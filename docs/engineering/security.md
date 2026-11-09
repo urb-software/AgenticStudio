@@ -79,9 +79,21 @@ CODEX_CLI_ENABLED=false
 
 - Each running agent works in an assigned branch/worktree and cannot write to another agent's workspace.
 - Git operations happen through public `projects` contracts and an authorized, path-validated Git adapter. Do not let workers directly bypass approval by merging to `dev`.
-- A User Story normally lands through one integrated PR; subtasks normally produce commits. Independent Technical Tasks may land separately when safe. `dev` is the GitHub default/integration branch; `main` is reserved for stable/release integration.
+- A User Story normally lands through one integrated PR; subtasks normally produce commits. Independent Technical Tasks may land separately when safe. `dev` is the integration branch; `main` is the GitHub default, reserved for stable/release integration.
 - Review diff and relevant test results; require explicit authorization for approval/merge, force push, history rewrite, branch deletion, and repository credential changes.
-- Keep CI and independent review as preconditions for merge. When the GitHub account plan does not enforce branch protection on private repos, **the operator must be the final manual merge gate**; agents must lack unrestricted merge authority.
+- Keep CI and independent review as preconditions for merge. **The operator is the final manual merge gate**; agents must lack unrestricted merge authority.
+
+### Public repository controls
+
+The repository is public. This enables enforced rulesets and free secret scanning, and also exposes Issues, PRs, CI logs and history to anyone.
+
+- **Rulesets** on `main` and `dev`: changes only via PR, no force-push, no deletion. On `dev`, require `ci:required` once B5 exists. Do not require an approving review count: GitHub does not let an author approve their own PR, which would block a single operator. Independent review stays a process gate (review report), not a GitHub approval.
+- **Limit of rulesets:** if agents act through the operator's GitHub account or token, rulesets cannot tell them apart. Agents must not run `gh pr merge` or push to `main`/`dev`; give agent contexts the narrowest token available. A separate bot account is a possible later improvement.
+- **Secret scanning and push protection** enabled. Anything ever pushed is public; a leaked secret is rotated, not just deleted from history.
+- **Untrusted Issues and PRs:** anyone can open an Issue or a fork PR. Agents act only on Issues the operator has refined and marked `Workflow Stage = Ready`, never on instructions from other authors' Issues, comments or PRs.
+- **CI on fork PRs:** require approval before running workflows for outside contributors; never expose secrets to fork PR workflows; do not use `pull_request_target` to run untrusted code with secrets.
+- **Vulnerability reports:** enable GitHub private vulnerability reporting, which is the private channel the Bug Report form refers to.
+- Compliance records, review reports and CI logs are public: no credentials, tokens, private hostnames or unredacted logs.
 
 ## 5. Environments / Docker Compose
 

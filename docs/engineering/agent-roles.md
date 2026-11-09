@@ -22,7 +22,7 @@ The same CLI product can be used twice **if contexts are genuinely separate**; u
 4. Implementer works only in the assigned worktree and reports changed files, commit SHA, exact test commands/results and remaining risks. The coordinator integrates Subtask commits into the one Story branch when delegated.
 5. Open a Draft PR to `dev` for the **integrated** Story, independent Technical Task, or Bug. Trigger actual CI (when implemented) and request an independent review of the same PR head SHA, using `docs/templates/review-report.md`.
 6. Implementer addresses review findings; rerun checks and obtain re-review for material changes. Distinguish CI check status from human/operator approval.
-7. The operator performs the final merge after all applicable checks and review pass. Close the Issue only after the appropriate DoD and integration verification. Private GitHub Organization Free does not enforce required private-branch checks; the operator is the real merge gate.
+7. The operator performs the final merge after all applicable checks and review pass. Close the Issue only after the appropriate DoD and integration verification. On this public repository, rulesets enforce PR-only changes and required checks on `dev`, but they cannot distinguish an agent from the operator when both use the same GitHub account; the operator remains the real merge gate (see [Security](security.md) §4).
 
 ## 3. Isolation rules
 

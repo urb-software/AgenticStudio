@@ -1,5 +1,5 @@
 ## Related issue
-<!-- Use e.g. `Refs #123`. Do not rely solely on `Closes #123` when merging into `dev` if `dev` is not the default branch. -->
+<!-- Use e.g. `Refs #123`. `dev` is not the default branch, so `Closes #123` will not close the issue on merge; the operator closes it after DoD. -->
 Refs #
 
 ## Outcome / scope of changes

@@ -130,7 +130,7 @@ ci:required           # Final policy aggregation
 - Tests, relevant builds and scanners are blocking according to change scope and agreed severity policy. Security-critical findings are not waived casually.
 - Keep the required PR check name stable. Avoid skip configurations that leave required status checks indefinitely pending or inadvertently mark incomplete work as green.
 - `affected` selection may skip irrelevant tests only after computing dependency impact. Full architecture graphs are always checked for applicable application changes.
-- If GitHub Free for **private** organization repositories does not enforce required status checks/branch protection, treat merge as a **manual operator gate** until paid enforcement or equivalent protection is available. Green CI is still required by project policy, but do not claim the platform enforces it automatically.
+- The repository is **public**, so GitHub rulesets enforce required status checks on the Free plan. Once B5 exists, `ci:required` is a required check on `dev`; until then, do not claim the platform enforces CI. Merge remains a **manual operator decision** on top of enforced checks (see [Security](security.md) §4).
 - For doc-only PRs, limit code checks only via explicitly tested policy; do not automatically skip when changing architecture tooling or core configuration.
 
 ## 8. Local agent checks (target command interface)
@@ -188,7 +188,7 @@ The first functional User Story is **not Ready** merely because these decisions 
 - [ ] Operator login/session/logout implemented on NestJS with API guard; integration tests prove successful login, invalid password, no-session 401, logout and CSRF/Origin rejection.
 - [ ] A reproducible pipeline converts Zod schemas → NestJS Swagger/OpenAPI → typed generated browser client, with contract drift check.
 - [ ] Three distinct architecture checks and essential PR CI are operational, not just described.
-- [ ] Repository has real `main` and GitHub-default `dev` branches; PRs target `dev`; the operator retains the final merge decision on GitHub Organization Free/private.
+- [ ] Repository has real GitHub-default `main` and integration `dev` branches; PRs target `dev`; rulesets protect both branches with `ci:required` as a required check on `dev`; the operator retains the final merge decision.
 - [ ] Manual orchestration, implementer and independent-reviewer responsibilities are documented and used in a dry-run PR.
 
 Planned script names (to be created, not yet runnable): `pnpm db:migrate:dev`, `pnpm db:migrate:deploy`, `pnpm contracts:generate`, and `pnpm contracts:check`. `contracts:check` must fail if OpenAPI or generated client output differs from the committed version. Use pinned compatible library versions and deterministic output. See [Bootstrap](bootstrap-plan.md) and [Agent roles](agent-roles.md).
@@ -199,6 +199,6 @@ Planned script names (to be created, not yet runnable): `pnpm db:migrate:dev`, `
 - Exact tool versions, scripts, dependency-rule files, fixture generators.
 - Security severity thresholds and full-E2E/release test schedules.
 - Real provider CLI smoke-test prerequisites, cost controls and licensing verification.
-- Review policy under the eventual GitHub repository plan.
+- Whether a second GitHub account (e.g. a bot account for agents) is introduced so rulesets can separate agent and operator permissions.
 
 Decision provenance: [Notion guardrails](https://app.notion.com/p/413d4d814eb0819499faecf3fe7f4afe) and [GitHub workflow](https://app.notion.com/p/413d4d814eb08175b243ca84f1191271).

@@ -19,7 +19,7 @@ Copy the contents of this package into the **root of your new repository**, pres
 
 1. Commit these files to the repository's **default branch** so GitHub can display the Issue Forms and PR template.
 2. Enable GitHub Issues and create GitHub Projects statuses: Backlog, Refinement, Ready, In Progress, In Review, Done, and Blocked.
-3. Decide whether `dev` should be the default branch; configure rulesets/branch protection and required CI before parallel agent development.
+3. Keep `main` as the default branch and use `dev` as the integration branch (decided; see `docs/engineering/bootstrap-plan.md`); configure rulesets/branch protection and required CI before parallel agent development.
 4. Create the first Technical Task for the repository/monorepo bootstrap, followed by implementation of architecture tests and CI.
 5. Adjust template fields only when the first few issues reveal a real need; keep the forms consistent across the project.
 

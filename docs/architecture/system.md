@@ -110,7 +110,7 @@ These are the selected **implementation baselines**, not claims that the code or
 | Operator auth | Single-operator password login, Argon2id hash configured as a secret, Redis-backed opaque server-side sessions, secure HttpOnly cookie | Meets authenticated/unauthorized acceptance without full identity platform |
 | Database | PostgreSQL with Prisma ORM, Prisma Migrate and explicit persistence adapters | One standard schema and migration path for the monorepo |
 | REST contracts | Zod 4 source schemas → `nestjs-zod` + `@nestjs/swagger` OpenAPI → `@hey-api/openapi-ts` generated Fetch client | Contract-first path with no duplicated handwritten frontend DTOs |
-| Repository | `main` remains the stable/release branch; `dev` is the **GitHub default and PR integration branch** | One unambiguous PR target and default-branch Issue automation |
+| Repository | `main` is the **GitHub default** and stable/release branch; `dev` is the **PR integration branch** (PRs set `--base dev` explicitly) | One unambiguous PR target; Issues are closed explicitly after DoD rather than by `Closes #...` |
 | Agent execution | Official Claude Code and Codex CLI binaries behind a small provider-specific runner interface; no API/SDK runners in MVP; automated execution enabled per provider only after its auth/execution model is validated against current terms | Preserves native CLI behavior while keeping the provider-policy risk gated; see [Security](../engineering/security.md) §2 |
 | Agent SDLC roles | Operator coordinates in a primary Claude Code session; implementer uses a fresh Claude Code or Codex CLI context; reviewer uses a separate context | No imaginary take-ticket automation or agent framework required at bootstrap |
 

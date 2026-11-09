@@ -65,7 +65,7 @@ If the English SDLC template pack is installed, also consult:
 
 ## Getting started
 
-**Before scaffolding:** initialize a first commit on `main`; create and push `dev` and set it as the **GitHub default branch**. Add the P0 documents and the English SDLC v3 templates on `dev`. Then create independent Technical Tasks for monorepo, Prisma/PostgreSQL/Redis, minimal operator auth, REST contract code generation, architecture checks and CI. Follow the exact [bootstrap order](docs/engineering/bootstrap-plan.md).
+**Before scaffolding:** commit the P0 documents and the English SDLC v3 templates on `main` (the **GitHub default branch**), then bring `dev` (the integration branch) up to date with `main`; PRs target `dev` explicitly. Then create independent Technical Tasks for monorepo, Prisma/PostgreSQL/Redis, minimal operator auth, REST contract code generation, architecture checks and CI. Follow the exact [bootstrap order](docs/engineering/bootstrap-plan.md).
 
 **After scaffolding:** replace this section with tested installation, setup, environment-variable, database-migration, and local start commands. **Do not invent commands that do not yet exist.** The expected monorepo package manager is `pnpm`, pending implementation.
 
