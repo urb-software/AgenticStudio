@@ -1,0 +1,36 @@
+name: "Subtask"
+description: "Part of a User Story, delivered as commits on the story branch"
+title: "[Subtask] "
+type: "Subtask"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A Subtask belongs to exactly one **User Story** (native parent) and never owns a direct PR to `dev`; its commits land on the story branch.
+        Create it from the parent Story ("Create sub-issue") or set the native parent after creating it. See `docs/engineering/issue-workflow.md`.
+  - type: textarea
+    id: goal
+    attributes:
+      label: "Goal"
+      placeholder: "What part of the Story does this deliver?"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: "Scope"
+      description: "Files/areas to change and to leave alone, especially when delegated to a separate implementer."
+      placeholder: |
+        Change:
+        - ...
+        Do not change:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-result
+    attributes:
+      label: "Expected result and verification"
+      placeholder: "- [ ] ...\n- [ ] Verified by ..."
+    validations:
+      required: true

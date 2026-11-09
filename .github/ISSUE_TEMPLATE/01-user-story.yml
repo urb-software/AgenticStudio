@@ -1,11 +1,13 @@
 name: "User Story — Vertical Slice"
 description: "A feature that delivers verifiable value to a user"
 title: "[Story] "
+type: "User Story"
 body:
   - type: markdown
     attributes:
       value: |
         A story can be drafted before all details are finalized, but implementation must not start until the Definition of Ready is satisfied.
+        After creating it, set the **native parent Epic** and the **Workflow Stage** field; a parent number typed into this form does not create the link. See `docs/engineering/issue-workflow.md`.
         By default, one User Story is delivered through one integrated PR targeting `dev`.
   - type: textarea
     id: business-goal

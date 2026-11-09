@@ -1,10 +1,13 @@
 name: "Bug Report"
 description: "A reproducible defect with clear fix criteria"
 title: "[Bug] "
+type: "Bug"
 body:
   - type: markdown
     attributes:
       value: |
+        Use this form only for defects in accepted/integrated behavior; a failure in an unfinished Story is fixed within that Story.
+        After creating it, set the **native parent Epic** and the **Workflow Stage** field. See `docs/engineering/issue-workflow.md`.
         Do not include secrets, access tokens, production data, or private logs.
         Report security vulnerabilities through the appropriate private channel.
   - type: textarea

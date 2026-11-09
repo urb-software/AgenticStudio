@@ -1,0 +1,46 @@
+name: "Epic"
+description: "A larger outcome or stage that groups Stories, Technical Tasks and Bugs"
+title: "[Epic] "
+type: "Epic"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An Epic is a root Issue and never owns a PR. Attach User Stories, Technical Tasks and Bugs to it as **native sub-issues**.
+        See `docs/engineering/issue-workflow.md`.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: "Outcome"
+      description: "What is true once this Epic is complete?"
+      placeholder: "e.g. The walking skeleton proves Next.js → NestJS → PostgreSQL end to end."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: "In scope / out of scope"
+      placeholder: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: completion
+    attributes:
+      label: "Completion criteria"
+      description: "How the operator decides the Epic can be closed."
+      placeholder: "- [ ] All child Issues closed\n- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: "References"
+      description: "Canonical documents and decisions. Enter 'None' if there are none."
+      placeholder: "docs/product/walking-skeleton.md, docs/engineering/bootstrap-plan.md"
+    validations:
+      required: false
