@@ -1,16 +1,14 @@
 # Walking Skeleton — First End-to-End Vertical Slice
 
-**Status:** approved implementation strategy with a selected bootstrap tooling baseline; user-story field details and GitHub Issues still require refinement. Decisions below are design targets, not implemented functionality.
+**Status:** approved implementation strategy with a selected bootstrap tooling baseline. User-story field details and GitHub Issues still require refinement; decisions below are design targets, not implemented functionality.
 
 ## 1. Purpose
 
-Prove that the architecture works **across actual application boundaries** early, before building complex agent execution or workflow UIs.
+Prove early that the architecture works **across actual application boundaries**, before building complex agent execution or workflow UIs.
 
-The first functional scenario is:
+First functional scenario:
 
 > As an operator, I can create a project from the Studio UI and see it in the project list after the system persists it in PostgreSQL.
-
-Expected path:
 
 ```text
 Next.js project form
@@ -22,25 +20,25 @@ Next.js project form
   → Next.js project list
 ```
 
-Do **not** use an in-memory fake as proof of the end-to-end scenario. Test doubles are appropriate in unit tests, not as the final integration evidence.
+An in-memory fake is **not** proof of the end-to-end scenario. Test doubles belong in unit tests, not in the final integration evidence.
 
 ## 2. Bootstrap work (independent Technical Tasks)
 
-These may be split into small, independently reviewable PRs into `dev`:
+Small, independently reviewable PRs into `dev`. Order and verification gates: [Bootstrap](../engineering/bootstrap-plan.md) §3.
 
 1. **Repository bootstrap:** pnpm monorepo, TypeScript, NestJS app, Next.js app, consistent scripts and configurations.
 2. **Basic services:** development Docker Compose for PostgreSQL **and Redis** (required for operator sessions), env example files without credentials, Prisma ORM + reviewed Prisma Migrate workflow in `packages/database/`.
 3. **Mandatory architecture gates:** Backend / Frontend / Monorepo dependency and structure checks, plus fixtures showing allowed and disallowed imports.
-4. **Minimal CI:** formatting, lint, TypeScript, build, architecture tests, and relevant unit/integration checks on PRs; do not report unimplemented jobs as passing.
-5. **Issue/PR workflow:** GitHub Issue Forms, DoR/DoD, Draft PR, reviews, branch/worktree conventions; enforce permissions to the extent available on the repository plan.
-6. **Single-operator authentication:** implement password login, Argon2id hash from a secret, Redis-backed HttpOnly sessions, API auth guard, logout, CSRF/Origin protection and tests for unauthorized API calls.
-7. **REST contract generation:** Zod 4 + `nestjs-zod` + NestJS Swagger to canonical OpenAPI 3.1, then `@hey-api/openapi-ts` generated Fetch client, with a deterministic generation/check script.
+4. **Minimal CI:** formatting, lint, TypeScript, build, architecture tests, and relevant unit/integration checks on PRs; unimplemented jobs are never reported as passing.
+5. **Issue/PR workflow:** GitHub Issue Forms, DoR/DoD, Draft PR, reviews, branch/worktree conventions; permissions enforced to the extent the repository plan allows.
+6. **Single-operator authentication:** password login with Redis-backed sessions and an API auth guard, including tests for unauthorized API calls. Spec: [Security](../engineering/security.md) §8.
+7. **REST contract generation:** Zod → OpenAPI 3.1 → generated Fetch client, with a deterministic generation/check script. Tooling: [Bootstrap](../engineering/bootstrap-plan.md) §2.
 
-Avoid scaffolding unused business capabilities or privileged Docker operations just to complete the bootstrap.
+Do not scaffold unused business capabilities or privileged Docker operations to complete the bootstrap.
 
 ## 3. First User Story — Create Project
 
-**Boundaries:** `projects` business module in API and web; no requirement to implement Git repository connection, agent execution, workflows, MCP, or Preview in this first story.
+**Boundaries:** the `projects` business module in API and web. Out of scope: Git repository connection, agent execution, workflows, MCP, Preview.
 
 **Proposed acceptance criteria (confirm during refinement):**
 
@@ -51,7 +49,7 @@ Avoid scaffolding unused business capabilities or privileged Docker operations j
 - An unauthorized request is rejected according to the chosen auth implementation.
 - Tests cover successful creation, validation errors, data persistence, and the basic UI path.
 
-**Contract First — selected starter contract to refine in Story 1:** public-facing routes are `POST /api/projects` and `GET /api/projects` behind an authenticated session. The initial proposal is `POST { name: string }` (trimmed, non-empty, maximum 100 characters), returning HTTP 201 and `{ id: string (UUID), name: string, createdAt: string (ISO 8601) }`. `GET` returns HTTP 200 `{ items: Project[] }` sorted newest first. Invalid input gives HTTP 400 and no session gives HTTP 401. The UI calls the generated client. Confirm exact uniqueness, duplicate-name behavior, standardized error responses and empty-list behavior in the User Story Issue **before** marking it Ready; only the accepted version becomes the contract. Swagger/OpenAPI generation must work before BE/FE are assigned to separate implementers.
+**Contract First:** `POST /api/projects` and `GET /api/projects` behind an authenticated session; the UI calls the generated client. The starter contract (payloads, status codes, open points to confirm before Ready) is canonical in [Bootstrap](../engineering/bootstrap-plan.md) §4; only the version accepted in the Story Issue becomes the contract. Swagger/OpenAPI generation must work before BE/FE are assigned to separate implementers.
 
 ## 4. Expected backend implementation
 
@@ -73,7 +71,7 @@ apps/api/src/modules/projects/
   projects.module.ts
 ```
 
-Create only files actually required by the slice. Keep handlers independent of HTTP and ORM; the endpoint is a thin adapter. Read queries may use a dedicated read port/repository if justified, but do not introduce unnecessary abstractions.
+Create only the files the slice requires. Handlers stay independent of HTTP and ORM; the endpoint is a thin adapter. Read queries may use a dedicated read port/repository if justified; no unnecessary abstractions.
 
 ## 5. Expected frontend implementation
 
@@ -87,7 +85,7 @@ apps/web/src/
     index.ts
 ```
 
-Pages compose publicly exported feature components. Use the agreed API client and appropriate local/form/server-state handling. Do not place business use cases in Next.js route handlers or Server Actions.
+Pages compose publicly exported feature components and use the agreed API client with appropriate local/form/server-state handling. No business use cases in Next.js route handlers or Server Actions.
 
 ## 6. Testing and architecture evidence
 
@@ -103,21 +101,18 @@ Pages compose publicly exported feature components. Use the agreed API client an
 | Build/quality | Formatting, lint, typecheck, production builds and required CI green |
 | Security | Auth and validation appropriate to chosen minimal auth model |
 
-The tests above are **targets to implement** during the technical bootstrap and first story. A passing local script cannot be claimed until it exists and has executed.
+These tests are **targets to implement** during the technical bootstrap and first story. A passing local script cannot be claimed until it exists and has executed.
 
 ## 7. Workflow and Done
 
-1. Complete repository bootstrap, auth, Prisma migration, and contract generation Technical Tasks; then refine User Story and verify DoR.
-2. The operator executes the **documented manual `take-ticket` procedure** using a primary Claude Code session; a coded command/skill does not exist yet. Prepare a bounded handoff and isolated worktree/branch. See [Agent roles](../engineering/agent-roles.md).
+1. Complete the repository bootstrap, auth, Prisma migration, and contract generation Technical Tasks; then refine the User Story and verify DoR.
+2. The operator runs the **manual `take-ticket` procedure** ([Agent roles](../engineering/agent-roles.md) §2; no coded command/skill exists yet): bounded handoff, isolated worktree/branch, Draft PR into `dev`, CI and independent review, operator merge, Issue closed only when the applicable DoD is satisfied.
 3. Implement BE + FE in one context if small; split BE/FE contexts if justified, after agreeing on the contract.
-4. Run local checks, prepare diff, open Draft PR into `dev`.
-5. CI and independent review; iterate on findings and rerun affected checks.
-6. Merge only after required checks and approval; verify the integrated behavior and close the Issue only when applicable DoD is satisfied.
 
-The first walking skeleton itself does not require the future per-project Compose Preview manager to be completed. Verify the end-to-end UI/API/DB scenario on the development/test environment; **Preview automation is a later slice**.
+The walking skeleton does not require the future per-project Compose Preview manager. Verify the end-to-end UI/API/DB scenario on the development/test environment; **Preview automation is a later slice**.
 
 ## 8. Next high-risk vertical proof
 
-After the basic skeleton, prove the integration **agent definition → worker → official CLI adapter → execution status/logs → UI** in a controlled test environment. First pass the per-provider CLI terms/auth acceptance gate ([Security](../engineering/security.md) §2), then verify permissions, redaction, cancellation, timeout, and isolation. Use Fake Runners in routine CI; real CLI smoke tests should be separate and controlled.
+After the basic skeleton, prove **agent definition → worker → official CLI adapter → execution status/logs → UI** in a controlled test environment. First pass the per-provider CLI terms/auth acceptance gate ([Security](../engineering/security.md) §2), then verify permissions, redaction, cancellation, timeout, and isolation. Routine CI uses Fake Runners; real CLI smoke tests are separate and controlled.
 
 Decision provenance: [Walking Skeleton & Vertical Slices](https://app.notion.com/p/412d4d814eb081bdbe62c0d76b1c2d4b).

@@ -4,9 +4,9 @@
 
 ## 1. Product intent
 
-Build a **private, self-hosted AI coding workspace** for one human operator that can manage software projects and agent definitions, run coding tasks through official Claude Code / Codex CLIs, inspect generated code changes, and preview integrated results on a VPS.
+A **private, self-hosted AI coding workspace** for one human operator: manage software projects and agent definitions, run coding tasks through official Claude Code / Codex CLIs, inspect generated code changes, and preview integrated results on a VPS.
 
-The system is **not** being designed as a public SaaS, a model provider, or a replacement for the native CLI tools. Preserve provider-native file/configuration formats where supported.
+It is **not** a public SaaS, a model provider, or a replacement for the native CLI tools. Provider-native file/configuration formats are preserved where supported.
 
 ## 2. User and desired outcome
 
@@ -23,7 +23,7 @@ The system is **not** being designed as a public SaaS, a model provider, or a re
 7. Merge approved changes into the project's `dev` integration branch.
 8. See the updated **single shared Preview** for that project.
 
-This is a **capability roadmap**, not a claim that all of it belongs in the first implemented story.
+This is a **capability roadmap**; not all of it belongs in the first implemented story.
 
 ## 3. Six business modules (approved architecture)
 
@@ -36,20 +36,20 @@ This is a **capability roadmap**, not a claim that all of it belongs in the firs
 | `environments` | Project Compose stack lifecycle and one shared Preview per project |
 | `mcp` | Reusable MCP server registry/configuration, project/agent bindings, basic connection management |
 
-Agent/skill definitions remain separate domain models *within* `agents`; MCP remains its own module. Git remains within `projects`.
+Agent and skill definitions are separate domain models *within* `agents`; MCP is its own module; Git stays within `projects`.
 
 ## 4. Intended MVP capabilities
 
 - A Next.js Studio UI for projects, agents/skills, workflows, executions, environments, and MCP management.
-- PostgreSQL for application state and Redis + BullMQ for queued jobs; separate worker process for CLI execution.
-- REST for commands/queries and SSE for progress/logs.
+- PostgreSQL for application state; Redis + BullMQ for queued jobs; a separate worker process for CLI execution.
+- REST for commands/queries; SSE for progress/logs.
 - Initial workflow orchestration centered on a **small sequential flow and human approval**; advanced branching/parallelism may be deferred.
 - Native CLI definitions where practical; immutable approved configuration snapshots for runs.
 - Per-agent Git worktrees/branches and controlled merge of reviewed changes.
 - Docker Compose environments controlled by a separate, narrowly privileged process, with one shared Preview built from `dev` after merge.
 - Secret storage outside Git and minimal access to external tools.
 
-Every capability requires its own refined GitHub Issue and acceptance criteria before implementation.
+Every capability needs its own refined GitHub Issue and acceptance criteria before implementation.
 
 ## 5. Explicit non-goals for the first MVP
 
@@ -64,22 +64,22 @@ Every capability requires its own refined GitHub Issue and acceptance criteria b
 
 ## 6. Success criteria to refine into GitHub User Stories
 
-A useful MVP should demonstrate that an operator can complete the end-to-end cycle with controlled permissions and a recoverable execution history. Evidence should include functional tests, architecture checks, integration tests, meaningful failures, and a working Preview after approval.
+The MVP demonstrates that an operator can complete the end-to-end cycle with controlled permissions and a recoverable execution history. Evidence: functional tests, architecture checks, integration tests, meaningful failures, and a working Preview after approval.
 
-**First implemented vertical slice is deliberately smaller:** create a project through the UI, persist it, list it, and verify the request across Next.js → NestJS → PostgreSQL. See [Walking Skeleton](walking-skeleton.md).
+**The first implemented vertical slice is deliberately smaller:** create a project through the UI, persist it, list it, and verify the request across Next.js → NestJS → PostgreSQL. See [Walking Skeleton](walking-skeleton.md).
 
 ## 7. Unresolved decisions — turn into refinement/Technical Tasks
 
-- Verify current CLI licensing/terms, supported authentication, headless use, and automation constraints for **each** provider; do not treat consumer subscriptions as unrestricted APIs. Automated execution stays disabled per provider until this validation passes (acceptance gate in [Security](../engineering/security.md) §2).
+- Validate CLI terms, authentication and headless use for **each** provider (tasks B6/B7); automated execution stays disabled per provider until then (acceptance gate in [Security](../engineering/security.md) §2).
 - Confirm VPS hardware, isolation model, networking, and secret-management mechanism before enabling real agent execution.
 - Decide Git access strategy and credential scope; protect upstream repositories and integration branches.
 - Refine exact workflow step semantics and human approval model.
 - Specify baseline project schema, auth/session strategy, API contracts, and Preview exposure only when the relevant slice begins.
-- Agree on frontend state-library versions/policy prior to installing them in feature code.
+- Agree on frontend state-library versions/policy before installing them in feature code.
 - Prioritize the initial User Story Map and define DoR-compliant GitHub Issues.
 
 ## 8. Product delivery strategy
 
-Use **Walking Skeleton + Vertical Slices**. GitHub Issues contain the authoritative work items; separate Issues may cover independent technical foundations. Do not build six entire modules before delivering the first usable end-to-end scenario.
+**Walking Skeleton + Vertical Slices.** GitHub Issues are the authoritative work items; separate Issues may cover independent technical foundations. Deliver the first usable end-to-end scenario before building out six entire modules.
 
 Decision provenance: [Notion architecture hub](https://app.notion.com/p/3fad4d814eb0817a9ba8c264625b4faa) and [development process](https://app.notion.com/p/412d4d814eb081bdbe62c0d76b1c2d4b).

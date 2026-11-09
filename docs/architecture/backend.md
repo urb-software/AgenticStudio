@@ -1,12 +1,12 @@
 # Backend Architecture — NestJS / VSA
 
-**Status:** approved module boundaries and core conventions; code examples are architectural targets, not proof of implemented files.
+**Status:** approved module boundaries and core conventions; code examples are architectural targets, not implemented files.
 
 ## 1. Style and decision hierarchy
 
 **NestJS Modular Monolith + Vertical Slice Architecture + Lightweight Clean Architecture.**
 
-The application has exactly six business modules under `apps/api/src/modules/`:
+Exactly six business modules under `apps/api/src/modules/`:
 
 1. `projects` (**including Git**)
 2. `agents` (**including skills**, with distinct domain models and lifecycle)
@@ -15,26 +15,14 @@ The application has exactly six business modules under `apps/api/src/modules/`:
 5. `environments`
 6. `mcp` (independent registry and bindings)
 
-Earlier proposals that separated `git` or `skills`, used Python/FastAPI, or mandated `command.ts` / `query.ts` files are superseded.
+Superseded: earlier proposals that separated `git` or `skills`, used Python/FastAPI, or mandated `command.ts` / `query.ts` files.
 
 ## 2. Canonical directory convention
 
 ```text
 apps/api/src/
-  modules/
-    projects/
-    agents/
-    workflows/
-    executions/
-    environments/
-    mcp/
-  platform/
-    auth/
-    database/
-    queue/
-    messaging/
-    config/
-    logging/
+  modules/     # projects, agents, workflows, executions, environments, mcp
+  platform/    # auth, database, queue, messaging, config, logging
   shared/
 
 modules/{module}/
@@ -64,19 +52,17 @@ modules/{module}/
   {module}.module.ts
 ```
 
-**Do not create empty mandatory directories.** `handler.ts` is the default feature implementation entry point. `endpoint.ts`, `schema.ts`, `input.ts`, consumers, ports and domain folders exist only when needed.
+**No empty mandatory directories.** `handler.ts` is the default feature entry point; `endpoint.ts`, `schema.ts`, `input.ts`, consumers, ports and domain folders exist only when needed.
 
 ## 3. Dependency rules
 
-- **Domain stays framework-independent.** Never import NestJS, Prisma, database connections, Redis, BullMQ, Git CLI, Docker, or HTTP types into `domain/`.
-- **Handlers own use-case business logic.** Depend on domain abstractions and ports; do not reach directly into concrete infrastructure implementations.
-- **HTTP endpoints and event consumers are thin adapters.** Validate/map input, invoke the appropriate local handler, map output/errors. Do not place business flows or transaction rules there.
-- **Infrastructure implements interfaces.** Use NestJS DI tokens/bindings at the composition root; allowed wiring dependencies at module setup must be explicit and narrowly scoped.
-- **Modules expose public contracts.** Other modules must not import private `features/`, `domain/`, `infrastructure/` or repositories from a sibling.
+- **Domain stays framework-independent.** `domain/` never imports NestJS, Prisma, database connections, Redis, BullMQ, Git CLI, Docker, or HTTP types.
+- **Handlers own use-case business logic.** They depend on domain abstractions and ports, never on concrete infrastructure implementations.
+- **HTTP endpoints and event consumers are thin adapters:** validate/map input, invoke the local handler, map output/errors. No business flows or transaction rules there.
+- **Infrastructure implements interfaces.** Bind via NestJS DI tokens at the composition root; wiring dependencies allowed at module setup must be explicit and narrowly scoped.
+- **Modules expose public contracts.** A module never imports a sibling's private `features/`, `domain/`, `infrastructure/` or repositories.
 - **No cycles** across modules or architecture layers.
-- Do not put business-specific behavior into `platform/` or generic `shared/` just to bypass module boundaries.
-
-Examples:
+- Business-specific behavior never goes into `platform/` or `shared/` to bypass module boundaries.
 
 ```typescript
 // Allowed: public publisher-owned contract in another module
@@ -90,32 +76,31 @@ The `@modules/*` alias is conceptual; define aliases in tooling before using the
 
 ## 4. Feature boundaries and CQRS semantics
 
-- Commands **change state**; queries **read state**. Keep this semantic distinction, but **do not** mandate a command/query bus or `command.ts`/`query.ts` files.
-- Default: one feature folder per use case, one `handler.ts`. A command and a query with different behavior have separate features.
-- Commands may persist aggregates and schedule external work through ports; queries must not cause business state changes.
-- Queries may use a read repository port and return read DTOs directly without reconstructing rich domain aggregates. Keep the read model in the **same PostgreSQL** initially — no event sourcing or separate CQRS database.
-- Aggregate repository **interfaces** live in `domain/repositories/`, concrete implementations in `infrastructure/repositories/`.
-- Read repository interfaces and non-domain abstractions live in `ports/`, implementations in `infrastructure/repositories/` or `infrastructure/adapters/`.
-- Transport-specific request validation is local to the HTTP feature (`schema.ts`); handler input types are transport-independent, colocated in the handler or optional `input.ts`. Avoid a global DTO dump.
-- **Selected REST contract bridge:** Zod 4 schemas are authoritative for request and response data, converted to NestJS DTOs by `nestjs-zod` (v5-family) and documented via `@nestjs/swagger`. Use the version-appropriate `cleanupOpenApiDoc` step before emitting the canonical OpenAPI 3.1 JSON. Validate both request and response behavior where necessary. Do not maintain parallel `class-validator` DTO definitions for the same endpoint.
-- The OpenAPI document generates the browser client via `@hey-api/openapi-ts` (Fetch). Generate and check reproducible artifacts in CI; see [Bootstrap](../engineering/bootstrap-plan.md). The browser must never import private backend feature code.
+- Commands **change state**; queries **read state**. Keep the semantic distinction, but **no** mandatory command/query bus or `command.ts`/`query.ts` files.
+- Default: one feature folder per use case, one `handler.ts`. A command and a query with different behavior are separate features.
+- Commands may persist aggregates and schedule external work through ports. Queries must not change business state.
+- Queries may use a read repository port and return read DTOs directly, without reconstructing rich aggregates. The read model stays in the **same PostgreSQL** initially; no event sourcing or separate CQRS database.
+- Interfaces: aggregate repositories in `domain/repositories/`; read repositories and non-domain abstractions in `ports/`. Implementations: `infrastructure/repositories/` or `infrastructure/adapters/`.
+- Transport-specific request validation is local to the HTTP feature (`schema.ts`). Handler input types are transport-independent, colocated in the handler or optional `input.ts`. No global DTO dump.
+- **REST contract bridge:** Zod 4 schemas are authoritative for request and response data, converted to NestJS DTOs by `nestjs-zod` (v5-family) and documented via `@nestjs/swagger`. Run the version-appropriate `cleanupOpenApiDoc` step before emitting the canonical OpenAPI 3.1 JSON. Validate both request and response behavior where necessary. No parallel `class-validator` DTOs for the same endpoint.
+- The OpenAPI document generates the browser client via `@hey-api/openapi-ts` (Fetch). Generation is reproducible and checked in CI; see [Bootstrap](../engineering/bootstrap-plan.md). The browser never imports private backend feature code.
 
 ## 5. PostgreSQL persistence and migrations
 
-- **Selected tool: Prisma ORM + Prisma Migrate**, using version-compatible Prisma configuration and PostgreSQL driver adapter. Consult current Prisma major-version setup during scaffolding; do not paste legacy v6 `datasource.url` patterns into newer versions.
-- Canonical Prisma schema and migration history belong in `packages/database/prisma/`. Treat migrations as reviewed versioned code; no unreviewed production `db push` / destructive reset. Local development generates migrations; deployment applies committed migrations.
-- `platform/database` creates and manages the Prisma connection; repositories use it through DI. Concrete Prisma-based repositories live in owning modules' `infrastructure/repositories/`; `domain/` and application handlers never depend on Prisma classes or generated database types.
-- Testcontainers-backed PostgreSQL integration tests cover repository behavior and migrations before Story 1; simple CRUD does not justify a second ORM or separate query database.
+- **Prisma ORM + Prisma Migrate**, with version-compatible Prisma configuration and PostgreSQL driver adapter. Check the current Prisma major-version setup during scaffolding; do not paste legacy v6 `datasource.url` patterns into newer versions.
+- The canonical Prisma schema and migration history live in `packages/database/prisma/`. Migrations are reviewed, versioned code: no unreviewed production `db push` or destructive reset. Local development generates migrations; deployment applies committed ones.
+- `platform/database` creates and manages the Prisma connection; repositories receive it through DI. Concrete Prisma repositories live in the owning module's `infrastructure/repositories/`. `domain/` and handlers never depend on Prisma classes or generated database types.
+- Testcontainers-backed PostgreSQL integration tests cover repository behavior and migrations before Story 1. Simple CRUD does not justify a second ORM or separate query database.
 
 ## 6. Cross-module contracts & integration events
 
-- The publishing module defines **one canonical, versioned Integration Event contract**, exported through its own public `contracts/index.ts`.
+- The publishing module defines **one canonical, versioned Integration Event contract**, exported through its public `contracts/index.ts`.
 - Prefer Zod runtime validation with inferred static TS types, plus a shared platform event envelope (e.g. `eventId`, `eventType`, `occurredAt`, optional correlation and causation IDs, `payload`).
-- The application handler publishes the integration event directly via a transactionally persisted outbox, if the business change uses the same PostgreSQL transaction.
-- Dispatcher and inbox provide at-least-once + idempotent processing; multiple consumers need independent delivery tracking.
-- Consumers validate/map received data and delegate to their own feature. Never import another module's private handler as a shortcut.
-- Do **not** add `domain/events/` by default in the MVP.
-- If an event contract crosses process boundaries, extract it to `packages/contracts` only when justified. **Never keep two competing definitions.**
+- The handler publishes the event through the transactionally persisted outbox when the business change uses the same PostgreSQL transaction.
+- Dispatcher + inbox give at-least-once, idempotent processing; multiple consumers need independent delivery tracking. See [System](system.md) §6.
+- Consumers validate/map received data and delegate to their own feature; never import another module's private handler as a shortcut.
+- **No** `domain/events/` by default in the MVP.
+- An event contract crossing process boundaries is extracted to `packages/contracts` only when justified. **Never keep two competing definitions.**
 
 ### Example flow
 
@@ -129,25 +114,26 @@ executions/features/complete-execution/handler.ts
 
 ## 7. Worker, Git and privileged infrastructure
 
-- Jobs flow through Redis + BullMQ to `apps/agent-worker`; the worker operates through a narrowly defined CLI runner adapter and an assigned Git worktree.
-- Keep the runner port small and provider-agnostic; each provider (Claude Code CLI, Codex CLI) gets its own adapter. API/SDK runners are out of scope for MVP. The worker never extracts, intercepts, shares or proxies subscription credentials, and a provider's adapter stays disabled until its auth/execution model passes the acceptance gate in [Security](../engineering/security.md) §2. The worker enforces this at runtime with fail-closed per-provider flags (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`) checked before any CLI subprocess is spawned.
+- Jobs flow through Redis + BullMQ to `apps/agent-worker`, which operates through a narrowly defined CLI runner adapter and an assigned Git worktree.
+- The runner port is small and provider-agnostic; each provider (Claude Code CLI, Codex CLI) gets its own adapter. API/SDK runners are out of scope for MVP.
+- Provider gate (canonical in [Security](../engineering/security.md) §2): the worker checks the fail-closed per-provider flag (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`) before spawning any CLI subprocess, and never extracts, intercepts, shares or proxies subscription credentials.
 - Workers have **no Docker socket**, privileged Compose access, production DB credentials or unrestricted filesystem access.
-- Docker Compose actions go through `apps/environment-controller` behind authorization and approved operations.
+- Docker Compose actions go through `apps/environment-controller`, behind authorization and approved operations.
 - Git belongs to `projects`; other modules consume its public interfaces, not its adapter or repositories.
-- External Git/Docker/CLI operations cannot be rolled back by a DB transaction; expose explicit states, timeouts, error handling and reconciliation.
+- External Git/Docker/CLI operations cannot be rolled back by a DB transaction: expose explicit states, timeouts, error handling and reconciliation.
 - `agents` owns separate `AgentDefinition` and `SkillDefinition` models; `mcp` owns reusable server definitions/bindings.
 
 ## 8. Test requirements
 
-- Unit tests: handler/domain behavior, error cases and transitions using controlled fakes.
-- Integration tests: repositories, API validation/auth, PostgreSQL transaction behavior, outbox/inbox, Redis/BullMQ where used (Testcontainers when appropriate).
-- Contract tests: REST DTO/schema compatibility and event versions.
-- Architecture tests: full dependency graph and structural rules in **`architecture:api`**.
-- Security/reliability: authorization failures, duplicate events, retry, cancellation, filesystem/worktree isolation and privileged-action rejection.
+- Unit: handler/domain behavior, error cases and transitions using controlled fakes.
+- Integration: repositories, API validation/auth, PostgreSQL transaction behavior, outbox/inbox, Redis/BullMQ where used (Testcontainers when appropriate).
+- Contract: REST DTO/schema compatibility and event versions.
+- Architecture: full dependency graph and structural rules in **`architecture:api`**.
+- Security/reliability: authorization failures, duplicate events, retry, cancellation, filesystem/worktree isolation, privileged-action rejection.
 
-Use **Vitest** as the preferred TypeScript runner; `@nestjs/testing`, Supertest, and Testcontainers are recommended supporting tools. Avoid a global coverage percentage target at bootstrap; prioritize meaningful business cases.
+Preferred runner: **Vitest**; supporting tools: `@nestjs/testing`, Supertest, Testcontainers. No global coverage percentage target at bootstrap; prioritize meaningful business cases. Architecture tests block merge once CI is implemented.
 
-See [Quality](../engineering/quality.md) and [Security](../engineering/security.md). Architecture tests must block merge once CI is implemented.
+See [Quality](../engineering/quality.md) and [Security](../engineering/security.md).
 
 ## 9. Avoid overengineering
 
