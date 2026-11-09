@@ -4,11 +4,9 @@
 
 ## 1. Branches: one explicit policy
 
-- `main`: **GitHub default branch** and stable/release branch; initialized first and updated only via approved release integration (a later concern).
-- `dev`: everyday integration target for feature/technical-task/bug PRs. It is **not** the GitHub default, which has three consequences:
-  - PRs must target `dev` explicitly (e.g. `gh pr create --base dev`); GitHub otherwise proposes `main`.
-  - `Closes #...` does not auto-close Issues on merge into `dev`; the operator closes Issues explicitly after DoD, as `issue-workflow.md` already requires.
-  - GitHub reads Issue Forms and the PR template from `main`; changes to `.github/` templates take effect only after they reach `main`.
+- `main`: stable/release branch; updated only via approved release integration (a later concern).
+- `dev`: **GitHub default branch** and everyday integration target for feature/technical-task/bug PRs. New PRs propose `dev` as base, and GitHub reads Issue Forms and the PR template from `dev`.
+- Because `Closes #...` would close an Issue as soon as its PR merges into `dev` (before DoD verification), PRs use `Refs #...` and the operator closes Issues explicitly after DoD.
 - Agents must not merge, force-push or change the default branch. The repository is **public**, so GitHub rulesets are enforced on the Free plan: protect `main` and `dev` (see [Security](security.md) §4). The operator still performs the final merge after CI and independent review.
 
 For a **brand-new empty remote** and an uninitialized local folder containing your downloaded documents:
@@ -24,7 +22,7 @@ git switch -c dev
 git push -u origin dev
 ```
 
-Keep `main` as the GitHub default branch. Verify `git ls-remote --heads origin main dev`, and that `dev` contains the same documentation as `main` before the first PR. If a Git repository or remote already exists, **inspect it first** and adapt rather than reinitializing or rewriting history. Do not force-push.
+Then in GitHub **Settings → General → Default branch**, choose `dev`. Verify `git ls-remote --heads origin main dev`, and verify GitHub displays `dev` as default. If a Git repository or remote already exists, **inspect it first** and adapt rather than reinitializing or rewriting history. Do not force-push.
 
 After this step, do routine changes on issue branches and PRs into `dev`; do not continue committing directly to `main` or `dev`.
 
@@ -44,7 +42,7 @@ Lock compatible **exact versions** in `pnpm-lock.yaml` during the respective Tec
 
 | Sequence | Technical Task | Verification gate |
 | --- | --- | --- |
-| B0 | Repository first commit, GitHub-default `main`, integration branch `dev`, SDLC v3 forms, baseline rulesets and secret scanning | Both remote branches exist with the same docs; rulesets block direct push/force-push/deletion on `main` and `dev`; secret push protection on; first sample PR targets `dev` |
+| B0 | Repository first commit, `main`, GitHub-default `dev`, SDLC v3 forms, baseline rulesets and secret scanning | Both remote branches exist; `dev` is the GitHub default; rulesets block direct push/force-push/deletion on `main` and `dev`; secret push protection on; first sample PR targets `dev` |
 | B1 | pnpm workspace, NestJS/Next.js boot and basic TypeScript/lint/build | `pnpm install --frozen-lockfile`, build and typecheck succeed |
 | B2 | PostgreSQL + Redis local Compose, Prisma schema/migrations and DB DI | Committed migration applies to empty DB; repository integration test with PostgreSQL passes |
 | B3 | Minimal operator auth with Redis sessions and route guard | Auth/login/session/logout + 401 + rate-limit/origin rejection integration tests pass |
@@ -86,7 +84,7 @@ B2 and B4 may proceed in parallel after B1 where dependencies permit. B3 needs R
 
 Before moving Story 1 to `Ready`, verify:
 
-- [ ] `dev` exists remotely as the integration branch; Story issue is attached to a native Epic parent.
+- [ ] `dev` exists remotely and is the GitHub default; Story issue is attached to a native Epic parent.
 - [ ] B1–B5 are complete, merged through reviewed PRs where applicable, and CI checks actually execute.
 - [ ] Auth can log in and log out, API rejects anonymous project calls (401), mutation CSRF/Origin defense has negative tests.
 - [ ] A real PostgreSQL Prisma migration and repository integration tests run.

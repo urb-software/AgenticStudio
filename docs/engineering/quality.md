@@ -188,7 +188,7 @@ The first functional User Story is **not Ready** merely because these decisions 
 - [ ] Operator login/session/logout implemented on NestJS with API guard; integration tests prove successful login, invalid password, no-session 401, logout and CSRF/Origin rejection.
 - [ ] A reproducible pipeline converts Zod schemas → NestJS Swagger/OpenAPI → typed generated browser client, with contract drift check.
 - [ ] Three distinct architecture checks and essential PR CI are operational, not just described.
-- [ ] Repository has real GitHub-default `main` and integration `dev` branches; PRs target `dev`; rulesets protect both branches with `ci:required` as a required check on `dev`; the operator retains the final merge decision.
+- [ ] Repository has real `main` and GitHub-default `dev` branches; PRs target `dev`; rulesets protect both branches with `ci:required` as a required check on `dev`; the operator retains the final merge decision.
 - [ ] Manual orchestration, implementer and independent-reviewer responsibilities are documented and used in a dry-run PR.
 
 Planned script names (to be created, not yet runnable): `pnpm db:migrate:dev`, `pnpm db:migrate:deploy`, `pnpm contracts:generate`, and `pnpm contracts:check`. `contracts:check` must fail if OpenAPI or generated client output differs from the committed version. Use pinned compatible library versions and deterministic output. See [Bootstrap](bootstrap-plan.md) and [Agent roles](agent-roles.md).
