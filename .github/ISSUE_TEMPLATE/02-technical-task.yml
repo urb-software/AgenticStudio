@@ -1,11 +1,13 @@
 name: "Technical Task"
 description: "A self-contained technical change that can be integrated safely"
 title: "[Tech] "
+type: "Technical Task"
 body:
   - type: markdown
     attributes:
       value: |
         Use this template for monorepo setup, CI, architecture guardrails, refactoring, and infrastructure.
+        After creating it, set the **native parent Epic** and the **Workflow Stage** field; a parent number typed into this form does not create the link. See `docs/engineering/issue-workflow.md`.
         A Technical Task may have its own PR to `dev` when the outcome is independent, testable, and safe to integrate.
   - type: textarea
     id: problem
