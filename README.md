@@ -2,15 +2,15 @@
 
 A private, self-hosted workspace for defining coding agents and skills, orchestrating Claude Code and Codex CLI tasks, reviewing Git changes, and previewing integrated project changes.
 
-> **Status: architecture and SDLC bootstrap.** The documents describe the agreed target design; they do **not** imply that the application, CI, security controls, or CLI integrations are already implemented. This repository will be built incrementally through GitHub Issues.
+> **Status: architecture and SDLC bootstrap.** The documents describe the agreed target design; the application, CI, security controls, and CLI integrations are **not yet implemented**. The repository is built incrementally through GitHub Issues.
 
 ## What we are building
 
-The MVP is designed for **one human operator** and supports the journey:
+An MVP for **one human operator**, supporting the journey:
 
 **Project → Agent/Skills → Workflow/Execution → Logs → Git Review & Approval → Merge to `dev` → Shared Project Preview**.
 
-The planned backend is a NestJS modular monolith with six business modules: `projects` (including Git), `agents` (including skills), `workflows`, `executions`, `environments`, and `mcp`. A Next.js UI exposes those capabilities. Separate worker and environment-controller processes perform constrained operations.
+Backend: a NestJS modular monolith with six business modules: `projects` (including Git), `agents` (including skills), `workflows`, `executions`, `environments`, `mcp`. A Next.js UI exposes them. Separate worker and environment-controller processes perform constrained operations.
 
 ## Tech stack (target)
 
@@ -29,7 +29,7 @@ The planned backend is a NestJS modular monolith with six business modules: `pro
 | Runtime | Docker Compose on a VPS, Traefik at the edge |
 | Editors | Monaco for definitions, React Flow for workflows |
 
-No GPU is required by the proposed architecture. Advanced sandboxing (microVMs), external-tenant APIs, and a full MCP gateway are outside the initial MVP.
+No GPU required. Outside the initial MVP: advanced sandboxing (microVMs), external-tenant APIs, a full MCP gateway.
 
 ## Repository layout (target, not yet scaffolded)
 
@@ -47,38 +47,31 @@ infra/
   compose.yaml
 ```
 
-The authoritative architecture and contributor instructions are located in this repository:
+## Documentation
 
 - [Agent instructions](AGENTS.md) and [Claude Code entry point](CLAUDE.md)
-- [MVP scope](docs/product/mvp.md) and [first walking skeleton](docs/product/walking-skeleton.md)
-- [System architecture](docs/architecture/system.md), [backend](docs/architecture/backend.md), and [frontend](docs/architecture/frontend.md)
-- [Quality & test guardrails](docs/engineering/quality.md) and [security guardrails](docs/engineering/security.md)
-- [Repository bootstrap and Story 1 readiness](docs/engineering/bootstrap-plan.md) and [Agent roles](docs/engineering/agent-roles.md)
-
-If the English SDLC template pack is installed, also consult:
-
-- `docs/engineering/definition-of-ready.md`
-- `docs/engineering/definition-of-done.md`
-- `docs/engineering/issue-workflow.md`
-- `docs/templates/implementation-handoff.md` and `docs/templates/review-report.md`
-- `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`
+- Product: [MVP scope](docs/product/mvp.md), [first walking skeleton](docs/product/walking-skeleton.md)
+- Architecture: [system](docs/architecture/system.md), [backend](docs/architecture/backend.md), [frontend](docs/architecture/frontend.md)
+- Guardrails: [quality & tests](docs/engineering/quality.md), [security](docs/engineering/security.md)
+- Bootstrap: [repository bootstrap and Story 1 readiness](docs/engineering/bootstrap-plan.md), [agent roles](docs/engineering/agent-roles.md)
+- SDLC: `docs/engineering/definition-of-ready.md`, `definition-of-done.md`, `issue-workflow.md`; `docs/templates/implementation-handoff.md`, `review-report.md`; `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`
 
 ## Getting started
 
 **Before scaffolding:** initialize a first commit on `main`; create and push `dev` and set it as the **GitHub default branch**. All further changes, including the English SDLC v3 templates, land on `dev` through PRs. Then create independent Technical Tasks for monorepo, Prisma/PostgreSQL/Redis, minimal operator auth, REST contract code generation, architecture checks and CI. Follow the exact [bootstrap order](docs/engineering/bootstrap-plan.md).
 
-**After scaffolding:** replace this section with tested installation, setup, environment-variable, database-migration, and local start commands. **Do not invent commands that do not yet exist.** The expected monorepo package manager is `pnpm`, pending implementation.
+**After scaffolding:** replace this section with tested installation, setup, environment-variable, database-migration, and local start commands. **Do not invent commands that do not yet exist.** Expected package manager: `pnpm`, pending implementation.
 
 ## Working agreement
 
 - GitHub Issues are the operational backlog. A User Story is normally integrated through one PR to `dev`; independent Technical Tasks may have their own PRs.
 - Work in isolated branches/worktrees. Never merge or deploy without the required approval.
-- A change is done only when the relevant DoD checks, independent review, required CI, and post-merge verification are satisfied.
-- Keep documentation in English. The repository documents are the canonical coding rules; Notion records the architectural decision history.
+- Done means: relevant DoD checks, independent review, required CI, and post-merge verification are all satisfied.
+- Documentation is in English. The repository documents are the canonical coding rules; Notion records the architectural decision history.
 
 ## Architectural decision history
 
-These documents were consolidated from the project discussions and Notion decision records. Newer approved decisions supersede historical examples in the parent page:
+Consolidated from project discussions and Notion decision records. Newer approved decisions supersede historical examples in the parent page:
 
 - [Architecture decision hub (Notion)](https://app.notion.com/p/3fad4d814eb0817a9ba8c264625b4faa)
 - [Frontend architecture](https://app.notion.com/p/412d4d814eb0818596d2dff8e7b2a136)

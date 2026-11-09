@@ -1,17 +1,17 @@
 # System Architecture — AI Agent Studio
 
-**Status:** approved high-level target architecture. Components are not yet implemented; all specifics not explicitly agreed below are subject to User Story refinement.
+**Status:** approved high-level target architecture. Nothing is implemented yet; specifics not explicitly agreed below are subject to User Story refinement.
 
 ## 1. Architectural principles
 
 - **One TypeScript stack:** NestJS API and Next.js App Router UI.
-- **Modular Monolith + Vertical Slice Architecture (VSA) + Lightweight Clean Architecture** in the API; feature-first modular frontend.
+- API: **Modular Monolith + Vertical Slice Architecture (VSA) + Lightweight Clean Architecture**. Frontend: feature-first, modular.
 - Exactly **six business modules** in the API, not six microservices.
 - Separate **technical processes** for background execution and narrowly privileged environment management.
-- Git-first / file-native configuration of coding agents and skills where supported by their CLIs.
+- Git-first / file-native configuration of coding agents and skills where their CLIs support it.
 - Human-controlled changes: isolated branches/worktrees, tests, review, and approval before merge.
-- Self-hosted single-operator deployment; least privilege, isolation, observability, and recoverability.
-- Introduce abstractions in response to a concrete use case, not as empty scaffolding.
+- Self-hosted, single operator; least privilege, isolation, observability, recoverability.
+- Abstractions answer a concrete use case; no empty scaffolding.
 
 ## 2. Logical context
 
@@ -38,7 +38,7 @@ NestJS API (apps/api) ───────── PostgreSQL
 Traefik exposes only explicitly approved UI/Preview entrypoints.
 ```
 
-This diagram is conceptual. The exact network, queue, auth, and deployment boundaries must be implemented and tested.
+Conceptual diagram. The exact network, queue, auth, and deployment boundaries must be implemented and tested.
 
 ## 3. Business module ownership
 
@@ -51,7 +51,7 @@ This diagram is conceptual. The exact network, queue, auth, and deployment bound
 | `environments` | Project environment lifecycle, Compose stack abstraction, health/logs, shared Preview | CLI agent definitions |
 | `mcp` | Reusable MCP server definitions, bindings, validation/connection checks, CLI tool configuration | Project repository internals or a full gateway in MVP |
 
-Frontend navigation may cross these boundaries: `/skills` is part of `agents`; `/projects/:id/preview` displays `environments` functionality in a project context. Backend boundaries remain authoritative.
+Frontend navigation may cross these boundaries (`/skills` is part of `agents`; `/projects/:id/preview` shows `environments` in a project context). Backend boundaries remain authoritative.
 
 ## 4. Cross-cutting platform
 
@@ -66,63 +66,56 @@ config/     # Validated configuration
 logging/    # Structured logs, correlation/tracing
 ```
 
-`shared/` is for genuinely domain-neutral helpers; business use cases belong to their owning modules.
+`shared/` holds only domain-neutral helpers; business use cases belong to their owning modules.
 
 ## 5. Processes and cross-process contracts
 
 - `apps/web`: UI only; never connects directly to privileged infrastructure or the agent worker.
-- `apps/api`: authoritative business operations, state, authentication, coordination; API operations via REST and realtime delivery via SSE.
+- `apps/api`: authoritative business operations, state, authentication, coordination; REST for operations, SSE for realtime delivery.
 - `apps/agent-worker`: consumes approved execution jobs, runs official CLI adapters with constrained filesystem/network/process permissions, publishes results and status. **Must not receive the Docker host socket.**
-- `apps/environment-controller`: narrow privileged interface for validated and authorized Docker Compose operations. Do not expose a generic arbitrary shell/Docker command interface.
-- `packages/contracts`: extract a cross-process contract here **only if** multiple runtime apps need it; retain one source of truth and do not duplicate schema definitions in a module and a shared package.
+- `apps/environment-controller`: narrow privileged interface for validated, authorized Docker Compose operations; no generic shell/Docker command interface.
+- `packages/contracts`: a cross-process contract is extracted here **only if** multiple runtime apps need it. One source of truth; never the same schema in both a module and a shared package.
 
 ## 6. Integration events and reliable messaging
 
-- Domain events are **not** a required MVP concept. Use **integration events** when modules need asynchronous communication.
-- The publishing module owns the event contract (e.g. `ExecutionCompletedV1`), including versioned schema, exported publicly. Prefer Zod schema + inferred TypeScript type.
-- Application handler changes business state and writes an event to a **PostgreSQL transactional outbox** in one DB transaction when both writes use the same DB.
-- Outbox dispatcher delivers with **at-least-once** semantics; consumers use an inbox / processed-event marker for idempotency and per-consumer delivery tracking. Do not claim exactly-once delivery.
-- `consumers/<event>/consumer.ts` validates/maps events and delegates to a local feature handler. Business logic stays in handlers; read projection handlers can update a projection directly when appropriate.
-- Git/Docker/CLI side effects are **not** transactionally atomic with PostgreSQL. Model state transitions, retries, reconciliation, and partial failure explicitly.
-- BullMQ handles long-running job delivery. Durable execution history and live SSE progress are separate from outbox retention.
+- Domain events are **not** a required MVP concept. Modules that need asynchronous communication use **integration events**.
+- The publishing module owns and publicly exports the versioned event contract (e.g. `ExecutionCompletedV1`); prefer a Zod schema + inferred TypeScript type.
+- The application handler changes business state and writes the event to a **PostgreSQL transactional outbox** in one DB transaction (when both writes use the same DB).
+- The outbox dispatcher delivers **at-least-once**; consumers use an inbox / processed-event marker for idempotency and per-consumer delivery tracking. Never claim exactly-once delivery.
+- `consumers/<event>/consumer.ts` validates/maps the event and delegates to a local feature handler, where business logic lives. Read projection handlers may update a projection directly when appropriate.
+- Git/Docker/CLI side effects are **not** transactionally atomic with PostgreSQL: model state transitions, retries, reconciliation, and partial failure explicitly.
+- BullMQ delivers long-running jobs. Durable execution history and live SSE progress are separate from outbox retention.
 
 ## 7. Git and project collaboration
 
-- Each running coding agent uses an assigned worktree and branch with scoped filesystem permissions.
-- Outputs are examined as diffs, tested and reviewed before controlled merge to `dev`.
-- The project has **one shared default Preview**, reflecting the integration branch `dev` following approved merges. It is **not** a Preview per agent.
-- Merge/production deployment are protected operations, never direct worker privileges.
+- Each running coding agent gets an assigned worktree and branch with scoped filesystem permissions.
+- Outputs are examined as diffs, tested and reviewed before a controlled merge to `dev`.
+- Each project has **one shared default Preview** reflecting `dev` after approved merges; **not** a Preview per agent.
+- Merge and production deployment are protected operations, never direct worker privileges.
 
 ## 8. Deployment and trust boundaries
 
-- Target deployment: Docker Compose on a standard VPS, Traefik, PostgreSQL, Redis, API, web, workers and controller.
-- No mandatory GPU, Kubernetes, multi-tenant infrastructure, or microVM/KVM dependency for MVP.
-- The default Compose-based approach is a starting point, **not a security equivalence to a sandbox/microVM**. Stronger isolation can be introduced after risk assessment.
-- Separate Studio administrative session from untrusted Preview origins. Restrict exposed ports, networking, filesystem mounts and privileges.
+- Target: Docker Compose on a standard VPS with Traefik, PostgreSQL, Redis, API, web, workers and controller.
+- MVP has no mandatory GPU, Kubernetes, multi-tenant infrastructure, or microVM/KVM dependency.
+- Compose is a starting point, **not security-equivalent to a sandbox/microVM**; stronger isolation can follow a risk assessment.
+- Keep the Studio administrative session separate from untrusted Preview origins. Restrict exposed ports, networking, filesystem mounts and privileges.
 - Secret material stays outside Git and outside agent-visible prompts, logs and ordinary config exports. See [Security](../engineering/security.md).
 
 ## 9. Bootstrap implementation decisions (P0 v2 baseline)
 
-These are the selected **implementation baselines**, not claims that the code or controls already exist. Their implementing Technical Tasks must pass before the Create Project User Story becomes Ready.
+Selected **implementation baselines**, not claims that code or controls exist. Their implementing Technical Tasks must pass before the Create Project User Story becomes Ready.
 
-| Area | Decision | Why |
-| --- | --- | --- |
-| Operator auth | Single-operator password login, Argon2id hash configured as a secret, Redis-backed opaque server-side sessions, secure HttpOnly cookie | Meets authenticated/unauthorized acceptance without full identity platform |
-| Database | PostgreSQL with Prisma ORM, Prisma Migrate and explicit persistence adapters | One standard schema and migration path for the monorepo |
-| REST contracts | Zod 4 source schemas → `nestjs-zod` + `@nestjs/swagger` OpenAPI → `@hey-api/openapi-ts` generated Fetch client | Contract-first path with no duplicated handwritten frontend DTOs |
-| Repository | `main` remains the stable/release branch; `dev` is the **GitHub default and PR integration branch** | One unambiguous PR target; Issue Forms and PR template served from `dev`; Issues closed explicitly after DoD (`Refs #...`, not `Closes #...`) |
-| Agent execution | Official Claude Code and Codex CLI binaries behind a small provider-specific runner interface; no API/SDK runners in MVP; automated execution enabled per provider only after its auth/execution model is validated against current terms | Preserves native CLI behavior while keeping the provider-policy risk gated; see [Security](../engineering/security.md) §2 |
-| Agent SDLC roles | Operator coordinates in a primary Claude Code session; implementer uses a fresh Claude Code or Codex CLI context; reviewer uses a separate context | No imaginary take-ticket automation or agent framework required at bootstrap |
+The decision table (approach, exclusions, rationale) is canonical in [Bootstrap](../engineering/bootstrap-plan.md) §2. It covers operator auth, database, REST contracts, repository branches, agent execution and agent SDLC roles. Architectural consequences:
 
-Auth details: the API owns login, session validation and authorization; Next.js remains presentation and calls a same-origin `/api` route through a trusted proxy. Use HTTPS in deployment, login rate limiting, origin/CSRF checks for state-changing operations, session rotation on login, secure cookies and a server-side session TTL. No OAuth, SSO, registration, multi-user identity or RBAC in Story 1. Never store the password or hash in the repository.
+**Auth:** the API owns login, session validation and authorization. Next.js is presentation only and calls a same-origin `/api` route through a trusted proxy. Story 1 excludes OAuth, SSO, registration, multi-user identity and RBAC. The password and its hash never enter the repository. Session, cookie, CSRF and rate-limit requirements are canonical in [Security](../engineering/security.md) §8.
 
-Prisma lives under `packages/database/` and infrastructure adapters; generated Prisma types do not enter `domain/`. Zod schemas remain owned by each feature, not by the generated client. `packages/contracts` is still reserved for justified cross-process runtime contracts; generated browser API code can reside in `apps/web/src/platform/api/generated/`.
+**Persistence and contracts:** Prisma lives under `packages/database/` and infrastructure adapters; generated Prisma types do not enter `domain/`. Zod schemas are owned by each feature, not by the generated client. `packages/contracts` stays reserved for justified cross-process runtime contracts; generated browser API code can live in `apps/web/src/platform/api/generated/`.
 
-Implementation sequencing, exact bootstrap commands, and agent role ownership: see [Bootstrap](../engineering/bootstrap-plan.md) and [Agent roles](../engineering/agent-roles.md). Security details: [Security](../engineering/security.md).
+Sequencing, exact bootstrap commands and role ownership: [Bootstrap](../engineering/bootstrap-plan.md), [Agent roles](../engineering/agent-roles.md).
 
 ## 10. Decisions intentionally deferred
 
-- Exact server/container isolation strategy, worker credentials, network egress policies, and resource budgets.
+- Exact server/container isolation strategy, worker credentials, network egress policies, resource budgets.
 - Outcome of the per-provider CLI terms/auth validation, provider credential handling and throttling (the CLI-only approach and its acceptance gate are decided; see [Security](../engineering/security.md) §2).
 - External identity integration (OAuth/SSO, multi-operator RBAC) and precise production domain/TLS topology; the minimal single-operator session strategy above is **not deferred**.
 - Exact scope and configuration semantics of MCP management in the first release.
