@@ -79,7 +79,7 @@ CODEX_CLI_ENABLED=false
 
 - Each running agent works in an assigned branch/worktree and cannot write to another agent's workspace.
 - Git operations happen through public `projects` contracts and an authorized, path-validated Git adapter. Do not let workers directly bypass approval by merging to `dev`.
-- A User Story normally lands through one integrated PR; subtasks normally produce commits. Independent Technical Tasks may land separately when safe. `dev` is the integration branch; `main` is the GitHub default, reserved for stable/release integration.
+- A User Story normally lands through one integrated PR; subtasks normally produce commits. Independent Technical Tasks may land separately when safe. `dev` is the GitHub default/integration branch; `main` is reserved for stable/release integration.
 - Review diff and relevant test results; require explicit authorization for approval/merge, force push, history rewrite, branch deletion, and repository credential changes.
 - Keep CI and independent review as preconditions for merge. **The operator is the final manual merge gate**; agents must lack unrestricted merge authority.
 

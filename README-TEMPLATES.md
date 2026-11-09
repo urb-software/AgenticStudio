@@ -19,7 +19,7 @@ Copy the contents of this package into the **root of your new repository**, pres
 
 1. Commit these files to the repository's **default branch** so GitHub can display the Issue Forms and PR template.
 2. Enable GitHub Issues and create GitHub Projects statuses: Backlog, Refinement, Ready, In Progress, In Review, Done, and Blocked.
-3. Keep `main` as the default branch and use `dev` as the integration branch (decided; see `docs/engineering/bootstrap-plan.md`); configure rulesets/branch protection and required CI before parallel agent development.
+3. `dev` is the default and integration branch; `main` is for releases (decided; see `docs/engineering/bootstrap-plan.md`); configure rulesets/branch protection and required CI before parallel agent development.
 4. Create the first Technical Task for the repository/monorepo bootstrap, followed by implementation of architecture tests and CI.
 5. Adjust template fields only when the first few issues reveal a real need; keep the forms consistent across the project.
 
@@ -29,5 +29,5 @@ Copy the contents of this package into the **root of your new repository**, pres
 - An Issue Form does not validate semantic DoR; readiness is assigned after requirements review.
 - Subtasks do not require their own PR by default.
 - Agent-generated review does not replace enforced permissions or CI.
-- Do not rely on `Closes #...` alone to close a story when a PR is merged into a non-default branch.
+- Use `Refs #...` rather than `Closes #...`; Issues are closed explicitly after DoD, not automatically on merge.
 - These are **templates**, not functioning CI workflows, bots, or configured repository rulesets.

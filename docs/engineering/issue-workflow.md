@@ -30,7 +30,7 @@
 - Never skip CI or architecture tests to obtain a passing status.
 - Review takes place in a separate context from implementation; do not approve your own code.
 - Do not require a separate PR for every subtask; split oversized stories into smaller deliverables.
-- `main` is the GitHub default branch, so `Closes #...` does not close an issue upon merging into `dev`; close it explicitly after DoD is met.
+- `dev` is the GitHub default branch, so `Closes #...` would close an issue as soon as its PR merges, before DoD verification. Use `Refs #...` and close the issue explicitly after DoD is met.
 
 ## CI
 

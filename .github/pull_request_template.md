@@ -1,5 +1,5 @@
 ## Related issue
-<!-- Use e.g. `Refs #123`. `dev` is not the default branch, so `Closes #123` will not close the issue on merge; the operator closes it after DoD. -->
+<!-- Use `Refs #123`, not `Closes #123`: `dev` is the default branch, so `Closes` would close the issue on merge, before DoD verification. The operator closes it after DoD. -->
 Refs #
 
 ## Outcome / scope of changes
