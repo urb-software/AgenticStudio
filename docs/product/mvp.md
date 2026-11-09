@@ -1,0 +1,85 @@
+# AI Agent Studio — MVP Product Scope
+
+**Status:** product-level baseline for backlog refinement; not a fully approved set of detailed User Stories or APIs.
+
+## 1. Product intent
+
+Build a **private, self-hosted AI coding workspace** for one human operator that can manage software projects and agent definitions, run coding tasks through official Claude Code / Codex CLIs, inspect generated code changes, and preview integrated results on a VPS.
+
+The system is **not** being designed as a public SaaS, a model provider, or a replacement for the native CLI tools. Preserve provider-native file/configuration formats where supported.
+
+## 2. User and desired outcome
+
+**Primary user:** a single authenticated operator/developer who controls projects, credentials, agent definitions, execution approvals, Git integration, and Preview environments. Story 1 uses simple password/session auth; OAuth, additional operators and roles are deferred.
+
+**Desired end-to-end outcome:**
+
+1. Create or connect a software project and its Git repository.
+2. Define or import agent configurations and reusable skills; select approved MCP integrations.
+3. Describe a task or compose an initial workflow.
+4. Execute a CLI-backed agent in an isolated project worktree/branch.
+5. Observe execution status, logs, errors, and results.
+6. Review diff/tests and explicitly approve changes.
+7. Merge approved changes into the project's `dev` integration branch.
+8. See the updated **single shared Preview** for that project.
+
+This is a **capability roadmap**, not a claim that all of it belongs in the first implemented story.
+
+## 3. Six business modules (approved architecture)
+
+| Module | Product responsibility |
+| --- | --- |
+| `projects` | Projects, repository connection, Git branches/worktrees, diff, review, approval, merge |
+| `agents` | Agent and skill definitions, assignment, file/Git-first editing, validation, publication |
+| `workflows` | Definition, steps, sequencing, orchestration, human approvals |
+| `executions` | Runs, queueing, cancellation, status, logs, results |
+| `environments` | Project Compose stack lifecycle and one shared Preview per project |
+| `mcp` | Reusable MCP server registry/configuration, project/agent bindings, basic connection management |
+
+Agent/skill definitions remain separate domain models *within* `agents`; MCP remains its own module. Git remains within `projects`.
+
+## 4. Intended MVP capabilities
+
+- A Next.js Studio UI for projects, agents/skills, workflows, executions, environments, and MCP management.
+- PostgreSQL for application state and Redis + BullMQ for queued jobs; separate worker process for CLI execution.
+- REST for commands/queries and SSE for progress/logs.
+- Initial workflow orchestration centered on a **small sequential flow and human approval**; advanced branching/parallelism may be deferred.
+- Native CLI definitions where practical; immutable approved configuration snapshots for runs.
+- Per-agent Git worktrees/branches and controlled merge of reviewed changes.
+- Docker Compose environments controlled by a separate, narrowly privileged process, with one shared Preview built from `dev` after merge.
+- Secret storage outside Git and minimal access to external tools.
+
+Every capability requires its own refined GitHub Issue and acceptance criteria before implementation.
+
+## 5. Explicit non-goals for the first MVP
+
+- Multi-tenant SaaS, public API for external teams, billing, role-heavy organization model.
+- Production/staging deployment pipeline and unrestricted autonomous deployments.
+- Full MCP gateway/proxy, generic tool-execution proxy, or broad third-party marketplace.
+- GPU-based model hosting/training.
+- MicroVM sandboxes as a **mandatory** MVP dependency (may be considered later).
+- Advanced visual workflow parallelism, arbitrary graph scripting, elaborate orchestration frameworks.
+- A full event-sourced system, separate CQRS databases, or microservices per domain module.
+- API-based or SDK-based agent runners; the MVP uses official CLI binaries only (see [Security](../engineering/security.md) §2).
+
+## 6. Success criteria to refine into GitHub User Stories
+
+A useful MVP should demonstrate that an operator can complete the end-to-end cycle with controlled permissions and a recoverable execution history. Evidence should include functional tests, architecture checks, integration tests, meaningful failures, and a working Preview after approval.
+
+**First implemented vertical slice is deliberately smaller:** create a project through the UI, persist it, list it, and verify the request across Next.js → NestJS → PostgreSQL. See [Walking Skeleton](walking-skeleton.md).
+
+## 7. Unresolved decisions — turn into refinement/Technical Tasks
+
+- Verify current CLI licensing/terms, supported authentication, headless use, and automation constraints for **each** provider; do not treat consumer subscriptions as unrestricted APIs. Automated execution stays disabled per provider until this validation passes (acceptance gate in [Security](../engineering/security.md) §2).
+- Confirm VPS hardware, isolation model, networking, and secret-management mechanism before enabling real agent execution.
+- Decide Git access strategy and credential scope; protect upstream repositories and integration branches.
+- Refine exact workflow step semantics and human approval model.
+- Specify baseline project schema, auth/session strategy, API contracts, and Preview exposure only when the relevant slice begins.
+- Agree on frontend state-library versions/policy prior to installing them in feature code.
+- Prioritize the initial User Story Map and define DoR-compliant GitHub Issues.
+
+## 8. Product delivery strategy
+
+Use **Walking Skeleton + Vertical Slices**. GitHub Issues contain the authoritative work items; separate Issues may cover independent technical foundations. Do not build six entire modules before delivering the first usable end-to-end scenario.
+
+Decision provenance: [Notion architecture hub](https://app.notion.com/p/3fad4d814eb0817a9ba8c264625b4faa) and [development process](https://app.notion.com/p/412d4d814eb081bdbe62c0d76b1c2d4b).

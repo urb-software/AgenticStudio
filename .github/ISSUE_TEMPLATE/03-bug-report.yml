@@ -1,0 +1,58 @@
+name: "Bug Report"
+description: "A reproducible defect with clear fix criteria"
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include secrets, access tokens, production data, or private logs.
+        Report security vulnerabilities through the appropriate private channel.
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual behavior"
+      placeholder: "What happens now?"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behavior"
+      placeholder: "What should happen instead?"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Steps to reproduce"
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: "Impact"
+      options:
+        - "Blocking: a core feature is unusable"
+        - "High: significant failure or risk"
+        - "Medium: a workaround exists"
+        - "Low: cosmetic or limited impact"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Environment and context"
+      placeholder: "Branch/commit, version, browser, service, relevant sanitized logs."
+    validations:
+      required: false
+  - type: textarea
+    id: fix-criteria
+    attributes:
+      label: "Fix criteria / regression test"
+      placeholder: "- [ ] The defect no longer reproduces, and a regression test verifies the fix."
+    validations:
+      required: true

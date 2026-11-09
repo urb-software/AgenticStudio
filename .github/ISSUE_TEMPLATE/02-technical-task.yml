@@ -1,0 +1,60 @@
+name: "Technical Task"
+description: "A self-contained technical change that can be integrated safely"
+title: "[Tech] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for monorepo setup, CI, architecture guardrails, refactoring, and infrastructure.
+        A Technical Task may have its own PR to `dev` when the outcome is independent, testable, and safe to integrate.
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / rationale"
+      placeholder: "What is blocked or made difficult by the current state?"
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: "Expected outcome"
+      placeholder: "Once completed, it will be possible to..."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: "Acceptance criteria"
+      placeholder: |
+        - [ ] ...
+        - [ ] The result can be verified by ...
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: "Scope and constraints"
+      placeholder: |
+        Change:
+        - ...
+        Do not change:
+        - ...
+        Security / architecture constraints:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencies and references"
+      placeholder: "Blocking issues, related User Story, architectural decisions."
+    validations:
+      required: false
+  - type: textarea
+    id: verification
+    attributes:
+      label: "How will the outcome be verified?"
+      description: "Specify any task-specific tests and scenarios. Standard guardrails and required CI checks always apply."
+      placeholder: "Command / test / expected result; failure and rollback checks."
+    validations:
+      required: true

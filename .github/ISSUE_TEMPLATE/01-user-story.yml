@@ -1,0 +1,80 @@
+name: "User Story — Vertical Slice"
+description: "A feature that delivers verifiable value to a user"
+title: "[Story] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A story can be drafted before all details are finalized, but implementation must not start until the Definition of Ready is satisfied.
+        By default, one User Story is delivered through one integrated PR targeting `dev`.
+  - type: textarea
+    id: business-goal
+    attributes:
+      label: "Goal and context"
+      description: "Why is this feature needed?"
+      placeholder: "Problem, user, and expected value."
+    validations:
+      required: true
+  - type: textarea
+    id: user-story
+    attributes:
+      label: "User Story"
+      placeholder: "As a [role], I want [action], so that [value]."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: "Acceptance criteria"
+      description: "Observable outcomes, including failure cases and edge cases. Given/When/Then is welcome."
+      placeholder: |
+        - [ ] The user can ...
+        - [ ] When the input is invalid, ...
+        - [ ] The backend enforces authorization where applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: "In scope / out of scope"
+      placeholder: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+    validations:
+      required: true
+  - type: dropdown
+    id: affected-areas
+    attributes:
+      label: "Affected system areas"
+      description: "Select all potentially affected modules. This is guidance, not a fixed file-level contract."
+      multiple: true
+      options:
+        - "Projects + Git"
+        - "Agents + Skills"
+        - "Workflows"
+        - "Executions"
+        - "Environments"
+        - "MCP"
+        - "Platform / cross-cutting"
+        - "To be determined"
+    validations:
+      required: false
+  - type: textarea
+    id: dependencies-contracts
+    attributes:
+      label: "Dependencies, contracts, and references"
+      description: "Link blocking issues, ADRs, API contracts, and data versions. Enter 'None' if there are none."
+      placeholder: "Blocked by #..., docs/architecture/..., POST /..."
+    validations:
+      required: false
+  - type: textarea
+    id: verification
+    attributes:
+      label: "Verification and risks"
+      description: "Story-specific tests, security scenarios, and any required operator approvals."
+      placeholder: "Unit/integration/component/E2E tests, permissions, rollback. Standard quality gates always apply."
+    validations:
+      required: false

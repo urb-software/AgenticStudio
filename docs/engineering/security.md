@@ -1,0 +1,120 @@
+# Security Guardrails — AI Agent Studio
+
+**Status:** design-time minimum controls and threat model. Actual permission enforcement, secret stores, sandboxing, allowlists and negative tests are **not yet implemented**. Treat them as prerequisites for real unattended CLI agent execution.
+
+## 1. Threat model and trust boundaries
+
+The system runs code and tools against potentially hostile repository content. Key threats:
+
+- Prompt injection inside repository files, Issues, README files, logs, MCP tool responses, and fetched documentation.
+- Data exfiltration via shell, logs, arbitrary HTTP/network egress, commit contents, or agent-visible environment variables.
+- Cross-project filesystem escape, symlink traversal, path confusion, rogue worktrees, and Git credential misuse.
+- Docker privilege escalation, unapproved Compose actions, host access, untrusted Preview content.
+- Unsafe dependency installation, execution of arbitrary shell hooks and malicious configuration.
+- Duplicated jobs/events, replay, stale authorization, unintended merges and destructive migrations.
+
+**Trust boundaries:** operator's admin session; Studio UI/REST API; PostgreSQL/Redis; untrusted project repository; agent runner; MCP servers; environment-controller; Docker host; exposed Preview origin. Keep credentials and authority narrow across each boundary.
+
+## 2. Agent execution policy
+
+- Each agent execution has an **assigned project, worktree, branch, approved tool set, time/resource budget and explicit run identity**.
+- A Git worktree is an organization/isolation mechanism but **not a complete sandbox**. Enforce filesystem permissions and container/process isolation; test path traversal and symlink escape.
+- Agent-worker **must not mount `/var/run/docker.sock` or obtain privileged Docker host access**. Do not run it as a privileged container.
+- Run user/project code with the least capabilities possible. Restrict host mounts, file access, process execution, network egress and inter-project access according to the task.
+- Do not expose production credentials or production data to coding agents. Separate development/test accounts and databases.
+- Configure execution timeout, cancellation, CPU/RAM/storage limits and output-size/log quotas; make repeated operations idempotent where appropriate.
+- No access to unapproved MCP tools or arbitrary configuration modifications outside permitted boundaries.
+
+### CLI usage and provider terms — MVP decision (canonical)
+
+- The MVP integrates the **official Claude Code and Codex CLI binaries** rather than calling model APIs directly.
+- Before implementing the agent worker, validate that the intended headless execution and authentication flows comply with each provider's **current** terms. Support for non-interactive CLI commands does not by itself establish permission for every form of subscription-based automation. Consumer subscriptions are not equivalent to unrestricted programmatic API access.
+- The worker must **not extract, intercept, share, or proxy subscription credentials**.
+- Keep a small runner interface that isolates provider-specific CLI execution. API-based or SDK-based runners are **out of scope for MVP**; they may be considered later if required by provider policy or product needs.
+- **Acceptance gate:** do not enable automated execution for a provider until its intended authentication and execution model has been validated. Validation is per provider; one provider passing does not enable the other.
+
+## 3. Secrets and credentials
+
+- Use a dedicated secret-management mechanism, with scoped and revocable credentials. **Never commit `.env` secrets, auth/session tokens, CLI credentials, private keys or MCP secrets.**
+- Store secret references in DB/Git definitions where appropriate, **not actual secret values**.
+- Inject only necessary secret values at the point of authorized use; minimize their lifetime and visibility.
+- Redact secrets and sensitive commands/paths from logs, error messages, SSE payloads, CI artifacts, PR descriptions and agent handoffs.
+- Do not copy external or provider session credentials to other agents unless explicitly supported and authorized.
+- Scan source/commits/PRs for secret leaks and test that run logs cannot disclose protected values.
+
+## 4. Git, branch and merge protection
+
+- Each running agent works in an assigned branch/worktree and cannot write to another agent's workspace.
+- Git operations happen through public `projects` contracts and an authorized, path-validated Git adapter. Do not let workers directly bypass approval by merging to `dev`.
+- A User Story normally lands through one integrated PR; subtasks normally produce commits. Independent Technical Tasks may land separately when safe. `dev` is the GitHub default/integration branch; `main` is reserved for stable/release integration.
+- Review diff and relevant test results; require explicit authorization for approval/merge, force push, history rewrite, branch deletion, and repository credential changes.
+- Keep CI and independent review as preconditions for merge. When the GitHub account plan does not enforce branch protection on private repos, **the operator must be the final manual merge gate**; agents must lack unrestricted merge authority.
+
+## 5. Environments / Docker Compose
+
+- A separate **`environment-controller`** holds the minimum privilege needed to manage approved project stacks; the agent-worker does not share its Docker credentials/socket.
+- The controller exposes *specific authorized operations* (e.g. start, stop, status, logs, controlled refresh) against validated project definitions, not an arbitrary Docker command surface.
+- Validate repository/project identity, allowed Compose files, volume mounts, ports, images, environment variables, resource limits and credentials before applying a stack change.
+- Treat application Preview code as **untrusted**. Expose Preview on a separate origin without administrative Studio cookies; isolate network and storage access, and restrict forwarded headers and ports.
+- One default shared Preview per project tracks approved changes in `dev`. No preview is created merely because an agent opened a worktree.
+- Compose isolation is a pragmatic MVP baseline, **not** a claim of microVM-strength isolation. Stronger sandboxing may be introduced later with appropriate VPS/KVM support.
+
+## 6. MCP and external tools
+
+- The `mcp` module owns the registry and bindings; secrets are stored outside Git. Do not build a generic unrestricted MCP gateway in MVP.
+- Tool/server definitions and their outputs are **untrusted**. Approve connections, scopes and permissions; never grant broad filesystem/network access by default.
+- Validate native CLI configuration generation and prevent secrets from being written into project-native config files or exposed to other agents.
+- Negative tests must prove an agent cannot call an unbound or disallowed MCP tool.
+
+## 7. Human approval boundaries
+
+Require explicit authorized approval for:
+
+| Operation | Minimum policy |
+| --- | --- |
+| Merge into `dev` / protected branches | Passing applicable CI + independent review + operator approval |
+| Deployment to production or external customer environment | Outside MVP; separate policy required |
+| Secret creation/rotation/export | Authorized operator/controller; never arbitrary agent tooling |
+| Destructive migrations or data deletion | Explicit operator review and tested recovery plan |
+| Privileged Docker/Compose changes or broad network exposure | Authorized environment-controller + operator approval as appropriate |
+| Repository access changes / Git credential changes | Operator approval |
+
+A text prompt saying "ask for approval" is not an access control. The backend/runtime must independently verify an approval record and the acting principal.
+
+## 8. Authentication and API authorization
+
+- **Story 1 auth decision:** single operator, password-only login; a strong operator password is verified by the API against an Argon2id hash supplied through the secret environment (`STUDIO_OPERATOR_PASSWORD_HASH`, illustrative key name; not the plaintext password). No public signup or user database is required yet.
+- Use an opaque random session ID, stored server-side in Redis with a bounded TTL (initial default: 12 hours of inactivity, subject to deployment testing), and an HttpOnly cookie. Use `Secure` and HTTPS in deployment, `SameSite=Lax` or stricter, invalidate on logout, and rotate the session identifier on successful login. Development HTTP cookies must be restricted to localhost and never presented as production-safe settings.
+- Protect mutation routes including login/logout with same-origin/Origin checking (and a suitable CSRF token scheme if the deployment topology requires it); do not rely on `SameSite` alone. Rate-limit login attempts; avoid account enumeration and avoid logging password values.
+- Authentication endpoints: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`. Guard all project endpoints and sensitive SSE endpoints at the API. Verify 401 responses with no session and after logout, and verify authorization is not merely a UI redirect.
+- The same public Studio origin routes `/api` to NestJS; Next.js does not independently grant authorization. Future external IdP/OAuth, MFA and multi-user accounts require a separate decision and are not part of Story 1.
+- Validate all backend inputs, project identifiers, file paths, and resource ownership, even when the UI restricts options.
+- Use narrowly scoped API and worker permissions; do not trust client-supplied role, path, tool name, branch, or container target.
+- All sensitive operations should record actor/run, project, action, decision, result and correlation identifier without leaking credentials.
+
+## 9. Security verification — negative tests
+
+The following should be **rejected** by enforced controls and evidenced by automated tests as the corresponding capabilities are implemented:
+
+- A worktree tries to read or write a file outside its assigned project scope, including via symlink/path traversal.
+- Agent B attempts to read Agent A's workspace or another project's files.
+- A runner tries to use Docker socket or call unauthorized environment-controller operations.
+- A malicious `README.md` instructs the agent to output secrets or modify forbidden files.
+- An unapproved MCP tool is invoked or a tool response includes prompt-injection text.
+- A run requests unauthorized branch merge, credential disclosure, or production DB access.
+- An execution is canceled or retried, with no duplicate irreversible effects.
+- A Preview attempts to access Studio cookies, admin APIs, internal DB/Redis or unapproved network destinations.
+
+## 10. Security delivery gates
+
+**Before repository bootstrap:** document required approvals and avoid committing secrets.
+
+**Before real CLI execution:** enforce bounded workspaces, credentials, tool access, timeouts, non-privileged worker behavior, and test denial of forbidden operations. A functional CLI demo alone is insufficient.
+
+**Before exposing Preview externally:** isolate origin, cookies, ports, network and resource scope; review untrusted code execution risks.
+
+**Before autonomous merge:** ensure platform-enforced branch protection where supported or keep the operator as the manual merge gate; do not let agents self-approve.
+
+See [System](../architecture/system.md) and [Quality](quality.md). Keep the initial scope small; improve isolation and test coverage as each risk-bearing capability ships.
+
+Decision provenance: [Notion guardrails & runtime security](https://app.notion.com/p/413d4d814eb0819499faecf3fe7f4afe).
