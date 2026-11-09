@@ -130,7 +130,7 @@ executions/features/complete-execution/handler.ts
 ## 7. Worker, Git and privileged infrastructure
 
 - Jobs flow through Redis + BullMQ to `apps/agent-worker`; the worker operates through a narrowly defined CLI runner adapter and an assigned Git worktree.
-- Keep the runner port small and provider-agnostic; each provider (Claude Code CLI, Codex CLI) gets its own adapter. API/SDK runners are out of scope for MVP. The worker never extracts, intercepts, shares or proxies subscription credentials, and a provider's adapter stays disabled until its auth/execution model passes the acceptance gate in [Security](../engineering/security.md) §2.
+- Keep the runner port small and provider-agnostic; each provider (Claude Code CLI, Codex CLI) gets its own adapter. API/SDK runners are out of scope for MVP. The worker never extracts, intercepts, shares or proxies subscription credentials, and a provider's adapter stays disabled until its auth/execution model passes the acceptance gate in [Security](../engineering/security.md) §2. The worker enforces this at runtime with fail-closed per-provider flags (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`) checked before any CLI subprocess is spawned.
 - Workers have **no Docker socket**, privileged Compose access, production DB credentials or unrestricted filesystem access.
 - Docker Compose actions go through `apps/environment-controller` behind authorization and approved operations.
 - Git belongs to `projects`; other modules consume its public interfaces, not its adapter or repositories.

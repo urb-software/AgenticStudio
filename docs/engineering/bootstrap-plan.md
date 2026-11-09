@@ -51,6 +51,17 @@ Lock compatible **exact versions** in `pnpm-lock.yaml` during the respective Tec
 
 B2 and B4 may proceed in parallel after B1 where dependencies permit. B3 needs Redis from B2 and an API app from B1. B5 may begin as soon as the workspace exists. **S1 must not move to Ready until B1–B5 results and its own detailed acceptance criteria are verified.** B0 is a manual setup step; it does not need a fake PR before a branch exists.
 
+**Provider validation (not Story 1 prerequisites):** these gate the agent worker, not the walking skeleton. B6 and B7 are independent Technical Tasks and can run whenever the operator chooses; each provider is approved separately.
+
+| Sequence | Technical Task | Verification gate |
+| --- | --- | --- |
+| B6 | Validate Claude Code CLI Authentication, Terms and Headless Execution | Dated decision record in `docs/engineering/provider-compliance/` with all required fields and an operator-accepted decision |
+| B7 | Validate Codex CLI Authentication, Terms and Headless Execution | Same as B6, for Codex CLI; B6 approval does not imply B7 approval |
+
+- Required record fields and the runtime enablement policy are canonical in [Security](security.md) §2; use the template in [`provider-compliance/README.md`](provider-compliance/README.md).
+- Neither task blocks S1. Each must have an `Approved`, still-applicable record before its provider is enabled in `agent-worker`; an unapproved provider stays disabled (`CLAUDE_CODE_ENABLED` / `CODEX_CLI_ENABLED` unset or `false`).
+- The existence of a headless CLI command is not evidence that every subscription-based automation scenario is permitted. Record only what the reviewed terms and the controlled test actually show; use `Needs Clarification` instead of guessing.
+
 ## 4. Minimal login and API contract
 
 ### Authentication

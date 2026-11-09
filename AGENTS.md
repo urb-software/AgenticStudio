@@ -48,6 +48,7 @@
 - Never exfiltrate secrets, print tokens, place credentials in commits/Issues/logs, or read files outside the assigned workspace or allowed access scope.
 - Do not use the Docker host socket, privileged containers, production data, unrestricted network access, or arbitrary MCP tools. Use only explicitly approved capabilities.
 - Merge, deployment, changing secrets, destructive migrations, and privileged environment actions require the authorized workflow and appropriate human approval.
+- Never set or change provider enablement flags (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`) or mark a provider compliance record `Approved`; both are operator-only. See `docs/engineering/security.md` §2.
 - See `docs/engineering/security.md` for trust boundaries and threat scenarios.
 
 ## 6. Language and documentation ownership

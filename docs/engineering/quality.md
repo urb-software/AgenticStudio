@@ -166,6 +166,19 @@ The canonical three-step DoD is in `docs/engineering/definition-of-done.md` from
 
 Test that prohibited operations **fail**: access outside worktree, cross-project file access, unexpected MCP tools, Docker access from worker, forbidden branch merge, unapproved controller actions, secret visibility, production DB access, and prompt-injection-driven tool use. A model refusing an instruction is **not** a replacement for enforcing privilege boundaries.
 
+**Provider enablement gate** (agent worker; see [Security](security.md) §2). Required negative tests:
+
+1. Both providers are disabled when configuration is missing.
+2. Explicitly disabled (`false`) providers cannot execute.
+3. Malformed flag values (e.g. empty, `1`, `yes`, `TRUE`) fail closed.
+4. A disabled provider never spawns a CLI subprocess (assert on the process-spawn boundary, not only on the returned status).
+5. Enabling Claude Code does not enable Codex, and vice versa.
+6. An execution request (including workflow definition or agent configuration content) cannot override provider enablement.
+7. A disabled execution returns a clear, non-sensitive error (no credentials, environment dumps or internal paths).
+8. A previously enabled provider can be disabled through configuration alone, without changing execution requests; subsequent executions are rejected.
+
+These tests use a mocked process-spawning boundary and must not require real provider credentials or network access; they belong in regular CI, separate from controlled real-CLI smoke tests.
+
 ## 11. Specific bootstrap gates before Story 1
 
 The first functional User Story is **not Ready** merely because these decisions are documented. Required independent Technical Tasks must deliver verifiable, working outputs:

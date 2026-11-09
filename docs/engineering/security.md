@@ -30,8 +30,41 @@ The system runs code and tools against potentially hostile repository content. K
 - The MVP integrates the **official Claude Code and Codex CLI binaries** rather than calling model APIs directly.
 - Before implementing the agent worker, validate that the intended headless execution and authentication flows comply with each provider's **current** terms. Support for non-interactive CLI commands does not by itself establish permission for every form of subscription-based automation. Consumer subscriptions are not equivalent to unrestricted programmatic API access.
 - The worker must **not extract, intercept, share, or proxy subscription credentials**.
-- Keep a small runner interface that isolates provider-specific CLI execution. API-based or SDK-based runners are **out of scope for MVP**; they may be considered later if required by provider policy or product needs.
-- **Acceptance gate:** do not enable automated execution for a provider until its intended authentication and execution model has been validated. Validation is per provider; one provider passing does not enable the other.
+- Keep a small runner interface that isolates provider-specific CLI execution. API-based or SDK-based runners are **out of scope for MVP**; they may be considered later if required by provider policy or product needs. "API/SDK runner" means calling a model API or provider SDK directly instead of the CLI binary. Running the official CLI binary with API-key or other supported credentials is still a **CLI runner** and is in scope; the chosen authentication method is part of each provider's validation.
+- **Acceptance gate:** do not enable automated execution for a provider until its intended authentication and execution model has been validated. Validation is per provider; approval for Codex never implies approval for Claude Code, or vice versa.
+
+#### Provider compliance decision records
+
+Validation produces a durable, auditable decision, not an informal statement that an integration was "validated". Technical Tasks **B6** (Claude Code CLI) and **B7** (Codex CLI) each produce a dated record under `docs/engineering/provider-compliance/` (template in that folder's `README.md`) documenting:
+
+- Provider and CLI version.
+- Terms and documentation reviewed: source URLs, version or effective date where available, and review date.
+- Selected authentication method.
+- Permitted execution mode and relevant restrictions.
+- Evidence from a controlled headless execution test.
+- Decision (`Approved`, `Rejected`, or `Needs Clarification`) and the operator who accepted it.
+- Next review date and triggers for earlier revalidation.
+
+The corresponding task must be complete, with an `Approved` record that is still applicable, before that provider is enabled in the agent worker.
+
+#### Runtime enforcement: per-provider enablement flags
+
+The provider gate is a **runtime authorization requirement**, not only an instruction to coding agents. The agent worker reads one operator-controlled flag per provider from its deployment configuration:
+
+```text
+CLAUDE_CODE_ENABLED=false
+CODEX_CLI_ENABLED=false
+```
+
+- Both default to disabled. **Fail closed:** only the exact value `true` enables a provider; a missing, empty, malformed or `false` value means disabled.
+- A provider cannot be executed unless its own flag is explicitly enabled. Enabling one provider **never** enables another.
+- Before spawning any provider CLI process, the worker checks the corresponding flag and rejects the execution if the provider is disabled. Rejection is recorded as an explicit execution failure with a clear, non-sensitive error, not a silent skip.
+- Only the trusted operator/deployment configuration may set these values. They **cannot be overridden** through an execution request, workflow definition, agent configuration, MCP response, or model-generated instructions.
+- The operator may enable a provider only after its compliance decision record is `Approved` and still applicable. Setting the flag does **not** itself constitute compliance, legal or terms approval.
+- If a provider's approval is revoked or no longer applicable (e.g. a record's review date passes or a revalidation trigger occurs), the operator disables its flag before any further executions.
+- Required negative tests are listed in [Quality](quality.md) §10.
+
+**Current status:** no provider has been validated; no compliance record exists yet. Both providers stay disabled until B6/B7 produce `Approved` records.
 
 ## 3. Secrets and credentials
 
