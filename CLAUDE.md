@@ -21,5 +21,6 @@
 - Guardrails: `docs/engineering/quality.md`, `docs/engineering/security.md`
 - Bootstrap decisions: `docs/engineering/bootstrap-plan.md`
 - Agent roles: `docs/engineering/agent-roles.md`
+- Optional role skills (`/studio-*`): `.claude/skills/README.md`
 
 **This file does not grant permissions.** Runtime policy, filesystem restrictions, and required CI checks are authoritative where enforced.

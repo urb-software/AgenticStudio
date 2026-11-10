@@ -31,7 +31,7 @@
   - **Blocked:** any Open native `Blocked by` dependency, or the label `blocked:external`. Do not take blocked Ready Issues or close unresolved blocked Issues.
 - **Branches:** work only in the **assigned** branch/worktree; never change another agent's worktree. `dev` is the GitHub default/integration branch; `main` is for stable releases. Reference Issues with `Refs #...`, not `Closes #...`. Until permissions/CI allow otherwise, the operator executes merges manually.
 - **Delegation:** pass a bounded handoff (Issue, acceptance criteria, approved contract, relevant docs, branch, required checks), **not** the whole planning conversation.
-- **Review:** open a Draft PR when there is a coherent change. Independent review runs in a separate context. At bootstrap the **operator manually performs `take-ticket`** in a primary Claude Code session, starts new implementer contexts, and requests a separate reviewer context. No dedicated CLI skill or autonomous orchestrator exists yet.
+- **Review:** open a Draft PR when there is a coherent change. Independent review runs in a separate context. At bootstrap the **operator manually performs `take-ticket`** in a primary Claude Code session, starts new implementer contexts, and requests a separate reviewer context. No take-ticket command or autonomous orchestrator exists yet; optional Claude Code role skills are described in `docs/engineering/agent-roles.md` §6.
 - **Requires explicit workflow/operator authorization:** approving your own work, force-pushing shared branches, merging to `dev`/`main`, deploying, closing Issues.
 
 ## 4. Verify and report
