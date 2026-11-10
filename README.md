@@ -31,7 +31,7 @@ Backend: a NestJS modular monolith with six business modules: `projects` (includ
 
 No GPU required. Outside the initial MVP: advanced sandboxing (microVMs), external-tenant APIs, a full MCP gateway.
 
-## Repository layout (target, not yet scaffolded)
+## Repository layout (target; only `apps/api` and `apps/web` exist so far)
 
 ```text
 apps/
@@ -58,9 +58,49 @@ infra/
 
 ## Getting started
 
-**Before scaffolding:** initialize a first commit on `main`; create and push `dev` and set it as the **GitHub default branch**. All further changes, including the English SDLC v3 templates, land on `dev` through PRs. Then create independent Technical Tasks for monorepo, Prisma/PostgreSQL/Redis, minimal operator auth, REST contract code generation, architecture checks and CI. Follow the exact [bootstrap order](docs/engineering/bootstrap-plan.md).
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far only the pnpm workspace with `apps/api` (NestJS) and `apps/web` (Next.js App Router) exists; database, auth, contracts, architecture checks and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
-**After scaffolding:** replace this section with tested installation, setup, environment-variable, database-migration, and local start commands. **Do not invent commands that do not yet exist.** Expected package manager: `pnpm`, pending implementation.
+### Prerequisites
+
+- Node.js 24 LTS (`engines.node` is `>=24.0.0 <25`; pnpm refuses other versions because `engineStrict` is on).
+- pnpm 11, exactly the version in `packageManager` (`pnpm@11.22.0`). With Corepack: `corepack enable`.
+
+### Install
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+### Run locally
+
+```bash
+pnpm dev
+```
+
+This starts both apps in parallel:
+
+| App | URL | Notes |
+| --- | --- | --- |
+| `apps/web` | http://localhost:3000 | Placeholder Studio page. In `next dev`, `/api/*` is rewritten to the API, so the browser only talks to one origin (no CORS). |
+| `apps/api` | http://localhost:3001/api | NestJS with the global `/api` prefix. `PORT` overrides the port. |
+
+Check the API through the web origin:
+
+```bash
+curl -i http://localhost:3000/api/health   # 200 {"status":"ok"}
+```
+
+If you run the API on another port or host, set `API_ORIGIN` (default `http://localhost:3001`) for `apps/web` so the dev rewrite targets it. The rewrite is active in `next dev` only; deployment routing is out of scope for now.
+
+### Checks
+
+```bash
+pnpm check:api   # Prettier check, ESLint, TypeScript typecheck, production build of apps/api
+pnpm check:web   # Prettier check, ESLint, TypeScript typecheck, production build of apps/web
+pnpm format      # Write Prettier formatting for the workspace
+```
+
+The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:*`, `architecture:*`, `test:contracts`, `check:affected`) are **not implemented yet**.
 
 ## Working agreement
 
