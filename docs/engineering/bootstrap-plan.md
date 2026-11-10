@@ -44,7 +44,7 @@ Canonical decision table (the P0 v2 baseline referenced by [System](../architect
 - Verify NestJS/`nestjs-zod`/Swagger interoperability with one real endpoint and an offline OpenAPI generator before generalizing.
 - Prisma major-version configurations change: use the current version's officially supported config and PostgreSQL adapter, not stale examples.
 
-## 3. Dependency-ordered Technical Tasks (each under the bootstrap Epic)
+## 3. Dependency-ordered Technical Tasks (B0–B5 and S1 under the Walking Skeleton Epic)
 
 | Sequence | Technical Task | Verification gate |
 | --- | --- | --- |
@@ -64,7 +64,7 @@ Ordering:
 - B5 may begin as soon as the workspace exists.
 - **S1 must not move to Ready until B1–B5 results and its own detailed acceptance criteria are verified.**
 
-**Provider validation (not Story 1 prerequisites).** These gate the agent worker, not the walking skeleton. B6 and B7 are independent Technical Tasks, run whenever the operator chooses; each provider is approved separately.
+**Provider validation (not Story 1 prerequisites).** These gate the agent worker, not the walking skeleton. B6 and B7 are independent Technical Tasks under a separate, later Epic (agent execution proof, [Walking Skeleton](../product/walking-skeleton.md) §8), run whenever the operator chooses; each provider is approved separately.
 
 | Sequence | Technical Task | Verification gate |
 | --- | --- | --- |
