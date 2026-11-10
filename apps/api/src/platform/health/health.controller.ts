@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 
-export interface HealthResponse {
+interface HealthResponse {
   status: 'ok';
 }
 
