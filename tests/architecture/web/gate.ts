@@ -1,4 +1,4 @@
-import { coreModules, npmPackages, type Gate } from '../harness';
+import { coreModules, npmPackages, SERVER_PACKAGES, type Gate } from '../harness';
 
 const PUBLIC_ENTRYPOINT = '^src/modules/[^/]+/index\\.tsx?$';
 
@@ -27,12 +27,11 @@ export const webGate: Gate = {
       to: { path: '^src/modules/', pathNot: PUBLIC_ENTRYPOINT },
     },
     {
-      name: 'web-shared-no-business-modules',
-      comment:
-        'shared/ never depends on business modules (or on the app/ routes that compose them).',
+      name: 'web-modules-no-app',
+      comment: 'Modules never depend on the app/ routes that compose them.',
       severity: 'error',
-      from: { path: '^src/shared/' },
-      to: { path: '^src/(modules|app)/' },
+      from: { path: '^src/modules/' },
+      to: { path: '^src/app/' },
     },
     {
       name: 'web-platform-no-business-modules',
@@ -42,33 +41,36 @@ export const webGate: Gate = {
       to: { path: '^src/(modules|app)/' },
     },
     {
+      name: 'web-shared-no-upward-imports',
+      comment: 'shared/ is the bottom layer: it never depends on modules/, app/ or platform/.',
+      severity: 'error',
+      from: { path: '^src/shared/' },
+      to: { path: '^src/(modules|app|platform)/' },
+    },
+    {
       name: 'web-no-server-code',
       comment:
         'The web app never imports server implementations, ORM, secrets access, privileged process ' +
-        'control or Node-only server modules.',
+        'control or Node-only server modules. The gate cannot tell Client from Server Components, ' +
+        'so only modules no web code needs are listed; fs or crypto use in client code is left to ' +
+        'the build and review (quality.md §4).',
       severity: 'error',
       from: { path: '^src/' },
       to: {
         path: [
-          npmPackages(
-            '@agentic-studio/api',
-            '@agentic-studio/database',
-            '@agentic-studio/testing',
-            '@nestjs',
-            '@prisma',
-            'prisma',
-            'bullmq',
-            'ioredis',
-            'pg',
-            'dockerode',
-            'execa',
-            'simple-git',
-            'node-pty',
-            'ssh2',
-          ),
+          npmPackages(...SERVER_PACKAGES),
+          // A built workspace package resolves through its pnpm symlink to packages/<name>/dist/.
+          '(^|/)packages/(database|testing)/',
           coreModules('child_process', 'cluster', 'dgram', 'net', 'tls', 'worker_threads'),
         ],
       },
+    },
+    {
+      name: 'web-local-imports-resolve',
+      comment: 'An unresolved relative or @/ import would silently drop an edge from the graph.',
+      severity: 'error',
+      from: {},
+      to: { path: '^(\\.|@/)', couldNotResolve: true },
     },
     {
       name: 'web-no-circular',

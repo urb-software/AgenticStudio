@@ -34,6 +34,11 @@ export interface Gate {
    * `dist/` exports, so the workspace graph is complete without a build.
    */
   resolveWorkspacePackagesToSource?: boolean;
+  /**
+   * Extra paths kept in the graph as leaves but not cruised into (node_modules always
+   * is), e.g. generated code: imports of it stay visible to the rules.
+   */
+  doNotFollow?: string;
 }
 
 export interface GateResult {
@@ -77,7 +82,7 @@ async function dependencyViolations(gate: Gate, baseDir: string): Promise<GateRe
       validate: true,
       ruleSet: { forbidden: gate.forbidden },
       ...(gate.exclude ? { exclude: gate.exclude } : {}),
-      doNotFollow: { path: 'node_modules' },
+      doNotFollow: { path: ['node_modules', ...(gate.doNotFollow ? [gate.doNotFollow] : [])] },
       // Type-only imports are dependencies too: a handler must not even reference an adapter type.
       tsPreCompilationDeps: true,
       ...(hasTsConfig ? { tsConfig: { fileName: tsConfigFile } } : {}),
@@ -166,6 +171,38 @@ export function stronglyConnectedComponents(edges: Map<string, Set<string>>): st
   }
   return components;
 }
+
+/** ORM and database access. */
+export const ORM_PACKAGES = ['@prisma', 'prisma', '@agentic-studio/database'];
+
+/** Concrete clients for queues, caches, databases, Docker, Git and processes. */
+export const CONCRETE_CLIENT_PACKAGES = [
+  'bullmq',
+  'ioredis',
+  'redis',
+  'pg',
+  'dockerode',
+  'execa',
+  'simple-git',
+  'node-pty',
+  'ssh2',
+];
+
+/** Framework, HTTP and infrastructure packages that domain code must not import. */
+export const INFRASTRUCTURE_PACKAGES = [
+  ...ORM_PACKAGES,
+  ...CONCRETE_CLIENT_PACKAGES,
+  '@nestjs',
+  'express',
+  'reflect-metadata',
+];
+
+/** Server-side or privileged packages the web app must never import or depend on. */
+export const SERVER_PACKAGES = [
+  ...INFRASTRUCTURE_PACKAGES,
+  '@agentic-studio/api',
+  '@agentic-studio/testing',
+];
 
 /**
  * Regex for npm packages, matching both a resolved path (`…/node_modules/@nestjs/core/…`)

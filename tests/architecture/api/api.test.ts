@@ -57,4 +57,7 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'infrastructure-file-outside-repositories-or-adapters',
     expected: ['api-infrastructure-placement'],
   },
+  { fixture: 'handler-imports-queue-client', expected: ['api-features-no-concrete-adapters'] },
+  { fixture: 'domain-imports-docker-client', expected: ['api-domain-independent'] },
+  { fixture: 'unresolved-relative-import', expected: ['api-local-imports-resolve'] },
 ]);

@@ -18,4 +18,8 @@ describeGate('monorepo', monorepoGate, '.', [
   },
   { fixture: 'file-cycle', expected: ['mono-no-circular'] },
   { fixture: 'unresolved-workspace-import', expected: ['mono-workspace-imports-resolve'] },
+  {
+    fixture: 'app-imports-package-by-relative-path',
+    expected: ['mono-no-relative-imports-into-packages'],
+  },
 ]);

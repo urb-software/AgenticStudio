@@ -1,18 +1,19 @@
 import {
+  CONCRETE_CLIENT_PACKAGES,
   coreModules,
+  INFRASTRUCTURE_PACKAGES,
   listDirectories,
   listFiles,
   npmPackages,
+  ORM_PACKAGES,
   type Gate,
   type Violation,
 } from '../harness';
 
 const MODULE_FILE = '^src/modules/([^/]+)/\\1\\.module\\.ts$';
 const CONTRACTS = '^src/modules/[^/]+/contracts/';
-const ORM = [
-  npmPackages('@prisma', 'prisma', '@agentic-studio/database'),
-  '(^|/)packages/database/',
-];
+// A built workspace package resolves through its pnpm symlink to packages/<name>/dist/.
+const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
 
 /**
  * `architecture:api`: the NestJS rules of docs/engineering/quality.md §4 and
@@ -49,23 +50,13 @@ export const apiGate: Gate = {
     {
       name: 'api-domain-independent',
       comment:
-        'domain/ never imports NestJS, ORM, database, queue, HTTP, process or infrastructure code.',
+        'domain/ never imports NestJS, ORM, database, Redis, queue, Git, Docker, HTTP, process ' +
+        'or infrastructure code.',
       severity: 'error',
       from: { path: '^src/modules/[^/]+/domain/' },
       to: {
         path: [
-          npmPackages(
-            '@nestjs',
-            '@prisma',
-            'prisma',
-            '@agentic-studio/database',
-            'bullmq',
-            'ioredis',
-            'redis',
-            'pg',
-            'express',
-            'reflect-metadata',
-          ),
+          npmPackages(...INFRASTRUCTURE_PACKAGES),
           '(^|/)packages/database/',
           coreModules('http', 'https', 'http2', 'net', 'child_process'),
           '^src/platform/',
@@ -78,10 +69,17 @@ export const apiGate: Gate = {
       name: 'api-features-no-concrete-adapters',
       comment:
         'Feature handlers and event consumers depend on domain repository contracts and ports, ' +
-        'never on concrete repositories, adapters or the database client.',
+        'never on concrete repositories, adapters, the database client or concrete infrastructure clients.',
       severity: 'error',
       from: { path: '^src/modules/[^/]+/(features|consumers)/' },
-      to: { path: ['^src/modules/[^/]+/infrastructure/', '^src/platform/database/', ...ORM] },
+      to: {
+        path: [
+          '^src/modules/[^/]+/infrastructure/',
+          '^src/platform/database/',
+          ...ORM,
+          npmPackages(...CONCRETE_CLIENT_PACKAGES),
+        ],
+      },
     },
     {
       name: 'api-orm-only-in-infrastructure-repositories',
@@ -90,6 +88,13 @@ export const apiGate: Gate = {
       severity: 'error',
       from: { path: '^src/modules/', pathNot: '^src/modules/[^/]+/infrastructure/repositories/' },
       to: { path: ORM },
+    },
+    {
+      name: 'api-local-imports-resolve',
+      comment: 'An unresolved relative import would silently drop an edge from the graph.',
+      severity: 'error',
+      from: {},
+      to: { path: '^\\.', couldNotResolve: true },
     },
     {
       name: 'api-no-circular',
