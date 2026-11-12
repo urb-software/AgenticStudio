@@ -1,10 +1,20 @@
-import { Body, Controller, Get, type INestApplication, Module, Post } from '@nestjs/common';
+import {
+  Body,
+  ConflictException,
+  Controller,
+  Get,
+  type INestApplication,
+  type LoggerService,
+  Module,
+  Post,
+} from '@nestjs/common';
 import { createZodDto, ZodResponse } from 'nestjs-zod';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { AppModule } from '../../../app.module.js';
 import { buildApp } from '../../../app.js';
+import { problemDetailsSchema } from '../problem-details.js';
 
 // Test-only endpoints: no production endpoint takes input yet (#12 DoR clarification 1).
 // They are registered in this test's root module only, never in the production app.
@@ -29,6 +39,13 @@ class ProbeController {
   @Get('crash')
   crash(): never {
     throw new Error(LEAKY_MESSAGE);
+  }
+
+  @Get('conflict')
+  conflict(): never {
+    throw new ConflictException('A project with this name already exists.', {
+      cause: new Error('unique constraint failed on nameNormalized'),
+    });
   }
 
   @Get('bad-response')
@@ -62,6 +79,20 @@ function expectProblem(response: request.Response, status: number, title: string
     detail: expect.any(String),
     correlationId: expect.stringMatching(UUID),
   });
+  // The runtime body must conform to the schema documented in OpenAPI.
+  expect(problemDetailsSchema.safeParse(response.body).success).toBe(true);
+}
+
+/** Captures what the app logs, so tests can assert on the server-side record. */
+class CapturingLogger implements LoggerService {
+  readonly lines: string[] = [];
+  log() {}
+  warn() {}
+  debug() {}
+  verbose() {}
+  error(...parts: unknown[]) {
+    this.lines.push(parts.map(String).join(' '));
+  }
 }
 
 function expectNoInternals(response: request.Response) {
@@ -81,9 +112,10 @@ function expectNoInternals(response: request.Response) {
 
 describe('problem+json error mapping', () => {
   let app: INestApplication;
+  const logger = new CapturingLogger();
 
   beforeAll(async () => {
-    app = await buildApp(ProbeRootModule, { logger: false });
+    app = await buildApp(ProbeRootModule, { logger });
     await app.init();
   });
 
@@ -128,6 +160,15 @@ describe('problem+json error mapping', () => {
 
     expectProblem(response, 404, 'Not Found');
     expect(response.body).not.toHaveProperty('errors');
+    expectNoInternals(response);
+  });
+
+  it('keeps the message of a deliberate client error that carries a cause', async () => {
+    const response = await request(app.getHttpServer()).get('/api/__test__/conflict');
+
+    expectProblem(response, 409, 'Conflict');
+    expect(response.body.detail).toBe('A project with this name already exists.');
+    expect(response.text).not.toContain('nameNormalized');
   });
 
   it('maps an unexpected error to a generic 500 without leaking internals', async () => {
@@ -139,6 +180,11 @@ describe('problem+json error mapping', () => {
       ['correlationId', 'detail', 'status', 'title', 'type'].sort(),
     );
     expectNoInternals(response);
+
+    // The cause is logged server-side under the same correlation id, with credentials redacted.
+    const logged = logger.lines.find((line) => line.includes(response.body.correlationId));
+    expect(logged).toContain('ECONNREFUSED postgres://***@10.0.0.5');
+    expect(logged).not.toContain('s3cr3t');
   });
 
   it('maps a response that violates its Zod schema to a generic 500', async () => {

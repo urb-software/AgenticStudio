@@ -16,7 +16,8 @@ engineStrict: true
 # Temporary, scoped to nestjs-zod only: nestjs-zod@5.6.0 still declares NestJS 10/11 peers,
 # but #12's validation, OpenAPI and determinism tests prove it works on NestJS 12.
 # Decision: https://github.com/urb-software/AgenticStudio/issues/12#issuecomment-6830882279
-# Review by 2027-02-12; remove once upstream supports NestJS 12 (tracking task #19).
+# Review by 2027-02-12; remove once upstream supports NestJS 12.
+# Tracking task #19: https://github.com/urb-software/AgenticStudio/issues/19
 peerDependencyRules:
   allowedVersions:
     'nestjs-zod>@nestjs/common': '12.4.2'

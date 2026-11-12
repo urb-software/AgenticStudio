@@ -35,7 +35,10 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     if (problem.status >= 500) {
       const cause =
         exception instanceof Error ? (exception.stack ?? exception.message) : String(exception);
-      this.logger.error(`Unhandled error [correlationId=${correlationId}]`, cause);
+      this.logger.error(
+        `Unhandled error [correlationId=${correlationId}]`,
+        redactCredentials(cause),
+      );
     }
 
     httpAdapter.setHeader(response, 'Content-Type', PROBLEM_JSON);
@@ -66,13 +69,22 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         })),
       };
     }
-    // Nest wraps low-level client errors (malformed JSON, bad URI encoding, body too
-    // large) with the original error as `cause`; that message is parser internals.
-    if (exception instanceof HttpException && exception.cause === undefined) {
+    // Nest turns malformed JSON (SyntaxError) and bad URI encoding (URIError) into a
+    // 400 that carries the parser's message; keep the status, not the internals.
+    if (exception instanceof HttpException && !isParserError(exception.cause)) {
       return { ...base, detail: exception.message };
     }
     return { ...base, detail: 'The request could not be processed.' };
   }
+}
+
+function isParserError(cause: unknown): boolean {
+  return cause instanceof SyntaxError || cause instanceof URIError;
+}
+
+/** Masks URL credentials (`scheme://user:password@host`) before anything is logged. */
+function redactCredentials(text: string): string {
+  return text.replace(/([a-z][a-z\d+.-]*:\/\/)[^\s/@]+@/gi, '$1***@');
 }
 
 function statusOf(exception: unknown): number {

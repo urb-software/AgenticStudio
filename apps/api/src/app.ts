@@ -1,6 +1,5 @@
-import type { DynamicModule, INestApplication, Type } from '@nestjs/common';
+import type { DynamicModule, INestApplication, NestApplicationOptions, Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import type { NestApplicationOptions } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import type { AppConfig } from './platform/config/config.js';
 
