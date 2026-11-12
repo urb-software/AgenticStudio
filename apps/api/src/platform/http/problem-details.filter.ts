@@ -12,6 +12,7 @@ import { HttpAdapterHost } from '@nestjs/core';
 import { ZodValidationException } from 'nestjs-zod';
 import { ZodError } from 'zod';
 import { PROBLEM_JSON, type ProblemDetails } from './problem-details.js';
+import { redactSecrets } from './redact.js';
 
 const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
 
@@ -35,10 +36,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     if (problem.status >= 500) {
       const cause =
         exception instanceof Error ? (exception.stack ?? exception.message) : String(exception);
-      this.logger.error(
-        `Unhandled error [correlationId=${correlationId}]`,
-        redactCredentials(cause),
-      );
+      this.logger.error(`Unhandled error [correlationId=${correlationId}]`, redactSecrets(cause));
     }
 
     httpAdapter.setHeader(response, 'Content-Type', PROBLEM_JSON);
@@ -80,11 +78,6 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
 function isParserError(cause: unknown): boolean {
   return cause instanceof SyntaxError || cause instanceof URIError;
-}
-
-/** Masks URL credentials (`scheme://user:password@host`) before anything is logged. */
-function redactCredentials(text: string): string {
-  return text.replace(/([a-z][a-z\d+.-]*:\/\/)[^\s/@]+@/gi, '$1***@');
 }
 
 function statusOf(exception: unknown): number {

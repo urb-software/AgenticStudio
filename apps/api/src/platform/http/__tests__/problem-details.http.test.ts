@@ -7,6 +7,7 @@ import {
   type LoggerService,
   Module,
   Post,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { createZodDto, ZodResponse } from 'nestjs-zod';
 import request from 'supertest';
@@ -27,7 +28,7 @@ class ProbeInputDto extends createZodDto(probeInputSchema) {}
 class ProbeOutputDto extends createZodDto(z.object({ id: z.string() })) {}
 
 const LEAKY_MESSAGE =
-  'connect ECONNREFUSED postgres://studio:s3cr3t@10.0.0.5 at C:\\srv\\internal\\db.ts';
+  'connect ECONNREFUSED postgres://studio:s3cr3t@x@10.0.0.5 at C:\\srv\\internal\\db.ts';
 
 @Controller('__test__')
 class ProbeController {
@@ -46,6 +47,11 @@ class ProbeController {
     throw new ConflictException('A project with this name already exists.', {
       cause: new Error('unique constraint failed on nameNormalized'),
     });
+  }
+
+  @Get('unavailable')
+  unavailable(): never {
+    throw new ServiceUnavailableException('Redis at 10.0.0.7:6379 refused AUTH s3cr3t');
   }
 
   @Get('bad-response')
@@ -185,6 +191,18 @@ describe('problem+json error mapping', () => {
     const logged = logger.lines.find((line) => line.includes(response.body.correlationId));
     expect(logged).toContain('ECONNREFUSED postgres://***@10.0.0.5');
     expect(logged).not.toContain('s3cr3t');
+  });
+
+  it('keeps a deliberately thrown 5xx generic: no message or stack', async () => {
+    const response = await request(app.getHttpServer()).get('/api/__test__/unavailable');
+
+    expectProblem(response, 503, 'Service Unavailable');
+    expect(response.body.detail).toBe('An unexpected error occurred.');
+    expect(Object.keys(response.body).sort()).toEqual(
+      ['correlationId', 'detail', 'status', 'title', 'type'].sort(),
+    );
+    expect(response.text).not.toMatch(/Redis|10\.0\.0\.7|AUTH|\bat \w/);
+    expectNoInternals(response);
   });
 
   it('maps a response that violates its Zod schema to a generic 500', async () => {
