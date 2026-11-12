@@ -1,0 +1,9 @@
+{
+  "name": "@agentic-studio/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "react": "19.3.1"
+  }
+}

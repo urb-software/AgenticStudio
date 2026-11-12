@@ -16,15 +16,23 @@
     "check:api": "prettier --check apps/api packages \"*.{json,mjs,yaml}\" && pnpm --filter \"@agentic-studio/api...\" run check",
     "check:web": "prettier --check apps/web \"*.{json,mjs,yaml}\" && pnpm --filter @agentic-studio/web run check",
     "test:api": "pnpm run build:packages && pnpm --filter \"@agentic-studio/api...\" --if-present run test",
+    "test:web": "pnpm --filter @agentic-studio/web run test",
+    "architecture:api": "tsc -p tests/architecture && vitest run --config tests/architecture/vitest.config.mts --project api",
+    "architecture:web": "tsc -p tests/architecture && vitest run --config tests/architecture/vitest.config.mts --project web",
+    "architecture:monorepo": "tsc -p tests/architecture && vitest run --config tests/architecture/vitest.config.mts --project monorepo",
     "db:migrate:dev": "pnpm --filter @agentic-studio/database run migrate:dev",
     "db:migrate:deploy": "pnpm --filter @agentic-studio/database run migrate:deploy"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@types/node": "24.19.2",
+    "dependency-cruiser": "18.7.2",
     "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.1"
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
   }
 }

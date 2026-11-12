@@ -57,7 +57,7 @@ compose.yaml               # Local development PostgreSQL and Redis
 
 ## Getting started
 
-The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file; auth, contracts, architecture checks and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file and the three architecture gates; auth, contracts and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
 ### Prerequisites
 
@@ -134,6 +134,10 @@ If you run the API on another port or host, set `API_ORIGIN` (default `http://lo
 pnpm check:api   # Prettier check, then ESLint, typecheck and build of apps/api and the packages it uses
 pnpm check:web   # Prettier check, ESLint, TypeScript typecheck, production build of apps/web
 pnpm test:api    # Vitest unit and integration tests of apps/api and the packages it uses (needs Docker)
+pnpm test:web    # Vitest + React Testing Library tests of apps/web (jsdom)
+pnpm architecture:api        # Architecture gate for apps/api
+pnpm architecture:web        # Architecture gate for apps/web
+pnpm architecture:monorepo   # Architecture gate for the apps/packages workspace graph
 pnpm format      # Write Prettier formatting for the workspace
 ```
 
@@ -143,7 +147,21 @@ pnpm format      # Write Prettier formatting for the workspace
 - HTTP tests build the app with `createApp(config)` from `apps/api/src/app.ts` (the same set-up as `main.ts`) and call it with Supertest.
 - Persistence tests use a real PostgreSQL from `startPostgres()` and apply the committed migrations with `deployMigrations()` from `@agentic-studio/database/migrations`; never a mocked ORM.
 
-The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:web`, `architecture:*`, `test:contracts`, `check:affected`) are **not implemented yet**.
+`pnpm test:web` runs Vitest in `apps/web` with a jsdom environment and React Testing Library. It follows the API conventions above: tests live in `__tests__/` next to the code and end in `.test.ts` or `.test.tsx`, and Vitest globals are off (import `describe`/`it`/`expect` from `vitest`).
+
+### Architecture gates
+
+The rules of [`quality.md` §4](docs/engineering/quality.md) are enforced by three separate gates. Each one type-checks the gate code, then runs its Vitest project in `tests/architecture/`:
+
+| Gate | Checks | Rules |
+| --- | --- | --- |
+| `pnpm architecture:api` | `apps/api/src` | Business modules import each other only through `contracts/`; `platform/` and `shared/` reach modules only through `contracts/`; the composition root `src/app.module.ts` may also import `{module}.module.ts`; `domain/` is free of NestJS, ORM, database, queue, HTTP and infrastructure code; features and consumers never import `infrastructure/`, the database client or Prisma; Prisma only in `infrastructure/repositories/`; no file or module cycles; a feature folder has a `handler.ts`; `infrastructure/` files live in `repositories/` or `adapters/`. |
+| `pnpm architecture:web` | `apps/web/src` | Modules and `app/` use another module only through its `index.ts`; `shared/` and `platform/` never import `modules/` or `app/` (modules and `app/` may import `platform/`, e.g. the API client); no server, ORM, privileged or Node-only server imports; no file or module cycles. |
+| `pnpm architecture:monorepo` | `apps/*`, `packages/*` | No app-to-app imports (including `agent-worker` and `environment-controller` once they exist); packages never import apps; web never imports server packages; every `@agentic-studio/*` import resolves; no file or package cycles; the same rules on `package.json` dependencies. |
+
+Dependency rules use [Dependency Cruiser](https://github.com/sverweij/dependency-cruiser) (`tests/architecture/*/gate.ts`); folder rules are Vitest assertions. Each gate checks the whole graph of its real tree and then its fixtures in `tests/architecture/fixtures/<gate>/`: every fixture must produce exactly its expected PASS or FAIL rules, every rule needs at least one FAIL fixture, and every [`quality.md` §5](docs/engineering/quality.md) row has its fixture. A change to a rule therefore needs a matching fixture. Fixtures are not production code: they sit outside every app, so no app build, lint or typecheck includes them.
+
+The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:contracts`, `check:affected`) are **not implemented yet**.
 
 ## Working agreement
 
