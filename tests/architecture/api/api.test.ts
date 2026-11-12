@@ -9,7 +9,11 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'handler-imports-other-module-private-repository',
-    expected: ['api-no-cross-module-private', 'api-features-no-concrete-adapters'],
+    expected: [
+      'api-no-cross-module-private',
+      'api-features-no-concrete-adapters',
+      'api-features-no-reachable-adapters',
+    ],
     qualityRow: "Handler imports another module's private repository",
   },
   {
@@ -35,9 +39,12 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'domain-imports-infrastructure', expected: ['api-domain-independent'] },
   {
     fixture: 'handler-imports-own-concrete-adapter',
-    expected: ['api-features-no-concrete-adapters'],
+    expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
   },
-  { fixture: 'handler-imports-database-client', expected: ['api-features-no-concrete-adapters'] },
+  {
+    fixture: 'handler-imports-database-client',
+    expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
+  },
   { fixture: 'file-cycle', expected: ['api-no-circular'] },
   {
     fixture: 'orm-outside-infrastructure-repositories',
@@ -57,18 +64,47 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'infrastructure-file-outside-repositories-or-adapters',
     expected: ['api-infrastructure-placement'],
   },
-  { fixture: 'handler-imports-queue-client', expected: ['api-features-no-concrete-adapters'] },
+  {
+    fixture: 'handler-imports-queue-client',
+    expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
+  },
   { fixture: 'domain-imports-docker-client', expected: ['api-domain-independent'] },
   { fixture: 'unresolved-relative-import', expected: ['api-local-imports-resolve'] },
-  { fixture: 'handler-imports-adapter-via-port', expected: ['api-ports-independent'] },
-  { fixture: 'contracts-reexport-infrastructure', expected: ['api-contracts-self-contained'] },
+  {
+    fixture: 'handler-imports-adapter-via-port',
+    expected: ['api-ports-independent', 'api-features-no-reachable-adapters'],
+  },
+  {
+    fixture: 'contracts-reexport-infrastructure',
+    expected: ['api-contracts-self-contained', 'api-features-no-reachable-adapters'],
+  },
   { fixture: 'contracts-import-domain', expected: ['api-contracts-self-contained'] },
   { fixture: 'domain-imports-file-system', expected: ['api-domain-independent'] },
-  { fixture: 'module-root-file-reexports-adapter', expected: ['api-module-layout'] },
-  { fixture: 'undocumented-folder-reexports-adapter', expected: ['api-module-layout'] },
+  {
+    fixture: 'module-root-file-reexports-adapter',
+    expected: ['api-module-layout', 'api-features-no-reachable-adapters'],
+  },
+  {
+    fixture: 'undocumented-folder-reexports-adapter',
+    expected: ['api-module-layout', 'api-features-no-reachable-adapters'],
+  },
   {
     fixture: 'handler-imports-module-file',
-    expected: ['api-module-file-composition-root-only'],
+    expected: ['api-module-file-composition-root-only', 'api-features-no-reachable-adapters'],
   },
-  { fixture: 'port-reexports-database-client', expected: ['api-ports-independent'] },
+  {
+    fixture: 'port-reexports-database-client',
+    expected: ['api-ports-independent', 'api-features-no-reachable-adapters'],
+  },
+  { fixture: 'handler-legitimate-dependencies', expected: [] },
+  { fixture: 'shared-reexports-database-client', expected: ['api-features-no-reachable-adapters'] },
+  { fixture: 'shared-reexports-concrete-client', expected: ['api-features-no-reachable-adapters'] },
+  {
+    fixture: 'platform-reexports-database-client',
+    expected: ['api-features-no-reachable-adapters'],
+  },
+  {
+    fixture: 'contracts-reexport-database-client',
+    expected: ['api-features-no-reachable-adapters'],
+  },
 ]);

@@ -127,6 +127,24 @@ export const apiGate: Gate = {
       },
     },
     {
+      name: 'api-features-no-reachable-adapters',
+      comment:
+        'Closes the re-export class of bypasses: no chain of imports (through shared/, platform/, ' +
+        'contracts/ or anything else) may lead a feature or consumer to a concrete repository, ' +
+        'adapter, the database client, the ORM or a concrete client.',
+      severity: 'error',
+      from: { path: '^src/modules/[^/]+/(features|consumers)/' },
+      to: {
+        path: [
+          '^src/modules/[^/]+/infrastructure/',
+          '^src/platform/database/',
+          ...ORM,
+          npmPackages(...CONCRETE_CLIENT_PACKAGES),
+        ],
+        reachable: true,
+      },
+    },
+    {
       name: 'api-orm-only-in-infrastructure-repositories',
       comment:
         'Inside business modules, Prisma is used only by infrastructure/repositories/ adapters.',
