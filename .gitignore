@@ -11,7 +11,11 @@ next-env.d.ts
 # env files (never commit secrets)
 .env
 .env.*
+!.env.example
 
 # logs and OS files
 *.log
 .DS_Store
+
+# generated Prisma client (prisma generate)
+packages/database/src/generated/

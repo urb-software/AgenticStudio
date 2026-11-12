@@ -1,0 +1,4 @@
+-- Baseline migration (B2, #11): intentionally empty.
+-- Prisma cannot generate a first migration without a model, and business tables
+-- belong to the slices that own them. Applying this records the start of the
+-- migration history in `_prisma_migrations`.

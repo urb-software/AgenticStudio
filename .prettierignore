@@ -7,3 +7,6 @@ docs/
 .claude/
 .github/
 LICENSE
+
+# Generated code.
+packages/database/src/generated/

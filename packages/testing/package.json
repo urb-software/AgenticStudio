@@ -1,0 +1,30 @@
+{
+  "name": "@agentic-studio/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint --max-warnings 0 .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@testcontainers/postgresql": "12.2.1",
+    "@testcontainers/redis": "12.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "eslint": "9.39.5",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
+}

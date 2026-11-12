@@ -9,17 +9,20 @@
     "pnpm": ">=11.22.0 <12"
   },
   "scripts": {
-    "dev": "pnpm --parallel --recursive run dev",
+    "build:packages": "pnpm --filter \"./packages/*\" run build",
+    "dev": "pnpm run build:packages && pnpm --parallel --filter \"./apps/*\" run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check:api": "prettier --check apps/api \"*.{json,mjs,yaml}\" && pnpm --filter @agentic-studio/api run check",
-    "check:web": "prettier --check apps/web \"*.{json,mjs,yaml}\" && pnpm --filter @agentic-studio/web run check"
+    "check:api": "prettier --check apps/api packages \"*.{json,mjs,yaml}\" && pnpm --filter \"@agentic-studio/api...\" run check",
+    "check:web": "prettier --check apps/web \"*.{json,mjs,yaml}\" && pnpm --filter @agentic-studio/web run check",
+    "test:api": "pnpm run build:packages && pnpm --filter \"@agentic-studio/api...\" --if-present run test",
+    "db:migrate:dev": "pnpm --filter @agentic-studio/database run migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @agentic-studio/database run migrate:deploy"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
-    "globals": "17.14.0",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1"
