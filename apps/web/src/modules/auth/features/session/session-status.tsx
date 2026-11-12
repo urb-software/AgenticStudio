@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api } from '../../../../platform/api';
+import { ApiError, api } from '../../../../platform/api';
 import { LogoutButton } from '../logout/logout-button';
+
+type SessionState = 'checking' | 'signed-in' | 'redirecting' | 'unavailable';
 
 /**
  * Asks the API whether the operator is signed in. Without a session the API answers
@@ -10,25 +12,33 @@ import { LogoutButton } from '../logout/logout-button';
  * component, is what enforces authorization.
  */
 export function SessionStatus() {
-  const [signedIn, setSignedIn] = useState(false);
+  const [state, setState] = useState<SessionState>('checking');
 
   useEffect(() => {
     let active = true;
     api.getSession().then(
-      () => active && setSignedIn(true),
-      () => active && setSignedIn(false),
+      () => active && setState('signed-in'),
+      (error: unknown) =>
+        active &&
+        setState(error instanceof ApiError && error.status === 401 ? 'redirecting' : 'unavailable'),
     );
     return () => {
       active = false;
     };
   }, []);
 
-  if (!signedIn) {
-    return <p>Checking session…</p>;
+  switch (state) {
+    case 'checking':
+      return <p>Checking session…</p>;
+    case 'redirecting':
+      return <p>Not signed in. Redirecting to the login page…</p>;
+    case 'unavailable':
+      return <p role="alert">Could not check the session. Reload the page to try again.</p>;
+    case 'signed-in':
+      return (
+        <p>
+          Signed in as the operator. <LogoutButton />
+        </p>
+      );
   }
-  return (
-    <p>
-      Signed in as the operator. <LogoutButton />
-    </p>
-  );
 }

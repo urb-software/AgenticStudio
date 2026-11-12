@@ -110,6 +110,21 @@ describe('redactSecrets', () => {
     expect(output).not.toContain('ZGlnZXN0ZGlnZXN0');
   });
 
+  it('stays fast on large adversarial input (no catastrophic backtracking)', () => {
+    const inputs = [
+      'token'.repeat(20_000),
+      `${'a-'.repeat(50_000)}password`,
+      '"'.repeat(100_000),
+      'a://'.repeat(25_000),
+    ];
+    for (const input of inputs) {
+      const started = performance.now();
+      redactSecrets(input);
+      // Linear matching takes milliseconds; the quadratic version took 10-20 s.
+      expect(performance.now() - started).toBeLessThan(1000);
+    }
+  });
+
   it('leaves text without secrets unchanged', () => {
     const text = 'TypeError: cannot read x of undefined\n    at handler (dist/main.js:1:2)';
     expect(redactSecrets(text)).toBe(text);
