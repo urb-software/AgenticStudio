@@ -13,12 +13,15 @@ import { createZodDto, ZodResponse } from 'nestjs-zod';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { testConfig } from '../../../__tests__/test-config.js';
 import { AppModule } from '../../../app.module.js';
+import { Public } from '../../auth/public.decorator.js';
 import { buildApp } from '../../../app.js';
 import { problemDetailsSchema } from '../problem-details.js';
 
 // Test-only endpoints: no production endpoint takes input yet (#12 DoR clarification 1).
 // They are registered in this test's root module only, never in the production app.
+// Public: this suite tests error mapping, not auth (covered in platform/auth).
 const probeInputSchema = z.object({
   name: z.string().trim().min(1).max(100),
   tags: z.array(z.string().min(1)).optional(),
@@ -30,6 +33,7 @@ class ProbeOutputDto extends createZodDto(z.object({ id: z.string() })) {}
 const LEAKY_MESSAGE =
   'connect ECONNREFUSED postgres://studio:s3cr3t@x@10.0.0.5 at C:\\srv\\internal\\db.ts';
 
+@Public()
 @Controller('__test__')
 class ProbeController {
   @Post('echo')
@@ -62,13 +66,7 @@ class ProbeController {
 }
 
 @Module({
-  imports: [
-    AppModule.register({
-      apiPort: 0,
-      apiOrigin: 'http://localhost:3001',
-      databaseUrl: 'postgresql://unused:unused@127.0.0.1:1/unused',
-    }),
-  ],
+  imports: [AppModule.register(testConfig())],
   controllers: [ProbeController],
 })
 class ProbeRootModule {}
@@ -132,6 +130,7 @@ describe('problem+json error mapping', () => {
   it('validates and transforms valid input through the Zod schema', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/__test__/echo')
+      .set('Origin', 'http://localhost:3000')
       .send({ name: '  Alpha  ' });
 
     expect(response.status).toBe(201);
@@ -141,6 +140,7 @@ describe('problem+json error mapping', () => {
   it('maps invalid input to 400 with field errors usable by React Hook Form', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/__test__/echo')
+      .set('Origin', 'http://localhost:3000')
       .send({ name: '   ', tags: ['ok', ''] });
 
     expectProblem(response, 400, 'Bad Request');
@@ -154,6 +154,7 @@ describe('problem+json error mapping', () => {
   it('maps malformed JSON to 400 without parser internals', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/__test__/echo')
+      .set('Origin', 'http://localhost:3000')
       .set('content-type', 'application/json')
       .send('{"name": ');
 

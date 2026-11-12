@@ -2,6 +2,7 @@ import { deployMigrations } from '@agentic-studio/database/migrations';
 import { startPostgres, type TestService } from '@agentic-studio/testing';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { testConfig } from '../../../__tests__/test-config.js';
 import { createApp } from '../../../app.js';
 import { DATABASE_CLIENT, type DatabaseClient } from '../database.module.js';
 
@@ -12,11 +13,7 @@ describe('database DI against a fresh PostgreSQL', () => {
   beforeAll(async () => {
     postgres = await startPostgres();
     await deployMigrations(postgres.url);
-    app = await createApp({
-      apiPort: 0,
-      apiOrigin: 'http://localhost:3001',
-      databaseUrl: postgres.url,
-    });
+    app = await createApp(testConfig({ databaseUrl: postgres.url }));
     await app.init();
   });
 
