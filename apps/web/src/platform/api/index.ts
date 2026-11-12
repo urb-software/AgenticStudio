@@ -28,7 +28,7 @@ export type {
  * Generated from the OpenAPI document: client-side hints for forms only. The API applies
  * the full rules (e.g. whitespace normalization) and its 400/409 field errors are final.
  */
-export const createProjectRequestSchema = zCreateProjectRequest;
+export const createProjectRequestHint = zCreateProjectRequest;
 
 client.setConfig({ credentials: 'same-origin' });
 

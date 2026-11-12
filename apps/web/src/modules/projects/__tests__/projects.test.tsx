@@ -114,6 +114,16 @@ describe('create project form', () => {
     expect(api.calls('POST')).toEqual([]);
   });
 
+  it('measures the length hint after whitespace normalization, as the API does', async () => {
+    const api = fakeProjectsApi();
+    renderProjectsPage();
+
+    submitName(`   ${'a'.repeat(50)}      ${'b'.repeat(49)}  `);
+
+    await waitFor(() => expect(api.calls('POST')).toHaveLength(1));
+    expect(screen.queryByText('Use at most 100 characters.')).toBeNull();
+  });
+
   it('shows the field error of a 400 response next to the name field', async () => {
     const api = fakeProjectsApi();
     api.respondNext(

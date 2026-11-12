@@ -1,11 +1,11 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { type Resolver, useForm } from 'react-hook-form';
 import {
   ApiError,
   type CreateProjectRequest,
-  createProjectRequestSchema,
+  createProjectRequestHint,
 } from '../../../../platform/api';
 import { useCreateProject } from '../../api/projects-queries';
 
@@ -17,6 +17,15 @@ function hintMessage(issue: { code?: string; maximum?: unknown }): string | unde
   if (issue.code === 'too_big') return `Use at most ${String(issue.maximum)} characters.`;
   return undefined;
 }
+
+const checkHint = zodResolver(createProjectRequestHint, { error: hintMessage });
+
+/**
+ * Checks the hint against the name with whitespace runs collapsed, because the API measures
+ * the length after normalizing (trim + collapse); the API stays the authority.
+ */
+const resolver: Resolver<CreateProjectRequest> = (values, context, options) =>
+  checkHint({ name: values.name.trim().replace(/\s+/gu, ' ') }, context, options);
 
 /** Server field errors (400/409 `errors[]`) that this form can show next to a field. */
 function nameErrorOf(error: unknown): string | undefined {
@@ -39,7 +48,7 @@ export function CreateProjectForm() {
     reset,
     formState: { errors, isSubmitting },
   } = useForm<CreateProjectRequest>({
-    resolver: zodResolver(createProjectRequestSchema, { error: hintMessage }),
+    resolver,
     defaultValues: { name: '' },
   });
 

@@ -219,7 +219,7 @@ pnpm contracts:check      # regenerate, then fail if openapi.json or the generat
 ```
 
 - Run `pnpm contracts:generate` after changing a request or response schema, and commit `apps/api/openapi.json` and `apps/web/src/platform/api/generated/` with the change. Never edit generated files by hand.
-- The generator also emits Zod schemas of the payloads (`generated/zod.gen.ts`). Forms use them, through `platform/api`, as client-side hints only (e.g. `createProjectRequestSchema`); the API applies the full rules and its 400/409 field errors are final.
+- The generator also emits Zod schemas of the payloads (`generated/zod.gen.ts`). Forms use them, through `platform/api`, as client-side hints only (e.g. `createProjectRequestHint`); the API applies the full rules and its 400/409 field errors are final.
 - A deliberate 4xx about specific fields (e.g. 409 for a taken project name) throws `FieldProblemException` (`apps/api/src/platform/http/problem-details.ts`), so its problem details carry `errors[]` like a 400.
 - The web app imports the client only from `apps/web/src/platform/api` (its public entry point), never from `generated/`.
 - Request bodies are validated by the global `ZodValidationPipe`; responses declared with `@ZodResponse` are validated and stripped by the global `ZodSerializerInterceptor`.
