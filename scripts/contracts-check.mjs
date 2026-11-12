@@ -10,7 +10,7 @@ const drift = execFileSync(
   'git',
   ['status', '--porcelain', '--untracked-files=all', '--', ...GENERATED_PATHS],
   { encoding: 'utf8' },
-).trim();
+).trimEnd();
 
 if (drift) {
   console.error('\ncontracts:check FAILED: generated contracts differ from the committed version:');
