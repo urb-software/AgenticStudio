@@ -27,9 +27,8 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',
-  // Generated code (Prisma client, @hey-api web client): kept as graph leaves, so imports
-  // of it are still checked but its internals are not.
-  doNotFollow: '^(packages/database/src/generated|apps/web/src/platform/api/generated)/',
+  // Generated Prisma client: kept as graph leaves, so imports of it are still checked.
+  doNotFollow: '^packages/database/src/generated/',
   resolveWorkspacePackagesToSource: true,
   forbidden: [
     {
@@ -79,9 +78,11 @@ export const monorepoGate: Gate = {
     },
     {
       name: 'mono-no-circular',
-      comment: 'No import cycles.',
+      comment:
+        'No import cycles. Only the generated @hey-api web client is exempt, for cycles between ' +
+        'its own files; every other rule applies to it.',
       severity: 'error',
-      from: { path: '^(apps|packages)/' },
+      from: { path: '^(apps|packages)/', pathNot: '^apps/web/src/platform/api/generated/' },
       to: { circular: true },
     },
   ],

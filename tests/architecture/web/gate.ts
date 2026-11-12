@@ -1,6 +1,7 @@
 import { coreModules, npmPackages, SERVER_PACKAGES, type Gate } from '../harness';
 
 const PUBLIC_ENTRYPOINT = '^src/modules/[^/]+/index\\.tsx?$';
+const GENERATED_CLIENT = '^src/platform/api/generated/';
 
 /**
  * `architecture:web`: the Next.js rules of docs/engineering/quality.md §4 and
@@ -9,10 +10,6 @@ const PUBLIC_ENTRYPOINT = '^src/modules/[^/]+/index\\.tsx?$';
  */
 export const webGate: Gate = {
   entries: ['src'],
-  // The @hey-api/openapi-ts client (#12) is generated code, checked by contracts:check. It is
-  // kept as graph leaves: imports of it are still checked, its internals (which contain a
-  // type-only cycle) are not.
-  doNotFollow: '^src/platform/api/generated/',
   forbidden: [
     {
       name: 'web-cross-module-public-entrypoints-only',
@@ -77,10 +74,21 @@ export const webGate: Gate = {
       to: { path: '^(\\.|@/)', couldNotResolve: true },
     },
     {
-      name: 'web-no-circular',
-      comment: 'No import cycles.',
+      name: 'web-generated-client-only-via-platform-api',
+      comment:
+        'The generated API client is used only through src/platform/api (its public entry point), ' +
+        'never imported directly from generated/.',
       severity: 'error',
-      from: { path: '^src/' },
+      from: { path: '^src/', pathNot: '^src/platform/api/' },
+      to: { path: GENERATED_CLIENT },
+    },
+    {
+      name: 'web-no-circular',
+      comment:
+        'No import cycles. Only the generated @hey-api client (checked by contracts:check) is ' +
+        'exempt, for cycles between its own files; every other rule applies to it.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: GENERATED_CLIENT },
       to: { circular: true },
     },
   ],

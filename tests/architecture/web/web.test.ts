@@ -27,4 +27,12 @@ describeGate('web', webGate, 'apps/web', [
   { fixture: 'imports-node-only-module', expected: ['web-no-server-code'] },
   { fixture: 'modules-cycle-through-entrypoints', expected: ['web-no-module-cycle'] },
   { fixture: 'file-cycle', expected: ['web-no-circular'] },
+  {
+    fixture: 'generated-client-imports-server-code',
+    expected: ['web-no-server-code', 'web-platform-no-business-modules'],
+  },
+  {
+    fixture: 'module-imports-generated-client',
+    expected: ['web-generated-client-only-via-platform-api'],
+  },
 ]);

@@ -64,4 +64,11 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'contracts-reexport-infrastructure', expected: ['api-contracts-self-contained'] },
   { fixture: 'contracts-import-domain', expected: ['api-contracts-self-contained'] },
   { fixture: 'domain-imports-file-system', expected: ['api-domain-independent'] },
+  { fixture: 'module-root-file-reexports-adapter', expected: ['api-module-layout'] },
+  { fixture: 'undocumented-folder-reexports-adapter', expected: ['api-module-layout'] },
+  {
+    fixture: 'handler-imports-module-file',
+    expected: ['api-module-file-composition-root-only'],
+  },
+  { fixture: 'port-reexports-database-client', expected: ['api-ports-independent'] },
 ]);

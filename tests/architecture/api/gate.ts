@@ -81,12 +81,14 @@ export const apiGate: Gate = {
       name: 'api-ports-independent',
       comment:
         'ports/ are interfaces: they never import (or re-export) infrastructure/, features/ or ' +
-        'consumers/, nor the ORM or concrete clients, so no adapter can be reached through a port.',
+        'consumers/, the database client, the ORM or concrete clients, so no adapter can be ' +
+        'reached through a port.',
       severity: 'error',
       from: { path: '^src/modules/[^/]+/ports/' },
       to: {
         path: [
           '^src/modules/[^/]+/(features|consumers|infrastructure)/',
+          '^src/platform/database/',
           ...ORM,
           npmPackages(...CONCRETE_CLIENT_PACKAGES),
         ],
@@ -140,6 +142,15 @@ export const apiGate: Gate = {
       to: { path: '^\\.', couldNotResolve: true },
     },
     {
+      name: 'api-module-file-composition-root-only',
+      comment:
+        'Only the composition root (src/app.module.ts) imports a {module}.module.ts; nothing under ' +
+        'src/modules/ does, so a module file cannot re-export private code to a handler.',
+      severity: 'error',
+      from: { path: '^src/modules/' },
+      to: { path: MODULE_FILE },
+    },
+    {
       name: 'api-no-circular',
       comment: 'No import cycles between files, layers or modules.',
       severity: 'error',
@@ -149,10 +160,34 @@ export const apiGate: Gate = {
   ],
   unitCycles: { rule: 'api-no-module-cycle', unit: /^(src\/modules\/[^/]+)\// },
   structural: {
-    rules: ['api-feature-has-handler', 'api-infrastructure-placement'],
-    check: (baseDir) => [...featuresWithoutHandler(baseDir), ...misplacedInfrastructure(baseDir)],
+    rules: ['api-module-layout', 'api-feature-has-handler', 'api-infrastructure-placement'],
+    check: (baseDir) => [
+      ...undocumentedModuleEntries(baseDir),
+      ...featuresWithoutHandler(baseDir),
+      ...misplacedInfrastructure(baseDir),
+    ],
   },
 };
+
+/** Folders allowed directly under src/modules/<m>/ (backend.md §2), besides <m>.module.ts. */
+const MODULE_FOLDERS = ['features', 'consumers', 'domain', 'ports', 'infrastructure', 'contracts'];
+
+/**
+ * A business module contains only the documented folders and its <m>.module.ts, so no
+ * undocumented file or folder (helpers.ts, lib/) can re-export private code past the rules.
+ */
+function undocumentedModuleEntries(baseDir: string): Violation[] {
+  return listDirectories(baseDir, 'src/modules').flatMap((module) => {
+    const root = `src/modules/${module}`;
+    const folders = listDirectories(baseDir, root)
+      .filter((folder) => !MODULE_FOLDERS.includes(folder))
+      .map((folder) => `${root}/${folder}/`);
+    const files = listFiles(baseDir, root)
+      .filter((file) => !file.slice(root.length + 1).includes('/'))
+      .filter((file) => file !== `${root}/${module}.module.ts`);
+    return [...folders, ...files].map((entry) => ({ rule: 'api-module-layout', from: entry }));
+  });
+}
 
 /** A present use-case feature has a handler.ts (endpoint.ts, schema.ts, input.ts are optional). */
 function featuresWithoutHandler(baseDir: string): Violation[] {
