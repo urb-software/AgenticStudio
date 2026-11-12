@@ -13,6 +13,7 @@ describeGate('web', webGate, 'apps/web', [
     qualityRow: "Web deep-imports another module's private Zustand store",
   },
   { fixture: 'modules-and-app-import-platform', expected: [] },
+  { fixture: 'generated-client-internal-cycle', expected: [] },
   {
     fixture: 'app-deep-imports-module-internals',
     expected: ['web-app-imports-public-entrypoints-only'],

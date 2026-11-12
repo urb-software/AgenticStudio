@@ -9,6 +9,10 @@ const PUBLIC_ENTRYPOINT = '^src/modules/[^/]+/index\\.tsx?$';
  */
 export const webGate: Gate = {
   entries: ['src'],
+  // The @hey-api/openapi-ts client (#12) is generated code, checked by contracts:check. It is
+  // kept as graph leaves: imports of it are still checked, its internals (which contain a
+  // type-only cycle) are not.
+  doNotFollow: '^src/platform/api/generated/',
   forbidden: [
     {
       name: 'web-cross-module-public-entrypoints-only',

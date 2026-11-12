@@ -27,8 +27,9 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',
-  // Generated Prisma client: kept as graph leaves, so imports of it are still checked.
-  doNotFollow: '^packages/database/src/generated/',
+  // Generated code (Prisma client, @hey-api web client): kept as graph leaves, so imports
+  // of it are still checked but its internals are not.
+  doNotFollow: '^(packages/database/src/generated|apps/web/src/platform/api/generated)/',
   resolveWorkspacePackagesToSource: true,
   forbidden: [
     {
