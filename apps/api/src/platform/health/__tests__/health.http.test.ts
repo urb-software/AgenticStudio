@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { testConfig } from '../../../__tests__/test-config.js';
 import { createApp } from '../../../app.js';
 
 describe('GET /api/health', () => {
@@ -8,11 +9,7 @@ describe('GET /api/health', () => {
 
   beforeAll(async () => {
     // The database client connects lazily, so this test needs no running PostgreSQL.
-    app = await createApp({
-      apiPort: 0,
-      apiOrigin: 'http://localhost:3001',
-      databaseUrl: 'postgresql://unused:unused@127.0.0.1:1/unused',
-    });
+    app = await createApp(testConfig());
     await app.init();
   });
 

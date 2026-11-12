@@ -57,7 +57,7 @@ compose.yaml               # Local development PostgreSQL and Redis
 
 ## Getting started
 
-The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file and the REST contract pipeline (Zod → OpenAPI → generated client); auth, architecture checks and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client) and single-operator auth; architecture checks and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
 ### Prerequisites
 
@@ -85,9 +85,31 @@ cp .env.example .env
 | `POSTGRES_PORT`, `REDIS_PORT` | `compose.yaml` | Host ports, bound to `127.0.0.1` only. Change them if 5432/6379 are taken. |
 | `DATABASE_URL` | API, Prisma | Required. Must match the Compose values. |
 | `API_PORT` | API | Default `3001`. Replaces the former `PORT`, which `next dev` also reads. |
+| `API_HOST` | API | Bind address. Default `127.0.0.1` (localhost only); a deployment sets it explicitly. |
+| `REDIS_URL` | API | Required. Sessions and login-failure counters. Must match the Compose Redis port. |
+| `STUDIO_ORIGIN` | API | Default `http://localhost:3000`: the web app's origin, the only origin accepted on mutations. Plain HTTP only for localhost; https makes the session cookie `Secure` (`__Host-studio_session`). |
+| `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). |
+| `STUDIO_OPERATOR_PASSWORD_HASH` | API | Required. Argon2id hash of the operator password (see [Operator login](#operator-login)), in single quotes in `.env`. Never the plaintext. |
 | `API_ORIGIN` | web (`next dev` rewrite), validated by the API | Default `http://localhost:3001`. `next dev` does not read the root `.env`; set it in the shell when the API runs elsewhere. |
 
 The API validates its environment with Zod at start-up (`apps/api/src/platform/config`) and exits with a list of the invalid variable names (never their values) instead of starting half-configured.
+
+### Operator login
+
+The Studio has one operator, who signs in with a password. The API stores only an Argon2id hash of it. Generate the hash locally:
+
+```bash
+pnpm --filter @agentic-studio/api run auth:hash-password   # type the password twice (hidden); prints the hash
+```
+
+Put the printed hash in `.env` as `STUDIO_OPERATOR_PASSWORD_HASH='$argon2id$...'` (single quotes). The API refuses to start without a valid Argon2id hash at the OWASP baseline or stronger. Then open http://localhost:3000/login.
+
+- `POST /api/auth/login` `{ "password": "..." }` sets an HttpOnly session cookie. `GET /api/auth/session` reports the session. `POST /api/auth/logout` ends it.
+- Every API route needs a session (401 problem+json without one) unless it is explicitly public: health and login.
+- Mutations need `Origin: <STUDIO_ORIGIN>` (or `Sec-Fetch-Site: same-origin`) and a JSON body. A browser on the Studio origin does this by itself; with curl, add `-H "Origin: http://localhost:3000" -H "Content-Type: application/json"`.
+- After 5 failed logins from one IP in 15 minutes, or 50 overall in an hour, login answers 429 with `Retry-After`. In local development all browser requests come through the `next dev` rewrite, so they share one IP.
+
+Cookie, Origin, rate-limit and proxy rules are canonical in [`security.md` §8](docs/engineering/security.md).
 
 ### Start PostgreSQL and Redis
 
@@ -117,13 +139,14 @@ This first builds the workspace packages (`packages/*`, including `prisma genera
 
 | App | URL | Notes |
 | --- | --- | --- |
-| `apps/web` | http://localhost:3000 | Placeholder Studio page. In `next dev`, `/api/*` is rewritten to the API, so the browser only talks to one origin (no CORS). |
+| `apps/web` | http://localhost:3000 | Placeholder Studio page (sends you to `/login` without a session). In `next dev`, `/api/*` is rewritten to the API, so the browser only talks to one origin (no CORS). |
 | `apps/api` | http://localhost:3001/api | NestJS with the global `/api` prefix. `API_PORT` overrides the port. |
 
 Check the API through the web origin:
 
 ```bash
-curl -i http://localhost:3000/api/health   # 200 {"status":"ok"}
+curl -i http://localhost:3000/api/health         # 200 {"status":"ok"} (public)
+curl -i http://localhost:3000/api/auth/session   # 401 problem+json until you sign in
 ```
 
 If you run the API on another port or host, set `API_ORIGIN` (default `http://localhost:3001`) for `apps/web` so the dev rewrite targets it. The rewrite is active in `next dev` only; deployment routing is out of scope for now.
@@ -140,7 +163,7 @@ pnpm format      # Write Prettier formatting for the workspace
 `pnpm test:api` builds `packages/*`, then runs Vitest in `apps/api` and `packages/testing`. Integration tests start throwaway PostgreSQL/Redis containers through `@agentic-studio/testing` (Testcontainers), so they need a running Docker daemon but neither Compose nor `.env`. Test conventions:
 
 - Tests live next to the code in `__tests__/` folders and end in `.test.ts`; tests that need containers end in `.integration.test.ts`.
-- HTTP tests build the app with `createApp(config)` from `apps/api/src/app.ts` (the same set-up as `main.ts`) and call it with Supertest.
+- HTTP tests build the app with `createApp(config)` from `apps/api/src/app.ts` (the same set-up as `main.ts`) and call it with Supertest. `testConfig()` in `apps/api/src/__tests__/test-config.ts` gives a complete config with placeholder values; tests that log in hash their own throwaway password. Auth tests (`platform/auth`) use a real Redis from `startRedis()`.
 - Persistence tests use a real PostgreSQL from `startPostgres()` and apply the committed migrations with `deployMigrations()` from `@agentic-studio/database/migrations`; never a mocked ORM.
 
 The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:web`, `architecture:*`, `test:contracts`, `check:affected`) are **not implemented yet**.

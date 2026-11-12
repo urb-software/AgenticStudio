@@ -6,4 +6,5 @@ const config = loadConfig(process.env);
 const app = await createApp(config);
 // SIGINT/SIGTERM run the shutdown hooks, which disconnect the database client.
 app.enableShutdownHooks();
-await app.listen(config.apiPort);
+// API_HOST defaults to 127.0.0.1: not reachable from the network unless configured.
+await app.listen(config.apiPort, config.apiHost);

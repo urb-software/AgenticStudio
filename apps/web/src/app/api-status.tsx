@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getHealth } from '../platform/api';
+import { api } from '../platform/api';
 
 type ApiStatusValue = 'checking' | 'ok' | 'unavailable';
 
@@ -11,8 +11,8 @@ export function ApiStatus() {
 
   useEffect(() => {
     let active = true;
-    getHealth().then(
-      ({ data }) => active && setStatus(data?.status === 'ok' ? 'ok' : 'unavailable'),
+    api.getHealth().then(
+      (data) => active && setStatus(data.status === 'ok' ? 'ok' : 'unavailable'),
       () => active && setStatus('unavailable'),
     );
     return () => {
