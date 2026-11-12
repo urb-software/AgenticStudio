@@ -57,7 +57,7 @@ compose.yaml               # Local development PostgreSQL and Redis
 
 ## Getting started
 
-The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client), single-operator auth, the three architecture gates and PR CI ([Continuous integration](#continuous-integration)). Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client), single-operator auth, the three architecture gates and PR CI ([Continuous integration](#continuous-integration)), and the first business slice: create and list projects ([Projects](#projects)). Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
 ### Prerequisites
 
@@ -90,7 +90,7 @@ cp .env.example .env
 | `STUDIO_ORIGIN` | API | Default `http://localhost:3000`: the web app's origin, the only origin accepted on mutations. Plain HTTP only for localhost; https makes the session cookie `Secure` (`__Host-studio_session`). |
 | `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). |
 | `STUDIO_OPERATOR_PASSWORD_HASH` | API | Required. Argon2id hash of the operator password (see [Operator login](#operator-login)), in single quotes in `.env`. Never the plaintext. |
-| `API_ORIGIN` | web (`next dev` rewrite), validated by the API | Default `http://localhost:3001`. `next dev` does not read the root `.env`; set it in the shell when the API runs elsewhere. |
+| `API_ORIGIN` | web (`/api` rewrite), validated by the API | `next dev` default `http://localhost:3001`. `next dev` does not read the root `.env`; set it in the shell when the API runs elsewhere. A production `next build` proxies `/api` only when `API_ORIGIN` is set at build time (as `pnpm e2e:smoke` does). |
 
 The API validates its environment with Zod at start-up (`apps/api/src/platform/config`) and exits with a list of the invalid variable names (never their values) instead of starting half-configured.
 
@@ -111,6 +111,15 @@ Put the printed hash in `.env` as `STUDIO_OPERATOR_PASSWORD_HASH='$argon2id$...'
 
 Cookie, Origin, rate-limit and proxy rules are canonical in [`security.md` §8](docs/engineering/security.md).
 
+### Projects
+
+After signing in, the Studio home links to http://localhost:3000/projects, where the operator creates projects and sees them newest first. API (session required; `POST` also needs the Origin and JSON rules above):
+
+- `POST /api/projects` `{ "name": "..." }`: the name is trimmed and internal whitespace runs collapse to one space (case kept); it must then be 1–100 characters. 201 `{ id, name, createdAt }`; 400 problem+json with a field error on `name`; 409 problem+json (field error on `name`) when another project has the same name ignoring case, enforced by a unique index on the lower-cased name.
+- `GET /api/projects`: 200 `{ items: [...] }`, newest first (`createdAt`, then `id`); `items` is empty when there are no projects.
+
+Code: `apps/api/src/modules/projects` (features `create-project` and `list-projects`, domain entity, value object and repository port, Prisma repository) and `apps/web/src/modules/projects` (create form and list), composed by `apps/web/src/app/(studio)/projects/page.tsx`.
+
 ### Start PostgreSQL and Redis
 
 ```bash
@@ -127,7 +136,9 @@ pnpm db:migrate:deploy   # apply committed migrations (the same command CI and d
 pnpm db:migrate:dev      # create a new migration from schema changes during development
 ```
 
-The first committed migration is an intentionally empty baseline; business tables arrive with the slices that own them. There is no `db push` or reset flow: migrations are reviewed, versioned code.
+The first committed migration is an intentionally empty baseline; business tables arrive with the slices that own them (`projects` is the first, Story #16). There is no `db push` or reset flow: migrations are reviewed, versioned code.
+
+> **Warning: decline any reset.** When `prisma migrate dev` detects drift between the migration history and your local database, it offers to **reset the database, deleting all its data**. Answer no. To review the SQL before anything is applied, create the migration only: `pnpm db:migrate:dev --create-only`, read and commit `packages/database/prisma/migrations/<timestamp>_<name>/migration.sql`, then apply it with `pnpm db:migrate:deploy`.
 
 ### Run locally
 
@@ -139,7 +150,7 @@ This first builds the workspace packages (`packages/*`, including `prisma genera
 
 | App | URL | Notes |
 | --- | --- | --- |
-| `apps/web` | http://localhost:3000 | Placeholder Studio page (sends you to `/login` without a session). In `next dev`, `/api/*` is rewritten to the API, so the browser only talks to one origin (no CORS). |
+| `apps/web` | http://localhost:3000 | Studio home with a link to the Projects page (http://localhost:3000/projects); without a session the browser is sent to `/login`. In `next dev`, `/api/*` is rewritten to the API, so the browser only talks to one origin (no CORS). |
 | `apps/api` | http://localhost:3001/api | NestJS with the global `/api` prefix. `API_PORT` overrides the port. |
 
 Check the API through the web origin:
@@ -149,7 +160,7 @@ curl -i http://localhost:3000/api/health         # 200 {"status":"ok"} (public)
 curl -i http://localhost:3000/api/auth/session   # 401 problem+json until you sign in
 ```
 
-If you run the API on another port or host, set `API_ORIGIN` (default `http://localhost:3001`) for `apps/web` so the dev rewrite targets it. The rewrite is active in `next dev` only; deployment routing is out of scope for now.
+If you run the API on another port or host, set `API_ORIGIN` (default `http://localhost:3001`) for `apps/web` so the dev rewrite targets it. `next dev` always rewrites; a production build only when `API_ORIGIN` was set at build time. Deployment routing is out of scope for now.
 
 ### Checks
 
@@ -161,6 +172,7 @@ pnpm test:web    # Vitest + React Testing Library tests of apps/web (jsdom)
 pnpm architecture:api        # Architecture gate for apps/api
 pnpm architecture:web        # Architecture gate for apps/web
 pnpm architecture:monorepo   # Architecture gate for the apps/packages workspace graph
+pnpm e2e:smoke   # Playwright smoke test against built apps, PostgreSQL and Redis (needs Docker; see below)
 pnpm format      # Write Prettier formatting for the workspace
 ```
 
@@ -169,8 +181,11 @@ pnpm format      # Write Prettier formatting for the workspace
 - Tests live next to the code in `__tests__/` folders and end in `.test.ts`; tests that need containers end in `.integration.test.ts`.
 - HTTP tests build the app with `createApp(config)` from `apps/api/src/app.ts` (the same set-up as `main.ts`) and call it with Supertest. `testConfig()` in `apps/api/src/__tests__/test-config.ts` gives a complete config with placeholder values; tests that log in hash their own throwaway password. Auth tests (`platform/auth`) use a real Redis from `startRedis()`.
 - Persistence tests use a real PostgreSQL from `startPostgres()` and apply the committed migrations with `deployMigrations()` from `@agentic-studio/database/migrations`; never a mocked ORM.
+- HTTP tests of a business module through the whole app (PostgreSQL + Redis + login) use `startStudioServices()`, `startStudioApp()` and `signIn()` from `apps/api/src/__tests__/studio-test-app.ts` and live in `apps/api/src/__tests__/`: building the app reaches the database client, which `architecture:api` forbids for anything under a feature folder, tests included. Handler unit tests stay next to the feature and use an in-memory adapter of the repository port.
 
-`pnpm test:web` runs Vitest in `apps/web` with a jsdom environment and React Testing Library. It follows the API conventions above: tests live in `__tests__/` next to the code and end in `.test.ts` or `.test.tsx`, and Vitest globals are off (import `describe`/`it`/`expect` from `vitest`).
+`pnpm test:web` runs Vitest in `apps/web` with a jsdom environment and React Testing Library. It follows the API conventions above: tests live in `__tests__/` next to the code and end in `.test.ts` or `.test.tsx`, and Vitest globals are off (import `describe`/`it`/`expect` from `vitest`). Feature tests render the real components with the real generated client and TanStack Query and fake the API at `fetch` (`vi.stubGlobal`); `vitest.setup.ts` resolves the client's relative `/api` URLs against the jsdom page URL, as a browser does.
+
+`pnpm e2e:smoke` (`tests/e2e/run-smoke.mjs`) runs the walking-skeleton smoke test, the same way locally and in CI: it builds the packages, the API and the web app, starts throwaway PostgreSQL and Redis containers (Testcontainers, so it needs Docker but neither Compose nor `.env`), applies the migrations, generates a random throwaway operator password for the run (only its hash reaches the API; nothing is stored), starts the API on `127.0.0.1:4501` and the web app on http://localhost:4500 (`E2E_API_PORT` / `E2E_WEB_PORT` override them), runs Playwright (`tests/e2e/smoke.spec.ts`: login → create project → list → reload) and always stops the servers and containers. Install the browser once with `pnpm exec playwright install chromium`. Playwright output goes to the git-ignored `tests/e2e/test-results/`.
 
 ### Architecture gates
 
@@ -204,6 +219,8 @@ pnpm contracts:check      # regenerate, then fail if openapi.json or the generat
 ```
 
 - Run `pnpm contracts:generate` after changing a request or response schema, and commit `apps/api/openapi.json` and `apps/web/src/platform/api/generated/` with the change. Never edit generated files by hand.
+- The generator also emits Zod schemas of the payloads (`generated/zod.gen.ts`). Forms use them, through `platform/api`, as client-side hints only (e.g. `createProjectRequestSchema`); the API applies the full rules and its 400/409 field errors are final.
+- A deliberate 4xx about specific fields (e.g. 409 for a taken project name) throws `FieldProblemException` (`apps/api/src/platform/http/problem-details.ts`), so its problem details carry `errors[]` like a 400.
 - The web app imports the client only from `apps/web/src/platform/api` (its public entry point), never from `generated/`.
 - Request bodies are validated by the global `ZodValidationPipe`; responses declared with `@ZodResponse` are validated and stripped by the global `ZodSerializerInterceptor`.
 - Every API error is RFC 9457 `application/problem+json` (`type`, `title`, `status`, `detail`, `correlationId`, optional `errors[]` of `{ path, message }`; `path` uses dot notation such as `tags.1` for React Hook Form `setError`). 5xx responses are generic; their cause is logged server-side under the `correlationId`. The `ProblemDetails` schema is the documented `default` response of every operation.
@@ -222,12 +239,13 @@ pnpm contracts:check      # regenerate, then fail if openapi.json or the generat
 | `test:api` | `pnpm test:api` (Testcontainers PostgreSQL and Redis on the runner's Docker) |
 | `test:web` | `pnpm test:web` |
 | `test:contracts` | `pnpm contracts:check` |
+| `e2e:smoke` | `pnpm exec playwright install --with-deps chromium`, then `pnpm e2e:smoke` (throwaway PostgreSQL and Redis via Testcontainers, random per-run operator password) |
 | `security` | `pnpm audit --audit-level high` over all dependencies |
 | `ci:required` | Always runs; the aggregate the `dev` ruleset requires |
 
 - Jobs run on `ubuntu-24.04` with Node.js 24 and the pnpm version from `packageManager`. Linux CI is authoritative: a check that passes only on Windows is a bug.
 - **Docs-only PRs.** The workflow always triggers. A PR is docs-only when every changed file (both sides of a rename) is under `docs/`, `.claude/skills/` or is a root `*.md` file; then the code jobs (every job above except `changes` and `ci:required`, including `security`) are skipped. Skipping the audit is safe because dependency files (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`) are never docs-only, and the post-merge run on `dev` always audits. Any other file, including anything in `.github/`, configuration, scripts, tests or the lockfile, runs every job. Pushes to `dev` always run every job.
-- **`ci:required`** passes only when `changes` succeeded and every code job succeeded, or, for a docs-only PR, every code job was skipped. A failed, cancelled or wrongly skipped job makes it red. A new job must be added to `CODE_JOBS` in `scripts/ci/ci-policy.mjs` as well as to the `ci:required` `needs`; an unknown job fails the check.
+- **`ci:required`** passes only when `changes` succeeded and every code job succeeded, or, for a docs-only PR, every code job was skipped. A failed, cancelled or wrongly skipped job makes it red. A new job must be added to `CODE_JOBS` in `scripts/ci/ci-policy.mjs` as well as to the `ci:required` `needs`; an unknown job fails the check. A policy test reads `ci.yml` and fails when `ci:required` `needs` and `CODE_JOBS` differ, when any job escapes `ci:required`, or when a job's `name:` is not its `quality.md` §7 check name.
 - **`security`.** Audit exceptions go only in `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`, each with a reason and a review date (Epic #8 decision 5). Prefer a patched version (a scoped `overrides` entry with the GHSA IDs, a reason, a review date and a tracking Issue, as for `js-yaml` under `@hey-api/json-schema-ref-parser`) over an exception.
 - Run the policy tests locally with `node --test "scripts/ci/*.test.mjs"`.
 

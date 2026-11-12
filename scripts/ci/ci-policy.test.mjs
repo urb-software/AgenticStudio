@@ -2,6 +2,7 @@
 // Run: `node --test "scripts/ci/*.test.mjs"` (CI runs them in the `changes` job before classifying).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -113,6 +114,7 @@ describe('evaluateRequired', () => {
       'test-api',
       'test-web',
       'test-contracts',
+      'e2e-smoke',
       'security',
     ]);
   });
@@ -167,10 +169,10 @@ describe('evaluateRequired', () => {
 
   it('fails on a job in needs that the policy does not know (keeps workflow and policy in sync)', () => {
     const verdict = evaluateRequired(
-      needs(true, 'success', { 'e2e-smoke': { result: 'success', outputs: {} } }),
+      needs(true, 'success', { 'nightly-e2e': { result: 'success', outputs: {} } }),
     );
     assert.equal(verdict.ok, false);
-    assert.match(verdict.problems.join('\n'), /e2e-smoke/);
+    assert.match(verdict.problems.join('\n'), /nightly-e2e/);
   });
 
   it('fails when a required code job is missing from needs', () => {
@@ -179,5 +181,89 @@ describe('evaluateRequired', () => {
     const verdict = evaluateRequired(all);
     assert.equal(verdict.ok, false);
     assert.match(verdict.problems.join('\n'), /test-contracts/);
+  });
+});
+
+/**
+ * Minimal reader for the jobs of `.github/workflows/ci.yml` as written there (two-space YAML
+ * indentation): job id → { name, needs, if }. No YAML dependency, because the `changes` job
+ * runs these tests before `pnpm install`.
+ */
+function readWorkflowJobs(text) {
+  const jobs = {};
+  let inJobs = false;
+  let current;
+  let inNeedsList = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^jobs:\s*$/.test(line)) {
+      inJobs = true;
+      continue;
+    }
+    if (!inJobs || line.trim() === '' || /^\s*#/.test(line)) continue;
+    if (/^\S/.test(line)) break;
+    const job = /^ {2}([\w-]+):\s*$/.exec(line);
+    if (job) {
+      current = jobs[job[1]] = { needs: [] };
+      inNeedsList = false;
+      continue;
+    }
+    if (!current) continue;
+    const field = /^ {4}([\w-]+):\s*(.*?)\s*$/.exec(line);
+    if (field) {
+      const [, key, value] = field;
+      inNeedsList = key === 'needs' && value === '';
+      if (key === 'needs' && value !== '') current.needs = [value];
+      if (key === 'name' || key === 'if') current[key] = value;
+      continue;
+    }
+    const item = /^ {6}- ([\w-]+)\s*$/.exec(line);
+    if (inNeedsList && item) current.needs.push(item[1]);
+  }
+  return jobs;
+}
+
+describe('.github/workflows/ci.yml stays in sync with the policy (#28 drift gap)', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const jobs = readWorkflowJobs(workflow);
+  const required = jobs['ci-required'];
+
+  it('reads the jobs of the workflow', () => {
+    assert.ok(required, 'ci-required job not found');
+    assert.ok(required.needs.length > 1, JSON.stringify(required));
+  });
+
+  it('makes ci:required need exactly `changes` and every policy code job', () => {
+    assert.deepEqual([...required.needs].sort(), ['changes', ...CODE_JOBS].sort());
+  });
+
+  it('lets no workflow job escape ci:required', () => {
+    const unchecked = Object.keys(jobs).filter(
+      (id) => id !== 'ci-required' && !required.needs.includes(id),
+    );
+    assert.deepEqual(unchecked, []);
+  });
+
+  it('runs every policy code job after `changes`, gated on its classification', () => {
+    for (const id of CODE_JOBS) {
+      assert.ok(jobs[id], `${id} is missing from ci.yml`);
+      assert.deepEqual(jobs[id].needs, ['changes'], id);
+      assert.equal(jobs[id].if, "needs.changes.outputs.code == 'true'", id);
+    }
+  });
+
+  it('names every job after its quality.md §7 check (first `-` of the id becomes `:`)', () => {
+    for (const [id, job] of Object.entries(jobs)) {
+      assert.equal(job.name, id.replace('-', ':'), id);
+    }
+  });
+
+  it('always runs ci:required', () => {
+    assert.equal(required.if, 'always()');
+  });
+
+  it('notices a code job dropped from ci:required needs (reader self-check)', () => {
+    const broken = readWorkflowJobs(workflow.replace(/^ {6}- e2e-smoke\r?\n/m, ''));
+    assert.ok(!broken['ci-required'].needs.includes('e2e-smoke'));
+    assert.notDeepEqual([...broken['ci-required'].needs].sort(), ['changes', ...CODE_JOBS].sort());
   });
 });
