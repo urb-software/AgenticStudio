@@ -22,3 +22,12 @@ peerDependencyRules:
   allowedVersions:
     'nestjs-zod>@nestjs/common': '12.4.2'
     'nestjs-zod>@nestjs/swagger': '12.1.1'
+
+# Temporary security override, scoped to the hey-api chain only: @hey-api/json-schema-ref-parser@1.4.4
+# (pulled in by apps/web > @hey-api/openapi-ts) pins js-yaml 4.2.0, which has three high advisories:
+# GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj, GHSA-2883-xcg3-v3hh. 4.3.2 is the patched release of the
+# same major; contracts:generate stays deterministic with it. Decision: #15 (coordinator, option a).
+# Review by 2027-02-12; remove once upstream depends on a patched js-yaml.
+# Tracking task #19: https://github.com/urb-software/AgenticStudio/issues/19
+overrides:
+  '@hey-api/json-schema-ref-parser>js-yaml': '4.3.2'

@@ -226,9 +226,9 @@ pnpm contracts:check      # regenerate, then fail if openapi.json or the generat
 | `ci:required` | Always runs; the aggregate the `dev` ruleset requires |
 
 - Jobs run on `ubuntu-24.04` with Node.js 24 and the pnpm version from `packageManager`. Linux CI is authoritative: a check that passes only on Windows is a bug.
-- **Docs-only PRs.** The workflow always triggers. A PR is docs-only when every changed file (both sides of a rename) is under `docs/`, `.claude/skills/` or is a root `*.md` file; then the code jobs (every job above except `changes` and `ci:required`, including `security`) are skipped; the post-merge run on `dev` still audits. Any other file, including anything in `.github/`, configuration, scripts, tests or the lockfile, runs every job. Pushes to `dev` always run every job.
+- **Docs-only PRs.** The workflow always triggers. A PR is docs-only when every changed file (both sides of a rename) is under `docs/`, `.claude/skills/` or is a root `*.md` file; then the code jobs (every job above except `changes` and `ci:required`, including `security`) are skipped. Skipping the audit is safe because dependency files (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`) are never docs-only, and the post-merge run on `dev` always audits. Any other file, including anything in `.github/`, configuration, scripts, tests or the lockfile, runs every job. Pushes to `dev` always run every job.
 - **`ci:required`** passes only when `changes` succeeded and every code job succeeded, or, for a docs-only PR, every code job was skipped. A failed, cancelled or wrongly skipped job makes it red. A new job must be added to `CODE_JOBS` in `scripts/ci/ci-policy.mjs` as well as to the `ci:required` `needs`; an unknown job fails the check.
-- **`security`.** Audit exceptions go only in `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`, each with a reason and a review date (Epic #8 decision 5).
+- **`security`.** Audit exceptions go only in `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`, each with a reason and a review date (Epic #8 decision 5). Prefer a patched version (a scoped `overrides` entry with the GHSA IDs, a reason, a review date and a tracking Issue, as for `js-yaml` under `@hey-api/json-schema-ref-parser`) over an exception.
 - Run the policy tests locally with `node --test "scripts/ci/*.test.mjs"`.
 
 ## Working agreement
