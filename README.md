@@ -57,7 +57,7 @@ compose.yaml               # Local development PostgreSQL and Redis
 
 ## Getting started
 
-The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client) and single-operator auth; architecture checks and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client), single-operator auth and the three architecture gates; CI arrives in a later Technical Task. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
 ### Prerequisites
 
@@ -157,6 +157,10 @@ If you run the API on another port or host, set `API_ORIGIN` (default `http://lo
 pnpm check:api   # Prettier check, then ESLint, typecheck and build of apps/api and the packages it uses
 pnpm check:web   # Prettier check, ESLint, TypeScript typecheck, production build of apps/web
 pnpm test:api    # Vitest unit and integration tests of apps/api and the packages it uses (needs Docker)
+pnpm test:web    # Vitest + React Testing Library tests of apps/web (jsdom)
+pnpm architecture:api        # Architecture gate for apps/api
+pnpm architecture:web        # Architecture gate for apps/web
+pnpm architecture:monorepo   # Architecture gate for the apps/packages workspace graph
 pnpm format      # Write Prettier formatting for the workspace
 ```
 
@@ -166,7 +170,23 @@ pnpm format      # Write Prettier formatting for the workspace
 - HTTP tests build the app with `createApp(config)` from `apps/api/src/app.ts` (the same set-up as `main.ts`) and call it with Supertest. `testConfig()` in `apps/api/src/__tests__/test-config.ts` gives a complete config with placeholder values; tests that log in hash their own throwaway password. Auth tests (`platform/auth`) use a real Redis from `startRedis()`.
 - Persistence tests use a real PostgreSQL from `startPostgres()` and apply the committed migrations with `deployMigrations()` from `@agentic-studio/database/migrations`; never a mocked ORM.
 
-The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:web`, `architecture:*`, `test:contracts`, `check:affected`) are **not implemented yet**.
+`pnpm test:web` runs Vitest in `apps/web` with a jsdom environment and React Testing Library. It follows the API conventions above: tests live in `__tests__/` next to the code and end in `.test.ts` or `.test.tsx`, and Vitest globals are off (import `describe`/`it`/`expect` from `vitest`).
+
+### Architecture gates
+
+The rules of [`quality.md` §4](docs/engineering/quality.md) are enforced by three separate gates. Each one type-checks the gate code, then runs its Vitest project in `tests/architecture/`:
+
+| Gate | Checks | Rules |
+| --- | --- | --- |
+| `pnpm architecture:api` | `apps/api/src` | Business modules import each other only through `contracts/`; `platform/` and `shared/` reach modules only through `contracts/`; only the composition root `src/app.module.ts` imports a `{module}.module.ts` (nothing under `src/modules/` does); a module contains only `features/`, `consumers/`, `domain/`, `ports/`, `infrastructure/`, `contracts/` and `<m>.module.ts`; `domain/` is free of NestJS, ORM, database, queue, HTTP, file-system/process and infrastructure code; `ports/` never import `infrastructure/`, `features/`, `consumers/`, `platform/database/`, the ORM or concrete clients; a module's `contracts/` never import its own `domain/`, `features/`, `consumers/`, `infrastructure/` or `ports/`, the ORM or concrete clients; features and consumers never import `infrastructure/`, the database client, Prisma or concrete queue/Redis/Docker/Git/process clients, directly or through any chain of re-exports (`reachable`); Prisma only in `infrastructure/repositories/`; relative imports resolve; no file or module cycles; a feature folder has a `handler.ts`; `infrastructure/` files live in `repositories/` or `adapters/`. |
+| `pnpm architecture:web` | `apps/web/src` | Modules and `app/` use another module only through its `index.ts`; modules never import `app/`; `platform/` never imports `modules/` or `app/` (modules and `app/` may import `platform/`, e.g. the API client); `shared/` imports none of `modules/`, `app/`, `platform/`; no server, ORM, privileged or Node-only server imports; only `platform/api/` imports `platform/api/generated/`; relative and `@/` imports resolve; no file or module cycles (the generated API client is exempt only from the cycle rules, for cycles between its own files). |
+| `pnpm architecture:monorepo` | `apps/*`, `packages/*` | No app-to-app imports (including `agent-worker` and `environment-controller` once they exist); packages never import apps; other code reaches a package only by its `@agentic-studio/*` name, never a relative path; web never imports server packages (every `packages/*` package must be classified as web-allowed or web-forbidden); every `@agentic-studio/*` import resolves; no file or package cycles; the same rules on `package.json` dependencies. |
+
+Dependency rules use [Dependency Cruiser](https://github.com/sverweij/dependency-cruiser) (`tests/architecture/*/gate.ts`); folder rules are Vitest assertions. Each gate checks the whole graph of its real tree and then its fixtures in `tests/architecture/fixtures/<gate>/`: every fixture must produce exactly its expected PASS or FAIL rules, every rule needs at least one FAIL fixture, and every [`quality.md` §5](docs/engineering/quality.md) row has its fixture. A change to a rule therefore needs a matching fixture. Fixtures are not production code: they sit outside every app, so no app build, lint or typecheck includes them.
+
+Not enforced yet, tracked in [#22](https://github.com/urb-software/AgenticStudio/issues/22) (no code exists for them, and each needs a convention decided first): versioned, publisher-owned integration event definitions and no duplicate event definitions; repository contracts only in `domain/repositories/` and read ports only in `ports/`. The gate code in `tests/architecture/` is type-checked by each gate and formatted by `pnpm format:check`, but not linted.
+
+The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:contracts`, `check:affected`) are **not implemented yet**.
 
 ### REST contracts (Zod → OpenAPI → client)
 

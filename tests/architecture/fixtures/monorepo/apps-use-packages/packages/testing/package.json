@@ -1,0 +1,9 @@
+{
+  "name": "@agentic-studio/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agentic-studio/database": "workspace:*"
+  }
+}
