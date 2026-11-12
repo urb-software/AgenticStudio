@@ -1,5 +1,7 @@
-import { describeGate } from '../suite';
-import { monorepoGate } from './gate';
+import { describe, expect, it } from 'vitest';
+import { SERVER_PACKAGES, workspacePackages } from '../harness';
+import { describeGate, REPO_ROOT } from '../suite';
+import { monorepoGate, WEB_PACKAGE_CLASSIFICATION } from './gate';
 
 describeGate('monorepo', monorepoGate, '.', [
   { fixture: 'apps-use-packages', expected: [] },
@@ -23,3 +25,19 @@ describeGate('monorepo', monorepoGate, '.', [
     expected: ['mono-no-relative-imports-into-packages'],
   },
 ]);
+
+describe('architecture:monorepo web package classification', () => {
+  const { allowed, forbidden } = WEB_PACKAGE_CLASSIFICATION;
+
+  it('every packages/* workspace package is classified as web-allowed or web-forbidden', () => {
+    const unclassified = workspacePackages(REPO_ROOT)
+      .filter((pkg) => pkg.dir.startsWith('packages/'))
+      .map((pkg) => pkg.name)
+      .filter((name) => allowed.includes(name) === forbidden.includes(name));
+    expect(unclassified).toEqual([]);
+  });
+
+  it('every web-forbidden package is enforced by the server package rules', () => {
+    expect(forbidden.filter((name) => !SERVER_PACKAGES.includes(name))).toEqual([]);
+  });
+});

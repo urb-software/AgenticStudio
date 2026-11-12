@@ -14,6 +14,16 @@ import {
  * they already cover the agent-worker and environment-controller apps, which do not
  * exist yet. Paths are relative to the workspace root.
  */
+/**
+ * Every packages/* workspace package must be listed here as allowed or forbidden for
+ * apps/web (a meta-test enforces it), so a new server-only package cannot reach the web
+ * app by default. Forbidden names must also be in SERVER_PACKAGES, which the rules use.
+ */
+export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[] } = {
+  allowed: [],
+  forbidden: ['@agentic-studio/database', '@agentic-studio/testing'],
+};
+
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',

@@ -58,10 +58,53 @@ export const apiGate: Gate = {
         path: [
           npmPackages(...INFRASTRUCTURE_PACKAGES),
           '(^|/)packages/database/',
-          coreModules('http', 'https', 'http2', 'net', 'child_process'),
+          coreModules(
+            'http',
+            'https',
+            'http2',
+            'net',
+            'tls',
+            'dgram',
+            'child_process',
+            'cluster',
+            'worker_threads',
+            'fs',
+            'fs/promises',
+          ),
           '^src/platform/',
           '^src/modules/[^/]+/(features|consumers|infrastructure)/',
           MODULE_FILE,
+        ],
+      },
+    },
+    {
+      name: 'api-ports-independent',
+      comment:
+        'ports/ are interfaces: they never import (or re-export) infrastructure/, features/ or ' +
+        'consumers/, nor the ORM or concrete clients, so no adapter can be reached through a port.',
+      severity: 'error',
+      from: { path: '^src/modules/[^/]+/ports/' },
+      to: {
+        path: [
+          '^src/modules/[^/]+/(features|consumers|infrastructure)/',
+          ...ORM,
+          npmPackages(...CONCRETE_CLIENT_PACKAGES),
+        ],
+      },
+    },
+    {
+      name: 'api-contracts-self-contained',
+      comment:
+        'A public contracts/ (publisher-owned event schemas and public exports, system.md §6) is ' +
+        "self-contained: it never imports or re-exports its own module's domain/, features/, " +
+        'consumers/, infrastructure/ or ports/, nor the ORM or concrete clients.',
+      severity: 'error',
+      from: { path: '^src/modules/([^/]+)/contracts/' },
+      to: {
+        path: [
+          '^src/modules/$1/(domain|features|consumers|infrastructure|ports)/',
+          ...ORM,
+          npmPackages(...CONCRETE_CLIENT_PACKAGES),
         ],
       },
     },

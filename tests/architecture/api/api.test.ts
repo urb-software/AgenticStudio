@@ -60,4 +60,8 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'handler-imports-queue-client', expected: ['api-features-no-concrete-adapters'] },
   { fixture: 'domain-imports-docker-client', expected: ['api-domain-independent'] },
   { fixture: 'unresolved-relative-import', expected: ['api-local-imports-resolve'] },
+  { fixture: 'handler-imports-adapter-via-port', expected: ['api-ports-independent'] },
+  { fixture: 'contracts-reexport-infrastructure', expected: ['api-contracts-self-contained'] },
+  { fixture: 'contracts-import-domain', expected: ['api-contracts-self-contained'] },
+  { fixture: 'domain-imports-file-system', expected: ['api-domain-independent'] },
 ]);
