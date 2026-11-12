@@ -1,0 +1,2 @@
+# Normalize line endings so Prettier checks are identical on every OS.
+* text=auto eol=lf

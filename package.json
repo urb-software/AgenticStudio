@@ -1,0 +1,27 @@
+{
+  "name": "agentic-studio",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=11.22.0 <12"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --recursive run dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:api": "prettier --check apps/api \"*.{json,mjs,yaml}\" && pnpm --filter @agentic-studio/api run check",
+    "check:web": "prettier --check apps/web \"*.{json,mjs,yaml}\" && pnpm --filter @agentic-studio/web run check"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  }
+}
