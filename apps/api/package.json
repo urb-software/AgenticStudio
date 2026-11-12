@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run build",
     "test": "vitest run",
-    "openapi:generate": "nest build && node dist/platform/openapi/generate.js openapi.json"
+    "openapi:generate": "nest build && node dist/platform/openapi/generate.js openapi.json",
+    "auth:hash-password": "nest build && node dist/platform/auth/hash-password.js"
   },
   "dependencies": {
     "@agentic-studio/database": "workspace:*",
@@ -19,6 +20,8 @@
     "@nestjs/core": "12.4.2",
     "@nestjs/platform-express": "12.4.2",
     "@nestjs/swagger": "12.1.1",
+    "@node-rs/argon2": "2.2.2",
+    "ioredis": "6.0.0",
     "nestjs-zod": "5.6.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",

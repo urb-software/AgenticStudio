@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { testConfig } from '../../../__tests__/test-config.js';
 import { createApp } from '../../../app.js';
 import { createOpenApiDocument } from '../openapi.js';
 
@@ -8,11 +9,7 @@ describe('OpenAPI document', () => {
 
   beforeAll(async () => {
     // Offline: the database client connects lazily and the app never listens.
-    app = await createApp({
-      apiPort: 0,
-      apiOrigin: 'http://localhost:3001',
-      databaseUrl: 'postgresql://unused:unused@127.0.0.1:1/unused',
-    });
+    app = await createApp(testConfig());
     await app.init();
   });
 
@@ -40,6 +37,35 @@ describe('OpenAPI document', () => {
       required: ['status'],
       additionalProperties: false,
     });
+  });
+
+  it('documents the auth endpoints with their Zod-derived schemas', () => {
+    const document = createOpenApiDocument(app);
+
+    const login = document.paths['/api/auth/login']?.post;
+    expect(login?.operationId).toBe('login');
+    expect(login?.requestBody).toMatchObject({
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginRequest' } } },
+    });
+    expect(document.components?.schemas?.LoginRequest).toMatchObject({
+      type: 'object',
+      properties: { password: { type: 'string', minLength: 1, maxLength: 1024 } },
+      required: ['password'],
+    });
+    expect(login?.responses['200']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/SessionResponse_Output' } },
+      },
+    });
+    expect(document.components?.schemas?.SessionResponse_Output).toMatchObject({
+      properties: { authenticated: { type: 'boolean', const: true } },
+      required: ['authenticated'],
+    });
+
+    expect(document.paths['/api/auth/session']?.get?.operationId).toBe('getSession');
+    const logout = document.paths['/api/auth/logout']?.post;
+    expect(logout?.operationId).toBe('logout');
+    expect(logout?.responses).toHaveProperty('204');
   });
 
   it('documents the problem+json schema as the error response of every operation', () => {

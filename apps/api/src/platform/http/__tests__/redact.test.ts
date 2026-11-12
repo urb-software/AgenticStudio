@@ -59,6 +59,57 @@ describe('redactSecrets', () => {
     expect(output).not.toMatch(/eyJhbGciOi|dXNlcjpwYXNz|abc-def_123/);
   });
 
+  // #20 review follow-up m8/m9.
+  it.each(['refresh_token', 'client_secret', 'id_token', 'pwd', 'passwd', 'X-Api-Key'])(
+    'masks the prefixed or abbreviated %s parameter value',
+    (name) => {
+      const output = redactSecrets(`GET https://h/cb?x=1&${name}=v4lu3&y=2 failed`);
+
+      expect(output).not.toContain('v4lu3');
+      expect(output).toContain(`${name}=***`);
+      expect(output).toContain('y=2');
+    },
+  );
+
+  it('masks secrets in a URL fragment', () => {
+    const output = redactSecrets('redirect to https://h/cb#access_token=v4lu3&state=ok');
+
+    expect(output).not.toContain('v4lu3');
+    expect(output).toContain('#access_token=***');
+    expect(output).toContain('state=ok');
+  });
+
+  it.each([
+    ['colon form', 'login failed: password: v4lu3 for operator'],
+    ['colon form without space', 'password:v4lu3'],
+    ['JSON form', 'body {"password":"v4lu3","remember":true}'],
+    ['JSON form with spaces', 'body { "client_secret" : "v4lu3" }'],
+    ['single-quoted form', "options { passwd: 'v4lu3' }"],
+    ['header form', 'X-Api-Key: v4lu3'],
+    ['Token scheme', 'Authorization: Token v4lu3'],
+    ['cookie header', 'Cookie: studio_session=v4lu3; theme=dark'],
+    ['set-cookie header', 'Set-Cookie: __Host-studio_session=v4lu3; Path=/; HttpOnly'],
+    ['session cookie pair', 'got studio_session=v4lu3 from client'],
+  ])('masks the %s', (_case, input) => {
+    expect(redactSecrets(input)).not.toContain('v4lu3');
+  });
+
+  it('keeps non-secret neighbours of a JSON secret', () => {
+    expect(redactSecrets('{"password":"v4lu3","remember":true}')).toBe(
+      '{"password":"***","remember":true}',
+    );
+  });
+
+  it.each([
+    ['argon2id', '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$ZGlnZXN0ZGlnZXN0'],
+    ['argon2i', '$argon2i$v=19$m=4096,t=3,p=1$c2FsdHNhbHQ$ZGlnZXN0ZGlnZXN0'],
+  ])('masks an %s password hash', (_case, hash) => {
+    const output = redactSecrets(`verify failed for ${hash} at startup`);
+
+    expect(output).not.toContain('c2FsdHNhbHQ');
+    expect(output).not.toContain('ZGlnZXN0ZGlnZXN0');
+  });
+
   it('leaves text without secrets unchanged', () => {
     const text = 'TypeError: cannot read x of undefined\n    at handler (dist/main.js:1:2)';
     expect(redactSecrets(text)).toBe(text);

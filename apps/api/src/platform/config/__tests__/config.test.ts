@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigValidationError, loadConfig } from '../config.js';
 
+// A format-valid Argon2id PHC string with dummy salt and digest: a fixture, not a credential.
+const PHC_SALT_AND_DIGEST = 'c29tZXNhbHRzb21lc2FsdA$ZHVtbXlkaWdlc3RkdW1teWRpZ2VzdGR1bW15ZGlnZXN0';
+const BASELINE_HASH = `$argon2id$v=19$m=19456,t=2,p=1$${PHC_SALT_AND_DIGEST}`;
+
 const validEnv = {
   DATABASE_URL: 'postgresql://user:placeholder@localhost:5432/studio',
+  REDIS_URL: 'redis://localhost:6379',
+  STUDIO_OPERATOR_PASSWORD_HASH: BASELINE_HASH,
   API_PORT: '4001',
+  API_HOST: '0.0.0.0',
   API_ORIGIN: 'http://localhost:4001',
+  API_TRUSTED_PROXIES: '10.0.0.1, 172.16.0.0/12,fd00::/8',
+  STUDIO_ORIGIN: 'https://studio.example.test',
+};
+
+const requiredEnv = {
+  DATABASE_URL: validEnv.DATABASE_URL,
+  REDIS_URL: validEnv.REDIS_URL,
+  STUDIO_OPERATOR_PASSWORD_HASH: validEnv.STUDIO_OPERATOR_PASSWORD_HASH,
 };
 
 function captureError(fn: () => unknown): Error {
@@ -20,36 +35,76 @@ describe('loadConfig', () => {
   it('returns typed configuration from a valid environment', () => {
     expect(loadConfig(validEnv)).toEqual({
       apiPort: 4001,
+      apiHost: '0.0.0.0',
       apiOrigin: 'http://localhost:4001',
+      apiTrustedProxies: ['10.0.0.1', '172.16.0.0/12', 'fd00::/8'],
       databaseUrl: 'postgresql://user:placeholder@localhost:5432/studio',
+      redisUrl: 'redis://localhost:6379',
+      studioOrigin: 'https://studio.example.test',
+      operatorPasswordHash: BASELINE_HASH,
     });
   });
 
-  it('defaults the API port and origin for local development', () => {
-    expect(loadConfig({ DATABASE_URL: validEnv.DATABASE_URL })).toMatchObject({
+  it('defaults to a localhost-only bind, local origins and no trusted proxies', () => {
+    expect(loadConfig(requiredEnv)).toMatchObject({
       apiPort: 3001,
+      apiHost: '127.0.0.1',
       apiOrigin: 'http://localhost:3001',
+      apiTrustedProxies: [],
+      studioOrigin: 'http://localhost:3000',
     });
   });
 
   it('ignores the generic PORT variable that next dev also reads', () => {
-    expect(loadConfig({ DATABASE_URL: validEnv.DATABASE_URL, PORT: '3000' }).apiPort).toBe(3001);
+    expect(loadConfig({ ...requiredEnv, PORT: '3000' }).apiPort).toBe(3001);
   });
 
-  it('fails fast when DATABASE_URL is missing', () => {
-    const error = captureError(() => loadConfig({}));
-    expect(error).toBeInstanceOf(ConfigValidationError);
-    expect(error.message).toMatch(/DATABASE_URL/);
+  it('normalizes a trailing slash on the Studio origin', () => {
+    expect(
+      loadConfig({ ...requiredEnv, STUDIO_ORIGIN: 'http://localhost:4300/' }).studioOrigin,
+    ).toBe('http://localhost:4300');
   });
+
+  it('accepts stronger Argon2id parameters than the baseline', () => {
+    const stronger = `$argon2id$v=19$m=65536,t=3,p=4$${PHC_SALT_AND_DIGEST}`;
+    expect(
+      loadConfig({ ...requiredEnv, STUDIO_OPERATOR_PASSWORD_HASH: stronger }).operatorPasswordHash,
+    ).toBe(stronger);
+  });
+
+  it.each(['DATABASE_URL', 'REDIS_URL', 'STUDIO_OPERATOR_PASSWORD_HASH'])(
+    'fails fast when %s is missing',
+    (name) => {
+      const env: Record<string, string> = { ...requiredEnv };
+      delete env[name];
+      const error = captureError(() => loadConfig(env));
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toMatch(new RegExp(name));
+    },
+  );
 
   it.each([
     ['DATABASE_URL', 'not a url'],
     ['DATABASE_URL', 'mysql://user@localhost/studio'],
+    ['REDIS_URL', 'http://localhost:6379'],
     ['API_PORT', 'abc'],
     ['API_PORT', '0'],
     ['API_PORT', '70000'],
+    ['API_HOST', ''],
+    ['API_HOST', 'bad host'],
     ['API_ORIGIN', 'localhost:3001'],
     ['API_ORIGIN', 'ftp://localhost:3001'],
+    ['API_TRUSTED_PROXIES', 'proxy.internal'],
+    ['API_TRUSTED_PROXIES', '10.0.0.0/33'],
+    ['API_TRUSTED_PROXIES', '10.0.0.1,*'],
+    ['STUDIO_ORIGIN', 'localhost:3000'],
+    ['STUDIO_ORIGIN', 'http://localhost:3000/login'],
+    ['STUDIO_ORIGIN', 'http://studio.example.test'],
+    ['STUDIO_OPERATOR_PASSWORD_HASH', 'correct horse battery staple'],
+    ['STUDIO_OPERATOR_PASSWORD_HASH', `$argon2i$v=19$m=19456,t=2,p=1$${PHC_SALT_AND_DIGEST}`],
+    ['STUDIO_OPERATOR_PASSWORD_HASH', `$argon2id$v=19$m=4096,t=2,p=1$${PHC_SALT_AND_DIGEST}`],
+    ['STUDIO_OPERATOR_PASSWORD_HASH', `$argon2id$v=19$m=19456,t=1,p=1$${PHC_SALT_AND_DIGEST}`],
+    ['STUDIO_OPERATOR_PASSWORD_HASH', `$argon2id$v=19$m=19456,t=2,p=0$${PHC_SALT_AND_DIGEST}`],
   ])('fails fast when %s is invalid (%s)', (name, value) => {
     const error = captureError(() => loadConfig({ ...validEnv, [name]: value }));
     expect(error).toBeInstanceOf(ConfigValidationError);
@@ -61,5 +116,17 @@ describe('loadConfig', () => {
     const error = captureError(() => loadConfig({ ...validEnv, DATABASE_URL: leakyUrl }));
     expect(error.message).toMatch(/DATABASE_URL/);
     expect(error.message).not.toContain('do-not-leak');
+  });
+
+  it('does not echo a rejected password hash or plaintext in the error message', () => {
+    const weak = `$argon2id$v=19$m=4096,t=1,p=1$${PHC_SALT_AND_DIGEST}`;
+    for (const value of [weak, 'plaintext-do-not-leak']) {
+      const error = captureError(() =>
+        loadConfig({ ...validEnv, STUDIO_OPERATOR_PASSWORD_HASH: value }),
+      );
+      expect(error.message).toMatch(/STUDIO_OPERATOR_PASSWORD_HASH/);
+      expect(error.message).not.toContain(PHC_SALT_AND_DIGEST.slice(0, 10));
+      expect(error.message).not.toContain('plaintext-do-not-leak');
+    }
   });
 });
