@@ -200,3 +200,5 @@ Planned script names (to be created, not yet runnable): `pnpm db:migrate:dev`, `
 - Whether a second GitHub account (e.g. a bot account for agents) is introduced so rulesets can separate agent and operator permissions.
 
 Decision provenance: [Notion guardrails](https://app.notion.com/p/413d4d814eb0819499faecf3fe7f4afe) and [GitHub workflow](https://app.notion.com/p/413d4d814eb08175b243ca84f1191271).
+
+<!-- DO NOT MERGE: docs-only CI proof for #15 -->

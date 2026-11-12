@@ -247,3 +247,5 @@ Consolidated from project discussions and Notion decision records. Newer approve
 - [Walking Skeleton & Vertical Slices](https://app.notion.com/p/412d4d814eb081bdbe62c0d76b1c2d4b)
 - [Guardrails & testing](https://app.notion.com/p/413d4d814eb0819499faecf3fe7f4afe)
 - [GitHub Issues & PR workflow](https://app.notion.com/p/413d4d814eb08175b243ca84f1191271)
+
+<!-- DO NOT MERGE: docs-only CI proof for #15 -->
