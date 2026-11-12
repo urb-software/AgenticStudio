@@ -22,3 +22,11 @@ peerDependencyRules:
   allowedVersions:
     'nestjs-zod>@nestjs/common': '12.4.2'
     'nestjs-zod>@nestjs/swagger': '12.1.1'
+
+# DO NOT MERGE: TEMPORARY, only on the #15 failure-proof branch, so that the deliberate
+# architecture violation is the only failing job. Not a real exception decision.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-52cp-r559-cp3m
+    - GHSA-5p4m-2wfm-xmqj
+    - GHSA-2883-xcg3-v3hh
