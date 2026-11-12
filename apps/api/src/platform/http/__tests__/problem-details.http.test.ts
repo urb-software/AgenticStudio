@@ -17,7 +17,7 @@ import { testConfig } from '../../../__tests__/test-config.js';
 import { AppModule } from '../../../app.module.js';
 import { Public } from '../../auth/public.decorator.js';
 import { buildApp } from '../../../app.js';
-import { problemDetailsSchema } from '../problem-details.js';
+import { FieldProblemException, problemDetailsSchema } from '../problem-details.js';
 
 // Test-only endpoints: no production endpoint takes input yet (#12 DoR clarification 1).
 // They are registered in this test's root module only, never in the production app.
@@ -51,6 +51,13 @@ class ProbeController {
     throw new ConflictException('A project with this name already exists.', {
       cause: new Error('unique constraint failed on nameNormalized'),
     });
+  }
+
+  @Get('field-conflict')
+  fieldConflict(): never {
+    throw new FieldProblemException(409, 'The request conflicts with existing data.', [
+      { path: 'name', message: 'A project with this name already exists.' },
+    ]);
   }
 
   @Get('unavailable')
@@ -176,6 +183,16 @@ describe('problem+json error mapping', () => {
     expectProblem(response, 409, 'Conflict');
     expect(response.body.detail).toBe('A project with this name already exists.');
     expect(response.text).not.toContain('nameNormalized');
+  });
+
+  it('keeps the field errors of a deliberate client error, for React Hook Form', async () => {
+    const response = await request(app.getHttpServer()).get('/api/__test__/field-conflict');
+
+    expectProblem(response, 409, 'Conflict');
+    expect(response.body.detail).toBe('The request conflicts with existing data.');
+    expect(response.body.errors).toEqual([
+      { path: 'name', message: 'A project with this name already exists.' },
+    ]);
   });
 
   it('maps an unexpected error to a generic 500 without leaking internals', async () => {

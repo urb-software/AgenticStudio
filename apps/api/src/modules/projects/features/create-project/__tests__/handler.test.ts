@@ -1,0 +1,103 @@
+import { describe, expect, it } from 'vitest';
+import type { Project } from '../../../domain/entities/project.js';
+import {
+  ProjectNameTakenError,
+  type ProjectRepository,
+} from '../../../domain/repositories/project-repository.js';
+import {
+  InvalidProjectNameError,
+  type ProjectName,
+} from '../../../domain/value-objects/project-name.js';
+import { CreateProjectHandler } from '../handler.js';
+
+/** In-memory adapter of the repository port, with the same uniqueness rule as the database. */
+class InMemoryProjectRepository implements ProjectRepository {
+  readonly stored: { name: string; uniquenessKey: string }[] = [];
+
+  add(name: ProjectName): Promise<Project> {
+    if (this.stored.some((project) => project.uniquenessKey === name.uniquenessKey)) {
+      return Promise.reject(new ProjectNameTakenError());
+    }
+    this.stored.push({ name: name.value, uniquenessKey: name.uniquenessKey });
+    return Promise.resolve({
+      id: `id-${this.stored.length}`,
+      name: name.value,
+      createdAt: new Date('2026-11-12T10:00:00.000Z'),
+    });
+  }
+
+  listNewestFirst(): Promise<Project[]> {
+    return Promise.reject(new Error('not used by create-project'));
+  }
+}
+
+function setUp() {
+  const projects = new InMemoryProjectRepository();
+  return { projects, handler: new CreateProjectHandler(projects) };
+}
+
+describe('CreateProjectHandler: project name normalization', () => {
+  it.each([
+    ['surrounding whitespace', '  Agentic Studio  ', 'Agentic Studio'],
+    ['internal whitespace runs', 'Agentic \t\n  Studio', 'Agentic Studio'],
+    ['non-ASCII whitespace', ' Agentic Studio　', 'Agentic Studio'],
+    ['an already normalized name', 'Agentic Studio', 'Agentic Studio'],
+  ])('trims and collapses %s, keeping case', async (_case, raw, expected) => {
+    const { handler, projects } = setUp();
+
+    const project = await handler.execute({ name: raw });
+
+    expect(project.name).toBe(expected);
+    expect(projects.stored[0]?.name).toBe(expected);
+  });
+
+  it.each([
+    ['ASCII', 'Agentic STUDIO', 'agentic studio'],
+    ['beyond ASCII', 'ÄRGER Über ÖL', 'ärger über öl'],
+    ['Greek', 'ΣΟΦΊΑ', 'σοφία'],
+  ])('derives the uniqueness key by lower-casing (%s)', async (_case, raw, key) => {
+    const { handler, projects } = setUp();
+
+    await handler.execute({ name: raw });
+
+    expect(projects.stored[0]?.uniquenessKey).toBe(key);
+  });
+
+  it('measures the length after normalization: 100 characters pass', async () => {
+    const { handler } = setUp();
+
+    const project = await handler.execute({ name: `  ${'a'.repeat(50)}    ${'b'.repeat(49)}  ` });
+
+    expect(project.name).toHaveLength(100);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', ' \t\n  '],
+  ])('rejects a name that is %s after trimming', async (_case, raw) => {
+    const { handler, projects } = setUp();
+
+    await expect(handler.execute({ name: raw })).rejects.toEqual(
+      new InvalidProjectNameError('empty'),
+    );
+    expect(projects.stored).toEqual([]);
+  });
+
+  it('rejects a name over 100 characters after normalization', async () => {
+    const { handler, projects } = setUp();
+
+    await expect(handler.execute({ name: `${'a'.repeat(50)}  ${'b'.repeat(50)}` })).rejects.toEqual(
+      new InvalidProjectNameError('too-long'),
+    );
+    expect(projects.stored).toEqual([]);
+  });
+
+  it('reports a name taken by another project after normalization', async () => {
+    const { handler } = setUp();
+    await handler.execute({ name: 'Agentic Studio' });
+
+    await expect(handler.execute({ name: '  agentic   STUDIO ' })).rejects.toBeInstanceOf(
+      ProjectNameTakenError,
+    );
+  });
+});

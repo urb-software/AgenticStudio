@@ -68,6 +68,49 @@ describe('OpenAPI document', () => {
     expect(logout?.responses).toHaveProperty('204');
   });
 
+  it('documents the project endpoints with their Zod-derived schemas', () => {
+    const document = createOpenApiDocument(app);
+
+    const create = document.paths['/api/projects']?.post;
+    expect(create?.operationId).toBe('createProject');
+    expect(create?.requestBody).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/CreateProjectRequest' } },
+      },
+    });
+    expect(document.components?.schemas?.CreateProjectRequest).toMatchObject({
+      type: 'object',
+      properties: { name: { type: 'string', minLength: 1, maxLength: 100 } },
+      required: ['name'],
+    });
+    expect(create?.responses['201']).toMatchObject({
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/Project_Output' } } },
+    });
+    expect(document.components?.schemas?.Project_Output).toMatchObject({
+      type: 'object',
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        name: { type: 'string' },
+        createdAt: { type: 'string', format: 'date-time' },
+      },
+      required: ['id', 'name', 'createdAt'],
+    });
+
+    const list = document.paths['/api/projects']?.get;
+    expect(list?.operationId).toBe('listProjects');
+    expect(list?.responses['200']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/ProjectList_Output' } },
+      },
+    });
+    expect(document.components?.schemas?.ProjectList_Output).toMatchObject({
+      properties: {
+        items: { type: 'array', items: { $ref: '#/components/schemas/Project_Output' } },
+      },
+      required: ['items'],
+    });
+  });
+
   it('documents the problem+json schema as the error response of every operation', () => {
     const document = createOpenApiDocument(app);
 
