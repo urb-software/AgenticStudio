@@ -11,7 +11,7 @@ import {
 import { HttpAdapterHost } from '@nestjs/core';
 import { ZodValidationException } from 'nestjs-zod';
 import { ZodError } from 'zod';
-import { PROBLEM_JSON, type ProblemDetails } from './problem-details.js';
+import { FieldProblemException, PROBLEM_JSON, type ProblemDetails } from './problem-details.js';
 import { redactSecrets } from './redact.js';
 
 const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
@@ -66,6 +66,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
           message: issue.message,
         })),
       };
+    }
+    if (exception instanceof FieldProblemException) {
+      return { ...base, detail: exception.message, errors: exception.errors };
     }
     // Nest turns malformed JSON (SyntaxError) and bad URI encoding (URIError) into a
     // 400 that carries the parser's message; keep the status, not the internals.

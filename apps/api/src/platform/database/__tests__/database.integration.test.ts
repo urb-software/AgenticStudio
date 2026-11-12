@@ -1,4 +1,4 @@
-import { deployMigrations } from '@agentic-studio/database/migrations';
+import { committedMigrations, deployMigrations } from '@agentic-studio/database/migrations';
 import { startPostgres, type TestService } from '@agentic-studio/testing';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -22,7 +22,7 @@ describe('database DI against a fresh PostgreSQL', () => {
     await postgres?.stop();
   });
 
-  it('records the committed baseline migration as applied', async () => {
+  it('records every committed migration as applied', async () => {
     const client = app.get<DatabaseClient>(DATABASE_CLIENT);
 
     const applied = await client.$queryRaw<{ migration_name: string }[]>`
@@ -30,7 +30,10 @@ describe('database DI against a fresh PostgreSQL', () => {
       WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
       ORDER BY migration_name`;
 
-    expect(applied.map((row) => row.migration_name)).toEqual(['20261112000000_baseline']);
+    // Every committed migration, not a fixed list: a new migration needs no test edit.
+    const committed = await committedMigrations();
+    expect(committed[0]).toBe('20261112000000_baseline');
+    expect(applied.map((row) => row.migration_name)).toEqual(committed);
   });
 
   it('round-trips a query through the DI-provided client', async () => {

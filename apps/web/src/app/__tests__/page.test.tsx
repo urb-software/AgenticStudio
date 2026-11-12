@@ -9,4 +9,10 @@ describe('StudioPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'AI Agent Studio' })).toBeTruthy();
     expect(screen.getByText(/placeholder studio page/i)).toBeTruthy();
   });
+
+  it('links to the Projects page', () => {
+    render(<StudioPage />);
+
+    expect(screen.getByRole('link', { name: 'Projects' }).getAttribute('href')).toBe('/projects');
+  });
 });

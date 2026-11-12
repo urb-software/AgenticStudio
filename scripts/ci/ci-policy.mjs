@@ -23,6 +23,7 @@ export const CODE_JOBS = [
   'test-api',
   'test-web',
   'test-contracts',
+  'e2e-smoke',
   'security',
 ];
 

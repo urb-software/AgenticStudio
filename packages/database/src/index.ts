@@ -1,5 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from './generated/prisma/client.js';
+import { Prisma, PrismaClient } from './generated/prisma/client.js';
 
 export type DatabaseClient = PrismaClient;
 
@@ -10,4 +10,9 @@ export type DatabaseClient = PrismaClient;
  */
 export function createDatabaseClient(connectionString: string): DatabaseClient {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+}
+
+/** Whether a client call failed on a unique constraint (Prisma error P2002). */
+export function isUniqueConstraintViolation(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }

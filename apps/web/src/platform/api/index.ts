@@ -5,10 +5,30 @@
 // them to NestJS, so the browser needs no CORS. The session is an HttpOnly cookie the
 // browser sends by itself: no code here reads it, and no token is ever stored.
 import * as sdk from './generated';
-import type { ProblemDetails, SessionResponseOutput } from './generated';
+import type {
+  CreateProjectRequest,
+  ProblemDetails,
+  ProjectListOutput,
+  ProjectOutput,
+  SessionResponseOutput,
+} from './generated';
 import { client } from './generated/client.gen';
+import { zCreateProjectRequest } from './generated/zod.gen';
 
-export type { HealthResponseOutput, ProblemDetails, SessionResponseOutput } from './generated';
+export type {
+  CreateProjectRequest,
+  HealthResponseOutput,
+  ProblemDetails,
+  ProjectListOutput,
+  ProjectOutput,
+  SessionResponseOutput,
+} from './generated';
+
+/**
+ * Generated from the OpenAPI document: client-side hints for forms only. The API applies
+ * the full rules (e.g. whitespace normalization) and its 400/409 field errors are final.
+ */
+export const createProjectRequestHint = zCreateProjectRequest;
 
 client.setConfig({ credentials: 'same-origin' });
 
@@ -82,4 +102,7 @@ export const api = {
   login: (password: string): Promise<SessionResponseOutput> =>
     unwrap(sdk.login({ body: { password } }), { redirectOnUnauthorized: false }),
   logout: (): Promise<void> => unwrap(sdk.logout()),
+  listProjects: (): Promise<ProjectListOutput> => unwrap(sdk.listProjects()),
+  createProject: (body: CreateProjectRequest): Promise<ProjectOutput> =>
+    unwrap(sdk.createProject({ body })),
 };

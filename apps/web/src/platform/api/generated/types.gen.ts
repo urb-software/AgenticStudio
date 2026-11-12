@@ -16,6 +16,20 @@ export type SessionResponseOutput = {
     authenticated: true;
 };
 
+export type CreateProjectRequest = {
+    name: string;
+};
+
+export type ProjectOutput = {
+    id: string;
+    name: string;
+    createdAt: string;
+};
+
+export type ProjectListOutput = {
+    items: Array<ProjectOutput>;
+};
+
 export type ProblemDetails = {
     type: string;
     title: string;
@@ -118,3 +132,47 @@ export type LogoutResponses = {
 };
 
 export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
+
+export type ListProjectsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/projects';
+};
+
+export type ListProjectsErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListProjectsError = ListProjectsErrors[keyof ListProjectsErrors];
+
+export type ListProjectsResponses = {
+    200: ProjectListOutput;
+};
+
+export type ListProjectsResponse = ListProjectsResponses[keyof ListProjectsResponses];
+
+export type CreateProjectData = {
+    body: CreateProjectRequest;
+    path?: never;
+    query?: never;
+    url: '/api/projects';
+};
+
+export type CreateProjectErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
+
+export type CreateProjectResponses = {
+    201: ProjectOutput;
+};
+
+export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];

@@ -19,3 +19,7 @@ next-env.d.ts
 
 # generated Prisma client (prisma generate)
 packages/database/src/generated/
+
+# Playwright output (pnpm e2e:smoke)
+tests/e2e/test-results/
+playwright-report/
