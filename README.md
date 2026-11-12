@@ -31,7 +31,7 @@ Backend: a NestJS modular monolith with six business modules: `projects` (includ
 
 No GPU required. Outside the initial MVP: advanced sandboxing (microVMs), external-tenant APIs, a full MCP gateway.
 
-## Repository layout (target; only `apps/api` and `apps/web` exist so far)
+## Repository layout (target; `apps/api`, `apps/web`, `packages/database`, `packages/testing` and `compose.yaml` exist so far)
 
 ```text
 apps/
@@ -41,10 +41,9 @@ apps/
   environment-controller/  # Narrow, authorized Compose operations
 packages/
   contracts/               # Only when cross-process contracts need extraction
-  database/
-  testing/
-infra/
-  compose.yaml
+  database/                # Prisma schema, migrations, client factory
+  testing/                 # Testcontainers helpers and shared fakes
+compose.yaml               # Local development PostgreSQL and Redis
 ```
 
 ## Documentation
@@ -58,12 +57,13 @@ infra/
 
 ## Getting started
 
-The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far only the pnpm workspace with `apps/api` (NestJS) and `apps/web` (Next.js App Router) exists; database, auth, contracts, architecture checks and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file; auth, contracts, architecture checks and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
 ### Prerequisites
 
 - Node.js 24 LTS (`engines.node` is `>=24.0.0 <25`; pnpm refuses other versions because `engineStrict` is on).
 - pnpm 11, exactly the version in `packageManager` (`pnpm@11.22.0`). With Corepack: `corepack enable`.
+- Docker with Compose v2, for the local PostgreSQL and Redis and for the Testcontainers integration tests.
 
 ### Install
 
@@ -71,18 +71,54 @@ The repository bootstrap follows the [bootstrap order](docs/engineering/bootstra
 pnpm install --frozen-lockfile
 ```
 
+### Configure the environment
+
+```bash
+cp .env.example .env
+```
+
+`.env` is git-ignored; never commit it. `.env.example` holds dev-only placeholders, not credentials. Docker Compose, Prisma (`packages/database/prisma.config.ts`) and the API (`pnpm dev`, `pnpm --filter @agentic-studio/api start`) read the repository-root `.env`; variables already set in the shell take precedence.
+
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `COMPOSE_PROJECT_NAME`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | `compose.yaml` | Local database only. |
+| `POSTGRES_PORT`, `REDIS_PORT` | `compose.yaml` | Host ports, bound to `127.0.0.1` only. Change them if 5432/6379 are taken. |
+| `DATABASE_URL` | API, Prisma | Required. Must match the Compose values. |
+| `API_PORT` | API | Default `3001`. Replaces the former `PORT`, which `next dev` also reads. |
+| `API_ORIGIN` | web (`next dev` rewrite), validated by the API | Default `http://localhost:3001`. `next dev` does not read the root `.env`; set it in the shell when the API runs elsewhere. |
+
+The API validates its environment with Zod at start-up (`apps/api/src/platform/config`) and exits with a list of the invalid variable names (never their values) instead of starting half-configured.
+
+### Start PostgreSQL and Redis
+
+```bash
+docker compose up -d     # PostgreSQL 18 and Redis 8 on 127.0.0.1
+docker compose down      # stop; add -v to also delete the local data volumes
+```
+
+### Database migrations
+
+The Prisma schema and migration history live in `packages/database/prisma/`.
+
+```bash
+pnpm db:migrate:deploy   # apply committed migrations (the same command CI and deployments use)
+pnpm db:migrate:dev      # create a new migration from schema changes during development
+```
+
+The first committed migration is an intentionally empty baseline; business tables arrive with the slices that own them. There is no `db push` or reset flow: migrations are reviewed, versioned code.
+
 ### Run locally
 
 ```bash
 pnpm dev
 ```
 
-This starts both apps in parallel:
+This first builds the workspace packages (`packages/*`, including `prisma generate`), then starts both apps in parallel:
 
 | App | URL | Notes |
 | --- | --- | --- |
 | `apps/web` | http://localhost:3000 | Placeholder Studio page. In `next dev`, `/api/*` is rewritten to the API, so the browser only talks to one origin (no CORS). |
-| `apps/api` | http://localhost:3001/api | NestJS with the global `/api` prefix. `PORT` overrides the port. |
+| `apps/api` | http://localhost:3001/api | NestJS with the global `/api` prefix. `API_PORT` overrides the port. |
 
 Check the API through the web origin:
 
@@ -95,12 +131,19 @@ If you run the API on another port or host, set `API_ORIGIN` (default `http://lo
 ### Checks
 
 ```bash
-pnpm check:api   # Prettier check, ESLint, TypeScript typecheck, production build of apps/api
+pnpm check:api   # Prettier check, then ESLint, typecheck and build of apps/api and the packages it uses
 pnpm check:web   # Prettier check, ESLint, TypeScript typecheck, production build of apps/web
+pnpm test:api    # Vitest unit and integration tests of apps/api and the packages it uses (needs Docker)
 pnpm format      # Write Prettier formatting for the workspace
 ```
 
-The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:*`, `architecture:*`, `test:contracts`, `check:affected`) are **not implemented yet**.
+`pnpm test:api` builds `packages/*`, then runs Vitest in `apps/api` and `packages/testing`. Integration tests start throwaway PostgreSQL/Redis containers through `@agentic-studio/testing` (Testcontainers), so they need a running Docker daemon but neither Compose nor `.env`. Test conventions:
+
+- Tests live next to the code in `__tests__/` folders and end in `.test.ts`; tests that need containers end in `.integration.test.ts`.
+- HTTP tests build the app with `createApp(config)` from `apps/api/src/app.ts` (the same set-up as `main.ts`) and call it with Supertest.
+- Persistence tests use a real PostgreSQL from `startPostgres()` and apply the committed migrations with `deployMigrations()` from `@agentic-studio/database/migrations`; never a mocked ORM.
+
+The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:web`, `architecture:*`, `test:contracts`, `check:affected`) are **not implemented yet**.
 
 ## Working agreement
 

@@ -1,13 +1,9 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module.js';
+import { createApp } from './app.js';
+import { loadConfig } from './platform/config/config.js';
 
-const DEFAULT_PORT = 3001;
-
-async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
-  // All HTTP routes live under /api so the web app can proxy them same-origin.
-  app.setGlobalPrefix('api');
-  await app.listen(process.env.PORT ?? DEFAULT_PORT);
-}
-
-await bootstrap();
+// Fail fast: an invalid environment stops the process before Nest starts.
+const config = loadConfig(process.env);
+const app = await createApp(config);
+// SIGINT/SIGTERM run the shutdown hooks, which disconnect the database client.
+app.enableShutdownHooks();
+await app.listen(config.apiPort);

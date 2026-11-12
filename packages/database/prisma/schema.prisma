@@ -1,0 +1,13 @@
+// Canonical Prisma schema for AI Agent Studio.
+// Business models are added by the slices that own them (e.g. `projects` in S1);
+// the connection URL lives in prisma.config.ts, not here (Prisma 7).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}

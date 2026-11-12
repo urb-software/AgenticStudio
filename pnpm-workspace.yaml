@@ -1,4 +1,13 @@
 packages:
   - apps/*
+  - packages/*
+
+allowBuilds:
+  '@prisma/engines': true
+  '@swc/core': false
+  cpu-features: false
+  prisma: true
+  protobufjs: false
+  ssh2: false
 
 engineStrict: true
