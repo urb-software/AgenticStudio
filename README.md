@@ -57,7 +57,7 @@ compose.yaml               # Local development PostgreSQL and Redis
 
 ## Getting started
 
-The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file and the three architecture gates; auth, contracts and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client) and the three architecture gates; auth and CI arrive in later Technical Tasks. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
 ### Prerequisites
 
@@ -164,6 +164,27 @@ Dependency rules use [Dependency Cruiser](https://github.com/sverweij/dependency
 Not enforced yet, tracked in [#22](https://github.com/urb-software/AgenticStudio/issues/22) (no code exists for them, and each needs a convention decided first): versioned, publisher-owned integration event definitions and no duplicate event definitions; repository contracts only in `domain/repositories/` and read ports only in `ports/`. The gate code in `tests/architecture/` is type-checked by each gate and formatted by `pnpm format:check`, but not linted.
 
 The other target scripts in [`quality.md` §8](docs/engineering/quality.md) (`test:contracts`, `check:affected`) are **not implemented yet**.
+
+### REST contracts (Zod → OpenAPI → client)
+
+Feature Zod schemas are the single source of truth for HTTP payloads:
+
+```text
+Zod schema + createZodDto (apps/api)
+  → nestjs-zod + @nestjs/swagger → apps/api/openapi.json (OpenAPI 3.1, committed)
+  → @hey-api/openapi-ts → apps/web/src/platform/api/generated/ (Fetch client, committed)
+```
+
+```bash
+pnpm contracts:generate   # build the API, write openapi.json offline (no server, no database), regenerate the client
+pnpm contracts:check      # regenerate, then fail if openapi.json or the generated client differs from the committed version
+```
+
+- Run `pnpm contracts:generate` after changing a request or response schema, and commit `apps/api/openapi.json` and `apps/web/src/platform/api/generated/` with the change. Never edit generated files by hand.
+- The web app imports the client only from `apps/web/src/platform/api` (its public entry point), never from `generated/`.
+- Request bodies are validated by the global `ZodValidationPipe`; responses declared with `@ZodResponse` are validated and stripped by the global `ZodSerializerInterceptor`.
+- Every API error is RFC 9457 `application/problem+json` (`type`, `title`, `status`, `detail`, `correlationId`, optional `errors[]` of `{ path, message }`; `path` uses dot notation such as `tags.1` for React Hook Form `setError`). 5xx responses are generic; their cause is logged server-side under the `correlationId`. The `ProblemDetails` schema is the documented `default` response of every operation.
+- `nestjs-zod@5.6.0` does not yet declare NestJS 12 peers. A scoped `peerDependencyRules` entry in `pnpm-workspace.yaml` allows it until upstream support lands (#19); the validation, OpenAPI and determinism tests guard the combination.
 
 ## Working agreement
 
