@@ -10,3 +10,5 @@ LICENSE
 
 # Generated code.
 packages/database/src/generated/
+apps/api/openapi.json
+apps/web/src/platform/api/generated/

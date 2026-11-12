@@ -1,8 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
-
-interface HealthResponse {
-  status: 'ok';
-}
+import { ApiOperation } from '@nestjs/swagger';
+import { ZodResponse } from 'nestjs-zod';
+import { HealthResponseDto } from './health.schema.js';
 
 /**
  * Unauthenticated liveness probe. Must stay non-sensitive: no versions,
@@ -11,7 +10,9 @@ interface HealthResponse {
 @Controller('health')
 export class HealthController {
   @Get()
-  check(): HealthResponse {
-    return { status: 'ok' };
+  @ApiOperation({ operationId: 'getHealth' })
+  @ZodResponse({ status: 200, type: HealthResponseDto })
+  check() {
+    return { status: 'ok' as const };
   }
 }

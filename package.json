@@ -17,7 +17,9 @@
     "check:web": "prettier --check apps/web \"*.{json,mjs,yaml}\" && pnpm --filter @agentic-studio/web run check",
     "test:api": "pnpm run build:packages && pnpm --filter \"@agentic-studio/api...\" --if-present run test",
     "db:migrate:dev": "pnpm --filter @agentic-studio/database run migrate:dev",
-    "db:migrate:deploy": "pnpm --filter @agentic-studio/database run migrate:deploy"
+    "db:migrate:deploy": "pnpm --filter @agentic-studio/database run migrate:deploy",
+    "contracts:generate": "pnpm run build:packages && pnpm --filter @agentic-studio/api run openapi:generate && pnpm --filter @agentic-studio/web run client:generate",
+    "contracts:check": "node scripts/contracts-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
