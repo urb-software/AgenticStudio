@@ -14,9 +14,13 @@
     "client:generate": "openapi-ts"
   },
   "dependencies": {
+    "@hookform/resolvers": "7.0.5",
+    "@tanstack/react-query": "5.107.1",
     "next": "16.4.5",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "react-hook-form": "7.91.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "0.99.0",
