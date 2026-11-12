@@ -57,7 +57,7 @@ compose.yaml               # Local development PostgreSQL and Redis
 
 ## Getting started
 
-The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client), single-operator auth and the three architecture gates; CI arrives in a later Technical Task. Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
+The repository bootstrap follows the [bootstrap order](docs/engineering/bootstrap-plan.md). So far the pnpm workspace has `apps/api` (NestJS), `apps/web` (Next.js App Router), `packages/database` (Prisma) and `packages/testing` (Testcontainers), plus a development Compose file, the REST contract pipeline (Zod → OpenAPI → generated client), single-operator auth, the three architecture gates and PR CI ([Continuous integration](#continuous-integration)). Add their setup commands here when they land. **Do not invent commands that do not yet exist.**
 
 ### Prerequisites
 
@@ -208,6 +208,28 @@ pnpm contracts:check      # regenerate, then fail if openapi.json or the generat
 - Request bodies are validated by the global `ZodValidationPipe`; responses declared with `@ZodResponse` are validated and stripped by the global `ZodSerializerInterceptor`.
 - Every API error is RFC 9457 `application/problem+json` (`type`, `title`, `status`, `detail`, `correlationId`, optional `errors[]` of `{ path, message }`; `path` uses dot notation such as `tags.1` for React Hook Form `setError`). 5xx responses are generic; their cause is logged server-side under the `correlationId`. The `ProblemDetails` schema is the documented `default` response of every operation.
 - `nestjs-zod@5.6.0` does not yet declare NestJS 12 peers. A scoped `peerDependencyRules` entry in `pnpm-workspace.yaml` allows it until upstream support lands (#19); the validation, OpenAPI and determinism tests guard the combination.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request to `dev` (opened, synchronized, reopened) and on every push to `dev`. A newer push to a PR cancels its superseded run. The workflow has a read-only token, uses no secrets, never uses `pull_request_target`, and pins every action by commit SHA.
+
+| Check (job name) | Runs |
+| --- | --- |
+| `changes` | `node --test "scripts/ci/*.test.mjs"`, then classifies the changed files with `scripts/ci/ci-policy.mjs` |
+| `quality:api` | `pnpm check:api` |
+| `quality:web` | `pnpm check:web`, then `pnpm format:check` (the whole repository) |
+| `architecture:api` / `architecture:web` / `architecture:monorepo` | `pnpm architecture:api` / `architecture:web` / `architecture:monorepo` |
+| `test:api` | `pnpm test:api` (Testcontainers PostgreSQL and Redis on the runner's Docker) |
+| `test:web` | `pnpm test:web` |
+| `test:contracts` | `pnpm contracts:check` |
+| `security` | `pnpm audit --audit-level high` over all dependencies |
+| `ci:required` | Always runs; the aggregate the `dev` ruleset requires |
+
+- Jobs run on `ubuntu-24.04` with Node.js 24 and the pnpm version from `packageManager`. Linux CI is authoritative: a check that passes only on Windows is a bug.
+- **Docs-only PRs.** The workflow always triggers. A PR is docs-only when every changed file (both sides of a rename) is under `docs/`, `.claude/skills/` or is a root `*.md` file; then the code jobs (every job above except `changes` and `ci:required`) are skipped. Any other file, including anything in `.github/`, configuration, scripts, tests or the lockfile, runs every job. Pushes to `dev` always run every job.
+- **`ci:required`** passes only when `changes` succeeded and every code job succeeded, or, for a docs-only PR, every code job was skipped. A failed, cancelled or wrongly skipped job makes it red. A new job must be added to `CODE_JOBS` in `scripts/ci/ci-policy.mjs` as well as to the `ci:required` `needs`; an unknown job fails the check.
+- **`security`.** Audit exceptions go only in `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`, each with a reason and a review date (Epic #8 decision 5).
+- Run the policy tests locally with `node --test "scripts/ci/*.test.mjs"`.
 
 ## Working agreement
 
