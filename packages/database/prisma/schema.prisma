@@ -1,5 +1,5 @@
 // Canonical Prisma schema for AI Agent Studio.
-// Business models are added by the slices that own them (e.g. `projects` in S1);
+// Business models are added by the slices that own them;
 // the connection URL lives in prisma.config.ts, not here (Prisma 7).
 
 generator client {
@@ -10,4 +10,20 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+/// A project the operator manages (`projects` business module, Story #16).
+model Project {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Display name: trimmed, internal whitespace collapsed, case preserved (1–100 characters).
+  name           String   @db.VarChar(100)
+  /// `name` lower-cased; unique, so names clash case-insensitively (Epic #8 decision 2).
+  /// Unbounded: lower-casing can lengthen a string (e.g. "İ" becomes two code points).
+  nameNormalized String   @unique(map: "projects_name_normalized_key") @map("name_normalized")
+  /// Set by PostgreSQL (microsecond precision), not by the client, so ordering uses one clock.
+  createdAt      DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+
+  /// Serves the newest-first list (created_at DESC, id DESC as the tie-breaker).
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "projects_created_at_id_idx")
+  @@map("projects")
 }
