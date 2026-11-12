@@ -1,9 +1,11 @@
 // Unit tests for the PR CI policy (`scripts/ci/ci-policy.mjs`).
-// Run: `node --test scripts/ci/` (CI runs them in the `changes` job before classifying).
+// Run: `node --test "scripts/ci/*.test.mjs"` (CI runs them in the `changes` job before classifying).
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-import { classifyChanges, evaluateRequired } from './ci-policy.mjs';
+import { CODE_JOBS, classifyChanges, evaluateRequired } from './ci-policy.mjs';
 
 describe('classifyChanges', () => {
   const docsOnly = (files) => classifyChanges(files).docsOnly;
@@ -78,18 +80,42 @@ describe('classifyChanges', () => {
   });
 });
 
+describe('ci-policy.mjs classify (CLI used by the workflow)', () => {
+  const script = fileURLToPath(new URL('./ci-policy.mjs', import.meta.url));
+  const classify = (input) =>
+    execFileSync(process.execPath, [script, 'classify'], {
+      input,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+
+  it('prints code=false for a docs-only file list', () => {
+    assert.equal(classify('docs/a.md\nREADME.md\n'), 'code=false');
+  });
+
+  it('prints code=true when code moves into docs/ (git diff --no-renames lists both sides)', () => {
+    assert.equal(classify('apps/api/src/main.ts\ndocs/main.ts\n'), 'code=true');
+  });
+
+  it('prints code=true for an empty file list', () => {
+    assert.equal(classify(''), 'code=true');
+  });
+});
+
 describe('evaluateRequired', () => {
-  const CODE_JOBS = [
-    'quality-api',
-    'quality-web',
-    'architecture-api',
-    'architecture-web',
-    'architecture-monorepo',
-    'test-api',
-    'test-web',
-    'test-contracts',
-    'security',
-  ];
+  it('requires every code job of the workflow', () => {
+    assert.deepEqual(CODE_JOBS, [
+      'quality-api',
+      'quality-web',
+      'architecture-api',
+      'architecture-web',
+      'architecture-monorepo',
+      'test-api',
+      'test-web',
+      'test-contracts',
+      'security',
+    ]);
+  });
 
   const needs = (code, codeJobResult, overrides = {}) => ({
     changes: { result: 'success', outputs: { code: String(code) } },
