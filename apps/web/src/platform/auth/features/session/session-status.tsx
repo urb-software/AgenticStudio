@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ApiError, api } from '../../../../platform/api';
+import { ApiError, api } from '../../../api';
 import { LogoutButton } from '../logout/logout-button';
 
 type SessionState = 'checking' | 'signed-in' | 'redirecting' | 'unavailable';

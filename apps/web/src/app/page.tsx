@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { SessionStatus } from '../modules/auth';
+import { SessionStatus } from '../platform/auth';
 import { ApiStatus } from './api-status';
 
 export default function StudioPage() {

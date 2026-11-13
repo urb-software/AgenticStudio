@@ -45,6 +45,8 @@ apps/web/src/
 
 The routing hierarchy is **not** the module hierarchy: `/skills` belongs to `agents`, and `/projects/:id/preview` can present `environments` in a project context.
 
+Operator login/logout/session UI lives in `platform/auth/` (public entrypoint `platform/auth/index.ts`) because auth is cross-cutting platform, not a business module.
+
 ### Feature example
 
 ```text

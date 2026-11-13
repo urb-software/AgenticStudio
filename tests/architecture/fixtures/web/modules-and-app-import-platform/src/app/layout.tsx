@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { currentOperator } from '@/platform/auth/session';
+import { currentOperator } from '@/platform/auth';
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   return (
