@@ -1,3 +1,4 @@
+import { createSecretKey, randomBytes } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { AppModule } from '../../app.module.js';
@@ -23,6 +24,8 @@ const app = await buildApp(
     studioOrigin: 'http://localhost:3000',
     // Never verified against: the generator serves no requests.
     operatorPasswordHash: '$argon2id$v=19$m=19456,t=2,p=1$b2ZmbGluZQ$b2ZmbGluZQ',
+    // A throwaway key: the generator stores and reads no secrets.
+    secretsKey: createSecretKey(randomBytes(32)),
   }),
   { logger: false },
 );

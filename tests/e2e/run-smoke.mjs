@@ -4,7 +4,8 @@
 //    applies the committed migrations.
 // 2. Generates a random throwaway operator password for this run and hashes it with the
 //    API's documented helper (`auth:hash-password`, password on stdin); neither is stored
-//    anywhere. The password reaches Playwright through the environment only.
+//    anywhere. The password reaches Playwright through the environment only. A throwaway
+//    secret-store master key (STUDIO_SECRETS_KEY) is generated the same way, per run.
 // 3. Builds the packages, the API and the web app (production builds), then starts them:
 //    web on http://localhost:$E2E_WEB_PORT (default 4500), API on 127.0.0.1:$E2E_API_PORT
 //    (default 4501), with the web build proxying same-origin /api to the API (opt-in rules:
@@ -144,6 +145,7 @@ async function main() {
     STUDIO_ORIGIN,
     API_TRUSTED_PROXIES: '',
     STUDIO_OPERATOR_PASSWORD_HASH: hashOperatorPassword(operatorPassword),
+    STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
   };
 
   startServer('api', process.execPath, ['apps/api/dist/main.js'], serverEnv);
