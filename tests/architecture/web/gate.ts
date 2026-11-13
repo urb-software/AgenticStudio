@@ -1,4 +1,11 @@
-import { coreModules, npmPackages, SERVER_PACKAGES, type Gate } from '../harness';
+import {
+  coreModules,
+  npmPackages,
+  SERVER_PACKAGES,
+  UNGENERATED_PRISMA_CLIENT,
+  WORKSPACE_PACKAGES_FROM_SOURCE,
+  type Gate,
+} from '../harness';
 
 const PUBLIC_ENTRYPOINT = '^src/modules/[^/]+/index\\.tsx?$';
 const GENERATED_CLIENT = '^src/platform/api/generated/';
@@ -12,8 +19,7 @@ export const webGate: Gate = {
   entries: ['src'],
   // @agentic-studio/* imports resolve to packages/<name>/src, so the server-package rules
   // see them without a build.
-  resolveWorkspacePackagesToSource: true,
-  doNotFollow: '(^|/)packages/database/src/generated/',
+  ...WORKSPACE_PACKAGES_FROM_SOURCE,
   forbidden: [
     {
       name: 'web-cross-module-public-entrypoints-only',
@@ -73,11 +79,16 @@ export const webGate: Gate = {
     {
       name: 'web-local-imports-resolve',
       comment:
-        'An unresolved relative, @/ or @agentic-studio/* import in apps/web would silently drop ' +
-        'an edge from the graph.',
+        'An unresolved relative, @/ or @agentic-studio/* import (in apps/web or a workspace ' +
+        'package it reaches) would silently drop an edge from the graph. Only the generated ' +
+        'Prisma client, absent before `prisma generate`, is exempt.',
       severity: 'error',
-      from: { path: '^src/' },
-      to: { path: '^(\\.|@/|@agentic-studio/)', couldNotResolve: true },
+      from: {},
+      to: {
+        pathNot: UNGENERATED_PRISMA_CLIENT,
+        couldNotResolve: true,
+        path: '^(\\.|@/|@agentic-studio/)',
+      },
     },
     {
       name: 'web-generated-client-only-via-platform-api',

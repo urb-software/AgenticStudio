@@ -1,5 +1,7 @@
 import {
   CONCRETE_CLIENTS,
+  UNGENERATED_PRISMA_CLIENT,
+  WORKSPACE_PACKAGES_FROM_SOURCE,
   coreModules,
   INFRASTRUCTURE_PACKAGES,
   listDirectories,
@@ -22,10 +24,8 @@ const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
  */
 export const apiGate: Gate = {
   entries: ['src'],
-  // @agentic-studio/* imports resolve to packages/<name>/src, so a re-export through a
-  // workspace package stays in the graph; the generated Prisma client is a graph leaf.
-  resolveWorkspacePackagesToSource: true,
-  doNotFollow: '(^|/)packages/database/src/generated/',
+  // A re-export through a workspace package stays in the graph.
+  ...WORKSPACE_PACKAGES_FROM_SOURCE,
   forbidden: [
     {
       name: 'api-no-cross-module-private',
@@ -161,12 +161,16 @@ export const apiGate: Gate = {
     {
       name: 'api-local-imports-resolve',
       comment:
-        'An unresolved relative or @agentic-studio/* import in apps/api would silently drop an ' +
-        'edge from the graph. Imports inside workspace packages are left to architecture:monorepo ' +
-        '(the generated Prisma client does not exist before a build).',
+        'An unresolved relative or @agentic-studio/* import (in apps/api or a workspace package ' +
+        'it reaches) would silently drop an edge from the graph. Only the generated Prisma client, ' +
+        'absent before `prisma generate`, is exempt.',
       severity: 'error',
-      from: { path: '^src/' },
-      to: { path: '^(\\.|@agentic-studio/)', couldNotResolve: true },
+      from: {},
+      to: {
+        pathNot: UNGENERATED_PRISMA_CLIENT,
+        couldNotResolve: true,
+        path: '^(\\.|@agentic-studio/)',
+      },
     },
     {
       name: 'api-module-file-composition-root-only',

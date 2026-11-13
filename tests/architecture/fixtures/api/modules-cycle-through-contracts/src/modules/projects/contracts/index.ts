@@ -1,4 +1,4 @@
-export interface ProjectSummary {
+export interface ProjectSummaryV1 {
   id: string;
   name: string;
 }

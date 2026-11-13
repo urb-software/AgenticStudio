@@ -212,15 +212,31 @@ export const CONCRETE_CLIENT_PACKAGES = [
   'simple-git',
   'node-pty',
   'ssh2',
+  // @nestjs/microservices wraps Kafka, NATS, Redis and other transports.
+  'microservices',
 ];
+
+/**
+ * Gate options of the api and web gates: `@agentic-studio/*` imports resolve to
+ * `packages/<name>/src`, so the graph is complete without a build, and the generated
+ * Prisma client stays a graph leaf.
+ */
+export const WORKSPACE_PACKAGES_FROM_SOURCE = {
+  resolveWorkspacePackagesToSource: true,
+  doNotFollow: '(^|/)packages/database/src/generated/',
+} satisfies Partial<Gate>;
+
+/** packages/database's import of its generated Prisma client, absent before `prisma generate`. */
+export const UNGENERATED_PRISMA_CLIENT = '^\\./generated/prisma/';
 
 /** npm scopes whose packages are all concrete clients. */
 export const CONCRETE_CLIENT_SCOPES = ['@mikro-orm', '@redis'];
 
 /**
  * Regex for concrete clients and their framework integrations: a listed client
- * (`ioredis`), the same name in any scope or after any `<prefix>-` (`@nestjs/bullmq`,
- * `@nestjs/typeorm`, `nestjs-redis`, `@types/pg`) and every package of a listed scope
+ * (`ioredis`), the same name in any scope and/or with any `<prefix>-` or `-<suffix>`
+ * (`@nestjs/bullmq`, `@nestjs/typeorm`, `nestjs-redis`, `pg-boss`, `cache-manager-redis-store`,
+ * `@types/pg`) and every package of a listed scope
  * (`@mikro-orm/core`). Matches resolved paths and unresolved module names alike.
  */
 export const CONCRETE_CLIENTS = concreteClients();
@@ -232,8 +248,11 @@ function concreteClients(): string {
   const forms = [
     names,
     `[^/]*-${names}`,
+    `${names}-[^/]*`,
+    `[^/]*-${names}-[^/]*`,
     `@[^/]+/${names}`,
     `@[^/]+/[^/]*-${names}`,
+    `@[^/]+/${names}-[^/]*`,
     `${scopes}/[^/]+`,
   ];
   return `(^|/node_modules/)(${forms.join('|')})(/|$)`;

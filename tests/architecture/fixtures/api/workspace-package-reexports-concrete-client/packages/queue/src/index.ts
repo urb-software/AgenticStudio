@@ -1,1 +1,1 @@
-export { Queue } from 'bullmq';
+export { Queue } from './queue.js';

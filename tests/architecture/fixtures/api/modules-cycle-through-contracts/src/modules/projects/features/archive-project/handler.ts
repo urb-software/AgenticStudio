@@ -1,7 +1,7 @@
-import type { ExecutionSummary } from '../../../executions/contracts/index.js';
+import type { ExecutionSummaryV1 } from '../../../executions/contracts/index.js';
 
 export class ArchiveProjectHandler {
-  canArchive(running: ExecutionSummary[]): boolean {
+  canArchive(running: ExecutionSummaryV1[]): boolean {
     return running.length === 0;
   }
 }

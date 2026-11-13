@@ -36,27 +36,25 @@ const EVENTS_DIR = /^src\/modules\/[^/]+\/contracts\/events\//;
 /** `src/modules/<publisher>/contracts/events/<event-name>-v<n>.ts`, directly in events/. */
 const EVENT_FILE =
   /^src\/modules\/([^/]+)\/contracts\/events\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-v([1-9][0-9]*)\.ts$/;
-/** Names reserved for integration event definitions: `<EventName>V<n>` and `<EventName>V<n>Schema`. */
-const EVENT_NAME = /^[A-Z][A-Za-z0-9]*V[1-9][0-9]*(Schema)?$/;
+/** An event definition name: `<EventName>V<n>` or `<EventName>V<n>Schema`. */
+const EVENT_NAME = /^([A-Z][A-Za-z0-9]*?)V[1-9][0-9]*(Schema)?$/;
+/** A module's public contracts/ outside events/. */
+const CONTRACTS_OUTSIDE_EVENTS = /^src\/modules\/[^/]+\/contracts\/(?!events\/)/;
+/** An event-like name (`ExecutionCompletedEvent`, `ExecutionCompletedEventSchema`). */
+const EVENT_LIKE_NAME = /Event(Schema)?$/;
 
 /**
  * Integration events (backend.md §6): each version of an event is defined once, by its
  * publisher, in `contracts/events/<event-name>-v<n>.ts`, which exports only
- * `<EventName>V<n>` and/or `<EventName>V<n>Schema`. Event-named declarations anywhere
- * else, re-exported definitions and the same event in two modules are rejected.
+ * `<EventName>V<n>` and/or `<EventName>V<n>Schema`, declared in that file. An event-like
+ * declaration elsewhere in `contracts/`, a competing definition of a published event
+ * anywhere else, and the same event in two modules are rejected.
  */
 function eventViolations(files: SourceFile[]): Violation[] {
   const violations: Violation[] = [];
   const publishers = new Map<string, Set<string>>();
 
-  for (const { path, source } of files) {
-    if (!EVENTS_DIR.test(path)) {
-      for (const name of declaredNames(source).filter((name) => EVENT_NAME.test(name))) {
-        violations.push({ rule: 'api-event-publisher-owned', from: path, to: name });
-      }
-      continue;
-    }
-
+  for (const { path, source } of files.filter((file) => EVENTS_DIR.test(file.path))) {
     const match = EVENT_FILE.exec(path);
     if (!match) {
       violations.push({ rule: 'api-event-versioned', from: path });
@@ -81,6 +79,20 @@ function eventViolations(files: SourceFile[]): Violation[] {
     }
   }
 
+  for (const { path, source } of files.filter((file) => !EVENTS_DIR.test(file.path))) {
+    if (CONTRACTS_OUTSIDE_EVENTS.test(path)) {
+      for (const name of declaredNames(source).filter((name) => EVENT_LIKE_NAME.test(name))) {
+        violations.push({ rule: 'api-event-versioned', from: path, to: name });
+      }
+    }
+    for (const name of allDeclaredNames(source)) {
+      const event = EVENT_NAME.exec(name)?.[1];
+      if (event && publishers.has(event)) {
+        violations.push({ rule: 'api-event-publisher-owned', from: path, to: name });
+      }
+    }
+  }
+
   for (const [event, modules] of publishers) {
     if (modules.size > 1) {
       violations.push({
@@ -95,15 +107,17 @@ function eventViolations(files: SourceFile[]): Violation[] {
 
 const DOMAIN_REPOSITORIES = /^src\/modules\/[^/]+\/domain\/repositories\//;
 const PORTS = /^src\/modules\/[^/]+\/ports\//;
+const BUSINESS_MODULES = /^src\/modules\//;
 
 /**
- * Contract names (backend.md §3): an interface, type alias or abstract class named
+ * Contract names (backend.md §4), inside business modules: an interface, type alias or abstract class named
  * `…ReadRepository` or `…Reader` is a read port and lives in `ports/`; any other
  * `…Repository` contract is an aggregate repository and lives in `domain/repositories/`.
  * Concrete classes (`PrismaProjectRepository`) are implementations, not contracts.
  */
 function repositoryContractViolations(files: SourceFile[]): Violation[] {
-  return files.flatMap(({ path, source }) =>
+  const moduleFiles = files.filter((file) => BUSINESS_MODULES.test(file.path));
+  return moduleFiles.flatMap(({ path, source }) =>
     contractDeclarations(source)
       .map((declaration) => declaration.name!.text)
       .filter((name) => {
@@ -116,7 +130,6 @@ function repositoryContractViolations(files: SourceFile[]): Violation[] {
 }
 
 const INFRASTRUCTURE = /^src\/modules\/[^/]+\/infrastructure\//;
-const BUSINESS_MODULES = /^src\/modules\//;
 
 /**
  * Every contract an infrastructure adapter implements (`implements X`, or `extends X` for an
@@ -205,8 +218,47 @@ function locate(
   }
 
   const target = resolveRelative(baseDir, path, binding.specifier);
-  if (!target) return undefined;
-  return { path: target, name, abstractClass: isAbstractClassIn(parse(baseDir, target), name) };
+  return target ? declarationOf(baseDir, target, name) : undefined;
+}
+
+/**
+ * Follows re-exports (`export { X } from`, `export *`, `import { X }` + `export { X }`) from
+ * `path` to the file that declares `name`, so a barrel in `ports/` cannot pass off a contract
+ * declared in `features/`. If no declaration is found, `path` itself is reported.
+ */
+function declarationOf(
+  baseDir: string,
+  path: string,
+  name: string,
+  seen = new Set<string>(),
+): { path: string; name: string; abstractClass: boolean } {
+  const source = parse(baseDir, path);
+  const here = { path, name, abstractClass: isAbstractClassIn(source, name) };
+  if (isDeclaredIn(source, name) || seen.has(path)) return here;
+  seen.add(path);
+  const imports = importBindings(source);
+  for (const statement of source.statements) {
+    if (!ts.isExportDeclaration(statement)) continue;
+    const specifier =
+      statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+        ? statement.moduleSpecifier.text
+        : undefined;
+    let next: { specifier: string; name: string } | undefined;
+    if (!statement.exportClause && specifier) {
+      next = { specifier, name };
+    } else if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      const element = statement.exportClause.elements.find((e) => e.name.text === name);
+      const local = element && (element.propertyName ?? element.name).text;
+      const binding = local ? imports.get(local) : undefined;
+      if (local && specifier) next = { specifier, name: local };
+      else if (binding) next = { specifier: binding.specifier, name: binding.imported };
+    }
+    const target = next && resolveRelative(baseDir, path, next.specifier);
+    if (!next || !target) continue;
+    const found = declarationOf(baseDir, target, next.name, seen);
+    if (isDeclaredIn(parse(baseDir, found.path), found.name)) return found;
+  }
+  return here;
 }
 
 /** Resolves a relative import (`./x.js` → `x.ts`) to a POSIX path; npm imports give undefined. */
@@ -219,12 +271,7 @@ function resolveRelative(baseDir: string, from: string, specifier: string): stri
   );
 }
 
-type NamedDeclaration =
-  | ts.InterfaceDeclaration
-  | ts.TypeAliasDeclaration
-  | ts.ClassDeclaration
-  | ts.FunctionDeclaration
-  | ts.EnumDeclaration;
+type NamedDeclaration = ts.InterfaceDeclaration | ts.TypeAliasDeclaration | ts.ClassDeclaration;
 
 /** Interfaces, type aliases and abstract classes declared at the top level. */
 function contractDeclarations(source: ts.SourceFile): NamedDeclaration[] {
@@ -262,6 +309,28 @@ function statementNames(statement: ts.Statement): string[] {
     return [statement.name.text];
   }
   return [];
+}
+
+/** Names of all declarations at any depth, e.g. a payload type redefined inside a function. */
+function allDeclaredNames(source: ts.SourceFile): string[] {
+  const names: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isVariableDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isFunctionDeclaration(node) ||
+        ts.isEnumDeclaration(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name)
+    ) {
+      names.push(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return names;
 }
 
 function isDeclaredIn(source: ts.SourceFile, name: string): boolean {

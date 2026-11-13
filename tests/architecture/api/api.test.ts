@@ -148,4 +148,13 @@ describeGate('api', apiGate, 'apps/api', [
   },
   { fixture: 'port-imports-framework-orm-integration', expected: ['api-ports-independent'] },
   { fixture: 'contracts-reexport-client-wrapper', expected: ['api-contracts-self-contained'] },
+  { fixture: 'event-declared-in-contracts-root', expected: ['api-event-versioned'] },
+  {
+    fixture: 'adapter-implements-contract-via-ports-barrel',
+    expected: ['api-adapter-contract-placement'],
+  },
+  {
+    fixture: 'handler-imports-pattern-only-client',
+    expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
+  },
 ]);
