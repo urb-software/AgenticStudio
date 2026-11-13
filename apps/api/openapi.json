@@ -379,6 +379,16 @@
               }
             }
           },
+          "503": {
+            "description": "The job queue is unavailable; the attempt is marked failed (generic problem)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "default": {
             "description": "Error (RFC 9457 problem details)",
             "content": {

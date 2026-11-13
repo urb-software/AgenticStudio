@@ -303,6 +303,10 @@ export type ConnectRepositoryErrors = {
      */
     501: ProblemDetails;
     /**
+     * The job queue is unavailable; the attempt is marked failed (generic problem)
+     */
+    503: ProblemDetails;
+    /**
      * Error (RFC 9457 problem details)
      */
     default: ProblemDetails;

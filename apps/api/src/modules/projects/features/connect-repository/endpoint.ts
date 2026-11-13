@@ -122,6 +122,7 @@ export class ConnectRepositoryEndpoint {
       `(${PROJECTS_PROBLEM_TYPES.cloneAlreadyRunning})`,
     422: 'Invalid url or integrationBranch (field errors)',
     501: `The API host is not Linux (${PROJECTS_PROBLEM_TYPES.unsupportedPlatform})`,
+    503: 'The job queue is unavailable; the attempt is marked failed (generic problem)',
   })
   async connect(
     @Param('id') id: string,

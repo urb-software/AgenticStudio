@@ -122,6 +122,35 @@ describe('ConnectRepositoryHandler', () => {
     },
   );
 
+  it('keeps the failure a Retry replaced when the old clone is still active, and rethrows', async () => {
+    await projects.beginConnect({
+      projectId: PROJECT,
+      url: URL,
+      identity: 'github.com/acme/shop',
+      integrationBranch: 'release',
+    });
+    await projects.markFailed(PROJECT, {
+      code: 'branch_not_found',
+      detail: 'Branch "release" was not found on the remote.',
+      remoteDefaultBranch: 'main',
+    });
+    const busy = new JobAlreadyActiveError('repository-clone', `clone-${PROJECT}`);
+    jobs.failWith = busy;
+
+    await expect(
+      handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'release' }),
+    ).rejects.toBe(busy);
+
+    expect(await projects.findRepository(PROJECT)).toMatchObject({
+      state: 'failed',
+      failure: {
+        code: 'branch_not_found',
+        detail: 'Branch "release" was not found on the remote.',
+        remoteDefaultBranch: 'main',
+      },
+    });
+  });
+
   it('marks the attempt failed when the clone cannot be scheduled, and rethrows', async () => {
     const busy = new JobAlreadyActiveError('repository-clone', `clone-${PROJECT}`);
     jobs.failWith = busy;

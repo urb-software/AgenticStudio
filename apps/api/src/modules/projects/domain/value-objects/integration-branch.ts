@@ -1,9 +1,6 @@
 /** Longest accepted Integration branch name, in characters. */
 export const INTEGRATION_BRANCH_MAX_LENGTH = 255;
 
-/** The Integration branch a new connection is prefilled with (Epic #55). */
-export const DEFAULT_INTEGRATION_BRANCH = 'dev';
-
 /**
  * A valid Git branch name (`git check-ref-format --branch`), as one ECMAScript pattern so the
  * HTTP schema publishes it to the generated client as a form hint: not `@`; no leading `-`,
