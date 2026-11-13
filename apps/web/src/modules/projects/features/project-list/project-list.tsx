@@ -1,6 +1,7 @@
 'use client';
 
 import { FolderIcon, PlusIcon, RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
+import Link from 'next/link';
 import { EmptyState } from '@/shared/components/empty-state';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
@@ -8,7 +9,7 @@ import { Card } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError } from '../../../../platform/api';
 import { useProjects } from '../../api/projects-queries';
-import { formatExactTime, formatTimeAgo } from './relative-time';
+import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
 
 /** The request the list makes (generated `listProjects`), shown verbatim when it fails. */
 const LIST_REQUEST = 'GET /api/projects';
@@ -87,8 +88,16 @@ export function ProjectList({ onCreateProject }: ProjectListProps) {
         const createdAt = new Date(project.createdAt);
         return (
           <li key={project.id} className="min-w-0">
-            <Card className="h-full gap-1.5 p-4">
-              <h2 className="m-0 truncate text-body font-semibold">{project.name}</h2>
+            {/* The whole card opens the project: the link's ::after covers it (one tab stop). */}
+            <Card className="relative h-full gap-1.5 p-4 transition-colors hover:bg-hover has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring">
+              <h2 className="m-0 truncate text-body font-semibold">
+                <Link
+                  href={`/projects/${project.id}`}
+                  className="text-text no-underline outline-none after:absolute after:inset-0 after:rounded-lg after:content-['']"
+                >
+                  {project.name}
+                </Link>
+              </h2>
               <p className="m-0 text-caption text-text-dim">
                 Created{' '}
                 <time dateTime={project.createdAt} title={formatExactTime(createdAt)}>

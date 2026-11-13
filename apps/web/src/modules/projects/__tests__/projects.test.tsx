@@ -200,6 +200,22 @@ describe('project list states', () => {
     expect(within(alert).getByText('GET /api/projects')).toBeTruthy();
   });
 
+  it('data: each project card links to its project screen (#60)', async () => {
+    fakeProjectsApi([BETA, ALPHA]);
+    const { container } = renderProjects();
+
+    const list = await screen.findByRole('list', { name: 'Projects' });
+    expect(
+      within(list)
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href')]),
+    ).toEqual([
+      ['Beta', `/projects/${BETA.id}`],
+      ['Alpha', `/projects/${ALPHA.id}`],
+    ]);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
   it('data: lists project cards newest first with a relative created time', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-12T12:00:00.000Z'));

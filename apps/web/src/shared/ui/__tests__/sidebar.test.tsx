@@ -12,6 +12,7 @@ import {
   useSidebar,
 } from '../sidebar';
 import { parseSidebarOpen, SIDEBAR_COOKIE_NAME } from '../sidebar-state';
+import Link from 'next/link';
 
 function Toggle() {
   const { toggleSidebar } = useSidebar();
@@ -30,7 +31,7 @@ function Shell({ defaultOpen }: { defaultOpen?: boolean }) {
           <nav aria-label="Studio">
             <SidebarMenu>
               <SidebarMenuItem>
-                <a href="/projects">Projects</a>
+                <Link href="/projects">Projects</Link>
               </SidebarMenuItem>
             </SidebarMenu>
           </nav>
