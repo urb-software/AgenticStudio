@@ -1,8 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Redis } from 'ioredis';
+import { clientIpLimitKey } from './client-ip-limit-key.js';
 import { REDIS_CLIENT } from './redis.js';
 
-/** Epic #8 decision 4: 5 failures per IP per 15 min, about 50 failures per hour overall. */
+/**
+ * Epic #8 decision 4: 5 failures per IP per 15 min, about 50 failures per hour overall.
+ * "Per IP" is per IPv4 address or per IPv6 /64 (#24, {@link clientIpLimitKey}).
+ */
 export const LOGIN_LIMITS = {
   perIp: { maxFailures: 5, windowMs: 15 * 60 * 1000 },
   global: { maxFailures: 50, windowMs: 60 * 60 * 1000 },
@@ -48,7 +52,7 @@ return 0
 const GLOBAL_KEY = 'auth:login-failures:global';
 
 function ipKey(clientIp: string): string {
-  return `auth:login-failures:ip:${clientIp}`;
+  return `auth:login-failures:ip:${clientIpLimitKey(clientIp)}`;
 }
 
 export type LoginAttempt = { allowed: true } | { allowed: false; retryAfterSeconds: number };

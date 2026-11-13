@@ -107,9 +107,10 @@ Put the printed hash in `.env` as `STUDIO_OPERATOR_PASSWORD_HASH='$argon2id$...'
 - `POST /api/auth/login` `{ "password": "..." }` sets an HttpOnly session cookie. `GET /api/auth/session` reports the session. `POST /api/auth/logout` ends it.
 - Every API route needs a session (401 problem+json without one) unless it is explicitly public: health and login.
 - Mutations need `Origin: <STUDIO_ORIGIN>` (or `Sec-Fetch-Site: same-origin`) and a JSON body. A browser on the Studio origin does this by itself; with curl, add `-H "Origin: http://localhost:3000" -H "Content-Type: application/json"`.
-- After 5 failed logins from one IP in 15 minutes, or 50 overall in an hour, login answers 429 with `Retry-After`. In local development all browser requests come through the `next dev` rewrite, so they share one IP.
+- After 5 failed logins from one IP (IPv6: one /64) in 15 minutes, or 50 overall in an hour, login answers 429 with `Retry-After`. In local development all browser requests come through the `next dev` rewrite, so they share one IP. Locked out locally? `docker compose exec redis redis-cli DEL auth:login-failures:global` clears the global counter (see the recovery procedure in `security.md` §8).
+- A session ends after 12 hours of inactivity, and in any case 30 days after login.
 
-Cookie, Origin, rate-limit and proxy rules are canonical in [`security.md` §8](docs/engineering/security.md).
+Cookie, session lifetime, Origin, rate-limit and proxy rules are canonical in [`security.md` §8](docs/engineering/security.md).
 
 ### Projects
 

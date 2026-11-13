@@ -3,11 +3,43 @@
 // acceptable; leaking any part of a credential is not.
 
 /**
- * `scheme://<userinfo>@`: everything up to the last `@` of the token, so passwords
- * containing `@`, `/` or `:` are masked whole. The scheme must start at a boundary
- * and both runs are bounded, so long tokens cannot cause quadratic backtracking.
+ * The `://` after a URL scheme. The scheme itself is not matched: a boundary or length
+ * rule on it let `1postgres://`, `.postgres://` or a 40-character scheme through
+ * unmasked (#33 review), and over-masking is acceptable.
  */
-const URL_USERINFO = /(?<![a-z\d+.-])([a-z][a-z\d+.-]{0,31}:\/\/)\S{0,512}@/gi;
+const URL_SCHEME_SEPARATOR = /:\/\//g;
+const WHITESPACE = /\s/g;
+
+/**
+ * `scheme://<userinfo>@` → `scheme://***@`: everything up to the last `@` of the
+ * whitespace-free token, so passwords containing `@`, `/` or `:` are masked whole, at
+ * any length. A regex cannot do this without either a length cap (which leaks longer
+ * secrets, #24) or quadratic backtracking, so this scans instead: each token is read
+ * once and scanning resumes after it, so the whole pass is linear in the input.
+ */
+function maskUrlUserinfo(text: string): string {
+  let output = '';
+  let copied = 0;
+  URL_SCHEME_SEPARATOR.lastIndex = 0;
+  for (
+    let separator = URL_SCHEME_SEPARATOR.exec(text);
+    separator;
+    separator = URL_SCHEME_SEPARATOR.exec(text)
+  ) {
+    const start = separator.index + separator[0].length;
+    WHITESPACE.lastIndex = start;
+    const end = WHITESPACE.exec(text)?.index ?? text.length;
+    const at = text.slice(start, end).lastIndexOf('@');
+    if (at >= 0) {
+      output += `${text.slice(copied, start)}***`;
+      copied = start + at;
+    }
+    // Any later `://` in this token lies inside the masked userinfo or after its last
+    // `@`, where there is nothing left to mask.
+    URL_SCHEME_SEPARATOR.lastIndex = end;
+  }
+  return output + text.slice(copied);
+}
 
 /** Argon2 PHC strings (`$argon2id$v=19$m=…$salt$digest`): parameters, salt and digest. */
 const ARGON2_HASH = /(\$argon2(?:id|i|d))\$[^\s"';]+/gi;
@@ -43,8 +75,7 @@ const UNQUOTED_SECRET = new RegExp(
 
 /** Masks credentials in free text before it is logged. */
 export function redactSecrets(text: string): string {
-  return text
-    .replace(URL_USERINFO, '$1***@')
+  return maskUrlUserinfo(text)
     .replace(ARGON2_HASH, '$1$***')
     .replace(COOKIE_HEADER, '$1***')
     .replace(AUTHORIZATION_VALUE, '$1 ***')
