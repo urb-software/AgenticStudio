@@ -132,6 +132,7 @@ ci:required           # Final policy aggregation
 - `affected` selection may skip irrelevant tests only after computing dependency impact. Full architecture graphs are always checked for applicable application changes.
 - The repository is **public**, so GitHub rulesets enforce required status checks on the Free plan. Once B5 exists, `ci:required` is a required check on `dev`; until then, do not claim the platform enforces CI. Merge remains a **manual operator decision** on top of enforced checks (see [Security](security.md) §4).
 - Doc-only PRs limit code checks only via an explicitly tested policy; never auto-skip when architecture tooling or core configuration changes.
+- **CODEOWNERS is deferred** (operator decision on #28, 2026-11-13) until the reviewer machine user exists: with one GitHub account, required code-owner review would block every CI change, and an unenforced CODEOWNERS adds no control. A PR runs its own workflow and policy, so until then any change to `.github/**` or `scripts/ci/**` needs an independent review and operator authorization to merge.
 
 ## 8. Local agent checks (target command interface)
 
@@ -147,7 +148,7 @@ pnpm test:contracts
 pnpm check:affected
 ```
 
-These are **planned package scripts, not currently executable commands**. The bootstrap Technical Tasks implement them and ensure their output agrees with CI. If missing, record `NOT IMPLEMENTED`, not `PASS`.
+Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api`, `test:api`, `check:web`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm e2e:smoke` and `pnpm audit --audit-level high` (CI `security`) also exist. `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
 
 For every substantive task, the implementer runs all relevant existing checks and reports exact commands, exit status, commit SHA, skips, and blockers.
 
@@ -189,7 +190,7 @@ Documenting these decisions does **not** make the first functional User Story Re
 - [ ] The three architecture checks and essential PR CI are operational, not just described.
 - [ ] Manual orchestration, implementer and independent-reviewer responsibilities ([Agent roles](agent-roles.md)) have been used in a dry-run PR.
 
-Planned script names (to be created, not yet runnable): `pnpm db:migrate:dev`, `pnpm db:migrate:deploy`, `pnpm contracts:generate`, `pnpm contracts:check`. `contracts:check` must fail if OpenAPI or generated client output differs from the committed version. Use pinned compatible library versions and deterministic output.
+Implemented scripts: `pnpm db:migrate:dev`, `pnpm db:migrate:deploy`, `pnpm contracts:generate` and `pnpm contracts:check`. `contracts:check` regenerates OpenAPI and the generated web client and fails if they differ from the committed version; it is required in CI as `test:contracts`. Use pinned compatible library versions and deterministic output.
 
 ## 12. Remaining implementation decisions
 
