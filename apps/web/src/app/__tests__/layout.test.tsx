@@ -40,6 +40,10 @@ describe('RootLayout', () => {
     expect(serverHtml()).toMatch(/<body[^>]*>[\s\S]*<main>page<\/main>[\s\S]*<\/body>/);
   });
 
+  it('mounts the toast region once, for every page (#44)', () => {
+    expect(serverHtml().match(/aria-label="Notifications/g)).toHaveLength(1);
+  });
+
   it('sets the phone viewport', () => {
     expect(viewport).toMatchObject({ width: 'device-width', initialScale: 1 });
   });
