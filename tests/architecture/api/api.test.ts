@@ -176,4 +176,8 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-database-package-imports-resolve'],
   },
   { fixture: 'port-aliases-contract-outside-ports', expected: ['api-adapter-contract-placement'] },
+  { fixture: 'event-default-export', expected: ['api-event-publisher-owned'] },
+  { fixture: 'event-namespace-alias', expected: ['api-event-publisher-owned'] },
+  { fixture: 'event-namespace-reexport', expected: ['api-event-publisher-owned'] },
+  { fixture: 'event-interface-alias', expected: ['api-event-publisher-owned'] },
 ]);
