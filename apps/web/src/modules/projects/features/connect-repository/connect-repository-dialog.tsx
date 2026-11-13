@@ -69,6 +69,8 @@ type ConnectRepositoryDialogProps = {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Prefills the form, e.g. with a failed Repository's URL and branch to change them. */
+  initialValues?: ConnectRepositoryRequest;
 };
 
 /**
@@ -82,6 +84,7 @@ export function ConnectRepositoryDialog({
   projectId,
   open,
   onOpenChange,
+  initialValues,
 }: ConnectRepositoryDialogProps) {
   const connect = useConnectRepository(projectId);
   const {
@@ -92,7 +95,7 @@ export function ConnectRepositoryDialog({
     formState: { errors, isSubmitting },
   } = useForm<ConnectRepositoryRequest>({
     resolver,
-    defaultValues: { url: '', integrationBranch: DEFAULT_INTEGRATION_BRANCH },
+    defaultValues: initialValues ?? { url: '', integrationBranch: DEFAULT_INTEGRATION_BRANCH },
   });
 
   const submitting = isSubmitting || connect.isPending;

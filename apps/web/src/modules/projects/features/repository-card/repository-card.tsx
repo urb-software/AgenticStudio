@@ -1,6 +1,6 @@
 'use client';
 
-import { GitBranchIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
+import { GitBranchIcon, PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
@@ -113,9 +113,12 @@ function ReadyBody({ repository, now }: { repository: RepositoryOutput; now: num
 function FailedBody({
   projectId,
   repository,
+  onChangeSettings,
 }: {
   projectId: string;
   repository: RepositoryOutput;
+  /** Opens the Connect dialog prefilled, to fix the URL or the branch (e.g. branch_not_found). */
+  onChangeSettings: () => void;
 }) {
   const retry = useConnectRepository(projectId);
   const failure = repository.failure;
@@ -142,7 +145,7 @@ function FailedBody({
           {retryProblem?.detail || 'Could not retry. Try again.'}
         </Banner>
       ) : null}
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button
           variant="primary"
           icon={RefreshCwIcon}
@@ -152,6 +155,9 @@ function FailedBody({
           }
         >
           {retry.isPending ? 'Retrying…' : 'Retry'}
+        </Button>
+        <Button icon={PencilIcon} disabled={retry.isPending} onClick={onChangeSettings}>
+          Change settings
         </Button>
       </div>
     </div>
@@ -185,6 +191,14 @@ type RepositoryCardProps = {
  */
 export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   const [connectOpen, setConnectOpen] = useState(false);
+  // Remounts the dialog per opening, so it starts from the right values (empty or prefilled).
+  const [dialogKey, setDialogKey] = useState(0);
+  const [prefill, setPrefill] = useState<RepositorySummaryOutput | undefined>();
+  const openConnect = (values?: RepositorySummaryOutput) => {
+    setPrefill(values);
+    setDialogKey((key) => key + 1);
+    setConnectOpen(true);
+  };
   const repositoryQuery = useRepository(projectId, summary !== null);
   const refreshProject = useRefreshProject(projectId);
   const repository = repositoryQuery.data;
@@ -207,7 +221,7 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
         title="No repository connected"
         description="Connect a public Git repository over HTTPS. Studio keeps its own clone, which agents later work from."
         action={
-          <Button variant="primary" icon={PlusIcon} onClick={() => setConnectOpen(true)}>
+          <Button variant="primary" icon={PlusIcon} onClick={() => openConnect()}>
             Connect repository
           </Button>
         }
@@ -234,7 +248,13 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   } else if (repository.state === 'ready') {
     body = <ReadyBody repository={repository} now={repositoryQuery.dataUpdatedAt} />;
   } else if (repository.state === 'failed') {
-    body = <FailedBody projectId={projectId} repository={repository} />;
+    body = (
+      <FailedBody
+        projectId={projectId}
+        repository={repository}
+        onChangeSettings={() => openConnect(repository)}
+      />
+    );
   } else {
     body = (
       <div className="flex flex-col gap-4">
@@ -259,7 +279,11 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
         <CardContent>{body}</CardContent>
       </Card>
       <ConnectRepositoryDialog
+        key={dialogKey}
         projectId={projectId}
+        initialValues={
+          prefill && { url: prefill.url, integrationBranch: prefill.integrationBranch }
+        }
         open={connectOpen}
         onOpenChange={setConnectOpen}
       />

@@ -296,6 +296,24 @@ describe('Repository card states', () => {
     ]);
   });
 
+  it('Change settings reopens Connect prefilled, so a missing branch can be fixed', async () => {
+    const api = fakeProjectApi(
+      PROJECT,
+      failed({ code: 'branch_not_found', detail: '', remoteDefaultBranch: 'main' }, 'release'),
+    );
+    await renderLoaded();
+
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Change settings' }));
+
+    expect(urlInput().value).toBe(URL);
+    expect(branchInput().value).toBe('release');
+    await submit(URL, 'main');
+    await within(card()).findByText('Connecting');
+    expect(api.calls('connect')).toEqual([
+      { route: 'connect', body: { url: URL, integrationBranch: 'main' } },
+    ]);
+  });
+
   it('shows a Retry that the API refuses as a banner, with the problem title', async () => {
     const api = fakeProjectApi(PROJECT, failed({ code: 'timeout', detail: '' }));
     api.respondNext('connect', 409, problem(409, 'Clone already running'));

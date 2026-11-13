@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 
 // Story #16 walking-skeleton smoke: Next.js → typed REST → NestJS → PostgreSQL, with the
 // Redis session, through the browser, inside the Studio Shell (#43). It runs once per
@@ -208,6 +208,21 @@ test('login says the API is unreachable when the request gets no response', asyn
   await expect(page).toHaveURL(/\/login$/);
 });
 
+/**
+ * Scans the page (no sideways scroll, axe) in the dark theme and again in the light one
+ * (stored the way next-themes stores it, then reloaded), and leaves the dark theme set.
+ */
+async function expectInBothThemes(page: Page, ready: Locator) {
+  for (const theme of ['light', 'dark']) {
+    await expectNoHorizontalScroll(page);
+    await expectNoAxeViolations(page);
+    await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+    await expect(ready).toBeVisible();
+  }
+}
+
 /** Signs in through the login page and lands on Projects. */
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -274,7 +289,19 @@ test('operator connects a repository and sees it ready', async ({ page }, testIn
   }
   await expectNoAxeViolations(page);
 
+  // First a branch the fixture does not have: the clone fails with branch_not_found.
   await dialog.getByLabel('Repository URL').fill(url);
+  await dialog.getByLabel('Integration branch').fill('release');
+  await dialog.getByRole('button', { name: 'Connect repository' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(card.getByText('Failed')).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByRole('alert')).toContainText('Its default branch is "main"');
+  await expectInBothThemes(page, card.getByText('Failed'));
+
+  // Change settings reopens Connect prefilled; the integration branch is fixed there.
+  await card.getByRole('button', { name: 'Change settings' }).click();
+  await expect(dialog.getByLabel('Repository URL')).toHaveValue(url);
+  await dialog.getByLabel('Integration branch').fill('dev');
   await dialog.getByRole('button', { name: 'Connect repository' }).click();
   await expect(dialog).toHaveCount(0);
 
@@ -284,8 +311,7 @@ test('operator connects a repository and sees it ready', async ({ page }, testIn
   await expect(commit).toBeVisible();
   await expect(card.getByText(url)).toBeVisible();
   await expect(card.getByText('Last fetched')).toBeVisible();
-  await expectNoHorizontalScroll(page);
-  await expectNoAxeViolations(page);
+  await expectInBothThemes(page, card.getByText('Connected'));
 
   // State comes from the server: a reload shows the same Repository.
   const commitId = await commit.textContent();

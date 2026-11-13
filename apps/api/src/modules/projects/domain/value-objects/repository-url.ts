@@ -26,6 +26,9 @@ const HOSTNAME =
   /^(?=.{1,253}$)[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
 const IPV6_LITERAL = /^\[[\da-f:.]+\]$/i;
 
+/** URL protocols of SSH remotes, whose default port is 22. */
+const SSH_SCHEMES = new Set(['ssh:', 'git+ssh:', 'ssh+git:']);
+
 function invalid(message: string): never {
   throw new InvalidRepositoryUrlError(message);
 }
@@ -47,9 +50,11 @@ function normalizePath(path: string): string {
 
 /**
  * The identity of a remote (Issue #60 clarification 6): host (lower-cased) plus repository
- * path, without the scheme, user, port, trailing `/` or `.git`. So the `https://`,
+ * path, without the scheme, user, default port, trailing `/` or `.git`. So the `https://`,
  * `ssh://git@` and scp-like (`git@host:owner/repo.git`) forms of one repository are the same
- * remote. The path keeps its case. Returns `null` for input that names no host and path.
+ * remote. A non-default port stays (`host:8443/owner/repo`): two servers on one host are
+ * different remotes. The path keeps its case. Returns `null` for input that names no host
+ * and path.
  */
 export function remoteIdentity(input: string): string | null {
   const scp = SCHEME.test(input) ? null : SCP_LIKE.exec(input);
@@ -67,7 +72,11 @@ export function remoteIdentity(input: string): string | null {
   const path = normalizePath(url.pathname);
   if (!path) return null;
   // A file URL (test-only fixture remotes) has no host: its identity is the path.
-  return url.protocol === 'file:' ? `/${path}` : `${url.hostname.toLowerCase()}/${path}`;
+  if (url.protocol === 'file:') return `/${path}`;
+  // The URL parser already drops https' default 443; ssh's default 22 is dropped here.
+  const port =
+    url.port === '' || (url.port === '22' && SSH_SCHEMES.has(url.protocol)) ? '' : `:${url.port}`;
+  return `${url.hostname.toLowerCase()}${port}/${path}`;
 }
 
 /**

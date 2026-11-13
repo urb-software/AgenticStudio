@@ -34,6 +34,18 @@ describe('remoteIdentity (Issue #60 clarification 6)', () => {
     expect(remoteIdentity(input)).toBe('github.com/acme/shop');
   });
 
+  it('keeps a non-default port: two servers on one host are different remotes', () => {
+    expect(remoteIdentity('https://git.example.com:8443/acme/shop.git')).toBe(
+      'git.example.com:8443/acme/shop',
+    );
+    expect(remoteIdentity('ssh://git@git.example.com:2222/acme/shop.git')).toBe(
+      'git.example.com:2222/acme/shop',
+    );
+    expect(remoteIdentity('https://git.example.com/acme/shop.git')).toBe(
+      'git.example.com/acme/shop',
+    );
+  });
+
   it('keeps the case of the path', () => {
     expect(remoteIdentity('https://github.com/Acme/Shop.git')).toBe('github.com/Acme/Shop');
   });
