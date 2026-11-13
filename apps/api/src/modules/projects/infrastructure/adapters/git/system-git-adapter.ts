@@ -1,7 +1,7 @@
 import { Logger, type OnModuleInit } from '@nestjs/common';
 import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { AppConfig } from '../../../../../platform/config/config.js';
+import { type AppConfig, SHELL_SAFE_PATH } from '../../../../../platform/config/config.js';
 import {
   type GitOperationOptions,
   GitOperationError,
@@ -103,8 +103,6 @@ const HOST_KEY =
   /^(ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) ([A-Za-z0-9+/]+={0,3})(?: [^\r\n]*)?$/;
 const PRIVATE_KEY =
   /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----\n[\s\S]+\n-----END [A-Z0-9 ]*PRIVATE KEY-----\n?$/;
-/** Paths embedded in GIT_SSH_COMMAND (run by a shell) must need no quoting beyond '…'. */
-const SHELL_SAFE_PATH = /^\/[A-Za-z0-9._/-]+$/;
 const GIT_VERSION = /^git version (\d+)\.(\d+)\.(\d+)/;
 /** Prefix of per-operation private directories. */
 const OPERATION_DIR_PREFIX = 'studio-git-';
@@ -180,6 +178,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly log: (message: string) => void;
   /** Per-project tail of the operation queue: operations on one Clone never overlap. */
   private readonly locks = new Map<string, Promise<unknown>>();
+  /** Whether per-operation directories live in the default `<dataDir>/tmp`, owned by this process. */
+  private readonly ownsTempRoot: boolean;
 
   constructor(private readonly settings: SystemGitSettings) {
     this.paths = new ClonePaths(settings.dataDir);
@@ -187,6 +187,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.gitBinary = settings.gitBinary ?? 'git';
     this.sshBinary = settings.sshBinary ?? 'ssh';
     this.tempRoot = settings.tempRoot ?? join(settings.dataDir, 'tmp');
+    this.ownsTempRoot = settings.tempRoot === undefined;
     this.sizePollIntervalMs = settings.sizePollIntervalMs ?? 1000;
     const logger = new Logger('Git');
     this.log = settings.log ?? ((message) => logger.warn(message));
@@ -203,14 +204,16 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
-   * Removes per-operation directories (which may hold a Deploy key) owned by this user and
-   * partial Clones, once they are older than the clone limit plus a margin: no live
-   * operation of this or another API process can still be using them.
+   * Removes leftovers of operations a crash interrupted, before any operation runs: every
+   * partial Clone, and the per-operation directories (which may hold a Deploy key) owned by
+   * this user. One API process owns the data directory, so nothing in it is live at
+   * start-up; only a custom temp root, which may be shared, keeps directories younger than
+   * the clone limit plus a margin. A failing entry is logged (redacted) and skipped.
    */
   private async sweepStaleLeftovers(): Promise<void> {
     const staleBefore = Date.now() - this.settings.cloneTimeoutMs - STALE_MARGIN_MS;
     const uid = this.settings.uid ?? process.getuid?.();
-    const sweep = async (dir: string, matches: (name: string) => boolean) => {
+    const sweep = async (dir: string, matches: (name: string) => boolean, anyAge: boolean) => {
       let names: string[];
       try {
         names = await readdir(dir);
@@ -218,17 +221,25 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         return;
       }
       for (const name of names.filter(matches)) {
-        const path = join(dir, name);
-        const stats = await lstat(path);
-        if (stats.isDirectory() && stats.uid === uid && stats.mtimeMs < staleBefore) {
-          await rm(path, { recursive: true, force: true });
+        try {
+          const path = join(dir, name);
+          const stats = await lstat(path);
+          if (stats.isDirectory() && stats.uid === uid && (anyAge || stats.mtimeMs < staleBefore)) {
+            await rm(path, { recursive: true, force: true });
+          }
+        } catch (error) {
+          this.log(`start-up sweep skipped an entry: ${redactGitOutput(String(error))}`);
         }
       }
     };
     try {
-      await sweep(this.tempRoot, (name) => name.startsWith(OPERATION_DIR_PREFIX));
+      await sweep(
+        this.tempRoot,
+        (name) => name.startsWith(OPERATION_DIR_PREFIX),
+        this.ownsTempRoot,
+      );
       if (await this.paths.verifyClonesFolder()) {
-        await sweep(this.paths.clonesFolder, (name) => /\.git\.partial-[\da-f]+$/.test(name));
+        await sweep(this.paths.clonesFolder, (name) => /\.git\.partial-[\da-f]+$/.test(name), true);
       }
     } catch (error) {
       this.log(`start-up sweep failed: ${redactGitOutput(String(error))}`);
@@ -300,7 +311,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     const remote = this.parseRemote(remoteUrl, options);
     this.assertBranch(branch);
     return this.guarded('clone', () =>
-      this.exclusive(projectId, async () => {
+      this.queued(projectId, this.settings.cloneTimeoutMs, options, async (options) => {
         if (await this.paths.existingClone(projectId)) {
           throw new GitRequestRejectedError('The project already has a Clone.');
         }
@@ -342,7 +353,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     const remote = this.parseRemote(remoteUrl, options);
     this.assertBranch(branch);
     return this.guarded('fetch', () =>
-      this.exclusive(projectId, async () => {
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
         const clone = await this.paths.existingClone(projectId);
         if (!clone) {
           throw new GitRequestRejectedError('The project has no Clone.');
@@ -381,7 +392,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.assertBranch(branch);
     this.paths.clone(projectId);
     return this.guarded('rev-parse', () =>
-      this.exclusive(projectId, async () => {
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
         const clone = await this.paths.existingClone(projectId);
         if (!clone) {
           throw new GitRequestRejectedError('The project has no Clone.');
@@ -411,6 +422,26 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         );
       }),
     );
+  }
+
+  /**
+   * {@link exclusive} with the time limit applied from the moment of the call: time spent
+   * waiting for the project lock counts, and `work` gets only what is left of it.
+   */
+  private queued<T>(
+    projectId: string,
+    limitMs: number,
+    options: GitOperationOptions,
+    work: (options: GitOperationOptions) => Promise<T>,
+  ): Promise<T> {
+    const budgetMs = Math.min(limitMs, options.timeoutMs ?? limitMs);
+    const queuedAt = Date.now();
+    return this.exclusive(projectId, async () => {
+      if (options.signal?.aborted) throw abortError();
+      const remainingMs = budgetMs - (Date.now() - queuedAt);
+      if (remainingMs <= 0) throw new GitOperationError('timeout');
+      return work({ ...options, timeoutMs: remainingMs });
+    });
   }
 
   /** Runs `work` after every earlier operation on the project has settled. */

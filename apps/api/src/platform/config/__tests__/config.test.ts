@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { inspect } from 'node:util';
@@ -237,6 +237,18 @@ describe('loadConfig', () => {
       () => {
         const error = captureError(() => loadConfig({ ...requiredEnv, STUDIO_DATA_DIR: '/proc' }));
         expect(error.message).toMatch(/STUDIO_DATA_DIR: must be writable/);
+      },
+    );
+
+    it.runIf(process.platform !== 'win32')(
+      'fails fast when it holds characters the SSH command line cannot carry',
+      () => {
+        const spaced = join(DATA_DIR, 'Studio Data');
+        mkdirSync(spaced);
+        const error = captureError(() => loadConfig({ ...requiredEnv, STUDIO_DATA_DIR: spaced }));
+        expect(error.message).toMatch(
+          /STUDIO_DATA_DIR: may contain only letters, digits and "\._\/-"/,
+        );
       },
     );
 

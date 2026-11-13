@@ -366,6 +366,17 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       await expectConnectionsClosed();
     });
 
+    it('counts time spent waiting for the project lock against the caller limit', async () => {
+      const git = adapter({ cloneTimeoutMs: 1_500 });
+      const first = git.clone(PROJECT_ID, url, 'main').catch((e: unknown) => e);
+      // Queued behind the 1.5 s clone, with a 300 ms budget: it must time out, not run late.
+      const queued = git.readBranchCommit(PROJECT_ID, 'main', { timeoutMs: 300 });
+
+      await expect(queued).rejects.toMatchObject({ reason: 'timeout' });
+      expect(await first).toMatchObject({ reason: 'timeout' });
+      await expectConnectionsClosed();
+    });
+
     it('aborts on the caller signal', async () => {
       const controller = new AbortController();
       setTimeout(() => controller.abort(), 300);

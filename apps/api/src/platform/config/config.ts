@@ -113,6 +113,9 @@ export function isSameOrInside(parent: string, child: string): boolean {
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
+/** Characters a path may hold to be embedded, single-quoted, in `GIT_SSH_COMMAND`. */
+export const SHELL_SAFE_PATH = /^\/[A-Za-z0-9._/-]+$/;
+
 /**
  * `STUDIO_DATA_DIR` (Clones and other repository data, Epic #55): an absolute, existing,
  * writable directory outside the repository checkout. Messages never echo the path.
@@ -136,6 +139,11 @@ function dataDirSchema(workspaceRoot: string | undefined) {
       },
       { message: 'must be writable', abort: true },
     )
+    .refine((value) => process.platform === 'win32' || SHELL_SAFE_PATH.test(value), {
+      message:
+        'may contain only letters, digits and "._/-" (no spaces): SSH key paths under it go on a command line',
+      abort: true,
+    })
     .refine(
       (value) =>
         workspaceRoot === undefined ||

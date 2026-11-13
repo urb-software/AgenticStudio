@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -262,31 +262,66 @@ describe.runIf(process.platform === 'linux')(
         expect(await readdir(join(dataDir, 'tmp'))).toEqual([]);
       });
 
-      it('are swept at start-up when stale, with stale partial Clones', async () => {
+      it('in a custom temp root, are swept at start-up only when stale; partial Clones always', async () => {
         const clones = join(dataDir, 'clones');
         const old = new Date(Date.now() - 60 * 60 * 1000);
-        const stale = [
+        const removed = [
           join(tempRoot, 'studio-git-stale'),
           join(clones, `${PROJECT_ID}.git.partial-0a1b2c3d4e5f`),
-        ];
-        const fresh = [
-          join(tempRoot, 'studio-git-fresh'),
           join(clones, `${PROJECT_ID}.git.partial-ffffffffffff`),
         ];
+        const fresh = join(tempRoot, 'studio-git-fresh');
         const unrelated = [join(tempRoot, 'other-tool'), join(clones, `${PROJECT_ID}.git`)];
-        for (const dir of [...stale, ...fresh, ...unrelated]) {
+        for (const dir of [...removed, fresh, ...unrelated]) {
           await mkdir(dir, { recursive: true });
         }
-        await writeFile(join(stale[0]!, 'deploy_key'), 'stale key');
-        for (const dir of [...stale, unrelated[0]!]) await utimes(dir, old, old);
+        await writeFile(join(removed[0]!, 'deploy_key'), 'stale key');
+        for (const dir of [removed[0]!, removed[1]!, unrelated[0]!]) await utimes(dir, old, old);
 
-        // The clone limit is 15 s here: an hour-old directory is stale, a new one is not.
+        // A custom temp root may be shared: the clone limit is 15 s here, so an hour-old
+        // directory is stale and a new one may still be in use.
         await (await adapter()).onModuleInit();
 
-        for (const dir of stale) expect(existsSync(dir)).toBe(false);
-        for (const dir of [...fresh, ...unrelated]) expect(existsSync(dir)).toBe(true);
-        await Promise.all([...fresh, unrelated[0]!].map((dir) => rm(dir, { recursive: true })));
+        for (const dir of removed) expect(existsSync(dir)).toBe(false);
+        for (const dir of [fresh, ...unrelated]) expect(existsSync(dir)).toBe(true);
+        await Promise.all([fresh, unrelated[0]!].map((dir) => rm(dir, { recursive: true })));
       });
+
+      it('in the default <dataDir>/tmp, are all swept at start-up, however fresh', async () => {
+        // A crash and an immediate restart: the leftover, with its key, is seconds old.
+        const leftover = join(dataDir, 'tmp', 'studio-git-crashed');
+        await mkdir(leftover, { recursive: true });
+        await writeFile(join(leftover, 'deploy_key'), 'key of a crashed operation');
+
+        await (await adapter({}, { tempRoot: undefined })).onModuleInit();
+
+        expect(existsSync(leftover)).toBe(false);
+      });
+
+      it.runIf(process.getuid?.() !== 0)(
+        'keep sweeping past an entry that cannot be removed, and log it redacted',
+        async () => {
+          const logs: string[] = [];
+          const old = new Date(Date.now() - 60 * 60 * 1000);
+          const stuck = join(tempRoot, 'studio-git-stuck');
+          await mkdir(join(stuck, 'locked', 'inner'), { recursive: true });
+          await chmod(join(stuck, 'locked'), 0o500);
+          await utimes(stuck, old, old);
+          const partial = join(dataDir, 'clones', `${PROJECT_ID}.git.partial-0a1b2c3d4e5f`);
+          await mkdir(partial, { recursive: true });
+
+          try {
+            await (await adapter({}, { log: (m) => logs.push(m) })).onModuleInit();
+
+            expect(existsSync(partial)).toBe(false);
+            expect(logs).toHaveLength(1);
+            expect(logs[0]).not.toContain(root);
+          } finally {
+            await chmod(join(stuck, 'locked'), 0o700);
+            await rm(stuck, { recursive: true, force: true });
+          }
+        },
+      );
 
       it('leaves stale directories of other users alone', async () => {
         const old = new Date(Date.now() - 60 * 60 * 1000);
