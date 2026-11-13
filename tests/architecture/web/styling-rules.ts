@@ -566,13 +566,30 @@ const PALETTE_UTILITY = new RegExp(`^${PREFIX}-(?:${PALETTE})-(?:${SHADE})${OPAC
 const BLACK_WHITE = new RegExp(`^${PREFIX}-(?:black|white)(${OPACITY})?$`);
 const ARBITRARY_NAMED = new RegExp(String.raw`^${PREFIX}-\[(?:color:)?([a-z]+)\]${OPACITY}?$`, 'i');
 
+/**
+ * Tailwind's palette variables (`--color-zinc-900`, `--color-black`) exist because globals.css
+ * imports `tailwindcss`; reaching them through `bg-(--color-…)` or `var(--color-…)` is the
+ * same palette under another spelling, so it is never allowed (not even for scrims).
+ */
+const PALETTE_VARIABLE = new RegExp(
+  `--color-(?:(?:${PALETTE})-(?:${SHADE})|black|white)(?![\\w-])`,
+);
+/** An arbitrary property with a named colour value: `[background-color:red]`. */
+const ARBITRARY_PROPERTY = /^\[[a-z-]+:([a-z]+)\]$/i;
+
 function isPaletteUtility(token: string, scrimsAllowed: boolean): boolean {
+  if (PALETTE_VARIABLE.test(token)) return true;
   const utility = withoutVariants(token).replace(/^!|!$/g, '');
   if (PALETTE_UTILITY.test(utility)) return true;
   const blackWhite = BLACK_WHITE.exec(utility);
   if (blackWhite) return !(scrimsAllowed && blackWhite[1] !== undefined);
-  const named = ARBITRARY_NAMED.exec(utility)?.[1]?.toLowerCase();
-  return named !== undefined && NAMED_COLOURS.has(named) && !PLAIN_KEYWORDS.has(named);
+  const named = (ARBITRARY_NAMED.exec(utility) ?? ARBITRARY_PROPERTY.exec(utility))?.[1];
+  return isNamedColour(named);
+}
+
+function isNamedColour(value: string | undefined): boolean {
+  const name = value?.toLowerCase();
+  return name !== undefined && NAMED_COLOURS.has(name) && !PLAIN_KEYWORDS.has(name);
 }
 
 /** `transparent` and `currentcolor` are not palette colours (`bg-[transparent]` is fine). */

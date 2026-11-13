@@ -108,6 +108,26 @@ describe('web-no-palette-utilities', () => {
     ],
     ['a named colour in an arbitrary value', 'src/app/page.tsx', `<div className="bg-[red]" />`],
     [
+      'a palette variable shorthand',
+      'src/app/page.tsx',
+      `<div className="bg-(--color-zinc-900)" />`,
+    ],
+    [
+      'a palette variable in an arbitrary value',
+      'src/app/page.tsx',
+      `<div className="shadow-[0_0_0_1px_var(--color-red-500)]" />`,
+    ],
+    [
+      'a black/white palette variable in shared/ui',
+      'src/shared/ui/dialog.tsx',
+      `<div className="bg-(--color-black)/50" />`,
+    ],
+    [
+      'a named colour in an arbitrary property',
+      'src/app/page.tsx',
+      `<div className="[background-color:red]" />`,
+    ],
+    [
       'a typed arbitrary named colour',
       'src/app/page.tsx',
       `<div className="text-[color:rebeccapurple]" />`,
@@ -168,6 +188,11 @@ describe('web-no-palette-utilities', () => {
       'a token arbitrary value',
       'src/app/page.tsx',
       `<div className="bg-[var(--brand)] shadow-[0_0_0_1px_var(--border)]" />`,
+    ],
+    [
+      'a token variable shorthand and a layout arbitrary property',
+      'src/app/page.tsx',
+      `<div className="bg-(--color-surface) [grid-area:main] [--rail:16rem]" />`,
     ],
     ['prose', 'src/app/page.tsx', `const t = 'Red is the colour of failure';`],
     ['an import of a palette-named module', 'src/app/page.tsx', `import x from 'text-red-500';`],

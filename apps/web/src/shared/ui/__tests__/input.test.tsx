@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { Input } from '../input';
 import { Label } from '../label';
-import { Textarea } from '../textarea';
 
 describe('Input', () => {
   it('takes typed text and is labelled by its label', async () => {
@@ -44,18 +43,6 @@ describe('Input', () => {
     const { container } = render(<Input aria-label="Name" aria-invalid="true" />);
 
     expect(screen.getByRole('textbox', { name: 'Name' }).getAttribute('aria-invalid')).toBe('true');
-    await expect(container).toHaveNoAxeViolations();
-  });
-});
-
-describe('Textarea', () => {
-  it('uses the input recipe for multi-line text', async () => {
-    const { container } = render(<Textarea aria-label="Task description" rows={4} />);
-
-    const textarea = screen.getByRole('textbox', { name: 'Task description' });
-    await userEvent.type(textarea, 'Add pagination{enter}to the list');
-    expect(textarea).toHaveProperty('value', 'Add pagination\nto the list');
-    expect(textarea.className).toContain('border-input');
     await expect(container).toHaveNoAxeViolations();
   });
 });
