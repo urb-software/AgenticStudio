@@ -1,5 +1,9 @@
-import { describeGate } from '../suite';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { listDirectories } from '../harness';
+import { describeGate, REPO_ROOT } from '../suite';
 import { webGate } from './gate';
+import { designSystemImportViolations } from './styling-rules';
 
 describeGate('web', webGate, 'apps/web', [
   {
@@ -40,4 +44,25 @@ describeGate('web', webGate, 'apps/web', [
     fixture: 'database-package-unresolved-import',
     expected: ['web-no-server-code', 'web-database-package-imports-resolve'],
   },
+  { fixture: 'styling-uses-tokens', expected: [] },
+  { fixture: 'module-imports-design-system', expected: ['web-no-design-system-imports'] },
+  { fixture: 'css-imports-design-system', expected: ['web-no-design-system-imports'] },
+  { fixture: 'alias-to-design-system', expected: ['web-no-design-system-imports'] },
+  { fixture: 'colour-literal-in-class-name', expected: ['web-no-colour-literals'] },
+  { fixture: 'colour-function-in-css', expected: ['web-no-colour-literals'] },
+  { fixture: 'style-prop-carries-colour', expected: ['web-no-style-colours'] },
 ]);
+
+// The design-system import ban covers every app, not only apps/web (frontend.md, "Styling and
+// UI components"); the gate above proves the rule on fixtures, this applies it to apps/*.
+describe('architecture:web design-system imports in apps/*', () => {
+  const apps = listDirectories(REPO_ROOT, 'apps');
+
+  it('finds the apps', () => {
+    expect(apps).toContain('web');
+  });
+
+  it.each(apps)('apps/%s does not import design-system/', (app) => {
+    expect(designSystemImportViolations(join(REPO_ROOT, 'apps', app))).toEqual([]);
+  });
+});

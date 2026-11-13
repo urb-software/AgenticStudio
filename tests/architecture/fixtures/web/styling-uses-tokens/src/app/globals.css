@@ -1,0 +1,7 @@
+/* The owned copy of the design-system theme: the only place raw colours live. */
+@import 'tailwindcss';
+
+:root {
+  --bg: #fafafa;
+  --brand-soft: rgba(124, 58, 237, 0.09);
+}
