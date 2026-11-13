@@ -28,7 +28,9 @@
       var s = document.createElement('script');
       s.src = src;
       s.onload = resolve;
-      s.onerror = function () { reject(new Error('Failed to load ' + src)); };
+      s.onerror = function () {
+        reject(new Error('Failed to load ' + src));
+      };
       document.head.appendChild(s);
     });
   }
@@ -43,7 +45,8 @@
   function showError(err) {
     console.error(err);
     var box = document.createElement('pre');
-    box.style.cssText = 'position:fixed;inset:16px auto auto 16px;max-width:calc(100vw - 32px);z-index:99999;' +
+    box.style.cssText =
+      'position:fixed;inset:16px auto auto 16px;max-width:calc(100vw - 32px);z-index:99999;' +
       'background:#2a0f12;color:#fecaca;border:1px solid #7f1d1d;border-radius:8px;padding:12px 14px;' +
       'font:12.5px/1.5 ui-monospace,monospace;white-space:pre-wrap';
     box.textContent = 'support.js shim error:\n' + (err && err.stack ? err.stack : String(err));
@@ -68,10 +71,16 @@
 
   function evalExpr(x, scopes) {
     if (!x.path) return x.lit;
-    var head = x.path[0], v, found = false;
+    var head = x.path[0],
+      v,
+      found = false;
     for (var i = 0; i < scopes.length; i++) {
       var sc = scopes[i];
-      if (sc != null && typeof sc === 'object' && head in sc) { v = sc[head]; found = true; break; }
+      if (sc != null && typeof sc === 'object' && head in sc) {
+        v = sc[head];
+        found = true;
+        break;
+      }
     }
     if (!found) return undefined;
     for (var j = 1; j < x.path.length; j++) {
@@ -86,7 +95,9 @@
     var m = SINGLE.exec(str);
     if (m && m[1].indexOf('}}') === -1) return { kind: 'bind', expr: compileExpr(m[1]) };
     if (str.indexOf('{{') === -1) return { kind: 'static', value: str };
-    var parts = [], last = 0, mm;
+    var parts = [],
+      last = 0,
+      mm;
     BIND.lastIndex = 0;
     while ((mm = BIND.exec(str))) {
       if (mm.index > last) parts.push(str.slice(last, mm.index));
@@ -97,7 +108,9 @@
     return { kind: 'interp', parts: parts };
   }
 
-  function toText(v) { return v == null || v === false || v === true ? '' : String(v); }
+  function toText(v) {
+    return v == null || v === false || v === true ? '' : String(v);
+  }
 
   function evalValue(c, scopes) {
     if (c.kind === 'static') return c.value;
@@ -112,44 +125,122 @@
 
   // ---------- attribute mapping (DOM lowercases names; React wants camelCase) ----------
 
-  var EVENTS = ['click', 'dblclick', 'change', 'input', 'submit', 'keydown', 'keyup', 'keypress',
-    'focus', 'blur', 'scroll', 'wheel', 'mousedown', 'mouseup', 'mouseenter', 'mouseleave', 'mousemove',
-    'mouseover', 'mouseout', 'contextmenu', 'pointerdown', 'pointerup', 'pointermove',
-    'drag', 'dragstart', 'dragend', 'dragenter', 'dragleave', 'dragover', 'drop', 'paste', 'copy'];
+  var EVENTS = [
+    'click',
+    'dblclick',
+    'change',
+    'input',
+    'submit',
+    'keydown',
+    'keyup',
+    'keypress',
+    'focus',
+    'blur',
+    'scroll',
+    'wheel',
+    'mousedown',
+    'mouseup',
+    'mouseenter',
+    'mouseleave',
+    'mousemove',
+    'mouseover',
+    'mouseout',
+    'contextmenu',
+    'pointerdown',
+    'pointerup',
+    'pointermove',
+    'drag',
+    'dragstart',
+    'dragend',
+    'dragenter',
+    'dragleave',
+    'dragover',
+    'drop',
+    'paste',
+    'copy',
+  ];
   var EVENT_MAP = {};
   EVENTS.forEach(function (e) {
-    var camel = e === 'dblclick' ? 'doubleClick'
-      : e.replace(/^(key|mouse|pointer|drag|context)(.)/, function (_, a, b) { return a + b.toUpperCase(); });
+    var camel =
+      e === 'dblclick'
+        ? 'doubleClick'
+        : e.replace(/^(key|mouse|pointer|drag|context)(.)/, function (_, a, b) {
+            return a + b.toUpperCase();
+          });
     EVENT_MAP['on' + e] = 'on' + camel.charAt(0).toUpperCase() + camel.slice(1);
   });
 
   var ATTR_MAP = {
-    'class': 'className', 'for': 'htmlFor', tabindex: 'tabIndex', autofocus: 'autoFocus',
-    autocomplete: 'autoComplete', spellcheck: 'spellCheck', maxlength: 'maxLength', minlength: 'minLength',
-    readonly: 'readOnly', contenteditable: 'contentEditable', crossorigin: 'crossOrigin', srcset: 'srcSet',
-    enterkeyhint: 'enterKeyHint', inputmode: 'inputMode', colspan: 'colSpan', rowspan: 'rowSpan'
+    class: 'className',
+    for: 'htmlFor',
+    tabindex: 'tabIndex',
+    autofocus: 'autoFocus',
+    autocomplete: 'autoComplete',
+    spellcheck: 'spellCheck',
+    maxlength: 'maxLength',
+    minlength: 'minLength',
+    readonly: 'readOnly',
+    contenteditable: 'contentEditable',
+    crossorigin: 'crossOrigin',
+    srcset: 'srcSet',
+    enterkeyhint: 'enterKeyHint',
+    inputmode: 'inputMode',
+    colspan: 'colSpan',
+    rowspan: 'rowSpan',
   };
-  var BOOL_ATTRS = { disabled: 1, hidden: 1, readOnly: 1, required: 1, autoFocus: 1, multiple: 1, checked: 1, selected: 1 };
-  var VOID = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, source: 1, track: 1, wbr: 1 };
+  var BOOL_ATTRS = {
+    disabled: 1,
+    hidden: 1,
+    readOnly: 1,
+    required: 1,
+    autoFocus: 1,
+    multiple: 1,
+    checked: 1,
+    selected: 1,
+  };
+  var VOID = {
+    area: 1,
+    base: 1,
+    br: 1,
+    col: 1,
+    embed: 1,
+    hr: 1,
+    img: 1,
+    input: 1,
+    link: 1,
+    meta: 1,
+    source: 1,
+    track: 1,
+    wbr: 1,
+  };
 
   function propName(name) {
     if (EVENT_MAP[name]) return EVENT_MAP[name];
     if (ATTR_MAP[name]) return ATTR_MAP[name];
     if (/^(aria|data)-/.test(name)) return name;
-    if (name.indexOf('-') !== -1) return name.replace(/-([a-z])/g, function (_, c) { return c.toUpperCase(); });
+    if (name.indexOf('-') !== -1)
+      return name.replace(/-([a-z])/g, function (_, c) {
+        return c.toUpperCase();
+      });
     return name;
   }
 
   function parseStyle(str) {
     var out = {};
-    String(str).split(';').forEach(function (decl) {
-      var i = decl.indexOf(':');
-      if (i < 0) return;
-      var k = decl.slice(0, i).trim(), v = decl.slice(i + 1).trim();
-      if (!k) return;
-      if (k.indexOf('--') !== 0) k = k.replace(/-([a-z])/g, function (_, c) { return c.toUpperCase(); });
-      out[k] = v;
-    });
+    String(str)
+      .split(';')
+      .forEach(function (decl) {
+        var i = decl.indexOf(':');
+        if (i < 0) return;
+        var k = decl.slice(0, i).trim(),
+          v = decl.slice(i + 1).trim();
+        if (!k) return;
+        if (k.indexOf('--') !== 0)
+          k = k.replace(/-([a-z])/g, function (_, c) {
+            return c.toUpperCase();
+          });
+        out[k] = v;
+      });
     return out;
   }
 
@@ -172,13 +263,23 @@
     var tag = node.localName;
 
     if (tag === 'sc-if') {
-      return { t: 'if', cond: compileValue(node.getAttribute('value') || ''), kids: compileChildren(node) };
+      return {
+        t: 'if',
+        cond: compileValue(node.getAttribute('value') || ''),
+        kids: compileChildren(node),
+      };
     }
     if (tag === 'sc-for') {
-      return { t: 'for', list: compileValue(node.getAttribute('list') || ''), as: node.getAttribute('as') || 'item', kids: compileChildren(node) };
+      return {
+        t: 'for',
+        list: compileValue(node.getAttribute('list') || ''),
+        as: node.getAttribute('as') || 'item',
+        kids: compileChildren(node),
+      };
     }
 
-    var attrs = [], hasChangeHandler = false;
+    var attrs = [],
+      hasChangeHandler = false;
     for (var i = 0; i < node.attributes.length; i++) {
       var a = node.attributes[i];
       if (a.name.indexOf('hint-') === 0) continue;
@@ -193,8 +294,14 @@
         if (a.name === 'checked') a.name = 'defaultChecked';
       });
     }
-    var kids = (VOID[tag] || tag === 'textarea') ? [] : compileChildren(node);
-    if (tag === 'textarea' && !attrs.some(function (a) { return a.name === 'value' || a.name === 'defaultValue'; }) && node.textContent) {
+    var kids = VOID[tag] || tag === 'textarea' ? [] : compileChildren(node);
+    if (
+      tag === 'textarea' &&
+      !attrs.some(function (a) {
+        return a.name === 'value' || a.name === 'defaultValue';
+      }) &&
+      node.textContent
+    ) {
       attrs.push({ name: 'defaultValue', v: { kind: 'static', value: node.textContent } });
     }
     return { t: 'el', tag: tag, attrs: attrs, kids: kids };
@@ -207,8 +314,9 @@
     for (var i = 0; i < nodes.length; i++) {
       var r = renderNode(nodes[i], scopes);
       if (r == null) continue;
-      if (Array.isArray(r)) { for (var j = 0; j < r.length; j++) out.push(r[j]); }
-      else out.push(r);
+      if (Array.isArray(r)) {
+        for (var j = 0; j < r.length; j++) out.push(r[j]);
+      } else out.push(r);
     }
     return out;
   }
@@ -222,25 +330,42 @@
     if (n.t === 'for') {
       var list = evalValue(n.list, scopes);
       if (!list || typeof list.length !== 'number') return null;
-      var seen = {}, out = [];
+      var seen = {},
+        out = [];
       for (var i = 0; i < list.length; i++) {
         var item = list[i];
-        var id = item != null && typeof item === 'object' && item.id != null ? 'id:' + item.id : null;
+        var id =
+          item != null && typeof item === 'object' && item.id != null ? 'id:' + item.id : null;
         var key = id && !seen[id] ? id : 'ix:' + i;
         seen[key] = 1;
-        var local = {}; local[n.as] = item;
-        out.push(R.createElement(R.Fragment, { key: key }, renderList(n.kids, [local].concat(scopes))));
+        var local = {};
+        local[n.as] = item;
+        out.push(
+          R.createElement(R.Fragment, { key: key }, renderList(n.kids, [local].concat(scopes))),
+        );
       }
       return out;
     }
     // element
     var props = {};
     for (var k = 0; k < n.attrs.length; k++) {
-      var a = n.attrs[k], v = evalValue(a.v, scopes);
-      if (a.name === 'style') { if (v) props.style = typeof v === 'object' ? v : parseStyle(v); continue; }
-      if (a.name.indexOf('on') === 0 && /^on[A-Z]/.test(a.name)) { if (typeof v === 'function') props[a.name] = v; continue; }
-      if (a.name === 'ref') { if (typeof v === 'function' || (v && typeof v === 'object')) props.ref = v; continue; }
-      if (BOOL_ATTRS[a.name]) { v = v === '' || v === a.name.toLowerCase() ? true : (v === 'false' ? false : !!v); }
+      var a = n.attrs[k],
+        v = evalValue(a.v, scopes);
+      if (a.name === 'style') {
+        if (v) props.style = typeof v === 'object' ? v : parseStyle(v);
+        continue;
+      }
+      if (a.name.indexOf('on') === 0 && /^on[A-Z]/.test(a.name)) {
+        if (typeof v === 'function') props[a.name] = v;
+        continue;
+      }
+      if (a.name === 'ref') {
+        if (typeof v === 'function' || (v && typeof v === 'object')) props.ref = v;
+        continue;
+      }
+      if (BOOL_ATTRS[a.name]) {
+        v = v === '' || v === a.name.toLowerCase() ? true : v === 'false' ? false : !!v;
+      }
       if (a.name === 'value' && v == null) v = '';
       props[a.name] = v;
     }
@@ -257,7 +382,9 @@
       Object.keys(spec).forEach(function (k) {
         if (k.charAt(0) !== '$' && spec[k] && 'default' in spec[k]) props[k] = spec[k]['default'];
       });
-    } catch (e) { console.warn('support.js: bad data-props', e); }
+    } catch (e) {
+      console.warn('support.js: bad data-props', e);
+    }
     var q = new URLSearchParams(location.search);
     q.forEach(function (val, k) {
       props[k] = val === 'true' ? true : val === 'false' ? false : val;
@@ -265,7 +392,12 @@
     return props;
   }
 
-  Promise.all([domReady(), loadScript(REACT).then(function () { return loadScript(REACT_DOM); })])
+  Promise.all([
+    domReady(),
+    loadScript(REACT).then(function () {
+      return loadScript(REACT_DOM);
+    }),
+  ])
     .then(function () {
       var R = window.React;
       var host = document.querySelector('x-dc');
@@ -289,12 +421,19 @@
         }
       };
 
-      var Component = new Function('React', '"use strict";\n' + scriptEl.textContent + '\n;return Component;')(R);
+      var Component = new Function(
+        'React',
+        '"use strict";\n' + scriptEl.textContent + '\n;return Component;',
+      )(R);
 
       var mount = document.createElement('div');
       mount.id = 'dc-root';
       document.body.appendChild(mount);
       window.ReactDOM.createRoot(mount).render(R.createElement(Component, readProps(scriptEl)));
     })
-    .catch(function (err) { domReady().then(function () { showError(err); }); });
+    .catch(function (err) {
+      domReady().then(function () {
+        showError(err);
+      });
+    });
 })();
