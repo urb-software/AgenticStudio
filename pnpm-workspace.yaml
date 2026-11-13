@@ -13,6 +13,58 @@ allowBuilds:
 
 engineStrict: true
 
+# Supply-chain policy (Issue #30 decision 4): pnpm resolves and installs only versions published
+# at least 7 days ago (10080 minutes), so a compromised release has time to be found and pulled.
+# Exclusions are exact versions only, each justified; process: docs/engineering/security.md §3
+# "Dependency supply chain". Urgent security fixes go below the baseline list with their own
+# comment (advisory, Issue, removal date).
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  # Adoption baseline, approved as temporary by the operator on #30: exact versions already in
+  # pnpm-lock.yaml when the policy was adopted on 2026-11-13, published 2026-11-06..2026-11-11.
+  # All are older than 7 days by 2026-11-18T12:31Z; remove this whole block then (tracking
+  # task #36; pnpm install --frozen-lockfile must still pass without it).
+  - '@eslint-community/regexpp@4.12.3'
+  - '@hookform/resolvers@7.0.5'
+  - '@nestjs/cli@12.0.12'
+  - '@nestjs/common@12.4.2'
+  - '@nestjs/core@12.4.2'
+  - '@nestjs/platform-express@12.4.2'
+  - '@nestjs/schematics@12.0.13'
+  - '@nestjs/swagger@12.1.1'
+  - '@rolldown/binding-android-arm-eabi@1.2.19'
+  - '@rolldown/binding-android-arm64@1.2.19'
+  - '@rolldown/binding-darwin-arm64@1.2.19'
+  - '@rolldown/binding-darwin-x64@1.2.19'
+  - '@rolldown/binding-freebsd-x64@1.2.19'
+  - '@rolldown/binding-linux-arm-gnueabihf@1.2.19'
+  - '@rolldown/binding-linux-arm64-gnu@1.2.19'
+  - '@rolldown/binding-linux-arm64-musl@1.2.19'
+  - '@rolldown/binding-linux-ppc64-gnu@1.2.19'
+  - '@rolldown/binding-linux-s390x-gnu@1.2.19'
+  - '@rolldown/binding-linux-x64-gnu@1.2.19'
+  - '@rolldown/binding-linux-x64-musl@1.2.19'
+  - '@rolldown/binding-openharmony-arm64@1.2.19'
+  - '@rolldown/binding-wasm32-wasi@1.2.19'
+  - '@rolldown/binding-win32-arm64-msvc@1.2.19'
+  - '@rolldown/binding-win32-x64-msvc@1.2.19'
+  - '@rolldown/pluginutils@1.1.0'
+  - '@tanstack/query-core@5.107.1'
+  - '@tanstack/react-query@5.107.1'
+  - 'ansi-regex@6.6.0'
+  - 'async-lock@1.5.0'
+  - 'brace-expansion@2.1.8'
+  - 'caniuse-lite@1.0.30001823'
+  - 'nestjs-zod@5.6.0'
+  - 'parse5-parser-stream@8.1.1'
+  - 'parse5@8.1.1'
+  - 'rolldown@1.2.19'
+  - 'superagent@10.4.2'
+  - 'supertest@7.3.2'
+  - 'tldts-core@7.4.22'
+  - 'tldts@7.4.22'
+  - 'tough-cookie@6.1.0'
+
 # Temporary, scoped to nestjs-zod only: nestjs-zod@5.6.0 still declares NestJS 10/11 peers,
 # but #12's validation, OpenAPI and determinism tests prove it works on NestJS 12.
 # Decision: https://github.com/urb-software/AgenticStudio/issues/12#issuecomment-6830882279

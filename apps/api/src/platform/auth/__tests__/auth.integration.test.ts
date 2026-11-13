@@ -2,7 +2,7 @@ import { startRedis, type TestService } from '@agentic-studio/testing';
 import { Controller, Get, type INestApplication, type LoggerService, Module } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { testConfig } from '../../../__tests__/test-config.js';
 import { AppModule } from '../../../app.module.js';
 import { buildApp } from '../../../app.js';
@@ -192,7 +192,11 @@ describe('operator authentication (Redis via Testcontainers)', () => {
       expect(logout.status).toBe(204);
       const cleared = sessionCookie(logout);
       expect(cleared).toMatch(/^studio_session=;/);
-      expect(cleared).toMatch(/Expires=Thu, 01 Jan 1970/);
+      expect(cleared).toMatch(/; Expires=Thu, 01 Jan 1970 00:00:00 GMT(;|$)/);
+      expect(cleared).toMatch(/; Path=\/(;|$)/);
+      expect(cleared).toMatch(/; HttpOnly(;|$)/);
+      expect(cleared).toMatch(/; SameSite=Lax(;|$)/);
+      expect(cleared).not.toMatch(/Domain=/i);
       expectProblem(await request(server).get('/api/auth/session').set('Cookie', cookie), 401);
       expectProblem(
         await request(server).post('/api/auth/logout').set({ Origin: ORIGIN, Cookie: cookie }),
@@ -221,6 +225,100 @@ describe('operator authentication (Redis via Testcontainers)', () => {
       await request(app.getHttpServer()).get('/api/auth/session').set('Cookie', cookie);
 
       expect(await redis.ttl(key!)).toBeGreaterThan(SESSION_TTL_SECONDS - 60);
+    });
+
+    // #24 operator decision: a session ends 30 days after login, however active it is.
+    describe('absolute lifetime of 30 days (fake clock)', () => {
+      const LOGIN_TIME = new Date('2026-11-01T08:00:00.000Z');
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const at = (offsetMs: number) => vi.setSystemTime(LOGIN_TIME.getTime() + offsetMs);
+
+      beforeEach(() => {
+        // Only Date: Redis, Supertest and Argon2 keep real timers.
+        vi.useFakeTimers({ toFake: ['Date'], now: LOGIN_TIME });
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      const session = (cookie: string) =>
+        request(app.getHttpServer()).get('/api/auth/session').set('Cookie', cookie);
+
+      it('keeps an active session valid until 30 days after login', async () => {
+        const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+
+        for (const day of [1, 10, 29]) {
+          at(day * DAY_MS);
+          expect((await session(cookie)).status).toBe(200);
+        }
+        at(30 * DAY_MS - 1000);
+        expect((await session(cookie)).status).toBe(200);
+      });
+
+      it('rejects and deletes the session 30 days after login, despite activity', async () => {
+        const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+        at(29 * DAY_MS);
+        expect((await session(cookie)).status).toBe(200);
+
+        at(30 * DAY_MS);
+
+        expectProblem(await session(cookie), 401);
+        expect(await redis.keys('*session*')).toHaveLength(0);
+        // Gone for good: an earlier clock does not revive it.
+        at(DAY_MS);
+        expectProblem(await session(cookie), 401);
+      });
+
+      it('applies the absolute lifetime on protected routes too', async () => {
+        const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+        at(31 * DAY_MS);
+
+        expectProblem(
+          await request(app.getHttpServer()).get('/api/__test__/protected').set('Cookie', cookie),
+          401,
+        );
+      });
+
+      // #33 review: a login on a fast clock must not stretch the lifetime once corrected.
+      it('tolerates a login time up to 5 minutes in the future (clock skew)', async () => {
+        const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+
+        at(-5 * 60 * 1000);
+
+        expect((await session(cookie)).status).toBe(200);
+      });
+
+      it('rejects and deletes a session whose login time is over 5 minutes in the future', async () => {
+        const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+
+        at(-5 * 60 * 1000 - 1000);
+
+        expectProblem(await session(cookie), 401);
+        expect(await redis.keys('*session*')).toHaveLength(0);
+      });
+
+      it.each(['{}', '{"createdAt":"not a date"}', 'null', 'not json'])(
+        'fails closed on a stored record without a valid login time (%s)',
+        async (stored) => {
+          const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+          const [key] = await redis.keys('*session*');
+          await redis.set(key!, stored, 'KEEPTTL');
+
+          expectProblem(await session(cookie), 401);
+          expect(await redis.exists(key!)).toBe(0);
+        },
+      );
+
+      it('gives a new login a fresh 30 days', async () => {
+        const first = cookiePair(sessionCookie(await login(PASSWORD)));
+        at(20 * DAY_MS);
+        const second = cookiePair(sessionCookie(await login(PASSWORD, { Cookie: first })));
+
+        at(45 * DAY_MS);
+
+        expect((await session(second)).status).toBe(200);
+      });
     });
 
     it('treats an expired session as no session', async () => {
@@ -462,6 +560,25 @@ describe('client IP behind a trusted proxy', () => {
     expectProblem(await loginFrom('198.51.100.99, 203.0.113.7'), 429);
   });
 
+  // #24 operator decision: IPv6 counts per /64, IPv4-mapped IPv6 as its IPv4 address.
+  it('limits IPv6 clients per /64, not per address', async () => {
+    for (let host = 1; host <= 5; host += 1) {
+      expectProblem(await loginFrom(`2001:db8:1:2::${host}`), 401);
+    }
+
+    expectProblem(await loginFrom('2001:db8:1:2:ffff::99'), 429);
+    expectProblem(await loginFrom('2001:db8:1:3::1'), 401);
+  });
+
+  it('counts an IPv4-mapped IPv6 client as its IPv4 address', async () => {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      await loginFrom(attempt % 2 === 0 ? '203.0.113.9' : '::ffff:203.0.113.9');
+    }
+
+    expectProblem(await loginFrom('203.0.113.9'), 429);
+    expectProblem(await loginFrom('::ffff:203.0.113.9'), 429);
+  });
+
   it('enforces a global ceiling of 50 failures per hour across IPs', async () => {
     for (let client = 1; client <= 10; client += 1) {
       for (let attempt = 1; attempt <= 5; attempt += 1) {
@@ -475,5 +592,91 @@ describe('client IP behind a trusted proxy', () => {
     const retryAfter = Number(response.headers['retry-after']);
     expect(retryAfter).toBeGreaterThan(15 * 60);
     expect(retryAfter).toBeLessThanOrEqual(60 * 60);
+  });
+
+  // #24: the operator recovery documented in security.md §8 uses these exact keys.
+  it('lifts the global lockout when the operator deletes the global failure counter', async () => {
+    for (let client = 1; client <= 10; client += 1) {
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        await loginFrom(`203.0.113.${client}`);
+      }
+    }
+    expectProblem(await loginFrom('203.0.113.200'), 429);
+    expect(await redis.get('auth:login-failures:global')).toBe('50');
+
+    expect(await redis.del('auth:login-failures:global')).toBe(1);
+
+    expectProblem(await loginFrom('203.0.113.200'), 401);
+    // Per-IP counters are separate: a blocked IP stays blocked until its own key goes.
+    expectProblem(await loginFrom('203.0.113.1'), 429);
+    expect(await redis.del('auth:login-failures:ip:203.0.113.1')).toBe(1);
+    expectProblem(await loginFrom('203.0.113.1'), 401);
+  });
+});
+
+// #24: production cookie attributes behind an https Studio origin.
+describe('session cookie for an https Studio origin', () => {
+  const HTTPS_ORIGIN = 'https://studio.example.test';
+  let redisService: TestService;
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    redisService = await startRedis();
+    app = await startApp(
+      testConfig({
+        redisUrl: redisService.url,
+        studioOrigin: HTTPS_ORIGIN,
+        operatorPasswordHash: await hashPassword(PASSWORD),
+      }),
+      new CapturingLogger(),
+    );
+  });
+
+  afterAll(async () => {
+    await app?.close();
+    await redisService?.stop();
+  });
+
+  function hostCookie(response: request.Response): string {
+    const cookies = ([] as string[]).concat(response.headers['set-cookie'] ?? []);
+    expect(cookies).toHaveLength(1);
+    return cookies[0]!;
+  }
+
+  it('sets a __Host-studio_session cookie with Secure, Path=/ and no Domain', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .set('Origin', HTTPS_ORIGIN)
+      .send({ password: PASSWORD });
+
+    expect(response.status).toBe(200);
+    const cookie = hostCookie(response);
+    expect(cookie).toMatch(/^__Host-studio_session=[A-Za-z0-9_-]{43};/);
+    expect(cookie).toMatch(/; Secure(;|$)/);
+    expect(cookie).toMatch(/; Path=\/(;|$)/);
+    expect(cookie).toMatch(/; HttpOnly(;|$)/);
+    expect(cookie).toMatch(/; SameSite=Lax(;|$)/);
+    expect(cookie).not.toMatch(/Domain=/i);
+
+    // The browser sends it back under the prefixed name only.
+    const pair = cookie.split(';')[0]!;
+    const server = app.getHttpServer();
+    expect((await request(server).get('/api/auth/session').set('Cookie', pair)).status).toBe(200);
+    const unprefixed = pair.replace(/^__Host-/, '');
+    expectProblem(await request(server).get('/api/auth/session').set('Cookie', unprefixed), 401);
+
+    // Logout clears it with the same attributes.
+    const logout = await request(server)
+      .post('/api/auth/logout')
+      .set({ Origin: HTTPS_ORIGIN, Cookie: pair });
+    expect(logout.status).toBe(204);
+    const cleared = hostCookie(logout);
+    expect(cleared).toMatch(/^__Host-studio_session=;/);
+    expect(cleared).toMatch(/; Secure;/);
+    expect(cleared).toMatch(/; Path=\/(;|$)/);
+    expect(cleared).toMatch(/; HttpOnly(;|$)/);
+    expect(cleared).toMatch(/; SameSite=Lax(;|$)/);
+    expect(cleared).toMatch(/; Expires=Thu, 01 Jan 1970 00:00:00 GMT(;|$)/);
+    expect(cleared).not.toMatch(/Domain=/i);
   });
 });

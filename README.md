@@ -88,9 +88,10 @@ cp .env.example .env
 | `API_HOST` | API | Bind address. Default `127.0.0.1` (localhost only); a deployment sets it explicitly. |
 | `REDIS_URL` | API | Required. Sessions and login-failure counters. Must match the Compose Redis port. |
 | `STUDIO_ORIGIN` | API | Default `http://localhost:3000`: the web app's origin, the only origin accepted on mutations. Plain HTTP only for localhost; https makes the session cookie `Secure` (`__Host-studio_session`). |
-| `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). |
+| `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). A proxied deployment must list its proxy addresses here (see [Web `/api` proxy](#web-api-proxy)). |
 | `STUDIO_OPERATOR_PASSWORD_HASH` | API | Required. Argon2id hash of the operator password (see [Operator login](#operator-login)), in single quotes in `.env`. Never the plaintext. |
-| `API_ORIGIN` | web (`/api` rewrite), validated by the API | `next dev` default `http://localhost:3001`. `next dev` does not read the root `.env`; set it in the shell when the API runs elsewhere. A production `next build` proxies `/api` only when `API_ORIGIN` is set at build time (as `pnpm e2e:smoke` does). |
+| `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
+| `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
 
 The API validates its environment with Zod at start-up (`apps/api/src/platform/config`) and exits with a list of the invalid variable names (never their values) instead of starting half-configured.
 
@@ -107,9 +108,10 @@ Put the printed hash in `.env` as `STUDIO_OPERATOR_PASSWORD_HASH='$argon2id$...'
 - `POST /api/auth/login` `{ "password": "..." }` sets an HttpOnly session cookie. `GET /api/auth/session` reports the session. `POST /api/auth/logout` ends it.
 - Every API route needs a session (401 problem+json without one) unless it is explicitly public: health and login.
 - Mutations need `Origin: <STUDIO_ORIGIN>` (or `Sec-Fetch-Site: same-origin`) and a JSON body. A browser on the Studio origin does this by itself; with curl, add `-H "Origin: http://localhost:3000" -H "Content-Type: application/json"`.
-- After 5 failed logins from one IP in 15 minutes, or 50 overall in an hour, login answers 429 with `Retry-After`. In local development all browser requests come through the `next dev` rewrite, so they share one IP.
+- After 5 failed logins from one IP (IPv6: one /64) in 15 minutes, or 50 overall in an hour, login answers 429 with `Retry-After`. In local development all browser requests come through the `next dev` rewrite, so they share one IP. Locked out locally? `docker compose exec redis redis-cli DEL auth:login-failures:global` clears the global counter (see the recovery procedure in `security.md` §8).
+- A session ends after 12 hours of inactivity, and in any case 30 days after login.
 
-Cookie, Origin, rate-limit and proxy rules are canonical in [`security.md` §8](docs/engineering/security.md).
+Cookie, session lifetime, Origin, rate-limit and proxy rules are canonical in [`security.md` §8](docs/engineering/security.md).
 
 ### Projects
 
@@ -160,7 +162,17 @@ curl -i http://localhost:3000/api/health         # 200 {"status":"ok"} (public)
 curl -i http://localhost:3000/api/auth/session   # 401 problem+json until you sign in
 ```
 
-If you run the API on another port or host, set `API_ORIGIN` (default `http://localhost:3001`) for `apps/web` so the dev rewrite targets it. `next dev` always rewrites; a production build only when `API_ORIGIN` was set at build time. Deployment routing is out of scope for now.
+If you run the API on another port or host, set `API_ORIGIN` for `apps/web` so the dev rewrite targets it (see below). Deployment routing is out of scope for now.
+
+### Web `/api` proxy
+
+The canonical rules for the web app's same-origin `/api/*` rewrite to the API (Issue #30 decision 3; implemented and unit-tested in `apps/web/next.config.ts`):
+
+- **`next dev`** always rewrites, to `API_ORIGIN` or the default `http://localhost:3001`. `next dev` does not read the root `.env`; set `API_ORIGIN` in the shell when the API runs elsewhere.
+- **Production (`next build`, `next start`)** rewrites only on the explicit opt-in `STUDIO_WEB_API_PROXY=true`, which then requires `API_ORIGIN`. `API_ORIGIN` alone does not enable it (the build logs a warning). `false` or unset means no rewrite.
+- The rewrite is baked into the build: set both variables at build time, and the same values at start (the config is evaluated again). `pnpm e2e:smoke` does this.
+- Any other flag value, `true` without `API_ORIGIN`, or an `API_ORIGIN` that is not a bare http(s) origin fails the build or start. The error names the variable, never its value.
+- Behind this rewrite or any other proxy, list the proxy in the API's `API_TRUSTED_PROXIES`, or all clients share one login rate-limit bucket ([Security](docs/engineering/security.md) §8).
 
 ### Checks
 

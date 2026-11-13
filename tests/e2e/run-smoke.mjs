@@ -2,11 +2,13 @@
 //
 // 1. Starts throwaway PostgreSQL and Redis containers (Testcontainers; needs Docker) and
 //    applies the committed migrations.
-// 2. Generates a random throwaway operator password for this run and hashes it; neither is
-//    stored anywhere. The password reaches Playwright through the environment only.
+// 2. Generates a random throwaway operator password for this run and hashes it with the
+//    API's documented helper (`auth:hash-password`, password on stdin); neither is stored
+//    anywhere. The password reaches Playwright through the environment only.
 // 3. Builds the packages, the API and the web app (production builds), then starts them:
 //    web on http://localhost:$E2E_WEB_PORT (default 4500), API on 127.0.0.1:$E2E_API_PORT
-//    (default 4501), with the web build proxying same-origin /api to the API.
+//    (default 4501), with the web build proxying same-origin /api to the API (opt-in rules:
+//    README.md, "Web /api proxy").
 // 4. Runs Playwright (tests/e2e/playwright.config.ts), then always stops the servers and
 //    containers.
 import { spawn, spawnSync } from 'node:child_process';
@@ -64,6 +66,29 @@ function startServer(name, command, args, env) {
   return child;
 }
 
+/**
+ * Hashes the operator password through the API's public helper script rather than importing
+ * its built internals: the password goes in on stdin, only the hash comes back on stdout.
+ */
+function hashOperatorPassword(password) {
+  const result = spawnSync(
+    'pnpm',
+    ['--silent', '--filter', '@agentic-studio/api', 'run', 'auth:hash-password'],
+    {
+      cwd: ROOT,
+      input: `${password}\n`,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'inherit'],
+      shell: process.platform === 'win32',
+    },
+  );
+  const hash = result.stdout?.trim().split(/\r?\n/).pop() ?? '';
+  if (result.status !== 0 || !hash.startsWith('$argon2id$')) {
+    throw new Error(`auth:hash-password failed with exit code ${result.status}`);
+  }
+  return hash;
+}
+
 async function waitUntilReady(url) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -93,12 +118,12 @@ async function main() {
   run('pnpm', ['exec', 'tsc', '-p', 'tests/e2e']);
   run('pnpm', ['run', 'build:packages']);
   run('pnpm', ['--filter', '@agentic-studio/api', 'run', 'build']);
-  run('pnpm', ['--filter', '@agentic-studio/web', 'run', 'build'], { API_ORIGIN });
+  const webProxyEnv = { STUDIO_WEB_API_PROXY: 'true', API_ORIGIN };
+  run('pnpm', ['--filter', '@agentic-studio/web', 'run', 'build'], webProxyEnv);
 
   // Imported after the builds: they resolve to the freshly built dist/ output.
   const { startPostgres, startRedis } = await import('@agentic-studio/testing');
   const { deployMigrations } = await import('@agentic-studio/database/migrations');
-  const { hashPassword } = await import('../../apps/api/dist/platform/auth/password.js');
 
   console.log('\n[e2e] starting PostgreSQL and Redis (Testcontainers)');
   const [postgres, redis] = await Promise.all([startPostgres(), startRedis()]);
@@ -118,7 +143,7 @@ async function main() {
     API_ORIGIN,
     STUDIO_ORIGIN,
     API_TRUSTED_PROXIES: '',
-    STUDIO_OPERATOR_PASSWORD_HASH: await hashPassword(operatorPassword),
+    STUDIO_OPERATOR_PASSWORD_HASH: hashOperatorPassword(operatorPassword),
   };
 
   startServer('api', process.execPath, ['apps/api/dist/main.js'], serverEnv);
@@ -135,7 +160,7 @@ async function main() {
       '-p',
       String(WEB_PORT),
     ],
-    { API_ORIGIN },
+    webProxyEnv,
   );
   // Through the web origin: proves the web server is up and proxies /api to the API.
   await waitUntilReady(`http://127.0.0.1:${WEB_PORT}/api/health`);
