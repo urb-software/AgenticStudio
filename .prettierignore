@@ -18,3 +18,7 @@ apps/web/src/platform/api/generated/
 design-system/**
 !design-system/serve.mjs
 !design-system/prototype/support.js
+
+# Owned copy of design-system/code/globals.css: kept byte-identical to the export so a re-export
+# re-syncs by plain diff (docs/architecture/frontend.md, "Styling and UI components").
+apps/web/src/app/globals.css

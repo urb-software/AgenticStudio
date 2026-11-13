@@ -6,6 +6,7 @@ import {
   WORKSPACE_PACKAGES_FROM_SOURCE,
   type Gate,
 } from '../harness';
+import { STYLING_RULES, stylingViolations } from './styling-rules';
 
 const PUBLIC_ENTRYPOINT = '^src/modules/[^/]+/index\\.tsx?$';
 const GENERATED_CLIENT = '^src/platform/api/generated/';
@@ -108,4 +109,7 @@ export const webGate: Gate = {
     },
   ],
   unitCycles: { rule: 'web-no-module-cycle', unit: /^(src\/modules\/[^/]+)\// },
+  // Styling: design-system imports, colour literals and style= colours (frontend.md, "Styling
+  // and UI components").
+  structural: { rules: STYLING_RULES, check: stylingViolations },
 };
