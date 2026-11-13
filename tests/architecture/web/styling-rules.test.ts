@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { colourViolationsInFile, designSystemViolationsInFile } from './styling-rules';
+import {
+  colourViolationsInFile,
+  designSystemViolationsInFile,
+  paletteViolationsInFile,
+} from './styling-rules';
 
 // Per-case checks of the styling source rules; the gate fixtures in web.test.ts prove the
 // rules are wired into architecture:web.
@@ -53,6 +57,124 @@ describe('web-no-colour-literals', () => {
     ['a media query', 'card.css', `@media (min-width: 768px) { #add { padding: 0; } }`],
   ])('allows %s', (_name, path, text) => {
     expect(colourViolationsInFile(path, text)).toEqual([]);
+  });
+});
+
+describe('web-no-palette-utilities', () => {
+  it.each([
+    ['a palette background', 'src/app/page.tsx', `<div className="bg-zinc-900 p-4" />`],
+    ['a palette text colour', 'src/app/page.tsx', `const c = 'text-red-500';`],
+    ['a palette border', 'src/modules/a/a.tsx', `<div className="border border-slate-200" />`],
+    ['a variant prefix', 'src/app/page.tsx', `<div className="hover:bg-zinc-800" />`],
+    ['stacked variants', 'src/app/page.tsx', `<div className="dark:md:hover:text-sky-300" />`],
+    ['an arbitrary variant', 'src/app/page.tsx', `<div className="[&_svg]:text-red-500" />`],
+    ['a data variant', 'src/app/page.tsx', `<div className="data-[state=open]:bg-zinc-900" />`],
+    ['an opacity modifier', 'src/app/page.tsx', `<div className="bg-red-500/20" />`],
+    ['an arbitrary opacity', 'src/app/page.tsx', `<div className="ring-blue-600/[.35]" />`],
+    ['an important modifier', 'src/app/page.tsx', `<div className="bg-zinc-900! !text-red-500" />`],
+    ['a new v4 palette', 'src/app/page.tsx', `<div className="bg-mauve-100 text-taupe-700" />`],
+    ['a gradient stop', 'src/app/page.tsx', `<div className="from-violet-500 via-pink-500" />`],
+    [
+      'ring, outline and shadow colours',
+      'src/app/page.tsx',
+      `const c = 'ring-zinc-500 outline-red-500 shadow-zinc-900';`,
+    ],
+    ['fill and stroke', 'src/app/page.tsx', `const c = 'fill-slate-500 stroke-gray-400';`],
+    [
+      'side borders and dividers',
+      'src/app/page.tsx',
+      `const c = 'border-t-zinc-800 divide-zinc-800';`,
+    ],
+    [
+      'decoration, caret, accent, placeholder',
+      'src/app/page.tsx',
+      `const c = 'decoration-red-500 caret-blue-500 accent-pink-500 placeholder-gray-400';`,
+    ],
+    ['white without opacity', 'src/app/page.tsx', `<div className="text-white" />`],
+    [
+      'black without opacity in shared/ui',
+      'src/shared/ui/dialog.tsx',
+      `<div className="bg-black" />`,
+    ],
+    [
+      'white with opacity outside shared/ui',
+      'src/modules/a/a.tsx',
+      `<div className="bg-white/10" />`,
+    ],
+    [
+      'black with opacity in shared/components',
+      'src/shared/components/a.tsx',
+      `<div className="bg-black/50" />`,
+    ],
+    ['a named colour in an arbitrary value', 'src/app/page.tsx', `<div className="bg-[red]" />`],
+    [
+      'a typed arbitrary named colour',
+      'src/app/page.tsx',
+      `<div className="text-[color:rebeccapurple]" />`,
+    ],
+    ['a palette class in a template', 'src/app/page.tsx', 'const c = `p-4 ${a} bg-zinc-900`;'],
+    [
+      'a palette class in a cva variant',
+      'src/shared/ui/b.tsx',
+      `cva('p-2', { variants: { v: { x: 'bg-emerald-600' } } });`,
+    ],
+    ['a palette class in @apply', 'src/app/a.css', `.a { @apply bg-zinc-900 text-white; }`],
+  ])('fails on %s', (_name, path, text) => {
+    expect(rulesIn(paletteViolationsInFile(path, text))).toEqual(['web-no-palette-utilities']);
+  });
+
+  it.each([
+    [
+      'token utilities',
+      'src/app/page.tsx',
+      `<div className="bg-surface text-text-muted border-border-strong" />`,
+    ],
+    [
+      'shadcn token utilities',
+      'src/app/page.tsx',
+      `<div className="bg-primary text-primary-foreground ring-ring" />`,
+    ],
+    [
+      'a token with opacity',
+      'src/app/page.tsx',
+      `<div className="border-run-failed/30 bg-brand-soft" />`,
+    ],
+    [
+      'transparent and current',
+      'src/app/page.tsx',
+      `<div className="bg-transparent text-current fill-current" />`,
+    ],
+    [
+      'non-colour utilities',
+      'src/app/page.tsx',
+      `<div className="border-2 text-sm text-left shadow-xs ring-1 outline-2 divide-y" />`,
+    ],
+    [
+      'black/white with opacity in shared/ui (overlay scrim)',
+      'src/shared/ui/dialog.tsx',
+      `<div className="bg-black/55" />`,
+    ],
+    [
+      'nested shared/ui file',
+      'src/shared/ui/sheet/sheet.tsx',
+      `<div className="data-open:bg-black/[.5]" />`,
+    ],
+    [
+      'a CSS variable arbitrary property',
+      'src/shared/ui/sonner.tsx',
+      `<div className="[--normal-bg:var(--surface)]!" />`,
+    ],
+    [
+      'a token arbitrary value',
+      'src/app/page.tsx',
+      `<div className="bg-[var(--brand)] shadow-[0_0_0_1px_var(--border)]" />`,
+    ],
+    ['prose', 'src/app/page.tsx', `const t = 'Red is the colour of failure';`],
+    ['an import of a palette-named module', 'src/app/page.tsx', `import x from 'text-red-500';`],
+    ['a comment', 'src/app/page.tsx', `// bg-zinc-900\nconst x = 1;`],
+    ['a non-script file', 'src/app/notes.md', `bg-zinc-900`],
+  ])('allows %s', (_name, path, text) => {
+    expect(paletteViolationsInFile(path, text)).toEqual([]);
   });
 });
 

@@ -125,7 +125,7 @@ Feature-specific hooks, tests, UI elements and schema live near the feature. No 
 - Vitest + React Testing Library: forms, components, feature interactions, hooks.
 - Playwright: meaningful user journeys (especially critical UI→API→DB slices).
 - Automated accessibility checks and keyboard/navigation basics for changed UI.
-- `architecture:web`: public entrypoint imports, layer direction, no cycles or private cross-module stores, server/client boundaries, structural feature-first conventions, and the styling rules of §9 (no `design-system/` imports in `apps/*`, no colour literals or `style=` colours).
+- `architecture:web`: public entrypoint imports, layer direction, no cycles or private cross-module stores, server/client boundaries, structural feature-first conventions, and the styling rules of §9 (no `design-system/` imports in `apps/*`, no colour literals, `style=` colours or Tailwind palette utilities).
 - Format, ESLint/React hook rules, strict TypeScript, build and relevant tests pass before merge.
 
 ## 9. Styling and UI components
@@ -136,7 +136,8 @@ The visual source of truth is the Agent Studio design system in `design-system/`
 
 - Colour, radius, spacing and shadow come from the tokens of `apps/web/src/app/globals.css`, through Tailwind utilities (`bg-surface`, `text-text-muted`, `rounded-lg`, `shadow-xs`). No raw colours (hex, `rgb()`, `hsl()` or other colour functions), no arbitrary colour values (`bg-[#…]`) and no ad hoc palette.
 - `style=` props never carry colours, literal or not (`var(--brand)` included): they must be inline object literals with layout values only. Use a `className` token utility instead.
-- `architecture:web` enforces the cheap part: hex and colour-function literals in `.ts`/`.tsx`/CSS/Sass under `apps/web/src/**` outside `globals.css` (in scripts by context, so `PR #1234`, selectors and URL fragments are not colours; the heuristic is documented in `tests/architecture/web/styling-rules.ts`), and colour properties, colour values or unverifiable values in `style=`. Tailwind default palette utilities (`bg-zinc-900`) and named colours in arbitrary values (`bg-[red]`) are not enforced yet and are caught in review. Prettier (`prettier-plugin-tailwindcss`) sorts classes.
+- No Tailwind default palette utilities (`bg-zinc-900`, `text-red-500`, `border-white`, with any variant prefix or opacity) and no named colours in arbitrary values (`bg-[red]`): colour utilities name a token, which may take an opacity modifier (`border-run-failed/30`). **One exception:** `black`/`white` **with an opacity modifier** (`bg-black/55`) in `src/shared/ui/**` only, for the overlay scrims of the shadcn primitives, because the design system has no overlay token and `globals.css` stays a copy of it.
+- `architecture:web` enforces these rules: hex and colour-function literals in `.ts`/`.tsx`/CSS/Sass under `apps/web/src/**` outside `globals.css` (in scripts by context, so `PR #1234`, selectors and URL fragments are not colours), colour properties, colour values or unverifiable values in `style=`, and palette utilities and named arbitrary colours in every script string (class names reach `className` through `cn()`, `cva()` and constants) and in stylesheet `@apply` lists. The heuristics are documented in `tests/architecture/web/styling-rules.ts`. Prettier (`prettier-plugin-tailwindcss`) sorts classes.
 
 **Design system and `globals.css`**
 

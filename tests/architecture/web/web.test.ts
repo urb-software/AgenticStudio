@@ -62,6 +62,8 @@ describeGate('web', webGate, 'apps/web', [
   { fixture: 'colour-literal-in-scss', expected: ['web-no-colour-literals'] },
   { fixture: 'style-prop-carries-colour', expected: ['web-no-style-colours'] },
   { fixture: 'style-prop-colour-in-value', expected: ['web-no-style-colours'] },
+  { fixture: 'palette-utility-in-class-name', expected: ['web-no-palette-utilities'] },
+  { fixture: 'scrim-outside-shared-ui', expected: ['web-no-palette-utilities'] },
 ]);
 
 // The design-system import ban covers every app, not only apps/web (frontend.md, "Styling and

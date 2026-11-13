@@ -13,10 +13,15 @@ export const STYLING_RULES = [
   'web-no-design-system-imports',
   'web-no-colour-literals',
   'web-no-style-colours',
+  'web-no-palette-utilities',
 ];
 
 export function stylingViolations(baseDir: string): Violation[] {
-  return [...designSystemImportViolations(baseDir), ...colourViolations(baseDir)];
+  return [
+    ...designSystemImportViolations(baseDir),
+    ...colourViolations(baseDir),
+    ...paletteViolations(baseDir),
+  ];
 }
 
 /** Directories never scanned: dependencies and build output. */
@@ -448,6 +453,143 @@ const NAMED_COLOURS = new Set(
     'yellowgreen transparent currentcolor'
   ).split(' '),
 );
+
+// ---------------------------------------------------------------------------------------------
+// web-no-palette-utilities
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Tailwind's default palette (`bg-zinc-900`, `text-red-500`, `border-white`) is an ad hoc palette
+ * next to the tokens, so colour utilities must name a token (`bg-surface`, `text-run-failed/80`).
+ * Named colours in arbitrary values (`bg-[red]`) are the same thing spelt differently.
+ *
+ * The one exception: `black` / `white` **with an opacity modifier** (`bg-black/55`) in
+ * `src/shared/ui/**`, for the overlay scrims the shadcn primitives draw, because the design
+ * system has no overlay token and `globals.css` stays a copy of it.
+ *
+ * Class names are found in every string of a script (class names reach `className` through
+ * `cn()`, `cva()` variant maps and constants, so attributes alone are not enough; import
+ * specifiers are skipped) and in stylesheet `@apply` lists. A string is split on whitespace and
+ * each token's variants (`hover:`, `dark:md:`, `[&_svg]:`, `data-[state=open]:`) and important
+ * marks (`!`) are removed before the utility is matched. Prose does not look like
+ * `<prefix>-<palette>-<shade>`, so it is not matched.
+ */
+function paletteViolations(baseDir: string): Violation[] {
+  return filesBelow(baseDir, 'src').flatMap((path) =>
+    paletteViolationsInFile(path, readFileSync(join(baseDir, path), 'utf8')),
+  );
+}
+
+/** Where `black` / `white` with an opacity modifier is allowed (overlay scrims). */
+const SCRIM_DIR = 'src/shared/ui/';
+
+export function paletteViolationsInFile(path: string, text: string): Violation[] {
+  let classLists: string[];
+  if (STYLESHEET.test(path)) {
+    const css = stripStylesheetComments(path, text);
+    classLists = [...css.matchAll(/@apply\s+([^;{}\n]*)/g)].map((match) => match[1] ?? '');
+  } else if (SCRIPT_FILE.test(path) && !path.endsWith('.d.ts')) {
+    classLists = scriptClassLists(parse(path, text));
+  } else {
+    return [];
+  }
+  const scrimsAllowed = path.startsWith(SCRIM_DIR);
+  return classLists
+    .flatMap((list) => list.split(/\s+/))
+    .filter((token) => isPaletteUtility(token, scrimsAllowed))
+    .map((token) => ({ rule: 'web-no-palette-utilities', from: path, to: token }));
+}
+
+/** Text of every string literal and template piece, except module specifiers. */
+function scriptClassLists(source: ts.SourceFile): string[] {
+  const lists: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (isTextLiteral(node) && !isModuleSpecifier(node)) lists.push(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return lists;
+}
+
+function isModuleSpecifier(node: ts.Node): boolean {
+  const parent = node.parent;
+  return (
+    ((ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent)) &&
+      parent.moduleSpecifier === node) ||
+    ts.isExternalModuleReference(parent) ||
+    (ts.isCallExpression(parent) && isImportOrRequire(parent))
+  );
+}
+
+/** Tailwind utilities that take a colour (v4). Longer prefixes first. */
+const COLOUR_UTILITY_PREFIXES = [
+  'border-x',
+  'border-y',
+  'border-s',
+  'border-e',
+  'border-t',
+  'border-r',
+  'border-b',
+  'border-l',
+  'border',
+  'ring-offset',
+  'inset-ring',
+  'ring',
+  'inset-shadow',
+  'drop-shadow',
+  'text-shadow',
+  'shadow',
+  'outline',
+  'divide',
+  'decoration',
+  'placeholder',
+  'accent',
+  'caret',
+  'fill',
+  'stroke',
+  'from',
+  'via',
+  'to',
+  'bg',
+  'text',
+];
+
+/** Tailwind v4 default palette names (tailwindcss/theme.css). */
+const PALETTE =
+  'slate|gray|zinc|neutral|stone|taupe|mauve|mist|olive|red|orange|amber|yellow|lime|green|' +
+  'emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose';
+const SHADE = '50|100|200|300|400|500|600|700|800|900|950';
+/** `/50`, `/12.5`, `/[.35]`, `/(--alpha)`. */
+const OPACITY = String.raw`(?:/(?:\d+(?:\.\d+)?|\[[^\]]+\]|\([^)]+\)))`;
+const PREFIX = `(?:${COLOUR_UTILITY_PREFIXES.join('|')})`;
+const PALETTE_UTILITY = new RegExp(`^${PREFIX}-(?:${PALETTE})-(?:${SHADE})${OPACITY}?$`);
+const BLACK_WHITE = new RegExp(`^${PREFIX}-(?:black|white)(${OPACITY})?$`);
+const ARBITRARY_NAMED = new RegExp(String.raw`^${PREFIX}-\[(?:color:)?([a-z]+)\]${OPACITY}?$`, 'i');
+
+function isPaletteUtility(token: string, scrimsAllowed: boolean): boolean {
+  const utility = withoutVariants(token).replace(/^!|!$/g, '');
+  if (PALETTE_UTILITY.test(utility)) return true;
+  const blackWhite = BLACK_WHITE.exec(utility);
+  if (blackWhite) return !(scrimsAllowed && blackWhite[1] !== undefined);
+  const named = ARBITRARY_NAMED.exec(utility)?.[1]?.toLowerCase();
+  return named !== undefined && NAMED_COLOURS.has(named) && !PLAIN_KEYWORDS.has(named);
+}
+
+/** `transparent` and `currentcolor` are not palette colours (`bg-[transparent]` is fine). */
+const PLAIN_KEYWORDS = new Set(['transparent', 'currentcolor']);
+
+/** The utility after the last variant separator (`:` outside brackets and parentheses). */
+function withoutVariants(token: string): string {
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < token.length; i++) {
+    const char = token[i];
+    if (char === '[' || char === '(') depth++;
+    else if (char === ']' || char === ')') depth--;
+    else if (char === ':' && depth === 0) start = i + 1;
+  }
+  return token.slice(start);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Files
