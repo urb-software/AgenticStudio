@@ -4,7 +4,7 @@
 // Importable for tests: startServer({ port: 0 }) listens on an ephemeral port (design-system/serve.test.mjs).
 import { createServer } from 'node:http';
 import { createReadStream, realpathSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -47,8 +47,18 @@ function sendText(res, status, text, headers = {}) {
   res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', ...headers }).end(text);
 }
 
-/** Request handler serving files under `root`; `fs` ({ stat, createReadStream }) is injectable for tests. */
-function createHandler(root, fs) {
+const defaultFileSystem = { stat, realpath, createReadStream };
+
+/** True when `file` is `root` itself or below it. */
+function isInside(root, file) {
+  return file === root || file.startsWith(root + sep);
+}
+
+/**
+ * Request handler serving files under `root` (`realRoot` is its resolved real path).
+ * `files` ({ stat, realpath, createReadStream }) is injectable for tests.
+ */
+function createHandler(root, realRoot, files) {
   return async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       sendText(res, 405, 'Method not allowed', { allow: 'GET, HEAD' });
@@ -71,16 +81,18 @@ function createHandler(root, fs) {
     }
     let file = normalize(join(root, pathname));
     // Anything resolving outside the root is reported as missing, never as forbidden.
-    if (file !== root && !file.startsWith(root + sep)) {
+    if (!isInside(root, file)) {
       sendText(res, 404, 'Not found');
       return;
     }
-    let info = await fs.stat(file).catch(() => null);
+    let info = await files.stat(file).catch(() => null);
     if (info?.isDirectory()) {
       file = join(file, 'index.html');
-      info = await fs.stat(file).catch(() => null);
+      info = await files.stat(file).catch(() => null);
     }
-    if (!info?.isFile()) {
+    // Links are followed only while their target stays inside the root, too.
+    const realFile = info?.isFile() ? await files.realpath(file).catch(() => null) : null;
+    if (!realFile || !isInside(realRoot, realFile)) {
       sendText(res, 404, 'Not found');
       return;
     }
@@ -94,7 +106,7 @@ function createHandler(root, fs) {
       res.end();
       return;
     }
-    const stream = fs.createReadStream(file);
+    const stream = files.createReadStream(realFile);
     stream.on('error', () => {
       if (res.headersSent) {
         res.destroy();
@@ -111,13 +123,15 @@ function createHandler(root, fs) {
 /**
  * Starts the server on 127.0.0.1 and resolves with the listening `http.Server`
  * (`server.address().port` is the bound port). Rejects on listen errors such as EADDRINUSE.
+ * `fileSystem` overrides parts of { stat, realpath, createReadStream } (tests only).
  */
-export function startServer({
-  port = DEFAULT_PORT,
-  root = DEFAULT_ROOT,
-  fs = { stat, createReadStream },
-} = {}) {
-  const server = createServer(createHandler(resolve(root), fs));
+export function startServer({ port = DEFAULT_PORT, root = DEFAULT_ROOT, fileSystem = {} } = {}) {
+  const absoluteRoot = resolve(root);
+  const handler = createHandler(absoluteRoot, realpathSync(absoluteRoot), {
+    ...defaultFileSystem,
+    ...fileSystem,
+  });
+  const server = createServer(handler);
   return new Promise((resolvePromise, reject) => {
     server.once('error', reject);
     server.listen(port, HOST, () => {

@@ -2,8 +2,14 @@
 // (`node --test design-system/serve.test.mjs`; Node 24, no dependencies).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createReadStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import {
+  createReadStream,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -125,83 +131,135 @@ describe('design-system viewer server', { timeout: 20_000 }, () => {
     });
   }
 
+  // [label, raw request path, expected status]. Every probe must also serve nothing.
+  // The drive-letter and UNC forms only reach outside the root on Windows; on Linux they resolve
+  // inside the root and prove that absolute paths are joined, not followed. The `..` forms are the
+  // cross-platform containment probes.
   const secretUrlPath = fixture.secret.replaceAll('\\', '/');
   const probes = [
-    '/../secret.txt',
-    '/%2e%2e/secret.txt',
-    '/%2E%2E/secret.txt',
-    '/..%2fsecret.txt',
-    '/..%2Fsecret.txt',
-    '/..%5csecret.txt',
-    '/nested/..%5c..%5csecret.txt',
-    '/%2e%2e%5csecret.txt',
-    `/${secretUrlPath}`,
-    `/${encodeURIComponent(fixture.secret)}`,
-    '/C:/Windows/win.ini',
-    '/C:%5cWindows%5cwin.ini',
-    '//127.0.0.1/c$/secret.txt',
-    '/%5c%5c127.0.0.1%5cc$%5csecret.txt',
-    '/\\\\127.0.0.1\\c$\\secret.txt',
-    '/page.html%00.txt',
-    '/%00../secret.txt',
+    ['plain ../ (normalized by the URL parser)', '/../secret.txt', 404],
+    ['%2e%2e/', '/%2e%2e/secret.txt', 404],
+    ['%2E%2E/ (upper case)', '/%2E%2E/secret.txt', 404],
+    ['..%2f', '/..%2fsecret.txt', 404],
+    ['..%2F (upper case)', '/..%2Fsecret.txt', 404],
+    ['..%5c', '/..%5csecret.txt', 404],
+    ['nested ..%5c..%5c', '/nested/..%5c..%5csecret.txt', 404],
+    ['%2e%2e%5c', '/%2e%2e%5csecret.txt', 404],
+    ['absolute path of the secret (drive letter on Windows)', `/${secretUrlPath}`, 404],
+    ['encoded absolute path', `/${encodeURIComponent(fixture.secret)}`, 404],
+    ['drive letter C:/ (Windows form)', '/C:/Windows/win.ini', 404],
+    ['drive letter C:%5c (Windows form)', '/C:%5cWindows%5cwin.ini', 404],
+    ['UNC //host/share (Windows form)', '//127.0.0.1/c$/secret.txt', 404],
+    ['UNC %5c%5chost%5cshare (Windows form)', '/%5c%5c127.0.0.1%5cc$%5csecret.txt', 404],
+    ['UNC raw backslashes (Windows form)', '/\\\\127.0.0.1\\c$\\secret.txt', 404],
+    ['null byte', '/page.html%00.txt', 400],
+    ['null byte before ..', '/%00../secret.txt', 400],
+    ['malformed percent-encoding', '/%E0%A4%A', 400],
   ];
-  for (const probe of probes) {
-    it(`never serves content outside the root: ${probe}`, async () => {
+  for (const [label, probe, status] of probes) {
+    it(`answers ${status} and serves nothing for ${label}: ${probe}`, async () => {
       const res = await send(port, probe);
-      assert.ok([400, 404].includes(res.status), `${probe} -> ${res.status}`);
+      assert.equal(res.status, status, probe);
       assert.ok(!res.body.includes(SECRET), probe);
       assert.ok(!res.body.includes('<h1>page</h1>'), probe);
     });
   }
-
-  it('returns 404 (not 403) for a path that resolves outside the root', async () => {
-    assert.equal((await send(port, '/..%2fsecret.txt')).status, 404);
-  });
-
-  it('returns 400 for a null byte in the path', async () => {
-    assert.equal((await send(port, '/page.html%00.txt')).status, 400);
-  });
-
-  it('returns 400 for a malformed URL', async () => {
-    assert.equal((await send(port, '/%E0%A4%A')).status, 400);
-  });
 });
+
+/** A read stream factory that pushes `prefix` (if any) and then fails. */
+function failingStream(prefix) {
+  return () => {
+    let sent = !prefix;
+    return new Readable({
+      read() {
+        if (sent) this.destroy(new Error('EIO: simulated read failure'));
+        else {
+          sent = true;
+          this.push(prefix);
+        }
+      },
+    });
+  };
+}
 
 describe('design-system viewer server: failing reads', { timeout: 20_000 }, () => {
   const fixture = makeFixture();
+  after(() => rmSync(fixture.dir, { recursive: true, force: true }));
+
+  /** Runs `check` against a server whose first read fails with `failing`; later reads are real. */
+  async function withFailingRead(failing, check) {
+    let failNext = true;
+    const server = await startServer({
+      port: 0,
+      root: fixture.root,
+      fileSystem: {
+        createReadStream(file) {
+          if (!failNext) return createReadStream(file);
+          failNext = false;
+          return failing();
+        },
+      },
+    });
+    try {
+      await check(server.address().port);
+    } finally {
+      await stop(server);
+    }
+  }
+
+  it('answers 500 when the read fails before any byte is sent, then serves the next request', async () => {
+    await withFailingRead(failingStream(), async (port) => {
+      const failed = await send(port, '/page.html');
+      assert.equal(failed.status, 500);
+      const next = await send(port, '/page.html');
+      assert.equal(next.status, 200);
+      assert.equal(next.body, '<h1>page</h1>');
+    });
+  });
+
+  it('destroys the response when the read fails after headers were sent, then serves the next request', async () => {
+    await withFailingRead(failingStream('<h1>pa'), async (port) => {
+      const failed = await send(port, '/page.html').catch(() => ({ aborted: true }));
+      assert.equal(failed.aborted, true);
+      const next = await send(port, '/page.html');
+      assert.equal(next.status, 200);
+      assert.equal(next.body, '<h1>page</h1>');
+    });
+  });
+});
+
+/**
+ * Creates a link at `path` to `target` and returns null, or returns why it cannot. Directory
+ * links are junctions on Windows (no privilege needed); file symlinks need privilege there.
+ */
+function tryLink(target, path, type) {
+  try {
+    symlinkSync(target, path, type === 'dir' && process.platform === 'win32' ? 'junction' : type);
+    return null;
+  } catch (error) {
+    return `cannot create a ${type} link on this machine (${error.code})`;
+  }
+}
+
+describe('design-system viewer server: links', { timeout: 20_000 }, () => {
+  const fixture = makeFixture();
+  const outside = join(fixture.dir, 'outside');
+  mkdirSync(outside);
+  writeFileSync(join(outside, 'leak.txt'), SECRET);
+  writeFileSync(join(outside, 'index.html'), SECRET);
+  writeFileSync(join(fixture.root, 'inner.txt'), 'inner');
+  const dirLinkError = tryLink(outside, join(fixture.root, 'link-dir'), 'dir');
+  const fileLinkError = tryLink(fixture.secret, join(fixture.root, 'link-file.txt'), 'file');
+  const innerLinkError = tryLink(
+    join(fixture.root, 'inner.txt'),
+    join(fixture.root, 'inner-link.txt'),
+    'file',
+  );
   let server;
   let port;
-  let failMode = 'none';
-
-  // Injected file system: real stat, read stream that fails on demand.
-  const fs = {
-    stat,
-    createReadStream(file) {
-      if (failMode === 'immediate') {
-        return new Readable({
-          read() {
-            this.destroy(new Error('EIO: simulated read failure'));
-          },
-        });
-      }
-      if (failMode === 'midway') {
-        let sent = false;
-        return new Readable({
-          read() {
-            if (sent) this.destroy(new Error('EIO: simulated read failure'));
-            else {
-              sent = true;
-              this.push('<h1>pa');
-            }
-          },
-        });
-      }
-      return createReadStream(file);
-    },
-  };
 
   before(async () => {
-    server = await startServer({ port: 0, root: fixture.root, fs });
+    server = await startServer({ port: 0, root: fixture.root });
     port = server.address().port;
   });
 
@@ -210,24 +268,27 @@ describe('design-system viewer server: failing reads', { timeout: 20_000 }, () =
     rmSync(fixture.dir, { recursive: true, force: true });
   });
 
-  it('answers 500 when the read fails before any byte is sent, then serves the next request', async () => {
-    failMode = 'immediate';
-    const failed = await send(port, '/page.html');
-    assert.equal(failed.status, 500);
-    failMode = 'none';
-    const next = await send(port, '/page.html');
-    assert.equal(next.status, 200);
-    assert.equal(next.body, '<h1>page</h1>');
+  it('answers 404 for files reached through a directory link pointing outside', async (t) => {
+    if (dirLinkError) return t.skip(dirLinkError);
+    for (const path of ['/link-dir/leak.txt', '/link-dir/', '/link-dir']) {
+      const res = await send(port, path);
+      assert.equal(res.status, 404, path);
+      assert.ok(!res.body.includes(SECRET), path);
+    }
   });
 
-  it('destroys the response when the read fails after headers were sent, then serves the next request', async () => {
-    failMode = 'midway';
-    const failed = await send(port, '/page.html').catch(() => ({ aborted: true }));
-    assert.equal(failed.aborted, true);
-    failMode = 'none';
-    const next = await send(port, '/page.html');
-    assert.equal(next.status, 200);
-    assert.equal(next.body, '<h1>page</h1>');
+  it('answers 404 for a file link pointing outside', async (t) => {
+    if (fileLinkError) return t.skip(fileLinkError);
+    const res = await send(port, '/link-file.txt');
+    assert.equal(res.status, 404);
+    assert.ok(!res.body.includes(SECRET));
+  });
+
+  it('still serves a file link that stays inside the root', async (t) => {
+    if (innerLinkError) return t.skip(innerLinkError);
+    const res = await send(port, '/inner-link.txt');
+    assert.equal(res.status, 200);
+    assert.equal(res.body, 'inner');
   });
 });
 
@@ -280,6 +341,15 @@ function runCli(args, { env = {}, until } = {}) {
   });
 }
 
+/** Kills a CLI child process and waits until it has exited. */
+function stopChild(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((done) => {
+    child.once('exit', done);
+    child.kill();
+  });
+}
+
 describe('serve.mjs CLI', { timeout: 20_000 }, () => {
   for (const [label, args, env] of [
     ['a non-numeric argument', ['abc'], {}],
@@ -328,7 +398,7 @@ describe('serve.mjs CLI', { timeout: 20_000 }, () => {
       assert.equal(outside.status, 404);
       assert.ok(!outside.body.includes('agentic-studio'));
     } finally {
-      child.kill();
+      await stopChild(child);
     }
   });
 });
