@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // Zero-dependency static server for the design system (gallery, component previews, prototype).
 // Usage: node design-system/serve.mjs [port]   (default 4400, or PORT env). Binds to 127.0.0.1 only.
+// Importable for tests: startServer({ port: 0 }) listens on an ephemeral port (design-system/serve.test.mjs).
 import { createServer } from 'node:http';
-import { createReadStream } from 'node:fs';
+import { createReadStream, realpathSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const root = resolve(fileURLToPath(new URL('.', import.meta.url)));
-const port = Number(process.argv[2] ?? process.env.PORT ?? 4400);
-const host = '127.0.0.1';
+const HOST = '127.0.0.1';
+const DEFAULT_PORT = 4400;
+const DEFAULT_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 
 const types = {
   '.html': 'text/html; charset=utf-8',
@@ -28,37 +29,133 @@ const types = {
   '.woff2': 'font/woff2',
 };
 
-const server = createServer(async (req, res) => {
-  try {
-    const { pathname } = new URL(req.url ?? '/', `http://${host}`);
-    let file = normalize(join(root, decodeURIComponent(pathname)));
-    if (file !== root && !file.startsWith(root + sep)) {
-      res.writeHead(403).end('Forbidden');
+/**
+ * Port from the CLI argument, then the PORT variable, then 4400. 0 means any free port.
+ * Throws `Invalid port "<value>"` for anything but an integer from 0 to 65535.
+ */
+export function parsePort(arg, env) {
+  const raw = arg ?? env;
+  if (raw === undefined) return DEFAULT_PORT;
+  const port = /^\d{1,5}$/.test(raw) ? Number(raw) : NaN;
+  if (!(port >= 0 && port <= 65535)) {
+    throw new Error(`Invalid port "${raw}": expected an integer from 0 to 65535.`);
+  }
+  return port;
+}
+
+function sendText(res, status, text, headers = {}) {
+  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', ...headers }).end(text);
+}
+
+/** Request handler serving files under `root`; `fs` ({ stat, createReadStream }) is injectable for tests. */
+function createHandler(root, fs) {
+  return async (req, res) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      sendText(res, 405, 'Method not allowed', { allow: 'GET, HEAD' });
       return;
     }
-    let info = await stat(file).catch(() => null);
+    let pathname;
+    try {
+      pathname = decodeURIComponent(new URL(req.url ?? '/', `http://${HOST}`).pathname);
+    } catch {
+      sendText(res, 400, 'Bad request');
+      return;
+    }
+    if (pathname.includes('\0')) {
+      sendText(res, 400, 'Bad request');
+      return;
+    }
+    if (pathname === '/') {
+      res.writeHead(302, { location: '/gallery.html' }).end();
+      return;
+    }
+    let file = normalize(join(root, pathname));
+    // Anything resolving outside the root is reported as missing, never as forbidden.
+    if (file !== root && !file.startsWith(root + sep)) {
+      sendText(res, 404, 'Not found');
+      return;
+    }
+    let info = await fs.stat(file).catch(() => null);
     if (info?.isDirectory()) {
       file = join(file, 'index.html');
-      info = await stat(file).catch(() => null);
+      info = await fs.stat(file).catch(() => null);
     }
     if (!info?.isFile()) {
-      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Not found');
+      sendText(res, 404, 'Not found');
       return;
     }
-    res.writeHead(200, {
-      'content-type': types[extname(file).toLowerCase()] ?? 'application/octet-stream',
-      'cache-control': 'no-store',
+    // Implicit headers: they are only sent with the first body chunk, so a read that fails
+    // before any byte can still become a 500.
+    res.statusCode = 200;
+    res.setHeader('content-type', types[extname(file).toLowerCase()] ?? 'application/octet-stream');
+    res.setHeader('content-length', info.size);
+    res.setHeader('cache-control', 'no-store');
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    const stream = fs.createReadStream(file);
+    stream.on('error', () => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      for (const name of res.getHeaderNames()) res.removeHeader(name);
+      sendText(res, 500, 'Internal server error');
     });
-    createReadStream(file).pipe(res);
-  } catch {
-    res.writeHead(400).end('Bad request');
-  }
-});
+    res.on('close', () => stream.destroy());
+    stream.pipe(res);
+  };
+}
 
-server.listen(port, host, () => {
-  const base = `http://${host}:${port}`;
-  console.log(`Design system served from ${root}`);
+/**
+ * Starts the server on 127.0.0.1 and resolves with the listening `http.Server`
+ * (`server.address().port` is the bound port). Rejects on listen errors such as EADDRINUSE.
+ */
+export function startServer({
+  port = DEFAULT_PORT,
+  root = DEFAULT_ROOT,
+  fs = { stat, createReadStream },
+} = {}) {
+  const server = createServer(createHandler(resolve(root), fs));
+  return new Promise((resolvePromise, reject) => {
+    server.once('error', reject);
+    server.listen(port, HOST, () => {
+      server.off('error', reject);
+      resolvePromise(server);
+    });
+  });
+}
+
+async function main() {
+  let port;
+  try {
+    port = parsePort(process.argv[2], process.env.PORT);
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
+  let server;
+  try {
+    server = await startServer({ port });
+  } catch (error) {
+    console.error(
+      error.code === 'EADDRINUSE'
+        ? `Port ${port} on ${HOST} is already in use; pass another port: node design-system/serve.mjs <port>`
+        : `Cannot listen on ${HOST}:${port}: ${error.message}`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const base = `http://${HOST}:${server.address().port}`;
+  console.log(`Design system served from ${DEFAULT_ROOT}`);
   console.log(`  Gallery:    ${base}/gallery.html`);
   console.log(`  Prototype:  ${base}/prototype/agent-studio-prototype.dc.html?startSignedIn=true`);
   console.log('Ctrl+C to stop.');
-});
+}
+
+const runAsCli =
+  process.argv[1] !== undefined &&
+  pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url;
+if (runAsCli) await main();
