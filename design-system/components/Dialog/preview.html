@@ -1,0 +1,12 @@
+<!-- @dsCard group="Overlays" height=360 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Dialog — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{style:{padding:16}},h(A.Dialog,{inline:true,title:'Approve & merge to dev?',description:'Add pagination to products API · r-1043',footer:[h(A.Button,{key:'c',variant:'ghost'},'Cancel'),h(A.Button,{key:'a',variant:'primary',icon:'merge'},'Approve & merge')]},h('div',{className:'as-mono',style:{fontSize:12.5,padding:'10px 12px',background:'var(--code-bg)',border:'1px solid var(--border)',borderRadius:8}},'agent/claude-add-pagination-1043 → ',h('span',{style:{color:'var(--accent)'}},'dev')),h('div',{style:{display:'flex',gap:8,alignItems:'center',fontSize:13}},'Tests ',h(A.StatusPill,{status:'succeeded'},'All 12 tests passed')))));
+</script>
+</body>
+</html>

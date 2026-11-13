@@ -1,0 +1,12 @@
+<!-- @dsCard group="Navigation" height=80 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Tabs — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{style:{padding:16}},h(A.Tabs,{label:'Project',items:[{value:'o',label:'Overview'},{value:'b',label:'Branches & Worktrees',count:4},{value:'r',label:'Reviews',count:1,attention:true},{value:'p',label:'Preview'},{value:'s',label:'Settings'}]})));
+</script>
+</body>
+</html>

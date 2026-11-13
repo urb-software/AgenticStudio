@@ -1,0 +1,12 @@
+<!-- @dsCard group="Feedback" height=230 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Banner — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-col',style:{maxWidth:560}},h(A.Banner,{tone:'warning',title:'Not validated — automated execution disabled.'},'Run a validation to check the CLI version and auth.'),h(A.Banner,{tone:'danger',title:'Project already exists.'},'A project named “acme-shop” already exists. Pick a different name.'),h(A.Banner,{tone:'success',title:'Merged to dev'},'as c81d0e4. The Preview rebuilds from this commit.'),h(A.Banner,{tone:'info',title:'Reconnecting…'},'Log stream dropped; lines will resume.')));
+</script>
+</body>
+</html>

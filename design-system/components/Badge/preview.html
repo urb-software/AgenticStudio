@@ -1,0 +1,12 @@
+<!-- @dsCard group="Status" height=72 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Badge — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-row'},h(A.Badge,{variant:'claude'}),h(A.Badge,{variant:'codex'}),h(A.Badge,{variant:'published'},'Published v3'),h(A.Badge,{variant:'draft'},'Draft'),h(A.Badge,null,'stdio')));
+</script>
+</body>
+</html>

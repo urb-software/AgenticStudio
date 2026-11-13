@@ -1,0 +1,12 @@
+<!-- @dsCard group="Feedback" height=190 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Toast — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-col'},h(A.Toast,{tone:'success',title:'Merged to dev · Preview rebuilding',description:'agent/claude-add-pagination-1043 → dev@c81d0e4',onDismiss:function(){}}),h(A.Toast,{tone:'warning',icon:'shield',title:'Awaiting approval',description:'Add pagination to products API'}),h(A.Toast,{tone:'danger',title:'Run r-1044 failed at Tests',description:'1 of 12 tests failed'})));
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- @dsCard group="Forms" height=72 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>SegmentedControl — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-row',style:{gap:16}},h(A.SegmentedControl,{label:'Diff view',options:[{value:'u',label:'Unified'},{value:'s',label:'Split'}]}),h(A.SegmentedControl,{label:'Device',options:[{value:'d',icon:'monitor',ariaLabel:'Desktop'},{value:'t',icon:'tablet',ariaLabel:'Tablet'},{value:'m',icon:'phone',ariaLabel:'Mobile'}]}),h(A.SegmentedControl,{label:'Provider',options:[{value:'c',label:'Claude Code'},{value:'x',label:'Codex'}]})));
+</script>
+</body>
+</html>

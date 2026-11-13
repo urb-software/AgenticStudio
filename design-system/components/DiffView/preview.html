@@ -1,0 +1,12 @@
+<!-- @dsCard group="Runs" height=300 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>DiffView — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{style:{padding:16}},h(A.DiffView,{path:'src/routes/products.ts',additions:28,deletions:6,lines:[{type:'hunk',text:'@@ -12,8 +12,30 @@ export const productsRouter = Router();'},{old:14,new:14,text:"productsRouter.get('/', async (req, res) => {"},{type:'del',old:15,text:'  const products = await repo.listProducts();'},{type:'del',old:16,text:'  res.json(products);'},{type:'add',new:15,text:'  const parsed = PaginationQuery.safeParse(req.query);'},{type:'add',new:16,text:'  const { page, pageSize } = parsed.data;'},{type:'add',new:17,text:'  res.json({ items, page, pageSize, total, hasNext });'},{old:17,new:18,text:'});'}]})));
+</script>
+</body>
+</html>

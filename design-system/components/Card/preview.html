@@ -1,0 +1,12 @@
+<!-- @dsCard group="Layout" height=200 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Card — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{style:{padding:16,maxWidth:460}},h(A.Card,{title:'Preview',actions:h(A.StatusPill,{status:'succeeded'},'Healthy')},h('div',{style:{display:'grid',gridTemplateColumns:'110px 1fr',gap:'8px 12px',fontSize:13}},h('span',{style:{color:'var(--text-dim)'}},'URL'),h('span',{className:'as-mono'},'preview-acme-shop.studio.local'),h('span',{style:{color:'var(--text-dim)'}},'Built from'),h('span',{className:'as-mono'},'dev · c81d0e4')))));
+</script>
+</body>
+</html>

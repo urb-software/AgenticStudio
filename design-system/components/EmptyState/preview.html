@@ -1,0 +1,12 @@
+<!-- @dsCard group="Feedback" height=300 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>EmptyState — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-col'},h(A.EmptyState,{icon:'folder',title:'Create your first project',description:'A project is a workspace around one repository. Agents work on branches you review before anything reaches dev.',action:h(A.Button,{variant:'primary',icon:'plus'},'New project')}),h(A.EmptyState,{tone:'error',icon:'alert',title:'Couldn’t load projects',description:h('span',{className:'as-mono',style:{fontSize:13}},'GET /api/projects · 503 Service Unavailable'),action:h(A.Button,{icon:'refresh'},'Retry')})));
+</script>
+</body>
+</html>
