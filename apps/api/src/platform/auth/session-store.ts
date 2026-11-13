@@ -6,6 +6,26 @@ import { REDIS_CLIENT } from './redis.js';
 /** 12 hours of inactivity (security.md §8). */
 export const SESSION_TTL_SECONDS = 12 * 60 * 60;
 
+/** 30 days after login, however active the session is (security.md §8, #24). */
+export const SESSION_ABSOLUTE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The stored record; `createdAt` is the login time. */
+interface SessionRecord {
+  createdAt: string;
+}
+
+/** True when the record is well-formed and less than the absolute lifetime old. */
+function isWithinLifetime(record: string, now: number): boolean {
+  let createdAt: number;
+  try {
+    createdAt = Date.parse((JSON.parse(record) as Partial<SessionRecord>).createdAt ?? '');
+  } catch {
+    return false;
+  }
+  // NaN (missing or malformed) fails the comparison, so it counts as expired.
+  return now - createdAt < SESSION_ABSOLUTE_LIFETIME_MS;
+}
+
 /** 32 CSPRNG bytes (256 bits), base64url-encoded: 43 characters. */
 const SESSION_ID_BYTES = 32;
 const SESSION_ID_FORMAT = /^[A-Za-z0-9_-]{43}$/;
@@ -18,7 +38,10 @@ function keyOf(sessionId: string): string {
   return `auth:session:${createHash('sha256').update(sessionId).digest('hex')}`;
 }
 
-/** Server-side operator sessions in Redis, with a sliding inactivity TTL. */
+/**
+ * Server-side operator sessions in Redis, with a sliding inactivity TTL and an absolute
+ * lifetime counted from login.
+ */
 @Injectable()
 export class SessionStore {
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
@@ -26,18 +49,29 @@ export class SessionStore {
   /** Creates a new session and returns its opaque ID (for the cookie only; never log it). */
   async create(): Promise<string> {
     const sessionId = randomBytes(SESSION_ID_BYTES).toString('base64url');
-    const record = JSON.stringify({ createdAt: new Date().toISOString() });
-    await this.redis.set(keyOf(sessionId), record, 'EX', SESSION_TTL_SECONDS);
+    const record: SessionRecord = { createdAt: new Date().toISOString() };
+    await this.redis.set(keyOf(sessionId), JSON.stringify(record), 'EX', SESSION_TTL_SECONDS);
     return sessionId;
   }
 
-  /** True when the session exists; extends its inactivity TTL in the same command. */
+  /**
+   * True when the session exists and is within its absolute lifetime; extends its
+   * inactivity TTL in the same command. A session past its lifetime is deleted.
+   */
   async touch(sessionId: string): Promise<boolean> {
     if (!SESSION_ID_FORMAT.test(sessionId)) {
       return false;
     }
-    const record = await this.redis.getex(keyOf(sessionId), 'EX', SESSION_TTL_SECONDS);
-    return record !== null;
+    const key = keyOf(sessionId);
+    const record = await this.redis.getex(key, 'EX', SESSION_TTL_SECONDS);
+    if (record === null) {
+      return false;
+    }
+    if (!isWithinLifetime(record, Date.now())) {
+      await this.redis.del(key);
+      return false;
+    }
+    return true;
   }
 
   async delete(sessionId: string): Promise<void> {
