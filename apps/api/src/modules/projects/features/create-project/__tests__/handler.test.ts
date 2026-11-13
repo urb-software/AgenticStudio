@@ -92,6 +92,54 @@ describe('CreateProjectHandler: project name normalization', () => {
     expect(projects.stored).toEqual([]);
   });
 
+  it('stores the name in Unicode NFC (Issue #30 decision 1)', async () => {
+    const { handler, projects } = setUp();
+    const nfd = 'Cafe\u0301 Ore\u0301'; // e + combining acute accent
+
+    const project = await handler.execute({ name: nfd });
+
+    expect(project.name).toBe('Caf\u00e9 Or\u00e9');
+    expect(projects.stored[0]).toEqual({
+      name: 'Caf\u00e9 Or\u00e9',
+      uniquenessKey: 'caf\u00e9 or\u00e9',
+    });
+  });
+
+  it('treats the NFC and NFD spellings of a name as the same name', async () => {
+    const { handler } = setUp();
+    await handler.execute({ name: 'Caf\u00e9' });
+
+    await expect(handler.execute({ name: 'CAFE\u0301' })).rejects.toBeInstanceOf(
+      ProjectNameTakenError,
+    );
+  });
+
+  it('counts the length in code points: 100 astral characters pass', async () => {
+    const { handler } = setUp();
+    const name = '\u{1F600}'.repeat(100); // 100 code points, 200 UTF-16 code units
+
+    const project = await handler.execute({ name });
+
+    expect(project.name).toBe(name);
+  });
+
+  it('counts the length in code points: 101 astral characters are too long', async () => {
+    const { handler, projects } = setUp();
+
+    await expect(handler.execute({ name: '\u{1F600}'.repeat(101) })).rejects.toEqual(
+      new InvalidProjectNameError('too-long'),
+    );
+    expect(projects.stored).toEqual([]);
+  });
+
+  it('measures the length after NFC: 100 characters written in NFD pass', async () => {
+    const { handler } = setUp();
+
+    const project = await handler.execute({ name: 'e\u0301'.repeat(100) });
+
+    expect(project.name).toBe('\u00e9'.repeat(100));
+  });
+
   it('reports a name taken by another project after normalization', async () => {
     const { handler } = setUp();
     await handler.execute({ name: 'Agentic Studio' });

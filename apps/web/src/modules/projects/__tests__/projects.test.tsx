@@ -124,6 +124,37 @@ describe('create project form', () => {
     expect(screen.queryByText('Use at most 100 characters.')).toBeNull();
   });
 
+  it('counts the length in code points: 100 astral characters pass the hint', async () => {
+    const api = fakeProjectsApi();
+    renderProjectsPage();
+
+    submitName('\u{1F600}'.repeat(100));
+
+    await waitFor(() => expect(api.calls('POST')).toHaveLength(1));
+    expect(screen.queryByText('Use at most 100 characters.')).toBeNull();
+  });
+
+  it('counts the length in code points: 101 astral characters fail the hint', async () => {
+    const api = fakeProjectsApi();
+    renderProjectsPage();
+
+    submitName('\u{1F600}'.repeat(101));
+
+    await expectFieldError('Use at most 100 characters.');
+    expect(api.calls('POST')).toEqual([]);
+  });
+
+  it('measures the length hint after NFC normalization, as the API does', async () => {
+    const api = fakeProjectsApi();
+    renderProjectsPage();
+
+    // 100 characters written in NFD (e + combining accent): 200 code points before NFC.
+    submitName('e\u0301'.repeat(100));
+
+    await waitFor(() => expect(api.calls('POST')).toHaveLength(1));
+    expect(screen.queryByText('Use at most 100 characters.')).toBeNull();
+  });
+
   it('shows the field error of a 400 response next to the name field', async () => {
     const api = fakeProjectsApi();
     api.respondNext(

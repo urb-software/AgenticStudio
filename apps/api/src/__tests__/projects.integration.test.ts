@@ -76,6 +76,18 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(await listedNames()).toEqual(['Gamma', 'Beta', 'Alpha']);
     });
 
+    it('breaks a createdAt tie by id, highest first', async () => {
+      // Test setup only: equal timestamps cannot be produced reliably through the API.
+      const createdAt = new Date('2026-11-13T10:00:00.000Z');
+      await app.get<DatabaseClient>(DATABASE_CLIENT).$executeRaw`
+        INSERT INTO projects (id, name, name_normalized, created_at) VALUES
+          ('00000000-0000-4000-8000-00000000000a'::uuid, 'Tie A', 'tie a', ${createdAt}),
+          ('00000000-0000-4000-8000-00000000000c'::uuid, 'Tie C', 'tie c', ${createdAt}),
+          ('00000000-0000-4000-8000-00000000000b'::uuid, 'Tie B', 'tie b', ${createdAt})`;
+
+      expect(await listedNames()).toEqual(['Tie C', 'Tie B', 'Tie A']);
+    });
+
     it('returns each project with the same shape as the create response', async () => {
       const created = await createProject({ name: 'Shape' });
 
@@ -115,8 +127,26 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(response.body.name).toBe(name);
     });
 
+    it('stores the name in Unicode NFC', async () => {
+      const response = await createProject({ name: 'Cafe\u0301' });
+
+      expect(response.status).toBe(201);
+      expect(response.body.name).toBe('Caf\u00e9');
+    });
+
+    it('counts the length in code points: 100 astral characters are accepted', async () => {
+      const name = '\u{1F600}'.repeat(100);
+
+      const response = await createProject({ name });
+
+      expect(response.status).toBe(201);
+      expect(response.body.name).toBe(name);
+      expect(await listedNames()).toEqual([name]);
+    });
+
     it.each([
       ['an empty name', { name: '' }],
+      ['a name over 100 code points (astral characters)', { name: '\u{1F600}'.repeat(101) }],
       ['a whitespace-only name', { name: ' \t\n ' }],
       ['a name over 100 characters', { name: 'x'.repeat(101) }],
       [
@@ -146,6 +176,13 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
       expectProblem(response, 409);
       expect(response.body.errors).toEqual([{ path: 'name', message: expect.any(String) }]);
       expect(await listedNames()).toEqual(['Agentic Studio']);
+    });
+
+    it('treats the NFC and NFD spellings of a name as a duplicate', async () => {
+      expect((await createProject({ name: 'Caf\u00e9 Cr\u00e8me' })).status).toBe(201);
+
+      expectProblem(await createProject({ name: 'Cafe\u0301 Cre\u0300me' }), 409);
+      expect(await listedNames()).toEqual(['Caf\u00e9 Cr\u00e8me']);
     });
 
     it('compares names case-insensitively beyond ASCII', async () => {
@@ -180,6 +217,22 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
 
       expectProblem(response, 401);
       expect(await listedNames()).toEqual([]);
+    });
+
+    it('rejects GET /api/projects with 401 after logout', async () => {
+      const server = app.getHttpServer();
+      const ownCookie = await signIn(app);
+      expect((await request(server).get('/api/projects').set('Cookie', ownCookie)).status).toBe(
+        200,
+      );
+
+      const logout = await request(server)
+        .post('/api/auth/logout')
+        .set({ Origin: STUDIO_ORIGIN, Cookie: ownCookie });
+      expect(logout.status).toBe(204);
+
+      // A browser drops the cleared cookie; replaying the old session cookie must fail too.
+      expectProblem(await request(server).get('/api/projects').set('Cookie', ownCookie), 401);
     });
 
     it('rejects a POST with a foreign Origin and creates nothing', async () => {

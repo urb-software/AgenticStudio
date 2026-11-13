@@ -21,11 +21,18 @@ function hintMessage(issue: { code?: string; maximum?: unknown }): string | unde
 const checkHint = zodResolver(createProjectRequestHint, { error: hintMessage });
 
 /**
- * Checks the hint against the name with whitespace runs collapsed, because the API measures
- * the length after normalizing (trim + collapse); the API stays the authority.
+ * Mirror of the API's `normalizeProjectName` (NFC, trim, whitespace collapse). OpenAPI cannot
+ * express a normalization, so the generated hint cannot carry it; this copy only keeps the
+ * client-side length hint in step with the API, which normalizes again and stays the
+ * authority (docs/architecture/frontend.md §3). The hint counts code points, like the API.
  */
+function normalizeForHint(name: string): string {
+  return name.normalize('NFC').trim().replace(/\s+/gu, ' ');
+}
+
+/** Checks the hint against the normalized name, because the API measures it after normalizing. */
 const resolver: Resolver<CreateProjectRequest> = (values, context, options) =>
-  checkHint({ name: values.name.trim().replace(/\s+/gu, ' ') }, context, options);
+  checkHint({ name: normalizeForHint(values.name) }, context, options);
 
 /** Server field errors (400/409 `errors[]`) that this form can show next to a field. */
 function nameErrorOf(error: unknown): string | undefined {
