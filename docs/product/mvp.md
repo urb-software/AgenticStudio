@@ -20,7 +20,7 @@ It is **not** a public SaaS, a model provider, or a replacement for the native C
 4. Execute a CLI-backed agent in an isolated project worktree/branch.
 5. Observe execution status, logs, errors, and results.
 6. Review diff/tests and explicitly approve changes.
-7. Merge approved changes into the project's `dev` integration branch.
+7. Merge approved changes into the project's integration branch (default `dev`).
 8. See the updated **single shared Preview** for that project.
 
 This is a **capability roadmap**; not all of it belongs in the first implemented story.
@@ -46,7 +46,7 @@ Agent and skill definitions are separate domain models *within* `agents`; MCP is
 - Initial workflow orchestration centered on a **small sequential flow and human approval**; advanced branching/parallelism may be deferred.
 - Native CLI definitions where practical; immutable approved configuration snapshots for runs.
 - Per-agent Git worktrees/branches and controlled merge of reviewed changes.
-- Docker Compose environments controlled by a separate, narrowly privileged process, with one shared Preview built from `dev` after merge.
+- Docker Compose environments controlled by a separate, narrowly privileged process, with one shared Preview built from the project's integration branch (default `dev`) after merge.
 - Secret storage outside Git and minimal access to external tools.
 
 Every capability needs its own refined GitHub Issue and acceptance criteria before implementation.
@@ -71,8 +71,8 @@ The MVP demonstrates that an operator can complete the end-to-end cycle with con
 ## 7. Unresolved decisions — turn into refinement/Technical Tasks
 
 - Validate CLI terms, authentication and headless use for **each** provider (tasks B6/B7); automated execution stays disabled per provider until then (acceptance gate in [Security](../engineering/security.md) §2).
-- Confirm VPS hardware, isolation model, networking, and secret-management mechanism before enabling real agent execution.
-- Decide Git access strategy and credential scope; protect upstream repositories and integration branches.
+- Confirm VPS hardware, isolation model, networking, and how agent/provider credentials are managed before enabling real agent execution. Studio's own secret store is decided in [ADR 0001](../architecture/adr/0001-secret-store.md).
+- **Decided** (Epic #55): Git access strategy and credential scope. Private Repositories use a per-project SSH Deploy key, public ones anonymous HTTPS; no tokens and no host credentials. See [Security](../engineering/security.md) §3–§4 and [ADR 0001](../architecture/adr/0001-secret-store.md). Protecting connected Repositories and their integration branches on push and merge is refined with the merge capability.
 - Refine exact workflow step semantics and human approval model.
 - Specify baseline project schema, auth/session strategy, API contracts, and Preview exposure only when the relevant slice begins.
 - Agree on frontend state-library versions/policy before installing them in feature code.

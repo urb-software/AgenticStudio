@@ -89,8 +89,8 @@ logging/    # Structured logs, correlation/tracing
 ## 7. Git and project collaboration
 
 - Each running coding agent gets an assigned worktree and branch with scoped filesystem permissions.
-- Outputs are examined as diffs, tested and reviewed before a controlled merge to `dev`.
-- Each project has **one shared default Preview** reflecting `dev` after approved merges; **not** a Preview per agent.
+- Outputs are examined as diffs, tested and reviewed before a controlled merge to the project's integration branch (default `dev`).
+- Each project has **one shared default Preview** reflecting the project's integration branch (default `dev`) after approved merges; **not** a Preview per agent.
 - Merge and production deployment are protected operations, never direct worker privileges.
 
 ## 8. Deployment and trust boundaries
