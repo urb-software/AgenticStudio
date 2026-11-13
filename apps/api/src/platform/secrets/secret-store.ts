@@ -20,6 +20,7 @@ export interface SecretStore {
   get(reference: SecretReference): Promise<string>;
   /** Deletes the secret behind `reference`; a no-op when it does not exist. */
   delete(reference: SecretReference): Promise<void>;
+  // Every method throws SecretStoreUnavailableError when the backing store fails.
 }
 
 /** DI token for the {@link SecretStore}. */
@@ -42,5 +43,13 @@ export class SecretDecryptionFailedError extends SecretStoreError {
   constructor() {
     super('The secret could not be decrypted.');
     this.name = 'SecretDecryptionFailedError';
+  }
+}
+
+/** The backing store failed (e.g. the database is unreachable); its error text is dropped. */
+export class SecretStoreUnavailableError extends SecretStoreError {
+  constructor() {
+    super('The secret store is unavailable.');
+    this.name = 'SecretStoreUnavailableError';
   }
 }

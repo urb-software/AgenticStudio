@@ -3,6 +3,7 @@ import { startPostgres, type TestService } from '@agentic-studio/testing';
 import {
   Controller,
   Get,
+  Post,
   Inject,
   type INestApplication,
   type LoggerService,
@@ -24,6 +25,7 @@ import {
   type SecretReference,
   type SecretStore,
   SecretStoreError,
+  SecretStoreUnavailableError,
 } from '../index.js';
 import { SecretsModule } from '../secrets.module.js';
 
@@ -31,9 +33,11 @@ import { SecretsModule } from '../secrets.module.js';
 // DI container as a consumer would use it. Assertions go through the port; the secrets table
 // is read or changed directly only to observe storage at rest or to simulate tampering.
 
-/** A throwaway value shaped like the deploy keys the store will hold: multi-line, non-ASCII. */
+/** A throwaway value shaped like the PEM-style keys the store will hold: multi-line, non-ASCII. */
 const SECRET_VALUE =
-  '-----BEGIN OPENSSH PRIVATE KEY-----\ntest-only-do-not-leak-7f3a ünïcødé\n-----END OPENSSH PRIVATE KEY-----\n';
+  '-----BEGIN TEST VALUE-----\ntest-only-do-not-leak-7f3a ünïcødé\n-----END TEST VALUE-----\n';
+/** Text a test trigger puts into a PostgreSQL error next to the ciphertext it was given. */
+const DB_ERROR_MARKER = 'db-error-carries-ciphertext';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 interface SecretRow {
@@ -63,6 +67,12 @@ class CapturingLogger implements LoggerService {
 @Controller('__test__/secrets')
 class SecretProbeController {
   constructor(@Inject(SECRET_STORE) private readonly secrets: SecretStore) {}
+
+  @Post()
+  async store(): Promise<{ stored: true }> {
+    await this.secrets.put(SECRET_VALUE);
+    return { stored: true };
+  }
 
   @Get(':reference')
   async resolve(@Param('reference') reference: string): Promise<{ length: number }> {
@@ -315,5 +325,95 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
     expect(logged).not.toContain('test-only-do-not-leak');
     expect(logged).not.toContain(Buffer.from(sealed.ciphertext).toString('base64').slice(0, 16));
     expect(logged).not.toContain(config.secretsKey.export().toString('base64'));
+  });
+
+  it.each([
+    ['a nonce that is not 12 bytes', 'nonce', Buffer.alloc(8)],
+    ['a tag that is not 16 bytes', 'auth_tag', Buffer.alloc(4)],
+    ['a key version below 1', 'key_version', 0],
+  ] as const)('rejects a row with %s at the database level', async (_, column, value) => {
+    const reference = await store.put(SECRET_VALUE);
+
+    // The column name comes from the fixed list above, never from input.
+    const update = db.$executeRawUnsafe(
+      `UPDATE secrets SET ${column} = $1 WHERE id = $2::uuid`,
+      value,
+      reference,
+    );
+
+    await expect(update).rejects.toThrow(/check constraint/i);
+  });
+
+  describe('when the database fails', () => {
+    const installLeakyTrigger = () =>
+      db.$transaction([
+        db.$executeRawUnsafe(`
+          CREATE FUNCTION test_secrets_fail() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            RAISE EXCEPTION '${DB_ERROR_MARKER} %', encode(NEW.ciphertext, 'base64');
+          END $$`),
+        db.$executeRawUnsafe(`
+          CREATE TRIGGER test_secrets_fail BEFORE INSERT ON secrets
+          FOR EACH ROW EXECUTE FUNCTION test_secrets_fail()`),
+      ]);
+    const removeLeakyTrigger = () =>
+      db.$transaction([
+        db.$executeRawUnsafe('DROP TRIGGER IF EXISTS test_secrets_fail ON secrets'),
+        db.$executeRawUnsafe('DROP FUNCTION IF EXISTS test_secrets_fail()'),
+      ]);
+
+    const expectNoLeak = (error: Error) => {
+      expect(error).toBeInstanceOf(SecretStoreUnavailableError);
+      expect(error).toBeInstanceOf(SecretStoreError);
+      expect(error.message).toBe('The secret store is unavailable.');
+      expect(error.cause).toBeUndefined();
+      for (const rendered of renderings(error)) {
+        expect(rendered).not.toContain('test-only-do-not-leak');
+        expect(rendered).not.toContain(DB_ERROR_MARKER);
+        expect(rendered).not.toContain('ECONNREFUSED');
+      }
+    };
+
+    it('drops a database error that carries the ciphertext on put', async () => {
+      await installLeakyTrigger();
+      try {
+        expectNoLeak(await captureRejection(store.put(SECRET_VALUE)));
+
+        const response = await request(app.getHttpServer())
+          .post('/api/__test__/secrets')
+          .set('Origin', config.studioOrigin)
+          .send({});
+        expect(response.status).toBe(500);
+        expect(response.body.detail).toBe('An unexpected error occurred.');
+        const logged = logger.lines.join('\n');
+        for (const leak of ['test-only-do-not-leak', DB_ERROR_MARKER]) {
+          expect(response.text).not.toContain(leak);
+          expect(logged).not.toContain(leak);
+        }
+      } finally {
+        await removeLeakyTrigger();
+      }
+    });
+
+    it('reports an unreachable database on put, get and delete without its error text', async () => {
+      // testConfig() points at an unreachable database (127.0.0.1:1).
+      const unreachable = await buildApp(probeRootModule(testConfig()), { logger });
+      await unreachable.init();
+      try {
+        const broken = unreachable.get<SecretStore>(SECRET_STORE);
+        const reference = '9b2f6c1e-4d0a-4f7b-8e3c-2a1d5f6b7c8d';
+        expectNoLeak(await captureRejection(broken.put(SECRET_VALUE)));
+        expectNoLeak(await captureRejection(broken.get(reference)));
+        expectNoLeak(await captureRejection(broken.delete(reference)));
+
+        const response = await request(unreachable.getHttpServer()).get(
+          `/api/__test__/secrets/${reference}`,
+        );
+        expect(response.status).toBe(500);
+        expect(response.text).not.toContain('ECONNREFUSED');
+      } finally {
+        await unreachable.close();
+      }
+    });
   });
 });

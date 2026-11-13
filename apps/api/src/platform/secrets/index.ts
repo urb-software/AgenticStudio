@@ -8,4 +8,5 @@ export {
   type SecretReference,
   type SecretStore,
   SecretStoreError,
+  SecretStoreUnavailableError,
 } from './secret-store.js';

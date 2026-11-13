@@ -16,3 +16,9 @@ CREATE TABLE "secrets" (
 
     CONSTRAINT "secrets_pkey" PRIMARY KEY ("id")
 );
+
+-- Defence in depth on the shape of the sealed parts (the adapter also fails closed on them).
+-- Prisma does not model CHECK constraints, so they live only here, and schema diffs ignore them.
+ALTER TABLE "secrets" ADD CONSTRAINT "secrets_nonce_length_check" CHECK (octet_length("nonce") = 12);
+ALTER TABLE "secrets" ADD CONSTRAINT "secrets_auth_tag_length_check" CHECK (octet_length("auth_tag") = 16);
+ALTER TABLE "secrets" ADD CONSTRAINT "secrets_key_version_check" CHECK ("key_version" >= 1);
