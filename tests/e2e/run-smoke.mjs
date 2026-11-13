@@ -10,10 +10,14 @@
 //    web on http://localhost:$E2E_WEB_PORT (default 4500), API on 127.0.0.1:$E2E_API_PORT
 //    (default 4501), with the web build proxying same-origin /api to the API (opt-in rules:
 //    README.md, "Web /api proxy").
+//    The API gets a throwaway data directory (STUDIO_DATA_DIR) in the OS temp directory.
 // 4. Runs Playwright (tests/e2e/playwright.config.ts), then always stops the servers and
-//    containers.
+//    containers and removes the data directory.
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -134,6 +138,10 @@ async function main() {
   );
   await deployMigrations(postgres.url);
 
+  // Throwaway data directory (STUDIO_DATA_DIR) outside the repository, removed afterwards.
+  const dataDir = await mkdtemp(join(tmpdir(), 'studio-e2e-data-'));
+  cleanups.push(() => rm(dataDir, { recursive: true, force: true }));
+
   const operatorPassword = randomBytes(24).toString('base64url');
   const serverEnv = {
     NODE_ENV: 'production',
@@ -146,6 +154,7 @@ async function main() {
     API_TRUSTED_PROXIES: '',
     STUDIO_OPERATOR_PASSWORD_HASH: hashOperatorPassword(operatorPassword),
     STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
+    STUDIO_DATA_DIR: dataDir,
   };
 
   startServer('api', process.execPath, ['apps/api/dist/main.js'], serverEnv);

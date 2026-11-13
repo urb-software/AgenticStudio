@@ -91,10 +91,16 @@ cp .env.example .env
 | `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). A proxied deployment must list its proxy addresses here (see [Web `/api` proxy](#web-api-proxy)). |
 | `STUDIO_OPERATOR_PASSWORD_HASH` | API | Required. Argon2id hash of the operator password (see [Operator login](#operator-login)), in single quotes in `.env`. Never the plaintext. |
 | `STUDIO_SECRETS_KEY` | API | Required. Master key for secrets stored in PostgreSQL: 32 random bytes, base64. See [Secrets key](#secrets-key). |
+| `STUDIO_DATA_DIR` | API | Required on every platform. Absolute path of an existing, writable directory **outside the repository checkout** (e.g. `/home/you/.local/share/agentic-studio`) where Studio keeps repository data such as Clones. Outside Windows it may contain only letters, digits and `._/-` (no spaces): the SSH key path under it is passed to `ssh` on a command line. See [Repository features (Linux only)](#repository-features-linux-only). |
+| `STUDIO_GIT_ALLOW_FILE_REMOTES` | API | Test-only. `true` lets the Git adapter use local `file://` fixture remotes. Accepted only with `NODE_ENV=test`; any other environment refuses to start. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
 | `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
 
 The API validates its environment with Zod at start-up (`apps/api/src/platform/config`) and exits with a list of the invalid variable names (never their values) instead of starting half-configured.
+
+### Repository features (Linux only)
+
+Connected Repositories (Epic #55) run the system `git` binary and an SSH client under the hardening baseline of [Security](docs/engineering/security.md) §4. They work on **Linux only** (containers, CI, a VPS). On Linux the API checks at start-up that `git` 2.32.0 or later is installed and refuses to start otherwise. On other platforms, including native Windows, the API starts and everything else works; Git operations report an unsupported platform. `STUDIO_DATA_DIR` is required everywhere, so the configuration is the same on every platform.
 
 ### Operator login
 

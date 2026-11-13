@@ -1,5 +1,6 @@
 import { createSecretKey, randomBytes } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { AppModule } from '../../app.module.js';
 import { buildApp } from '../../app.js';
@@ -26,6 +27,9 @@ const app = await buildApp(
     operatorPasswordHash: '$argon2id$v=19$m=19456,t=2,p=1$b2ZmbGluZQ$b2ZmbGluZQ',
     // A throwaway key: the generator stores and reads no secrets.
     secretsKey: createSecretKey(randomBytes(32)),
+    // Nothing is cloned: the generator runs no Git operation.
+    dataDir: tmpdir(),
+    gitAllowFileRemotes: false,
   }),
   { logger: false },
 );

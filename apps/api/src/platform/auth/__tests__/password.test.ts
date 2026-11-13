@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { PLACEHOLDER_PASSWORD_HASH } from '../../../__tests__/test-config.js';
 import { loadConfig } from '../../config/config.js';
@@ -19,6 +20,7 @@ describe('password hashing', () => {
         STUDIO_OPERATOR_PASSWORD_HASH: hash,
         // A throwaway key: the config requires one (Issue #57).
         STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
+        STUDIO_DATA_DIR: tmpdir(),
       }).operatorPasswordHash,
     ).toBe(hash);
   });

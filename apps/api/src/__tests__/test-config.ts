@@ -1,4 +1,5 @@
 import { createSecretKey, randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import type { AppConfig } from '../platform/config/config.js';
 
 /**
@@ -30,6 +31,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     studioOrigin: 'http://localhost:3000',
     operatorPasswordHash: PLACEHOLDER_PASSWORD_HASH,
     secretsKey: TEST_SECRETS_KEY,
+    // Nothing is written there unless a test clones; such tests pass their own directory.
+    dataDir: tmpdir(),
+    gitAllowFileRemotes: false,
     ...overrides,
   };
 }

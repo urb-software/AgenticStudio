@@ -108,6 +108,8 @@ A change to architecture tooling must run the fixtures; a configuration edit mus
 | Security/reliability | Negative tests + scanners | Forbidden paths, unauthorized actions, secrets, duplicate messages, cancellation/timeouts |
 | CLI adapter | Fake Runners in regular CI; separate real CLI smoke | Process invocation, exit codes, redaction, failure/retry, true integration compatibility |
 
+Platform: repository features (Git adapter, Clones) are **Linux only**; their tests skip on other platforms with a clear reason and must run, not skip, in Linux CI.
+
 Placement: feature tests **near the feature** in `__tests__/` where practical; system-level E2E/security/contract suites at repo-level `tests/`; fixtures and fakes shared by multiple apps in `packages/testing/`.
 
 Coverage: no rigid overall percentage at the beginning. Measure it, prioritize critical behavior and failure cases, and set numerical thresholds only after the first slices, if they help.

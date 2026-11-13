@@ -120,6 +120,9 @@ importers:
       supertest:
         specifier: 7.3.2
         version: 7.3.2(supports-color@7.2.0)
+      testcontainers:
+        specifier: 12.2.1
+        version: 12.2.1(bare-buffer@3.7.1)(supports-color@7.2.0)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -256,10 +259,10 @@ importers:
     dependencies:
       '@testcontainers/postgresql':
         specifier: 12.2.1
-        version: 12.2.1(bare-buffer@3.7.1)(supports-color@7.2.0)
+        version: 12.2.1(supports-color@7.2.0)
       '@testcontainers/redis':
         specifier: 12.2.1
-        version: 12.2.1(bare-buffer@3.7.1)(supports-color@7.2.0)
+        version: 12.2.1(supports-color@7.2.0)
     devDependencies:
       '@types/node':
         specifier: 24.19.2
@@ -8025,7 +8028,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  '@testcontainers/postgresql@12.2.1(bare-buffer@3.7.1)(supports-color@7.2.0)':
+  '@testcontainers/postgresql@12.2.1(supports-color@7.2.0)':
     dependencies:
       testcontainers: 12.2.1(bare-buffer@3.7.1)(supports-color@7.2.0)
     transitivePeerDependencies:
@@ -8034,7 +8037,7 @@ snapshots:
       - react-native-b4a
       - supports-color
 
-  '@testcontainers/redis@12.2.1(bare-buffer@3.7.1)(supports-color@7.2.0)':
+  '@testcontainers/redis@12.2.1(supports-color@7.2.0)':
     dependencies:
       testcontainers: 12.2.1(bare-buffer@3.7.1)(supports-color@7.2.0)
     transitivePeerDependencies:
