@@ -37,8 +37,8 @@ apps/web/src/
     realtime/        # SSE lifecycle
     query/           # TanStack Query infrastructure, if adopted
   shared/
-    ui/              # shadcn/ui primitives
-    components/
+    ui/              # shadcn-generated primitives (Button, Dialog…), see §9
+    components/      # Agent Studio compositions built on shared/ui (StatusPill…), see §9
     hooks/
     lib/
 ```
@@ -122,8 +122,42 @@ Feature-specific hooks, tests, UI elements and schema live near the feature. No 
 - Vitest + React Testing Library: forms, components, feature interactions, hooks.
 - Playwright: meaningful user journeys (especially critical UI→API→DB slices).
 - Automated accessibility checks and keyboard/navigation basics for changed UI.
-- `architecture:web`: public entrypoint imports, layer direction, no cycles or private cross-module stores, server/client boundaries, structural feature-first conventions.
+- `architecture:web`: public entrypoint imports, layer direction, no cycles or private cross-module stores, server/client boundaries, structural feature-first conventions, and the styling rules of §9 (no `design-system/` imports in `apps/*`, no colour literals or `style=` colours).
 - Format, ESLint/React hook rules, strict TypeScript, build and relevant tests pass before merge.
+
+## 9. Styling and UI components
+
+The visual source of truth is the Agent Studio design system in `design-system/` (see its `README.md`). The app uses **Tailwind v4** (PostCSS, `tw-animate-css`), **shadcn/ui**, `next/font/google` (Inter, JetBrains Mono; downloaded at build time and self-hosted, never fetched from Google by the browser) and `next-themes` (class on `<html>`, dark by default; the theme provider is a Client Component island, layouts stay Server Components, §6).
+
+**Tokens only**
+
+- Colour, radius, spacing and shadow come from the tokens of `apps/web/src/app/globals.css`, through Tailwind utilities (`bg-surface`, `text-text-muted`, `rounded-lg`, `shadow-xs`). No raw colours (hex, `rgb()`, `hsl()` or other colour functions), no arbitrary colour values (`bg-[#…]`) and no ad hoc palette.
+- `style=` props never carry colours, literal or not (`var(--brand)` included): they must be inline object literals with layout values only. Use a `className` token utility instead.
+- `architecture:web` enforces the cheap part: colour literals in `.ts`/`.tsx`/CSS under `apps/web/src/**` outside `globals.css`, and colour properties (or unverifiable values) in `style=`. Prettier (`prettier-plugin-tailwindcss`) sorts classes.
+
+**Design system and `globals.css`**
+
+- `design-system/` is a **reference, never imported**: no script or stylesheet in `apps/*` imports from it (enforced by `architecture:web`).
+- `apps/web/src/app/globals.css` is an **owned copy** of `design-system/code/globals.css`, imported once by the root layout and excluded from Prettier so it stays diffable. After a design-system re-export it is re-synced by manual diff, in a reviewed PR.
+
+**Where components live**
+
+- `shared/ui/` holds **shadcn-generated primitives**; `shared/components/` holds **Agent Studio compositions** built on them (for example `StatusPill`, `EmptyState`). Neither contains feature business logic (§3).
+- **New component rule:** when `design-system/components/<Name>/README.md` exists, it is the spec: the same props, variants and class recipes. The component is implemented in `shared/` in the PR of the story that first needs it, not ahead of time. A component missing from the design system is **flagged to the operator**, not invented silently.
+- Modules never define their own primitives and never restyle shared ones; a missing variant is added to the shared component.
+- shadcn components are added with the shadcn CLI **pinned to an exact version at least 7 days old** ([Security](../engineering/security.md) §3); the generated code is reviewed like hand-written code.
+
+**Responsive rules**
+
+- Minimum supported width **360px**. Breakpoints: **phone** < 768px, **tablet** 768–1279px, **desktop** ≥ 1280px.
+- On phones:
+  - the sidebar is an off-canvas sheet, and the theme toggle lives in the operator menu;
+  - page padding is `space-4`, and header actions wrap under the title;
+  - dialogs become bottom sheets with a scrollable body and sticky actions;
+  - lists become stacked cards or scroll inside their own box; the page never scrolls sideways.
+- No hover-only affordances: everything reachable on hover is also reachable by tap and keyboard.
+- Controls are at least **44px** on coarse pointers, and inputs use at least a **16px** font on phones (no zoom on focus).
+- The app extends the design system to phones. Where they differ, **these rules win** until the design system is re-exported with phone layouts.
 
 See [Quality](../engineering/quality.md) and [Security](../engineering/security.md).
 
