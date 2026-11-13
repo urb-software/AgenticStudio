@@ -88,9 +88,10 @@ cp .env.example .env
 | `API_HOST` | API | Bind address. Default `127.0.0.1` (localhost only); a deployment sets it explicitly. |
 | `REDIS_URL` | API | Required. Sessions and login-failure counters. Must match the Compose Redis port. |
 | `STUDIO_ORIGIN` | API | Default `http://localhost:3000`: the web app's origin, the only origin accepted on mutations. Plain HTTP only for localhost; https makes the session cookie `Secure` (`__Host-studio_session`). |
-| `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). |
+| `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). A proxied deployment (reverse proxy or `STUDIO_WEB_API_PROXY=true`) must list its proxy addresses here, or all clients share one rate-limit bucket. |
 | `STUDIO_OPERATOR_PASSWORD_HASH` | API | Required. Argon2id hash of the operator password (see [Operator login](#operator-login)), in single quotes in `.env`. Never the plaintext. |
-| `API_ORIGIN` | web (`/api` rewrite), validated by the API | `next dev` default `http://localhost:3001`. `next dev` does not read the root `.env`; set it in the shell when the API runs elsewhere. A production `next build` proxies `/api` only when `API_ORIGIN` is set at build time (as `pnpm e2e:smoke` does). |
+| `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin. `next dev` default `http://localhost:3001`. `next dev` does not read the root `.env`; set it in the shell when the API runs elsewhere. On its own it does not make a production build proxy `/api`. |
+| `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` turns on the production `/api` rewrite to `API_ORIGIN`, which is then required; `false` or unset means no rewrite. Any other value, or `true` without `API_ORIGIN`, fails the build. Set it at build time (the rewrite is baked into the build) and at start, as `pnpm e2e:smoke` does. `next dev` always proxies. |
 
 The API validates its environment with Zod at start-up (`apps/api/src/platform/config`) and exits with a list of the invalid variable names (never their values) instead of starting half-configured.
 
@@ -160,7 +161,7 @@ curl -i http://localhost:3000/api/health         # 200 {"status":"ok"} (public)
 curl -i http://localhost:3000/api/auth/session   # 401 problem+json until you sign in
 ```
 
-If you run the API on another port or host, set `API_ORIGIN` (default `http://localhost:3001`) for `apps/web` so the dev rewrite targets it. `next dev` always rewrites; a production build only when `API_ORIGIN` was set at build time. Deployment routing is out of scope for now.
+If you run the API on another port or host, set `API_ORIGIN` (default `http://localhost:3001`) for `apps/web` so the dev rewrite targets it. `next dev` always rewrites; a production build only with the explicit opt-in `STUDIO_WEB_API_PROXY=true` plus `API_ORIGIN` at build time. Behind that rewrite or any other proxy, set `API_TRUSTED_PROXIES` on the API. Deployment routing is out of scope for now.
 
 ### Checks
 
