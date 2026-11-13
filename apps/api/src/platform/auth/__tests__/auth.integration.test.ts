@@ -571,6 +571,25 @@ describe('client IP behind a trusted proxy', () => {
     expect(retryAfter).toBeGreaterThan(15 * 60);
     expect(retryAfter).toBeLessThanOrEqual(60 * 60);
   });
+
+  // #24: the operator recovery documented in security.md §8 uses these exact keys.
+  it('lifts the global lockout when the operator deletes the global failure counter', async () => {
+    for (let client = 1; client <= 10; client += 1) {
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        await loginFrom(`203.0.113.${client}`);
+      }
+    }
+    expectProblem(await loginFrom('203.0.113.200'), 429);
+    expect(await redis.get('auth:login-failures:global')).toBe('50');
+
+    expect(await redis.del('auth:login-failures:global')).toBe(1);
+
+    expectProblem(await loginFrom('203.0.113.200'), 401);
+    // Per-IP counters are separate: a blocked IP stays blocked until its own key goes.
+    expectProblem(await loginFrom('203.0.113.1'), 429);
+    expect(await redis.del('auth:login-failures:ip:203.0.113.1')).toBe(1);
+    expectProblem(await loginFrom('203.0.113.1'), 401);
+  });
 });
 
 // #24: production cookie attributes behind an https Studio origin.
