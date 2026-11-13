@@ -19,14 +19,14 @@ export const connectRepositoryRequestSchema = z
     url: z
       .string()
       .trim()
-      .min(1, { error: 'Enter the repository URL.' })
+      .min(1, { error: 'Enter the repository URL.', abort: true })
       .max(REPOSITORY_URL_MAX_LENGTH, {
         error: `Use at most ${REPOSITORY_URL_MAX_LENGTH} characters.`,
       }),
     integrationBranch: z
       .string()
       .trim()
-      .min(1, { error: 'Enter the integration branch.' })
+      .min(1, { error: 'Enter the integration branch.', abort: true })
       .max(INTEGRATION_BRANCH_MAX_LENGTH, {
         error: `Use at most ${INTEGRATION_BRANCH_MAX_LENGTH} characters.`,
       })

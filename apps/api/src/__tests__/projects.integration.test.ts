@@ -57,7 +57,7 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
 
   beforeEach(async () => {
     // Test isolation only; every assertion goes through the HTTP API.
-    await app.get<DatabaseClient>(DATABASE_CLIENT).$executeRaw`TRUNCATE TABLE projects`;
+    await app.get<DatabaseClient>(DATABASE_CLIENT).$executeRaw`TRUNCATE TABLE projects CASCADE`;
   });
 
   describe('GET /api/projects', () => {
