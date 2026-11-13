@@ -30,6 +30,49 @@ export type ProjectListOutput = {
     items: Array<ProjectOutput>;
 };
 
+export type RepositorySummaryOutput = {
+    state: RepositoryStateOutput;
+    url: string;
+    integrationBranch: string;
+};
+
+/**
+ * connecting: the first Clone is being made; ready: the Clone exists; failed: the last attempt failed. Later stories add values; treat an unknown value as unavailable.
+ */
+export type RepositoryStateOutput = 'connecting' | 'ready' | 'failed';
+
+export type ProjectDetailOutput = {
+    id: string;
+    name: string;
+    createdAt: string;
+    repository: RepositorySummaryOutput | null;
+};
+
+export type RepositoryFailureOutput = {
+    code: RepositoryFailureCodeOutput;
+    detail: string;
+    remoteDefaultBranch?: string;
+};
+
+/**
+ * The fixed failure reason codes (Epic #55).
+ */
+export type RepositoryFailureCodeOutput = 'auth_failed' | 'host_unreachable' | 'host_key_mismatch' | 'repository_not_found' | 'branch_not_found' | 'timeout' | 'size_limit' | 'unknown';
+
+export type RepositoryOutput = {
+    state: RepositoryStateOutput;
+    url: string;
+    integrationBranch: string;
+    headSha?: string;
+    lastFetchedAt?: string;
+    failure?: RepositoryFailureOutput;
+};
+
+export type ConnectRepositoryRequest = {
+    url: string;
+    integrationBranch: string;
+};
+
 export type ProblemDetails = {
     type: string;
     title: string;
@@ -176,3 +219,103 @@ export type CreateProjectResponses = {
 };
 
 export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
+
+export type GetProjectData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}';
+};
+
+export type GetProjectErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetProjectError = GetProjectErrors[keyof GetProjectErrors];
+
+export type GetProjectResponses = {
+    200: ProjectDetailOutput;
+};
+
+export type GetProjectResponse = GetProjectResponses[keyof GetProjectResponses];
+
+export type GetRepositoryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/repository';
+};
+
+export type GetRepositoryErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRepositoryError = GetRepositoryErrors[keyof GetRepositoryErrors];
+
+export type GetRepositoryResponses = {
+    200: RepositoryOutput;
+};
+
+export type GetRepositoryResponse = GetRepositoryResponses[keyof GetRepositoryResponses];
+
+export type ConnectRepositoryData = {
+    body: ConnectRepositoryRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/repository';
+};
+
+export type ConnectRepositoryErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The project already has a repository (urn:agentic-studio:problem:repository-already-connected), the remote is connected to another project (urn:agentic-studio:problem:remote-already-connected; field error on url), or an earlier clone is still finishing (urn:agentic-studio:problem:clone-already-running)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid url or integrationBranch (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)
+     */
+    501: ProblemDetails;
+    /**
+     * The job queue is unavailable; the attempt is marked failed (generic problem)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ConnectRepositoryError = ConnectRepositoryErrors[keyof ConnectRepositoryErrors];
+
+export type ConnectRepositoryResponses = {
+    201: RepositoryOutput;
+};
+
+export type ConnectRepositoryResponse = ConnectRepositoryResponses[keyof ConnectRepositoryResponses];

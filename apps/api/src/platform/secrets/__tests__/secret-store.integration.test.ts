@@ -12,7 +12,11 @@ import {
 } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { testConfig, throwawaySecretsKey } from '../../../__tests__/test-config.js';
+import {
+  testConfig,
+  throwawaySecretsKey,
+  WITHOUT_QUEUE_WORKERS,
+} from '../../../__tests__/test-config.js';
 import { AppModule } from '../../../app.module.js';
 import { buildApp, createApp } from '../../../app.js';
 import { Public } from '../../auth/public.decorator.js';
@@ -82,7 +86,7 @@ class SecretProbeController {
 
 function probeRootModule(config: AppConfig) {
   @Module({
-    imports: [AppModule.register(config), SecretsModule],
+    imports: [AppModule.register(config, WITHOUT_QUEUE_WORKERS), SecretsModule],
     controllers: [SecretProbeController],
   })
   class SecretProbeRootModule {}
@@ -146,7 +150,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('is provided by the production app', async () => {
-    const production = await createApp(config);
+    const production = await createApp(config, WITHOUT_QUEUE_WORKERS);
     try {
       const reference = await production.get<SecretStore>(SECRET_STORE).put(SECRET_VALUE);
       expect(await store.get(reference)).toBe(SECRET_VALUE);
@@ -195,6 +199,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
     const reference = await store.put(SECRET_VALUE);
     const otherKeyApp = await createApp(
       testConfig({ ...config, secretsKey: throwawaySecretsKey() }),
+      WITHOUT_QUEUE_WORKERS,
     );
     try {
       const error = await captureRejection(

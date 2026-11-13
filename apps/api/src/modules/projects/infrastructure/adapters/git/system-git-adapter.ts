@@ -270,6 +270,10 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     return version.join('.');
   }
 
+  assertSupported(): void {
+    this.assertSupportedPlatform();
+  }
+
   async inspectRemote(
     remoteUrl: string,
     branch: string,

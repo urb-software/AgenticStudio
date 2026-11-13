@@ -203,6 +203,208 @@
           "projects"
         ]
       }
+    },
+    "/api/projects/{id}": {
+      "get": {
+        "operationId": "getProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetail_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/repository": {
+      "get": {
+        "operationId": "getRepository",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "description": "Connects a public repository over HTTPS: stores it as `connecting` and clones it in the background (poll `GET /api/projects/{id}/repository`). A `failed` repository is replaced by the new attempt (Retry).",
+        "operationId": "connectRepository",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectRepositoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The project already has a repository (urn:agentic-studio:problem:repository-already-connected), the remote is connected to another project (urn:agentic-studio:problem:remote-already-connected; field error on url), or an earlier clone is still finishing (urn:agentic-studio:problem:clone-already-running)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid url or integrationBranch (field errors)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The job queue is unavailable; the attempt is marked failed (generic problem)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      }
     }
   },
   "info": {
@@ -305,6 +507,154 @@
           "items"
         ],
         "additionalProperties": false
+      },
+      "RepositorySummary_Output": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/RepositoryState_Output"
+          },
+          "url": {
+            "type": "string"
+          },
+          "integrationBranch": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "url",
+          "integrationBranch"
+        ],
+        "additionalProperties": false
+      },
+      "RepositoryState_Output": {
+        "type": "string",
+        "enum": [
+          "connecting",
+          "ready",
+          "failed"
+        ],
+        "description": "connecting: the first Clone is being made; ready: the Clone exists; failed: the last attempt failed. Later stories add values; treat an unknown value as unavailable."
+      },
+      "ProjectDetail_Output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepositorySummary_Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "repository"
+        ],
+        "additionalProperties": false
+      },
+      "RepositoryFailure_Output": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/RepositoryFailureCode_Output"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "remoteDefaultBranch": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ],
+        "additionalProperties": false
+      },
+      "RepositoryFailureCode_Output": {
+        "type": "string",
+        "enum": [
+          "auth_failed",
+          "host_unreachable",
+          "host_key_mismatch",
+          "repository_not_found",
+          "branch_not_found",
+          "timeout",
+          "size_limit",
+          "unknown"
+        ],
+        "description": "The fixed failure reason codes (Epic #55)."
+      },
+      "Repository_Output": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/RepositoryState_Output"
+          },
+          "url": {
+            "type": "string"
+          },
+          "integrationBranch": {
+            "type": "string"
+          },
+          "headSha": {
+            "type": "string"
+          },
+          "lastFetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "failure": {
+            "$ref": "#/components/schemas/RepositoryFailure_Output"
+          }
+        },
+        "required": [
+          "state",
+          "url",
+          "integrationBranch"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectRepositoryRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "integrationBranch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "pattern": "^(?!@$)(?![-/.])(?!.*(?:\\.\\.|\\/\\/|@\\{|\\/\\.|\\.lock\\/|\\.lock$|[/.]$))[^\\x00-\\x20\\x7f~^:?*[\\\\]+$"
+          }
+        },
+        "required": [
+          "url",
+          "integrationBranch"
+        ]
       },
       "ProblemDetails": {
         "type": "object",

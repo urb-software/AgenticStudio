@@ -2,7 +2,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { testConfig } from '../../../../../../__tests__/test-config.js';
+import { testConfig, WITHOUT_QUEUE_WORKERS } from '../../../../../../__tests__/test-config.js';
 import { createApp } from '../../../../../../app.js';
 import {
   GitRequestRejectedError,
@@ -47,7 +47,7 @@ describe('SystemGitAdapter production wiring', () => {
 
 describe('SystemGitAdapter in the API', () => {
   it('is the projects Git port; the API starts and refuses file remotes', async () => {
-    const app = await createApp(testConfig());
+    const app = await createApp(testConfig(), WITHOUT_QUEUE_WORKERS);
     try {
       await app.init();
       const git = app.get<RepositoryGit>(REPOSITORY_GIT, { strict: false });
@@ -99,6 +99,17 @@ describe('SystemGitAdapter on a platform other than Linux', () => {
       expect(await readdir(tempRoot)).toEqual([]);
     },
   );
+
+  it.each(['win32', 'darwin'] as const)(
+    'assertSupported throws the typed error on %s',
+    (platform) => {
+      expect(() => adapter(platform).assertSupported()).toThrow(GitUnsupportedPlatformError);
+    },
+  );
+
+  it('assertSupported accepts Linux', () => {
+    expect(() => adapter('linux').assertSupported()).not.toThrow();
+  });
 
   it('skips the start-up Git check, so the rest of the API starts', async () => {
     await expect(adapter('win32').onModuleInit()).resolves.toBeUndefined();

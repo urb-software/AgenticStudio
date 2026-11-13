@@ -28,6 +28,62 @@ export const zProjectListOutput = z.object({
     items: z.array(zProjectOutput)
 });
 
+/**
+ * connecting: the first Clone is being made; ready: the Clone exists; failed: the last attempt failed. Later stories add values; treat an unknown value as unavailable.
+ */
+export const zRepositoryStateOutput = z.enum([
+    'connecting',
+    'ready',
+    'failed'
+]);
+
+export const zRepositorySummaryOutput = z.object({
+    state: zRepositoryStateOutput,
+    url: z.string(),
+    integrationBranch: z.string()
+});
+
+export const zProjectDetailOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    name: z.string(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    repository: zRepositorySummaryOutput.nullable()
+});
+
+/**
+ * The fixed failure reason codes (Epic #55).
+ */
+export const zRepositoryFailureCodeOutput = z.enum([
+    'auth_failed',
+    'host_unreachable',
+    'host_key_mismatch',
+    'repository_not_found',
+    'branch_not_found',
+    'timeout',
+    'size_limit',
+    'unknown'
+]);
+
+export const zRepositoryFailureOutput = z.object({
+    code: zRepositoryFailureCodeOutput,
+    detail: z.string(),
+    remoteDefaultBranch: z.string().optional()
+});
+
+export const zRepositoryOutput = z.object({
+    state: zRepositoryStateOutput,
+    url: z.string(),
+    integrationBranch: z.string(),
+    headSha: z.string().optional(),
+    lastFetchedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    failure: zRepositoryFailureOutput.optional()
+});
+
+export const zConnectRepositoryRequest = z.object({
+    url: z.string().min(1).max(2048),
+    integrationBranch: z.string().min(1).max(255).regex(/^(?!@$)(?![-\/.])(?!.*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/)
+});
+
 export const zProblemDetails = z.object({
     type: z.string(),
     title: z.string(),
@@ -58,3 +114,23 @@ export const zListProjectsResponse = zProjectListOutput;
 export const zCreateProjectBody = zCreateProjectRequest;
 
 export const zCreateProjectResponse = zProjectOutput;
+
+export const zGetProjectPath = z.object({
+    id: z.string()
+});
+
+export const zGetProjectResponse = zProjectDetailOutput;
+
+export const zGetRepositoryPath = z.object({
+    id: z.string()
+});
+
+export const zGetRepositoryResponse = zRepositoryOutput;
+
+export const zConnectRepositoryBody = zConnectRepositoryRequest;
+
+export const zConnectRepositoryPath = z.object({
+    id: z.string()
+});
+
+export const zConnectRepositoryResponse = zRepositoryOutput;

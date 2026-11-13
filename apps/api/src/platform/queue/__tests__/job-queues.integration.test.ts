@@ -4,6 +4,7 @@ import {
   Injectable,
   Module,
   type OnModuleInit,
+  type Provider,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Queue, Worker } from 'bullmq';
@@ -22,7 +23,7 @@ import {
   QueueUnavailableError,
   type RunningJob,
 } from '../job-queue.js';
-import { type QueueWorkerTuning, QueueModule } from '../queue.module.js';
+import { type QueueWorkerTuning, QueueModule, queueHealthProvider } from '../queue.module.js';
 
 type Payload = { projectId: string };
 
@@ -91,6 +92,7 @@ async function startApp(
   redisUrl: string,
   owner: RecordingOwner,
   tuning?: QueueWorkerTuning,
+  extraProviders: Provider[] = [],
 ): Promise<{ app: INestApplicationContext; queue: JobQueue<Payload> }> {
   const handle: { queue?: JobQueue<Payload> } = {};
 
@@ -104,7 +106,7 @@ async function startApp(
 
   @Module({
     imports: [ConfigModule.forRoot(testConfig({ redisUrl })), QueueModule.forRoot(tuning)],
-    providers: [OwnerRegistration],
+    providers: [OwnerRegistration, ...extraProviders],
   })
   class TestRoot {}
 
@@ -515,6 +517,32 @@ describe('job queues (Redis via Testcontainers)', () => {
       await queue.enqueue('sync-p1', { projectId: 'p1' }, { timeoutMs: 200 });
 
       await eventually(() => expect(owner.failures[0]?.failure).toEqual({ reason: 'timeout' }));
+    });
+  });
+
+  describe('start-up', () => {
+    it('starts each worker once when another provider also resolves to the service (health alias)', async () => {
+      const first = new RecordingOwner('repository-sync');
+      ({ app } = await startApp(redisService.url, first, undefined, [queueHealthProvider]));
+      expect(first.reconciled).toHaveLength(1);
+      await app.close();
+
+      // A worker leaked by a second start would keep taking jobs after its app closed.
+      const second = new RecordingOwner('repository-sync');
+      let queue: JobQueue<Payload>;
+      ({ app, queue } = await startApp(redisService.url, second, undefined, [queueHealthProvider]));
+      for (let n = 0; n < 6; n++) await queue.enqueue(`sync-${n}`, { projectId: `p${n}` });
+      await eventually(() => expect(second.processed).toHaveLength(6));
+
+      expect(first.processed).toEqual([]);
+    });
+
+    it('with startWorkers false, starts without Redis and neither reconciles nor runs jobs', async () => {
+      const owner = new RecordingOwner('repository-sync');
+
+      ({ app } = await startApp('redis://127.0.0.1:1', owner, { startWorkers: false }));
+
+      expect(owner.reconciled).toEqual([]);
     });
   });
 

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { GitMerge, Plus } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
 import { Button } from '../button';
+import Link from 'next/link';
 
 const VARIANTS = ['primary', 'secondary', 'ghost', 'danger', 'destructive'] as const;
 
@@ -98,7 +99,7 @@ describe('Button', () => {
   it('renders a link with button styling via asChild', () => {
     render(
       <Button asChild variant="ghost">
-        <a href="/projects/acme-shop/preview">Open preview</a>
+        <Link href="/projects/acme-shop/preview">Open preview</Link>
       </Button>,
     );
 

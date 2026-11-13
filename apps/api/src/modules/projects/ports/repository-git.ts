@@ -59,6 +59,12 @@ export type GitFailureReason = (typeof GIT_FAILURE_REASONS)[number];
  * on its own; start-up removes the stale temporary files and partial Clones.
  */
 export interface RepositoryGit {
+  /**
+   * Throws {@link GitUnsupportedPlatformError} when Git operations cannot run on this host
+   * (anything but Linux), so a caller can refuse a request before scheduling any work.
+   */
+  assertSupported(): void;
+
   /** Checks that the remote answers; reports whether `branch` exists and its default branch. */
   inspectRemote(
     remoteUrl: string,

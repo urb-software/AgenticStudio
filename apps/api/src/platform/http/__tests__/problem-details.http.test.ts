@@ -13,11 +13,15 @@ import { createZodDto, ZodResponse } from 'nestjs-zod';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { testConfig } from '../../../__tests__/test-config.js';
+import { testConfig, WITHOUT_QUEUE_WORKERS } from '../../../__tests__/test-config.js';
 import { AppModule } from '../../../app.module.js';
 import { Public } from '../../auth/public.decorator.js';
 import { buildApp } from '../../../app.js';
-import { FieldProblemException, problemDetailsSchema } from '../problem-details.js';
+import {
+  FieldProblemException,
+  ProblemException,
+  problemDetailsSchema,
+} from '../problem-details.js';
 
 // Test-only endpoints: no production endpoint takes input yet (#12 DoR clarification 1).
 // They are registered in this test's root module only, never in the production app.
@@ -65,6 +69,25 @@ class ProbeController {
     throw new ServiceUnavailableException('Redis at 10.0.0.7:6379 refused AUTH s3cr3t');
   }
 
+  @Get('public-5xx')
+  public5xx(): never {
+    throw new ProblemException(501, {
+      type: 'urn:agentic-studio:problem:probe',
+      title: 'Probe unsupported',
+      detail: 'This probe is not supported here.',
+    });
+  }
+
+  @Get('typed-conflict')
+  typedConflict(): never {
+    throw new ProblemException(409, {
+      type: 'urn:agentic-studio:problem:probe-conflict',
+      title: 'Probe conflict',
+      detail: 'The probe conflicts.',
+      errors: [{ path: 'url', message: 'Already used.' }],
+    });
+  }
+
   @Get('bad-response')
   @ZodResponse({ status: 200, type: ProbeOutputDto })
   badResponse() {
@@ -73,7 +96,7 @@ class ProbeController {
 }
 
 @Module({
-  imports: [AppModule.register(testConfig())],
+  imports: [AppModule.register(testConfig(), WITHOUT_QUEUE_WORKERS)],
   controllers: [ProbeController],
 })
 class ProbeRootModule {}
@@ -221,6 +244,36 @@ describe('problem+json error mapping', () => {
     );
     expect(response.text).not.toMatch(/Redis|10\.0\.0\.7|AUTH|\bat \w/);
     expectNoInternals(response);
+  });
+
+  it('keeps the fixed text and type of a deliberate ProblemException 5xx, unlogged', async () => {
+    const before = logger.lines.length;
+
+    const response = await request(app.getHttpServer()).get('/api/__test__/public-5xx');
+
+    expect(response.status).toBe(501);
+    expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(response.body).toEqual({
+      type: 'urn:agentic-studio:problem:probe',
+      title: 'Probe unsupported',
+      status: 501,
+      detail: 'This probe is not supported here.',
+      correlationId: expect.stringMatching(UUID),
+    });
+    expect(problemDetailsSchema.safeParse(response.body).success).toBe(true);
+    expect(logger.lines.slice(before)).toEqual([]);
+  });
+
+  it('keeps the type, title and field errors of a deliberate ProblemException 4xx', async () => {
+    const response = await request(app.getHttpServer()).get('/api/__test__/typed-conflict');
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      type: 'urn:agentic-studio:problem:probe-conflict',
+      title: 'Probe conflict',
+      detail: 'The probe conflicts.',
+      errors: [{ path: 'url', message: 'Already used.' }],
+    });
   });
 
   it('maps a response that violates its Zod schema to a generic 500', async () => {

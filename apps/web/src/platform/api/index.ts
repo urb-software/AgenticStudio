@@ -6,21 +6,30 @@
 // browser sends by itself: no code here reads it, and no token is ever stored.
 import * as sdk from './generated';
 import type {
+  ConnectRepositoryRequest,
   CreateProjectRequest,
   ProblemDetails,
+  ProjectDetailOutput,
   ProjectListOutput,
   ProjectOutput,
+  RepositoryOutput,
   SessionResponseOutput,
 } from './generated';
 import { client } from './generated/client.gen';
-import { zCreateProjectRequest } from './generated/zod.gen';
+import { zConnectRepositoryRequest, zCreateProjectRequest } from './generated/zod.gen';
 
 export type {
+  ConnectRepositoryRequest,
   CreateProjectRequest,
   HealthResponseOutput,
   ProblemDetails,
+  ProjectDetailOutput,
   ProjectListOutput,
   ProjectOutput,
+  RepositoryFailureCodeOutput,
+  RepositoryOutput,
+  RepositoryStateOutput,
+  RepositorySummaryOutput,
   SessionResponseOutput,
 } from './generated';
 
@@ -29,6 +38,9 @@ export type {
  * the full rules (e.g. whitespace normalization) and its 400/409 field errors are final.
  */
 export const createProjectRequestHint = zCreateProjectRequest;
+
+/** Generated hint for the Connect repository form; the API's 422 field errors are final. */
+export const connectRepositoryRequestHint = zConnectRepositoryRequest;
 
 client.setConfig({ credentials: 'same-origin' });
 
@@ -106,4 +118,12 @@ export const api = {
   listProjects: (): Promise<ProjectListOutput> => unwrap(sdk.listProjects()),
   createProject: (body: CreateProjectRequest): Promise<ProjectOutput> =>
     unwrap(sdk.createProject({ body })),
+  getProject: (id: string): Promise<ProjectDetailOutput> =>
+    unwrap(sdk.getProject({ path: { id } })),
+  getRepository: (projectId: string): Promise<RepositoryOutput> =>
+    unwrap(sdk.getRepository({ path: { id: projectId } })),
+  connectRepository: (
+    projectId: string,
+    body: ConnectRepositoryRequest,
+  ): Promise<RepositoryOutput> => unwrap(sdk.connectRepository({ path: { id: projectId }, body })),
 };

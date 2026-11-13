@@ -18,7 +18,8 @@ vi.mock('next/headers', () => ({
         : undefined,
   }),
 }));
-vi.mock('next/navigation', () => ({ usePathname: () => '/projects' }));
+const route = vi.hoisted(() => ({ pathname: '/projects' }));
+vi.mock('next/navigation', () => ({ usePathname: () => route.pathname }));
 
 const { default: StudioLayout } = await import('../layout');
 
@@ -49,6 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  route.pathname = '/projects';
   cookie.value = undefined;
   setWidth(DESKTOP);
   vi.unstubAllGlobals();
@@ -94,6 +96,32 @@ describe('Studio Shell', () => {
 
     const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
     expect(within(breadcrumb).getByText('Projects').getAttribute('aria-current')).toBe('page');
+  });
+
+  it('shows Projects › project name on a project screen (#60)', async () => {
+    const id = '00000000-0000-4000-8000-0000000000a1';
+    route.pathname = `/projects/${id}`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (request: Request) => {
+        const body = new URL(request.url).pathname.startsWith('/api/projects/')
+          ? { id, name: 'Acme Shop', createdAt: '2026-11-12T09:00:00.000Z', repository: null }
+          : { authenticated: true };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    const { container } = render(await shell(<h1>Acme Shop</h1>));
+
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    const projects = within(breadcrumb).getByRole('link', { name: 'Projects' });
+    expect(projects.getAttribute('href')).toBe('/projects');
+    expect(projects.getAttribute('aria-current')).toBeNull();
+    const current = await within(breadcrumb).findByText('Acme Shop');
+    expect(current.closest('[aria-current]')?.getAttribute('aria-current')).toBe('page');
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('collapses the sidebar to the icon rail and back', async () => {

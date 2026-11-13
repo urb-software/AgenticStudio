@@ -32,6 +32,18 @@ class InMemoryProjectRepository implements ProjectRepository {
   listNewestFirst(): Promise<Project[]> {
     return Promise.reject(new Error('not used by create-project'));
   }
+
+  // The Repository transitions are not used by create-project.
+  findById = notUsed;
+  findRepository = notUsed;
+  beginConnect = notUsed;
+  markReady = notUsed;
+  markFailed = notUsed;
+  failAllConnecting = notUsed;
+}
+
+function notUsed(): Promise<never> {
+  return Promise.reject(new Error('not used by create-project'));
 }
 
 // The same vector is checked against the web form's normalizeForHint

@@ -37,3 +37,10 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     ...overrides,
   };
 }
+
+/**
+ * App options for tests that build the app without the services the job-queue workers need
+ * at start-up (Redis for reconciliation, PostgreSQL for the clone queue's owner): queues
+ * register, but no worker starts. Tests of background jobs use the real services instead.
+ */
+export const WITHOUT_QUEUE_WORKERS = { queue: { startWorkers: false } } as const;

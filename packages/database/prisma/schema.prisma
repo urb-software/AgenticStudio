@@ -22,10 +22,43 @@ model Project {
   nameNormalized String   @unique(map: "projects_name_normalized_key") @map("name_normalized")
   /// Set by PostgreSQL (microsecond precision), not by the client, so ordering uses one clock.
   createdAt      DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  /// The connected Repository (Story #60): at most one per project.
+  repository     Repository?
 
   /// Serves the newest-first list (created_at DESC, id DESC as the tie-breaker).
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "projects_created_at_id_idx")
   @@map("projects")
+}
+
+/// The Git repository connected to a project (`projects` module, Story #60), one per project.
+/// The migration adds CHECK constraints (the known states; failure fields set exactly when
+/// `failed`), which Prisma does not model. `state` and `failure_code` are text, not enums, so
+/// later stories add values by changing a CHECK constraint.
+model Repository {
+  /// The owning project; also the primary key, so a project has at most one repository.
+  projectId                  String    @id @map("project_id") @db.Uuid
+  project                    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The URL as the operator entered it (trimmed).
+  url                        String    @db.VarChar(2048)
+  /// Host plus path without scheme, user, port, trailing slash or `.git`: the same remote in
+  /// any URL form. Unique, so one remote cannot be connected to two projects.
+  urlNormalized              String    @unique(map: "repositories_url_normalized_key") @map("url_normalized")
+  integrationBranch          String    @map("integration_branch") @db.VarChar(255)
+  /// connecting | ready | failed (later stories add values).
+  state                      String    @db.VarChar(32)
+  /// Commit id of the integration branch in the Clone; set when ready.
+  headSha                    String?   @map("head_sha") @db.VarChar(64)
+  lastFetchedAt              DateTime? @map("last_fetched_at") @db.Timestamptz(6)
+  /// One of the fixed failure reason codes; set exactly when failed.
+  failureCode                String?   @map("failure_code") @db.VarChar(32)
+  /// Redacted Git output or a short fixed explanation; set exactly when failed.
+  failureDetail              String?   @map("failure_detail") @db.VarChar(2000)
+  /// For branch_not_found: the remote's default branch, when it advertises one.
+  failureRemoteDefaultBranch String?   @map("failure_remote_default_branch") @db.VarChar(255)
+  createdAt                  DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime  @default(dbgenerated("now()")) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("repositories")
 }
 
 /// One value sealed by the API's SecretStore (`platform/secrets`, Issue #57, ADR 0001):
