@@ -1,5 +1,5 @@
 import {
-  CONCRETE_CLIENT_PACKAGES,
+  CONCRETE_CLIENTS,
   coreModules,
   INFRASTRUCTURE_PACKAGES,
   listDirectories,
@@ -9,10 +9,11 @@ import {
   type Gate,
   type Violation,
 } from '../harness';
+import { SOURCE_RULES, sourceViolations } from './source-rules';
 
 const MODULE_FILE = '^src/modules/([^/]+)/\\1\\.module\\.ts$';
 const CONTRACTS = '^src/modules/[^/]+/contracts/';
-// A built workspace package resolves through its pnpm symlink to packages/<name>/dist/.
+// Workspace packages resolve to their source (`../../packages/database/src/` from apps/api).
 const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
 
 /**
@@ -21,6 +22,10 @@ const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
  */
 export const apiGate: Gate = {
   entries: ['src'],
+  // @agentic-studio/* imports resolve to packages/<name>/src, so a re-export through a
+  // workspace package stays in the graph; the generated Prisma client is a graph leaf.
+  resolveWorkspacePackagesToSource: true,
+  doNotFollow: '(^|/)packages/database/src/generated/',
   forbidden: [
     {
       name: 'api-no-cross-module-private',
@@ -57,6 +62,7 @@ export const apiGate: Gate = {
       to: {
         path: [
           npmPackages(...INFRASTRUCTURE_PACKAGES),
+          CONCRETE_CLIENTS,
           '(^|/)packages/database/',
           coreModules(
             'http',
@@ -90,7 +96,7 @@ export const apiGate: Gate = {
           '^src/modules/[^/]+/(features|consumers|infrastructure)/',
           '^src/platform/database/',
           ...ORM,
-          npmPackages(...CONCRETE_CLIENT_PACKAGES),
+          CONCRETE_CLIENTS,
         ],
       },
     },
@@ -106,7 +112,7 @@ export const apiGate: Gate = {
         path: [
           '^src/modules/$1/(domain|features|consumers|infrastructure|ports)/',
           ...ORM,
-          npmPackages(...CONCRETE_CLIENT_PACKAGES),
+          CONCRETE_CLIENTS,
         ],
       },
     },
@@ -122,7 +128,7 @@ export const apiGate: Gate = {
           '^src/modules/[^/]+/infrastructure/',
           '^src/platform/database/',
           ...ORM,
-          npmPackages(...CONCRETE_CLIENT_PACKAGES),
+          CONCRETE_CLIENTS,
         ],
       },
     },
@@ -139,7 +145,7 @@ export const apiGate: Gate = {
           '^src/modules/[^/]+/infrastructure/',
           '^src/platform/database/',
           ...ORM,
-          npmPackages(...CONCRETE_CLIENT_PACKAGES),
+          CONCRETE_CLIENTS,
         ],
         reachable: true,
       },
@@ -154,10 +160,13 @@ export const apiGate: Gate = {
     },
     {
       name: 'api-local-imports-resolve',
-      comment: 'An unresolved relative import would silently drop an edge from the graph.',
+      comment:
+        'An unresolved relative or @agentic-studio/* import in apps/api would silently drop an ' +
+        'edge from the graph. Imports inside workspace packages are left to architecture:monorepo ' +
+        '(the generated Prisma client does not exist before a build).',
       severity: 'error',
-      from: {},
-      to: { path: '^\\.', couldNotResolve: true },
+      from: { path: '^src/' },
+      to: { path: '^(\\.|@agentic-studio/)', couldNotResolve: true },
     },
     {
       name: 'api-module-file-composition-root-only',
@@ -178,11 +187,17 @@ export const apiGate: Gate = {
   ],
   unitCycles: { rule: 'api-no-module-cycle', unit: /^(src\/modules\/[^/]+)\// },
   structural: {
-    rules: ['api-module-layout', 'api-feature-has-handler', 'api-infrastructure-placement'],
+    rules: [
+      'api-module-layout',
+      'api-feature-has-handler',
+      'api-infrastructure-placement',
+      ...SOURCE_RULES,
+    ],
     check: (baseDir) => [
       ...undocumentedModuleEntries(baseDir),
       ...featuresWithoutHandler(baseDir),
       ...misplacedInfrastructure(baseDir),
+      ...sourceViolations(baseDir),
     ],
   },
 };

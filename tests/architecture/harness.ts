@@ -49,8 +49,17 @@ export interface GateResult {
   npmDependencies: number;
 }
 
-export async function checkGate(gate: Gate, baseDir: string): Promise<GateResult> {
-  const { violations, ...counts } = await dependencyViolations(gate, baseDir);
+/**
+ * Checks `baseDir` against `gate`. `workspaceRoot` is the pnpm workspace whose
+ * `apps/*` and `packages/*` resolve `@agentic-studio/*` imports for
+ * `resolveWorkspacePackagesToSource`; a fixture is its own workspace.
+ */
+export async function checkGate(
+  gate: Gate,
+  baseDir: string,
+  workspaceRoot: string = baseDir,
+): Promise<GateResult> {
+  const { violations, ...counts } = await dependencyViolations(gate, baseDir, workspaceRoot);
   violations.push(...(gate.structural?.check(baseDir) ?? []));
   violations.sort((a, b) =>
     `${a.rule} ${a.from} ${a.to ?? ''}`.localeCompare(`${b.rule} ${b.from} ${b.to ?? ''}`),
@@ -67,7 +76,11 @@ export function ruleNames(gate: Gate): string[] {
   ];
 }
 
-async function dependencyViolations(gate: Gate, baseDir: string): Promise<GateResult> {
+async function dependencyViolations(
+  gate: Gate,
+  baseDir: string,
+  workspaceRoot: string,
+): Promise<GateResult> {
   const entries = gate.entries.filter((entry) => existsSync(join(baseDir, entry)));
   if (entries.length === 0) {
     return { violations: [], filesCruised: 0, npmDependencies: 0 };
@@ -87,7 +100,7 @@ async function dependencyViolations(gate: Gate, baseDir: string): Promise<GateRe
       tsPreCompilationDeps: true,
       ...(hasTsConfig ? { tsConfig: { fileName: tsConfigFile } } : {}),
     },
-    gate.resolveWorkspacePackagesToSource ? { alias: workspaceSourceAliases(baseDir) } : {},
+    gate.resolveWorkspacePackagesToSource ? { alias: workspaceSourceAliases(workspaceRoot) } : {},
     hasTsConfig ? { tsConfig: extractTSConfig(tsConfigFile) } : {},
   );
   const result = output as ICruiseResult;
@@ -178,15 +191,53 @@ export const ORM_PACKAGES = ['@prisma', 'prisma', '@agentic-studio/database'];
 /** Concrete clients for queues, caches, databases, Docker, Git and processes. */
 export const CONCRETE_CLIENT_PACKAGES = [
   'bullmq',
+  'bull',
   'ioredis',
   'redis',
   'pg',
+  'postgres',
+  'mysql2',
+  'mongodb',
+  'mongoose',
+  'typeorm',
+  'sequelize',
+  'knex',
+  'kysely',
+  'drizzle-orm',
+  'amqplib',
+  'kafkajs',
+  'nats',
   'dockerode',
   'execa',
   'simple-git',
   'node-pty',
   'ssh2',
 ];
+
+/** npm scopes whose packages are all concrete clients. */
+export const CONCRETE_CLIENT_SCOPES = ['@mikro-orm', '@redis'];
+
+/**
+ * Regex for concrete clients and their framework integrations: a listed client
+ * (`ioredis`), the same name in any scope or after any `<prefix>-` (`@nestjs/bullmq`,
+ * `@nestjs/typeorm`, `nestjs-redis`, `@types/pg`) and every package of a listed scope
+ * (`@mikro-orm/core`). Matches resolved paths and unresolved module names alike.
+ */
+export const CONCRETE_CLIENTS = concreteClients();
+
+function concreteClients(): string {
+  const names = `(${escapeNames(CONCRETE_CLIENT_PACKAGES).join('|')})`;
+  const scopes = `(${escapeNames(CONCRETE_CLIENT_SCOPES).join('|')})`;
+  // Spelled out as alternatives: Dependency Cruiser rejects nested quantifiers as unsafe.
+  const forms = [
+    names,
+    `[^/]*-${names}`,
+    `@[^/]+/${names}`,
+    `@[^/]+/[^/]*-${names}`,
+    `${scopes}/[^/]+`,
+  ];
+  return `(^|/node_modules/)(${forms.join('|')})(/|$)`;
+}
 
 /** Framework, HTTP and infrastructure packages that domain code must not import. */
 export const INFRASTRUCTURE_PACKAGES = [
@@ -209,8 +260,11 @@ export const SERVER_PACKAGES = [
  * and an unresolved module name (`@nestjs/core`).
  */
 export function npmPackages(...names: string[]): string {
-  const escaped = names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return `(^|/node_modules/)(${escaped.join('|')})(/|$)`;
+  return `(^|/node_modules/)(${escapeNames(names).join('|')})(/|$)`;
+}
+
+function escapeNames(names: string[]): string[] {
+  return names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 }
 
 /** Regex for Node.js core modules, with or without the `node:` prefix. */

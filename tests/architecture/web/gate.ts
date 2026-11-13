@@ -10,6 +10,10 @@ const GENERATED_CLIENT = '^src/platform/api/generated/';
  */
 export const webGate: Gate = {
   entries: ['src'],
+  // @agentic-studio/* imports resolve to packages/<name>/src, so the server-package rules
+  // see them without a build.
+  resolveWorkspacePackagesToSource: true,
+  doNotFollow: '(^|/)packages/database/src/generated/',
   forbidden: [
     {
       name: 'web-cross-module-public-entrypoints-only',
@@ -60,7 +64,7 @@ export const webGate: Gate = {
       to: {
         path: [
           npmPackages(...SERVER_PACKAGES),
-          // A built workspace package resolves through its pnpm symlink to packages/<name>/dist/.
+          // Workspace packages resolve to their source (`../../packages/database/src/`).
           '(^|/)packages/(database|testing)/',
           coreModules('child_process', 'cluster', 'dgram', 'net', 'tls', 'worker_threads'),
         ],
@@ -68,10 +72,12 @@ export const webGate: Gate = {
     },
     {
       name: 'web-local-imports-resolve',
-      comment: 'An unresolved relative or @/ import would silently drop an edge from the graph.',
+      comment:
+        'An unresolved relative, @/ or @agentic-studio/* import in apps/web would silently drop ' +
+        'an edge from the graph.',
       severity: 'error',
-      from: {},
-      to: { path: '^(\\.|@/)', couldNotResolve: true },
+      from: { path: '^src/' },
+      to: { path: '^(\\.|@/|@agentic-studio/)', couldNotResolve: true },
     },
     {
       name: 'web-generated-client-only-via-platform-api',
