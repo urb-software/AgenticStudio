@@ -22,6 +22,7 @@ describeGate('web', webGate, 'apps/web', [
   { fixture: 'shared-imports-platform', expected: ['web-shared-no-upward-imports'] },
   { fixture: 'module-imports-app', expected: ['web-modules-no-app'] },
   { fixture: 'unresolved-alias-import', expected: ['web-local-imports-resolve'] },
+  { fixture: 'unresolved-workspace-import', expected: ['web-local-imports-resolve'] },
   { fixture: 'platform-imports-module', expected: ['web-platform-no-business-modules'] },
   { fixture: 'imports-server-code', expected: ['web-no-server-code'] },
   { fixture: 'imports-node-only-module', expected: ['web-no-server-code'] },
@@ -34,5 +35,9 @@ describeGate('web', webGate, 'apps/web', [
   {
     fixture: 'module-imports-generated-client',
     expected: ['web-generated-client-only-via-platform-api'],
+  },
+  {
+    fixture: 'database-package-unresolved-import',
+    expected: ['web-no-server-code', 'web-database-package-imports-resolve'],
   },
 ]);

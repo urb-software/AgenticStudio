@@ -38,7 +38,7 @@ A clean unit-test result proves neither architectural correctness nor safe behav
 - No imports of another business module's private files; use explicit public contracts.
 - `domain/` does not import NestJS, ORM, database, queue, infrastructure, HTTP or framework details.
 - Feature handlers depend on interfaces/ports, not concrete adapters/repository implementations.
-- Domain repository contracts live in `domain/repositories/`; read ports and other service interfaces in `ports/`.
+- Domain repository contracts live in `domain/repositories/`; read ports and other service interfaces in `ports/` (naming convention in [Backend](../architecture/backend.md) §4).
 - No prohibited cycles between modules or layers.
 - Event consumers use the owning module's public contract and do not bypass module boundaries.
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
@@ -47,7 +47,7 @@ A clean unit-test result proves neither architectural correctness nor safe behav
 
 - A present use-case feature has a `handler.ts`; `endpoint.ts`, `schema.ts`, `input.ts`, `__tests__/` are optional.
 - Concrete read/write repository implementations belong in `infrastructure/repositories/`, adapters in `infrastructure/adapters/`.
-- Public integration event definitions are versioned and publisher-owned.
+- Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
 - Do **not** require empty folders, mandatory `command.ts`/`query.ts`, or `domain/events/`.
 - Static checks cannot prove where all business logic lives; thin consumer/endpoint rules need behavior tests and review.
 
@@ -86,6 +86,10 @@ Positive and negative fixtures prove the rules catch violations:
 | Handler imports another module's private repository | FAIL |
 | Domain imports ORM/NestJS | FAIL |
 | Consumer imports publisher-owned public versioned event | PASS |
+| Module publishes an unversioned integration event | FAIL |
+| Two modules define the same integration event | FAIL |
+| Integration event re-exported by another module or under another name | FAIL |
+| Repository contract declared outside `domain/repositories/` | FAIL |
 | Web imports `@/modules/agents` public entrypoint | PASS |
 | Web deep-imports another module's private Zustand store | FAIL |
 | Two modules introduce a dependency cycle | FAIL |

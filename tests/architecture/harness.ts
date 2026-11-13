@@ -49,8 +49,17 @@ export interface GateResult {
   npmDependencies: number;
 }
 
-export async function checkGate(gate: Gate, baseDir: string): Promise<GateResult> {
-  const { violations, ...counts } = await dependencyViolations(gate, baseDir);
+/**
+ * Checks `baseDir` against `gate`. `workspaceRoot` is the pnpm workspace whose
+ * `apps/*` and `packages/*` resolve `@agentic-studio/*` imports for
+ * `resolveWorkspacePackagesToSource`; a fixture is its own workspace.
+ */
+export async function checkGate(
+  gate: Gate,
+  baseDir: string,
+  workspaceRoot: string = baseDir,
+): Promise<GateResult> {
+  const { violations, ...counts } = await dependencyViolations(gate, baseDir, workspaceRoot);
   violations.push(...(gate.structural?.check(baseDir) ?? []));
   violations.sort((a, b) =>
     `${a.rule} ${a.from} ${a.to ?? ''}`.localeCompare(`${b.rule} ${b.from} ${b.to ?? ''}`),
@@ -67,7 +76,11 @@ export function ruleNames(gate: Gate): string[] {
   ];
 }
 
-async function dependencyViolations(gate: Gate, baseDir: string): Promise<GateResult> {
+async function dependencyViolations(
+  gate: Gate,
+  baseDir: string,
+  workspaceRoot: string,
+): Promise<GateResult> {
   const entries = gate.entries.filter((entry) => existsSync(join(baseDir, entry)));
   if (entries.length === 0) {
     return { violations: [], filesCruised: 0, npmDependencies: 0 };
@@ -87,7 +100,7 @@ async function dependencyViolations(gate: Gate, baseDir: string): Promise<GateRe
       tsPreCompilationDeps: true,
       ...(hasTsConfig ? { tsConfig: { fileName: tsConfigFile } } : {}),
     },
-    gate.resolveWorkspacePackagesToSource ? { alias: workspaceSourceAliases(baseDir) } : {},
+    gate.resolveWorkspacePackagesToSource ? { alias: workspaceSourceAliases(workspaceRoot) } : {},
     hasTsConfig ? { tsConfig: extractTSConfig(tsConfigFile) } : {},
   );
   const result = output as ICruiseResult;
@@ -178,15 +191,99 @@ export const ORM_PACKAGES = ['@prisma', 'prisma', '@agentic-studio/database'];
 /** Concrete clients for queues, caches, databases, Docker, Git and processes. */
 export const CONCRETE_CLIENT_PACKAGES = [
   'bullmq',
+  'bull',
   'ioredis',
   'redis',
   'pg',
+  'postgres',
+  'mysql2',
+  'mongodb',
+  'mongoose',
+  'typeorm',
+  'sequelize',
+  'knex',
+  'kysely',
+  'drizzle-orm',
+  'amqplib',
+  'kafkajs',
+  'nats',
   'dockerode',
   'execa',
   'simple-git',
   'node-pty',
   'ssh2',
+  // @nestjs/microservices wraps Kafka, NATS, Redis and other transports.
+  'microservices',
 ];
+
+/**
+ * Gate options of the api and web gates: `@agentic-studio/*` imports resolve to
+ * `packages/<name>/src`, so the graph is complete without a build, and the generated
+ * Prisma client stays a graph leaf.
+ */
+export const WORKSPACE_PACKAGES_FROM_SOURCE = {
+  resolveWorkspacePackagesToSource: true,
+  doNotFollow: '(^|/)packages/database/src/generated/',
+} satisfies Partial<Gate>;
+
+/**
+ * The two import-resolution rules of a gate: an unresolved import matching `specifiers`
+ * (e.g. relative or `@agentic-studio/*`) would silently drop an edge from the graph. The
+ * check is graph-wide, also inside the workspace packages the gate follows. Only
+ * packages/database's own import of its generated Prisma client, absent before
+ * `prisma generate`, is exempt, by a separate rule scoped to that package.
+ */
+export function importsResolveRules(gate: string, specifiers: string): IForbiddenRuleType[] {
+  const databasePackage = '(^|/)packages/database/src/';
+  return [
+    {
+      name: `${gate}-local-imports-resolve`,
+      comment:
+        'An unresolved local or workspace import would silently drop an edge from the graph.',
+      severity: 'error',
+      from: { pathNot: databasePackage },
+      to: { path: specifiers, couldNotResolve: true },
+    },
+    {
+      name: `${gate}-database-package-imports-resolve`,
+      comment:
+        'The same check inside packages/database, where only the generated Prisma client ' +
+        '(./generated/prisma/, absent before `prisma generate`) may be unresolved.',
+      severity: 'error',
+      from: { path: databasePackage },
+      to: { path: specifiers, pathNot: '^\\./generated/prisma/', couldNotResolve: true },
+    },
+  ];
+}
+
+/** npm scopes whose packages are all concrete clients. */
+export const CONCRETE_CLIENT_SCOPES = ['@mikro-orm', '@redis'];
+
+/**
+ * Regex for concrete clients and their framework integrations: a listed client
+ * (`ioredis`), the same name in any scope and/or with any `<prefix>-` or `-<suffix>`
+ * (`@nestjs/bullmq`, `@nestjs/typeorm`, `nestjs-redis`, `pg-boss`, `cache-manager-redis-store`,
+ * `@types/pg`) and every package of a listed scope
+ * (`@mikro-orm/core`). Matches resolved paths and unresolved module names alike.
+ */
+export const CONCRETE_CLIENTS = concreteClients();
+
+function concreteClients(): string {
+  const names = `(${escapeNames(CONCRETE_CLIENT_PACKAGES).join('|')})`;
+  const scopes = `(${escapeNames(CONCRETE_CLIENT_SCOPES).join('|')})`;
+  // Spelled out as alternatives: Dependency Cruiser rejects nested quantifiers as unsafe.
+  const forms = [
+    names,
+    `[^/]*-${names}`,
+    `${names}-[^/]*`,
+    `[^/]*-${names}-[^/]*`,
+    `@[^/]+/${names}`,
+    `@[^/]+/[^/]*-${names}`,
+    `@[^/]+/${names}-[^/]*`,
+    `${scopes}/[^/]+`,
+  ];
+  return `(^|/node_modules/)(${forms.join('|')})(/|$)`;
+}
 
 /** Framework, HTTP and infrastructure packages that domain code must not import. */
 export const INFRASTRUCTURE_PACKAGES = [
@@ -209,8 +306,11 @@ export const SERVER_PACKAGES = [
  * and an unresolved module name (`@nestjs/core`).
  */
 export function npmPackages(...names: string[]): string {
-  const escaped = names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return `(^|/node_modules/)(${escaped.join('|')})(/|$)`;
+  return `(^|/node_modules/)(${escapeNames(names).join('|')})(/|$)`;
+}
+
+function escapeNames(names: string[]): string[] {
+  return names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 }
 
 /** Regex for Node.js core modules, with or without the `node:` prefix. */

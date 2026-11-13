@@ -1,4 +1,11 @@
-import { coreModules, npmPackages, SERVER_PACKAGES, type Gate } from '../harness';
+import {
+  coreModules,
+  npmPackages,
+  SERVER_PACKAGES,
+  importsResolveRules,
+  WORKSPACE_PACKAGES_FROM_SOURCE,
+  type Gate,
+} from '../harness';
 
 const PUBLIC_ENTRYPOINT = '^src/modules/[^/]+/index\\.tsx?$';
 const GENERATED_CLIENT = '^src/platform/api/generated/';
@@ -10,6 +17,9 @@ const GENERATED_CLIENT = '^src/platform/api/generated/';
  */
 export const webGate: Gate = {
   entries: ['src'],
+  // @agentic-studio/* imports resolve to packages/<name>/src, so the server-package rules
+  // see them without a build.
+  ...WORKSPACE_PACKAGES_FROM_SOURCE,
   forbidden: [
     {
       name: 'web-cross-module-public-entrypoints-only',
@@ -60,19 +70,13 @@ export const webGate: Gate = {
       to: {
         path: [
           npmPackages(...SERVER_PACKAGES),
-          // A built workspace package resolves through its pnpm symlink to packages/<name>/dist/.
+          // Workspace packages resolve to their source (`../../packages/database/src/`).
           '(^|/)packages/(database|testing)/',
           coreModules('child_process', 'cluster', 'dgram', 'net', 'tls', 'worker_threads'),
         ],
       },
     },
-    {
-      name: 'web-local-imports-resolve',
-      comment: 'An unresolved relative or @/ import would silently drop an edge from the graph.',
-      severity: 'error',
-      from: {},
-      to: { path: '^(\\.|@/)', couldNotResolve: true },
-    },
+    ...importsResolveRules('web', '^(\\.|@/|@agentic-studio/)'),
     {
       name: 'web-generated-client-only-via-platform-api',
       comment:
