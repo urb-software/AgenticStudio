@@ -41,6 +41,8 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
   await expect(topBar).toHaveCount(0);
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
 
   await page.getByLabel('Password').fill(operatorPassword());
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -107,14 +109,41 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
 
-  await main.getByLabel('Project name').fill(`  ${projectName.replace(/ /g, '   ')}  `);
-  await main.getByRole('button', { name: 'Create project' }).click();
-
-  const projects = main.getByRole('list', { name: 'Projects' });
-  // Shown without a manual reload, with the name as the API normalized it.
-  await expect(projects.getByRole('heading', { name: projectName })).toBeVisible();
-  await expect(main.getByLabel('Project name')).toHaveValue('');
+  // New project opens the dialog: centred on desktop, a bottom sheet on phones (#44).
+  await main.getByRole('button', { name: 'New project' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New project' });
+  const nameField = dialog.getByLabel('Project name');
+  await expect(nameField).toBeFocused();
+  const viewport = page.viewportSize()!;
+  // Polled: the box settles once the 150ms open animation ends.
+  const dialogEdges = async () => {
+    const box = await dialog.boundingBox();
+    return box && { width: box.width, bottom: Math.round(box.y + box.height) };
+  };
+  if (phone) {
+    await expect.poll(dialogEdges).toEqual({ width: viewport.width, bottom: viewport.height });
+  } else {
+    await expect.poll(async () => (await dialogEdges())?.width).toBeLessThan(viewport.width / 2);
+  }
   await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+
+  await nameField.fill(`  ${projectName.replace(/ /g, '   ')}  `);
+  await dialog.getByRole('button', { name: 'Create project' }).click();
+
+  // The dialog closes, a toast confirms, and the list shows the project without a manual
+  // reload, with the name as the API normalized it.
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Project created')).toBeVisible();
+  // Scanned once the toast has faded in: mid-animation its text is part-transparent.
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast).toHaveCSS('opacity', '1');
+  const projects = main.getByRole('list', { name: 'Projects' });
+  await expect(projects.getByRole('heading', { name: projectName })).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+  // The toast was still on screen, so the scan included it.
+  await expect(toast).toBeVisible();
 
   await page.reload();
   await expect(projects.getByRole('heading', { name: projectName })).toBeVisible();

@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/shared/ui/sidebar';
-import { LogoMark } from './logo-mark';
+import { LogoLockup } from '@/shared/components/logo-mark';
 import { routeFor, STUDIO_ROUTES } from './routes';
 
 function toggleLabel(auto: boolean, collapsed: boolean): string {
@@ -44,18 +44,11 @@ export function StudioSidebar() {
             auto && 'md:max-xl:flex-col md:max-xl:gap-2 md:max-xl:px-2.5',
           )}
         >
-          <LogoMark />
-          {collapsed ? null : (
-            <span
-              className={cn(
-                // 15px semibold logo text (prototype `.logo-text`): no type token matches.
-                'flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-text',
-                auto && 'md:max-xl:hidden',
-              )}
-            >
-              Agent Studio
-            </span>
-          )}
+          <LogoLockup
+            showLabel={!collapsed}
+            className={collapsed ? undefined : 'flex-1'}
+            labelClassName={auto ? 'md:max-xl:hidden' : undefined}
+          />
           {isMobile ? null : (
             <IconButton
               icon={PanelLeft}

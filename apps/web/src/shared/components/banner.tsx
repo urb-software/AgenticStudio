@@ -10,6 +10,11 @@ type BannerProps = {
   title?: string;
   icon?: LucideIcon;
   action?: React.ReactNode;
+  /**
+   * How it is announced: `assertive` (role alert) or `polite` (role status). Defaults to
+   * assertive for `danger` and polite otherwise; a lockout warning needs assertive.
+   */
+  announce?: 'polite' | 'assertive';
   children?: React.ReactNode;
   className?: string;
 };
@@ -31,16 +36,25 @@ const TONE_ICON: Record<BannerTone, LucideIcon> = {
 /**
  * Inline, persistent message inside a page, card, dialog or drawer
  * (design-system/components/Banner); it stays until the condition changes. `danger` is
- * announced as an alert, the other tones as status. Transient confirmations use a toast.
+ * announced as an alert, the other tones as status, unless `announce` says otherwise. Transient confirmations use a toast.
  */
-function Banner({ tone = 'info', title, icon, action, children, className }: BannerProps) {
+function Banner({
+  tone = 'info',
+  title,
+  icon,
+  action,
+  announce,
+  children,
+  className,
+}: BannerProps) {
   const Icon = icon ?? TONE_ICON[tone];
+  const assertive = (announce ?? (tone === 'danger' ? 'assertive' : 'polite')) === 'assertive';
 
   return (
     <div
       data-slot="banner"
       data-tone={tone}
-      role={tone === 'danger' ? 'alert' : 'status'}
+      role={assertive ? 'alert' : 'status'}
       className={cn(
         'flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-small',
         TONE_CLASS[tone],
