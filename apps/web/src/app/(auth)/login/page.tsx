@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import { LoginForm } from '../../../platform/auth';
 import { Card } from '@/shared/ui/card';
-import { LogoMark } from '../../(studio)/_shell/logo-mark';
+import { LogoMark } from '@/shared/components/logo-mark';
 
 export const metadata: Metadata = { title: 'Sign in · AI Agent Studio' };
 
 /**
  * The login screen (prototype "LOGIN"): a centred 400px card with the logo tile, the heading
  * and the password form; on phones the card spans the width and pads `space-4`. The logo tile
- * is the shell's LogoMark, reused as is. No shell: this page is outside `(studio)`.
+ * is the shared LogoMark, as in the sidebar. No shell: this page is outside `(studio)`.
  */
 export default function LoginPage() {
   return (

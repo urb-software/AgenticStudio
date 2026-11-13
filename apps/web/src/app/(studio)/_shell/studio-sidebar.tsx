@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/shared/ui/sidebar';
-import { LogoMark } from './logo-mark';
+import { LogoMark } from '@/shared/components/logo-mark';
 import { routeFor, STUDIO_ROUTES } from './routes';
 
 function toggleLabel(auto: boolean, collapsed: boolean): string {
