@@ -2,7 +2,7 @@
 // Run: `node --test "scripts/ci/*.test.mjs"` (CI runs them in the `changes` job before classifying).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -186,7 +186,8 @@ describe('evaluateRequired', () => {
 
 /**
  * Minimal reader for the jobs of `.github/workflows/ci.yml` as written there (two-space YAML
- * indentation): job id → { name, needs, if }. No YAML dependency, because the `changes` job
+ * indentation): job id → { name, needs, if, uses } (`uses` = the job's step actions, in order).
+ * No YAML dependency, because the `changes` job
  * runs these tests before `pnpm install`.
  */
 function readWorkflowJobs(text) {
@@ -203,11 +204,16 @@ function readWorkflowJobs(text) {
     if (/^\S/.test(line)) break;
     const job = /^ {2}([\w-]+):\s*$/.exec(line);
     if (job) {
-      current = jobs[job[1]] = { needs: [] };
+      current = jobs[job[1]] = { needs: [], uses: [] };
       inNeedsList = false;
       continue;
     }
     if (!current) continue;
+    const step = /^ {6}(?:- | {2})uses:\s*(\S+)/.exec(line);
+    if (step) {
+      current.uses.push(step[1]);
+      continue;
+    }
     const field = /^ {4}([\w-]+):\s*(.*?)\s*$/.exec(line);
     if (field) {
       const [, key, value] = field;
@@ -265,5 +271,56 @@ describe('.github/workflows/ci.yml stays in sync with the policy (#28 drift gap)
     const broken = readWorkflowJobs(workflow.replace(/^ {6}- e2e-smoke\r?\n/m, ''));
     assert.ok(!broken['ci-required'].needs.includes('e2e-smoke'));
     assert.notDeepEqual([...broken['ci-required'].needs].sort(), ['changes', ...CODE_JOBS].sort());
+  });
+});
+
+/** `uses:` references of a file (workflow or composite action), without trailing comments. */
+const usesRefs = (text) =>
+  [...text.matchAll(/^\s*(?:- )?uses:\s*(\S+)/gm)].map((match) => match[1]);
+
+describe('.github/actions/setup composite action (#28 setup de-duplication)', () => {
+  const actionsDir = new URL('../../.github/actions/', import.meta.url);
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const jobs = readWorkflowJobs(workflow);
+  const actionFiles = readdirSync(actionsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => new URL(`${entry.name}/action.yml`, actionsDir));
+  const setup = readFileSync(new URL('setup/action.yml', actionsDir), 'utf8');
+
+  it('pins every external action by full commit SHA (workflow and local actions)', () => {
+    const refs = [workflow, ...actionFiles.map((file) => readFileSync(file, 'utf8'))].flatMap(
+      usesRefs,
+    );
+    assert.ok(refs.length > 0);
+    for (const ref of refs) {
+      if (ref.startsWith('./')) continue;
+      assert.match(ref, /^[\w.-]+\/[\w.-]+(\/[\w./-]+)?@[0-9a-f]{40}$/, ref);
+    }
+  });
+
+  it('checks out the repository before a job uses a local action', () => {
+    for (const [id, job] of Object.entries(jobs)) {
+      const local = job.uses.findIndex((ref) => ref.startsWith('./'));
+      if (local === -1) continue;
+      const checkout = job.uses.findIndex((ref) => ref.startsWith('actions/checkout@'));
+      assert.ok(checkout !== -1 && checkout < local, `${id}: ${job.uses.join(', ')}`);
+    }
+  });
+
+  it('sets up pnpm only through the shared setup action', () => {
+    for (const [id, job] of Object.entries(jobs)) {
+      assert.ok(!job.uses.some((ref) => ref.startsWith('pnpm/action-setup@')), id);
+    }
+    assert.ok(usesRefs(setup).some((ref) => ref.startsWith('pnpm/action-setup@')));
+  });
+
+  it('is used by every policy code job', () => {
+    for (const id of CODE_JOBS) {
+      assert.ok(jobs[id].uses.includes('./.github/actions/setup'), `${id}: ${jobs[id].uses}`);
+    }
+  });
+
+  it('installs with the frozen lockfile', () => {
+    assert.match(setup, /run: pnpm install --frozen-lockfile/);
   });
 });
