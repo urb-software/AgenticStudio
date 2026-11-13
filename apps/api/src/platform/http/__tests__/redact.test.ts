@@ -125,6 +125,67 @@ describe('redactSecrets', () => {
     }
   });
 
+  // #24: secrets longer than the former 512-character userinfo cap.
+  describe('long secrets', () => {
+    const long = (length: number) => 'S3cr'.repeat(Math.ceil(length / 4)).slice(0, length);
+
+    it.each([513, 4_096, 200_000])('masks %i-character URL userinfo whole', (length) => {
+      const output = redactSecrets(
+        `connect postgres://studio:${long(length)}@db.internal:5432/studio`,
+      );
+
+      expect(output).toBe('connect postgres://***@db.internal:5432/studio');
+    });
+
+    it('masks a long userinfo that itself contains @, / and :', () => {
+      const secret = `${long(600)}@/:${long(600)}`;
+
+      expect(redactSecrets(`redis://default:${secret}@h:6379 down`)).toBe(
+        'redis://***@h:6379 down',
+      );
+    });
+
+    it('masks the userinfo of each URL on a line', () => {
+      const output = redactSecrets(
+        `primary postgres://u:${long(1_000)}@a/db replica postgres://u:${long(1_000)}@b/db`,
+      );
+
+      expect(output).toBe('primary postgres://***@a/db replica postgres://***@b/db');
+    });
+
+    it.each([
+      ['query parameter', (s: string) => `GET https://h/cb?access_token=${s}&y=2`],
+      ['Bearer value', (s: string) => `Authorization: Bearer ${s}`],
+      ['JSON value', (s: string) => `{"client_secret":"${s}","remember":true}`],
+      ['colon form', (s: string) => `password: ${s} for operator`],
+    ])('masks a long token in a %s', (_case, wrap) => {
+      const secret = long(10_000);
+
+      const output = redactSecrets(wrap(secret));
+
+      expect(output).not.toContain(secret.slice(0, 600));
+      expect(output).not.toContain(secret.slice(-600));
+    });
+
+    it('stays fast on adversarial URL-shaped input (linear time)', () => {
+      const inputs = [
+        `a://${'x'.repeat(200_000)}`,
+        `a://${'@'.repeat(200_000)}`,
+        'a://x'.repeat(40_000),
+        'a://@'.repeat(40_000),
+        'a:// '.repeat(40_000),
+        `${'a:// '.repeat(20_000)}@`,
+        `${'a'.repeat(100_000)}://${'b'.repeat(100_000)}`,
+      ];
+      for (const input of inputs) {
+        const started = performance.now();
+        redactSecrets(input);
+        // Linear matching takes milliseconds; a quadratic scan of these takes seconds.
+        expect(performance.now() - started).toBeLessThan(1000);
+      }
+    });
+  });
+
   it('leaves text without secrets unchanged', () => {
     const text = 'TypeError: cannot read x of undefined\n    at handler (dist/main.js:1:2)';
     expect(redactSecrets(text)).toBe(text);
