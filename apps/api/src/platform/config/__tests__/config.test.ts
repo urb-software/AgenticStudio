@@ -1,14 +1,20 @@
+import { randomBytes } from 'node:crypto';
+import { inspect } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { ConfigValidationError, loadConfig } from '../config.js';
 
 // A format-valid Argon2id PHC string with dummy salt and digest: a fixture, not a credential.
 const PHC_SALT_AND_DIGEST = 'c29tZXNhbHRzb21lc2FsdA$ZHVtbXlkaWdlc3RkdW1teWRpZ2VzdGR1bW15ZGlnZXN0';
 const BASELINE_HASH = `$argon2id$v=19$m=19456,t=2,p=1$${PHC_SALT_AND_DIGEST}`;
+// A throwaway master key generated per run: no key material is committed.
+const SECRETS_KEY_BYTES = randomBytes(32);
+const SECRETS_KEY = SECRETS_KEY_BYTES.toString('base64');
 
 const validEnv = {
   DATABASE_URL: 'postgresql://user:placeholder@localhost:5432/studio',
   REDIS_URL: 'redis://localhost:6379',
   STUDIO_OPERATOR_PASSWORD_HASH: BASELINE_HASH,
+  STUDIO_SECRETS_KEY: SECRETS_KEY,
   API_PORT: '4001',
   API_HOST: '0.0.0.0',
   API_ORIGIN: 'http://localhost:4001',
@@ -20,6 +26,7 @@ const requiredEnv = {
   DATABASE_URL: validEnv.DATABASE_URL,
   REDIS_URL: validEnv.REDIS_URL,
   STUDIO_OPERATOR_PASSWORD_HASH: validEnv.STUDIO_OPERATOR_PASSWORD_HASH,
+  STUDIO_SECRETS_KEY: validEnv.STUDIO_SECRETS_KEY,
 };
 
 function captureError(fn: () => unknown): Error {
@@ -33,7 +40,10 @@ function captureError(fn: () => unknown): Error {
 
 describe('loadConfig', () => {
   it('returns typed configuration from a valid environment', () => {
-    expect(loadConfig(validEnv)).toEqual({
+    const { secretsKey, ...config } = loadConfig(validEnv);
+    expect(secretsKey.type).toBe('secret');
+    expect(secretsKey.export().equals(SECRETS_KEY_BYTES)).toBe(true);
+    expect(config).toEqual({
       apiPort: 4001,
       apiHost: '0.0.0.0',
       apiOrigin: 'http://localhost:4001',
@@ -72,7 +82,7 @@ describe('loadConfig', () => {
     ).toBe(stronger);
   });
 
-  it.each(['DATABASE_URL', 'REDIS_URL', 'STUDIO_OPERATOR_PASSWORD_HASH'])(
+  it.each(['DATABASE_URL', 'REDIS_URL', 'STUDIO_OPERATOR_PASSWORD_HASH', 'STUDIO_SECRETS_KEY'])(
     'fails fast when %s is missing',
     (name) => {
       const env: Record<string, string> = { ...requiredEnv };
@@ -105,6 +115,15 @@ describe('loadConfig', () => {
     ['STUDIO_OPERATOR_PASSWORD_HASH', `$argon2id$v=19$m=4096,t=2,p=1$${PHC_SALT_AND_DIGEST}`],
     ['STUDIO_OPERATOR_PASSWORD_HASH', `$argon2id$v=19$m=19456,t=1,p=1$${PHC_SALT_AND_DIGEST}`],
     ['STUDIO_OPERATOR_PASSWORD_HASH', `$argon2id$v=19$m=19456,t=2,p=0$${PHC_SALT_AND_DIGEST}`],
+    ['STUDIO_SECRETS_KEY', ''],
+    ['STUDIO_SECRETS_KEY', 'not base64 at all!'],
+    ['STUDIO_SECRETS_KEY', `-_${SECRETS_KEY.slice(2)}`],
+    ['STUDIO_SECRETS_KEY', randomBytes(32).toString('hex')],
+    ['STUDIO_SECRETS_KEY', randomBytes(16).toString('base64')],
+    ['STUDIO_SECRETS_KEY', randomBytes(31).toString('base64')],
+    ['STUDIO_SECRETS_KEY', randomBytes(33).toString('base64')],
+    ['STUDIO_SECRETS_KEY', randomBytes(32).toString('base64').replace(/=$/, '')],
+    ['STUDIO_SECRETS_KEY', ` ${randomBytes(32).toString('base64')}`],
   ])('fails fast when %s is invalid (%s)', (name, value) => {
     const error = captureError(() => loadConfig({ ...validEnv, [name]: value }));
     expect(error).toBeInstanceOf(ConfigValidationError);
@@ -127,6 +146,46 @@ describe('loadConfig', () => {
       expect(error.message).toMatch(/STUDIO_OPERATOR_PASSWORD_HASH/);
       expect(error.message).not.toContain(PHC_SALT_AND_DIGEST.slice(0, 10));
       expect(error.message).not.toContain('plaintext-do-not-leak');
+    }
+  });
+
+  it('explains how to fix a missing, malformed or wrong-length secrets key', () => {
+    const missing: Record<string, string> = { ...requiredEnv };
+    delete missing.STUDIO_SECRETS_KEY;
+    expect(captureError(() => loadConfig(missing)).message).toMatch(
+      /STUDIO_SECRETS_KEY: .*32 random bytes.*base64/,
+    );
+    expect(
+      captureError(() => loadConfig({ ...requiredEnv, STUDIO_SECRETS_KEY: '!!!!' })).message,
+    ).toMatch(/STUDIO_SECRETS_KEY: .*base64/);
+    expect(
+      captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_SECRETS_KEY: randomBytes(16).toString('base64') }),
+      ).message,
+    ).toMatch(/STUDIO_SECRETS_KEY: .*32 bytes/);
+  });
+
+  it('does not echo a rejected secrets key in the error message', () => {
+    for (const value of [
+      randomBytes(16).toString('base64'),
+      randomBytes(32).toString('hex'),
+      `${randomBytes(32).toString('base64')}x`,
+    ]) {
+      const error = captureError(() => loadConfig({ ...requiredEnv, STUDIO_SECRETS_KEY: value }));
+      expect(error.message).toMatch(/STUDIO_SECRETS_KEY/);
+      expect(error.message).not.toContain(value.slice(0, 12));
+    }
+  });
+
+  it('never exposes the secrets key bytes when the configuration is logged or serialized', () => {
+    const config = loadConfig(requiredEnv);
+    for (const rendered of [
+      inspect(config, { depth: 5 }),
+      JSON.stringify(config),
+      String(config),
+    ]) {
+      expect(rendered).not.toContain(SECRETS_KEY);
+      expect(rendered).not.toContain(SECRETS_KEY_BYTES.toString('hex'));
     }
   });
 });

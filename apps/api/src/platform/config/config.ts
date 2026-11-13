@@ -1,3 +1,4 @@
+import { createSecretKey, type KeyObject } from 'node:crypto';
 import { isIP } from 'node:net';
 import { z } from 'zod';
 
@@ -47,6 +48,25 @@ const passwordHashSchema = z.string().refine(meetsArgon2idBaseline, {
     'must be an Argon2id PHC string (v=19) with at least m=19456, t=2, p=1; generate it with the hash-password helper',
 });
 
+/** Length of the AES-256 master key behind the SecretStore (ADR 0001). */
+const SECRETS_KEY_BYTES = 32;
+/** Standard base64 with padding, as `openssl rand -base64 32` and Node's `toString('base64')` print it. */
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const SECRETS_KEY_HINT = 'generate one with `openssl rand -base64 32` (see README.md)';
+
+// Messages never echo the value: it is the master key that protects every stored secret.
+// The parsed key is a KeyObject, which never prints its bytes when logged or serialized.
+const secretsKeySchema = z
+  .string({ error: `required: 32 random bytes, base64-encoded; ${SECRETS_KEY_HINT}` })
+  .refine((value) => value.length > 0 && BASE64.test(value), {
+    message: `must be standard base64 (A-Z, a-z, 0-9, +, /, = padding); ${SECRETS_KEY_HINT}`,
+    abort: true,
+  })
+  .refine((value) => Buffer.from(value, 'base64').length === SECRETS_KEY_BYTES, {
+    message: `must decode to exactly ${SECRETS_KEY_BYTES} bytes; ${SECRETS_KEY_HINT}`,
+  })
+  .transform((value) => createSecretKey(Buffer.from(value, 'base64')));
+
 const studioOriginSchema = z
   .url({ protocol: /^https?$/ })
   .refine((value) => new URL(value).origin === value.replace(/\/$/, ''), {
@@ -94,6 +114,8 @@ const environmentSchema = z.object({
   // The only origin accepted on mutations; https makes the session cookie Secure.
   STUDIO_ORIGIN: studioOriginSchema.default('http://localhost:3000'),
   STUDIO_OPERATOR_PASSWORD_HASH: passwordHashSchema,
+  // AES-256-GCM master key of the SecretStore (ADR 0001); never stored in the database.
+  STUDIO_SECRETS_KEY: secretsKeySchema,
 });
 
 export interface AppConfig {
@@ -105,6 +127,8 @@ export interface AppConfig {
   redisUrl: string;
   studioOrigin: string;
   operatorPasswordHash: string;
+  /** Master key of the SecretStore. Only `platform/secrets` reads it (ADR 0001). */
+  secretsKey: KeyObject;
 }
 
 /** DI token for the validated {@link AppConfig}. */
@@ -135,5 +159,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     redisUrl: result.data.REDIS_URL,
     studioOrigin: result.data.STUDIO_ORIGIN,
     operatorPasswordHash: result.data.STUDIO_OPERATOR_PASSWORD_HASH,
+    secretsKey: result.data.STUDIO_SECRETS_KEY,
   };
 }

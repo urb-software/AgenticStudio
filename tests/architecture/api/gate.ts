@@ -11,9 +11,13 @@ import {
   type Gate,
   type Violation,
 } from '../harness';
+import { SECRETS_SOURCE_RULES, secretsViolations } from './secrets-rules';
 import { SOURCE_RULES, sourceViolations } from './source-rules';
 
 const MODULE_FILE = '^src/modules/([^/]+)/\\1\\.module\\.ts$';
+const SECRETS_DIR = '^src/platform/secrets/';
+/** The secrets capability's two entry points (backend.md §2): the port and the Nest wiring. */
+const SECRETS_ENTRY_POINTS = '^src/platform/secrets/(index|secrets\\.module)\\.ts$';
 const CONTRACTS = '^src/modules/[^/]+/contracts/';
 // Workspace packages resolve to their source (`../../packages/database/src/` from apps/api).
 const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
@@ -178,6 +182,25 @@ export const apiGate: Gate = {
       to: { path: MODULE_FILE },
     },
     {
+      name: 'api-secrets-via-entry-points',
+      comment:
+        'Outside platform/secrets/, the secrets capability is reached only through its port ' +
+        '(index.ts) and its Nest wiring (secrets.module.ts), never its adapter or AES-GCM code ' +
+        '(ADR 0001, backend.md §2).',
+      severity: 'error',
+      from: { pathNot: SECRETS_DIR },
+      to: { path: SECRETS_DIR, pathNot: SECRETS_ENTRY_POINTS },
+    },
+    {
+      name: 'api-secrets-module-in-module-files',
+      comment:
+        'Only a Nest module file (*.module.ts) imports secrets.module.ts; code that uses secrets ' +
+        'injects SECRET_STORE from platform/secrets/index.ts.',
+      severity: 'error',
+      from: { pathNot: [SECRETS_DIR, '\\.module\\.ts$'] },
+      to: { path: '^src/platform/secrets/secrets\\.module\\.ts$' },
+    },
+    {
       name: 'api-no-circular',
       comment: 'No import cycles between files, layers or modules.',
       severity: 'error',
@@ -192,12 +215,14 @@ export const apiGate: Gate = {
       'api-feature-has-handler',
       'api-infrastructure-placement',
       ...SOURCE_RULES,
+      ...SECRETS_SOURCE_RULES,
     ],
     check: (baseDir) => [
       ...undocumentedModuleEntries(baseDir),
       ...featuresWithoutHandler(baseDir),
       ...misplacedInfrastructure(baseDir),
       ...sourceViolations(baseDir),
+      ...secretsViolations(baseDir),
     ],
   },
 };
