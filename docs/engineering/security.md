@@ -75,6 +75,13 @@ CODEX_CLI_ENABLED=false
 - External or provider session credentials are not copied to other agents unless explicitly supported and authorized.
 - Scan source/commits/PRs for secret leaks; test that run logs cannot disclose protected values.
 
+### Dependency supply chain
+
+- **Release age (Issue #30 decision 4):** `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080` (7 days). pnpm refuses to resolve a version younger than that, and `pnpm install --frozen-lockfile` (local and CI) refuses a lockfile entry younger than that, so a fresh compromised release cannot slip in through an update or a hand-edited lockfile.
+- **Exclusions** live in `minimumReleaseAgeExclude`, as exact `name@version` entries only (never a bare name or a range), each with a comment.
+- **Urgent security fix younger than 7 days:** the implementer adds the exact patched version to `minimumReleaseAgeExclude` with a comment naming the advisory (GHSA/CVE), the tracking Issue and a removal date (at most the day the version turns 7 days old), bumps the dependency, and states the exclusion in the PR's review notes. The independent reviewer checks the advisory and the exact version; the operator's merge is the approval. Once the version is 7 days old, the entry is removed in a follow-up.
+- **Adoption baseline:** versions already locked when the policy was adopted (2026-11-13) are listed as a temporary baseline block, removed once they are all 7 days old (2026-11-18).
+
 ## 4. Git, branch and merge protection
 
 - Each running agent works in an assigned branch/worktree and cannot write to another agent's workspace.
@@ -138,7 +145,7 @@ A prompt saying "ask for approval" is not an access control. The backend/runtime
   - A mutation that carries a body (any `Content-Type`, non-zero `Content-Length`, or chunked encoding) must be `Content-Type: application/json`, else 415. A bodyless mutation (e.g. logout) needs no `Content-Type`. The API parses JSON bodies only.
   - These checks run before the session guard, on public routes too.
 - **Login rate limit** (Epic #8 decision 4): at most 5 failed logins per client IP per 15 minutes and 50 failed logins per hour overall, as Redis counters. The next attempt over either limit gets 429 with `Retry-After` (seconds), even with the right password. A failure is reserved atomically before the password check, so concurrent attempts cannot overshoot; a successful login resets the IP counter and returns its global reservation.
-- **Client IP:** `X-Forwarded-For` is honoured only when the socket peer is in `API_TRUSTED_PROXIES` (comma-separated IPs/CIDRs; default empty). The client IP is then the right-most address not in that list. With an empty list, the socket address is used. In local development, the `next dev` rewrite is the socket peer, so all browser traffic shares one IP bucket. The rewrite is not a trusted proxy unless listed.
+- **Client IP:** `X-Forwarded-For` is honoured only when the socket peer is in `API_TRUSTED_PROXIES` (comma-separated IPs/CIDRs; default empty). The client IP is then the right-most address not in that list. With an empty list, the socket address is used. In local development, the `next dev` rewrite is the socket peer, so all browser traffic shares one IP bucket. The rewrite is not a trusted proxy unless listed. **Proxied deployments** (a reverse proxy, or the web app's `/api` rewrite enabled with `STUDIO_WEB_API_PROXY=true`) must list the proxy's address(es) in `API_TRUSTED_PROXIES`; otherwise every client shares the proxy's IP and one rate-limit bucket. List only proxies that set `X-Forwarded-For` themselves, never a client-controlled hop.
 - **Failures and logs:** every 401 is the same problem+json (`detail: "Not authenticated."`), whether the password is wrong or the session is missing, unknown, expired or logged out. Logs record login failures, successes and rate-limit hits with the client IP only. Server-side log redaction masks passwords, Argon2 hashes, cookies/session IDs, tokens and API keys.
 - **Bind address:** the API listens on `API_HOST`, default `127.0.0.1` (localhost only). A deployment sets it explicitly. Express's `X-Powered-By` header is disabled.
 - **Endpoints:**
