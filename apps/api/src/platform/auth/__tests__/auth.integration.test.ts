@@ -538,6 +538,25 @@ describe('client IP behind a trusted proxy', () => {
     expectProblem(await loginFrom('198.51.100.99, 203.0.113.7'), 429);
   });
 
+  // #24 operator decision: IPv6 counts per /64, IPv4-mapped IPv6 as its IPv4 address.
+  it('limits IPv6 clients per /64, not per address', async () => {
+    for (let host = 1; host <= 5; host += 1) {
+      expectProblem(await loginFrom(`2001:db8:1:2::${host}`), 401);
+    }
+
+    expectProblem(await loginFrom('2001:db8:1:2:ffff::99'), 429);
+    expectProblem(await loginFrom('2001:db8:1:3::1'), 401);
+  });
+
+  it('counts an IPv4-mapped IPv6 client as its IPv4 address', async () => {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      await loginFrom(attempt % 2 === 0 ? '203.0.113.9' : '::ffff:203.0.113.9');
+    }
+
+    expectProblem(await loginFrom('203.0.113.9'), 429);
+    expectProblem(await loginFrom('::ffff:203.0.113.9'), 429);
+  });
+
   it('enforces a global ceiling of 50 failures per hour across IPs', async () => {
     for (let client = 1; client <= 10; client += 1) {
       for (let attempt = 1; attempt <= 5; attempt += 1) {
