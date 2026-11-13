@@ -91,7 +91,8 @@ export const webGate: Gate = {
       comment:
         'Operator login/logout/session UI lives in src/platform/auth; code outside it (app/, ' +
         'modules/, other platform/ areas) imports it only through src/platform/auth/index.ts. ' +
-        'Kept specific to auth: other platform/ areas have no index.ts entry point yet.',
+        'Kept specific to auth: platform/query has no index.ts, and app/(studio)/layout.tsx ' +
+        'imports platform/query/query-provider directly.',
       severity: 'error',
       from: { path: '^src/', pathNot: '^src/platform/auth/' },
       to: { path: '^src/platform/auth/', pathNot: '^src/platform/auth/index\\.tsx?$' },
