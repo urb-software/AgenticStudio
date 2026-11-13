@@ -207,3 +207,110 @@ test('login says the API is unreachable when the request gets no response', asyn
   await expect(alert).toHaveText('The Studio API is unreachable.');
   await expect(page).toHaveURL(/\/login$/);
 });
+
+/** Signs in through the login page and lands on Projects. */
+async function signIn(page: Page) {
+  await page.goto('/login');
+  await page.getByLabel('Password').fill(operatorPassword());
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+}
+
+/** Creates a project through the New project dialog and opens it from the list. */
+async function createAndOpenProject(page: Page, name: string) {
+  const main = page.getByRole('main', { name: 'Page content' });
+  await main.getByRole('button', { name: 'New project' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New project' });
+  await dialog.getByLabel('Project name').fill(name);
+  await dialog.getByRole('button', { name: 'Create project' }).click();
+  await expect(dialog).toHaveCount(0);
+  await main.getByRole('list', { name: 'Projects' }).getByRole('link', { name }).click();
+  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+  await expect(main.getByRole('heading', { level: 1, name })).toBeVisible();
+  return main;
+}
+
+// Story #60: create a project, open it, connect a fixture Repository over the test-only file
+// transport, see it ready with a commit id, and keep it across a reload. Linux only, like every
+// repository feature; `pnpm e2e:smoke` fails on Linux if this test did not run and pass.
+test('operator connects a repository and sees it ready', async ({ page }, testInfo) => {
+  test.skip(
+    process.env.E2E_API_PLATFORM !== 'linux',
+    'Repository features run on Linux only; CI runs this test on Linux.',
+  );
+  const base = process.env.E2E_FIXTURE_REPO_BASE;
+  if (!base) throw new Error('E2E_FIXTURE_REPO_BASE is not set; run `pnpm e2e:smoke` on Linux');
+  const phone = testInfo.project.name === 'phone';
+  const projectName = `Repository ${testInfo.project.name}`;
+  const url = `${base}${testInfo.project.name}.git`;
+
+  await signIn(page);
+  const main = await createAndOpenProject(page, projectName);
+
+  // Breadcrumb: Projects › name.
+  const breadcrumb = page
+    .getByRole('banner', { name: 'Top bar' })
+    .getByRole('navigation', { name: 'Breadcrumb' });
+  await expect(breadcrumb.getByRole('link', { name: 'Projects' })).toBeVisible();
+  await expect(breadcrumb.getByText(projectName)).toHaveAttribute('aria-current', 'page');
+
+  // No repository yet: the card is an empty state with the Connect action.
+  const card = main.getByRole('region', { name: 'Repository' });
+  await expect(card.getByRole('heading', { name: 'No repository connected' })).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+
+  await card.getByRole('button', { name: 'Connect repository' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Connect repository' });
+  await expect(dialog.getByLabel('Integration branch')).toHaveValue('dev');
+  if (phone) {
+    const viewport = page.viewportSize()!;
+    await expect
+      .poll(async () => {
+        const box = await dialog.boundingBox();
+        return box && { width: box.width, bottom: Math.round(box.y + box.height) };
+      })
+      .toEqual({ width: viewport.width, bottom: viewport.height });
+  }
+  await expectNoAxeViolations(page);
+
+  await dialog.getByLabel('Repository URL').fill(url);
+  await dialog.getByRole('button', { name: 'Connect repository' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // The clone runs in the background; the card polls until the Repository is ready.
+  await expect(card.getByText('Connected')).toBeVisible({ timeout: 30_000 });
+  const commit = card.locator('code').filter({ hasText: /^[0-9a-f]{7}$/ });
+  await expect(commit).toBeVisible();
+  await expect(card.getByText(url)).toBeVisible();
+  await expect(card.getByText('Last fetched')).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+
+  // State comes from the server: a reload shows the same Repository.
+  const commitId = await commit.textContent();
+  await page.reload();
+  await expect(card.getByText('Connected')).toBeVisible();
+  await expect(card.locator('code').filter({ hasText: commitId! })).toBeVisible();
+
+  await breadcrumb.getByRole('link', { name: 'Projects' }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+});
+
+// On an API host that is not Linux (a native Windows or macOS development machine), connect
+// answers 501 "Unsupported platform" and the dialog shows it; CI (Linux) skips this.
+test('connect says the platform is unsupported on an API host that is not Linux', async ({
+  page,
+}, testInfo) => {
+  test.skip(process.env.E2E_API_PLATFORM === 'linux', 'The API host is Linux.');
+  await signIn(page);
+  const main = await createAndOpenProject(page, `Unsupported ${testInfo.project.name}`);
+
+  await main.getByRole('button', { name: 'Connect repository' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Connect repository' });
+  await dialog.getByLabel('Repository URL').fill('https://github.com/acme/shop.git');
+  await dialog.getByRole('button', { name: 'Connect repository' }).click();
+
+  await expect(dialog.getByRole('alert')).toContainText('Unsupported platform');
+  await expectNoAxeViolations(page);
+});
