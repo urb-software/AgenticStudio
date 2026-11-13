@@ -109,4 +109,27 @@ describe('DropdownMenu', () => {
     }
     await expect(document.body).toHaveNoAxeViolations();
   });
+
+  it('opens inside a given container instead of body', async () => {
+    const container = document.createElement('section');
+    document.body.append(container);
+    try {
+      render(
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost">Open</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent container={container}>
+            <DropdownMenuItem>Item</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>,
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+      expect(container.contains(screen.getByRole('menu'))).toBe(true);
+    } finally {
+      container.remove();
+    }
+  });
 });

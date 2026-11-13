@@ -68,6 +68,8 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
     await expect(menuTheme).toBeHidden();
     await expect(topBarTheme).toBeVisible();
   }
+  // The open menu (and its popover layout) is scanned in the browser too.
+  await expectNoAxeViolations(page);
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
 
@@ -80,7 +82,21 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
       'aria-current',
       'page',
     );
+    await expectNoAxeViolations(page);
+    // Focus stays in the sheet when tabbing past its last control.
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press('Tab');
+      expect(await sheet.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    }
     await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    // A visible close control (44px on touch) for users without an Esc key.
+    await topBar.getByRole('button', { name: 'Open navigation' }).tap();
+    const close = sheet.getByRole('button', { name: 'Close navigation' });
+    const closeBox = await close.boundingBox();
+    expect(closeBox?.width).toBeGreaterThanOrEqual(44);
+    expect(closeBox?.height).toBeGreaterThanOrEqual(44);
+    await close.tap();
     await expect(sheet).toHaveCount(0);
   } else {
     await expect(
@@ -102,6 +118,9 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
 
   await page.reload();
   await expect(projects.getByRole('heading', { name: projectName })).toBeVisible();
+  // Exactly one: not created twice. Counted by this run's unique name, since both Playwright
+  // projects share the database.
+  await expect(projects.getByRole('listitem').filter({ hasText: projectName })).toHaveCount(1);
 
   // Logout ends the session: Projects sends the browser back to the login page.
   await topBar.getByRole('button', { name: 'Operator menu' }).click();
@@ -111,8 +130,9 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
   await expect(page).toHaveURL(/\/login$/);
 });
 
-// The first paint, before any script runs: the server-rendered sidebar already has its final
-// width (240px column or 64px rail), so it does not flash (#43).
+// The first paint, before any script runs: the server-rendered sidebar and the spacer that
+// offsets the page already have their final width (240px column or 64px rail), so neither the
+// sidebar nor the page content shifts on hydration (#43).
 test('the server-rendered sidebar has its final width before scripts run', async ({
   browser,
   baseURL,
@@ -134,8 +154,13 @@ test('the server-rendered sidebar has its final width before scripts run', async
     }
     const page = await context.newPage();
     await page.goto('/projects');
-    const box = await page.locator('[data-slot="sidebar-container"]').boundingBox();
-    expect(box?.width, `width ${width}, sidebar_state=${cookie ?? '(none)'}`).toBe(expected);
+    const label = `width ${width}, sidebar_state=${cookie ?? '(none)'}`;
+    const container = await page.locator('[data-slot="sidebar-container"]').boundingBox();
+    const gap = await page.locator('[data-slot="sidebar-gap"]').boundingBox();
+    const main = await page.getByRole('main', { name: 'Page content' }).boundingBox();
+    expect(container?.width, label).toBe(expected);
+    expect(gap?.width, label).toBe(expected);
+    expect(main?.x, label).toBe(expected);
     await context.close();
   }
 });

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -145,6 +145,36 @@ describe('Sidebar', () => {
 
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('has a labelled close button in the phone sheet (44px on touch)', async () => {
+    setWidth(360);
+    render(<Shell />);
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }));
+
+    const close = within(screen.getByRole('dialog', { name: 'Navigation' })).getByRole('button', {
+      name: 'Close navigation',
+    });
+    expect(close.className.split(' ')).toEqual(
+      expect.arrayContaining(['pointer-coarse:min-h-11', 'pointer-coarse:min-w-11']),
+    );
+
+    await userEvent.click(close);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps focus inside the phone sheet when tabbing past its last item', async () => {
+    setWidth(360);
+    render(<Shell />);
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }));
+    const sheet = screen.getByRole('dialog', { name: 'Navigation' });
+
+    for (let i = 0; i < 4; i++) {
+      await userEvent.tab();
+      expect(sheet.contains(document.activeElement)).toBe(true);
+    }
+    await userEvent.tab({ shift: true });
+    expect(sheet.contains(document.activeElement)).toBe(true);
   });
 
   it('has no keyboard shortcut of its own', async () => {

@@ -86,6 +86,22 @@ describe('OperatorMenu', () => {
     await expect(document.body).toHaveNoAxeViolations();
   });
 
+  it('opens its menu inside the landmark that holds it (axe region)', async () => {
+    fakeAuthApi();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <header aria-label="Top bar">
+          <OperatorMenu />
+        </header>
+      </QueryClientProvider>,
+    );
+
+    const menu = await openMenu();
+
+    expect(screen.getByRole('banner', { name: 'Top bar' }).contains(menu)).toBe(true);
+  });
+
   it('opens from the keyboard and closes with Esc', async () => {
     fakeAuthApi();
     renderMenu();

@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
-import { OperatorMenu } from '../../platform/auth';
-import { QueryProvider } from '../../platform/query/query-provider';
+import { OperatorMenu } from '@/platform/auth';
+import { QueryProvider } from '@/platform/query/query-provider';
 import { SidebarInset, SidebarProvider } from '@/shared/ui/sidebar';
 import { parseSidebarOpen, SIDEBAR_COOKIE_NAME } from '@/shared/ui/sidebar-state';
 import { StudioBreadcrumb } from './_shell/breadcrumb';
@@ -12,7 +12,9 @@ const MAIN_ID = 'main-content';
 
 /**
  * The Studio Shell (design-system Layout) around every Studio page: sidebar, sticky 56px top
- * bar (`topbar-height`) and the page capped at 1280px (`content-max`). A Server Component: it
+ * bar and the page capped at 1280px. globals.css has no `topbar-height`, `content-max` or
+ * `z-topbar` tokens yet, so those are the literal values (`h-14`, `max-w-[1280px]`, `z-20`).
+ * A Server Component: it
  * reads the stored sidebar state from the request so the first paint matches; the sidebar,
  * theme toggle and operator menu are Client islands. The API enforces the session (401 →
  * login); the shell hides nothing that the API does not also protect.

@@ -3,8 +3,11 @@
 import * as React from 'react';
 import { cn } from '@/shared/lib/utils';
 
-import { useIsMobile, useIsTablet } from '@/shared/hooks/use-mobile';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/sheet';
+import { XIcon } from 'lucide-react';
+import { useHydrated } from '@/shared/hooks/use-hydrated';
+import { useIsMobile, useIsTablet } from '@/shared/hooks/use-viewport';
+import { Button } from '@/shared/ui/button';
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/sheet';
 import { SIDEBAR_COOKIE_MAX_AGE, SIDEBAR_COOKIE_NAME } from '@/shared/ui/sidebar-state';
 
 // Trimmed from the shadcn Sidebar to what the Studio Shell uses (#43): a left sidebar that
@@ -18,15 +21,11 @@ type SidebarContextProps = {
   state: 'expanded' | 'collapsed';
   /** No stored choice and the width not yet known (server render, hydration): CSS decides. */
   auto: boolean;
-  open: boolean;
-  setOpen: (open: boolean) => void;
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
 };
-
-const noSubscription = () => () => {};
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
@@ -44,7 +43,8 @@ function useSidebar() {
  * server so the first paint matches). Without one, the sidebar starts expanded on desktop and
  * collapsed to the icon rail on tablet (frontend.md §9); that default is never stored. The
  * server cannot know the width, so until the client does, the markup carries `data-auto` and
- * `group-data-[auto=true]:md:max-xl:` styles draw the tablet rail: no flash either way.
+ * `group-data-[auto=true]:md:max-xl:` styles draw the tablet rail (consumers read `auto` to do
+ * the same for their own content): no flash either way.
  */
 function SidebarProvider({
   defaultOpen,
@@ -56,11 +56,7 @@ function SidebarProvider({
   const isTablet = useIsTablet();
   const [openMobile, setOpenMobile] = React.useState(false);
   const [choice, setChoice] = React.useState<boolean | undefined>(defaultOpen);
-  const hydrated = React.useSyncExternalStore(
-    noSubscription,
-    () => true,
-    () => false,
-  );
+  const hydrated = useHydrated();
   const open = choice ?? !isTablet;
   const auto = choice === undefined && !hydrated;
 
@@ -77,12 +73,13 @@ function SidebarProvider({
     }
   }, [isMobile, open, setOpen]);
 
-  // data-state="expanded" | "collapsed" drives the group-data-[collapsible=icon] styles.
+  // `state` sets data-collapsible="icon" on the sidebar, which drives the
+  // group-data-[collapsible=icon] styles.
   const state = open ? 'expanded' : 'collapsed';
 
   const contextValue = React.useMemo<SidebarContextProps>(
-    () => ({ state, auto, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar }),
-    [state, auto, open, setOpen, isMobile, openMobile, toggleSidebar],
+    () => ({ state, auto, isMobile, openMobile, setOpenMobile, toggleSidebar }),
+    [state, auto, isMobile, openMobile, toggleSidebar],
   );
 
   return (
@@ -90,7 +87,7 @@ function SidebarProvider({
       <div
         data-slot="sidebar-wrapper"
         className={cn(
-          'group/sidebar-wrapper flex min-h-svh w-full [--sidebar-width-icon:4rem] [--sidebar-width:15rem]',
+          'flex min-h-svh w-full [--sidebar-width-icon:4rem] [--sidebar-width:15rem]',
           className,
         )}
         {...props}
@@ -109,17 +106,28 @@ function Sidebar({ className, children, ...props }: React.ComponentProps<'div'>)
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile}>
         <SheetContent
-          data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
           aria-describedby={undefined}
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [--sidebar-width:18rem] [&>button]:hidden"
+          showCloseButton={false}
+          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [--sidebar-width:18rem]"
           side="left"
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Navigation</SheetTitle>
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
+          {/* Visible and reachable by touch screen readers too (no Esc key, overlay unreachable). */}
+          <SheetClose asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Close navigation"
+              className="absolute top-3.5 right-3 text-text-muted hover:text-text"
+            >
+              <XIcon aria-hidden="true" />
+            </Button>
+          </SheetClose>
         </SheetContent>
       </Sheet>
     );
@@ -127,7 +135,7 @@ function Sidebar({ className, children, ...props }: React.ComponentProps<'div'>)
 
   return (
     <div
-      className="group peer hidden text-sidebar-foreground md:block"
+      className="group hidden text-sidebar-foreground md:block"
       data-state={state}
       data-collapsible={state === 'collapsed' ? 'icon' : ''}
       data-auto={auto ? 'true' : undefined}
@@ -146,11 +154,7 @@ function Sidebar({ className, children, ...props }: React.ComponentProps<'div'>)
         )}
         {...props}
       >
-        <div
-          data-sidebar="sidebar"
-          data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar"
-        >
+        <div data-slot="sidebar-inner" className="flex size-full flex-col bg-sidebar">
           {children}
         </div>
       </div>
@@ -173,7 +177,6 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="sidebar-header"
-      data-sidebar="header"
       className={cn('flex flex-col gap-2 p-2', className)}
       {...props}
     />
@@ -184,9 +187,8 @@ function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="sidebar-content"
-      data-sidebar="content"
       className={cn(
-        'no-scrollbar flex min-h-0 flex-1 flex-col gap-0 overflow-auto group-data-[collapsible=icon]:overflow-hidden',
+        'flex min-h-0 flex-1 flex-col gap-0 overflow-auto group-data-[collapsible=icon]:overflow-hidden',
         className,
       )}
       {...props}
@@ -198,7 +200,6 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
   return (
     <ul
       data-slot="sidebar-menu"
-      data-sidebar="menu"
       className={cn('flex w-full min-w-0 flex-col gap-0.5', className)}
       {...props}
     />
@@ -206,14 +207,7 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
 }
 
 function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
-  return (
-    <li
-      data-slot="sidebar-menu-item"
-      data-sidebar="menu-item"
-      className={cn('group/menu-item relative', className)}
-      {...props}
-    />
-  );
+  return <li data-slot="sidebar-menu-item" className={cn('relative', className)} {...props} />;
 }
 
 export {

@@ -2,11 +2,9 @@
 
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useSyncExternalStore } from 'react';
 import { IconButton } from '@/shared/components/icon-button';
+import { useHydrated } from '@/shared/hooks/use-hydrated';
 import { DropdownMenuItem } from '@/shared/ui/dropdown-menu';
-
-const noSubscription = () => () => {};
 
 /**
  * The stored theme is known only in the browser, so the server render and hydration assume the
@@ -14,11 +12,7 @@ const noSubscription = () => () => {};
  */
 function useThemeSwitch() {
   const { resolvedTheme, setTheme } = useTheme();
-  const hydrated = useSyncExternalStore(
-    noSubscription,
-    () => true,
-    () => false,
-  );
+  const hydrated = useHydrated();
   const light = hydrated && resolvedTheme === 'light';
   return {
     label: light ? 'Switch to dark theme' : 'Switch to light theme',

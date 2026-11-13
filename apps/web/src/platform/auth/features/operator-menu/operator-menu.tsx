@@ -38,6 +38,9 @@ export function OperatorMenu({ children }: { children?: ReactNode }) {
   const session = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: api.getSession });
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  // The menu opens in here, inside the landmark that holds the trigger (the top bar), so the
+  // non-modal menu keeps all page content in landmarks.
+  const [menuContainer, setMenuContainer] = useState<HTMLSpanElement | null>(null);
 
   async function logOut() {
     setPending(true);
@@ -76,7 +79,8 @@ export function OperatorMenu({ children }: { children?: ReactNode }) {
           <span className="sr-only">Operator menu</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[220px]">
+      {/* 220px wide, as the prototype's operator popover: no width token. */}
+      <DropdownMenuContent align="end" container={menuContainer} className="w-[220px]">
         <div className="px-2.5 pt-2 pb-2.5">
           <p className="text-label font-semibold text-text">Operator</p>
           <p className="text-caption text-text-dim">
@@ -113,6 +117,7 @@ export function OperatorMenu({ children }: { children?: ReactNode }) {
           {LOGOUT_FAILED}
         </span>
       ) : null}
+      <span ref={setMenuContainer} />
     </DropdownMenu>
   );
 }

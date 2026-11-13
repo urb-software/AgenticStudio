@@ -16,13 +16,20 @@ import {
 import { LogoMark } from './logo-mark';
 import { routeFor, STUDIO_ROUTES } from './routes';
 
+function toggleLabel(auto: boolean, collapsed: boolean): string {
+  // Before the client knows the width, the rail or column is drawn by CSS: name no direction.
+  if (auto) return 'Toggle sidebar';
+  return collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+}
+
 /**
  * The Studio Shell sidebar: logo tile, the collapse toggle and the section links. A 240px
- * column that collapses to the 64px icon rail; on phones the same content in a sheet.
+ * column that collapses to the 64px icon rail; on phones the same content in a sheet. While
+ * `auto` (server render without a stored choice), tablet widths get the rail in CSS alone.
  */
 export function StudioSidebar() {
   const pathname = usePathname();
-  const { state, isMobile, toggleSidebar, setOpenMobile } = useSidebar();
+  const { state, auto, isMobile, toggleSidebar, setOpenMobile } = useSidebar();
   const collapsed = !isMobile && state === 'collapsed';
   const active = routeFor(pathname);
 
@@ -34,13 +41,18 @@ export function StudioSidebar() {
           className={cn(
             'flex-row items-center gap-2.5 px-3.5 pt-3.5 pb-2',
             collapsed && 'flex-col gap-2 px-2.5',
-            // Server render without a stored choice: the tablet rail in CSS (see SidebarProvider).
-            'group-data-[auto=true]:md:max-xl:flex-col group-data-[auto=true]:md:max-xl:gap-2 group-data-[auto=true]:md:max-xl:px-2.5',
+            auto && 'md:max-xl:flex-col md:max-xl:gap-2 md:max-xl:px-2.5',
           )}
         >
           <LogoMark />
           {collapsed ? null : (
-            <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-text group-data-[auto=true]:md:max-xl:hidden">
+            <span
+              className={cn(
+                // 15px semibold logo text (prototype `.logo-text`): no type token matches.
+                'flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-text',
+                auto && 'md:max-xl:hidden',
+              )}
+            >
               Agent Studio
             </span>
           )}
@@ -48,7 +60,7 @@ export function StudioSidebar() {
             <IconButton
               icon={PanelLeft}
               size="sm"
-              label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              label={toggleLabel(auto, collapsed)}
               onClick={toggleSidebar}
             />
           )}
@@ -62,8 +74,7 @@ export function StudioSidebar() {
                   icon={route.icon}
                   label={route.label}
                   active={active?.href === route.href}
-                  collapsed={collapsed}
-                  className="group-data-[auto=true]:md:max-xl:justify-center group-data-[auto=true]:md:max-xl:[&>span]:hidden"
+                  collapsed={collapsed || (auto ? 'tablet' : false)}
                   onClick={() => setOpenMobile(false)}
                 />
               </SidebarMenuItem>

@@ -120,6 +120,24 @@ describe('Studio Shell', () => {
     expect(html).toContain('aria-label="Expand sidebar"');
   });
 
+  it('server-renders the tablet rail without a cookie and keeps every control named', async () => {
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(await shell());
+    document.body.append(container);
+
+    try {
+      // The rail is CSS only (md:max-xl): the link keeps its label as its accessible name, and
+      // the toggle names neither direction until the client knows the width.
+      const nav = within(container).getByRole('navigation', { name: 'Primary' });
+      const link = within(nav).getByRole('link', { name: 'Projects' });
+      expect(link.querySelector('[class~="md:max-xl:sr-only"]')?.textContent).toBe('Projects');
+      expect(within(nav).getByRole('button', { name: 'Toggle sidebar' })).toBeTruthy();
+      expect(container.innerHTML).not.toContain('[&amp;&gt;span]');
+    } finally {
+      container.remove();
+    }
+  });
+
   it('switches between the dark and light themes from the top bar', async () => {
     setWidth(1440);
     render(await shell());
