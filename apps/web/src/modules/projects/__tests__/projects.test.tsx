@@ -149,6 +149,17 @@ describe('project list states', () => {
     expect(await screen.findByText('GET /api/projects · 502')).toBeTruthy();
   });
 
+  it('error: shows the request alone when the API cannot be reached', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    );
+    renderProjects();
+
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('GET /api/projects')).toBeTruthy();
+  });
+
   it('data: lists project cards newest first with a relative created time', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-12T12:00:00.000Z'));
@@ -243,6 +254,7 @@ describe('new project dialog', () => {
 
     const pending = within(dialog()).getByRole<HTMLButtonElement>('button', { name: 'Creating…' });
     expect(pending.disabled).toBe(true);
+    expect(nameInput().readOnly).toBe(true);
     await userEvent.keyboard('{Escape}');
     expect(dialog()).toBeTruthy();
     expect(api.calls('POST')).toHaveLength(1);

@@ -124,6 +124,8 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
               type="text"
               autoComplete="off"
               error={errors.name?.message}
+              // Read-only, not disabled, while creating: a server field error can still focus it.
+              readOnly={isSubmitting}
               {...register('name')}
             />
           </DialogBody>
