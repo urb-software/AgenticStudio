@@ -168,6 +168,8 @@ async function createFixtureRepositories(root) {
       work,
       join(root, `${name}.git`),
     ]);
+    // A bare clone takes the work tree's current branch (dev) as HEAD; the default is main.
+    fixtureGit(join(root, `${name}.git`), ['symbolic-ref', 'HEAD', 'refs/heads/main']);
   }
   return pathToFileURL(`${root}/`).href;
 }
