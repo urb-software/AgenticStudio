@@ -1,7 +1,7 @@
 import { startRedis, type TestService } from '@agentic-studio/testing';
-import type { INestApplication } from '@nestjs/common';
+import { type INestApplication, Logger } from '@nestjs/common';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { testConfig } from '../../../__tests__/test-config.js';
 import { createApp } from '../../../app.js';
 
@@ -55,5 +55,21 @@ describe('GET /api/health', () => {
     expect(response.headers['content-type']).toContain('application/problem+json');
     expect(response.body).toMatchObject({ status: 503, title: 'Service Unavailable' });
     expect(JSON.stringify(response.body)).not.toMatch(/redis|6379|127\.0\.0\.1|ECONNREFUSED/i);
+  });
+
+  it('treats the 503 as a handled answer: no "Unhandled error" log per probe', async () => {
+    const logged = vi.spyOn(Logger.prototype, 'error');
+    try {
+      app = await createApp(testConfig({ redisUrl: 'redis://127.0.0.1:1' }));
+      await app.init();
+
+      for (let probe = 0; probe < 3; probe += 1) {
+        expect((await request(app.getHttpServer()).get('/api/health')).status).toBe(503);
+      }
+
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
   });
 });

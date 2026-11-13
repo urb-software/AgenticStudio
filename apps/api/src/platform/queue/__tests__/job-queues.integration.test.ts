@@ -22,9 +22,12 @@ import {
   QueueUnavailableError,
   type RunningJob,
 } from '../job-queue.js';
-import { QueueModule } from '../queue.module.js';
+import { type QueueWorkerTuning, QueueModule } from '../queue.module.js';
 
 type Payload = { projectId: string };
+
+// Our producer and worker connections, and the blocking connection BullMQ derives from them.
+const QUEUE_CLIENT = /name=studio(-queue|:queue:)/;
 
 /** A well-behaved long-running processor: it runs until its signal aborts, then stops. */
 function stopsOnAbort(job: RunningJob<Payload>): Promise<void> {
@@ -87,6 +90,7 @@ class RecordingOwner implements QueueDefinition<Payload> {
 async function startApp(
   redisUrl: string,
   owner: RecordingOwner,
+  tuning?: QueueWorkerTuning,
 ): Promise<{ app: INestApplicationContext; queue: JobQueue<Payload> }> {
   const handle: { queue?: JobQueue<Payload> } = {};
 
@@ -99,7 +103,7 @@ async function startApp(
   }
 
   @Module({
-    imports: [ConfigModule.forRoot(testConfig({ redisUrl })), QueueModule],
+    imports: [ConfigModule.forRoot(testConfig({ redisUrl })), QueueModule.forRoot(tuning)],
     providers: [OwnerRegistration],
   })
   class TestRoot {}
@@ -212,6 +216,39 @@ describe('job queues (Redis via Testcontainers)', () => {
       release.resolve();
     });
 
+    it('removes a leftover finished job with the same id instead of being blocked by it', async () => {
+      // A finished job kept in Redis (e.g. by different retention settings).
+      const workerConnection = new Redis(redisService.url, { maxRetriesPerRequest: null });
+      const producerConnection = new Redis(redisService.url);
+      const previous = new Worker('repository-sync', null, {
+        connection: workerConnection,
+        prefix: 'studio:queue',
+      });
+      const producer = new Queue('repository-sync', {
+        connection: producerConnection,
+        prefix: 'studio:queue',
+      });
+      await producer.add(
+        'repository-sync',
+        { payload: { projectId: 'p1' }, token: 'previous' },
+        { jobId: 'sync-p1' },
+      );
+      const taken = await previous.getNextJob('previous-token');
+      await taken!.moveToCompleted('done', 'previous-token', false);
+      expect(await (await producer.getJob('sync-p1'))?.getState()).toBe('completed');
+      await previous.close(true);
+      await producer.close();
+      workerConnection.disconnect();
+      producerConnection.disconnect();
+
+      const owner = new RecordingOwner('repository-sync');
+      let queue: JobQueue<Payload>;
+      ({ app, queue } = await startApp(redisService.url, owner));
+
+      await queue.enqueue('sync-p1', { projectId: 'p1' });
+      await eventually(() => expect(owner.processed).toHaveLength(1));
+    });
+
     it('lets a finished job id run again', async () => {
       const owner = new RecordingOwner('repository-sync');
       let queue: JobQueue<Payload>;
@@ -309,6 +346,69 @@ describe('job queues (Redis via Testcontainers)', () => {
       expect(owner.failures).toEqual([]);
     });
 
+    it('cancels a job right after enqueue, whether it is still waiting or just taken by the worker', async () => {
+      const owner = new RecordingOwner('repository-sync');
+      owner.behaviour = stopsOnAbort;
+      let queue: JobQueue<Payload>;
+      ({ app, queue } = await startApp(redisService.url, owner));
+
+      for (let round = 0; round < 20; round += 1) {
+        const id = `sync-r${round}`;
+        await queue.enqueue(id, { projectId: 'p1' });
+        await expect(queue.cancel(id)).resolves.toBe(true);
+      }
+
+      // Whatever got to run saw a live signal that then aborted, and was reported once.
+      await eventually(() => expect(owner.failures).toHaveLength(owner.processed.length));
+      expect(owner.failures.every((entry) => entry.failure.reason === 'cancelled')).toBe(true);
+      // Every id is free again.
+      owner.behaviour = async () => {};
+      for (let round = 0; round < 20; round += 1) {
+        await eventually(async () => {
+          await queue.enqueue(`sync-r${round}`, { projectId: 'p1' });
+        });
+      }
+    });
+
+    it('does not claim to cancel an active job that this process is not running', async () => {
+      // Held by another (crashed or foreign) worker: nothing here can abort it.
+      const workerConnection = new Redis(redisService.url, { maxRetriesPerRequest: null });
+      const producerConnection = new Redis(redisService.url);
+      const foreign = new Worker('repository-sync', null, {
+        connection: workerConnection,
+        prefix: 'studio:queue',
+      });
+      const producer = new Queue('repository-sync', {
+        connection: producerConnection,
+        prefix: 'studio:queue',
+      });
+      try {
+        const owner = new RecordingOwner('repository-sync');
+        const release = deferred();
+        owner.behaviour = () => release.promise;
+        let queue: JobQueue<Payload>;
+        ({ app, queue } = await startApp(redisService.url, owner));
+        // Keep our only worker slot busy so the foreign worker is the one that takes sync-p2.
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+        await eventually(() => expect(owner.processed).toHaveLength(1));
+        await producer.add(
+          'repository-sync',
+          { payload: { projectId: 'p2' }, token: 'foreign' },
+          { jobId: 'sync-p2' },
+        );
+        const taken = await foreign.getNextJob('foreign-token');
+        expect(taken?.id).toBe('sync-p2');
+
+        await expect(queue.cancel('sync-p2')).resolves.toBe(false);
+        release.resolve();
+      } finally {
+        await foreign.close(true);
+        await producer.close();
+        workerConnection.disconnect();
+        producerConnection.disconnect();
+      }
+    });
+
     it('returns false when there is nothing to cancel', async () => {
       const owner = new RecordingOwner('repository-sync');
       let queue: JobQueue<Payload>;
@@ -363,6 +463,47 @@ describe('job queues (Redis via Testcontainers)', () => {
       await eventually(async () => {
         await queue.enqueue('sync-p1', { projectId: 'p1' });
       });
+    });
+
+    it('reports a timeout even when the processor ignores the signal and then resolves', async () => {
+      const owner = new RecordingOwner('repository-sync', 200);
+      const release = deferred();
+      owner.behaviour = () => release.promise; // ignores the signal, then succeeds
+      let queue: JobQueue<Payload>;
+      ({ app, queue } = await startApp(redisService.url, owner));
+      await queue.enqueue('sync-p1', { projectId: 'p1' });
+      await eventually(() => expect(owner.processed[0]?.signal.aborted).toBe(true));
+
+      release.resolve();
+
+      await eventually(() =>
+        expect(owner.failures.map((entry) => entry.failure)).toEqual([{ reason: 'timeout' }]),
+      );
+    });
+
+    it.each([0, -1, 1.5, Number.NaN, 2 ** 31])(
+      'rejects an invalid time limit (%s) at enqueue and registration',
+      async (timeoutMs) => {
+        const owner = new RecordingOwner('repository-sync');
+        let queue: JobQueue<Payload>;
+        ({ app, queue } = await startApp(redisService.url, owner));
+
+        await expect(queue.enqueue('sync-p1', { projectId: 'p1' }, { timeoutMs })).rejects.toThrow(
+          /timeoutMs/,
+        );
+        await app.close();
+        app = undefined;
+        await expect(
+          startApp(redisService.url, new RecordingOwner('repository-sync', timeoutMs)),
+        ).rejects.toThrow(/timeoutMs/);
+      },
+    );
+
+    it.each([0, -1, 1.5])('rejects an invalid concurrency (%s)', async (concurrency) => {
+      const owner = new RecordingOwner('repository-sync');
+      Object.assign(owner, { concurrency });
+
+      await expect(startApp(redisService.url, owner)).rejects.toThrow(/concurrency/);
     });
 
     it('applies a per-job limit given at enqueue time', async () => {
@@ -439,11 +580,75 @@ describe('job queues (Redis via Testcontainers)', () => {
       expect(Date.now() - started).toBeLessThan(5_000);
       expect(owner.processed[0]!.signal.reason).toMatchObject({ reason: 'shutdown' });
       expect(owner.failures.map((entry) => entry.failure)).toEqual([{ reason: 'shutdown' }]);
-      // Only the test's own connection is left.
+      // None of the queue's connections (producer, worker, BullMQ's blocking duplicate) is left.
+      // They are counted by name, so a connection leaked by another test cannot interfere.
       await eventually(async () => {
         const clients = (await redis.client('LIST')) as string;
-        expect(clients.trim().split('\n')).toHaveLength(1);
+        expect(clients.split('\n').filter((line) => QUEUE_CLIENT.test(line))).toEqual([]);
       });
+    });
+
+    it('names every queue connection so the check above is meaningful', async () => {
+      const owner = new RecordingOwner('repository-sync');
+      owner.behaviour = stopsOnAbort;
+      let queue: JobQueue<Payload>;
+      ({ app, queue } = await startApp(redisService.url, owner));
+      await queue.enqueue('sync-p1', { projectId: 'p1' });
+      await eventually(() => expect(owner.processed).toHaveLength(1));
+
+      const clients = (await redis.client('LIST')) as string;
+      expect(
+        clients.split('\n').filter((line) => QUEUE_CLIENT.test(line)).length,
+      ).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('lost lock (stalled job)', () => {
+    // Short BullMQ timings so the stalled-job check runs within the test.
+    const tuning: QueueWorkerTuning = { lockDuration: 1_000, stalledInterval: 300 };
+
+    it('aborts the run as stalled, never re-runs it, and keeps the id busy until the processor settles', async () => {
+      const owner = new RecordingOwner('repository-sync');
+      const release = deferred();
+      owner.behaviour = async (job) => {
+        await release.promise; // a slow processor that only checks the signal at the end
+        job.signal.throwIfAborted();
+      };
+      let queue: JobQueue<Payload>;
+      ({ app, queue } = await startApp(redisService.url, owner, tuning));
+      await queue.enqueue('sync-p1', { projectId: 'p1' });
+      await eventually(() => expect(owner.processed).toHaveLength(1));
+
+      // A Redis outage longer than the lock: the lock is gone and cannot be renewed.
+      await redis.del('studio:queue:repository-sync:sync-p1:lock');
+
+      await eventually(() =>
+        expect(owner.processed[0]!.signal.reason).toMatchObject({ reason: 'stalled' }),
+      );
+      // The job left Redis, but the processor still runs: no overlapping run with this id.
+      await expect(queue.enqueue('sync-p1', { projectId: 'p1' })).rejects.toThrow(
+        JobAlreadyActiveError,
+      );
+      await new Promise((r) => setTimeout(r, 1_000));
+      expect(owner.processed).toHaveLength(1); // not re-run
+      expect(owner.failures).toEqual([]);
+
+      release.resolve();
+      await eventually(() =>
+        expect(owner.failures).toEqual([
+          { job: { id: 'sync-p1', payload: { projectId: 'p1' } }, failure: { reason: 'stalled' } },
+        ]),
+      );
+
+      // The id is free again, and the new run is cancellable.
+      owner.behaviour = stopsOnAbort;
+      await eventually(async () => {
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+      });
+      await eventually(() => expect(owner.processed).toHaveLength(2));
+      await expect(queue.cancel('sync-p1')).resolves.toBe(true);
+      await eventually(() => expect(owner.failures).toHaveLength(2));
+      expect(owner.failures[1]!.failure).toEqual({ reason: 'cancelled' });
     });
   });
 

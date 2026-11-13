@@ -1,7 +1,8 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, HttpStatus } from '@nestjs/common';
 import { ApiOperation } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { Public } from '../auth/public.decorator.js';
+import { HandledServerErrorException } from '../http/problem-details.js';
 import { QueueHealth } from '../queue/queue-health.js';
 import { HealthResponseDto } from './health.schema.js';
 
@@ -20,7 +21,8 @@ export class HealthController {
   @ZodResponse({ status: 200, type: HealthResponseDto })
   async check() {
     if (!(await this.queue.isAvailable())) {
-      throw new ServiceUnavailableException();
+      // The queue logs the outage once; a probe every few seconds must not log a stack each.
+      throw new HandledServerErrorException(HttpStatus.SERVICE_UNAVAILABLE);
     }
     return { status: 'ok' as const };
   }

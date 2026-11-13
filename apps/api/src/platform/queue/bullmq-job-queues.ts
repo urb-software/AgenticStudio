@@ -28,9 +28,26 @@ import type { QueueHealth } from './queue-health.js';
 /** Every queue key starts with this, so queues cannot collide with session or other keys. */
 export const QUEUE_KEY_PREFIX = 'studio:queue';
 
+/** Redis client name of every queue connection (visible in `CLIENT LIST`). */
+export const QUEUE_CONNECTION_NAME = 'studio-queue';
+
+/**
+ * BullMQ worker timings. Production uses BullMQ's defaults (30 s lock, 30 s stalled check);
+ * tests shorten them to exercise the lost-lock path.
+ */
+export interface QueueWorkerTuning {
+  readonly lockDuration?: number;
+  readonly stalledInterval?: number;
+}
+
+/** DI token for {@link QueueWorkerTuning}. */
+export const QUEUE_WORKER_TUNING = Symbol('QUEUE_WORKER_TUNING');
+
 const QUEUE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 // BullMQ rejects integer-like custom ids and uses `:` as its key separator.
 const JOB_ID = /^(?!\d+$)[A-Za-z0-9._-]{1,200}$/;
+// The largest delay a Node.js timer supports; anything above fires after ~1 ms.
+const MAX_TIMEOUT_MS = 2_147_483_647;
 type State = JobState | 'unknown';
 // States in which a job with the same id blocks a new one.
 const UNFINISHED_STATES: ReadonlySet<State> = new Set<State>([
@@ -45,7 +62,13 @@ const WAITING_STATES: ReadonlySet<State> = new Set<State>(['waiting', 'delayed',
 const HEALTH_TIMEOUT_MS = 1_000;
 // Bounds shutdown when Redis is dead or a processor ignores its abort signal.
 const CLOSE_TIMEOUT_MS = 5_000;
+// How long cancel() waits for a job our worker has taken to reach its processor.
+const START_WAIT_MS = 1_000;
+const START_POLL_MS = 10;
 const TIMED_OUT = Symbol('timed out');
+// Errors that mean "Redis is unreachable"; logged once per outage by logConnectionErrors.
+const CONNECTION_ERROR =
+  /ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|Connection is closed|MaxRetriesPerRequest|Stream isn't writeable/i;
 
 /** What is stored in Redis per job: the owner's payload plus platform bookkeeping. */
 interface StoredJob {
@@ -60,10 +83,12 @@ interface Entry {
   queue: Queue<StoredJob>;
   worker?: Worker<StoredJob>;
   workerConnection?: Redis;
-  /** Abort controllers of the jobs this process is running, by job id. */
+  /**
+   * Abort controllers of the jobs this process is running, by job id. Authoritative for
+   * "running" (one API instance): an id stays here until its processor settles, even if
+   * BullMQ has lost or dropped the job meanwhile.
+   */
   running: Map<string, AbortController>;
-  /** Tokens of jobs cancelled after BullMQ took them but before their processor started. */
-  cancelledBeforeStart: Set<string>;
 }
 
 /**
@@ -82,9 +107,16 @@ export class BullMqJobQueues
   private readonly entries = new Map<string, Entry>();
   private bootstrapped = false;
 
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(QUEUE_WORKER_TUNING) private readonly tuning: QueueWorkerTuning,
+  ) {
     super();
-    this.producer = new Redis(config.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
+    this.producer = new Redis(config.redisUrl, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      connectionName: QUEUE_CONNECTION_NAME,
+    });
     this.logConnectionErrors(this.producer, 'producer');
   }
 
@@ -98,18 +130,23 @@ export class BullMqJobQueues
     if (this.entries.has(definition.name)) {
       throw new Error(`Queue "${definition.name}" is already registered.`);
     }
+    assertTimeout(definition.timeoutMs);
+    if (
+      definition.concurrency !== undefined &&
+      !(Number.isInteger(definition.concurrency) && definition.concurrency >= 1)
+    ) {
+      throw new Error(`Invalid concurrency ${definition.concurrency}: must be an integer ≥ 1.`);
+    }
     const queue = new Queue<StoredJob>(definition.name, {
       connection: this.producer,
       prefix: QUEUE_KEY_PREFIX,
       defaultJobOptions: { attempts: 1, removeOnComplete: true, removeOnFail: true },
     });
-    // Connection errors are logged once per outage by logConnectionErrors.
-    queue.on('error', () => {});
+    queue.on('error', (error) => this.logBullMqError(definition.name, error));
     const entry: Entry = {
       definition: definition as unknown as QueueDefinition<JobPayload>,
       queue,
       running: new Map(),
-      cancelledBeforeStart: new Set(),
     };
     this.entries.set(definition.name, entry);
     return {
@@ -196,17 +233,25 @@ export class BullMqJobQueues
     options: EnqueueOptions = {},
   ): Promise<void> {
     assertJobId(id);
+    assertTimeout(options.timeoutMs);
     const { queue, definition } = entry;
+    // A processor that is still running here owns the id, whatever Redis says (lost lock).
+    if (entry.running.has(id)) {
+      throw new JobAlreadyActiveError(definition.name, id);
+    }
     const stored: StoredJob = { payload, token: randomUUID(), timeoutMs: options.timeoutMs };
     const added = await unavailableOnError(async () => {
       const existing = await queue.getJob(id);
-      if (existing && UNFINISHED_STATES.has(await existing.getState())) {
-        return false;
+      if (existing) {
+        if (UNFINISHED_STATES.has(await existing.getState())) {
+          return false;
+        }
+        // A finished (or orphaned) leftover would make BullMQ ignore the add below.
+        await existing.remove();
       }
       // BullMQ ignores an add whose id exists (it returns no error), so read the job back:
       // a different token means a concurrent enqueue won. Finished jobs are removed at
-      // once, so `undefined` normally means ours already ran. (Known gap: it can also mean
-      // a concurrent rival with the same id ran and finished in between.)
+      // once, so `undefined` normally means ours already ran (see the port's race note).
       await queue.add(definition.name, stored, { jobId: id });
       const current = await queue.getJob(id);
       return current === undefined || current.data.token === stored.token;
@@ -221,28 +266,40 @@ export class BullMqJobQueues
     if (this.abortRunning(entry, id)) {
       return true;
     }
-    return unavailableOnError(async () => {
+    const state = await unavailableOnError(async () => {
       const job = await entry.queue.getJob(id);
       if (!job) {
-        return false;
+        return undefined;
       }
-      const state = await job.getState();
-      if (WAITING_STATES.has(state)) {
+      const current = await job.getState();
+      if (WAITING_STATES.has(current)) {
         try {
           await job.remove();
-          return true;
+          return 'removed';
         } catch {
           // Our worker took it meanwhile (it holds the lock).
+          return 'active';
         }
-      } else if (state !== 'active' || !this.bootstrapped) {
-        return false;
       }
-      // Active here means our worker has taken it; abort it now or as soon as it starts.
-      if (!this.abortRunning(entry, id)) {
-        entry.cancelledBeforeStart.add(job.data.token);
-      }
-      return true;
+      return current;
     });
+    if (state === 'removed') {
+      return true;
+    }
+    if (state !== 'active' || !this.bootstrapped) {
+      return false;
+    }
+    // Active but not running here: either our worker has just taken it and is about to
+    // call its processor (wait for that, then abort with a live signal), or it is held by
+    // something we cannot abort or has just finished (then there is nothing to cancel).
+    const deadline = Date.now() + START_WAIT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
+      if (this.abortRunning(entry, id)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private abortRunning(entry: Entry, id: string): boolean {
@@ -252,8 +309,11 @@ export class BullMqJobQueues
   }
 
   private startWorker(entry: Entry): void {
-    const { definition } = entry;
-    entry.workerConnection = new Redis(this.config.redisUrl, { maxRetriesPerRequest: null });
+    const { definition, running } = entry;
+    entry.workerConnection = new Redis(this.config.redisUrl, {
+      maxRetriesPerRequest: null,
+      connectionName: QUEUE_CONNECTION_NAME,
+    });
     this.logConnectionErrors(entry.workerConnection, `worker "${definition.name}"`);
     entry.worker = new Worker<StoredJob>(definition.name, (job) => this.run(entry, job), {
       connection: entry.workerConnection,
@@ -261,43 +321,56 @@ export class BullMqJobQueues
       concurrency: definition.concurrency ?? 1,
       // A stalled job fails instead of running a second time (attempts stay at 1).
       maxStalledCount: 0,
+      ...this.tuning,
     });
-    // Connection errors are logged once per outage by logConnectionErrors.
-    entry.worker.on('error', () => {});
+    entry.worker.on('error', (error) => this.logBullMqError(definition.name, error));
+    // The lock of a job we are still running was lost (e.g. a Redis outage longer than
+    // the lock): BullMQ fails it. Abort the processor; the id stays busy until it settles.
+    entry.worker.on('stalled', (jobId) => {
+      this.logger.warn(`Queue "${definition.name}": job "${jobId}" lost its lock (stalled).`);
+      running.get(jobId)?.abort(new JobAbortedError('stalled'));
+    });
   }
 
   /**
    * The processor wrapper: one AbortController per running job, fired by cancel(), the
-   * time limit or shutdown. The job (and so its id and worker slot) stays active until
-   * the processor settles, so a processor that ignores the signal cannot overlap a new
-   * run with the same id; its owner hears about every failure exactly once, afterwards.
+   * time limit, a lost lock or shutdown. The job (and so its id and worker slot) stays
+   * busy until the processor settles; an aborted job is a failure even if the processor
+   * resolves, and its owner hears about every failure exactly once, afterwards.
    */
   private async run(entry: Entry, job: Job<StoredJob>): Promise<void> {
-    const { definition, running, cancelledBeforeStart } = entry;
+    const { definition, running } = entry;
     const id = job.id!;
-    const { payload, token, timeoutMs = definition.timeoutMs } = job.data;
+    const { payload, timeoutMs = definition.timeoutMs } = job.data;
     const controller = new AbortController();
     running.set(id, controller);
-    if (cancelledBeforeStart.delete(token)) {
-      controller.abort(new JobAbortedError('cancelled'));
-    }
     const timer =
       timeoutMs === undefined
         ? undefined
         : setTimeout(() => controller.abort(new JobAbortedError('timeout')), timeoutMs);
+    let failure: JobFailure | undefined;
     try {
       await definition.process({ id, payload, signal: controller.signal });
     } catch (error) {
-      const failure: JobFailure =
-        controller.signal.reason instanceof JobAbortedError
-          ? { reason: controller.signal.reason.reason }
-          : { reason: 'error', error };
-      await this.report(entry, { id, payload }, failure);
-      // Tells BullMQ the job failed; the owner already has the real error.
-      throw new Error(`Job failed: ${failure.reason}`);
+      failure = { reason: 'error', error };
     } finally {
       clearTimeout(timer);
-      running.delete(id);
+    }
+    // An abort wins over the processor's own outcome (see JobFailure).
+    if (controller.signal.reason instanceof JobAbortedError) {
+      failure = { reason: controller.signal.reason.reason };
+    }
+    try {
+      if (failure) {
+        await this.report(entry, { id, payload }, failure);
+        // Tells BullMQ the job failed; the owner already has the real error.
+        throw new Error(`Job failed: ${failure.reason}`);
+      }
+    } finally {
+      // Only our own entry: never a newer run's controller.
+      if (running.get(id) === controller) {
+        running.delete(id);
+      }
     }
   }
 
@@ -326,6 +399,13 @@ export class BullMqJobQueues
     }
   }
 
+  /** BullMQ errors other than "Redis unreachable" (e.g. lock failures) are logged, redacted. */
+  private logBullMqError(queue: string, error: unknown): void {
+    if (!isConnectionError(error)) {
+      this.logger.warn(`Queue "${queue}": ${redactSecrets(errorMessage(error))}`);
+    }
+  }
+
   /** Logs the first error of an outage (redacted) and the recovery, not every retry. */
   private logConnectionErrors(connection: Redis, label: string): void {
     let down = false;
@@ -351,9 +431,28 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message || error.name : String(error);
 }
 
+function isConnectionError(error: unknown): boolean {
+  if (error instanceof AggregateError) {
+    return true;
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  return CONNECTION_ERROR.test(`${typeof code === 'string' ? code : ''} ${errorMessage(error)}`);
+}
+
 function assertJobId(id: string): void {
   if (!JOB_ID.test(id)) {
     throw new Error(`Invalid job id "${id}".`);
+  }
+}
+
+function assertTimeout(timeoutMs: number | undefined): void {
+  if (
+    timeoutMs !== undefined &&
+    !(Number.isInteger(timeoutMs) && timeoutMs >= 1 && timeoutMs <= MAX_TIMEOUT_MS)
+  ) {
+    throw new Error(
+      `Invalid timeoutMs ${timeoutMs}: must be an integer from 1 to ${MAX_TIMEOUT_MS}.`,
+    );
   }
 }
 

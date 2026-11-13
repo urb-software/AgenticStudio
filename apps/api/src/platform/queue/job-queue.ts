@@ -13,13 +13,16 @@ export interface QueuedJob<P extends JobPayload> {
   readonly payload: P;
 }
 
-/** A job being processed. The signal aborts on cancel, timeout or shutdown. */
+/** A job being processed. The signal aborts on cancel, timeout, a lost lock or shutdown. */
 export interface RunningJob<P extends JobPayload> extends QueuedJob<P> {
   readonly signal: AbortSignal;
 }
 
-/** Why a running job was aborted. */
-export type JobAbortReason = 'cancelled' | 'timeout' | 'shutdown';
+/**
+ * Why a running job was aborted. `stalled`: the queue lost the job's lock (e.g. a Redis
+ * outage longer than the lock) and gave up on it; it is not re-run.
+ */
+export type JobAbortReason = 'cancelled' | 'timeout' | 'stalled' | 'shutdown';
 
 /** The `signal.reason` a processor sees when its job is aborted. */
 export class JobAbortedError extends Error {
@@ -29,7 +32,11 @@ export class JobAbortedError extends Error {
   }
 }
 
-/** Why a job that started processing did not succeed. `error` is the processor's own throw. */
+/**
+ * Why a job that started processing did not succeed. `error` is the processor's own throw.
+ * Once a job has been aborted, the abort reason wins: an error thrown (or a value returned)
+ * after the abort is reported as that reason, without the error.
+ */
 export type JobFailure = { reason: 'error'; error: unknown } | { reason: JobAbortReason };
 
 /**
@@ -41,42 +48,52 @@ export interface QueueDefinition<P extends JobPayload> {
   readonly name: string;
   /**
    * Runs one job and must stop promptly when `job.signal` aborts (e.g. kill its child
-   * process). The job, its id and its worker slot stay busy until this settles, and
+   * process); check `signal.aborted` (or `throwIfAborted()`) as well as listening for
+   * `abort`. The job, its id and its worker slot stay busy until this settles, and
    * `onFailed` is called only afterwards, so no late write can follow the failure report.
+   * Resolving after an abort still counts as a failure.
    */
   process(job: RunningJob<P>): Promise<void>;
-  /** Called once when a job fails, is cancelled while running, times out or is cut off by shutdown. */
+  /**
+   * Called once when a job fails, is cancelled while running, times out, loses its lock or
+   * is cut off by shutdown.
+   */
   onFailed(job: QueuedJob<P>, failure: JobFailure): Promise<void>;
   /**
    * Called on startup, before any job of this queue runs, with the jobs that were running
    * when the previous process died. They are then discarded and never re-run. If this
-   * throws, application startup fails and the jobs are offered again on the next start.
+   * throws, application startup fails and the jobs are offered again on the next start,
+   * so it must be idempotent.
    */
   reconcile(interrupted: QueuedJob<P>[]): Promise<void>;
-  /** Default per-job time limit in milliseconds; none if omitted. */
+  /** Default per-job time limit in milliseconds (integer, 1 to 2^31−1); none if omitted. */
   readonly timeoutMs?: number;
-  /** Jobs processed in parallel by this process; default 1. */
+  /** Jobs processed in parallel by this process (integer ≥ 1); default 1. */
   readonly concurrency?: number;
 }
 
 export interface EnqueueOptions {
-  /** Overrides the queue's default time limit for this job, in milliseconds. */
+  /** Overrides the queue's default time limit for this job, in milliseconds (1 to 2^31−1). */
   readonly timeoutMs?: number;
 }
 
 /** The handle a module gets back from {@link JobQueues.register}. */
 export interface JobQueue<P extends JobPayload> {
   /**
-   * Adds a job under a deterministic, caller-supplied id (letters, digits, `.`, `_`, `-`;
-   * not all digits). A finished job with the same id does not block a new one.
+   * Adds a job under a deterministic, caller-supplied id (1–200 letters, digits, `.`,
+   * `_`, `-`; not all digits). A finished job with the same id does not block a new one.
+   * Known race: if two callers enqueue the same id at once and the winner's job finishes
+   * before the loser's check, the loser is told its job was accepted although only the
+   * winner's ran. With deterministic, identifiers-only payloads both mean the same work;
+   * the owner's own state (e.g. a database transition) remains the real guard.
    * @throws JobAlreadyActiveError if a job with this id is waiting or running.
    * @throws QueueUnavailableError if Redis cannot be reached.
    */
   enqueue(id: string, payload: P, options?: EnqueueOptions): Promise<void>;
   /**
    * Cancels a job: a running job's signal aborts (its owner gets `onFailed` with
-   * `cancelled`); a waiting job is removed without running. Returns false if there was
-   * nothing to cancel.
+   * `cancelled`); a waiting job is removed without running and without `onFailed`.
+   * Returns false if there was nothing this process could cancel.
    * @throws QueueUnavailableError if Redis cannot be reached.
    */
   cancel(id: string): Promise<boolean>;

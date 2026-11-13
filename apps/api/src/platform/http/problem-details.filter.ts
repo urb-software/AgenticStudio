@@ -11,7 +11,12 @@ import {
 import { HttpAdapterHost } from '@nestjs/core';
 import { ZodValidationException } from 'nestjs-zod';
 import { ZodError } from 'zod';
-import { FieldProblemException, PROBLEM_JSON, type ProblemDetails } from './problem-details.js';
+import {
+  FieldProblemException,
+  HandledServerErrorException,
+  PROBLEM_JSON,
+  type ProblemDetails,
+} from './problem-details.js';
 import { redactSecrets } from './redact.js';
 
 const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
@@ -33,7 +38,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const correlationId = randomUUID();
     const problem = this.toProblem(exception, correlationId);
 
-    if (problem.status >= 500) {
+    if (problem.status >= 500 && !(exception instanceof HandledServerErrorException)) {
       const cause =
         exception instanceof Error ? (exception.stack ?? exception.message) : String(exception);
       this.logger.error(`Unhandled error [correlationId=${correlationId}]`, redactSecrets(cause));

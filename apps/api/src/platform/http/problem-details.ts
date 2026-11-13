@@ -43,3 +43,14 @@ export class FieldProblemException extends HttpException {
     super(detail, status);
   }
 }
+
+/**
+ * A deliberate 5xx (e.g. the health endpoint's 503) whose cause its owner already logs.
+ * The response stays generic like every 5xx, but the filter does not log it as an
+ * unhandled error.
+ */
+export class HandledServerErrorException extends HttpException {
+  constructor(status: number) {
+    super('Handled server error', status);
+  }
+}
