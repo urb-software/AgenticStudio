@@ -70,6 +70,7 @@ CODEX_CLI_ENABLED=false
 
 - Use a dedicated secret-management mechanism with scoped, revocable credentials. **Never commit `.env` secrets, auth/session tokens, CLI credentials, private keys or MCP secrets.**
 - DB/Git definitions store secret references where appropriate, **not secret values**.
+- **Chosen mechanism ([ADR 0001](../architecture/adr/0001-secret-store.md)):** Studio-held secrets, such as the private half of a project's Deploy key, are encrypted in PostgreSQL (AES-256-GCM) behind the `SecretStore` port, with a key-version field per record. The master key comes from the environment (`STUDIO_SECRETS_KEY`, 32 random bytes, base64) and never enters the database, Git, logs or API responses. Key rotation tooling and an external secret manager are deferred.
 - Inject only the necessary secret values at the point of authorized use; minimize lifetime and visibility.
 - Redact secrets and sensitive commands/paths from logs, error messages, SSE payloads, CI artifacts, PR descriptions and agent handoffs.
 - External or provider session credentials are not copied to other agents unless explicitly supported and authorized.
@@ -85,10 +86,24 @@ CODEX_CLI_ENABLED=false
 ## 4. Git, branch and merge protection
 
 - Each running agent works in an assigned branch/worktree and cannot write to another agent's workspace.
-- Git operations go through public `projects` contracts and an authorized, path-validated Git adapter. Workers cannot bypass approval by merging to `dev` directly.
+- Git operations go through public `projects` contracts and an authorized, path-validated Git adapter. Workers cannot bypass approval by merging to the project's integration branch (default `dev`) directly.
 - A User Story normally lands through one integrated PR; subtasks normally produce commits; independent Technical Tasks may land separately when safe. `dev` is the GitHub default/integration branch; `main` is reserved for stable/release integration.
 - Review the diff and relevant test results. Explicit authorization is required for approval/merge, force push, history rewrite, branch deletion, and repository credential changes.
 - CI and independent review are preconditions for merge. **The operator is the final manual merge gate**; agents have no unrestricted merge authority.
+
+### Git adapter hardening baseline (connected repositories)
+
+Rules every Git operation on a connected Repository follows, whatever the caller:
+
+- **Linux only:** repository features run on Linux (containers, CI, VPS); they are not supported on native Windows.
+- **Transports:** only `ssh` and `https` remote URLs; every other transport or URL form is rejected.
+- **No submodule recursion** and **no LFS smudge**: Studio fetches only the Repository's own objects.
+- **Hooks never run**, from the Repository or from anywhere else.
+- **No terminal prompts:** an operation that would need interactive input fails instead.
+- **Isolated Git configuration:** the host's system, global and user Git configuration, credential helpers and SSH agents are never used; only Studio's fixed configuration and the project's Deploy key apply.
+- **Time and size limits:** a clone is stopped after 10 minutes, a fetch after 2 minutes, and a Clone may not exceed 2 GB.
+- **Redacted output:** Git output is redacted before it is stored, logged or returned; private keys, credentials and secret-bearing URLs never appear.
+- **Strict SSH host-key checking:** pinned host keys for the large Git hosts, an operator-confirmed fingerprint otherwise; an unknown or changed host key fails the operation.
 
 ### Public repository controls
 
@@ -108,7 +123,7 @@ The repository is public: rulesets and secret scanning are enforced for free, an
 - The controller exposes *specific authorized operations* (e.g. start, stop, status, logs, controlled refresh) against validated project definitions, not an arbitrary Docker command surface.
 - Before applying a stack change, validate repository/project identity, allowed Compose files, volume mounts, ports, images, environment variables, resource limits and credentials.
 - Preview code is **untrusted**: separate origin without administrative Studio cookies, isolated network and storage access, restricted forwarded headers and ports.
-- One default shared Preview per project tracks approved changes in `dev`. Opening a worktree does not create a preview.
+- One default shared Preview per project tracks approved changes in the project's integration branch (default `dev`). Opening a worktree does not create a preview.
 - Compose isolation is a pragmatic MVP baseline, **not** microVM-strength isolation. Stronger sandboxing may follow with appropriate VPS/KVM support.
 
 ## 6. MCP and external tools
@@ -124,7 +139,7 @@ Explicit authorized approval is required for:
 
 | Operation | Minimum policy |
 | --- | --- |
-| Merge into `dev` / protected branches | Passing applicable CI + independent review + operator approval |
+| Merge into the project's integration branch (default `dev`) / protected branches | Passing applicable CI + independent review + operator approval |
 | Deployment to production or external customer environment | Outside MVP; separate policy required |
 | Secret creation/rotation/export | Authorized operator/controller; never arbitrary agent tooling |
 | Destructive migrations or data deletion | Explicit operator review and tested recovery plan |

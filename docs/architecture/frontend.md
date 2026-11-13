@@ -142,6 +142,7 @@ The visual source of truth is the Agent Studio design system in `design-system/`
 **Design system and `globals.css`**
 
 - `design-system/` is a **reference, never imported**: no script, stylesheet, build config (`next.config.*`, `postcss.config.*`) or manifest (tsconfig/jsconfig paths, `package.json`, shadcn `components.json`) in `apps/*` points at it (enforced by `architecture:web`).
+- The UI label is **Integration branch** ([Glossary](glossary.md)) where the design-system prototype says "Default branch".
 - `apps/web/src/app/globals.css` is an **owned copy** of `design-system/code/globals.css`, imported once by the root layout and excluded from Prettier so it stays diffable. After a design-system re-export it is re-synced by manual diff, in a reviewed PR.
 
 **Where components live**
