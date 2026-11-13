@@ -6,6 +6,7 @@ import { ConfigModule } from './platform/config/config.module.js';
 import { DatabaseModule } from './platform/database/database.module.js';
 import { HealthController } from './platform/health/health.controller.js';
 import { HttpModule } from './platform/http/http.module.js';
+import { QueueModule } from './platform/queue/queue.module.js';
 
 @Module({})
 export class AppModule {
@@ -16,6 +17,7 @@ export class AppModule {
         ConfigModule.forRoot(config),
         DatabaseModule,
         HttpModule,
+        QueueModule,
         AuthModule,
         ProjectsModule,
       ],
