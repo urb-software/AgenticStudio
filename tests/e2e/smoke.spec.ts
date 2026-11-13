@@ -294,9 +294,9 @@ test('operator connects a repository and sees it ready', async ({ page }, testIn
   await dialog.getByLabel('Integration branch').fill('release');
   await dialog.getByRole('button', { name: 'Connect repository' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(card.getByText('Failed')).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByText('Failed', { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(card.getByRole('alert')).toContainText('Its default branch is "main"');
-  await expectInBothThemes(page, card.getByText('Failed'));
+  await expectInBothThemes(page, card.getByText('Failed', { exact: true }));
 
   // Change settings reopens Connect prefilled; the integration branch is fixed there.
   await card.getByRole('button', { name: 'Change settings' }).click();
@@ -306,17 +306,17 @@ test('operator connects a repository and sees it ready', async ({ page }, testIn
   await expect(dialog).toHaveCount(0);
 
   // The clone runs in the background; the card polls until the Repository is ready.
-  await expect(card.getByText('Connected')).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
   const commit = card.locator('code').filter({ hasText: /^[0-9a-f]{7}$/ });
   await expect(commit).toBeVisible();
   await expect(card.getByText(url)).toBeVisible();
   await expect(card.getByText('Last fetched')).toBeVisible();
-  await expectInBothThemes(page, card.getByText('Connected'));
+  await expectInBothThemes(page, card.getByText('Connected', { exact: true }));
 
   // State comes from the server: a reload shows the same Repository.
   const commitId = await commit.textContent();
   await page.reload();
-  await expect(card.getByText('Connected')).toBeVisible();
+  await expect(card.getByText('Connected', { exact: true })).toBeVisible();
   await expect(card.locator('code').filter({ hasText: commitId! })).toBeVisible();
 
   await breadcrumb.getByRole('link', { name: 'Projects' }).click();
