@@ -320,6 +320,24 @@ describe('.github/actions/setup composite action (#28 setup de-duplication)', ()
     }
   });
 
+  it('keeps the security job without pnpm cache and without install', () => {
+    const lines = workflow.split(/\r?\n/);
+    const start = lines.indexOf('  security:');
+    assert.ok(start !== -1, 'security job not found');
+    const end = lines.findIndex((line, index) => index > start && /^ {2}\S/.test(line));
+    const job = lines.slice(start + 1, end === -1 ? undefined : end);
+    const step = job.indexOf('      - uses: ./.github/actions/setup');
+    assert.ok(step !== -1 && job[step + 1] === '        with:', 'security: setup step with inputs');
+    const inputs = {};
+    for (const line of job.slice(step + 2)) {
+      const input = /^ {10}([\w-]+):\s*(.*?)\s*$/.exec(line);
+      if (!input) break;
+      inputs[input[1]] = input[2];
+    }
+    assert.equal(inputs.cache, "''");
+    assert.equal(inputs.install, "'false'");
+  });
+
   it('installs with the frozen lockfile', () => {
     assert.match(setup, /run: pnpm install --frozen-lockfile/);
   });
