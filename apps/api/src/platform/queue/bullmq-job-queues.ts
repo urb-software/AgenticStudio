@@ -7,7 +7,7 @@ import {
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from '@nestjs/common';
-import { type Job, Queue, Worker } from 'bullmq';
+import { type Job, type JobState, Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { redactSecrets } from '../http/redact.js';
@@ -23,6 +23,7 @@ import {
   type QueuedJob,
   QueueUnavailableError,
 } from './job-queue.js';
+import type { QueueHealth } from './queue-health.js';
 
 /** Every queue key starts with this, so queues cannot collide with session or other keys. */
 export const QUEUE_KEY_PREFIX = 'studio:queue';
@@ -30,8 +31,9 @@ export const QUEUE_KEY_PREFIX = 'studio:queue';
 const QUEUE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 // BullMQ rejects integer-like custom ids and uses `:` as its key separator.
 const JOB_ID = /^(?!\d+$)[A-Za-z0-9._-]{1,200}$/;
+type State = JobState | 'unknown';
 // States in which a job with the same id blocks a new one.
-const UNFINISHED_STATES = new Set([
+const UNFINISHED_STATES: ReadonlySet<State> = new Set<State>([
   'waiting',
   'active',
   'delayed',
@@ -39,15 +41,16 @@ const UNFINISHED_STATES = new Set([
   'waiting-children',
 ]);
 // States in which cancel() removes a job before it runs.
-const CANCELLABLE_WAITING_STATES = new Set(['waiting', 'delayed', 'prioritized']);
+const WAITING_STATES: ReadonlySet<State> = new Set<State>(['waiting', 'delayed', 'prioritized']);
 const HEALTH_TIMEOUT_MS = 1_000;
-// Aborted jobs settle at once, so a healthy close is fast; this only bounds a dead Redis.
+// Bounds shutdown when Redis is dead or a processor ignores its abort signal.
 const CLOSE_TIMEOUT_MS = 5_000;
+const TIMED_OUT = Symbol('timed out');
 
 /** What is stored in Redis per job: the owner's payload plus platform bookkeeping. */
 interface StoredJob {
   payload: JobPayload;
-  /** Unique per enqueue call; tells our job apart from a concurrent duplicate. */
+  /** Unique per enqueue call; tells this job apart from any other run with the same id. */
   token: string;
   timeoutMs?: number;
 }
@@ -59,6 +62,8 @@ interface Entry {
   workerConnection?: Redis;
   /** Abort controllers of the jobs this process is running, by job id. */
   running: Map<string, AbortController>;
+  /** Tokens of jobs cancelled after BullMQ took them but before their processor started. */
+  cancelledBeforeStart: Set<string>;
 }
 
 /**
@@ -70,7 +75,7 @@ interface Entry {
 @Injectable()
 export class BullMqJobQueues
   extends JobQueues
-  implements OnApplicationBootstrap, BeforeApplicationShutdown, OnApplicationShutdown
+  implements QueueHealth, OnApplicationBootstrap, BeforeApplicationShutdown, OnApplicationShutdown
 {
   private readonly logger = new Logger('JobQueues');
   private readonly producer: Redis;
@@ -80,8 +85,7 @@ export class BullMqJobQueues
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
     super();
     this.producer = new Redis(config.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
-    // Failures surface as typed errors from enqueue/cancel and in the health check.
-    this.producer.on('error', () => {});
+    this.logConnectionErrors(this.producer, 'producer');
   }
 
   register<P extends JobPayload>(definition: QueueDefinition<P>): JobQueue<P> {
@@ -99,11 +103,13 @@ export class BullMqJobQueues
       prefix: QUEUE_KEY_PREFIX,
       defaultJobOptions: { attempts: 1, removeOnComplete: true, removeOnFail: true },
     });
-    queue.on('error', (error) => this.logError(definition.name, error));
+    // Connection errors are logged once per outage by logConnectionErrors.
+    queue.on('error', () => {});
     const entry: Entry = {
       definition: definition as unknown as QueueDefinition<JobPayload>,
       queue,
       running: new Map(),
+      cancelledBeforeStart: new Set(),
     };
     this.entries.set(definition.name, entry);
     return {
@@ -112,23 +118,12 @@ export class BullMqJobQueues
     };
   }
 
-  /** True if the queue's Redis answers within HEALTH_TIMEOUT_MS. */
   async isAvailable(): Promise<boolean> {
-    let timer: NodeJS.Timeout | undefined;
-    const timedOut = new Promise<false>((resolve) => {
-      timer = setTimeout(() => resolve(false), HEALTH_TIMEOUT_MS);
-    });
-    try {
-      return await Promise.race([
-        this.producer.ping().then(
-          (reply) => reply === 'PONG',
-          () => false,
-        ),
-        timedOut,
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
+    const reply = await withTimeout(
+      this.producer.ping().catch(() => undefined),
+      HEALTH_TIMEOUT_MS,
+    );
+    return reply === 'PONG';
   }
 
   /** Reconciles interrupted jobs, then starts the workers. */
@@ -144,7 +139,8 @@ export class BullMqJobQueues
    * Jobs still `active` at startup belonged to a process that died: processors run only in
    * the API process, and there is one API instance (MVP). The owner hears about them first;
    * then they are removed (their stale lock included) so BullMQ's stalled-job check cannot
-   * run them a second time.
+   * run them a second time. If the owner's hook throws, startup fails and the jobs stay
+   * for the next start.
    */
   private async reconcile(entry: Entry): Promise<void> {
     const { queue, definition } = entry;
@@ -209,7 +205,8 @@ export class BullMqJobQueues
       }
       // BullMQ ignores an add whose id exists (it returns no error), so read the job back:
       // a different token means a concurrent enqueue won. Finished jobs are removed at
-      // once, so `undefined` means ours already ran.
+      // once, so `undefined` normally means ours already ran. (Known gap: it can also mean
+      // a concurrent rival with the same id ran and finished in between.)
       await queue.add(definition.name, stored, { jobId: id });
       const current = await queue.getJob(id);
       return current === undefined || current.data.token === stored.token;
@@ -226,16 +223,25 @@ export class BullMqJobQueues
     }
     return unavailableOnError(async () => {
       const job = await entry.queue.getJob(id);
-      if (!job || !CANCELLABLE_WAITING_STATES.has(await job.getState())) {
+      if (!job) {
         return false;
       }
-      try {
-        await job.remove();
-        return true;
-      } catch {
-        // It started meanwhile (our worker holds its lock): abort it instead.
-        return this.abortRunning(entry, id);
+      const state = await job.getState();
+      if (WAITING_STATES.has(state)) {
+        try {
+          await job.remove();
+          return true;
+        } catch {
+          // Our worker took it meanwhile (it holds the lock).
+        }
+      } else if (state !== 'active' || !this.bootstrapped) {
+        return false;
       }
+      // Active here means our worker has taken it; abort it now or as soon as it starts.
+      if (!this.abortRunning(entry, id)) {
+        entry.cancelledBeforeStart.add(job.data.token);
+      }
+      return true;
     });
   }
 
@@ -248,7 +254,7 @@ export class BullMqJobQueues
   private startWorker(entry: Entry): void {
     const { definition } = entry;
     entry.workerConnection = new Redis(this.config.redisUrl, { maxRetriesPerRequest: null });
-    entry.workerConnection.on('error', () => {});
+    this.logConnectionErrors(entry.workerConnection, `worker "${definition.name}"`);
     entry.worker = new Worker<StoredJob>(definition.name, (job) => this.run(entry, job), {
       connection: entry.workerConnection,
       prefix: QUEUE_KEY_PREFIX,
@@ -256,29 +262,31 @@ export class BullMqJobQueues
       // A stalled job fails instead of running a second time (attempts stay at 1).
       maxStalledCount: 0,
     });
-    entry.worker.on('error', (error) => this.logError(definition.name, error));
+    // Connection errors are logged once per outage by logConnectionErrors.
+    entry.worker.on('error', () => {});
   }
 
   /**
    * The processor wrapper: one AbortController per running job, fired by cancel(), the
-   * time limit or shutdown. An aborted job settles at once even if its processor ignores
-   * the signal, and its owner hears about every failure exactly once.
+   * time limit or shutdown. The job (and so its id and worker slot) stays active until
+   * the processor settles, so a processor that ignores the signal cannot overlap a new
+   * run with the same id; its owner hears about every failure exactly once, afterwards.
    */
   private async run(entry: Entry, job: Job<StoredJob>): Promise<void> {
-    const { definition, running } = entry;
+    const { definition, running, cancelledBeforeStart } = entry;
     const id = job.id!;
-    const { payload, timeoutMs = definition.timeoutMs } = job.data;
+    const { payload, token, timeoutMs = definition.timeoutMs } = job.data;
     const controller = new AbortController();
     running.set(id, controller);
+    if (cancelledBeforeStart.delete(token)) {
+      controller.abort(new JobAbortedError('cancelled'));
+    }
     const timer =
       timeoutMs === undefined
         ? undefined
         : setTimeout(() => controller.abort(new JobAbortedError('timeout')), timeoutMs);
     try {
-      await untilAborted(
-        definition.process({ id, payload, signal: controller.signal }),
-        controller.signal,
-      );
+      await definition.process({ id, payload, signal: controller.signal });
     } catch (error) {
       const failure: JobFailure =
         controller.signal.reason instanceof JobAbortedError
@@ -301,29 +309,40 @@ export class BullMqJobQueues
     try {
       await entry.definition.onFailed(job, failure);
     } catch (error) {
-      this.logError(entry.definition.name, error);
+      this.logger.warn(
+        `onFailed of queue "${entry.definition.name}" threw: ${redactSecrets(errorMessage(error))}`,
+      );
     }
   }
 
   /** Waits for `operation`, but at most CLOSE_TIMEOUT_MS, so shutdown never hangs. */
   private async bounded(operation: Promise<unknown>, what: string): Promise<void> {
-    let timer: NodeJS.Timeout | undefined;
-    const timedOut = new Promise<'timeout'>((resolve) => {
-      timer = setTimeout(() => resolve('timeout'), CLOSE_TIMEOUT_MS);
-    });
     try {
-      if ((await Promise.race([operation, timedOut])) === 'timeout') {
+      if ((await withTimeout(operation, CLOSE_TIMEOUT_MS)) === TIMED_OUT) {
         this.logger.warn(`Gave up ${what} after ${CLOSE_TIMEOUT_MS} ms.`);
       }
     } catch (error) {
       this.logger.warn(`Failed ${what}: ${redactSecrets(errorMessage(error))}`);
-    } finally {
-      clearTimeout(timer);
     }
   }
 
-  private logError(queue: string, error: unknown): void {
-    this.logger.warn(`Queue "${queue}": ${redactSecrets(errorMessage(error))}`);
+  /** Logs the first error of an outage (redacted) and the recovery, not every retry. */
+  private logConnectionErrors(connection: Redis, label: string): void {
+    let down = false;
+    connection.on('error', (error: unknown) => {
+      if (!down) {
+        down = true;
+        this.logger.warn(
+          `Queue Redis (${label}) unavailable: ${redactSecrets(errorMessage(error))}`,
+        );
+      }
+    });
+    connection.on('ready', () => {
+      if (down) {
+        down = false;
+        this.logger.log(`Queue Redis (${label}) available again.`);
+      }
+    });
   }
 }
 
@@ -347,17 +366,15 @@ async function unavailableOnError<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Settles with `work`, or rejects as soon as `signal` aborts, whichever comes first. */
-function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  // A processor that ignores the signal may still reject later; nobody listens then.
-  work.catch(() => {});
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener('abort', onAbort, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+/** Settles with `operation`, or with TIMED_OUT once `ms` pass. */
+async function withTimeout<T>(operation: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
   });
+  try {
+    return await Promise.race([operation, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

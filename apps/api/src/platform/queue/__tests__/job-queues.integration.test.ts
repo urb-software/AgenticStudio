@@ -26,6 +26,13 @@ import { QueueModule } from '../queue.module.js';
 
 type Payload = { projectId: string };
 
+/** A well-behaved long-running processor: it runs until its signal aborts, then stops. */
+function stopsOnAbort(job: RunningJob<Payload>): Promise<void> {
+  return new Promise((_resolve, reject) =>
+    job.signal.addEventListener('abort', () => reject(job.signal.reason)),
+  );
+}
+
 /** A promise the test resolves by hand. */
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -254,10 +261,7 @@ describe('job queues (Redis via Testcontainers)', () => {
   describe('cancel', () => {
     it('aborts a running job and reports it as cancelled', async () => {
       const owner = new RecordingOwner('repository-sync');
-      owner.behaviour = (job) =>
-        new Promise((_resolve, reject) =>
-          job.signal.addEventListener('abort', () => reject(job.signal.reason)),
-        );
+      owner.behaviour = stopsOnAbort;
       let queue: JobQueue<Payload>;
       ({ app, queue } = await startApp(redisService.url, owner));
       await queue.enqueue('sync-p1', { projectId: 'p1' });
@@ -277,6 +281,12 @@ describe('job queues (Redis via Testcontainers)', () => {
           },
         ]),
       );
+      // A cancelled id can run again.
+      owner.behaviour = async () => {};
+      await eventually(async () => {
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+      });
+      await eventually(() => expect(owner.processed).toHaveLength(2));
     });
 
     it('removes a waiting job so it never runs', async () => {
@@ -309,9 +319,9 @@ describe('job queues (Redis via Testcontainers)', () => {
   });
 
   describe('time limit', () => {
-    it("aborts a job when the queue's limit passes, even if the processor ignores the signal", async () => {
+    it("aborts a job when the queue's limit passes and reports a timeout", async () => {
       const owner = new RecordingOwner('repository-sync', 200);
-      owner.behaviour = () => new Promise(() => {}); // never settles, ignores the signal
+      owner.behaviour = stopsOnAbort;
       let queue: JobQueue<Payload>;
       ({ app, queue } = await startApp(redisService.url, owner));
 
@@ -328,9 +338,36 @@ describe('job queues (Redis via Testcontainers)', () => {
       await eventually(() => expect(owner.processed).toHaveLength(2));
     });
 
+    it('keeps the id busy until a processor that ignores the signal settles, then reports', async () => {
+      const owner = new RecordingOwner('repository-sync', 200);
+      const release = deferred();
+      owner.behaviour = async (job) => {
+        await release.promise; // ignores the signal
+        job.signal.throwIfAborted();
+      };
+      let queue: JobQueue<Payload>;
+      ({ app, queue } = await startApp(redisService.url, owner));
+      await queue.enqueue('sync-p1', { projectId: 'p1' });
+      await eventually(() => expect(owner.processed[0]?.signal.aborted).toBe(true));
+
+      // No overlapping run with the same id, and no failure reported while it still runs.
+      await expect(queue.enqueue('sync-p1', { projectId: 'p1' })).rejects.toThrow(
+        JobAlreadyActiveError,
+      );
+      expect(owner.failures).toEqual([]);
+
+      release.resolve();
+      await eventually(() =>
+        expect(owner.failures.map((entry) => entry.failure)).toEqual([{ reason: 'timeout' }]),
+      );
+      await eventually(async () => {
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+      });
+    });
+
     it('applies a per-job limit given at enqueue time', async () => {
       const owner = new RecordingOwner('repository-sync');
-      owner.behaviour = () => new Promise(() => {});
+      owner.behaviour = stopsOnAbort;
       let queue: JobQueue<Payload>;
       ({ app, queue } = await startApp(redisService.url, owner));
 
@@ -389,7 +426,7 @@ describe('job queues (Redis via Testcontainers)', () => {
   describe('graceful shutdown', () => {
     it('signals running jobs, reports them as shut down and closes every Redis connection', async () => {
       const owner = new RecordingOwner('repository-sync');
-      owner.behaviour = () => new Promise(() => {}); // ignores the signal
+      owner.behaviour = stopsOnAbort;
       let queue: JobQueue<Payload>;
       ({ app, queue } = await startApp(redisService.url, owner));
       await queue.enqueue('sync-p1', { projectId: 'p1' });

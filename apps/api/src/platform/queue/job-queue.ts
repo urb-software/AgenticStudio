@@ -39,13 +39,18 @@ export type JobFailure = { reason: 'error'; error: unknown } | { reason: JobAbor
 export interface QueueDefinition<P extends JobPayload> {
   /** Lower-case letters, digits and dashes; unique per application. */
   readonly name: string;
-  /** Runs one job. Should stop promptly when `job.signal` aborts. */
+  /**
+   * Runs one job and must stop promptly when `job.signal` aborts (e.g. kill its child
+   * process). The job, its id and its worker slot stay busy until this settles, and
+   * `onFailed` is called only afterwards, so no late write can follow the failure report.
+   */
   process(job: RunningJob<P>): Promise<void>;
   /** Called once when a job fails, is cancelled while running, times out or is cut off by shutdown. */
   onFailed(job: QueuedJob<P>, failure: JobFailure): Promise<void>;
   /**
    * Called on startup, before any job of this queue runs, with the jobs that were running
-   * when the previous process died. They are then discarded and never re-run.
+   * when the previous process died. They are then discarded and never re-run. If this
+   * throws, application startup fails and the jobs are offered again on the next start.
    */
   reconcile(interrupted: QueuedJob<P>[]): Promise<void>;
   /** Default per-job time limit in milliseconds; none if omitted. */

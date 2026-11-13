@@ -2,7 +2,7 @@ import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOperation } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { Public } from '../auth/public.decorator.js';
-import { BullMqJobQueues } from '../queue/bullmq-job-queues.js';
+import { QueueHealth } from '../queue/queue-health.js';
 import { HealthResponseDto } from './health.schema.js';
 
 /**
@@ -13,13 +13,13 @@ import { HealthResponseDto } from './health.schema.js';
 @Public()
 @Controller('health')
 export class HealthController {
-  constructor(private readonly queues: BullMqJobQueues) {}
+  constructor(private readonly queue: QueueHealth) {}
 
   @Get()
   @ApiOperation({ operationId: 'getHealth' })
   @ZodResponse({ status: 200, type: HealthResponseDto })
   async check() {
-    if (!(await this.queues.isAvailable())) {
+    if (!(await this.queue.isAvailable())) {
       throw new ServiceUnavailableException();
     }
     return { status: 'ok' as const };
