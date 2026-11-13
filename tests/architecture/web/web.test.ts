@@ -48,9 +48,12 @@ describeGate('web', webGate, 'apps/web', [
   { fixture: 'module-imports-design-system', expected: ['web-no-design-system-imports'] },
   { fixture: 'css-imports-design-system', expected: ['web-no-design-system-imports'] },
   { fixture: 'alias-to-design-system', expected: ['web-no-design-system-imports'] },
+  { fixture: 'next-config-aliases-design-system', expected: ['web-no-design-system-imports'] },
   { fixture: 'colour-literal-in-class-name', expected: ['web-no-colour-literals'] },
   { fixture: 'colour-function-in-css', expected: ['web-no-colour-literals'] },
+  { fixture: 'colour-literal-in-scss', expected: ['web-no-colour-literals'] },
   { fixture: 'style-prop-carries-colour', expected: ['web-no-style-colours'] },
+  { fixture: 'style-prop-colour-in-value', expected: ['web-no-style-colours'] },
 ]);
 
 // The design-system import ban covers every app, not only apps/web (frontend.md, "Styling and

@@ -36,6 +36,7 @@ apps/web/src/
     auth/
     realtime/        # SSE lifecycle
     query/           # TanStack Query infrastructure, if adopted
+    theme/           # next-themes provider (Client Component island), see §9
   shared/
     ui/              # shadcn-generated primitives (Button, Dialog…), see §9
     components/      # Agent Studio compositions built on shared/ui (StatusPill…), see §9
@@ -133,11 +134,11 @@ The visual source of truth is the Agent Studio design system in `design-system/`
 
 - Colour, radius, spacing and shadow come from the tokens of `apps/web/src/app/globals.css`, through Tailwind utilities (`bg-surface`, `text-text-muted`, `rounded-lg`, `shadow-xs`). No raw colours (hex, `rgb()`, `hsl()` or other colour functions), no arbitrary colour values (`bg-[#…]`) and no ad hoc palette.
 - `style=` props never carry colours, literal or not (`var(--brand)` included): they must be inline object literals with layout values only. Use a `className` token utility instead.
-- `architecture:web` enforces the cheap part: colour literals in `.ts`/`.tsx`/CSS under `apps/web/src/**` outside `globals.css`, and colour properties (or unverifiable values) in `style=`. Prettier (`prettier-plugin-tailwindcss`) sorts classes.
+- `architecture:web` enforces the cheap part: hex and colour-function literals in `.ts`/`.tsx`/CSS/Sass under `apps/web/src/**` outside `globals.css` (in scripts by context, so `PR #1234`, selectors and URL fragments are not colours; the heuristic is documented in `tests/architecture/web/styling-rules.ts`), and colour properties, colour values or unverifiable values in `style=`. Tailwind default palette utilities (`bg-zinc-900`) and named colours in arbitrary values (`bg-[red]`) are not enforced yet and are caught in review. Prettier (`prettier-plugin-tailwindcss`) sorts classes.
 
 **Design system and `globals.css`**
 
-- `design-system/` is a **reference, never imported**: no script or stylesheet in `apps/*` imports from it (enforced by `architecture:web`).
+- `design-system/` is a **reference, never imported**: no script, stylesheet, build config (`next.config.*`, `postcss.config.*`) or manifest (tsconfig/jsconfig paths, `package.json`, shadcn `components.json`) in `apps/*` points at it (enforced by `architecture:web`).
 - `apps/web/src/app/globals.css` is an **owned copy** of `design-system/code/globals.css`, imported once by the root layout and excluded from Prettier so it stays diffable. After a design-system re-export it is re-synced by manual diff, in a reviewed PR.
 
 **Where components live**

@@ -21,6 +21,14 @@ describe('RootLayout', () => {
     expect(serverHtml()).toMatch(/<html lang="en" class="[^"]*\bdark\b[^"]*"/);
   });
 
+  it('server-renders the next-themes script that applies a stored theme before the first paint', () => {
+    const html = serverHtml();
+    const script = /<body[^>]*><script[^>]*>([^<]*)<\/script>/.exec(html)?.[1] ?? '';
+
+    expect(script).toContain('localStorage.getItem');
+    expect(script).toContain('"dark"');
+  });
+
   it('exposes Inter and JetBrains Mono as CSS variables on <html>', () => {
     const html = serverHtml();
 
