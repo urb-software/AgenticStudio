@@ -52,4 +52,20 @@ describe('NavItem', () => {
     // The open tooltip is portalled to body.
     await expect(document.body).toHaveNoAxeViolations();
   });
+
+  it('can draw the icon rail at tablet width in CSS alone, keeping the label as its name', () => {
+    render(
+      <nav aria-label="Studio">
+        <NavItem href="/projects" icon={Folder} label="Projects" badge={2} collapsed="tablet" />
+      </nav>,
+    );
+
+    // Server render before the width is known: the label and badge stay in the accessible name,
+    // only visually hidden between 768 and 1279px; no tooltip without JS.
+    const link = screen.getByRole('link', { name: 'Projects 2' });
+    expect(link.getAttribute('aria-label')).toBeNull();
+    expect(link.className.split(' ')).toContain('md:max-xl:justify-center');
+    const hidden = link.querySelectorAll('[class~="md:max-xl:sr-only"]');
+    expect([...hidden].map((node) => node.textContent)).toEqual(['Projects', '2']);
+  });
 });

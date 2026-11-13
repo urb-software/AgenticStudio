@@ -11,8 +11,13 @@ type NavItemOwnProps = {
   active?: boolean;
   /** Amber count of items waiting on the operator; part of the accessible name. */
   badge?: number | string;
-  /** 64px icon rail: the label becomes the tooltip, and the label (with the badge count) the aria-label. */
-  collapsed?: boolean;
+  /**
+   * `true`: the 64px icon rail; the label becomes the tooltip, and the label (with the badge
+   * count) the aria-label. `'tablet'`: the rail drawn by CSS alone at tablet width (768–1279px),
+   * for a server render that cannot know the width yet; the label and badge stay in the DOM,
+   * visually hidden, so they remain the accessible name. No tooltip until JS decides.
+   */
+  collapsed?: boolean | 'tablet';
   className?: string;
 };
 
@@ -35,24 +40,34 @@ function NavItem({
   className,
   ...props
 }: NavItemProps) {
+  const rail = collapsed === true;
+  const tabletRail = collapsed === 'tablet';
   const classes = cn(
     'flex h-[34px] w-full items-center gap-2.5 rounded-md px-2.5 text-left text-label font-medium text-text-muted',
     'cursor-pointer no-underline transition-colors hover:bg-hover hover:text-text',
     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
     'pointer-coarse:min-h-11 [&_svg]:size-4 [&_svg]:shrink-0',
     active && 'bg-brand-soft text-text hover:bg-brand-soft [&_svg]:text-brand',
-    collapsed && 'justify-center',
+    rail && 'justify-center',
+    tabletRail && 'md:max-xl:justify-center',
     className,
   );
   const content = (
     <>
       <Icon aria-hidden="true" />
-      {collapsed ? null : <span className="truncate">{label}</span>}
-      {badge !== undefined && !collapsed ? (
+      {rail ? null : (
+        <span className={cn('truncate', tabletRail && 'md:max-xl:sr-only')}>{label}</span>
+      )}
+      {badge !== undefined && !rail ? (
         // The space keeps the accessible name readable ("Executions 2"); flex ignores it.
         <>
           {' '}
-          <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-run-awaiting-soft px-[5px] text-[11px] font-semibold text-run-awaiting">
+          <span
+            className={cn(
+              'ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-run-awaiting-soft px-[5px] text-[11px] font-semibold text-run-awaiting',
+              tabletRail && 'md:max-xl:sr-only',
+            )}
+          >
             {badge}
           </span>
         </>
@@ -64,7 +79,7 @@ function NavItem({
     'data-active': active,
     'aria-current': active ? ('page' as const) : undefined,
     // The rail hides the badge, so its count stays in the name ("Runs, 3").
-    'aria-label': collapsed ? (badge !== undefined ? `${label}, ${badge}` : label) : undefined,
+    'aria-label': rail ? (badge !== undefined ? `${label}, ${badge}` : label) : undefined,
     className: classes,
   };
   const item =
@@ -78,7 +93,7 @@ function NavItem({
       </button>
     );
 
-  if (!collapsed) return item;
+  if (!rail) return item;
   return (
     <Tooltip>
       <TooltipTrigger asChild>{item}</TooltipTrigger>
