@@ -3,7 +3,7 @@ import { Controller, Get, type INestApplication, type LoggerService, Module } fr
 import { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { testConfig } from '../../../__tests__/test-config.js';
+import { testConfig, WITHOUT_QUEUE_WORKERS } from '../../../__tests__/test-config.js';
 import { AppModule } from '../../../app.module.js';
 import { buildApp } from '../../../app.js';
 import type { AppConfig } from '../../config/config.js';
@@ -40,7 +40,10 @@ class CapturingLogger implements LoggerService {
 }
 
 async function startApp(config: AppConfig, logger: LoggerService): Promise<INestApplication> {
-  @Module({ imports: [AppModule.register(config)], controllers: [ProtectedProbeController] })
+  @Module({
+    imports: [AppModule.register(config, WITHOUT_QUEUE_WORKERS)],
+    controllers: [ProtectedProbeController],
+  })
   class TestRootModule {}
   const app = await buildApp(TestRootModule, { logger });
   await app.init();

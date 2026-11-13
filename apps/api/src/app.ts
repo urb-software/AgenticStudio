@@ -5,8 +5,11 @@ import { AppModule } from './app.module.js';
 import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
 
 /** Builds the HTTP application exactly as production runs it; tests use it too. */
-export async function createApp(config: AppConfig): Promise<INestApplication> {
-  return buildApp(AppModule.register(config));
+export async function createApp(
+  config: AppConfig,
+  options: Parameters<typeof AppModule.register>[1] = {},
+): Promise<INestApplication> {
+  return buildApp(AppModule.register(config, options));
 }
 
 /**

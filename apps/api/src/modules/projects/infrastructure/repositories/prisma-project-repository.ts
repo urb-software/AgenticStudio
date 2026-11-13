@@ -5,6 +5,7 @@ import {
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import type { Project } from '../../domain/entities/project.js';
+import type { Repository } from '../../domain/entities/repository.js';
 import {
   ProjectNameTakenError,
   type ProjectRepository,
@@ -41,5 +42,29 @@ export class PrismaProjectRepository implements ProjectRepository {
       select: PROJECT_FIELDS,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+  }
+
+  findById(): Promise<Project | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  findRepository(): Promise<Repository | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  beginConnect(): Promise<Repository> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  markReady(): Promise<boolean> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  markFailed(): Promise<boolean> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  failAllConnecting(): Promise<number> {
+    return Promise.reject(new Error('not implemented'));
   }
 }

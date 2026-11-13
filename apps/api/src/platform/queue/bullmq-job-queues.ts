@@ -38,6 +38,12 @@ export const QUEUE_CONNECTION_NAME = 'studio-queue';
 export interface QueueWorkerTuning {
   readonly lockDuration?: number;
   readonly stalledInterval?: number;
+  /**
+   * `false`: queues register, but bootstrap neither reconciles nor starts workers, so the app
+   * needs no Redis to start. For offline builds that run no jobs: OpenAPI generation and
+   * HTTP tests without Redis. Production always starts them (default `true`).
+   */
+  readonly startWorkers?: boolean;
 }
 
 /** DI token for {@link QueueWorkerTuning}. */
@@ -166,6 +172,7 @@ export class BullMqJobQueues
   /** Reconciles interrupted jobs, then starts the workers. */
   async onApplicationBootstrap(): Promise<void> {
     this.bootstrapped = true;
+    if (this.tuning.startWorkers === false) return;
     for (const entry of this.entries.values()) {
       await this.reconcile(entry);
       this.startWorker(entry);

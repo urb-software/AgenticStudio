@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses } from './types.gen';
+import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -37,6 +37,22 @@ export const listProjects = <ThrowOnError extends boolean = false>(options?: Opt
 
 export const createProject = <ThrowOnError extends boolean = false>(options: Options<CreateProjectData, ThrowOnError>): RequestResult<CreateProjectResponses, CreateProjectErrors, ThrowOnError> => (options.client ?? client).post<CreateProjectResponses, CreateProjectErrors, ThrowOnError>({
     url: '/api/projects',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getProject = <ThrowOnError extends boolean = false>(options: Options<GetProjectData, ThrowOnError>): RequestResult<GetProjectResponses, GetProjectErrors, ThrowOnError> => (options.client ?? client).get<GetProjectResponses, GetProjectErrors, ThrowOnError>({ url: '/api/projects/{id}', ...options });
+
+export const getRepository = <ThrowOnError extends boolean = false>(options: Options<GetRepositoryData, ThrowOnError>): RequestResult<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError> => (options.client ?? client).get<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository', ...options });
+
+/**
+ * Connects a public repository over HTTPS: stores it as `connecting` and clones it in the background (poll `GET /api/projects/{id}/repository`). A `failed` repository is replaced by the new attempt (Retry).
+ */
+export const connectRepository = <ThrowOnError extends boolean = false>(options: Options<ConnectRepositoryData, ThrowOnError>): RequestResult<ConnectRepositoryResponses, ConnectRepositoryErrors, ThrowOnError> => (options.client ?? client).post<ConnectRepositoryResponses, ConnectRepositoryErrors, ThrowOnError>({
+    url: '/api/projects/{id}/repository',
     ...options,
     headers: {
         'Content-Type': 'application/json',

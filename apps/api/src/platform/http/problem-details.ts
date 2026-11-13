@@ -1,6 +1,7 @@
-import { HttpException } from '@nestjs/common';
+import { applyDecorators, HttpException } from '@nestjs/common';
+import { ApiResponse, getSchemaPath } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 
 /** Media type of every API error response (RFC 9457). */
 export const PROBLEM_JSON = 'application/problem+json';
@@ -53,4 +54,44 @@ export class HandledServerErrorException extends HttpException {
   constructor(status: number) {
     super('Handled server error', status);
   }
+}
+
+/**
+ * A deliberate error whose `type`, `title`, `detail` and optional field errors are written for
+ * the client, at any status. Unlike other 5xx responses, a 5xx `ProblemException` (e.g. 501
+ * "Unsupported platform") keeps its text and is not logged as an unhandled error, so it must
+ * never carry internals: only fixed, operator-facing text.
+ */
+export class ProblemException extends HttpException {
+  constructor(
+    status: number,
+    readonly problem: { type: string; title: string; detail: string; errors?: FieldError[] },
+  ) {
+    super(problem.detail, status);
+  }
+}
+
+/** The field errors of a Zod validation error, with dot-notation paths. */
+export function zodFieldErrors(error: unknown): FieldError[] {
+  const issues = error instanceof ZodError ? error.issues : [];
+  return issues.map((issue) => ({
+    path: issue.path.map(String).join('.'),
+    message: issue.message,
+  }));
+}
+
+/**
+ * Documents an endpoint's deliberate error statuses as problem+json responses in OpenAPI
+ * (every other status stays under the global `default` response).
+ */
+export function ApiProblemResponses(responses: Record<number, string>) {
+  return applyDecorators(
+    ...Object.entries(responses).map(([status, description]) =>
+      ApiResponse({
+        status: Number(status),
+        description,
+        content: { [PROBLEM_JSON]: { schema: { $ref: getSchemaPath(ProblemDetailsDto) } } },
+      }),
+    ),
+  );
 }

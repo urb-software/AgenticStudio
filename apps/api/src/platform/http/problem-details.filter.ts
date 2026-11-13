@@ -10,20 +10,21 @@ import {
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import { ZodValidationException } from 'nestjs-zod';
-import { ZodError } from 'zod';
 import {
   FieldProblemException,
   HandledServerErrorException,
   PROBLEM_JSON,
   type ProblemDetails,
+  ProblemException,
+  zodFieldErrors,
 } from './problem-details.js';
 import { redactSecrets } from './redact.js';
 
 const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
 
 /**
- * Maps every error to RFC 9457 problem+json. Only 4xx details reach the client;
- * 5xx responses are generic and the cause is logged server-side under the
+ * Maps every error to RFC 9457 problem+json. Only 4xx details (and the fixed text of a
+ * deliberate {@link ProblemException}) reach the client; other 5xx responses are generic and the cause is logged server-side under the
  * correlation id, so stacks, paths, configuration and database errors never leak.
  */
 @Catch()
@@ -38,7 +39,11 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const correlationId = randomUUID();
     const problem = this.toProblem(exception, correlationId);
 
-    if (problem.status >= 500 && !(exception instanceof HandledServerErrorException)) {
+    if (
+      problem.status >= 500 &&
+      !(exception instanceof HandledServerErrorException) &&
+      !(exception instanceof ProblemException)
+    ) {
       const cause =
         exception instanceof Error ? (exception.stack ?? exception.message) : String(exception);
       this.logger.error(`Unhandled error [correlationId=${correlationId}]`, redactSecrets(cause));
@@ -57,19 +62,19 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       correlationId,
     };
 
+    // Deliberate, client-facing text at any status (e.g. 501 "Unsupported platform").
+    if (exception instanceof ProblemException) {
+      const { type, title, detail, errors } = exception.problem;
+      return { ...base, type, title, detail, ...(errors ? { errors } : {}) };
+    }
     if (status >= 500) {
       return { ...base, detail: GENERIC_SERVER_DETAIL };
     }
     if (exception instanceof ZodValidationException) {
-      const error = exception.getZodError();
-      const issues = error instanceof ZodError ? error.issues : [];
       return {
         ...base,
         detail: 'The request is invalid.',
-        errors: issues.map((issue) => ({
-          path: issue.path.map(String).join('.'),
-          message: issue.message,
-        })),
+        errors: zodFieldErrors(exception.getZodError()),
       };
     }
     if (exception instanceof FieldProblemException) {

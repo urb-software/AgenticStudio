@@ -44,9 +44,15 @@ async function stopAll(services: TestService[]): Promise<void> {
   await Promise.all(services.map((service) => service.stop()));
 }
 
-/** Builds and initializes the production app (as `main.ts` does) without listening. */
-export async function startStudioApp(config: AppConfig): Promise<INestApplication> {
-  const app = await createApp(config);
+/**
+ * Builds and initializes the production app (as `main.ts` does) without listening. `options`
+ * are the app's test seams (e.g. shorter Git limits); production passes none.
+ */
+export async function startStudioApp(
+  config: AppConfig,
+  options: Parameters<typeof createApp>[1] = {},
+): Promise<INestApplication> {
+  const app = await createApp(config, options);
   await app.init();
   return app;
 }

@@ -2,7 +2,7 @@ import { startRedis, type TestService } from '@agentic-studio/testing';
 import { type INestApplication, Logger } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { testConfig } from '../../../__tests__/test-config.js';
+import { testConfig, WITHOUT_QUEUE_WORKERS } from '../../../__tests__/test-config.js';
 import { createApp } from '../../../app.js';
 
 describe('GET /api/health', () => {
@@ -26,7 +26,7 @@ describe('GET /api/health', () => {
 
     it('responds 200 with a non-sensitive status body', async () => {
       // The database client connects lazily, so this test needs no running PostgreSQL.
-      app = await createApp(testConfig({ redisUrl: redis.url }));
+      app = await createApp(testConfig({ redisUrl: redis.url }), WITHOUT_QUEUE_WORKERS);
       await app.init();
 
       const response = await request(app.getHttpServer()).get('/api/health');
@@ -36,7 +36,7 @@ describe('GET /api/health', () => {
     });
 
     it('serves routes only under the /api prefix', async () => {
-      app = await createApp(testConfig({ redisUrl: redis.url }));
+      app = await createApp(testConfig({ redisUrl: redis.url }), WITHOUT_QUEUE_WORKERS);
       await app.init();
 
       const response = await request(app.getHttpServer()).get('/health');
@@ -46,7 +46,7 @@ describe('GET /api/health', () => {
   });
 
   it("responds 503 without naming the dependency when the queue's Redis is unreachable", async () => {
-    app = await createApp(testConfig({ redisUrl: 'redis://127.0.0.1:1' }));
+    app = await createApp(testConfig({ redisUrl: 'redis://127.0.0.1:1' }), WITHOUT_QUEUE_WORKERS);
     await app.init();
 
     const response = await request(app.getHttpServer()).get('/api/health');
@@ -60,7 +60,7 @@ describe('GET /api/health', () => {
   it('treats the 503 as a handled answer: no "Unhandled error" log per probe', async () => {
     const logged = vi.spyOn(Logger.prototype, 'error');
     try {
-      app = await createApp(testConfig({ redisUrl: 'redis://127.0.0.1:1' }));
+      app = await createApp(testConfig({ redisUrl: 'redis://127.0.0.1:1' }), WITHOUT_QUEUE_WORKERS);
       await app.init();
 
       for (let probe = 0; probe < 3; probe += 1) {
