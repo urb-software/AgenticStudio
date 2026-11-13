@@ -2,7 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { FieldProblemException } from '../../../../platform/http/problem-details.js';
-import { ProjectResponseDto, toProjectResponse } from '../../contracts/index.js';
+import { ProjectResponseDto, toProjectResponse } from '../../contracts/http/project-response.js';
 import { ProjectNameTakenError } from '../../domain/repositories/project-repository.js';
 import { InvalidProjectNameError } from '../../domain/value-objects/project-name.js';
 import { CreateProjectHandler } from './handler.js';

@@ -3,8 +3,9 @@ import { z } from 'zod';
 
 /**
  * A project in API responses: the create response and each list item. Shared by several
- * features of the module, so it lives in the module's public HTTP contract (backend.md §2),
- * not in one feature's schema.ts. Self-contained: it takes a plain shape, not a domain type.
+ * features of this module, so it lives in contracts/http/ (backend.md §2), not in one
+ * feature's schema.ts. Within this module only: other modules must not import it, and it is
+ * not re-exported from a contracts/index.ts. Self-contained: it takes a plain shape.
  */
 export const projectResponseSchema = z
   .object({

@@ -1,16 +1,10 @@
 import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
-// Same-origin /api/* proxy to the NestJS API (Issue #30 decision 3), so the browser never
-// needs CORS. Deployment routing (Traefik) is out of scope here.
-//
-// - `next dev` always proxies, to API_ORIGIN or http://localhost:3001.
-// - A production build (and `next start`) proxies only on the explicit opt-in
-//   STUDIO_WEB_API_PROXY=true, which then requires API_ORIGIN, as the e2e smoke run does.
-//   API_ORIGIN alone does not enable it. The rewrite is baked into the build, so set both
-//   at build time (and at start, where this file is loaded again).
-// Inconsistent or invalid values fail the build/start with the variable name, never its value.
-// The logic stays in this file: `next start` cannot load a separate TypeScript module here.
+// Same-origin /api/* proxy to the NestJS API, so the browser never needs CORS. The rules
+// (dev always; production only with STUDIO_WEB_API_PROXY=true + API_ORIGIN) are canonical
+// in README.md, "Web /api proxy"; next.config.test.ts pins them. The logic stays in this
+// file because `next start` cannot load a separate TypeScript module from the config.
 
 const DEFAULT_DEV_API_ORIGIN = 'http://localhost:3001';
 const FLAG = 'STUDIO_WEB_API_PROXY';
@@ -31,13 +25,13 @@ function parseFlag(value: string | undefined): boolean {
   throw new Error(`${FLAG} must be "true" or "false" (or unset).`);
 }
 
+const INVALID_ORIGIN = 'API_ORIGIN must be an http(s) origin, e.g. http://localhost:3001.';
+
 function parseOrigin(value: string): string {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    url = new URL('invalid:');
+  if (!URL.canParse(value)) {
+    throw new Error(INVALID_ORIGIN);
   }
+  const url = new URL(value);
   const isOrigin =
     (url.protocol === 'http:' || url.protocol === 'https:') &&
     url.pathname === '/' &&
@@ -46,7 +40,7 @@ function parseOrigin(value: string): string {
     !url.username &&
     !url.password;
   if (!isOrigin) {
-    throw new Error('API_ORIGIN must be an http(s) origin, e.g. http://localhost:3001.');
+    throw new Error(INVALID_ORIGIN);
   }
   return url.origin;
 }

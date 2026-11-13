@@ -48,13 +48,14 @@ modules/{module}/
     adapters/                # Git, CLI, secret store, infrastructure adapters
   contracts/
     events/                 # publisher-owned versioned Integration Events
+    http/                   # HTTP schemas shared by several features of THIS module only
     index.ts                # public contract exports
   {module}.module.ts
 ```
 
 **No empty mandatory directories.** `handler.ts` is the default feature entry point; `endpoint.ts`, `schema.ts`, `input.ts`, consumers, ports and domain folders exist only when needed.
 
-**A schema shared by several features of one module** (e.g. the `Project` response used by `create-project` and `list-projects`) is part of the module's public HTTP contract: it lives in `contracts/http/` and is exported from `contracts/index.ts`. Features never import another feature's `schema.ts`. Like all of `contracts/`, it is self-contained: no import of the module's `domain/` (a response mapper takes a plain shape, not a domain type). A schema used by one feature stays in that feature's `schema.ts`.
+**A schema shared by several features of one module** (e.g. the `Project` response used by `create-project` and `list-projects`) lives in that module's `contracts/http/` (operator decision on Issue #30). It is shared **within the module only**: other modules must not import `contracts/http/`, even though it sits under `contracts/`, and it is not re-exported from `contracts/index.ts`; cross-module communication uses public versioned Integration Events (`contracts/events/`) or read ports (§6). A gate rule may enforce this later. Features never import another feature's `schema.ts`. Like all of `contracts/`, it is self-contained: no import of the module's `domain/` (a response mapper takes a plain shape, not a domain type). A schema used by one feature stays in that feature's `schema.ts`.
 
 ## 3. Dependency rules
 

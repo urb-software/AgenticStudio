@@ -1,0 +1,35 @@
+{
+  "comment": "Shared test vector (Issue #30): the API's normalizeProjectName and the web form's normalizeForHint must both map each input to its expected output. Both test suites read this file.",
+  "cases": [
+    {
+      "name": "surrounding and internal whitespace",
+      "input": "  Agentic \t\n  Studio  ",
+      "expected": "Agentic Studio"
+    },
+    {
+      "name": "non-ASCII whitespace",
+      "input": "\u00a0Agentic\u2003Studio\u3000",
+      "expected": "Agentic Studio"
+    },
+    {
+      "name": "NFD to NFC",
+      "input": "Cafe\u0301",
+      "expected": "Caf\u00e9"
+    },
+    {
+      "name": "NFD with surrounding whitespace (NFC, then trim)",
+      "input": "\u3000 Cafe\u0301 \u2001",
+      "expected": "Caf\u00e9"
+    },
+    {
+      "name": "combining mark after leading whitespace",
+      "input": " \u0301Cafe",
+      "expected": "\u0301Cafe"
+    },
+    {
+      "name": "case and astral characters are kept",
+      "input": "MyAPI \ud83d\ude00",
+      "expected": "MyAPI \ud83d\ude00"
+    }
+  ]
+}

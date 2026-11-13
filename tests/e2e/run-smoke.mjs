@@ -7,8 +7,8 @@
 //    anywhere. The password reaches Playwright through the environment only.
 // 3. Builds the packages, the API and the web app (production builds), then starts them:
 //    web on http://localhost:$E2E_WEB_PORT (default 4500), API on 127.0.0.1:$E2E_API_PORT
-//    (default 4501), with the web build proxying same-origin /api to the API (the explicit
-//    STUDIO_WEB_API_PROXY=true opt-in plus API_ORIGIN, at build time and at start).
+//    (default 4501), with the web build proxying same-origin /api to the API (opt-in rules:
+//    README.md, "Web /api proxy").
 // 4. Runs Playwright (tests/e2e/playwright.config.ts), then always stops the servers and
 //    containers.
 import { spawn, spawnSync } from 'node:child_process';

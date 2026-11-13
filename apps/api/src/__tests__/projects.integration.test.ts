@@ -146,6 +146,10 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
 
     it.each([
       ['an empty name', { name: '' }],
+      [
+        '101 characters written in NFD (202 code points before NFC)',
+        { name: 'e\u0301'.repeat(101) },
+      ],
       ['a name over 100 code points (astral characters)', { name: '\u{1F600}'.repeat(101) }],
       ['a whitespace-only name', { name: ' \t\n ' }],
       ['a name over 100 characters', { name: 'x'.repeat(101) }],
@@ -183,6 +187,13 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
 
       expectProblem(await createProject({ name: 'Cafe\u0301 Cre\u0300me' }), 409);
       expect(await listedNames()).toEqual(['Caf\u00e9 Cr\u00e8me']);
+    });
+
+    it('treats an NFD spelling in surrounding whitespace as a duplicate', async () => {
+      expect((await createProject({ name: 'Caf\u00e9' })).status).toBe(201);
+
+      expectProblem(await createProject({ name: ' \tCAFE\u0301 \u3000' }), 409);
+      expect(await listedNames()).toEqual(['Caf\u00e9']);
     });
 
     it('compares names case-insensitively beyond ASCII', async () => {

@@ -20,10 +20,10 @@ engineStrict: true
 # comment (advisory, Issue, removal date).
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
-  # Adoption baseline (#30): exact versions already in pnpm-lock.yaml when the policy was adopted
-  # on 2026-11-13, published 2026-11-06..2026-11-11. All are older than 7 days by
-  # 2026-11-18T12:31Z; remove this whole baseline block then (pnpm install --frozen-lockfile
-  # must still pass without it).
+  # Adoption baseline, approved as temporary by the operator on #30: exact versions already in
+  # pnpm-lock.yaml when the policy was adopted on 2026-11-13, published 2026-11-06..2026-11-11.
+  # All are older than 7 days by 2026-11-18T12:31Z; remove this whole block then (tracking
+  # task #36; pnpm install --frozen-lockfile must still pass without it).
   - '@eslint-community/regexpp@4.12.3'
   - '@hookform/resolvers@7.0.5'
   - '@nestjs/cli@12.0.12'
