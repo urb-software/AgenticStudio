@@ -87,7 +87,8 @@ export function findWorkspaceRoot(start: string): string | undefined {
   }
 }
 
-function isSameOrInside(parent: string, child: string): boolean {
+/** Whether `child` is `parent` or lies inside it (lexically; pass real paths to resolve links). */
+export function isSameOrInside(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }

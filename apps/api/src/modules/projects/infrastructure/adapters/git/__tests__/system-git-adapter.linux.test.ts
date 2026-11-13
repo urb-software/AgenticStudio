@@ -151,6 +151,30 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       );
     });
 
+    it('serializes operations on one project: a concurrent second clone is refused', async () => {
+      const git = adapter();
+      const results = await Promise.allSettled([
+        git.clone(PROJECT_ID, fixture.url, 'dev'),
+        git.clone(PROJECT_ID, fixture.url, 'dev'),
+      ]);
+      expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+      const rejected = results.find((result) => result.status === 'rejected');
+      expect((rejected as PromiseRejectedResult).reason).toBeInstanceOf(GitRequestRejectedError);
+      expect(await cloneEntries()).toEqual([`${PROJECT_ID}.git`]);
+    });
+
+    it('removes stale Git lock files before a fetch', async () => {
+      const git = adapter();
+      await git.clone(PROJECT_ID, fixture.url, 'dev');
+      // Left behind by a fetch that was killed while updating refs.
+      for (const lock of ['refs/heads/dev.lock', 'packed-refs.lock', 'HEAD.lock', 'shallow.lock']) {
+        await writeFile(join(clonePath(), lock), '');
+      }
+      const next = addCommit(fixture, { 'after-crash.txt': 'x\n' }, 'dev');
+
+      await expect(git.fetch(PROJECT_ID, fixture.url, 'dev')).resolves.toEqual({ commit: next });
+    });
+
     it('fails a clone of a missing branch with branch_not_found and leaves no partial Clone', async () => {
       await expectReason(adapter().clone(PROJECT_ID, fixture.url, 'nope'), 'branch_not_found');
       expect(await cloneEntries()).toEqual([]);

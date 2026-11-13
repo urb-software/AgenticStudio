@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -30,6 +30,8 @@ const SSH: SshCredentials = {
 /** Settings every hardened Git command must carry (security.md §4). */
 const HARDENING = [
   'core.hooksPath=/dev/null',
+  'core.fsmonitor=false',
+  'fetch.writeCommitGraph=false',
   'credential.helper=',
   'protocol.allow=never',
   'protocol.ssh.allow=always',
@@ -164,6 +166,7 @@ describe.runIf(process.platform === 'linux')(
         git.inspectRemote('https://user:secret@git.example.test/repo.git', 'main'),
         git.inspectRemote(HTTPS_URL, '-main'),
         git.inspectRemote(HTTPS_URL, 'a..b'),
+        git.inspectRemote(HTTPS_URL, '/main'),
         git.inspectRemote(SSH_URL, 'main'),
         git.inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, hostKey: 'not a key' } }),
         git.inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, privateKey: 'not a key' } }),
@@ -205,7 +208,7 @@ describe.runIf(process.platform === 'linux')(
       expect(await readdir(join(dataDir, 'clones'))).toEqual([]);
     });
 
-    it('kills a fetch that grows past the size limit and removes its temporary files', async () => {
+    it('kills a fetch that grows past the size limit and removes the Clone', async () => {
       const clone = join(dataDir, 'clones', `${PROJECT_ID}.git`);
       await mkdir(join(clone, 'objects', 'pack'), { recursive: true });
       const git = await adapter({ fetch: 'grow-and-hang' });
@@ -213,7 +216,90 @@ describe.runIf(process.platform === 'linux')(
       await expect(git.fetch(PROJECT_ID, HTTPS_URL, 'main')).rejects.toMatchObject({
         reason: 'size_limit',
       });
-      expect(await readdir(join(clone, 'objects', 'pack'))).toEqual([]);
+      // A size_limit fetch leaves no usable Clone: the caller clones again (#61).
+      expect(await readdir(join(dataDir, 'clones'))).toEqual([]);
+    });
+
+    describe('unexpected failures become GitOperationError(unknown) without paths', () => {
+      it('maps a file-system error during a clone (the Clone appeared meanwhile)', async () => {
+        const logs: string[] = [];
+        const git = await adapter({ fetch: 'occupy-target' }, { log: (m) => logs.push(m) });
+
+        const error = await git.clone(PROJECT_ID, HTTPS_URL, 'main').catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(GitOperationError);
+        expect(error).toMatchObject({ reason: 'unknown', detail: 'ENOTEMPTY' });
+        expect(logs).toHaveLength(1);
+        for (const text of [(error as Error).message, logs[0]!]) {
+          expect(text).not.toContain(root);
+        }
+        expect(logs[0]).toMatch(/ENOTEMPTY/);
+      });
+
+      it('maps an unusable temporary directory', async () => {
+        const notADirectory = join(root, 'not-a-directory');
+        await writeFile(notADirectory, '');
+        const logs: string[] = [];
+        const git = await adapter({}, { tempRoot: notADirectory, log: (m) => logs.push(m) });
+
+        const error = await git.inspectRemote(HTTPS_URL, 'main').catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(GitOperationError);
+        expect((error as GitOperationError).reason).toBe('unknown');
+        for (const text of [(error as GitOperationError).detail, logs.join('\n')]) {
+          expect(text).not.toContain(root);
+        }
+      });
+    });
+
+    describe('per-operation directories', () => {
+      it('live in an owner-only tmp folder of the data directory by default', async () => {
+        const git = await adapter({}, { tempRoot: undefined });
+        await expect(git.inspectRemote(HTTPS_URL, 'main')).rejects.toThrow(GitOperationError);
+        const [invocation] = await gitInvocations(recordDir);
+        expect(invocation!.cwd.startsWith(join(dataDir, 'tmp', 'studio-git-'))).toBe(true);
+        expect((await stat(join(dataDir, 'tmp'))).mode & 0o777).toBe(0o700);
+        expect(await readdir(join(dataDir, 'tmp'))).toEqual([]);
+      });
+
+      it('are swept at start-up when stale, with stale partial Clones', async () => {
+        const clones = join(dataDir, 'clones');
+        const old = new Date(Date.now() - 60 * 60 * 1000);
+        const stale = [
+          join(tempRoot, 'studio-git-stale'),
+          join(clones, `${PROJECT_ID}.git.partial-0a1b2c3d4e5f`),
+        ];
+        const fresh = [
+          join(tempRoot, 'studio-git-fresh'),
+          join(clones, `${PROJECT_ID}.git.partial-ffffffffffff`),
+        ];
+        const unrelated = [join(tempRoot, 'other-tool'), join(clones, `${PROJECT_ID}.git`)];
+        for (const dir of [...stale, ...fresh, ...unrelated]) {
+          await mkdir(dir, { recursive: true });
+        }
+        await writeFile(join(stale[0]!, 'deploy_key'), 'stale key');
+        for (const dir of [...stale, unrelated[0]!]) await utimes(dir, old, old);
+
+        // The clone limit is 15 s here: an hour-old directory is stale, a new one is not.
+        await (await adapter()).onModuleInit();
+
+        for (const dir of stale) expect(existsSync(dir)).toBe(false);
+        for (const dir of [...fresh, ...unrelated]) expect(existsSync(dir)).toBe(true);
+        await Promise.all([...fresh, unrelated[0]!].map((dir) => rm(dir, { recursive: true })));
+      });
+
+      it('leaves stale directories of other users alone', async () => {
+        const old = new Date(Date.now() - 60 * 60 * 1000);
+        const othersDir = join(tempRoot, 'studio-git-other-user');
+        await mkdir(othersDir);
+        await utimes(othersDir, old, old);
+
+        // As if the API ran as another user than the one owning the directory.
+        await (await adapter({}, { uid: (process.getuid?.() ?? 0) + 1 })).onModuleInit();
+
+        expect(existsSync(othersDir)).toBe(true);
+        await rm(othersDir, { recursive: true });
+      });
     });
 
     describe('start-up version check', () => {
@@ -263,6 +349,15 @@ describe.runIf(process.platform === 'linux')(
             'KbdInteractiveAuthentication=no',
             'ForwardAgent=no',
             'UpdateHostKeys=no',
+            'ProxyCommand=none',
+            'CheckHostIP=no',
+            'ClearAllForwardings=yes',
+            'PermitLocalCommand=no',
+            'ControlMaster=no',
+            'ControlPath=none',
+            'PubkeyAuthentication=yes',
+            'PreferredAuthentications=publickey',
+            'ForwardX11=no',
             `IdentityFile=${ssh.keyPath}`,
           ]),
         );

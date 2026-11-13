@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { lstat, mkdir, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { lstat, mkdir } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
+import { isSameOrInside } from '../../../../../platform/config/config.js';
 import { GitRequestRejectedError } from '../../../ports/repository-git.js';
 
 /** A canonical, lowercase UUID: the only accepted project id. */
@@ -10,8 +11,7 @@ const PROJECT_ID = /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da
 export const CLONES_FOLDER = 'clones';
 
 function isInside(parent: string, child: string): boolean {
-  const path = relative(parent, child);
-  return path !== '' && !path.startsWith('..') && !isAbsolute(path);
+  return resolve(parent) !== resolve(child) && isSameOrInside(parent, child);
 }
 
 /**
@@ -76,9 +76,8 @@ export class ClonePaths {
   }
 
   /**
-   * Creates the clones folder if needed (owner-only) and checks that it is a real
-   * directory inside the real data directory, so a symlink planted in its place cannot
-   * redirect Clones elsewhere.
+   * Creates the clones folder if needed (owner-only) and checks that it is a plain
+   * directory, so a symlink planted in its place cannot redirect Clones elsewhere.
    */
   async ensureClonesFolder(): Promise<void> {
     await mkdir(this.clonesDir, { recursive: true, mode: 0o700 });
@@ -94,15 +93,10 @@ export class ClonePaths {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
       throw error;
     }
+    // `clones` is a direct child of the data directory: when it is a plain directory (not
+    // a symlink), its real path is inside the data directory's real path.
     if (!stats.isDirectory() || stats.isSymbolicLink()) {
       throw new GitRequestRejectedError('The clones folder is not a plain directory.');
-    }
-    const [realData, realClones] = await Promise.all([
-      realpath(this.dataDir),
-      realpath(this.clonesDir),
-    ]);
-    if (!isInside(realData, realClones)) {
-      throw new GitRequestRejectedError('The clones folder escapes the data directory.');
     }
     return true;
   }

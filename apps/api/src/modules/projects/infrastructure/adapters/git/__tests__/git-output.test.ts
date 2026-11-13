@@ -36,6 +36,14 @@ describe('redactGitOutput', () => {
     expect(redacted.match(/<path>/g)).toHaveLength(3);
   });
 
+  it('removes absolute paths in file URLs', () => {
+    const redacted = redactGitOutput(
+      'fatal: could not read from file:///tmp/studio-fixtures/app.git',
+    );
+    expect(redacted).not.toContain('/tmp/studio-fixtures');
+    expect(redacted).toContain('file://<path>');
+  });
+
   it('caps the length, keeping the end of the output', () => {
     const redacted = redactGitOutput(`${'x'.repeat(5_000)}\nfatal: the end`);
     expect(redacted.length).toBeLessThanOrEqual(MAX_DETAIL_LENGTH + 1);

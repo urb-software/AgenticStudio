@@ -34,6 +34,7 @@ describe('parseRemoteUrl', () => {
     ['https://github.com/owner/repo.git?token=x', 'query string'],
     ['https://github.com/owner/repo.git#frag', 'fragment'],
     ['ssh://-oProxyCommand=touch%20pwned/repo', 'option-like host'],
+    ['ssh://-oProxyCommand=x@git.example.test/repo', 'option-like ssh user'],
     ['-oProxyCommand=touch pwned', 'option-like value'],
     ['-u@host:repo', 'option-like scp user'],
     ['git@-oProxyCommand=x:repo', 'option-like scp host'],

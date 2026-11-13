@@ -50,6 +50,14 @@ export const GIT_FAILURE_REASONS = [
 
 export type GitFailureReason = (typeof GIT_FAILURE_REASONS)[number];
 
+/**
+ * Operations on one project are serialized by the adapter (in-process lock: one API
+ * process owns the data directory). Errors: {@link GitRequestRejectedError} before Git
+ * starts, {@link GitUnsupportedPlatformError} off Linux, an `AbortError` on abort, and
+ * {@link GitOperationError} for everything else, unexpected failures as `unknown`. If the
+ * API process crashes mid-operation, the Git process it started is orphaned until it ends
+ * on its own; start-up removes the stale temporary files and partial Clones.
+ */
 export interface RepositoryGit {
   /** Checks that the remote answers; reports whether `branch` exists and its default branch. */
   inspectRemote(

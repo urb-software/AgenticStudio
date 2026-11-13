@@ -14,17 +14,21 @@ export interface Invocation {
 }
 
 /** Behaviour of the fake `git fetch`. */
-export type FakeFetch = 'fail' | 'grow-and-hang';
+export type FakeFetch = 'fail' | 'grow-and-hang' | 'occupy-target';
 
 export async function writeFakeGit(
   dir: string,
   recordDir: string,
   options: { version?: string; fetch?: FakeFetch } = {},
 ): Promise<string> {
-  const fetch =
-    options.fetch === 'grow-and-hang'
-      ? 'head -c 3000000 /dev/zero > "$gitdir/objects/pack/tmp_pack_fake"; exec sleep 30'
-      : 'echo "fatal: could not read from remote" >&2; exit 128';
+  const fetches: Record<FakeFetch, string> = {
+    fail: 'echo "fatal: could not read from remote" >&2; exit 128',
+    'grow-and-hang':
+      'head -c 3000000 /dev/zero > "$gitdir/objects/pack/tmp_pack_fake"; exec sleep 30',
+    // Something else creates the final Clone meanwhile: renaming the partial one fails.
+    'occupy-target': 'mkdir -p "${gitdir%.partial-*}/objects"; exit 0',
+  };
+  const fetch = fetches[options.fetch ?? 'fail'];
   const script = `#!/bin/sh
 rec='${recordDir}'
 n=$(ls "$rec" | grep -c '^git-.*.args$')

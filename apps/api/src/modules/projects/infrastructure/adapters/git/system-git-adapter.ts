@@ -1,6 +1,5 @@
 import { Logger, type OnModuleInit } from '@nestjs/common';
-import { mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { AppConfig } from '../../../../../platform/config/config.js';
 import {
@@ -53,10 +52,15 @@ export interface SystemGitSettings {
   gitBinary?: string;
   /** Default `ssh` from `PATH`. */
   sshBinary?: string;
-  /** Where per-operation private directories (SSH key, known hosts) go. Default the OS temp dir. */
+  /**
+   * Where per-operation private directories (`studio-git-*`: SSH key, known hosts) go.
+   * Default `<dataDir>/tmp`, created owner-only; never inside a Clone.
+   */
   tempRoot?: string;
   /** Receives redacted Git output of failed operations. Default: the Nest logger. */
   log?: (message: string) => void;
+  /** The user whose stale leftovers the start-up sweep may remove. Default `process.getuid()`. */
+  uid?: number;
 }
 
 /** The production wiring: limits and transports pinned, file remotes only under the test-only setting. */
@@ -102,6 +106,12 @@ const PRIVATE_KEY =
 /** Paths embedded in GIT_SSH_COMMAND (run by a shell) must need no quoting beyond '…'. */
 const SHELL_SAFE_PATH = /^\/[A-Za-z0-9._/-]+$/;
 const GIT_VERSION = /^git version (\d+)\.(\d+)\.(\d+)/;
+/** Prefix of per-operation private directories. */
+const OPERATION_DIR_PREFIX = 'studio-git-';
+/** A leftover is stale once it is older than the clone limit plus this margin. */
+const STALE_MARGIN_MS = 5 * 60 * 1000;
+/** Git lock files at the top of a Clone that a killed process may leave behind. */
+const TOP_LEVEL_LOCK = /\.lock$/;
 
 function isValidBranchName(branch: string): boolean {
   return (
@@ -109,6 +119,7 @@ function isValidBranchName(branch: string): boolean {
     branch.length <= 255 &&
     branch !== '@' &&
     !branch.startsWith('-') &&
+    !branch.startsWith('/') &&
     !branch.endsWith('/') &&
     !branch.endsWith('.') &&
     !branch.includes('..') &&
@@ -142,9 +153,22 @@ interface OperationContext {
   signal?: AbortSignal;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 /**
  * The `projects` Git adapter: runs the system `git` binary under the fixed hardening
  * baseline of security.md §4. Linux only.
+ *
+ * Operations on one project are serialized by an in-process lock (one API process). Any
+ * failure other than the port's typed errors and `AbortError` becomes
+ * `GitOperationError('unknown')`; the raw error goes, redacted, to the server log only.
+ *
+ * Residual risk: if the API process itself dies, the detached Git process group of a
+ * running operation is orphaned and keeps running without Studio's time and size limits
+ * until Git finishes or fails on its own. The start-up sweep then removes stale
+ * per-operation directories (with any SSH key) and partial Clones.
  */
 export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly paths: ClonePaths;
@@ -154,22 +178,61 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly tempRoot: string;
   private readonly sizePollIntervalMs: number;
   private readonly log: (message: string) => void;
+  /** Per-project tail of the operation queue: operations on one Clone never overlap. */
+  private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(private readonly settings: SystemGitSettings) {
     this.paths = new ClonePaths(settings.dataDir);
     this.platform = settings.platform ?? process.platform;
     this.gitBinary = settings.gitBinary ?? 'git';
     this.sshBinary = settings.sshBinary ?? 'ssh';
-    this.tempRoot = settings.tempRoot ?? tmpdir();
+    this.tempRoot = settings.tempRoot ?? join(settings.dataDir, 'tmp');
     this.sizePollIntervalMs = settings.sizePollIntervalMs ?? 1000;
     const logger = new Logger('Git');
     this.log = settings.log ?? ((message) => logger.warn(message));
   }
 
-  /** Start-up check: on Linux, `git` must be installed at {@link MIN_GIT_VERSION} or later. */
+  /**
+   * Start-up on Linux: `git` must be installed at {@link MIN_GIT_VERSION} or later, and
+   * leftovers of operations a crash interrupted are removed.
+   */
   async onModuleInit(): Promise<void> {
     if (this.platform !== 'linux') return;
     await this.verifyGitVersion();
+    await this.sweepStaleLeftovers();
+  }
+
+  /**
+   * Removes per-operation directories (which may hold a Deploy key) owned by this user and
+   * partial Clones, once they are older than the clone limit plus a margin: no live
+   * operation of this or another API process can still be using them.
+   */
+  private async sweepStaleLeftovers(): Promise<void> {
+    const staleBefore = Date.now() - this.settings.cloneTimeoutMs - STALE_MARGIN_MS;
+    const uid = this.settings.uid ?? process.getuid?.();
+    const sweep = async (dir: string, matches: (name: string) => boolean) => {
+      let names: string[];
+      try {
+        names = await readdir(dir);
+      } catch {
+        return;
+      }
+      for (const name of names.filter(matches)) {
+        const path = join(dir, name);
+        const stats = await lstat(path);
+        if (stats.isDirectory() && stats.uid === uid && stats.mtimeMs < staleBefore) {
+          await rm(path, { recursive: true, force: true });
+        }
+      }
+    };
+    try {
+      await sweep(this.tempRoot, (name) => name.startsWith(OPERATION_DIR_PREFIX));
+      if (await this.paths.verifyClonesFolder()) {
+        await sweep(this.paths.clonesFolder, (name) => /\.git\.partial-[\da-f]+$/.test(name));
+      }
+    } catch (error) {
+      this.log(`start-up sweep failed: ${redactGitOutput(String(error))}`);
+    }
   }
 
   async verifyGitVersion(): Promise<string> {
@@ -204,12 +267,14 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.assertSupportedPlatform();
     const remote = this.parseRemote(remoteUrl, options);
     this.assertBranch(branch);
-    const { stdout } = await this.withOperation(this.settings.fetchTimeoutMs, options, (context) =>
-      this.gitOrFail(
-        context,
-        ['ls-remote', '--symref', remote.url, 'HEAD', `refs/heads/${branch}`],
-        remote,
-        options.ssh,
+    const { stdout } = await this.guarded('ls-remote', () =>
+      this.withOperation(this.settings.fetchTimeoutMs, options, (context) =>
+        this.gitOrFail(
+          context,
+          ['ls-remote', '--symref', remote.url, 'HEAD', `refs/heads/${branch}`],
+          remote,
+          options.ssh,
+        ),
       ),
     );
     let defaultBranch: string | null = null;
@@ -234,28 +299,36 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     const target = this.paths.clone(projectId);
     const remote = this.parseRemote(remoteUrl, options);
     this.assertBranch(branch);
-    if (await this.paths.existingClone(projectId)) {
-      throw new GitRequestRejectedError('The project already has a Clone.');
-    }
-    await this.paths.ensureClonesFolder();
-    const partial = this.paths.partial(projectId);
-    try {
-      return await this.withOperation(this.settings.cloneTimeoutMs, options, async (context) => {
-        await this.gitOrFail(context, ['init', '--bare', '--quiet', '--template=', partial]);
-        await this.gitOrFail(context, [
-          `--git-dir=${partial}`,
-          'symbolic-ref',
-          'HEAD',
-          `refs/heads/${branch}`,
-        ]);
-        await this.fetchInto(context, partial, remote, branch, options.ssh);
-        const commit = await this.revParse(context, partial, branch);
-        await rename(partial, target);
-        return { commit };
-      });
-    } finally {
-      await rm(partial, { recursive: true, force: true });
-    }
+    return this.guarded('clone', () =>
+      this.exclusive(projectId, async () => {
+        if (await this.paths.existingClone(projectId)) {
+          throw new GitRequestRejectedError('The project already has a Clone.');
+        }
+        await this.paths.ensureClonesFolder();
+        const partial = this.paths.partial(projectId);
+        try {
+          return await this.withOperation(
+            this.settings.cloneTimeoutMs,
+            options,
+            async (context) => {
+              await this.gitOrFail(context, ['init', '--bare', '--quiet', '--template=', partial]);
+              await this.gitOrFail(context, [
+                `--git-dir=${partial}`,
+                'symbolic-ref',
+                'HEAD',
+                `refs/heads/${branch}`,
+              ]);
+              await this.fetchInto(context, partial, remote, branch, options.ssh);
+              const commit = await this.revParse(context, partial, branch);
+              await rename(partial, target);
+              return { commit };
+            },
+          );
+        } finally {
+          await rm(partial, { recursive: true, force: true });
+        }
+      }),
+    );
   }
 
   async fetch(
@@ -268,28 +341,35 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.paths.clone(projectId);
     const remote = this.parseRemote(remoteUrl, options);
     this.assertBranch(branch);
-    const clone = await this.paths.existingClone(projectId);
-    if (!clone) {
-      throw new GitRequestRejectedError('The project has no Clone.');
-    }
-    try {
-      return await this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
-        await this.fetchInto(context, clone, remote, branch, options.ssh);
-        return { commit: await this.revParse(context, clone, branch) };
-      });
-    } catch (error) {
-      // A killed fetch leaves Git's temporary packs; the refs are unchanged.
-      await removeTemporaryObjects(clone);
-      if (
-        error instanceof GitOperationError &&
-        error.reason === 'size_limit' &&
-        (await diskUsage(clone)) > this.settings.maxCloneBytes
-      ) {
-        // The fetch completed past the limit: a Clone may not exceed it.
-        await rm(clone, { recursive: true, force: true });
-      }
-      throw error;
-    }
+    return this.guarded('fetch', () =>
+      this.exclusive(projectId, async () => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitRequestRejectedError('The project has no Clone.');
+        }
+        // Under the lock no other Git process works on this Clone: any lock file is stale.
+        await removeStaleLocks(clone);
+        try {
+          return await this.withOperation(
+            this.settings.fetchTimeoutMs,
+            options,
+            async (context) => {
+              await this.fetchInto(context, clone, remote, branch, options.ssh);
+              return { commit: await this.revParse(context, clone, branch) };
+            },
+          );
+        } catch (error) {
+          if (error instanceof GitOperationError && error.reason === 'size_limit') {
+            // Killed mid-transfer or finished past the limit: no usable Clone remains (#61).
+            await rm(clone, { recursive: true, force: true });
+          } else {
+            // A killed fetch leaves Git's temporary packs; the refs are unchanged.
+            await removeTemporaryObjects(clone);
+          }
+          throw error;
+        }
+      }),
+    );
   }
 
   async readBranchCommit(
@@ -299,29 +379,76 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   ): Promise<{ commit: string }> {
     this.assertSupportedPlatform();
     this.assertBranch(branch);
-    const clone = await this.paths.existingClone(projectId);
-    if (!clone) {
-      throw new GitRequestRejectedError('The project has no Clone.');
-    }
-    return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => ({
-      commit: await this.revParse(context, clone, branch),
-    }));
+    this.paths.clone(projectId);
+    return this.guarded('rev-parse', () =>
+      this.exclusive(projectId, async () => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitRequestRejectedError('The project has no Clone.');
+        }
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => ({
+          commit: await this.revParse(context, clone, branch),
+        }));
+      }),
+    );
   }
 
   async removeClone(projectId: string, options: GitOperationOptions = {}): Promise<void> {
     this.assertSupportedPlatform();
     const target = this.paths.clone(projectId);
     if (options.signal?.aborted) throw abortError();
-    if (!(await this.paths.verifyClonesFolder())) return;
-    const partials = (await readdir(this.paths.clonesFolder)).filter((name) =>
-      this.paths.isPartialOf(projectId, name),
+    await this.guarded('remove', () =>
+      this.exclusive(projectId, async () => {
+        if (!(await this.paths.verifyClonesFolder())) return;
+        const partials = (await readdir(this.paths.clonesFolder)).filter((name) =>
+          this.paths.isPartialOf(projectId, name),
+        );
+        // rm never follows symlinks: a symlink in place of the Clone is removed, not its target.
+        await Promise.all(
+          [target, ...partials.map((name) => join(this.paths.clonesFolder, name))].map((path) =>
+            rm(path, { recursive: true, force: true }),
+          ),
+        );
+      }),
     );
-    // rm never follows symlinks: a symlink in place of the Clone is removed, not its target.
-    await Promise.all(
-      [target, ...partials.map((name) => join(this.paths.clonesFolder, name))].map((path) =>
-        rm(path, { recursive: true, force: true }),
-      ),
-    );
+  }
+
+  /** Runs `work` after every earlier operation on the project has settled. */
+  private async exclusive<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(projectId) ?? Promise.resolve();
+    const current = previous.then(work, work);
+    const tail = current.catch(() => undefined);
+    this.locks.set(projectId, tail);
+    try {
+      return await current;
+    } finally {
+      if (this.locks.get(projectId) === tail) this.locks.delete(projectId);
+    }
+  }
+
+  /**
+   * The port's typed errors and `AbortError` pass through; anything else (a file-system
+   * error, a bug) becomes `GitOperationError('unknown')` whose detail is at most an errno
+   * code. The raw error is logged, redacted.
+   */
+  private async guarded<T>(operation: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (
+        error instanceof GitOperationError ||
+        error instanceof GitRequestRejectedError ||
+        error instanceof GitUnsupportedPlatformError ||
+        isAbortError(error)
+      ) {
+        throw error;
+      }
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      const detail = typeof code === 'string' && /^E[A-Z0-9]+$/.test(code) ? code : '';
+      const raw = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      this.log(`${operation} failed (unknown): ${redactGitOutput(raw)}`);
+      throw new GitOperationError('unknown', detail);
+    }
   }
 
   private assertSupportedPlatform(): void {
@@ -365,7 +492,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     if (options.signal?.aborted) throw abortError();
     const timeoutMs = Math.min(limitMs, options.timeoutMs ?? limitMs);
     const deadline = Date.now() + timeoutMs;
-    const dir = await mkdtemp(join(this.tempRoot, 'studio-git-'));
+    await mkdir(this.tempRoot, { recursive: true, mode: 0o700 });
+    const dir = await mkdtemp(join(this.tempRoot, OPERATION_DIR_PREFIX));
     try {
       const context: OperationContext = {
         dir,
@@ -554,6 +682,32 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       throw error;
     }
   }
+}
+
+/**
+ * Lock files a killed Git process left in a Clone (`HEAD.lock`, `packed-refs.lock`,
+ * `shallow.lock`, lock files under `refs/`); they would make every later fetch fail. Symlinks are
+ * never followed.
+ */
+async function removeStaleLocks(gitDir: string): Promise<void> {
+  const removeIn = async (dir: string, recursive: boolean): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (entry.isFile() && TOP_LEVEL_LOCK.test(entry.name)) {
+        await rm(path, { force: true });
+      } else if (recursive && entry.isDirectory()) {
+        await removeIn(path, true);
+      }
+    }
+  };
+  await removeIn(gitDir, false);
+  await removeIn(join(gitDir, 'refs'), true);
 }
 
 /** Git's temporary files left by a killed fetch (packs being received). */

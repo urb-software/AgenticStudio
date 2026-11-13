@@ -11,6 +11,8 @@ const PRIVATE_KEY_BLOCK =
  * a bracket, `=` or `,`). URL paths are not matched: their `/` follows a host or `:`.
  */
 const ABSOLUTE_PATH = /(^|[\s'"`(<[=,])\/(?!\/)[^\s'"`)>\]]*/gm;
+/** The absolute path of a `file://` URL (test-only fixture remotes). */
+const FILE_URL_PATH = /\bfile:\/\/\/[^\s'"`)>\]]*/gi;
 
 /**
  * Redacts Git output before it is returned or logged (security.md §4): private keys,
@@ -18,10 +20,9 @@ const ABSOLUTE_PATH = /(^|[\s'"`(<[=,])\/(?!\/)[^\s'"`)>\]]*/gm;
  * directories, anything else on the host).
  */
 export function redactGitOutput(text: string): string {
-  const redacted = redactSecrets(text.replace(PRIVATE_KEY_BLOCK, '<private key>')).replace(
-    ABSOLUTE_PATH,
-    '$1<path>',
-  );
+  const redacted = redactSecrets(text.replace(PRIVATE_KEY_BLOCK, '<private key>'))
+    .replace(FILE_URL_PATH, 'file://<path>')
+    .replace(ABSOLUTE_PATH, '$1<path>');
   const trimmed = redacted.trim();
   return trimmed.length > MAX_DETAIL_LENGTH
     ? `…${trimmed.slice(trimmed.length - MAX_DETAIL_LENGTH)}`
