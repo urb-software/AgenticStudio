@@ -202,10 +202,10 @@
 
   // ---------- renderer ----------
 
-  function renderList(nodes, scopes, h) {
+  function renderList(nodes, scopes) {
     var out = [];
     for (var i = 0; i < nodes.length; i++) {
-      var r = renderNode(nodes[i], scopes, h);
+      var r = renderNode(nodes[i], scopes);
       if (r == null) continue;
       if (Array.isArray(r)) { for (var j = 0; j < r.length; j++) out.push(r[j]); }
       else out.push(r);
@@ -213,11 +213,11 @@
     return out;
   }
 
-  function renderNode(n, scopes, h) {
+  function renderNode(n, scopes) {
     var R = window.React;
     if (n.t === 'text') return toText(evalValue(n.v, scopes));
     if (n.t === 'if') {
-      return evalValue(n.cond, scopes) ? renderList(n.kids, scopes, h) : null;
+      return evalValue(n.cond, scopes) ? renderList(n.kids, scopes) : null;
     }
     if (n.t === 'for') {
       var list = evalValue(n.list, scopes);
@@ -229,7 +229,7 @@
         var key = id && !seen[id] ? id : 'ix:' + i;
         seen[key] = 1;
         var local = {}; local[n.as] = item;
-        out.push(R.createElement(R.Fragment, { key: key }, renderList(n.kids, [local].concat(scopes), h)));
+        out.push(R.createElement(R.Fragment, { key: key }, renderList(n.kids, [local].concat(scopes))));
       }
       return out;
     }
@@ -244,7 +244,7 @@
       if (a.name === 'value' && v == null) v = '';
       props[a.name] = v;
     }
-    var kids = renderList(n.kids, scopes, h);
+    var kids = renderList(n.kids, scopes);
     return R.createElement.apply(null, [n.tag, props].concat(kids));
   }
 
