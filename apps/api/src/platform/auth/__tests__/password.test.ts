@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { PLACEHOLDER_PASSWORD_HASH } from '../../../__tests__/test-config.js';
@@ -17,6 +18,8 @@ describe('password hashing', () => {
         DATABASE_URL: 'postgresql://u:placeholder@localhost/db',
         REDIS_URL: 'redis://localhost:6379',
         STUDIO_OPERATOR_PASSWORD_HASH: hash,
+        // A throwaway key: the config requires one (Issue #57).
+        STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
         STUDIO_DATA_DIR: tmpdir(),
       }).operatorPasswordHash,
     ).toBe(hash);

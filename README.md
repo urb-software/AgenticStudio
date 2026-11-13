@@ -90,6 +90,7 @@ cp .env.example .env
 | `STUDIO_ORIGIN` | API | Default `http://localhost:3000`: the web app's origin, the only origin accepted on mutations. Plain HTTP only for localhost; https makes the session cookie `Secure` (`__Host-studio_session`). |
 | `API_TRUSTED_PROXIES` | API | Default empty. Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted for the client IP (rate limit). A proxied deployment must list its proxy addresses here (see [Web `/api` proxy](#web-api-proxy)). |
 | `STUDIO_OPERATOR_PASSWORD_HASH` | API | Required. Argon2id hash of the operator password (see [Operator login](#operator-login)), in single quotes in `.env`. Never the plaintext. |
+| `STUDIO_SECRETS_KEY` | API | Required. Master key for secrets stored in PostgreSQL: 32 random bytes, base64. See [Secrets key](#secrets-key). |
 | `STUDIO_DATA_DIR` | API | Required on every platform. Absolute path of an existing, writable directory **outside the repository checkout** (e.g. `/home/you/.local/share/agentic-studio`) where Studio keeps repository data such as Clones. See [Repository features (Linux only)](#repository-features-linux-only). |
 | `STUDIO_GIT_ALLOW_FILE_REMOTES` | API | Test-only. `true` lets the Git adapter use local `file://` fixture remotes. Accepted only with `NODE_ENV=test`; any other environment refuses to start. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
@@ -118,6 +119,22 @@ Put the printed hash in `.env` as `STUDIO_OPERATOR_PASSWORD_HASH='$argon2id$...'
 - A session ends after 12 hours of inactivity, and in any case 30 days after login.
 
 Cookie, session lifetime, Origin, rate-limit and proxy rules are canonical in [`security.md` §8](docs/engineering/security.md).
+
+### Secrets key
+
+Secrets the Studio holds (such as a project's deploy key) are encrypted in PostgreSQL with AES-256-GCM under a master key from `STUDIO_SECRETS_KEY` ([ADR 0001](docs/architecture/adr/0001-secret-store.md)). Generate 32 random bytes, base64-encoded, with either command:
+
+```bash
+openssl rand -base64 32
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+Put the output in `.env` as `STUDIO_SECRETS_KEY=...`. The API refuses to start when the key is missing, is not standard base64 or does not decode to exactly 32 bytes; the message names the variable, never its value.
+
+- **Keep the key safe and separate from the database backups.** It never enters the database, Git or logs; never commit it or reuse a key from an example.
+- **Losing the key makes every stored secret unrecoverable.** There is no recovery path. Once repository connections exist (Epic #55), the affected repositories will have to be disconnected and connected again, with new deploy keys registered on the Git host.
+- **A database backup is useless for secrets without the key.** Restoring a backup restores the encrypted secrets only; back the key up separately, in a password manager or secret vault.
+- Key rotation is not supported yet: changing the key makes the existing secrets unreadable, just like losing it.
 
 ### Projects
 
