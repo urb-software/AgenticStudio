@@ -136,11 +136,14 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText('Project created')).toBeVisible();
   // Scanned once the toast has faded in: mid-animation its text is part-transparent.
-  await expect(page.locator('[data-sonner-toast]')).toHaveCSS('opacity', '1');
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast).toHaveCSS('opacity', '1');
   const projects = main.getByRole('list', { name: 'Projects' });
   await expect(projects.getByRole('heading', { name: projectName })).toBeVisible();
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
+  // The toast was still on screen, so the scan included it.
+  await expect(toast).toBeVisible();
 
   await page.reload();
   await expect(projects.getByRole('heading', { name: projectName })).toBeVisible();

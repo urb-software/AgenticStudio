@@ -70,6 +70,27 @@ async function expectFieldError(message: string) {
   expect(nameInput().getAttribute('aria-describedby')).toContain(error.id);
 }
 
+/**
+ * Holds every POST (after the fake API has recorded and stored it) until `release()`,
+ * which answers them all with 201.
+ */
+function holdPosts(): () => void {
+  const held: { resolve: (response: Response) => void; answer: Promise<Response> }[] = [];
+  const fetch = vi.mocked(globalThis.fetch);
+  const answer = fetch.getMockImplementation()!;
+  fetch.mockImplementation(async (input) => {
+    const request = input as Request;
+    if (request.method !== 'POST') return answer(request);
+    const created = answer(request.clone()); // records and stores the project
+    return new Promise<Response>((resolve) => held.push({ resolve, answer: created }));
+  });
+  return () => {
+    for (const { resolve, answer: created } of held.splice(0)) {
+      void created.then(resolve);
+    }
+  };
+}
+
 afterEach(() => {
   act(() => {
     toast.dismiss();
@@ -139,6 +160,25 @@ describe('project list states', () => {
     expect(await listedNames()).toEqual(['Alpha']);
     expect(api.calls('GET')).toHaveLength(2);
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('error: stays in the error state when Retry fails again, and Retry still works', async () => {
+    const api = fakeProjectsApi([ALPHA]);
+    api.respondNext('GET', 503, problem(503, 'Service Unavailable'));
+    api.respondNext('GET', 500, problem(500, 'Internal Server Error'));
+    renderProjects();
+    await screen.findByText('GET /api/projects · 503 Service Unavailable');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByText('GET /api/projects · 500 Internal Server Error')).toBeTruthy();
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(api.calls('GET')).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await listedNames()).toEqual(['Alpha']);
+    expect(api.calls('GET')).toHaveLength(3);
   });
 
   it('error: shows the status alone when the response has no problem details', async () => {
@@ -238,15 +278,7 @@ describe('new project dialog', () => {
 
   it('stays open while the project is being created', async () => {
     const api = fakeProjectsApi();
-    let release: (response: Response) => void = () => {};
-    const fetch = vi.mocked(globalThis.fetch);
-    const answer = fetch.getMockImplementation()!;
-    fetch.mockImplementation(async (input) => {
-      const request = input as Request;
-      if (request.method !== 'POST') return answer(request);
-      await answer(request.clone()); // records the call
-      return new Promise<Response>((resolve) => (release = resolve));
-    });
+    const release = holdPosts();
     renderProjects();
     await openDialog();
 
@@ -259,13 +291,30 @@ describe('new project dialog', () => {
     expect(dialog()).toBeTruthy();
     expect(api.calls('POST')).toHaveLength(1);
 
-    release(
-      new Response(JSON.stringify({ ...ALPHA, name: 'Gamma' }), {
-        status: 201,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
+    release();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('cannot be submitted twice while the project is being created', async () => {
+    const api = fakeProjectsApi();
+    const release = holdPosts();
+    renderProjects();
+    await openDialog();
+
+    await submitName('Gamma');
+    const pending = within(dialog()).getByRole<HTMLButtonElement>('button', { name: 'Creating…' });
+    await userEvent.click(pending);
+    await userEvent.type(nameInput(), '{Enter}');
+    act(() => pending.form?.requestSubmit());
+
+    expect(api.calls('POST')).toHaveLength(1);
+    // Still pending: the ignored submits do not end the pending state.
+    await act(async () => {});
+    expect(within(dialog()).getByRole('button', { name: 'Creating…' })).toBeTruthy();
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.calls('POST')).toHaveLength(1);
+    expect(await listedNames()).toEqual(['Gamma']);
   });
 
   it('requires a name before calling the API', async () => {
@@ -385,6 +434,19 @@ describe('new project dialog', () => {
     expect(nameInput().getAttribute('aria-invalid')).not.toBe('true');
     expect(nameInput().value).toBe('Delta');
     await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('keeps the generic copy under the title when the problem has an empty detail', async () => {
+    const api = fakeProjectsApi();
+    api.respondNext('POST', 503, { ...problem(503, 'Service Unavailable'), detail: '' });
+    renderProjects();
+    await openDialog();
+
+    await submitName('Delta');
+
+    const alert = await within(dialog()).findByRole('alert');
+    expect(alert.querySelector('b')?.textContent?.trim()).toBe('Service Unavailable');
+    expect(alert.textContent).toContain('Could not create the project. Try again.');
   });
 
   it('keeps the dialog open with a generic error when the response has no problem details', async () => {

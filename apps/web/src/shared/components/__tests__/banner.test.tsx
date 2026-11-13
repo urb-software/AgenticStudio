@@ -38,6 +38,29 @@ describe('Banner', () => {
     },
   );
 
+  it('announces a non-danger tone as an alert when asked (e.g. a lockout)', async () => {
+    const { container } = render(
+      <Banner tone="warning" announce="assertive" title="Too many failed attempts.">
+        Try again in 5 minutes.
+      </Banner>,
+    );
+
+    const alert = screen.getByRole('alert');
+    expect(alert.dataset.tone).toBe('warning');
+    expect(screen.queryByRole('status')).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('can announce a danger banner politely', () => {
+    render(
+      <Banner tone="danger" announce="polite">
+        Preview stopped.
+      </Banner>,
+    );
+
+    expect(screen.getByRole('status').dataset.tone).toBe('danger');
+  });
+
   it('defaults to info', () => {
     render(<Banner>Preview rebuilding</Banner>);
 

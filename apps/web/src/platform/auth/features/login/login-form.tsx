@@ -31,7 +31,11 @@ function errorFor(error: unknown): LoginError {
     }
     default:
       return error.problem
-        ? { kind: 'server', title: error.problem.title, message: error.problem.detail }
+        ? {
+            kind: 'server',
+            title: error.problem.title,
+            message: error.problem.detail || 'Login failed. Try again.',
+          }
         : { kind: 'server', message: 'Login failed. Try again.' };
   }
 }
@@ -78,7 +82,8 @@ export function LoginForm() {
         error={error?.kind === 'field' ? error.message : undefined}
       />
       {error?.kind === 'rate-limited' ? (
-        <Banner tone="warning" icon={LockIcon} title={error.title}>
+        // Assertive, as the lockout message was before #44 (a warning is polite by default).
+        <Banner tone="warning" announce="assertive" icon={LockIcon} title={error.title}>
           {error.message}
         </Banner>
       ) : null}

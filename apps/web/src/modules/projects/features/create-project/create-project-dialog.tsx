@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { type FormEvent, useRef } from 'react';
 import { type Resolver, useForm } from 'react-hook-form';
 import { Banner } from '@/shared/components/banner';
 import { TextField } from '@/shared/components/text-field';
@@ -47,12 +48,10 @@ function nameErrorOf(error: unknown): string | undefined {
 /** A failure without a field error: the problem+json title in bold, then the detail. */
 function ServerError({ error }: { error: unknown }) {
   const problem = error instanceof ApiError ? error.problem : undefined;
-  return problem ? (
-    <Banner tone="danger" title={problem.title}>
-      {problem.detail}
+  return (
+    <Banner tone="danger" title={problem?.title}>
+      {problem?.detail || 'Could not create the project. Try again.'}
     </Banner>
-  ) : (
-    <Banner tone="danger">Could not create the project. Try again.</Banner>
   );
 }
 
@@ -80,6 +79,14 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
     defaultValues: { name: '' },
   });
 
+  // RHF's isSubmitting ends with each handleSubmit call, so an ignored second submit would end
+  // it early; the mutation's own pending state keeps the dialog busy until the API answers.
+  const submitting = isSubmitting || createProject.isPending;
+
+  // The disabled button stops clicks; this stops a second submit by other means (Enter, script)
+  // before the pending state renders.
+  const inFlight = useRef(false);
+
   function close() {
     reset();
     createProject.reset();
@@ -88,19 +95,33 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
 
   function changeOpen(next: boolean) {
     if (next) onOpenChange(true);
-    else if (!isSubmitting) close();
+    else if (!submitting) close();
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    if (inFlight.current) {
+      event.preventDefault();
+      return;
+    }
+    inFlight.current = true;
+    const invalid = () => {
+      inFlight.current = false;
+    };
+    void handleSubmit(onSubmit, invalid)(event);
   }
 
   async function onSubmit(values: CreateProjectRequest) {
     try {
       await createProject.mutateAsync(values);
     } catch (cause) {
+      inFlight.current = false;
       const nameError = nameErrorOf(cause);
       if (nameError) {
         setError('name', { type: 'server', message: nameError }, { shouldFocus: true });
       }
       return;
     }
+    inFlight.current = false;
     close();
     toast.success('Project created');
   }
@@ -112,7 +133,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent aria-describedby={undefined}>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex min-h-0 flex-1 flex-col">
+        <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
           <DialogHeader>
             <DialogTitle>New project</DialogTitle>
           </DialogHeader>
@@ -125,18 +146,18 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
               autoComplete="off"
               error={errors.name?.message}
               // Read-only, not disabled, while creating: a server field error can still focus it.
-              readOnly={isSubmitting}
+              readOnly={submitting}
               {...register('name')}
             />
           </DialogBody>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="ghost" disabled={isSubmitting}>
+              <Button variant="ghost" disabled={submitting}>
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" variant="primary" loading={isSubmitting}>
-              {isSubmitting ? 'Creating…' : 'Create project'}
+            <Button type="submit" variant="primary" loading={submitting}>
+              {submitting ? 'Creating…' : 'Create project'}
             </Button>
           </DialogFooter>
         </form>

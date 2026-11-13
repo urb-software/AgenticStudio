@@ -122,7 +122,8 @@ describe('LoginForm', () => {
 
     await signIn();
 
-    const banner = await screen.findByRole('status');
+    // Announced assertively, as the lockout message was before #44.
+    const banner = await screen.findByRole('alert');
     expect(banner.dataset.tone).toBe('warning');
     expect(banner.querySelector('b')?.textContent?.trim()).toBe('Too many failed attempts.');
     expect(banner.textContent).toContain('Try again in 2 minutes.');
@@ -136,7 +137,7 @@ describe('LoginForm', () => {
 
     await signIn();
 
-    expect((await screen.findByRole('status')).textContent).toContain('Try again in 1 minute.');
+    expect((await screen.findByRole('alert')).textContent).toContain('Try again in 1 minute.');
   });
 
   it('shows a server error with the problem title in bold, then the detail', async () => {
@@ -152,6 +153,17 @@ describe('LoginForm', () => {
     expect(alert.querySelector('b')?.textContent?.trim()).toBe('Service Unavailable');
     expect(alert.textContent).toContain('The session store is not reachable.');
     await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('keeps the generic message under the title when the problem has an empty detail', async () => {
+    fakeLogin(() => problemResponse(503, 'Service Unavailable', ''));
+    render(<LoginForm />);
+
+    await signIn();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.querySelector('b')?.textContent?.trim()).toBe('Service Unavailable');
+    expect(alert.textContent).toContain('Login failed. Try again.');
   });
 
   it('falls back to a generic message when the server error has no problem details', async () => {
