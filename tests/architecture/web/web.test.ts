@@ -37,6 +37,14 @@ describeGate('web', webGate, 'apps/web', [
     expected: ['web-generated-client-only-via-platform-api'],
   },
   {
+    fixture: 'app-deep-imports-platform-auth',
+    expected: ['web-platform-auth-public-entrypoint-only'],
+  },
+  {
+    fixture: 'module-deep-imports-platform-auth',
+    expected: ['web-platform-auth-public-entrypoint-only'],
+  },
+  {
     fixture: 'database-package-unresolved-import',
     expected: ['web-no-server-code', 'web-database-package-imports-resolve'],
   },

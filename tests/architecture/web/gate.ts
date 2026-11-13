@@ -87,6 +87,16 @@ export const webGate: Gate = {
       to: { path: GENERATED_CLIENT },
     },
     {
+      name: 'web-platform-auth-public-entrypoint-only',
+      comment:
+        'Operator login/logout/session UI lives in src/platform/auth; code outside it (app/, ' +
+        'modules/, other platform/ areas) imports it only through src/platform/auth/index.ts. ' +
+        'Kept specific to auth: other platform/ areas have no index.ts entry point yet.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: '^src/platform/auth/' },
+      to: { path: '^src/platform/auth/', pathNot: '^src/platform/auth/index\\.tsx?$' },
+    },
+    {
       name: 'web-no-circular',
       comment:
         'No import cycles. Only the generated @hey-api client (checked by contracts:check) is ' +
