@@ -1,4 +1,4 @@
-export interface ExecutionSummaryV1 {
+export interface ExecutionSummary {
   id: string;
   projectId: string;
 }

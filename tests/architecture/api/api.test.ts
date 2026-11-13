@@ -107,4 +107,45 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'contracts-reexport-database-client',
     expected: ['api-features-no-reachable-adapters'],
   },
+  { fixture: 'events-versioned-and-publisher-owned', expected: [] },
+  {
+    fixture: 'event-unversioned-export',
+    expected: ['api-event-versioned'],
+    qualityRow: 'Module publishes an unversioned integration event',
+  },
+  { fixture: 'event-export-version-mismatch', expected: ['api-event-versioned'] },
+  { fixture: 'event-defined-outside-contracts', expected: ['api-event-publisher-owned'] },
+  {
+    fixture: 'event-reexports-foreign-event',
+    expected: ['api-event-publisher-owned', 'api-event-no-duplicates'],
+  },
+  {
+    fixture: 'event-duplicated-across-modules',
+    expected: ['api-event-no-duplicates'],
+    qualityRow: 'Two modules define the same integration event',
+  },
+  { fixture: 'contracts-in-domain-repositories-and-ports', expected: [] },
+  {
+    fixture: 'repository-contract-outside-domain-repositories',
+    expected: ['api-repository-contract-placement'],
+    qualityRow: 'Repository contract declared outside `domain/repositories/`',
+  },
+  { fixture: 'read-port-in-domain-repositories', expected: ['api-repository-contract-placement'] },
+  {
+    fixture: 'adapter-implements-contract-outside-ports',
+    expected: ['api-adapter-contract-placement'],
+  },
+  { fixture: 'adapter-declares-own-contract', expected: ['api-adapter-contract-placement'] },
+  { fixture: 'repository-imports-workspace-database-package', expected: [] },
+  {
+    fixture: 'workspace-package-reexports-concrete-client',
+    expected: ['api-features-no-reachable-adapters'],
+  },
+  { fixture: 'unresolved-workspace-import', expected: ['api-local-imports-resolve'] },
+  {
+    fixture: 'handler-imports-framework-queue-integration',
+    expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
+  },
+  { fixture: 'port-imports-framework-orm-integration', expected: ['api-ports-independent'] },
+  { fixture: 'contracts-reexport-client-wrapper', expected: ['api-contracts-self-contained'] },
 ]);

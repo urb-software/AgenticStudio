@@ -10,6 +10,13 @@ export const QUALITY_TABLE = [
   { row: "Handler imports another module's private repository", expected: 'FAIL', gate: 'api' },
   { row: 'Domain imports ORM/NestJS', expected: 'FAIL', gate: 'api' },
   { row: 'Consumer imports publisher-owned public versioned event', expected: 'PASS', gate: 'api' },
+  { row: 'Module publishes an unversioned integration event', expected: 'FAIL', gate: 'api' },
+  { row: 'Two modules define the same integration event', expected: 'FAIL', gate: 'api' },
+  {
+    row: 'Repository contract declared outside `domain/repositories/`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
   { row: 'Web imports `@/modules/agents` public entrypoint', expected: 'PASS', gate: 'web' },
   { row: "Web deep-imports another module's private Zustand store", expected: 'FAIL', gate: 'web' },
   { row: 'Two modules introduce a dependency cycle', expected: 'FAIL', gate: 'api' },
@@ -41,6 +48,7 @@ export function describeGate(
       const { violations, filesCruised, npmDependencies } = await checkGate(
         gate,
         join(REPO_ROOT, realTree),
+        REPO_ROOT,
       );
       expect(violations).toEqual([]);
       // Guard against a vacuous pass: the cruised directories moved, or npm imports
