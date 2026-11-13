@@ -43,6 +43,16 @@ describe('remoteIdentity (Issue #60 clarification 6)', () => {
     expect(remoteIdentity('https://gitlab.com/acme/shop')).toBe('gitlab.com/acme/shop');
   });
 
+  it('stays linear on many slashes (no polynomial backtracking)', () => {
+    const started = performance.now();
+
+    expect(remoteIdentity(`https://github.com/acme/shop${'/'.repeat(200_000)}`)).toBe(
+      'github.com/acme/shop',
+    );
+    expect(remoteIdentity(`https://github.com/${'/'.repeat(200_000)}x`)).toBe('github.com/x');
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it('gives a file URL its path as identity', () => {
     expect(remoteIdentity('file:///tmp/fixtures/shop.git')).toBe('/tmp/fixtures/shop');
   });

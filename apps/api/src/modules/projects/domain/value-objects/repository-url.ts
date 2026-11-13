@@ -30,13 +30,19 @@ function invalid(message: string): never {
   throw new InvalidRepositoryUrlError(message);
 }
 
+/** `path` without leading and trailing slashes; a loop, so it stays linear on any input. */
+function trimSlashes(path: string): string {
+  let start = 0;
+  let end = path.length;
+  while (start < end && path[start] === '/') start += 1;
+  while (end > start && path[end - 1] === '/') end -= 1;
+  return path.slice(start, end);
+}
+
 /** The repository path without leading or trailing slashes and without a trailing `.git`. */
 function normalizePath(path: string): string {
-  return path
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '')
-    .replace(/\.git$/i, '')
-    .replace(/\/+$/, '');
+  const trimmed = trimSlashes(path);
+  return trimmed.toLowerCase().endsWith('.git') ? trimSlashes(trimmed.slice(0, -4)) : trimmed;
 }
 
 /**
