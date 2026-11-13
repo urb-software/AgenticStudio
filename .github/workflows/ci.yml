@@ -90,6 +90,9 @@ jobs:
       - run: pnpm check:web
       # Whole-repository Prettier check (scripts/, tests/ and root files are outside check:api/web).
       - run: pnpm format:check
+      # Design-system viewer server (design-system/serve.mjs, Issue #53): node:test, no dependencies.
+      # Runs here so it needs no new required check; any design-system/** change is a code change.
+      - run: pnpm design:test
 
   architecture-api:
     name: architecture:api

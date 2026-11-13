@@ -25,7 +25,8 @@
     "contracts:generate": "pnpm run build:packages && pnpm --filter @agentic-studio/api run openapi:generate && pnpm --filter @agentic-studio/web run client:generate",
     "contracts:check": "node scripts/contracts-check.mjs",
     "e2e:smoke": "node tests/e2e/run-smoke.mjs",
-    "design:serve": "node design-system/serve.mjs"
+    "design:serve": "node design-system/serve.mjs",
+    "design:test": "node --test design-system/serve.test.mjs"
   },
   "devDependencies": {
     "@agentic-studio/database": "workspace:*",

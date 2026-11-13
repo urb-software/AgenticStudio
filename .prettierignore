@@ -14,9 +14,14 @@ apps/api/openapi.json
 apps/web/src/platform/api/generated/
 
 # Design system export (Claude Design): keep files byte-identical to the export so re-exports diff cleanly.
-# Hand-written tooling in it stays formatted.
-design-system/**
+# The hand-written files in it stay formatted. A `!` rule cannot re-include a file whose parent
+# directory is ignored, so ignore directory contents (`dir/*`), never the directory itself.
+design-system/*
 !design-system/serve.mjs
+!design-system/serve.test.mjs
+!design-system/HOW-TO-RUN.md
+design-system/prototype/*
+!design-system/prototype/
 !design-system/prototype/support.js
 
 # Owned copy of design-system/code/globals.css: kept byte-identical to the export so a re-export
