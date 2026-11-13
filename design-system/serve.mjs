@@ -155,7 +155,13 @@ async function main() {
   console.log('Ctrl+C to stop.');
 }
 
-const runAsCli =
-  process.argv[1] !== undefined &&
-  pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url;
-if (runAsCli) await main();
+/** True when this file is the process entry point (`node design-system/serve.mjs`), not an import. */
+function isEntryPoint() {
+  try {
+    return pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url;
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) await main();
