@@ -114,8 +114,10 @@ function eventViolations(baseDir: string, files: SourceFile[]): Violation[] {
 /**
  * A published event leaves its publisher only under its own name and only through the
  * publisher's `contracts/index.ts`: no renaming re-export (`export { XV1 as Y }`), no alias
- * declaration (`type Y = XV1`, `const Y = XV1Schema`), and no re-export (named or `export *`)
- * by any other file, e.g. another module's `contracts/index.ts` or a consumer.
+ * declaration (`type Y = XV1`, `type Y = ns.XV1`, `const Y = XV1Schema`,
+ * `interface Y extends XV1 {}`), no `export default XV1Schema`, and no re-export (named,
+ * `export *`, `export * as ns` or `import * as ns` + `export { ns }`) by any other file, e.g.
+ * another module's `contracts/index.ts` or a consumer.
  */
 function eventExposureViolations(
   baseDir: string,
@@ -134,6 +136,36 @@ function eventExposureViolations(
     return event ? publishers.get(event) : undefined;
   };
   const publishingModules = new Set([...publishers.values()].flatMap((modules) => [...modules]));
+  /**
+   * Whether exposing the whole module at `specifier` (`export *`, `export * as ns`, or
+   * `import * as ns` + `export { ns }`) re-exports events: from another publishing module's
+   * contracts, or, under a namespace name, from an event file even in the publisher's index.
+   */
+  const republishesModule = (specifier: string | undefined, namespaced: boolean): boolean => {
+    const target = specifier ? resolveRelative(baseDir, path, specifier) : undefined;
+    const targetModule = target ? MODULE_CONTRACTS.exec(target)?.[1] : undefined;
+    const renames = namespaced && EVENTS_DIR.test(target ?? '');
+    return (
+      targetModule !== undefined &&
+      publishingModules.has(targetModule) &&
+      (targetModule !== ownIndexOf || renames)
+    );
+  };
+  /** The published name `X` behind `X`, an imported `X as Y`, or `ns.X` with `ns` a namespace import. */
+  const referenced = (node: ts.Node): string | undefined => {
+    if (ts.isIdentifier(node)) return original(node.text);
+    const [left, right] = ts.isQualifiedName(node)
+      ? [node.left, node.right]
+      : ts.isPropertyAccessExpression(node)
+        ? [node.expression, node.name]
+        : [undefined, undefined];
+    if (!left || !right || !ts.isIdentifier(left)) return undefined;
+    return imports.get(left.text)?.imported === '*' ? right.text : undefined;
+  };
+  const isPublished = (node: ts.Node | undefined): boolean => {
+    const name = node ? referenced(node) : undefined;
+    return name !== undefined && publisherOf(name) !== undefined;
+  };
 
   for (const statement of source.statements) {
     if (ts.isExportDeclaration(statement)) {
@@ -143,22 +175,18 @@ function eventExposureViolations(
           : undefined;
       const clause = statement.exportClause;
       if (!clause || ts.isNamespaceExport(clause)) {
-        // `export * [as ns] from` another module's contracts, or from an event file anywhere
-        // but the publisher's own index, re-exports events without naming them.
-        const target = specifier ? resolveRelative(baseDir, path, specifier) : undefined;
-        const targetModule = target ? MODULE_CONTRACTS.exec(target)?.[1] : undefined;
-        const renames = clause !== undefined && EVENTS_DIR.test(target ?? '');
-        if (
-          targetModule &&
-          publishingModules.has(targetModule) &&
-          (targetModule !== ownIndexOf || renames)
-        ) {
+        if (republishesModule(specifier, clause !== undefined)) {
           fail(clause ? clause.name.text : '*');
         }
         continue;
       }
       for (const element of clause.elements) {
         const exported = (element.propertyName ?? element.name).text;
+        const binding = specifier ? undefined : imports.get(exported);
+        if (binding?.imported === '*') {
+          if (republishesModule(binding.specifier, true)) fail(element.name.text);
+          continue;
+        }
         const name = specifier ? exported : original(exported);
         const modules = publisherOf(name);
         if (!modules) continue;
@@ -166,22 +194,18 @@ function eventExposureViolations(
           fail(element.name.text);
         }
       }
-    } else if (
-      ts.isTypeAliasDeclaration(statement) &&
-      ts.isTypeReferenceNode(statement.type) &&
-      ts.isIdentifier(statement.type.typeName) &&
-      publisherOf(original(statement.type.typeName.text))
-    ) {
-      fail(statement.name.text);
+    } else if (ts.isExportAssignment(statement)) {
+      if (isPublished(statement.expression)) fail('default');
+    } else if (ts.isTypeAliasDeclaration(statement)) {
+      if (ts.isTypeReferenceNode(statement.type) && isPublished(statement.type.typeName)) {
+        fail(statement.name.text);
+      }
+    } else if (ts.isInterfaceDeclaration(statement)) {
+      const target = aliasTarget(source, statement.name.text);
+      if (target && publisherOf(original(target))) fail(statement.name.text);
     } else if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
-        const initializer = declaration.initializer;
-        if (
-          initializer &&
-          ts.isIdentifier(initializer) &&
-          ts.isIdentifier(declaration.name) &&
-          publisherOf(original(initializer.text))
-        ) {
+        if (ts.isIdentifier(declaration.name) && isPublished(declaration.initializer)) {
           fail(declaration.name.text);
         }
       }
