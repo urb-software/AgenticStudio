@@ -9,6 +9,8 @@ import {
   ConnectRepositoryHandler,
   type ConnectRepositorySettings,
 } from './features/connect-repository/handler.js';
+import { FetchRepositoryEndpoint } from './features/fetch-repository/endpoint.js';
+import { FetchRepositoryHandler } from './features/fetch-repository/handler.js';
 import { CreateProjectEndpoint } from './features/create-project/endpoint.js';
 import { CreateProjectHandler } from './features/create-project/handler.js';
 import { GetProjectEndpoint } from './features/get-project/endpoint.js';
@@ -58,6 +60,7 @@ export class ProjectsModule {
         GetProjectEndpoint,
         GetRepositoryEndpoint,
         ConnectRepositoryEndpoint,
+        FetchRepositoryEndpoint,
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
@@ -81,6 +84,7 @@ export class ProjectsModule {
         GetProjectHandler,
         GetRepositoryHandler,
         ConnectRepositoryHandler,
+        FetchRepositoryHandler,
       ],
     };
   }

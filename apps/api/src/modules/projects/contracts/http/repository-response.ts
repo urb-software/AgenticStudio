@@ -11,11 +11,13 @@ import { z } from 'zod';
 /**
  * Later stories add states; clients must treat a value they do not know as "unavailable".
  */
-export const repositoryStateSchema = z.enum(['connecting', 'ready', 'failed']).meta({
+export const repositoryStateSchema = z.enum(['connecting', 'ready', 'fetching', 'failed']).meta({
   id: 'RepositoryState',
   description:
-    'connecting: the first Clone is being made; ready: the Clone exists; failed: the last ' +
-    'attempt failed. Later stories add values; treat an unknown value as unavailable.',
+    'connecting: the first Clone is being made; ready: the Clone is up to date as of ' +
+    'lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last ' +
+    'operation failed (hasClone tells whether a usable Clone remains). Later stories add ' +
+    'values; treat an unknown value as unavailable.',
 });
 
 export const repositoryFailureCodeSchema = z
@@ -54,9 +56,15 @@ export const repositoryResponseSchema = z
     state: repositoryStateSchema,
     url: z.string(),
     integrationBranch: z.string(),
-    /** Commit id of the Integration branch in the Clone; present when `ready`. */
+    /**
+     * Whether Studio holds a usable Clone: true when `ready` or `fetching`, and when `failed`
+     * after a fetch that kept the Clone; false while `connecting` and after a failed connect
+     * or a fetch that had to remove the Clone (`size_limit`), which only Retry repairs.
+     */
+    hasClone: z.boolean(),
+    /** Commit id of the Integration branch in the Clone; present exactly when `hasClone`. */
     headSha: z.string().optional(),
-    /** When the Clone was last brought up to date; present when `ready`. */
+    /** When the Clone was last brought up to date; present exactly when `hasClone`. */
     lastFetchedAt: z.iso.datetime().optional(),
     /** Present exactly when `failed`. */
     failure: repositoryFailureSchema.optional(),
@@ -73,6 +81,7 @@ export interface RepositoryView {
   state: RepositoryResponse['state'];
   url: string;
   integrationBranch: string;
+  hasClone: boolean;
   headSha: string | null;
   lastFetchedAt: Date | null;
   failure: {
@@ -94,6 +103,7 @@ export function toRepositoryResponse(repository: RepositoryView): RepositoryResp
   const { failure } = repository;
   return {
     ...toRepositorySummary(repository),
+    hasClone: repository.hasClone,
     ...(repository.headSha === null ? {} : { headSha: repository.headSha }),
     ...(repository.lastFetchedAt === null
       ? {}

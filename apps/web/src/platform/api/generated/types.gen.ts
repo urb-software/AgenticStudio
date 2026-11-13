@@ -37,9 +37,9 @@ export type RepositorySummaryOutput = {
 };
 
 /**
- * connecting: the first Clone is being made; ready: the Clone exists; failed: the last attempt failed. Later stories add values; treat an unknown value as unavailable.
+ * connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains). Later stories add values; treat an unknown value as unavailable.
  */
-export type RepositoryStateOutput = 'connecting' | 'ready' | 'failed';
+export type RepositoryStateOutput = 'connecting' | 'ready' | 'fetching' | 'failed';
 
 export type ProjectDetailOutput = {
     id: string;
@@ -63,6 +63,7 @@ export type RepositoryOutput = {
     state: RepositoryStateOutput;
     url: string;
     integrationBranch: string;
+    hasClone: boolean;
     headSha?: string;
     lastFetchedAt?: string;
     failure?: RepositoryFailureOutput;
@@ -319,3 +320,43 @@ export type ConnectRepositoryResponses = {
 };
 
 export type ConnectRepositoryResponse = ConnectRepositoryResponses[keyof ConnectRepositoryResponses];
+
+export type FetchRepositoryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/repository/fetch';
+};
+
+export type FetchRepositoryErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)
+     */
+    404: ProblemDetails;
+    /**
+     * A connect or fetch is still running (urn:agentic-studio:problem:repository-busy), or there is no usable Clone to fetch into; use Retry (urn:agentic-studio:problem:no-usable-clone)
+     */
+    409: ProblemDetails;
+    /**
+     * The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)
+     */
+    501: ProblemDetails;
+    /**
+     * The job queue is unavailable; the repository keeps its previous state (generic problem)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type FetchRepositoryError = FetchRepositoryErrors[keyof FetchRepositoryErrors];
+
+export type FetchRepositoryResponses = {
+    202: RepositoryOutput;
+};
+
+export type FetchRepositoryResponse = FetchRepositoryResponses[keyof FetchRepositoryResponses];

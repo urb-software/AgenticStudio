@@ -50,7 +50,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
           : json(404, problem(404, 'No repository'));
       case 'connect': {
         const { url, integrationBranch } = body as { url: string; integrationBranch: string };
-        state.repository = { state: 'connecting', url, integrationBranch };
+        state.repository = { state: 'connecting', url, integrationBranch, hasClone: false };
         return json(201, state.repository);
       }
     }

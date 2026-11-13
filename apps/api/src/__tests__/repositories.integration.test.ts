@@ -266,6 +266,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         state: 'failed',
         url: 'https://github.com/acme/crashed.git',
         integrationBranch: 'dev',
+        hasClone: false,
         failure: { code: 'unknown', detail: 'Interrupted' },
       });
       expect((await getProject(id)).body.repository).toEqual({
@@ -329,12 +330,14 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         state: 'connecting',
         url: fixture.url,
         integrationBranch: 'dev',
+        hasClone: false,
       });
       const ready = await settled(id);
       expect(ready).toEqual({
         state: 'ready',
         url: fixture.url,
         integrationBranch: 'dev',
+        hasClone: true,
         headSha: fixture.commits.dev,
         lastFetchedAt: expect.stringMatching(ISO_8601),
       });
@@ -436,6 +439,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         state: 'failed',
         url: fixture.url,
         integrationBranch: 'release',
+        hasClone: false,
         failure: {
           code: 'branch_not_found',
           detail: expect.any(String),
@@ -449,6 +453,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         state: 'connecting',
         url: fixture.url,
         integrationBranch: 'main',
+        hasClone: false,
       });
       expect(await settled(id)).toMatchObject({ state: 'ready', headSha: fixture.commits.main });
     });

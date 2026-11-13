@@ -87,3 +87,27 @@ export class RemoteAlreadyConnectedError extends Error {
     this.name = 'RemoteAlreadyConnectedError';
   }
 }
+
+/** The project has no Repository. */
+export class NoRepositoryError extends Error {
+  constructor() {
+    super('The project has no repository.');
+    this.name = 'NoRepositoryError';
+  }
+}
+
+/** A connect or fetch of the Repository is still running (`connecting` or `fetching`). */
+export class RepositoryBusyError extends Error {
+  constructor() {
+    super('A connect or fetch of the repository is still running.');
+    this.name = 'RepositoryBusyError';
+  }
+}
+
+/** The Repository has no usable Clone to fetch into; a Retry (connect) makes a new one. */
+export class NoUsableCloneError extends Error {
+  constructor() {
+    super('The repository has no usable clone.');
+    this.name = 'NoUsableCloneError';
+  }
+}

@@ -405,6 +405,88 @@
           "projects"
         ]
       }
+    },
+    "/api/projects/{id}/repository/fetch": {
+      "post": {
+        "description": "Brings the Clone up to date with the remote in the background: answers at once with the repository in `fetching` (poll `GET /api/projects/{id}/repository`). Allowed when the repository is `ready`, or `failed` with a usable Clone (`hasClone`).",
+        "operationId": "fetchRepository",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A connect or fetch is still running (urn:agentic-studio:problem:repository-busy), or there is no usable Clone to fetch into; use Retry (urn:agentic-studio:problem:no-usable-clone)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The job queue is unavailable; the repository keeps its previous state (generic problem)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      }
     }
   },
   "info": {
@@ -533,9 +615,10 @@
         "enum": [
           "connecting",
           "ready",
+          "fetching",
           "failed"
         ],
-        "description": "connecting: the first Clone is being made; ready: the Clone exists; failed: the last attempt failed. Later stories add values; treat an unknown value as unavailable."
+        "description": "connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains). Later stories add values; treat an unknown value as unavailable."
       },
       "ProjectDetail_Output": {
         "type": "object",
@@ -617,6 +700,9 @@
           "integrationBranch": {
             "type": "string"
           },
+          "hasClone": {
+            "type": "boolean"
+          },
           "headSha": {
             "type": "string"
           },
@@ -632,7 +718,8 @@
         "required": [
           "state",
           "url",
-          "integrationBranch"
+          "integrationBranch",
+          "hasClone"
         ],
         "additionalProperties": false
       },

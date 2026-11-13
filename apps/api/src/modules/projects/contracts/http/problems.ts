@@ -16,6 +16,10 @@ export const PROJECTS_PROBLEM_TYPES = {
   remoteAlreadyConnected: 'urn:agentic-studio:problem:remote-already-connected',
   /** 409: an earlier clone of the project is still waiting or running. */
   cloneAlreadyRunning: 'urn:agentic-studio:problem:clone-already-running',
+  /** 409: a connect or fetch of the Repository is still running. */
+  repositoryBusy: 'urn:agentic-studio:problem:repository-busy',
+  /** 409: the Repository has no usable Clone to fetch into; Retry (connect) makes one. */
+  noUsableClone: 'urn:agentic-studio:problem:no-usable-clone',
   /** 501: repository features need a Linux API host. */
   unsupportedPlatform: 'urn:agentic-studio:problem:unsupported-platform',
 } as const;

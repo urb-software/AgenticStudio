@@ -60,6 +60,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
       identity: record.identity,
       integrationBranch: record.integrationBranch,
       state: 'connecting',
+      hasClone: false,
       headSha: null,
       lastFetchedAt: null,
       failure: null,
@@ -70,6 +71,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
   markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
     return this.transition(projectId, (repository) => {
       repository.state = 'ready';
+      repository.hasClone = true;
       repository.headSha = clone.headSha;
       repository.lastFetchedAt = clone.fetchedAt;
     });

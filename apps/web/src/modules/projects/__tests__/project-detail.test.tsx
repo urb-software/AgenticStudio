@@ -18,11 +18,17 @@ const PROJECT: ProjectOutput = {
 const URL = 'https://github.com/acme/shop.git';
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 
-const CONNECTING: RepositoryOutput = { state: 'connecting', url: URL, integrationBranch: 'dev' };
+const CONNECTING: RepositoryOutput = {
+  state: 'connecting',
+  url: URL,
+  integrationBranch: 'dev',
+  hasClone: false,
+};
 const READY: RepositoryOutput = {
   state: 'ready',
   url: URL,
   integrationBranch: 'dev',
+  hasClone: true,
   headSha: SHA,
   lastFetchedAt: '2026-11-13T10:00:00.000Z',
 };
@@ -33,6 +39,7 @@ const failed = (
   state: 'failed',
   url: URL,
   integrationBranch,
+  hasClone: false,
   failure,
 });
 

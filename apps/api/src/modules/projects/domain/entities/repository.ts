@@ -1,8 +1,10 @@
 /**
- * The states of a Repository. `connecting`: the first Clone is being made; `ready`: the
- * Clone exists; `failed`: the last attempt failed (no usable Clone). Later stories add states.
+ * The states of a Repository: the last operation, not whether a Clone exists (see
+ * `RepositoryConnection.hasClone`). `connecting`: the first Clone is being made; `ready`: the
+ * Clone is up to date as of the last fetch; `fetching`: the Clone is being brought up to date;
+ * `failed`: the last connect or fetch failed. Later stories add states.
  */
-export const REPOSITORY_STATES = ['connecting', 'ready', 'failed'] as const;
+export const REPOSITORY_STATES = ['connecting', 'ready', 'fetching', 'failed'] as const;
 export type RepositoryState = (typeof REPOSITORY_STATES)[number];
 
 /** Why a Repository is `failed`: the fixed reason codes of Epic #55. */
@@ -39,9 +41,14 @@ export interface RepositoryConnection {
   url: string;
   integrationBranch: string;
   state: RepositoryState;
-  /** Commit id of the Integration branch in the Clone; set when `ready`. */
+  /**
+   * Whether a usable Clone exists: always when `ready` or `fetching`; when `failed`, only if
+   * the failure was a fetch that kept the Clone. Never while `connecting`.
+   */
+  hasClone: boolean;
+  /** Commit id of the Integration branch in the Clone; set exactly when `hasClone`. */
   headSha: string | null;
-  /** When the Clone was last brought up to date; set when `ready`. */
+  /** When the Clone was last brought up to date; set exactly when `hasClone`. */
   lastFetchedAt: Date | null;
   /** Set exactly when `failed`. */
   failure: RepositoryFailure | null;

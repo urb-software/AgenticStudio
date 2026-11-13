@@ -68,6 +68,8 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
     url: row.url,
     integrationBranch: row.integrationBranch,
     state: row.state,
+    // The Clone's commit is kept exactly while a usable Clone exists.
+    hasClone: row.headSha !== null,
     headSha: row.headSha,
     lastFetchedAt: row.lastFetchedAt,
     failure:
