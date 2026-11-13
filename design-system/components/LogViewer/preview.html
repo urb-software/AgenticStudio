@@ -1,0 +1,12 @@
+<!-- @dsCard group="Runs" height=360 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>LogViewer — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{style:{padding:16}},h(A.LogViewer,{streaming:true,height:260,onJumpToLatest:function(){},lines:[{section:'Prepare worktree',tone:'command',text:'$ git worktree add .worktrees/claude-add-pagination-1043 -b agent/claude-add-pagination-1043 origin/dev'},{section:'Prepare worktree',tone:'ok',text:'Done in 4.1s'},{section:'Agent · Claude Code',tone:'command',text:'$ claude -p --output-format stream-json "Add pagination to products API"'},{section:'Agent · Claude Code',tone:'warn',text:'ANTHROPIC_API_KEY=••••••[redacted]'},{section:'Agent · Claude Code',tone:'tool',text:'● Read src/routes/products.ts'},{section:'Agent · Claude Code',tone:'edit',text:'✎ Edit src/routes/products.ts  (+28 −6)'},{section:'Tests',tone:'ok',text:'✓ returns the first page with default size 20'},{section:'Tests',tone:'error',text:'✗ rejects pageSize=0 with 400'}]})));
+</script>
+</body>
+</html>

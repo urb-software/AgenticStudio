@@ -1,0 +1,108 @@
+<!-- @dsCard height=320 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Studio</title>
+<style>
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font-sans); overflow:hidden; }
+  .cover { position:relative; height:320px; width:960px; overflow:hidden; }
+  .art { position:absolute; top:0; left:480px; width:480px; height:320px; overflow:hidden; }
+  .art svg { display:block; width:480px; height:320px; }
+  .brand { fill:var(--accent-solid); }
+  .tint { fill:var(--accent-tint); }
+  .ink { fill:var(--text); }
+  .run { fill:var(--run-running); }
+  .gate { fill:var(--run-awaiting); }
+  .dot { fill:var(--accent); }
+  .blk { rx:var(--radius-lg); }
+  .words { position:absolute; left:var(--space-6); bottom:var(--space-6); max-width:440px; }
+  .name { margin:0; font-size:112px; line-height:.92; font-weight:600; letter-spacing:-.035em; color:var(--text); }
+  .tag { margin:var(--space-2) 0 0 4px; font-size:14px; line-height:20px; color:var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 320" width="480" height="320">
+<!--
+  blocks      accent-solid 176×312 slab bled off the top (the one brand colour, largest) · accent-tint 128×168 · text (ink) 144×168 bleeding off the right · run-running 96×64 · run-awaiting 48×16 pill, small because amber only ever means "waiting on you"
+  arrangement one tall violet slab with satellites, bottoms on one line space-6 above the edge, space-4 gutters, read left to right like the run timeline
+  pattern     dot grid, from "precise, technical, mono, a 4px grid" and the dotted workflow canvas: 10×6 accent dots at a space-3 pitch on the ground above the tint
+  scales      sides in space-2 multiples; gutters space-4; pitch space-3; corners radius-lg; pill rx half its height (radius-full)
+-->
+<rect class="brand blk" x="16" y="-16" width="176" height="312" rx="10"/>
+<rect class="gate" x="208" y="104" width="48" height="16" rx="8"/>
+<rect class="tint blk" x="208" y="128" width="128" height="168" rx="10"/>
+<rect class="ink blk" x="352" y="48" width="144" height="168" rx="10"/>
+<rect class="run blk" x="352" y="232" width="96" height="64" rx="10"/>
+<circle class="dot" cx="216" cy="24" r="1.5"/>
+<circle class="dot" cx="228" cy="24" r="1.5"/>
+<circle class="dot" cx="240" cy="24" r="1.5"/>
+<circle class="dot" cx="252" cy="24" r="1.5"/>
+<circle class="dot" cx="264" cy="24" r="1.5"/>
+<circle class="dot" cx="276" cy="24" r="1.5"/>
+<circle class="dot" cx="288" cy="24" r="1.5"/>
+<circle class="dot" cx="300" cy="24" r="1.5"/>
+<circle class="dot" cx="312" cy="24" r="1.5"/>
+<circle class="dot" cx="324" cy="24" r="1.5"/>
+<circle class="dot" cx="216" cy="36" r="1.5"/>
+<circle class="dot" cx="228" cy="36" r="1.5"/>
+<circle class="dot" cx="240" cy="36" r="1.5"/>
+<circle class="dot" cx="252" cy="36" r="1.5"/>
+<circle class="dot" cx="264" cy="36" r="1.5"/>
+<circle class="dot" cx="276" cy="36" r="1.5"/>
+<circle class="dot" cx="288" cy="36" r="1.5"/>
+<circle class="dot" cx="300" cy="36" r="1.5"/>
+<circle class="dot" cx="312" cy="36" r="1.5"/>
+<circle class="dot" cx="324" cy="36" r="1.5"/>
+<circle class="dot" cx="216" cy="48" r="1.5"/>
+<circle class="dot" cx="228" cy="48" r="1.5"/>
+<circle class="dot" cx="240" cy="48" r="1.5"/>
+<circle class="dot" cx="252" cy="48" r="1.5"/>
+<circle class="dot" cx="264" cy="48" r="1.5"/>
+<circle class="dot" cx="276" cy="48" r="1.5"/>
+<circle class="dot" cx="288" cy="48" r="1.5"/>
+<circle class="dot" cx="300" cy="48" r="1.5"/>
+<circle class="dot" cx="312" cy="48" r="1.5"/>
+<circle class="dot" cx="324" cy="48" r="1.5"/>
+<circle class="dot" cx="216" cy="60" r="1.5"/>
+<circle class="dot" cx="228" cy="60" r="1.5"/>
+<circle class="dot" cx="240" cy="60" r="1.5"/>
+<circle class="dot" cx="252" cy="60" r="1.5"/>
+<circle class="dot" cx="264" cy="60" r="1.5"/>
+<circle class="dot" cx="276" cy="60" r="1.5"/>
+<circle class="dot" cx="288" cy="60" r="1.5"/>
+<circle class="dot" cx="300" cy="60" r="1.5"/>
+<circle class="dot" cx="312" cy="60" r="1.5"/>
+<circle class="dot" cx="324" cy="60" r="1.5"/>
+<circle class="dot" cx="216" cy="72" r="1.5"/>
+<circle class="dot" cx="228" cy="72" r="1.5"/>
+<circle class="dot" cx="240" cy="72" r="1.5"/>
+<circle class="dot" cx="252" cy="72" r="1.5"/>
+<circle class="dot" cx="264" cy="72" r="1.5"/>
+<circle class="dot" cx="276" cy="72" r="1.5"/>
+<circle class="dot" cx="288" cy="72" r="1.5"/>
+<circle class="dot" cx="300" cy="72" r="1.5"/>
+<circle class="dot" cx="312" cy="72" r="1.5"/>
+<circle class="dot" cx="324" cy="72" r="1.5"/>
+<circle class="dot" cx="216" cy="84" r="1.5"/>
+<circle class="dot" cx="228" cy="84" r="1.5"/>
+<circle class="dot" cx="240" cy="84" r="1.5"/>
+<circle class="dot" cx="252" cy="84" r="1.5"/>
+<circle class="dot" cx="264" cy="84" r="1.5"/>
+<circle class="dot" cx="276" cy="84" r="1.5"/>
+<circle class="dot" cx="288" cy="84" r="1.5"/>
+<circle class="dot" cx="300" cy="84" r="1.5"/>
+<circle class="dot" cx="312" cy="84" r="1.5"/>
+<circle class="dot" cx="324" cy="84" r="1.5"/>
+</svg>
+</div>
+<div class="words">
+<h1 class="name">Agent<br>Studio</h1>
+<p class="tag">Calm, keyboard-first tooling for supervising coding agents.</p>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- @dsCard group="Actions" height=72 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>IconButton — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-row'},h(A.IconButton,{icon:'bell',label:'Notifications',dot:true}),h(A.IconButton,{icon:'sun',label:'Switch to light theme'}),h(A.IconButton,{icon:'x',label:'Close',size:'sm'}),h(A.IconButton,{icon:'refresh',label:'Restart',size:'sm'})));
+</script>
+</body>
+</html>

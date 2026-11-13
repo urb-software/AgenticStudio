@@ -1,0 +1,12 @@
+<!-- @dsCard group="Navigation" height=210 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>NavItem — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('nav',{className:'as-sidebar','aria-label':'Sections'},h(A.NavItem,{icon:'folder',label:'Projects',active:true}),h(A.NavItem,{icon:'bot',label:'Agents'}),h(A.NavItem,{icon:'sparkles',label:'Skills'}),h(A.NavItem,{icon:'activity',label:'Executions',badge:2}),h(A.NavItem,{icon:'server',label:'MCP Servers'})));
+</script>
+</body>
+</html>

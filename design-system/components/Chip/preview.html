@@ -1,0 +1,12 @@
+<!-- @dsCard group="Status" height=72 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Chip — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-row'},h(A.Chip,{mono:true,icon:'branch'},'dev · +2 merged'),h(A.Chip,{mono:true},'claude-opus-5-5'),h(A.Chip,null,'Used by 2 agents'),h(A.Chip,null,'attempt 2')));
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- @dsCard group="Runs" height=96 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>RunTimeline — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-col'},h(A.RunTimeline,{current:2,state:'running'}),h(A.RunTimeline,{current:4,state:'awaiting'}),h(A.RunTimeline,{current:3,state:'failed'})));
+</script>
+</body>
+</html>

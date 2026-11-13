@@ -1,0 +1,12 @@
+<!-- @dsCard group="Actions" height=80 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Button — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-row'},h(A.Button,{variant:'primary',icon:'plus'},'New project'),h(A.Button,{icon:'refresh'},'Retry'),h(A.Button,{variant:'ghost'},'Cancel'),h(A.Button,{variant:'danger',icon:'stop'},'Cancel run'),h(A.Button,{variant:'destructive'},'Archive project'),h(A.Button,{variant:'primary',loading:true},'Merging…'),h(A.Button,{size:'sm'},'Open Preview tab')));
+</script>
+</body>
+</html>

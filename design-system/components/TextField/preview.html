@@ -1,0 +1,12 @@
+<!-- @dsCard group="Forms" height=260 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>TextField — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-col',style:{maxWidth:420}},h(A.TextField,{label:'Name',placeholder:'acme-shop',defaultValue:'acme-shop'}),h(A.TextField,{label:'Repository URL',mono:true,defaultValue:'github.com/acme',error:'Use an SSH (git@…) or HTTPS URL'}),h(A.TextField,{label:'Default branch',mono:true,defaultValue:'dev',help:'Approved runs merge here and the Preview builds from it.'})));
+</script>
+</body>
+</html>

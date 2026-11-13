@@ -1,0 +1,12 @@
+<!-- @dsCard group="Foundations" height=72 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Icon — preview</title></head>
+<body>
+<div id="root" class="as-root"></div>
+<script>
+  var A = window.AgentStudio, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'as-row',style:{gap:16,color:'var(--text-muted)'}},['folder','bot','sparkles','workflow','activity','server','sliders','branch','merge','shield','flask','terminal','diff','globe','lock','alert'].map(function(n){return h(A.Icon,{key:n,name:n})})));
+</script>
+</body>
+</html>
