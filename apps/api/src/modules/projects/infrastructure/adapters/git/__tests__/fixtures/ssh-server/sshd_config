@@ -1,0 +1,13 @@
+# Test-only sshd: public-key login for the `git` user, keys supplied by the test.
+Port 22
+HostKey /etc/ssh/test_host_ed25519_key
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AllowUsers git
+AllowAgentForwarding no
+AllowTcpForwarding no
+X11Forwarding no
+LogLevel VERBOSE
