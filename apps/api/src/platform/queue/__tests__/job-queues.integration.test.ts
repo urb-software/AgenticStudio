@@ -609,6 +609,8 @@ describe('job queues (Redis via Testcontainers)', () => {
 
     it('aborts the run as stalled, never re-runs it, and keeps the id busy until the processor settles', async () => {
       const owner = new RecordingOwner('repository-sync');
+      // A free second slot lets the worker pick the stalled job up again at once.
+      Object.assign(owner, { concurrency: 2 });
       const release = deferred();
       owner.behaviour = async (job) => {
         await release.promise; // a slow processor that only checks the signal at the end
@@ -625,7 +627,11 @@ describe('job queues (Redis via Testcontainers)', () => {
       await eventually(() =>
         expect(owner.processed[0]!.signal.reason).toMatchObject({ reason: 'stalled' }),
       );
-      // The job left Redis, but the processor still runs: no overlapping run with this id.
+      // BullMQ fails the stalled job and removes it from Redis (removeOnFail)...
+      await eventually(async () => {
+        expect(await redis.exists('studio:queue:repository-sync:sync-p1')).toBe(0);
+      });
+      // ...but the processor still runs: no overlapping run with this id.
       await expect(queue.enqueue('sync-p1', { projectId: 'p1' })).rejects.toThrow(
         JobAlreadyActiveError,
       );
