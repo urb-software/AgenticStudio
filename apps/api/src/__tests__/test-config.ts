@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import type { AppConfig } from '../platform/config/config.js';
 
 /**
@@ -21,6 +22,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     redisUrl: 'redis://127.0.0.1:1',
     studioOrigin: 'http://localhost:3000',
     operatorPasswordHash: PLACEHOLDER_PASSWORD_HASH,
+    // Nothing is written there unless a test clones; such tests pass their own directory.
+    dataDir: tmpdir(),
+    gitAllowFileRemotes: false,
     ...overrides,
   };
 }

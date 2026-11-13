@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { AppModule } from '../../app.module.js';
 import { buildApp } from '../../app.js';
@@ -23,6 +24,9 @@ const app = await buildApp(
     studioOrigin: 'http://localhost:3000',
     // Never verified against: the generator serves no requests.
     operatorPasswordHash: '$argon2id$v=19$m=19456,t=2,p=1$b2ZmbGluZQ$b2ZmbGluZQ',
+    // Nothing is cloned: the generator runs no Git operation.
+    dataDir: tmpdir(),
+    gitAllowFileRemotes: false,
   }),
   { logger: false },
 );

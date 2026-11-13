@@ -1,4 +1,6 @@
+import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 
 const DEFAULT_API_PORT = 3001;
@@ -74,6 +76,53 @@ const trustedProxiesSchema = z
     message: 'must be a comma-separated list of IP addresses or CIDR ranges',
   });
 
+/**
+ * The repository checkout the API runs from: the nearest ancestor of `start` holding
+ * `pnpm-workspace.yaml`, or `undefined` outside a checkout (e.g. a deployment bundle).
+ */
+export function findWorkspaceRoot(start: string): string | undefined {
+  for (let dir = start; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
+    if (dirname(dir) === dir) return undefined;
+  }
+}
+
+function isSameOrInside(parent: string, child: string): boolean {
+  const path = relative(parent, child);
+  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+}
+
+/**
+ * `STUDIO_DATA_DIR` (Clones and other repository data, Epic #55): an absolute, existing,
+ * writable directory outside the repository checkout. Messages never echo the path.
+ */
+function dataDirSchema(workspaceRoot: string | undefined) {
+  return z
+    .string({ error: 'is required: an absolute path outside the repository checkout' })
+    .refine((value) => isAbsolute(value), { message: 'must be an absolute path', abort: true })
+    .refine((value) => statSync(value, { throwIfNoEntry: false })?.isDirectory() === true, {
+      message: 'must be an existing directory',
+      abort: true,
+    })
+    .refine(
+      (value) => {
+        try {
+          accessSync(value, constants.W_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'must be writable', abort: true },
+    )
+    .refine(
+      (value) =>
+        workspaceRoot === undefined ||
+        !isSameOrInside(realpathSync(workspaceRoot), realpathSync(value)),
+      { message: 'must be outside the repository checkout' },
+    );
+}
+
 const environmentSchema = z.object({
   // API_PORT, not PORT: `next dev` also reads PORT, so a shell-wide PORT would put
   // both apps on the same port.
@@ -94,7 +143,19 @@ const environmentSchema = z.object({
   // The only origin accepted on mutations; https makes the session cookie Secure.
   STUDIO_ORIGIN: studioOriginSchema.default('http://localhost:3000'),
   STUDIO_OPERATOR_PASSWORD_HASH: passwordHashSchema,
+  // Test-only: adds `file` remotes to the Git adapter's transports (local fixture remotes).
+  STUDIO_GIT_ALLOW_FILE_REMOTES: z.enum(['true', 'false']).default('false'),
+  NODE_ENV: z.string().optional(),
 });
+
+function schemaFor(workspaceRoot: string | undefined) {
+  return environmentSchema
+    .extend({ STUDIO_DATA_DIR: dataDirSchema(workspaceRoot) })
+    .refine((env) => env.STUDIO_GIT_ALLOW_FILE_REMOTES !== 'true' || env.NODE_ENV === 'test', {
+      path: ['STUDIO_GIT_ALLOW_FILE_REMOTES'],
+      message: 'is a test-only setting; it is accepted only with NODE_ENV=test',
+    });
+}
 
 export interface AppConfig {
   apiPort: number;
@@ -105,6 +166,15 @@ export interface AppConfig {
   redisUrl: string;
   studioOrigin: string;
   operatorPasswordHash: string;
+  /** Absolute data directory for repository data (Clones). */
+  dataDir: string;
+  /** Test-only: whether the Git adapter also accepts `file` remotes. */
+  gitAllowFileRemotes: boolean;
+}
+
+export interface LoadConfigOptions {
+  /** The repository checkout the data directory must stay out of; found from this file by default. */
+  workspaceRoot?: string;
 }
 
 /** DI token for the validated {@link AppConfig}. */
@@ -119,8 +189,12 @@ export class ConfigValidationError extends Error {
 }
 
 /** Validates the environment once at start-up; throws instead of running half-configured. */
-export function loadConfig(env: Record<string, string | undefined>): AppConfig {
-  const result = environmentSchema.safeParse(env);
+export function loadConfig(
+  env: Record<string, string | undefined>,
+  options: LoadConfigOptions = {},
+): AppConfig {
+  const workspaceRoot = options.workspaceRoot ?? findWorkspaceRoot(import.meta.dirname);
+  const result = schemaFor(workspaceRoot).safeParse(env);
   if (!result.success) {
     throw new ConfigValidationError(
       result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
@@ -135,5 +209,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     redisUrl: result.data.REDIS_URL,
     studioOrigin: result.data.STUDIO_ORIGIN,
     operatorPasswordHash: result.data.STUDIO_OPERATOR_PASSWORD_HASH,
+    dataDir: result.data.STUDIO_DATA_DIR,
+    gitAllowFileRemotes: result.data.STUDIO_GIT_ALLOW_FILE_REMOTES === 'true',
   };
 }
