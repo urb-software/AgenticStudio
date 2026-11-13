@@ -157,4 +157,23 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'handler-imports-pattern-only-client',
     expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
   },
+  {
+    fixture: 'event-republished-by-other-module',
+    expected: ['api-event-publisher-owned'],
+    qualityRow: 'Integration event re-exported by another module or under another name',
+  },
+  { fixture: 'event-unversioned-export-alias', expected: ['api-event-publisher-owned'] },
+  { fixture: 'event-unversioned-type-alias', expected: ['api-event-publisher-owned'] },
+  { fixture: 'event-renamed-by-consumer', expected: ['api-event-publisher-owned'] },
+  {
+    fixture: 'consumer-deep-imports-event-file',
+    expected: ['api-events-imported-via-contracts-index'],
+  },
+  { fixture: 'http-dto-named-event', expected: [] },
+  { fixture: 'unresolved-generated-client-import', expected: ['api-local-imports-resolve'] },
+  {
+    fixture: 'database-package-unresolved-import',
+    expected: ['api-database-package-imports-resolve'],
+  },
+  { fixture: 'port-aliases-contract-outside-ports', expected: ['api-adapter-contract-placement'] },
 ]);

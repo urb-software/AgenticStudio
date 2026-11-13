@@ -13,6 +13,11 @@ export const QUALITY_TABLE = [
   { row: 'Module publishes an unversioned integration event', expected: 'FAIL', gate: 'api' },
   { row: 'Two modules define the same integration event', expected: 'FAIL', gate: 'api' },
   {
+    row: 'Integration event re-exported by another module or under another name',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
     row: 'Repository contract declared outside `domain/repositories/`',
     expected: 'FAIL',
     gate: 'api',

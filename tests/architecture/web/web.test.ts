@@ -36,4 +36,8 @@ describeGate('web', webGate, 'apps/web', [
     fixture: 'module-imports-generated-client',
     expected: ['web-generated-client-only-via-platform-api'],
   },
+  {
+    fixture: 'database-package-unresolved-import',
+    expected: ['web-no-server-code', 'web-database-package-imports-resolve'],
+  },
 ]);
