@@ -1,21 +1,6 @@
-import Link from 'next/link';
-import { SessionStatus } from '../platform/auth';
-import { ApiStatus } from './api-status';
+import { redirect } from 'next/navigation';
 
-export default function StudioPage() {
-  return (
-    <main>
-      <h1>AI Agent Studio</h1>
-      <nav aria-label="Studio">
-        <ul>
-          <li>
-            <Link href="/projects">Projects</Link>
-          </li>
-        </ul>
-      </nav>
-      <p>Placeholder Studio page. More features arrive in later slices.</p>
-      <SessionStatus />
-      <ApiStatus />
-    </main>
-  );
+/** The Studio has no home screen yet: `/` opens Projects (a server-side redirect). */
+export default function RootPage() {
+  redirect('/projects');
 }

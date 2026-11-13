@@ -1,18 +1,15 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import StudioPage from '../page';
+import { describe, expect, it, vi } from 'vitest';
 
-describe('StudioPage', () => {
-  it('shows the Studio heading and the placeholder notice', () => {
-    render(<StudioPage />);
+// The real redirect() throws Next.js's internal NEXT_REDIRECT error; the seam is the call.
+const redirect = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ redirect }));
 
-    expect(screen.getByRole('heading', { level: 1, name: 'AI Agent Studio' })).toBeTruthy();
-    expect(screen.getByText(/placeholder studio page/i)).toBeTruthy();
-  });
+const { default: RootPage } = await import('../page');
 
-  it('links to the Projects page', () => {
-    render(<StudioPage />);
+describe('/', () => {
+  it('redirects to the Projects page on the server', () => {
+    RootPage();
 
-    expect(screen.getByRole('link', { name: 'Projects' }).getAttribute('href')).toBe('/projects');
+    expect(redirect).toHaveBeenCalledWith('/projects');
   });
 });
