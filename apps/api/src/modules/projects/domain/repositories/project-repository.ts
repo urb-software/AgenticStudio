@@ -1,5 +1,5 @@
 import type { Project } from '../entities/project.js';
-import type { Repository, RepositoryFailure } from '../entities/repository.js';
+import type { RepositoryConnection, RepositoryFailure } from '../entities/repository.js';
 import type { ProjectName } from '../value-objects/project-name.js';
 
 /** DI token for the {@link ProjectRepository} adapter. */
@@ -35,7 +35,7 @@ export interface ProjectRepository {
   findById(id: string): Promise<Project | null>;
 
   /** The project's Repository, or `null` when none is connected. */
-  findRepository(projectId: string): Promise<Repository | null>;
+  findRepository(projectId: string): Promise<RepositoryConnection | null>;
 
   /**
    * Stores the Repository in state `connecting`: a new one, or a `failed` one replaced by
@@ -44,7 +44,7 @@ export interface ProjectRepository {
    * {@link RepositoryAlreadyConnectedError} (a Repository that is not `failed` exists) or
    * {@link RemoteAlreadyConnectedError} (another Project holds the same remote identity).
    */
-  beginConnect(record: ConnectRepositoryRecord): Promise<Repository>;
+  beginConnect(record: ConnectRepositoryRecord): Promise<RepositoryConnection>;
 
   /** `connecting` → `ready` with the Clone's commit; false if the state was not `connecting`. */
   markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean>;

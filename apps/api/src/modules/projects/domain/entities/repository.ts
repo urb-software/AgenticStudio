@@ -33,7 +33,7 @@ export interface RepositoryFailure {
 }
 
 /** The Repository connected to a Project (at most one per Project). */
-export interface Repository {
+export interface RepositoryConnection {
   projectId: string;
   /** The URL as the operator entered it (trimmed). */
   url: string;

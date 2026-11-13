@@ -8,7 +8,7 @@ import type { Project } from '../../domain/entities/project.js';
 import {
   REPOSITORY_FAILURE_CODES,
   REPOSITORY_STATES,
-  type Repository,
+  type RepositoryConnection,
   type RepositoryFailure,
   type RepositoryFailureCode,
   type RepositoryState,
@@ -58,7 +58,7 @@ function isFailureCode(value: string): value is RepositoryFailureCode {
 }
 
 /** Maps a row; the CHECK constraints guarantee the state and the failure fields agree. */
-function toRepository(row: RepositoryRow): Repository {
+function toRepository(row: RepositoryRow): RepositoryConnection {
   if (!isState(row.state)) {
     throw new Error(`Unexpected repository state in the database: ${row.state}`);
   }
@@ -127,7 +127,7 @@ export class PrismaProjectRepository implements ProjectRepository {
     return this.db.project.findUnique({ where: { id }, select: PROJECT_FIELDS });
   }
 
-  async findRepository(projectId: string): Promise<Repository | null> {
+  async findRepository(projectId: string): Promise<RepositoryConnection | null> {
     const row = await this.db.repository.findUnique({
       where: { projectId },
       select: REPOSITORY_FIELDS,
@@ -135,7 +135,7 @@ export class PrismaProjectRepository implements ProjectRepository {
     return row ? toRepository(row) : null;
   }
 
-  async beginConnect(record: ConnectRepositoryRecord): Promise<Repository> {
+  async beginConnect(record: ConnectRepositoryRecord): Promise<RepositoryConnection> {
     const project = await this.db.project.findUnique({
       where: { id: record.projectId },
       select: { id: true },

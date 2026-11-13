@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../domain/entities/project.js';
-import type { Repository } from '../../domain/entities/repository.js';
+import type { RepositoryConnection } from '../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
@@ -15,7 +15,7 @@ import {
 export class GetRepositoryHandler {
   constructor(@Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository) {}
 
-  async execute(projectId: string): Promise<Repository | null> {
+  async execute(projectId: string): Promise<RepositoryConnection | null> {
     if (!isProjectId(projectId)) throw new ProjectNotFoundError();
     const repository = await this.projects.findRepository(projectId);
     if (repository) return repository;

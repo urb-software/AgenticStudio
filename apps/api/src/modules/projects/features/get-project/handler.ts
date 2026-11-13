@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId, type Project } from '../../domain/entities/project.js';
-import type { Repository } from '../../domain/entities/repository.js';
+import type { RepositoryConnection } from '../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -8,7 +8,7 @@ import {
 
 export interface ProjectDetail {
   project: Project;
-  repository: Repository | null;
+  repository: RepositoryConnection | null;
 }
 
 /** Query: one project with its Repository, or `null` for an unknown id. */

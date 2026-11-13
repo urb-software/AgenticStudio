@@ -169,8 +169,13 @@ export class BullMqJobQueues
     return reply === 'PONG';
   }
 
-  /** Reconciles interrupted jobs, then starts the workers. */
+  /**
+   * Reconciles interrupted jobs, then starts the workers, once. Nest calls the hook once per
+   * provider that resolves to this instance (e.g. the health module's `QueueHealth` alias
+   * too); a second run would start a second worker that shutdown never closes.
+   */
   async onApplicationBootstrap(): Promise<void> {
+    if (this.bootstrapped) return;
     this.bootstrapped = true;
     if (this.tuning.startWorkers === false) return;
     for (const entry of this.entries.values()) {

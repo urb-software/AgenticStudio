@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../domain/entities/project.js';
-import { type Repository, repositoryFailure } from '../../domain/entities/repository.js';
+import { type RepositoryConnection, repositoryFailure } from '../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
@@ -48,7 +48,7 @@ export class ConnectRepositoryHandler {
     @Inject(CONNECT_REPOSITORY_SETTINGS) private readonly settings: ConnectRepositorySettings,
   ) {}
 
-  async execute(input: ConnectRepositoryInput): Promise<Repository> {
+  async execute(input: ConnectRepositoryInput): Promise<RepositoryConnection> {
     if (!isProjectId(input.projectId)) throw new ProjectNotFoundError();
     const url = RepositoryUrl.parse(input.url, {
       allowFileRemotes: this.settings.allowFileRemotes,
