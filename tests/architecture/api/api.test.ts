@@ -180,4 +180,13 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'event-namespace-alias', expected: ['api-event-publisher-owned'] },
   { fixture: 'event-namespace-reexport', expected: ['api-event-publisher-owned'] },
   { fixture: 'event-interface-alias', expected: ['api-event-publisher-owned'] },
+  // SecretStore boundary (ADR 0001, backend.md §2, Issue #57).
+  { fixture: 'secrets-used-through-entry-points', expected: [] },
+  { fixture: 'module-imports-secrets-internals', expected: ['api-secrets-via-entry-points'] },
+  {
+    fixture: 'secrets-module-imported-outside-module-file',
+    expected: ['api-secrets-module-in-module-files'],
+  },
+  { fixture: 'module-uses-secret-model', expected: ['api-secret-model-in-secrets-only'] },
+  { fixture: 'module-reads-secrets-key', expected: ['api-secrets-key-reads'] },
 ]);
