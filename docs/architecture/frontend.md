@@ -70,6 +70,7 @@ Feature-specific hooks, tests, UI elements and schema live near the feature. No 
 - Never import another module's private store, hook, data repository, or editor internals.
 - Frontend never imports server app implementation code, raw ORM entities, secret access, CLI controls or controller internals.
 - **Client tooling:** NestJS emits OpenAPI 3.1 (`nestjs-zod`/`@nestjs/swagger`); `@hey-api/openapi-ts` generates the typed Fetch client into `apps/web/src/platform/api/generated/`. No handwritten copies of API DTOs.
+- **Form hints:** forms validate with the generated Zod schemas as hints; the API stays authoritative. Zod counts string lengths in code points, like the API and PostgreSQL. A rule OpenAPI cannot express, such as the API's input normalization (project names: NFC, trim, whitespace collapse), may be mirrored in the feature as one small, commented function that only feeds the hint, and is never a second source of the rule.
 - One configure-once wrapper around the generated client handles the `/api` base URL, session credentials (`credentials: 'include'` when needed), typed errors and request tracing. Generation and drift checks are Technical Tasks that must exist before Story 1.
 - A Studio Shell may aggregate navigation, breadcrumbs, notifications and global run indicators without breaking module ownership.
 

@@ -54,6 +54,8 @@ modules/{module}/
 
 **No empty mandatory directories.** `handler.ts` is the default feature entry point; `endpoint.ts`, `schema.ts`, `input.ts`, consumers, ports and domain folders exist only when needed.
 
+**A schema shared by several features of one module** (e.g. the `Project` response used by `create-project` and `list-projects`) is part of the module's public HTTP contract: it lives in `contracts/http/` and is exported from `contracts/index.ts`. Features never import another feature's `schema.ts`. Like all of `contracts/`, it is self-contained: no import of the module's `domain/` (a response mapper takes a plain shape, not a domain type). A schema used by one feature stays in that feature's `schema.ts`.
+
 ## 3. Dependency rules
 
 - **Domain stays framework-independent.** `domain/` never imports NestJS, Prisma, database connections, Redis, BullMQ, Git CLI, Docker, or HTTP types.
@@ -127,6 +129,7 @@ executions/features/complete-execution/handler.ts
 
 - Unit: handler/domain behavior, error cases and transitions using controlled fakes.
 - Integration: repositories, API validation/auth, PostgreSQL transaction behavior, outbox/inbox, Redis/BullMQ where used (Testcontainers when appropriate).
+- HTTP integration tests that build the whole app (`AppModule`, real database client) live in `apps/api/src/__tests__/`, outside `src/modules/`: building the app reaches the database client, which `architecture:api` forbids for anything under a feature folder, tests included. Unit tests of a feature stay in its `__tests__/` with fakes of the ports.
 - Contract: REST DTO/schema compatibility and event versions.
 - Architecture: full dependency graph and structural rules in **`architecture:api`**.
 - Security/reliability: authorization failures, duplicate events, retry, cancellation, filesystem/worktree isolation, privileged-action rejection.
