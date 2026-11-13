@@ -25,7 +25,7 @@ export function seal(key: KeyObject, plaintext: string, aad: Buffer): SealedValu
  * (wrong key, wrong AAD, tampered bytes, or a nonce or tag of the wrong length). The caller
  * picks the error, so no crypto error text travels further.
  */
-export function open(key: KeyObject, sealed: SealedValue, aad: Buffer): string | undefined {
+export function unseal(key: KeyObject, sealed: SealedValue, aad: Buffer): string | undefined {
   if (sealed.nonce.length !== NONCE_BYTES || sealed.authTag.length !== AUTH_TAG_BYTES) {
     return undefined;
   }

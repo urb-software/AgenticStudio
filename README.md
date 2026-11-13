@@ -126,7 +126,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 Put the output in `.env` as `STUDIO_SECRETS_KEY=...`. The API refuses to start when the key is missing, is not standard base64 or does not decode to exactly 32 bytes; the message names the variable, never its value.
 
 - **Keep the key safe and separate from the database backups.** It never enters the database, Git or logs; never commit it or reuse a key from an example.
-- **Losing the key makes every stored secret unrecoverable.** There is no recovery path: the affected repositories must be disconnected and connected again, which generates new deploy keys to register on the Git host.
+- **Losing the key makes every stored secret unrecoverable.** There is no recovery path. Once repository connections exist (Epic #55), the affected repositories will have to be disconnected and connected again, with new deploy keys registered on the Git host.
 - **A database backup is useless for secrets without the key.** Restoring a backup restores the encrypted secrets only; back the key up separately, in a password manager or secret vault.
 - Key rotation is not supported yet: changing the key makes the existing secrets unreadable, just like losing it.
 

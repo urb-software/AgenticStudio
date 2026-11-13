@@ -191,6 +191,11 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
         otherKeyApp.get<SecretStore>(SECRET_STORE).get(reference),
       );
       expect(error).toBeInstanceOf(SecretDecryptionFailedError);
+      expect(error.cause).toBeUndefined();
+      for (const rendered of renderings(error)) {
+        expect(rendered).not.toContain('test-only-do-not-leak');
+        expect(rendered).not.toContain(config.secretsKey.export().toString('base64'));
+      }
     } finally {
       await otherKeyApp.close();
     }

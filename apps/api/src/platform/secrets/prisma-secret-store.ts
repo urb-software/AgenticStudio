@@ -2,7 +2,7 @@ import { type KeyObject, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { DATABASE_CLIENT, type DatabaseClient } from '../database/database.module.js';
-import { open, seal } from './aes-256-gcm.js';
+import { seal, unseal } from './aes-256-gcm.js';
 import {
   SecretDecryptionFailedError,
   SecretNotFoundError,
@@ -60,7 +60,7 @@ export class PrismaSecretStore implements SecretStore {
       nonce: Buffer.from(row.nonce),
       authTag: Buffer.from(row.authTag),
     };
-    const value = key ? open(key, sealed, aadOf(row.id)) : undefined;
+    const value = key ? unseal(key, sealed, aadOf(row.id)) : undefined;
     if (value === undefined) {
       throw new SecretDecryptionFailedError();
     }
