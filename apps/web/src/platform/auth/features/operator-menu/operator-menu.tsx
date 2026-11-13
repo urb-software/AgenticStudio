@@ -12,7 +12,7 @@ import {
 } from '@/shared/ui/dropdown-menu';
 import { api, ApiError, LOGIN_PATH } from '../../../api';
 
-export const SESSION_QUERY_KEY = ['auth', 'session'] as const;
+const SESSION_QUERY_KEY = ['auth', 'session'] as const;
 
 const LOGOUT_FAILED = 'Could not log out. Your session may still be active. Try again.';
 

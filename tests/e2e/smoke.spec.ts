@@ -110,3 +110,32 @@ test('operator logs in, uses the shell, creates a project, and logs out', async 
   await page.goto('/projects');
   await expect(page).toHaveURL(/\/login$/);
 });
+
+// The first paint, before any script runs: the server-rendered sidebar already has its final
+// width (240px column or 64px rail), so it does not flash (#43).
+test('the server-rendered sidebar has its final width before scripts run', async ({
+  browser,
+  baseURL,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'checks desktop and tablet widths');
+  const cases = [
+    { width: 1440, cookie: undefined, expected: 240 },
+    { width: 1024, cookie: undefined, expected: 64 },
+    { width: 1024, cookie: 'true', expected: 240 },
+    { width: 1440, cookie: 'false', expected: 64 },
+  ];
+  for (const { width, cookie, expected } of cases) {
+    const context = await browser.newContext({
+      javaScriptEnabled: false,
+      viewport: { width, height: 900 },
+    });
+    if (cookie !== undefined) {
+      await context.addCookies([{ name: 'sidebar_state', value: cookie, url: baseURL! }]);
+    }
+    const page = await context.newPage();
+    await page.goto('/projects');
+    const box = await page.locator('[data-slot="sidebar-container"]').boundingBox();
+    expect(box?.width, `width ${width}, sidebar_state=${cookie ?? '(none)'}`).toBe(expected);
+    await context.close();
+  }
+});

@@ -34,11 +34,13 @@ export function StudioSidebar() {
           className={cn(
             'flex-row items-center gap-2.5 px-3.5 pt-3.5 pb-2',
             collapsed && 'flex-col gap-2 px-2.5',
+            // Server render without a stored choice: the tablet rail in CSS (see SidebarProvider).
+            'group-data-[auto=true]:md:max-xl:flex-col group-data-[auto=true]:md:max-xl:gap-2 group-data-[auto=true]:md:max-xl:px-2.5',
           )}
         >
           <LogoMark />
           {collapsed ? null : (
-            <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-text">
+            <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-text group-data-[auto=true]:md:max-xl:hidden">
               Agent Studio
             </span>
           )}
@@ -47,7 +49,6 @@ export function StudioSidebar() {
               icon={PanelLeft}
               size="sm"
               label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              aria-expanded={!collapsed}
               onClick={toggleSidebar}
             />
           )}
@@ -62,6 +63,7 @@ export function StudioSidebar() {
                   label={route.label}
                   active={active?.href === route.href}
                   collapsed={collapsed}
+                  className="group-data-[auto=true]:md:max-xl:justify-center group-data-[auto=true]:md:max-xl:[&>span]:hidden"
                   onClick={() => setOpenMobile(false)}
                 />
               </SidebarMenuItem>

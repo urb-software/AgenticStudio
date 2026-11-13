@@ -88,6 +88,24 @@ describe('Sidebar', () => {
     expect(html).toMatch(/<div[^>]*data-state="collapsed"[^>]*data-slot="sidebar"/);
   });
 
+  it('server-renders the width-based default as CSS when no choice is stored, so tablets do not flash', () => {
+    // The server cannot know the width: the markup carries data-auto, and the CSS collapses the
+    // rail at tablet width (md:max-xl) until the client knows the width.
+    const unset = renderToString(<Shell />);
+    const stored = renderToString(<Shell defaultOpen />);
+
+    expect(unset).toMatch(/<div[^>]*data-auto="true"[^>]*data-slot="sidebar"/);
+    expect(unset).toContain('group-data-[auto=true]:md:max-xl:w-(--sidebar-width-icon)');
+    expect(stored).not.toContain('data-auto');
+  });
+
+  it('drops the CSS default once the client knows the width', () => {
+    setWidth(1024);
+    const { container } = render(<Shell />);
+
+    expect(sidebar(container)?.hasAttribute('data-auto')).toBe(false);
+  });
+
   it('starts collapsed at tablet width when no choice is stored', () => {
     setWidth(1024);
     const { container } = render(<Shell />);

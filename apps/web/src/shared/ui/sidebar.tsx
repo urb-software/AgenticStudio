@@ -16,6 +16,8 @@ import { SIDEBAR_COOKIE_MAX_AGE, SIDEBAR_COOKIE_NAME } from '@/shared/ui/sidebar
 
 type SidebarContextProps = {
   state: 'expanded' | 'collapsed';
+  /** No stored choice and the width not yet known (server render, hydration): CSS decides. */
+  auto: boolean;
   open: boolean;
   setOpen: (open: boolean) => void;
   openMobile: boolean;
@@ -23,6 +25,8 @@ type SidebarContextProps = {
   isMobile: boolean;
   toggleSidebar: () => void;
 };
+
+const noSubscription = () => () => {};
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
@@ -38,7 +42,9 @@ function useSidebar() {
 /**
  * `defaultOpen` is the operator's stored choice (the `sidebar_state` cookie, read on the
  * server so the first paint matches). Without one, the sidebar starts expanded on desktop and
- * collapsed to the icon rail on tablet (frontend.md §9); that default is never stored.
+ * collapsed to the icon rail on tablet (frontend.md §9); that default is never stored. The
+ * server cannot know the width, so until the client does, the markup carries `data-auto` and
+ * `group-data-[auto=true]:md:max-xl:` styles draw the tablet rail: no flash either way.
  */
 function SidebarProvider({
   defaultOpen,
@@ -50,7 +56,13 @@ function SidebarProvider({
   const isTablet = useIsTablet();
   const [openMobile, setOpenMobile] = React.useState(false);
   const [choice, setChoice] = React.useState<boolean | undefined>(defaultOpen);
+  const hydrated = React.useSyncExternalStore(
+    noSubscription,
+    () => true,
+    () => false,
+  );
   const open = choice ?? !isTablet;
+  const auto = choice === undefined && !hydrated;
 
   const setOpen = React.useCallback((value: boolean) => {
     setChoice(value);
@@ -69,8 +81,8 @@ function SidebarProvider({
   const state = open ? 'expanded' : 'collapsed';
 
   const contextValue = React.useMemo<SidebarContextProps>(
-    () => ({ state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar }),
-    [state, open, setOpen, isMobile, openMobile, toggleSidebar],
+    () => ({ state, auto, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar }),
+    [state, auto, open, setOpen, isMobile, openMobile, toggleSidebar],
   );
 
   return (
@@ -91,7 +103,7 @@ function SidebarProvider({
 
 /** The navigation column: an icon-collapsible column from 768px, a left sheet below. */
 function Sidebar({ className, children, ...props }: React.ComponentProps<'div'>) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, state, auto, openMobile, setOpenMobile } = useSidebar();
 
   if (isMobile) {
     return (
@@ -118,17 +130,18 @@ function Sidebar({ className, children, ...props }: React.ComponentProps<'div'>)
       className="group peer hidden text-sidebar-foreground md:block"
       data-state={state}
       data-collapsible={state === 'collapsed' ? 'icon' : ''}
+      data-auto={auto ? 'true' : undefined}
       data-slot="sidebar"
     >
       {/* Reserves the sidebar's width in the page flow; the container itself is fixed. */}
       <div
         data-slot="sidebar-gap"
-        className="relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear group-data-[collapsible=icon]:w-(--sidebar-width-icon) motion-reduce:transition-none"
+        className="relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear group-data-[collapsible=icon]:w-(--sidebar-width-icon) motion-reduce:transition-none group-data-[auto=true]:md:max-xl:w-(--sidebar-width-icon)"
       />
       <div
         data-slot="sidebar-container"
         className={cn(
-          'fixed inset-y-0 left-0 z-10 hidden h-svh w-(--sidebar-width) border-r border-sidebar-border transition-[width] duration-200 ease-linear group-data-[collapsible=icon]:w-(--sidebar-width-icon) motion-reduce:transition-none md:flex',
+          'fixed inset-y-0 left-0 z-10 hidden h-svh w-(--sidebar-width) border-r border-sidebar-border transition-[width] duration-200 ease-linear group-data-[collapsible=icon]:w-(--sidebar-width-icon) motion-reduce:transition-none md:flex group-data-[auto=true]:md:max-xl:w-(--sidebar-width-icon)',
           className,
         )}
         {...props}
