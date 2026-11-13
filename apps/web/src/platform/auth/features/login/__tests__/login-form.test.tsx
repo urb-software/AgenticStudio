@@ -175,10 +175,32 @@ describe('LoginForm', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Login failed. Try again.');
   });
 
-  it('shows the generic message when the request fails without a response', async () => {
-    // The generated client reports a failed fetch as a response-less error (status 0), so
-    // today's rules show the generic message, as before #44.
+  it('says the API is unreachable when the request fails without a response', async () => {
+    // A network error: `fetch` rejects and no HTTP response arrives (#52).
     fakeLogin(() => Promise.reject(new TypeError('Failed to fetch')));
+    const { container } = render(<LoginForm />);
+
+    await signIn();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.dataset.tone).toBe('danger');
+    expect(alert.textContent).toBe('The Studio API is unreachable.');
+    expect(passwordInput().getAttribute('aria-invalid')).not.toBe('true');
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says the API is unreachable when the request is aborted or times out', async () => {
+    fakeLogin(() => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')));
+    render(<LoginForm />);
+
+    await signIn();
+
+    expect((await screen.findByRole('alert')).textContent).toBe('The Studio API is unreachable.');
+  });
+
+  it('keeps the server-error message for a 5xx that has a response (e.g. from a proxy)', async () => {
+    // Any HTTP response, even an empty gateway error, means something answered (#52).
+    fakeLogin(() => new Response(null, { status: 504 }));
     render(<LoginForm />);
 
     await signIn();

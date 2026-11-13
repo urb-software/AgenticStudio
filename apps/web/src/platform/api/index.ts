@@ -38,6 +38,7 @@ export const LOGIN_PATH = '/login';
 /** A non-2xx API response, with its RFC 9457 problem details when the API sent them. */
 export class ApiError extends Error {
   constructor(
+    /** The HTTP status, or 0 when no response arrived (network error, abort, timeout). */
     readonly status: number,
     readonly problem: ProblemDetails | undefined,
     /** Seconds from a `Retry-After` header (429), if any. */
