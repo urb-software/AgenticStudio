@@ -8,7 +8,7 @@ The shared domain language of AI Agent Studio: one context, grouped by business 
 
 **Project**:
 The operator's workspace around one Repository.
-_Avoid_: Workspace, app
+_Avoid_: App, solution
 
 **Repository**:
 The remote Git repository connected to a Project; a Project has at most one.

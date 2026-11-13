@@ -96,7 +96,7 @@ CODEX_CLI_ENABLED=false
 Rules every Git operation on a connected Repository follows, whatever the caller:
 
 - **Linux only:** repository features run on Linux (containers, CI, VPS); they are not supported on native Windows.
-- **Transports:** only `ssh` and `https` remote URLs; every other transport or URL form is rejected.
+- **Transports:** only `ssh` and `https` remote URLs; every other transport is rejected.
 - **No submodule recursion** and **no LFS smudge**: Studio fetches only the Repository's own objects.
 - **Hooks never run**, from the Repository or from anywhere else.
 - **No terminal prompts:** an operation that would need interactive input fails instead.

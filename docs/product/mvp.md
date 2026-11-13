@@ -71,8 +71,8 @@ The MVP demonstrates that an operator can complete the end-to-end cycle with con
 ## 7. Unresolved decisions — turn into refinement/Technical Tasks
 
 - Validate CLI terms, authentication and headless use for **each** provider (tasks B6/B7); automated execution stays disabled per provider until then (acceptance gate in [Security](../engineering/security.md) §2).
-- Confirm VPS hardware, isolation model, networking, and secret-management mechanism before enabling real agent execution.
-- **Decided** (Epic #55): Git access strategy and credential scope. Private Repositories use a per-project SSH Deploy key, public ones anonymous HTTPS; no tokens and no host credentials. See [Security](../engineering/security.md) §3–§4 and [ADR 0001](../architecture/adr/0001-secret-store.md). Protecting upstream repositories and integration branches on push and merge is refined with the merge capability.
+- Confirm VPS hardware, isolation model, networking, and how agent/provider credentials are managed before enabling real agent execution. Studio's own secret store is decided in [ADR 0001](../architecture/adr/0001-secret-store.md).
+- **Decided** (Epic #55): Git access strategy and credential scope. Private Repositories use a per-project SSH Deploy key, public ones anonymous HTTPS; no tokens and no host credentials. See [Security](../engineering/security.md) §3–§4 and [ADR 0001](../architecture/adr/0001-secret-store.md). Protecting connected Repositories and their integration branches on push and merge is refined with the merge capability.
 - Refine exact workflow step semantics and human approval model.
 - Specify baseline project schema, auth/session strategy, API contracts, and Preview exposure only when the relevant slice begins.
 - Agree on frontend state-library versions/policy before installing them in feature code.
