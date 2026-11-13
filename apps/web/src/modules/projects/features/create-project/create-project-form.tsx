@@ -8,6 +8,7 @@ import {
   createProjectRequestHint,
 } from '../../../../platform/api';
 import { useCreateProject } from '../../api/projects-queries';
+import { normalizeForHint } from './normalize-for-hint';
 
 const NAME_ERROR_ID = 'project-name-error';
 
@@ -20,12 +21,9 @@ function hintMessage(issue: { code?: string; maximum?: unknown }): string | unde
 
 const checkHint = zodResolver(createProjectRequestHint, { error: hintMessage });
 
-/**
- * Checks the hint against the name with whitespace runs collapsed, because the API measures
- * the length after normalizing (trim + collapse); the API stays the authority.
- */
+/** Checks the hint against the normalized name, because the API measures it after normalizing. */
 const resolver: Resolver<CreateProjectRequest> = (values, context, options) =>
-  checkHint({ name: values.name.trim().replace(/\s+/gu, ' ') }, context, options);
+  checkHint({ name: normalizeForHint(values.name) }, context, options);
 
 /** Server field errors (400/409 `errors[]`) that this form can show next to a field. */
 function nameErrorOf(error: unknown): string | undefined {

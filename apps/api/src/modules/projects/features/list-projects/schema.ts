@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { projectResponseSchema } from '../create-project/schema.js';
+import { projectResponseSchema } from '../../contracts/http/project-response.js';
 
 /** `GET /api/projects` response, newest first; an empty `items` means no projects yet. */
 export const projectListResponseSchema = z

@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
-import { toProjectResponse } from '../create-project/schema.js';
+import { toProjectResponse } from '../../contracts/http/project-response.js';
 import { ListProjectsHandler } from './handler.js';
 import { ProjectListResponseDto } from './schema.js';
 
