@@ -1,11 +1,12 @@
 // Tests for the design-system viewer server (Issue #53). Run: `pnpm design:test`
 // (`node --test design-system/serve.test.mjs`; Node 24, no dependencies).
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   createReadStream,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -54,7 +55,8 @@ function stop(server) {
 
 /** A site root with one page, next to a secret file that must never be served. */
 function makeFixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'design-serve-'));
+  // Canonical (native) spelling, so the fixtures also work when tmpdir() is an 8.3 short path.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'design-serve-')));
   const root = join(dir, 'site');
   mkdirSync(join(root, 'nested'), { recursive: true });
   writeFileSync(join(root, 'page.html'), '<h1>page</h1>');
@@ -290,6 +292,65 @@ describe('design-system viewer server: links', { timeout: 20_000 }, () => {
     assert.equal(res.status, 200);
     assert.equal(res.body, 'inner');
   });
+});
+
+/** The Windows 8.3 short spelling of `path`, or null when the volume has none. */
+function shortPath(path) {
+  try {
+    const short = execFileSync('cmd.exe', ['/d', '/c', `for %I in ("${path}") do @echo %~sI`], {
+      encoding: 'utf8',
+      windowsVerbatimArguments: true,
+    }).trim();
+    return short && short.toLowerCase() !== path.toLowerCase() ? short : null;
+  } catch {
+    return null;
+  }
+}
+
+describe('design-system viewer server: root spellings', { timeout: 20_000 }, () => {
+  const fixture = makeFixture();
+  const outside = join(fixture.dir, 'outside');
+  mkdirSync(outside);
+  writeFileSync(join(outside, 'leak.txt'), SECRET);
+  const linkError = tryLink(outside, join(fixture.root, 'link-dir'), 'dir');
+  const rootLink = join(fixture.dir, 'root-link');
+  const rootLinkError = tryLink(fixture.root, rootLink, 'dir');
+  after(() => rmSync(fixture.dir, { recursive: true, force: true }));
+
+  const windows = process.platform === 'win32';
+  const notWindows = 'case-insensitive paths and 8.3 names are Windows-only';
+  const short = windows ? shortPath(fixture.root) : null;
+  const spellings = [
+    ['in upper case', fixture.root.toUpperCase(), windows ? null : notWindows],
+    ['in lower case', fixture.root.toLowerCase(), windows ? null : notWindows],
+    [
+      'as an 8.3 short name',
+      short,
+      windows ? (short ? null : 'no 8.3 short name on this volume') : notWindows,
+    ],
+    ['through a link', rootLink, rootLinkError],
+  ];
+
+  for (const [label, root, skipReason] of spellings) {
+    it(`serves files and still contains links with the root spelled ${label}`, async (t) => {
+      if (skipReason) return t.skip(skipReason);
+      const server = await startServer({ port: 0, root });
+      try {
+        const port = server.address().port;
+        const page = await send(port, '/page.html');
+        assert.equal(page.status, 200, `${root}: /page.html`);
+        assert.equal(page.body, '<h1>page</h1>');
+        assert.equal((await send(port, '/nested/')).status, 200, `${root}: /nested/`);
+        if (!linkError) {
+          const leak = await send(port, '/link-dir/leak.txt');
+          assert.equal(leak.status, 404, `${root}: /link-dir/leak.txt`);
+          assert.ok(!leak.body.includes(SECRET));
+        }
+      } finally {
+        await stop(server);
+      }
+    });
+  }
 });
 
 describe('parsePort', { timeout: 20_000 }, () => {

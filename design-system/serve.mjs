@@ -127,10 +127,16 @@ function createHandler(root, realRoot, files) {
  */
 export function startServer({ port = DEFAULT_PORT, root = DEFAULT_ROOT, fileSystem = {} } = {}) {
   const absoluteRoot = resolve(root);
-  const handler = createHandler(absoluteRoot, realpathSync(absoluteRoot), {
-    ...defaultFileSystem,
-    ...fileSystem,
-  });
+  const handler = createHandler(
+    absoluteRoot,
+    // Same resolver as the per-request fs/promises realpath (native): the JS realpathSync keeps
+    // the input's letter case and 8.3 short names on Windows, so nothing would ever match.
+    realpathSync.native(absoluteRoot),
+    {
+      ...defaultFileSystem,
+      ...fileSystem,
+    },
+  );
   const server = createServer(handler);
   return new Promise((resolvePromise, reject) => {
     server.once('error', reject);
