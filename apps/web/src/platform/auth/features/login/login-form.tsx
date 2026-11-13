@@ -15,8 +15,10 @@ type LoginError =
   | { kind: 'server'; title?: string; message: string };
 
 function errorFor(error: unknown): LoginError {
-  if (!(error instanceof ApiError)) {
-    return { kind: 'server', message: 'The Studio API is unreachable. Try again.' };
+  // No HTTP response at all (network error, abort, timeout): the API is unreachable.
+  // Any response, even an empty 5xx from a proxy, keeps the mapping below.
+  if (!(error instanceof ApiError) || error.status === 0) {
+    return { kind: 'server', message: 'The Studio API is unreachable.' };
   }
   switch (error.status) {
     case 401:

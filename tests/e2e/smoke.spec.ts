@@ -193,3 +193,17 @@ test('the server-rendered sidebar has its final width before scripts run', async
     await context.close();
   }
 });
+
+// A login request that gets no HTTP response says the API is unreachable (#52). The request
+// is aborted in the browser, so the API and the session store are untouched.
+test('login says the API is unreachable when the request gets no response', async ({ page }) => {
+  await page.route('**/api/auth/login', (route) => route.abort('connectionrefused'));
+  await page.goto('/login');
+  await page.getByLabel('Password').fill('not-the-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+
+  // Filtered: Next.js's route announcer is an alert too.
+  const alert = page.getByRole('alert').filter({ hasText: 'unreachable' });
+  await expect(alert).toHaveText('The Studio API is unreachable.');
+  await expect(page).toHaveURL(/\/login$/);
+});
