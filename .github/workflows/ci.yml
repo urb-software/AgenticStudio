@@ -152,6 +152,10 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # Repository features (Epic #55) need git and an SSH client, both preinstalled on the runner.
+      # The API checks the minimum Git version at start-up; this records what the job ran with.
+      - name: Print Git and SSH versions
+        run: git --version && ssh -V
       # Testcontainers starts throwaway PostgreSQL and Redis on the runner's Docker. Tests that log in
       # hash their own throwaway password; no secrets are used.
       - run: pnpm test:api
@@ -201,6 +205,10 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # Repository features (Epic #55) need git and an SSH client, both preinstalled on the runner.
+      # The API checks the minimum Git version at start-up; this records what the job ran with.
+      - name: Print Git and SSH versions
+        run: git --version && ssh -V
       # Chromium for the pinned @playwright/test, with its system libraries.
       - run: pnpm exec playwright install --with-deps chromium
       # Builds the packages, API and web, starts them against throwaway PostgreSQL and Redis
