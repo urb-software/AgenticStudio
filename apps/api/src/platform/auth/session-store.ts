@@ -9,12 +9,21 @@ export const SESSION_TTL_SECONDS = 12 * 60 * 60;
 /** 30 days after login, however active the session is (security.md §8, #24). */
 export const SESSION_ABSOLUTE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * How far in the future a login time may lie (clock skew). Beyond it, a session created
+ * on a fast clock would outlive its absolute lifetime once the clock is corrected.
+ */
+export const SESSION_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
 /** The stored record; `createdAt` is the login time. */
 interface SessionRecord {
   createdAt: string;
 }
 
-/** True when the record is well-formed and less than the absolute lifetime old. */
+/**
+ * True when the record is well-formed, less than the absolute lifetime old, and its
+ * login time is at most {@link SESSION_CLOCK_SKEW_MS} in the future.
+ */
 function isWithinLifetime(record: string, now: number): boolean {
   let createdAt: number;
   try {
@@ -22,8 +31,9 @@ function isWithinLifetime(record: string, now: number): boolean {
   } catch {
     return false;
   }
-  // NaN (missing or malformed) fails the comparison, so it counts as expired.
-  return now - createdAt < SESSION_ABSOLUTE_LIFETIME_MS;
+  // NaN (missing or malformed) fails both comparisons, so it counts as expired.
+  const age = now - createdAt;
+  return age >= -SESSION_CLOCK_SKEW_MS && age < SESSION_ABSOLUTE_LIFETIME_MS;
 }
 
 /** 32 CSPRNG bytes (256 bits), base64url-encoded: 43 characters. */

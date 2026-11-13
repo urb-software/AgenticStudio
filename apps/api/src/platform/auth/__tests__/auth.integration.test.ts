@@ -192,7 +192,11 @@ describe('operator authentication (Redis via Testcontainers)', () => {
       expect(logout.status).toBe(204);
       const cleared = sessionCookie(logout);
       expect(cleared).toMatch(/^studio_session=;/);
-      expect(cleared).toMatch(/Expires=Thu, 01 Jan 1970/);
+      expect(cleared).toMatch(/; Expires=Thu, 01 Jan 1970 00:00:00 GMT(;|$)/);
+      expect(cleared).toMatch(/; Path=\/(;|$)/);
+      expect(cleared).toMatch(/; HttpOnly(;|$)/);
+      expect(cleared).toMatch(/; SameSite=Lax(;|$)/);
+      expect(cleared).not.toMatch(/Domain=/i);
       expectProblem(await request(server).get('/api/auth/session').set('Cookie', cookie), 401);
       expectProblem(
         await request(server).post('/api/auth/logout').set({ Origin: ORIGIN, Cookie: cookie }),
@@ -274,6 +278,24 @@ describe('operator authentication (Redis via Testcontainers)', () => {
           await request(app.getHttpServer()).get('/api/__test__/protected').set('Cookie', cookie),
           401,
         );
+      });
+
+      // #33 review: a login on a fast clock must not stretch the lifetime once corrected.
+      it('tolerates a login time up to 5 minutes in the future (clock skew)', async () => {
+        const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+
+        at(-5 * 60 * 1000);
+
+        expect((await session(cookie)).status).toBe(200);
+      });
+
+      it('rejects and deletes a session whose login time is over 5 minutes in the future', async () => {
+        const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
+
+        at(-5 * 60 * 1000 - 1000);
+
+        expectProblem(await session(cookie), 401);
+        expect(await redis.keys('*session*')).toHaveLength(0);
       });
 
       it.each(['{}', '{"createdAt":"not a date"}', 'null', 'not json'])(
@@ -651,6 +673,10 @@ describe('session cookie for an https Studio origin', () => {
     const cleared = hostCookie(logout);
     expect(cleared).toMatch(/^__Host-studio_session=;/);
     expect(cleared).toMatch(/; Secure;/);
-    expect(cleared).toMatch(/; Path=\//);
+    expect(cleared).toMatch(/; Path=\/(;|$)/);
+    expect(cleared).toMatch(/; HttpOnly(;|$)/);
+    expect(cleared).toMatch(/; SameSite=Lax(;|$)/);
+    expect(cleared).toMatch(/; Expires=Thu, 01 Jan 1970 00:00:00 GMT(;|$)/);
+    expect(cleared).not.toMatch(/Domain=/i);
   });
 });
