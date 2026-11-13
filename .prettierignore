@@ -12,3 +12,9 @@ LICENSE
 packages/database/src/generated/
 apps/api/openapi.json
 apps/web/src/platform/api/generated/
+
+# Design system export (Claude Design): keep files byte-identical to the export so re-exports diff cleanly.
+# Hand-written tooling in it stays formatted.
+design-system/**
+!design-system/serve.mjs
+!design-system/prototype/support.js
