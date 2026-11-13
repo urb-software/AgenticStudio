@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   Sidebar,
   SidebarContent,
+  SidebarInput,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
@@ -51,7 +52,9 @@ describe('Sidebar', () => {
 
     const sidebar = container.querySelector('[data-slot="sidebar"]');
     expect(sidebar?.getAttribute('data-state')).toBe('expanded');
-    expect(screen.getByRole('button', { name: 'Projects' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Projects' }).className).toContain(
+      'pointer-coarse:min-h-11',
+    );
     await expect(container).toHaveNoAxeViolations();
 
     await userEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
@@ -76,5 +79,15 @@ describe('Sidebar', () => {
 
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('has a search input that follows the input rules (44px coarse, 16px on phones)', () => {
+    render(<SidebarInput aria-label="Filter" />);
+
+    const classes = screen.getByRole('textbox', { name: 'Filter' }).className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['h-[38px]', 'text-base', 'md:text-body', 'pointer-coarse:min-h-11']),
+    );
+    expect(classes).not.toContain('h-8');
   });
 });

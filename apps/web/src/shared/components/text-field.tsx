@@ -39,8 +39,8 @@ function TextField({ label, help, error, mono = false, className, ...control }: 
     id,
     'aria-invalid': error ? true : control['aria-invalid'],
     'aria-describedby': describedBy,
-    // Mono text is 13px from tablet up; phones keep 16px so focus does not zoom.
-    className: cn(mono && 'font-mono md:text-[13px]'),
+    // Mono text is 13px (small) from tablet up; phones keep 16px so focus does not zoom.
+    className: cn(mono && 'font-mono md:text-small'),
   };
 
   return (
@@ -57,13 +57,13 @@ function TextField({ label, help, error, mono = false, className, ...control }: 
         <p
           id={messageId}
           role="alert"
-          className="mt-1.5 mb-0 flex items-center gap-1.5 text-[12.5px] text-run-failed"
+          className="mt-1.5 mb-0 flex items-center gap-1.5 text-code text-run-failed"
         >
           <TriangleAlertIcon aria-hidden="true" className="size-3.5 shrink-0" />
           {error}
         </p>
       ) : help ? (
-        <p id={messageId} className="mt-1.5 mb-0 text-[12.5px] text-text-dim">
+        <p id={messageId} className="mt-1.5 mb-0 text-code text-text-dim">
           {help}
         </p>
       ) : null}

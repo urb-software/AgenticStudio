@@ -17,7 +17,7 @@ describe('TextField', () => {
     expect(input.getAttribute('aria-invalid')).toBeNull();
     // Mono is 13px only from tablet up; phones keep the 16px input font.
     expect(input.className.split(' ')).toEqual(
-      expect.arrayContaining(['font-mono', 'md:text-[13px]', 'text-base']),
+      expect.arrayContaining(['font-mono', 'md:text-small', 'text-base']),
     );
 
     await userEvent.type(input, 'git@github.com:acme/shop.git');

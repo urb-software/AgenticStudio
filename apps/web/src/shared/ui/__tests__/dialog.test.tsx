@@ -76,6 +76,26 @@ describe('Dialog', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it('closes on a backdrop click', async () => {
+    render(<NewProjectDialog />);
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+    expect(overlay).toBeTruthy();
+    await userEvent.click(overlay as Element);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('has a 44px close button on coarse pointers', async () => {
+    render(<NewProjectDialog />);
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+
+    expect(screen.getByRole('button', { name: 'Close' }).className.split(' ')).toEqual(
+      expect.arrayContaining(['pointer-coarse:min-h-11', 'pointer-coarse:min-w-11']),
+    );
+  });
+
   it('closes from the labelled close button', async () => {
     render(<NewProjectDialog />);
     await userEvent.click(screen.getByRole('button', { name: 'New project' }));

@@ -217,17 +217,24 @@ function colourFunctions(text: string): string[] {
  */
 function stylesheetColours(path: string, text: string): string[] {
   const css = stripStylesheetComments(path, text);
-  const declaration = path.endsWith('.sass')
-    ? /^\s*(?:[\w-]+|\$[\w-]+)\s*:\s+(.*)$/gm
-    : /(?<![\w-])(?:[\w-]+|\$[\w-]+)\s*:\s*([^;{}]*)(?=[;}]|$)/g;
-  const values = [
-    ...[...css.matchAll(declaration)].map((match) => match[1] ?? ''),
-    ...[...css.matchAll(/@apply\s+([^;{}\n]*)/g)].map((match) => match[1] ?? ''),
-  ];
+  const values = [...stylesheetDeclarationValues(path, css), ...applyLists(css)];
   return values.flatMap((value) => [
     ...[...value.matchAll(HEX_COLOUR)].map((match) => match[0]),
     ...colourFunctions(value),
   ]);
+}
+
+/** Values of `prop: value`, `$var: value` and `--token: value` declarations (comments stripped). */
+function stylesheetDeclarationValues(path: string, css: string): string[] {
+  const declaration = path.endsWith('.sass')
+    ? /^\s*(?:[\w-]+|\$[\w-]+)\s*:\s+(.*)$/gm
+    : /(?<![\w-])(?:[\w-]+|\$[\w-]+)\s*:\s*([^;{}]*)(?=[;}]|$)/g;
+  return [...css.matchAll(declaration)].map((match) => match[1] ?? '');
+}
+
+/** Class lists of `@apply` rules (comments stripped). */
+function applyLists(css: string): string[] {
+  return [...css.matchAll(/@apply\s+([^;{}\n]*)/g)].map((match) => match[1] ?? '');
 }
 
 function stripStylesheetComments(path: string, text: string): string {
@@ -461,15 +468,19 @@ const NAMED_COLOURS = new Set(
 /**
  * Tailwind's default palette (`bg-zinc-900`, `text-red-500`, `border-white`) is an ad hoc palette
  * next to the tokens, so colour utilities must name a token (`bg-surface`, `text-run-failed/80`).
- * Named colours in arbitrary values (`bg-[red]`) are the same thing spelt differently.
+ * Named colours in arbitrary values or properties (`bg-[red]`, `[color:red]`), Tailwind's palette
+ * variables (`bg-(--color-zinc-900)`, `var(--color-red-500)`) and `theme(colors.red.500)` are
+ * the same thing spelt differently.
  *
- * The one exception: `black` / `white` **with an opacity modifier** (`bg-black/55`) in
- * `src/shared/ui/**`, for the overlay scrims the shadcn primitives draw, because the design
- * system has no overlay token and `globals.css` stays a copy of it.
+ * The one exception: a **background** in `black` / `white` **with an opacity modifier**
+ * (`bg-black/55`, any variant) in `src/shared/ui/**`, for the overlay scrims the shadcn
+ * primitives draw, because the design system has no overlay token and `globals.css` stays a
+ * copy of it. Text, border and other colour utilities get no exception.
  *
  * Class names are found in every string of a script (class names reach `className` through
  * `cn()`, `cva()` variant maps and constants, so attributes alone are not enough; import
- * specifiers are skipped) and in stylesheet `@apply` lists. A string is split on whitespace and
+ * specifiers are skipped) and in stylesheet `@apply` lists; stylesheet declaration values are
+ * checked for palette variables and theme() paths. A string is split on whitespace and
  * each token's variants (`hover:`, `dark:md:`, `[&_svg]:`, `data-[state=open]:`) and important
  * marks (`!`) are removed before the utility is matched. Prose does not look like
  * `<prefix>-<palette>-<shade>`, so it is not matched.
@@ -480,19 +491,26 @@ function paletteViolations(baseDir: string): Violation[] {
   );
 }
 
-/** Where `black` / `white` with an opacity modifier is allowed (overlay scrims). */
+/** Where `bg-black/<n>` / `bg-white/<n>` is allowed (overlay scrims). */
 const SCRIM_DIR = 'src/shared/ui/';
 
 export function paletteViolationsInFile(path: string, text: string): Violation[] {
-  let classLists: string[];
   if (STYLESHEET.test(path)) {
     const css = stripStylesheetComments(path, text);
-    classLists = [...css.matchAll(/@apply\s+([^;{}\n]*)/g)].map((match) => match[1] ?? '');
-  } else if (SCRIPT_FILE.test(path) && !path.endsWith('.d.ts')) {
-    classLists = scriptClassLists(parse(path, text));
-  } else {
-    return [];
+    // Declarations can reach the palette only through its variables or theme().
+    const declarationHits = stylesheetDeclarationValues(path, css)
+      .flatMap((value) => value.split(/\s+/))
+      .filter(isPaletteReference)
+      .map((token) => ({ rule: 'web-no-palette-utilities', from: path, to: token }));
+    return [...declarationHits, ...classListViolations(path, applyLists(css))];
   }
+  if (SCRIPT_FILE.test(path) && !path.endsWith('.d.ts')) {
+    return classListViolations(path, scriptClassLists(parse(path, text)));
+  }
+  return [];
+}
+
+function classListViolations(path: string, classLists: string[]): Violation[] {
   const scrimsAllowed = path.startsWith(SCRIM_DIR);
   return classLists
     .flatMap((list) => list.split(/\s+/))
@@ -523,6 +541,8 @@ function isModuleSpecifier(node: ts.Node): boolean {
 
 /** Tailwind utilities that take a colour (v4). Longer prefixes first. */
 const COLOUR_UTILITY_PREFIXES = [
+  'border-bs',
+  'border-be',
   'border-x',
   'border-y',
   'border-s',
@@ -563,7 +583,7 @@ const SHADE = '50|100|200|300|400|500|600|700|800|900|950';
 const OPACITY = String.raw`(?:/(?:\d+(?:\.\d+)?|\[[^\]]+\]|\([^)]+\)))`;
 const PREFIX = `(?:${COLOUR_UTILITY_PREFIXES.join('|')})`;
 const PALETTE_UTILITY = new RegExp(`^${PREFIX}-(?:${PALETTE})-(?:${SHADE})${OPACITY}?$`);
-const BLACK_WHITE = new RegExp(`^${PREFIX}-(?:black|white)(${OPACITY})?$`);
+const BLACK_WHITE = new RegExp(`^(${PREFIX})-(?:black|white)(${OPACITY})?$`);
 const ARBITRARY_NAMED = new RegExp(String.raw`^${PREFIX}-\[(?:color:)?([a-z]+)\]${OPACITY}?$`, 'i');
 
 /**
@@ -574,15 +594,25 @@ const ARBITRARY_NAMED = new RegExp(String.raw`^${PREFIX}-\[(?:color:)?([a-z]+)\]
 const PALETTE_VARIABLE = new RegExp(
   `--color-(?:(?:${PALETTE})-(?:${SHADE})|black|white)(?![\\w-])`,
 );
+/** `theme(colors.red.500)` / `theme(colors.black)`: the v3-style path to the palette. */
+const THEME_PALETTE = new RegExp(
+  String.raw`theme\(\s*colors\.(?:(?:${PALETTE})\.(?:${SHADE})|black|white)(?![\w-])`,
+);
 /** An arbitrary property with a named colour value: `[background-color:red]`. */
 const ARBITRARY_PROPERTY = /^\[[a-z-]+:([a-z]+)\]$/i;
 
+/** A palette variable or a theme() palette path anywhere in a token or declaration value. */
+function isPaletteReference(token: string): boolean {
+  return PALETTE_VARIABLE.test(token) || THEME_PALETTE.test(token);
+}
+
 function isPaletteUtility(token: string, scrimsAllowed: boolean): boolean {
-  if (PALETTE_VARIABLE.test(token)) return true;
+  if (isPaletteReference(token)) return true;
   const utility = withoutVariants(token).replace(/^!|!$/g, '');
   if (PALETTE_UTILITY.test(utility)) return true;
   const blackWhite = BLACK_WHITE.exec(utility);
-  if (blackWhite) return !(scrimsAllowed && blackWhite[1] !== undefined);
+  // The scrim exception: a background with an opacity modifier, nothing else.
+  if (blackWhite) return !(scrimsAllowed && blackWhite[1] === 'bg' && blackWhite[2] !== undefined);
   const named = (ARBITRARY_NAMED.exec(utility) ?? ARBITRARY_PROPERTY.exec(utility))?.[1];
   return isNamedColour(named);
 }

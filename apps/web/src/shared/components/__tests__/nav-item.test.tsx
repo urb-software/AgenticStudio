@@ -22,6 +22,12 @@ describe('NavItem', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('keeps the badge count in the accessible name when collapsed', () => {
+    render(<NavItem href="/runs" icon={Activity} label="Runs" badge={3} collapsed />);
+
+    expect(screen.getByRole('link', { name: 'Runs, 3' })).toBeTruthy();
+  });
+
   it('is a button without an href', async () => {
     const onClick = vi.fn();
     render(<NavItem icon={Folder} label="Projects" onClick={onClick} />);
@@ -31,9 +37,9 @@ describe('NavItem', () => {
   });
 
   it('shows only the icon when collapsed, named by its label and with a tooltip on focus', async () => {
-    const { container } = render(
+    render(
       <nav aria-label="Studio">
-        <NavItem href="/executions" icon={Activity} label="Executions" badge={2} collapsed />
+        <NavItem href="/executions" icon={Activity} label="Executions" collapsed />
       </nav>,
     );
 
@@ -43,6 +49,7 @@ describe('NavItem', () => {
     await userEvent.tab();
     expect(document.activeElement).toBe(link);
     expect((await screen.findByRole('tooltip')).textContent).toBe('Executions');
-    await expect(container).toHaveNoAxeViolations();
+    // The open tooltip is portalled to body.
+    await expect(document.body).toHaveNoAxeViolations();
   });
 });

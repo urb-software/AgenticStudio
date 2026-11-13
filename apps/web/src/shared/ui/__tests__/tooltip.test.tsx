@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../tooltip';
 
 describe('Tooltip', () => {
   it('shows on keyboard focus without an app-level provider and hides on Esc', async () => {
-    const { container } = render(
+    render(
       <Tooltip>
         <TooltipTrigger>Run status</TooltipTrigger>
         <TooltipContent>2 running · 1 awaiting approval</TooltipContent>
@@ -17,7 +17,8 @@ describe('Tooltip', () => {
     expect((await screen.findByRole('tooltip')).textContent).toBe(
       '2 running · 1 awaiting approval',
     );
-    await expect(container).toHaveNoAxeViolations();
+    // The open tooltip is portalled to body.
+    await expect(document.body).toHaveNoAxeViolations();
 
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('tooltip')).toBeNull();

@@ -32,7 +32,7 @@ const buttonVariants = cva(
         destructive: 'border-danger-solid bg-danger-solid text-on-brand hover:brightness-90',
       },
       size: {
-        sm: "h-[30px] gap-1.5 px-2.5 text-[12.5px] [&_svg:not([class*='size-'])]:size-3.5",
+        sm: "h-[30px] gap-1.5 px-2.5 text-code [&_svg:not([class*='size-'])]:size-3.5",
         md: 'h-9 px-3.5 text-label',
         lg: 'h-11 px-[18px] text-[14.5px]',
         icon: 'size-9 pointer-coarse:min-w-11',

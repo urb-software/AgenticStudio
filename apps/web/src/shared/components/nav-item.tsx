@@ -9,9 +9,9 @@ type NavItemOwnProps = {
   label: string;
   /** The current page: brand-soft fill, brand icon, aria-current="page". */
   active?: boolean;
-  /** Amber count of runs awaiting approval (Executions). */
+  /** Amber count of items waiting on the operator; part of the accessible name. */
   badge?: number | string;
-  /** 64px icon rail: the label becomes the tooltip and the aria-label. */
+  /** 64px icon rail: the label becomes the tooltip, and the label (with the badge count) the aria-label. */
   collapsed?: boolean;
   className?: string;
 };
@@ -23,8 +23,8 @@ type NavItemProps = NavItemOwnProps &
   );
 
 /**
- * Sidebar navigation row (design-system/components/NavItem): Projects, Agents, Skills,
- * Workflows, Executions, MCP Servers, Settings. A link when it has an `href`, else a button.
+ * Sidebar navigation row (design-system/components/NavItem): icon, label and an optional count
+ * badge. A link when it has an `href`, else a button.
  */
 function NavItem({
   icon: Icon,
@@ -63,7 +63,8 @@ function NavItem({
     'data-slot': 'nav-item',
     'data-active': active,
     'aria-current': active ? ('page' as const) : undefined,
-    'aria-label': collapsed ? label : undefined,
+    // The rail hides the badge, so its count stays in the name ("Runs, 3").
+    'aria-label': collapsed ? (badge !== undefined ? `${label}, ${badge}` : label) : undefined,
     className: classes,
   };
   const item =

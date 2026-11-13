@@ -7,15 +7,14 @@ import { IconButton } from '../icon-button';
 describe('IconButton', () => {
   it('is named by its label, which is also its tooltip on keyboard focus', async () => {
     const onClick = vi.fn();
-    const { container } = render(
-      <IconButton icon={Bell} label="Notifications" onClick={onClick} />,
-    );
+    render(<IconButton icon={Bell} label="Notifications" onClick={onClick} />);
 
     await userEvent.tab();
     const button = screen.getByRole('button', { name: 'Notifications' });
     expect(document.activeElement).toBe(button);
     expect((await screen.findByRole('tooltip')).textContent).toBe('Notifications');
-    await expect(container).toHaveNoAxeViolations();
+    // The open tooltip is portalled to body.
+    await expect(document.body).toHaveNoAxeViolations();
 
     await userEvent.keyboard('{Enter}');
     expect(onClick).toHaveBeenCalledOnce();

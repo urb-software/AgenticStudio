@@ -123,6 +123,36 @@ describe('web-no-palette-utilities', () => {
       `<div className="bg-(--color-black)/50" />`,
     ],
     [
+      'a theme() palette colour in an arbitrary value',
+      'src/app/page.tsx',
+      `<div className="bg-[theme(colors.red.500)]" />`,
+    ],
+    [
+      'a logical block border',
+      'src/app/page.tsx',
+      `<div className="border-bs-red-500 border-be-zinc-800" />`,
+    ],
+    [
+      'white text with opacity in shared/ui (not a scrim)',
+      'src/shared/ui/tooltip.tsx',
+      `<div className="text-white/80" />`,
+    ],
+    [
+      'a black border with opacity in shared/ui (not a scrim)',
+      'src/shared/ui/card.tsx',
+      `<div className="border-black/10" />`,
+    ],
+    [
+      'a palette variable in a CSS declaration',
+      'src/app/a.css',
+      `.a { background: var(--color-red-500); }`,
+    ],
+    [
+      'a theme() palette colour in a SCSS declaration',
+      'src/app/a.scss',
+      `.a { color: theme(colors.zinc.900); }`,
+    ],
+    [
       'a named colour in an arbitrary property',
       'src/app/page.tsx',
       `<div className="[background-color:red]" />`,
@@ -193,6 +223,16 @@ describe('web-no-palette-utilities', () => {
       'a token variable shorthand and a layout arbitrary property',
       'src/app/page.tsx',
       `<div className="bg-(--color-surface) [grid-area:main] [--rail:16rem]" />`,
+    ],
+    [
+      'token variables in a CSS declaration',
+      'src/app/a.css',
+      `.a { background: var(--color-surface); color: var(--text); }`,
+    ],
+    [
+      'a white scrim with a variant in shared/ui',
+      'src/shared/ui/sheet.tsx',
+      `<div className="dark:bg-white/10 data-open:bg-black/40" />`,
     ],
     ['prose', 'src/app/page.tsx', `const t = 'Red is the colour of failure';`],
     ['an import of a palette-named module', 'src/app/page.tsx', `import x from 'text-red-500';`],
