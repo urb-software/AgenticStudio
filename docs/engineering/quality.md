@@ -88,6 +88,7 @@ Positive and negative fixtures prove the rules catch violations:
 | Consumer imports publisher-owned public versioned event | PASS |
 | Module publishes an unversioned integration event | FAIL |
 | Two modules define the same integration event | FAIL |
+| Integration event re-exported by another module or under another name | FAIL |
 | Repository contract declared outside `domain/repositories/` | FAIL |
 | Web imports `@/modules/agents` public entrypoint | PASS |
 | Web deep-imports another module's private Zustand store | FAIL |

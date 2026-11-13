@@ -6,7 +6,7 @@ import { listFiles, type Violation } from '../harness';
 /**
  * Source-level rules of `architecture:api` that Dependency Cruiser cannot express, because
  * they depend on declaration names and kinds rather than on import edges
- * (docs/architecture/backend.md §3 and §6). Syntax only: each file is parsed on its own,
+ * (docs/architecture/backend.md §4 and §6). Syntax only: each file is parsed on its own,
  * without type checking, so the rules work on fixtures whose npm imports do not resolve.
  */
 export const SOURCE_RULES = [
@@ -20,7 +20,7 @@ export const SOURCE_RULES = [
 export function sourceViolations(baseDir: string): Violation[] {
   const files = sourceFiles(baseDir).map((path) => ({ path, source: parse(baseDir, path) }));
   return [
-    ...eventViolations(files),
+    ...eventViolations(baseDir, files),
     ...repositoryContractViolations(files),
     ...adapterContractViolations(baseDir, files),
   ];
@@ -38,8 +38,11 @@ const EVENT_FILE =
   /^src\/modules\/([^/]+)\/contracts\/events\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-v([1-9][0-9]*)\.ts$/;
 /** An event definition name: `<EventName>V<n>` or `<EventName>V<n>Schema`. */
 const EVENT_NAME = /^([A-Z][A-Za-z0-9]*?)V[1-9][0-9]*(Schema)?$/;
-/** A module's public contracts/ outside events/. */
-const CONTRACTS_OUTSIDE_EVENTS = /^src\/modules\/[^/]+\/contracts\/(?!events\/)/;
+/** A module's contracts/ outside events/ and the within-module HTTP/SSE DTOs of http/. */
+const CONTRACTS_OUTSIDE_EVENTS = /^src\/modules\/[^/]+\/contracts\/(?!events\/|http\/)/;
+/** The public entry point of a module's contracts: `src/modules/<module>/contracts/index.ts`. */
+const CONTRACTS_INDEX = /^src\/modules\/([^/]+)\/contracts\/index\.ts$/;
+const MODULE_CONTRACTS = /^src\/modules\/([^/]+)\/contracts\//;
 /** An event-like name (`ExecutionCompletedEvent`, `ExecutionCompletedEventSchema`). */
 const EVENT_LIKE_NAME = /Event(Schema)?$/;
 
@@ -47,10 +50,12 @@ const EVENT_LIKE_NAME = /Event(Schema)?$/;
  * Integration events (backend.md §6): each version of an event is defined once, by its
  * publisher, in `contracts/events/<event-name>-v<n>.ts`, which exports only
  * `<EventName>V<n>` and/or `<EventName>V<n>Schema`, declared in that file. An event-like
- * declaration elsewhere in `contracts/`, a competing definition of a published event
- * anywhere else, and the same event in two modules are rejected.
+ * declaration elsewhere in `contracts/` (except `contracts/http/`), a competing definition of
+ * a published event anywhere else, a published event exposed under another name or by
+ * any file but its publisher's `contracts/index.ts`, and the same event in two modules are
+ * rejected.
  */
-function eventViolations(files: SourceFile[]): Violation[] {
+function eventViolations(baseDir: string, files: SourceFile[]): Violation[] {
   const violations: Violation[] = [];
   const publishers = new Map<string, Set<string>>();
 
@@ -91,6 +96,7 @@ function eventViolations(files: SourceFile[]): Violation[] {
         violations.push({ rule: 'api-event-publisher-owned', from: path, to: name });
       }
     }
+    violations.push(...eventExposureViolations(baseDir, path, source, publishers));
   }
 
   for (const [event, modules] of publishers) {
@@ -100,6 +106,85 @@ function eventViolations(files: SourceFile[]): Violation[] {
         from: event,
         to: [...modules].sort().join(', '),
       });
+    }
+  }
+  return violations;
+}
+
+/**
+ * A published event leaves its publisher only under its own name and only through the
+ * publisher's `contracts/index.ts`: no renaming re-export (`export { XV1 as Y }`), no alias
+ * declaration (`type Y = XV1`, `const Y = XV1Schema`), and no re-export (named or `export *`)
+ * by any other file, e.g. another module's `contracts/index.ts` or a consumer.
+ */
+function eventExposureViolations(
+  baseDir: string,
+  path: string,
+  source: ts.SourceFile,
+  publishers: Map<string, Set<string>>,
+): Violation[] {
+  const violations: Violation[] = [];
+  const fail = (name: string) =>
+    violations.push({ rule: 'api-event-publisher-owned', from: path, to: name });
+  const imports = importBindings(source);
+  const original = (local: string) => imports.get(local)?.imported ?? local;
+  const ownIndexOf = CONTRACTS_INDEX.exec(path)?.[1];
+  const publisherOf = (name: string): Set<string> | undefined => {
+    const event = EVENT_NAME.exec(name)?.[1];
+    return event ? publishers.get(event) : undefined;
+  };
+  const publishingModules = new Set([...publishers.values()].flatMap((modules) => [...modules]));
+
+  for (const statement of source.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      const specifier =
+        statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+          ? statement.moduleSpecifier.text
+          : undefined;
+      const clause = statement.exportClause;
+      if (!clause || ts.isNamespaceExport(clause)) {
+        // `export * [as ns] from` another module's contracts, or from an event file anywhere
+        // but the publisher's own index, re-exports events without naming them.
+        const target = specifier ? resolveRelative(baseDir, path, specifier) : undefined;
+        const targetModule = target ? MODULE_CONTRACTS.exec(target)?.[1] : undefined;
+        const renames = clause !== undefined && EVENTS_DIR.test(target ?? '');
+        if (
+          targetModule &&
+          publishingModules.has(targetModule) &&
+          (targetModule !== ownIndexOf || renames)
+        ) {
+          fail(clause ? clause.name.text : '*');
+        }
+        continue;
+      }
+      for (const element of clause.elements) {
+        const exported = (element.propertyName ?? element.name).text;
+        const name = specifier ? exported : original(exported);
+        const modules = publisherOf(name);
+        if (!modules) continue;
+        if (element.name.text !== name || !ownIndexOf || !modules.has(ownIndexOf)) {
+          fail(element.name.text);
+        }
+      }
+    } else if (
+      ts.isTypeAliasDeclaration(statement) &&
+      ts.isTypeReferenceNode(statement.type) &&
+      ts.isIdentifier(statement.type.typeName) &&
+      publisherOf(original(statement.type.typeName.text))
+    ) {
+      fail(statement.name.text);
+    } else if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const initializer = declaration.initializer;
+        if (
+          initializer &&
+          ts.isIdentifier(initializer) &&
+          ts.isIdentifier(declaration.name) &&
+          publisherOf(original(initializer.text))
+        ) {
+          fail(declaration.name.text);
+        }
+      }
     }
   }
   return violations;
@@ -222,9 +307,10 @@ function locate(
 }
 
 /**
- * Follows re-exports (`export { X } from`, `export *`, `import { X }` + `export { X }`) from
- * `path` to the file that declares `name`, so a barrel in `ports/` cannot pass off a contract
- * declared in `features/`. If no declaration is found, `path` itself is reported.
+ * Follows re-exports (`export { X } from`, `export *`, `import { X }` + `export { X }`) and
+ * re-badging declarations (`type Y = X`, `interface Y extends X {}`) from `path` to the file
+ * that declares the contract, so a barrel or alias in `ports/` cannot pass off a contract
+ * declared in `features/` or `domain/services/`. If none is found, `path` itself is reported.
  */
 function declarationOf(
   baseDir: string,
@@ -234,9 +320,17 @@ function declarationOf(
 ): { path: string; name: string; abstractClass: boolean } {
   const source = parse(baseDir, path);
   const here = { path, name, abstractClass: isAbstractClassIn(source, name) };
-  if (isDeclaredIn(source, name) || seen.has(path)) return here;
-  seen.add(path);
+  if (seen.has(`${path}#${name}`)) return here;
+  seen.add(`${path}#${name}`);
   const imports = importBindings(source);
+  if (isDeclaredIn(source, name)) {
+    const aliased = aliasTarget(source, name);
+    if (!aliased) return here;
+    const binding = imports.get(aliased);
+    const target = binding ? resolveRelative(baseDir, path, binding.specifier) : path;
+    if (!target) return here;
+    return declarationOf(baseDir, target, binding ? binding.imported : aliased, seen);
+  }
   for (const statement of source.statements) {
     if (!ts.isExportDeclaration(statement)) continue;
     const specifier =
@@ -259,6 +353,31 @@ function declarationOf(
     if (isDeclaredIn(parse(baseDir, found.path), found.name)) return found;
   }
   return here;
+}
+
+/** The `X` of `type name = X` or `interface name extends X {}`, if `name` only re-badges X. */
+function aliasTarget(source: ts.SourceFile, name: string): string | undefined {
+  for (const statement of source.statements) {
+    if (
+      ts.isTypeAliasDeclaration(statement) &&
+      statement.name.text === name &&
+      ts.isTypeReferenceNode(statement.type) &&
+      ts.isIdentifier(statement.type.typeName)
+    ) {
+      return statement.type.typeName.text;
+    }
+    if (
+      ts.isInterfaceDeclaration(statement) &&
+      statement.name.text === name &&
+      statement.members.length === 0 &&
+      statement.heritageClauses?.length === 1 &&
+      statement.heritageClauses[0]!.types.length === 1
+    ) {
+      const expression = statement.heritageClauses[0]!.types[0]!.expression;
+      if (ts.isIdentifier(expression)) return expression.text;
+    }
+  }
+  return undefined;
 }
 
 /** Resolves a relative import (`./x.js` → `x.ts`) to a POSIX path; npm imports give undefined. */

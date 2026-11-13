@@ -1,6 +1,6 @@
 import {
   CONCRETE_CLIENTS,
-  UNGENERATED_PRISMA_CLIENT,
+  importsResolveRules,
   WORKSPACE_PACKAGES_FROM_SOURCE,
   coreModules,
   INFRASTRUCTURE_PACKAGES,
@@ -34,6 +34,15 @@ export const apiGate: Gate = {
       severity: 'error',
       from: { path: '^src/modules/([^/]+)/' },
       to: { path: '^src/modules/', pathNot: ['^src/modules/$1/', CONTRACTS] },
+    },
+    {
+      name: 'api-events-imported-via-contracts-index',
+      comment:
+        "Another module consumes an integration event only through the publisher's " +
+        'contracts/index.ts, never by deep-importing contracts/events/<file> (backend.md §6).',
+      severity: 'error',
+      from: { path: '^src/modules/([^/]+)/' },
+      to: { path: '^src/modules/[^/]+/contracts/events/', pathNot: '^src/modules/$1/' },
     },
     {
       name: 'api-outside-modules-imports-contracts-only',
@@ -158,20 +167,7 @@ export const apiGate: Gate = {
       from: { path: '^src/modules/', pathNot: '^src/modules/[^/]+/infrastructure/repositories/' },
       to: { path: ORM },
     },
-    {
-      name: 'api-local-imports-resolve',
-      comment:
-        'An unresolved relative or @agentic-studio/* import (in apps/api or a workspace package ' +
-        'it reaches) would silently drop an edge from the graph. Only the generated Prisma client, ' +
-        'absent before `prisma generate`, is exempt.',
-      severity: 'error',
-      from: {},
-      to: {
-        pathNot: UNGENERATED_PRISMA_CLIENT,
-        couldNotResolve: true,
-        path: '^(\\.|@agentic-studio/)',
-      },
-    },
+    ...importsResolveRules('api', '^(\\.|@agentic-studio/)'),
     {
       name: 'api-module-file-composition-root-only',
       comment:

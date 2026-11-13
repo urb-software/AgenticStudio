@@ -226,8 +226,35 @@ export const WORKSPACE_PACKAGES_FROM_SOURCE = {
   doNotFollow: '(^|/)packages/database/src/generated/',
 } satisfies Partial<Gate>;
 
-/** packages/database's import of its generated Prisma client, absent before `prisma generate`. */
-export const UNGENERATED_PRISMA_CLIENT = '^\\./generated/prisma/';
+/**
+ * The two import-resolution rules of a gate: an unresolved import matching `specifiers`
+ * (e.g. relative or `@agentic-studio/*`) would silently drop an edge from the graph. The
+ * check is graph-wide, also inside the workspace packages the gate follows. Only
+ * packages/database's own import of its generated Prisma client, absent before
+ * `prisma generate`, is exempt, by a separate rule scoped to that package.
+ */
+export function importsResolveRules(gate: string, specifiers: string): IForbiddenRuleType[] {
+  const databasePackage = '(^|/)packages/database/src/';
+  return [
+    {
+      name: `${gate}-local-imports-resolve`,
+      comment:
+        'An unresolved local or workspace import would silently drop an edge from the graph.',
+      severity: 'error',
+      from: { pathNot: databasePackage },
+      to: { path: specifiers, couldNotResolve: true },
+    },
+    {
+      name: `${gate}-database-package-imports-resolve`,
+      comment:
+        'The same check inside packages/database, where only the generated Prisma client ' +
+        '(./generated/prisma/, absent before `prisma generate`) may be unresolved.',
+      severity: 'error',
+      from: { path: databasePackage },
+      to: { path: specifiers, pathNot: '^\\./generated/prisma/', couldNotResolve: true },
+    },
+  ];
+}
 
 /** npm scopes whose packages are all concrete clients. */
 export const CONCRETE_CLIENT_SCOPES = ['@mikro-orm', '@redis'];
