@@ -167,8 +167,24 @@ describe('redactSecrets', () => {
       expect(output).not.toContain(secret.slice(-600));
     });
 
+    // #33 review: the scheme boundary check let these through unmasked.
+    it.each([
+      ['a digit before the scheme', '1postgres://u:s3cr3tv4lu3@h/db'],
+      ['a dot before the scheme', 'at .postgres://u:s3cr3tv4lu3@h/db'],
+      ['a hyphen before the scheme', 'x -redis://u:s3cr3tv4lu3@h:6379'],
+      ['a scheme longer than 32 characters', `${'s'.repeat(40)}://u:s3cr3tv4lu3@h`],
+      ['a scheme of 10 000 characters', `${'s'.repeat(10_000)}://u:s3cr3tv4lu3@h`],
+    ])('masks userinfo after %s', (_case, input) => {
+      const output = redactSecrets(input);
+
+      expect(output).not.toContain('s3cr3tv4lu3');
+      expect(output).toMatch(/:\/\/\*\*\*@h/);
+    });
+
     it('stays fast on adversarial URL-shaped input (linear time)', () => {
       const inputs = [
+        `${'1.-'.repeat(70_000)}://x@h`,
+        '://'.repeat(70_000),
         `a://${'x'.repeat(200_000)}`,
         `a://${'@'.repeat(200_000)}`,
         'a://x'.repeat(40_000),

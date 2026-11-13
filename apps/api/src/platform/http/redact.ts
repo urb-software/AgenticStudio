@@ -2,8 +2,12 @@
 // drivers and HTTP clients often echo connection URLs or headers. Over-masking is
 // acceptable; leaking any part of a credential is not.
 
-/** A URL scheme and `//`, starting at a boundary; the bounded run keeps matching linear. */
-const URL_SCHEME = /(?<![a-z\d+.-])[a-z][a-z\d+.-]{0,31}:\/\//gi;
+/**
+ * The `://` after a URL scheme. The scheme itself is not matched: a boundary or length
+ * rule on it let `1postgres://`, `.postgres://` or a 40-character scheme through
+ * unmasked (#33 review), and over-masking is acceptable.
+ */
+const URL_SCHEME_SEPARATOR = /:\/\//g;
 const WHITESPACE = /\s/g;
 
 /**
@@ -16,9 +20,13 @@ const WHITESPACE = /\s/g;
 function maskUrlUserinfo(text: string): string {
   let output = '';
   let copied = 0;
-  URL_SCHEME.lastIndex = 0;
-  for (let scheme = URL_SCHEME.exec(text); scheme; scheme = URL_SCHEME.exec(text)) {
-    const start = scheme.index + scheme[0].length;
+  URL_SCHEME_SEPARATOR.lastIndex = 0;
+  for (
+    let separator = URL_SCHEME_SEPARATOR.exec(text);
+    separator;
+    separator = URL_SCHEME_SEPARATOR.exec(text)
+  ) {
+    const start = separator.index + separator[0].length;
     WHITESPACE.lastIndex = start;
     const end = WHITESPACE.exec(text)?.index ?? text.length;
     const at = text.slice(start, end).lastIndexOf('@');
@@ -26,9 +34,9 @@ function maskUrlUserinfo(text: string): string {
       output += `${text.slice(copied, start)}***`;
       copied = start + at;
     }
-    // Any later scheme in this token lies inside the masked userinfo or after its last
+    // Any later `://` in this token lies inside the masked userinfo or after its last
     // `@`, where there is nothing left to mask.
-    URL_SCHEME.lastIndex = end;
+    URL_SCHEME_SEPARATOR.lastIndex = end;
   }
   return output + text.slice(copied);
 }
