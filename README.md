@@ -8,7 +8,7 @@ A private, self-hosted workspace for defining coding agents and skills, orchestr
 
 An MVP for **one human operator**, supporting the journey:
 
-**Project → Agent/Skills → Workflow/Execution → Logs → Git Review & Approval → Merge to `dev` → Shared Project Preview**.
+**Project → Agent/Skills → Workflow/Execution → Logs → Git Review & Approval → Merge to the integration branch → Shared Project Preview**.
 
 Backend: a NestJS modular monolith with six business modules: `projects` (including Git), `agents` (including skills), `workflows`, `executions`, `environments`, `mcp`. A Next.js UI exposes them. Separate worker and environment-controller processes perform constrained operations.
 
@@ -25,7 +25,7 @@ Backend: a NestJS modular monolith with six business modules: `projects` (includ
 | Live updates | REST + Server-Sent Events (SSE) |
 | Operator auth | One operator, password login + Redis server-side sessions |
 | API schema/client | Zod 4 → `nestjs-zod`/NestJS Swagger → OpenAPI → `@hey-api/openapi-ts` Fetch client |
-| Git workflow | Per-agent worktrees, review/approval, integration branch `dev` |
+| Git workflow | Per-agent worktrees, review/approval, per-project integration branch (default `dev`) |
 | Runtime | Docker Compose on a VPS, Traefik at the edge |
 | Editors | Monaco for definitions, React Flow for workflows |
 
