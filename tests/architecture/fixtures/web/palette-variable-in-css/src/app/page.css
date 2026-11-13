@@ -1,0 +1,4 @@
+/* Tailwind's palette variables are the palette under another name. */
+.page {
+  background: var(--color-zinc-900);
+}

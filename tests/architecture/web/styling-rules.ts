@@ -13,10 +13,15 @@ export const STYLING_RULES = [
   'web-no-design-system-imports',
   'web-no-colour-literals',
   'web-no-style-colours',
+  'web-no-palette-utilities',
 ];
 
 export function stylingViolations(baseDir: string): Violation[] {
-  return [...designSystemImportViolations(baseDir), ...colourViolations(baseDir)];
+  return [
+    ...designSystemImportViolations(baseDir),
+    ...colourViolations(baseDir),
+    ...paletteViolations(baseDir),
+  ];
 }
 
 /** Directories never scanned: dependencies and build output. */
@@ -212,17 +217,24 @@ function colourFunctions(text: string): string[] {
  */
 function stylesheetColours(path: string, text: string): string[] {
   const css = stripStylesheetComments(path, text);
-  const declaration = path.endsWith('.sass')
-    ? /^\s*(?:[\w-]+|\$[\w-]+)\s*:\s+(.*)$/gm
-    : /(?<![\w-])(?:[\w-]+|\$[\w-]+)\s*:\s*([^;{}]*)(?=[;}]|$)/g;
-  const values = [
-    ...[...css.matchAll(declaration)].map((match) => match[1] ?? ''),
-    ...[...css.matchAll(/@apply\s+([^;{}\n]*)/g)].map((match) => match[1] ?? ''),
-  ];
+  const values = [...stylesheetDeclarationValues(path, css), ...applyLists(css)];
   return values.flatMap((value) => [
     ...[...value.matchAll(HEX_COLOUR)].map((match) => match[0]),
     ...colourFunctions(value),
   ]);
+}
+
+/** Values of `prop: value`, `$var: value` and `--token: value` declarations (comments stripped). */
+function stylesheetDeclarationValues(path: string, css: string): string[] {
+  const declaration = path.endsWith('.sass')
+    ? /^\s*(?:[\w-]+|\$[\w-]+)\s*:\s+(.*)$/gm
+    : /(?<![\w-])(?:[\w-]+|\$[\w-]+)\s*:\s*([^;{}]*)(?=[;}]|$)/g;
+  return [...css.matchAll(declaration)].map((match) => match[1] ?? '');
+}
+
+/** Class lists of `@apply` rules (comments stripped). */
+function applyLists(css: string): string[] {
+  return [...css.matchAll(/@apply\s+([^;{}\n]*)/g)].map((match) => match[1] ?? '');
 }
 
 function stripStylesheetComments(path: string, text: string): string {
@@ -448,6 +460,183 @@ const NAMED_COLOURS = new Set(
     'yellowgreen transparent currentcolor'
   ).split(' '),
 );
+
+// ---------------------------------------------------------------------------------------------
+// web-no-palette-utilities
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Tailwind's default palette (`bg-zinc-900`, `text-red-500`, `border-white`) is an ad hoc palette
+ * next to the tokens, so colour utilities must name a token (`bg-surface`, `text-run-failed/80`).
+ * Named colours in arbitrary values or properties (`bg-[red]`, `[color:red]`), Tailwind's palette
+ * variables (`bg-(--color-zinc-900)`, `var(--color-red-500)`) and `theme(colors.red.500)` are
+ * the same thing spelt differently.
+ *
+ * The one exception: a **background** in `black` / `white` **with an opacity modifier**
+ * (`bg-black/55`, any variant) in `src/shared/ui/**`, for the overlay scrims the shadcn
+ * primitives draw, because the design system has no overlay token and `globals.css` stays a
+ * copy of it. Text, border and other colour utilities get no exception.
+ *
+ * Class names are found in every string of a script (class names reach `className` through
+ * `cn()`, `cva()` variant maps and constants, so attributes alone are not enough; import
+ * specifiers are skipped) and in stylesheet `@apply` lists; stylesheet declaration values are
+ * checked for palette variables and theme() paths. A string is split on whitespace and
+ * each token's variants (`hover:`, `dark:md:`, `[&_svg]:`, `data-[state=open]:`) and important
+ * marks (`!`) are removed before the utility is matched. Prose does not look like
+ * `<prefix>-<palette>-<shade>`, so it is not matched.
+ */
+function paletteViolations(baseDir: string): Violation[] {
+  return filesBelow(baseDir, 'src').flatMap((path) =>
+    paletteViolationsInFile(path, readFileSync(join(baseDir, path), 'utf8')),
+  );
+}
+
+/** Where `bg-black/<n>` / `bg-white/<n>` is allowed (overlay scrims). */
+const SCRIM_DIR = 'src/shared/ui/';
+
+export function paletteViolationsInFile(path: string, text: string): Violation[] {
+  if (STYLESHEET.test(path)) {
+    const css = stripStylesheetComments(path, text);
+    // Declarations can reach the palette only through its variables or theme().
+    const declarationHits = stylesheetDeclarationValues(path, css)
+      .flatMap((value) => value.split(/\s+/))
+      .filter(isPaletteReference)
+      .map((token) => ({ rule: 'web-no-palette-utilities', from: path, to: token }));
+    return [...declarationHits, ...classListViolations(path, applyLists(css))];
+  }
+  if (SCRIPT_FILE.test(path) && !path.endsWith('.d.ts')) {
+    return classListViolations(path, scriptClassLists(parse(path, text)));
+  }
+  return [];
+}
+
+function classListViolations(path: string, classLists: string[]): Violation[] {
+  const scrimsAllowed = path.startsWith(SCRIM_DIR);
+  return classLists
+    .flatMap((list) => list.split(/\s+/))
+    .filter((token) => isPaletteUtility(token, scrimsAllowed))
+    .map((token) => ({ rule: 'web-no-palette-utilities', from: path, to: token }));
+}
+
+/** Text of every string literal and template piece, except module specifiers. */
+function scriptClassLists(source: ts.SourceFile): string[] {
+  const lists: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (isTextLiteral(node) && !isModuleSpecifier(node)) lists.push(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return lists;
+}
+
+function isModuleSpecifier(node: ts.Node): boolean {
+  const parent = node.parent;
+  return (
+    ((ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent)) &&
+      parent.moduleSpecifier === node) ||
+    ts.isExternalModuleReference(parent) ||
+    (ts.isCallExpression(parent) && isImportOrRequire(parent))
+  );
+}
+
+/** Tailwind utilities that take a colour (v4). Longer prefixes first. */
+const COLOUR_UTILITY_PREFIXES = [
+  'border-bs',
+  'border-be',
+  'border-x',
+  'border-y',
+  'border-s',
+  'border-e',
+  'border-t',
+  'border-r',
+  'border-b',
+  'border-l',
+  'border',
+  'ring-offset',
+  'inset-ring',
+  'ring',
+  'inset-shadow',
+  'drop-shadow',
+  'text-shadow',
+  'shadow',
+  'outline',
+  'divide',
+  'decoration',
+  'placeholder',
+  'accent',
+  'caret',
+  'fill',
+  'stroke',
+  'from',
+  'via',
+  'to',
+  'bg',
+  'text',
+];
+
+/** Tailwind v4 default palette names (tailwindcss/theme.css). */
+const PALETTE =
+  'slate|gray|zinc|neutral|stone|taupe|mauve|mist|olive|red|orange|amber|yellow|lime|green|' +
+  'emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose';
+const SHADE = '50|100|200|300|400|500|600|700|800|900|950';
+/** `/50`, `/12.5`, `/[.35]`, `/(--alpha)`. */
+const OPACITY = String.raw`(?:/(?:\d+(?:\.\d+)?|\[[^\]]+\]|\([^)]+\)))`;
+const PREFIX = `(?:${COLOUR_UTILITY_PREFIXES.join('|')})`;
+const PALETTE_UTILITY = new RegExp(`^${PREFIX}-(?:${PALETTE})-(?:${SHADE})${OPACITY}?$`);
+const BLACK_WHITE = new RegExp(`^(${PREFIX})-(?:black|white)(${OPACITY})?$`);
+const ARBITRARY_NAMED = new RegExp(String.raw`^${PREFIX}-\[(?:color:)?([a-z]+)\]${OPACITY}?$`, 'i');
+
+/**
+ * Tailwind's palette variables (`--color-zinc-900`, `--color-black`) exist because globals.css
+ * imports `tailwindcss`; reaching them through `bg-(--color-…)` or `var(--color-…)` is the
+ * same palette under another spelling, so it is never allowed (not even for scrims).
+ */
+const PALETTE_VARIABLE = new RegExp(
+  `--color-(?:(?:${PALETTE})-(?:${SHADE})|black|white)(?![\\w-])`,
+);
+/** `theme(colors.red.500)` / `theme(colors.black)`: the v3-style path to the palette. */
+const THEME_PALETTE = new RegExp(
+  String.raw`theme\(\s*colors\.(?:(?:${PALETTE})\.(?:${SHADE})|black|white)(?![\w-])`,
+);
+/** An arbitrary property with a named colour value: `[background-color:red]`. */
+const ARBITRARY_PROPERTY = /^\[[a-z-]+:([a-z]+)\]$/i;
+
+/** A palette variable or a theme() palette path anywhere in a token or declaration value. */
+function isPaletteReference(token: string): boolean {
+  return PALETTE_VARIABLE.test(token) || THEME_PALETTE.test(token);
+}
+
+function isPaletteUtility(token: string, scrimsAllowed: boolean): boolean {
+  if (isPaletteReference(token)) return true;
+  const utility = withoutVariants(token).replace(/^!|!$/g, '');
+  if (PALETTE_UTILITY.test(utility)) return true;
+  const blackWhite = BLACK_WHITE.exec(utility);
+  // The scrim exception: a background with an opacity modifier, nothing else.
+  if (blackWhite) return !(scrimsAllowed && blackWhite[1] === 'bg' && blackWhite[2] !== undefined);
+  const named = (ARBITRARY_NAMED.exec(utility) ?? ARBITRARY_PROPERTY.exec(utility))?.[1];
+  return isNamedColour(named);
+}
+
+function isNamedColour(value: string | undefined): boolean {
+  const name = value?.toLowerCase();
+  return name !== undefined && NAMED_COLOURS.has(name) && !PLAIN_KEYWORDS.has(name);
+}
+
+/** `transparent` and `currentcolor` are not palette colours (`bg-[transparent]` is fine). */
+const PLAIN_KEYWORDS = new Set(['transparent', 'currentcolor']);
+
+/** The utility after the last variant separator (`:` outside brackets and parentheses). */
+function withoutVariants(token: string): string {
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < token.length; i++) {
+    const char = token[i];
+    if (char === '[' || char === '(') depth++;
+    else if (char === ']' || char === ')') depth--;
+    else if (char === ':' && depth === 0) start = i + 1;
+  }
+  return token.slice(start);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Files
