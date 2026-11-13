@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { api, ApiError, LOGIN_PATH } from '../../../../platform/api';
+import { api, ApiError, LOGIN_PATH } from '../../../api';
 
 /**
  * Ends the session on the API (Redis + cookie), then shows the login page. When the

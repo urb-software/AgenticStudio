@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { LoginForm } from '../../../modules/auth';
+import { LoginForm } from '../../../platform/auth';
 
 export const metadata: Metadata = { title: 'Sign in · AI Agent Studio' };
 

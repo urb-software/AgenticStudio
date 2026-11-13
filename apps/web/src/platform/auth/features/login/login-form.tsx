@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
-import { api, ApiError } from '../../../../platform/api';
+import { api, ApiError } from '../../../api';
 
 function messageFor(error: unknown): string {
   if (!(error instanceof ApiError)) {
