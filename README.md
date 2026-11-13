@@ -175,7 +175,7 @@ This first builds the workspace packages (`packages/*`, including `prisma genera
 Check the API through the web origin:
 
 ```bash
-curl -i http://localhost:3000/api/health         # 200 {"status":"ok"} (public)
+curl -i http://localhost:3000/api/health         # 200 {"status":"ok"} (public); 503 problem+json if Redis is unreachable
 curl -i http://localhost:3000/api/auth/session   # 401 problem+json until you sign in
 ```
 
