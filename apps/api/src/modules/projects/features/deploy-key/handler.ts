@@ -45,6 +45,14 @@ export class NoTrustedHostKeyError extends Error {
  * through the secret store's public entry point: it is created and stored here, read here for one Git operation at a time
  * (the Git adapter writes it owner-only for that operation and deletes it), and deleted
  * here. It is never returned to a caller outside the Git port, and never logged.
+ *
+ * Why it lives in `features/` although it is a shared service, not a use case (#72): it
+ * injects the platform's `SECRET_STORE`, and the module layout (backend.md §2, enforced by
+ * `architecture:api`) leaves no other home for that. `domain/` (also `domain/services/`) never
+ * imports NestJS or `platform/` (`api-domain-independent`), `ports/` holds interfaces only,
+ * and features never reach `infrastructure/` (`api-features-no-concrete-adapters`); hiding it
+ * behind a port would move the host-trust rules into an adapter. It has no endpoint, and the
+ * features that use it import only this file.
  */
 @Injectable()
 export class DeployKeyHandler {
