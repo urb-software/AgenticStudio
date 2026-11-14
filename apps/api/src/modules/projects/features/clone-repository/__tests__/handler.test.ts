@@ -148,8 +148,8 @@ describe('CloneRepositoryHandler', () => {
   it('does nothing for a job whose Repository is no longer connecting', async () => {
     await connecting();
     await projects.markFailed(PROJECT, {
-      code: 'unknown',
-      detail: 'Interrupted',
+      code: 'interrupted',
+      detail: '',
       remoteDefaultBranch: null,
     });
 
@@ -190,8 +190,8 @@ describe('CloneRepositoryHandler', () => {
   });
 
   it.each([
-    ['stalled', { code: 'unknown', detail: 'Interrupted' }],
-    ['shutdown', { code: 'unknown', detail: 'Interrupted' }],
+    ['stalled', { code: 'interrupted', detail: '' }],
+    ['shutdown', { code: 'interrupted', detail: '' }],
     ['cancelled', { code: 'unknown', detail: 'Cancelled' }],
     ['timeout', { code: 'timeout' }],
   ] as const)('onFailed stores %s as %j', async (reason, failure) => {
@@ -214,7 +214,7 @@ describe('CloneRepositoryHandler', () => {
     });
   });
 
-  it('reconcile fails every connecting Repository as Interrupted, idempotently', async () => {
+  it('reconcile fails every connecting Repository as interrupted, idempotently', async () => {
     await connecting();
     const other = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
     projects.addProject(other, 'Ready one');
@@ -230,8 +230,8 @@ describe('CloneRepositoryHandler', () => {
     await handler.reconcile();
 
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
-      code: 'unknown',
-      detail: 'Interrupted',
+      code: 'interrupted',
+      detail: '',
       remoteDefaultBranch: null,
     });
     expect((await projects.findRepository(other))?.state).toBe('ready');

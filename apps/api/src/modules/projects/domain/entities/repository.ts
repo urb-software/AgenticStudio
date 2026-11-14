@@ -20,8 +20,8 @@ export type RepositoryState = (typeof REPOSITORY_STATES)[number];
 
 /**
  * Why a Repository is `failed`: the fixed reason codes of Epic #55, the one list of the API.
- * The Git port's failure reasons are these codes, the HTTP contract's enum and the database's
- * CHECK constraint are pinned to them.
+ * The Git port's failure reasons are these codes but `interrupted`; the HTTP contract's enum
+ * and the database's CHECK constraint are pinned to them.
  */
 export const REPOSITORY_FAILURE_CODES = [
   'auth_failed',
@@ -35,12 +35,19 @@ export const REPOSITORY_FAILURE_CODES = [
   'remote_not_allowed',
   /** The remote answered with an HTTP redirect; Studio never follows one (Issue #69). */
   'redirect_refused',
+  /**
+   * The operation was cut off by a crash or a restart of Studio, not by the Repository (#72);
+   * never a Git failure reason.
+   */
+  'interrupted',
   'unknown',
 ] as const;
 export type RepositoryFailureCode = (typeof REPOSITORY_FAILURE_CODES)[number];
 
-/** The detail of a failure left by a crash or shutdown (Issue #60). */
-export const INTERRUPTED_DETAIL = 'Interrupted';
+/** The failure of an operation cut off by a crash or a shutdown (Issue #60): no detail. */
+export function interruptedFailure(): RepositoryFailure {
+  return repositoryFailure('interrupted');
+}
 
 /** Longest stored failure detail; longer redacted Git output is cut. */
 export const FAILURE_DETAIL_MAX_LENGTH = 2000;

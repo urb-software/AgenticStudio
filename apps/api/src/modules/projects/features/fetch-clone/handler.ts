@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import type { JobFailure } from '../../../../platform/queue/job-queue.js';
-import { INTERRUPTED_DETAIL, repositoryFailure } from '../../domain/entities/repository.js';
+import { interruptedFailure, repositoryFailure } from '../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -39,7 +39,7 @@ export const CLONE_MISSING_DETAIL =
  *   (configured or pinned): a host presenting another key fails with `host_key_mismatch`,
  *   never accepted automatically; with no key trusted any more, it fails the same way.
  * - `reconcile` (start-up, before the worker) fails every Repository still `fetching` as
- *   "Interrupted"; its Clone stays usable (a killed fetch leaves the refs unchanged).
+ *   `interrupted`; its Clone stays usable (a killed fetch leaves the refs unchanged).
  */
 @Injectable()
 export class FetchCloneHandler {
@@ -107,9 +107,7 @@ export class FetchCloneHandler {
 
   /** Idempotent: failing what is already failed changes nothing. */
   async reconcile(): Promise<void> {
-    const failed = await this.projects.failAllFetching(
-      repositoryFailure('unknown', INTERRUPTED_DETAIL),
-    );
+    const failed = await this.projects.failAllFetching(interruptedFailure());
     if (failed > 0) {
       this.logger.warn(`Marked ${failed} interrupted repository fetch(es) as failed.`);
     }

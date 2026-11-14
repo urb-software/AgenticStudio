@@ -55,9 +55,9 @@ export type RepositoryFailureOutput = {
 };
 
 /**
- * The fixed failure reason codes (Epic #55). remote_not_allowed: the remote host is or resolves to an address Studio does not connect to (Issue #69); redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow. Later versions may add values; treat an unknown value as a generic failure.
+ * The fixed failure reason codes (Epic #55). remote_not_allowed: the remote host is or resolves to an address Studio does not connect to (Issue #69); redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by a crash or a restart of Studio, not by the repository (Issue #72). Later versions may add values; treat an unknown value as a generic failure.
  */
-export type RepositoryFailureCodeOutput = 'auth_failed' | 'host_unreachable' | 'host_key_mismatch' | 'repository_not_found' | 'branch_not_found' | 'timeout' | 'size_limit' | 'remote_not_allowed' | 'redirect_refused' | 'unknown';
+export type RepositoryFailureCodeOutput = 'auth_failed' | 'host_unreachable' | 'host_key_mismatch' | 'repository_not_found' | 'branch_not_found' | 'timeout' | 'size_limit' | 'remote_not_allowed' | 'redirect_refused' | 'interrupted' | 'unknown';
 
 export type RepositoryOutput = {
     state: RepositoryStateOutput;

@@ -1,7 +1,7 @@
 import type { JobFailure } from '../../../../platform/queue/job-queue.js';
 import {
   gitOperationFailure,
-  INTERRUPTED_DETAIL,
+  interruptedFailure,
   type RepositoryFailure,
   repositoryFailure,
 } from '../../domain/entities/repository.js';
@@ -27,7 +27,7 @@ export function unfinishedJobFailure(
     // A crash-like end: the queue lost the job, or the API is shutting down (#60 clarification 2).
     case 'stalled':
     case 'shutdown':
-      return repositoryFailure('unknown', INTERRUPTED_DETAIL);
+      return interruptedFailure();
     case 'error':
       return repositoryFailure('unknown');
   }

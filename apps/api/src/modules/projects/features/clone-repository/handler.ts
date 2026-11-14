@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import type { JobFailure } from '../../../../platform/queue/job-queue.js';
-import { INTERRUPTED_DETAIL, repositoryFailure } from '../../domain/entities/repository.js';
+import { interruptedFailure, repositoryFailure } from '../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -86,9 +86,7 @@ export class CloneRepositoryHandler {
 
   /** Idempotent: failing what is already failed changes nothing. */
   async reconcile(): Promise<void> {
-    const failed = await this.projects.failAllConnecting(
-      repositoryFailure('unknown', INTERRUPTED_DETAIL),
-    );
+    const failed = await this.projects.failAllConnecting(interruptedFailure());
     if (failed > 0) {
       this.logger.warn(`Marked ${failed} interrupted repository connection(s) as failed.`);
     }

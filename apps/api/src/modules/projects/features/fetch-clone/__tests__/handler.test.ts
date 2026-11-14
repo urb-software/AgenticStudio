@@ -156,7 +156,7 @@ describe('FetchCloneHandler', () => {
     await fetching();
     await projects.markFetchFailed(
       PROJECT,
-      { code: 'unknown', detail: 'Interrupted', remoteDefaultBranch: null },
+      { code: 'interrupted', detail: '', remoteDefaultBranch: null },
       { cloneKept: true },
     );
 
@@ -217,8 +217,8 @@ describe('FetchCloneHandler', () => {
   });
 
   it.each([
-    ['stalled', { code: 'unknown', detail: 'Interrupted' }],
-    ['shutdown', { code: 'unknown', detail: 'Interrupted' }],
+    ['stalled', { code: 'interrupted', detail: '' }],
+    ['shutdown', { code: 'interrupted', detail: '' }],
     ['cancelled', { code: 'unknown', detail: 'Cancelled' }],
     ['timeout', { code: 'timeout', detail: 'The fetch took too long and was stopped.' }],
     ['error', { code: 'unknown', detail: '' }],
@@ -239,7 +239,7 @@ describe('FetchCloneHandler', () => {
     });
   });
 
-  it('reconcile fails every fetching Repository as Interrupted with its Clone kept, idempotently', async () => {
+  it('reconcile fails every fetching Repository as interrupted with its Clone kept, idempotently', async () => {
     await fetching();
 
     await handler.reconcile();
@@ -249,7 +249,7 @@ describe('FetchCloneHandler', () => {
       state: 'failed',
       hasClone: true,
       headSha: OLD,
-      failure: { code: 'unknown', detail: 'Interrupted', remoteDefaultBranch: null },
+      failure: { code: 'interrupted', detail: '', remoteDefaultBranch: null },
     });
   });
 

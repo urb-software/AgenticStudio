@@ -198,6 +198,7 @@ describe('OpenAPI document', () => {
         'size_limit',
         'remote_not_allowed',
         'redirect_refused',
+        'interrupted',
         'unknown',
       ],
     });

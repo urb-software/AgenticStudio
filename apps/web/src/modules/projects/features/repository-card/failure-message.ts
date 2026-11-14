@@ -8,7 +8,7 @@ export type FailedOperation = 'clone' | 'fetch';
 /** How Studio reaches the Repository: anonymous HTTPS, or SSH with the Deploy key (#62). */
 export type Transport = 'https' | 'ssh';
 
-/** The detail the API stores for an operation cut off by a crash or a restart. */
+/** The detail an earlier API stored for an operation cut off by a crash or a restart. */
 const INTERRUPTED = 'Interrupted';
 
 /**
@@ -59,6 +59,9 @@ export function failureMessage(
       return 'Studio does not connect to this address: it is link-local, a cloud metadata service, or loopback or private without STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true. The detail below names the address.';
     case 'redirect_refused':
       return 'The Git host redirected Studio to another URL, and Studio does not follow redirects. Connect with the final URL of the repository.';
+    // #72: the structured marker. PR B drops the `unknown` + 'Interrupted' fallback below.
+    case 'interrupted':
+      return `The ${operation} was interrupted, for example by a restart of Studio.`;
     case 'unknown':
       return failure.detail === INTERRUPTED
         ? `The ${operation} was interrupted, for example by a restart of Studio.`

@@ -308,11 +308,16 @@ describe('Repository card states', () => {
     },
   );
 
-  it('failed after a crash: says the clone was interrupted', async () => {
-    fakeProjectApi(PROJECT, failed({ code: 'unknown', detail: 'Interrupted' }));
+  it.each([
+    ['the interrupted code (#72)', { code: 'interrupted', detail: '' }],
+    ['the detail an earlier API stored', { code: 'unknown', detail: 'Interrupted' }],
+  ] as const)('failed after a crash (%s): says the clone was interrupted', async (_, failure) => {
+    fakeProjectApi(PROJECT, failed(failure));
     await renderLoaded();
 
-    expect((await within(card()).findByRole('alert')).textContent).toMatch(/interrupted/);
+    expect((await within(card()).findByRole('alert')).textContent).toMatch(
+      /The clone was interrupted/,
+    );
   });
 
   it('Retry connects again with the stored URL and branch', async () => {
@@ -571,7 +576,7 @@ describe('Fetch (Story #61)', () => {
   });
 
   it('failed fetch after a crash: says the fetch was interrupted', async () => {
-    fakeProjectApi(PROJECT, failedFetch({ code: 'unknown', detail: 'Interrupted' }));
+    fakeProjectApi(PROJECT, failedFetch({ code: 'interrupted', detail: '' }));
     await renderLoaded();
 
     expect((await within(card()).findByRole('alert')).textContent).toMatch(

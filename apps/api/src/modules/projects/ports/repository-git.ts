@@ -46,11 +46,13 @@ export interface RemoteInspection {
 
 /**
  * The fixed failure reasons of a Git operation (Epic #55): the Repository failure codes, so a
- * reason is stored as it is.
+ * reason is stored as it is, except `interrupted`, which only the job records.
  */
-export const GIT_FAILURE_REASONS = REPOSITORY_FAILURE_CODES;
+export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
-export type GitFailureReason = RepositoryFailureCode;
+export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
+  (code): code is GitFailureReason => code !== 'interrupted',
+);
 
 /**
  * Operations on one project are serialized by the adapter (in-process lock: one API

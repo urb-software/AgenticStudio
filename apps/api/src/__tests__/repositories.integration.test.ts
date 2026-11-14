@@ -419,7 +419,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   });
 
   describe('start-up reconciliation', () => {
-    it('marks a repository left connecting by a crash as failed (unknown, "Interrupted")', async () => {
+    it('marks a repository left connecting by a crash as failed (interrupted)', async () => {
       const id = await createProject('Crashed');
       // Test setup only: a crash mid-clone cannot be produced through the API.
       await db().$executeRaw`
@@ -435,7 +435,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         url: 'https://github.com/acme/crashed.git',
         integrationBranch: 'dev',
         hasClone: false,
-        failure: { code: 'unknown', detail: 'Interrupted' },
+        failure: { code: 'interrupted', detail: '' },
       });
       expect((await getProject(id)).body.repository).toEqual({
         state: 'failed',
@@ -444,7 +444,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       });
     });
 
-    it('marks a repository left fetching by a crash as failed ("Interrupted"), keeping its Clone', async () => {
+    it('marks a repository left fetching by a crash as failed (interrupted), keeping its Clone', async () => {
       const id = await createProject('Crashed fetch');
       const sha = 'e'.repeat(40);
       const fetchedAt = '2026-11-13T10:00:00.000Z';
@@ -462,7 +462,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         hasClone: true,
         headSha: sha,
         lastFetchedAt: fetchedAt,
-        failure: { code: 'unknown', detail: 'Interrupted' },
+        failure: { code: 'interrupted', detail: '' },
       });
     });
   });
