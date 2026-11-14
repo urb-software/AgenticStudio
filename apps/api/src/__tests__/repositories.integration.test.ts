@@ -7,7 +7,13 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
-import { createGitFixture, type GitFixture } from './git-fixture.js';
+import {
+  createGitFixture,
+  deleteRemoteBranch,
+  type GitFixture,
+  pushCommit,
+  restoreRemoteBranch,
+} from './git-fixture.js';
 import {
   signIn,
   startStudioApp,
@@ -16,7 +22,7 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Story #60, main seam: the real app over HTTP with PostgreSQL and Redis (Testcontainers) and
+// Stories #60 (connect) and #61 (fetch), main seam: the real app over HTTP with PostgreSQL and Redis (Testcontainers) and
 // the real job queue. Cases that clone need the real `git` and run on Linux only (CI runs
 // them; a guard at the end fails CI if they were skipped). Fixture remotes are `file://`
 // URLs, accepted only under the test-only setting this suite turns on.
@@ -71,14 +77,19 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   const getRepository = (projectId: string) =>
     request(server()).get(`/api/projects/${projectId}/repository`).set('Cookie', cookie);
 
-  /** Polls the repository until it leaves `connecting`, as the web app does. */
+  const fetchRepository = (projectId: string) =>
+    request(server())
+      .post(`/api/projects/${projectId}/repository/fetch`)
+      .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+
+  /** Polls the repository until it leaves `connecting` and `fetching`, as the web app does. */
   async function settled(projectId: string, timeoutMs = 30_000) {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const response = await getRepository(projectId);
       expect(response.status).toBe(200);
-      if (response.body.state !== 'connecting') return response.body;
-      if (Date.now() > deadline) throw new Error('the repository stayed connecting');
+      if (!['connecting', 'fetching'].includes(response.body.state)) return response.body;
+      if (Date.now() > deadline) throw new Error(`the repository stayed ${response.body.state}`);
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
@@ -248,6 +259,28 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         await restart();
       }
     });
+
+    it('refuses to fetch with 501 and leaves the repository as it was', async () => {
+      await restart({ projects: { gitSettings: { platform: 'win32' } } });
+      try {
+        const id = await createProject('Windows fetch');
+        // Test setup only: a ready repository cannot be connected on this host.
+        await db().$executeRaw`
+          INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state, head_sha, last_fetched_at)
+          VALUES (${id}::uuid, 'https://github.com/acme/win.git', 'github.com/acme/win', 'dev', 'ready', ${'d'.repeat(40)}, now())`;
+
+        expectProblem(await fetchRepository(id), 501, 'unsupported-platform');
+        expect((await getRepository(id)).body.state).toBe('ready');
+      } finally {
+        await restart();
+      }
+    });
+  });
+
+  describe('POST /api/projects/:id/repository/fetch: refused (every platform)', () => {
+    it('answers 404 for an id that is not a UUID', async () => {
+      expectProblem(await fetchRepository('not-a-uuid'), 404, 'project-not-found');
+    });
   });
 
   describe('start-up reconciliation', () => {
@@ -275,6 +308,28 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         integrationBranch: 'dev',
       });
     });
+
+    it('marks a repository left fetching by a crash as failed ("Interrupted"), keeping its Clone', async () => {
+      const id = await createProject('Crashed fetch');
+      const sha = 'e'.repeat(40);
+      const fetchedAt = '2026-11-13T10:00:00.000Z';
+      // Test setup only: a crash mid-fetch cannot be produced through the API.
+      await db().$executeRaw`
+        INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state, head_sha, last_fetched_at)
+        VALUES (${id}::uuid, 'https://github.com/acme/fetching.git', 'github.com/acme/fetching', 'dev', 'fetching', ${sha}, ${fetchedAt}::timestamptz)`;
+
+      await restart();
+
+      expect((await getRepository(id)).body).toEqual({
+        state: 'failed',
+        url: 'https://github.com/acme/fetching.git',
+        integrationBranch: 'dev',
+        hasClone: true,
+        headSha: sha,
+        lastFetchedAt: fetchedAt,
+        failure: { code: 'unknown', detail: 'Interrupted' },
+      });
+    });
   });
 
   describe('authentication', () => {
@@ -292,6 +347,22 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         401,
       );
       expectProblem(await getRepository(id), 404, 'no-repository');
+      expectProblem(
+        await request(server())
+          .post(`/api/projects/${id}/repository/fetch`)
+          .set('Origin', STUDIO_ORIGIN),
+        401,
+      );
+    });
+
+    it('rejects a fetch with a foreign Origin', async () => {
+      const id = await createProject('Cross-site fetch');
+
+      const response = await request(server())
+        .post(`/api/projects/${id}/repository/fetch`)
+        .set({ Origin: 'http://evil.example', Cookie: cookie });
+
+      expectProblem(response, 403);
     });
 
     it('rejects a connect with a foreign Origin', async () => {
@@ -528,6 +599,188 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
           code: 'size_limit',
           detail: expect.any(String),
         });
+      });
+
+      it('fails a fetch with timeout when the remote stops answering, keeping the Clone', async () => {
+        const id = await createProject('Slow fetch');
+        const remote = createGitFixture(fixtures, 'slow-fetch');
+        expect((await connect(id, { url: remote.url, integrationBranch: 'dev' })).status).toBe(201);
+        const ready = await settled(id);
+        // Test setup only: the remote moves to a host that hangs.
+        await db().$executeRaw`
+          UPDATE repositories SET url = ${`https://127.0.0.1:${silentPort}/acme/slow.git`}
+          WHERE project_id = ${id}::uuid`;
+        await restart({ projects: { gitSettings: { fetchTimeoutMs: 1_500 } } });
+
+        expect((await fetchRepository(id)).status).toBe(202);
+
+        expect(await settled(id)).toMatchObject({
+          state: 'failed',
+          hasClone: true,
+          headSha: ready.headSha,
+          lastFetchedAt: ready.lastFetchedAt,
+          failure: { code: 'timeout' },
+        });
+      });
+
+      it('fails a fetch past the size limit with no usable Clone; only Retry repairs it', async () => {
+        await restart();
+        const remote = createGitFixture(fixtures, 'grows');
+        const id = await createProject('Grows');
+        expect((await connect(id, { url: remote.url, integrationBranch: 'dev' })).status).toBe(201);
+        expect((await settled(id)).state).toBe('ready');
+        pushCommit(remote, 'dev', { bigFileBytes: 4 * 1024 * 1024 });
+        await restart({
+          projects: { gitSettings: { maxCloneBytes: 256 * 1024, sizePollIntervalMs: 20 } },
+        });
+
+        expect((await fetchRepository(id)).status).toBe(202);
+
+        const failed = await settled(id);
+        expect(failed).toEqual({
+          state: 'failed',
+          url: remote.url,
+          integrationBranch: 'dev',
+          hasClone: false,
+          failure: { code: 'size_limit', detail: expect.any(String) },
+        });
+        expectProblem(await fetchRepository(id), 409, 'no-usable-clone');
+
+        await restart();
+        expect((await connect(id, { url: remote.url, integrationBranch: 'dev' })).status).toBe(201);
+        expect(await settled(id)).toMatchObject({ state: 'ready', hasClone: true });
+      });
+    });
+
+    describe('fetch', () => {
+      let remote: GitFixture;
+      let id: string;
+      let connected: { headSha: string; lastFetchedAt: string };
+
+      beforeEach(async () => {
+        remote = createGitFixture(fixtures, `fetch-${Date.now()}`);
+        id = await createProject('Fetched');
+        expect((await connect(id, { url: remote.url, integrationBranch: 'dev' })).status).toBe(201);
+        connected = await settled(id);
+        expect(connected).toMatchObject({ state: 'ready', headSha: remote.commits.dev });
+      });
+
+      it('picks up a new commit: 202 fetching at once, then ready with the new commit', async () => {
+        const commit = pushCommit(remote, 'dev');
+
+        const response = await fetchRepository(id);
+
+        expect(response.status).toBe(202);
+        expect(response.body).toEqual({
+          state: 'fetching',
+          url: remote.url,
+          integrationBranch: 'dev',
+          hasClone: true,
+          headSha: connected.headSha,
+          lastFetchedAt: connected.lastFetchedAt,
+        });
+        const fetched = await settled(id);
+        expect(fetched).toEqual({
+          state: 'ready',
+          url: remote.url,
+          integrationBranch: 'dev',
+          hasClone: true,
+          headSha: commit,
+          lastFetchedAt: expect.stringMatching(ISO_8601),
+        });
+        expect(Date.parse(fetched.lastFetchedAt)).toBeGreaterThan(
+          Date.parse(connected.lastFetchedAt),
+        );
+        expect((await getProject(id)).body.repository.state).toBe('ready');
+      });
+
+      it('keeps the commit and moves "Last fetched" on when nothing changed', async () => {
+        expect((await fetchRepository(id)).status).toBe(202);
+
+        const fetched = await settled(id);
+
+        expect(fetched).toMatchObject({ state: 'ready', headSha: connected.headSha });
+        expect(Date.parse(fetched.lastFetchedAt)).toBeGreaterThan(
+          Date.parse(connected.lastFetchedAt),
+        );
+      });
+
+      it('fails with branch_not_found when the branch is gone, keeping the Clone; Fetch works again later', async () => {
+        deleteRemoteBranch(remote, 'dev');
+
+        expect((await fetchRepository(id)).status).toBe(202);
+
+        expect(await settled(id)).toEqual({
+          state: 'failed',
+          url: remote.url,
+          integrationBranch: 'dev',
+          hasClone: true,
+          headSha: connected.headSha,
+          lastFetchedAt: connected.lastFetchedAt,
+          failure: {
+            code: 'branch_not_found',
+            detail: 'Branch "dev" was not found on the remote.',
+          },
+        });
+
+        restoreRemoteBranch(remote, 'dev');
+        const commit = pushCommit(remote, 'dev');
+        expect((await fetchRepository(id)).status).toBe(202);
+        expect(await settled(id)).toMatchObject({ state: 'ready', headSha: commit });
+        expect((await getRepository(id)).body.failure).toBeUndefined();
+      });
+
+      it('fails with repository_not_found when the remote is gone, keeping the Clone', async () => {
+        await rm(remote.bare, { recursive: true, force: true });
+
+        expect((await fetchRepository(id)).status).toBe(202);
+
+        const failed = await settled(id);
+        expect(failed).toMatchObject({
+          state: 'failed',
+          hasClone: true,
+          headSha: connected.headSha,
+          lastFetchedAt: connected.lastFetchedAt,
+          failure: { code: 'repository_not_found' },
+        });
+        // Redacted: the local path of the fixture is not in the detail.
+        expect(failed.failure.detail).not.toContain(fixtures);
+      });
+
+      it('lets the store decide between concurrent fetches: one 202, one 409', async () => {
+        const responses = await Promise.all([fetchRepository(id), fetchRepository(id)]);
+
+        expect(responses.map((response) => response.status).sort()).toEqual([202, 409]);
+        expectProblem(
+          responses.find((response) => response.status === 409)!,
+          409,
+          'repository-busy',
+        );
+        expect((await settled(id)).state).toBe('ready');
+      });
+
+      it('refuses a fetch while connecting with 409 repository-busy', async () => {
+        // Test setup only: hold the repository in `connecting` (a clone that has not finished).
+        await db().$executeRaw`
+          UPDATE repositories SET state = 'connecting', head_sha = NULL, last_fetched_at = NULL
+          WHERE project_id = ${id}::uuid`;
+
+        expectProblem(await fetchRepository(id), 409, 'repository-busy');
+        expect((await getRepository(id)).body.state).toBe('connecting');
+      });
+
+      it('refuses a fetch after a failed connect with 409 no-usable-clone', async () => {
+        const other = await createProject('Never cloned');
+        const url = remote.url.replace(/\.git$/, '-missing.git');
+        expect((await connect(other, { url, integrationBranch: 'dev' })).status).toBe(201);
+        expect(await settled(other)).toMatchObject({ state: 'failed', hasClone: false });
+
+        expectProblem(await fetchRepository(other), 409, 'no-usable-clone');
+      });
+
+      it('answers 404 for an unknown project and for a project without a repository', async () => {
+        expectProblem(await fetchRepository(UNKNOWN_PROJECT), 404, 'project-not-found');
+        expectProblem(await fetchRepository(await createProject('Empty')), 404, 'no-repository');
       });
     });
   });

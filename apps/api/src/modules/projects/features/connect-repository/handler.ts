@@ -8,7 +8,7 @@ import {
 } from '../../domain/repositories/project-repository.js';
 import { IntegrationBranch } from '../../domain/value-objects/integration-branch.js';
 import { RepositoryUrl } from '../../domain/value-objects/repository-url.js';
-import { CLONE_JOBS, type CloneJobs } from '../../ports/clone-jobs.js';
+import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 
 /** DI token for {@link ConnectRepositorySettings}. */
@@ -45,7 +45,7 @@ export class ConnectRepositoryHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
-    @Inject(CLONE_JOBS) private readonly cloneJobs: CloneJobs,
+    @Inject(REPOSITORY_JOBS) private readonly jobs: RepositoryJobs,
     @Inject(CONNECT_REPOSITORY_SETTINGS) private readonly settings: ConnectRepositorySettings,
   ) {}
 
@@ -66,7 +66,7 @@ export class ConnectRepositoryHandler {
       integrationBranch: branch.value,
     });
     try {
-      await this.cloneJobs.start(input.projectId);
+      await this.jobs.start(input.projectId, 'clone');
     } catch (error) {
       await this.projects.markFailed(
         input.projectId,

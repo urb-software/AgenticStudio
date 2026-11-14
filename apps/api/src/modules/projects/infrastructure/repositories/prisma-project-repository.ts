@@ -15,11 +15,14 @@ import {
 } from '../../domain/entities/repository.js';
 import {
   type ConnectRepositoryRecord,
+  NoRepositoryError,
+  NoUsableCloneError,
   ProjectNameTakenError,
   ProjectNotFoundError,
   type ProjectRepository,
   RemoteAlreadyConnectedError,
   RepositoryAlreadyConnectedError,
+  RepositoryBusyError,
 } from '../../domain/repositories/project-repository.js';
 import type { ProjectName } from '../../domain/value-objects/project-name.js';
 
@@ -83,6 +86,12 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
   };
 }
 
+const NO_FAILURE = {
+  failureCode: null,
+  failureDetail: null,
+  failureRemoteDefaultBranch: null,
+} as const;
+
 function failureColumns(failure: RepositoryFailure) {
   return {
     state: 'failed',
@@ -97,7 +106,8 @@ function failureColumns(failure: RepositoryFailure) {
  * PostgreSQL adapter of {@link ProjectRepository}. Unique indexes, not prior reads, decide
  * duplicates: `projects.name_normalized` for names, the `repositories` primary key (one per
  * project) and `repositories.url_normalized` (one project per remote) for Connect. Every
- * Repository transition is a conditional update on the current state.
+ * Repository transition is a conditional update on the current state, and a usable Clone is
+ * recorded by its commit: `head_sha` is set exactly while one exists.
  */
 @Injectable()
 export class PrismaProjectRepository implements ProjectRepository {
@@ -200,15 +210,81 @@ export class PrismaProjectRepository implements ProjectRepository {
     return count;
   }
 
+  async beginFetch(projectId: string): Promise<RepositoryConnection> {
+    // One conditional statement: only a Repository with a usable Clone that is not busy.
+    const { count } = await this.db.repository.updateMany({
+      where: { projectId, state: { in: ['ready', 'failed'] }, headSha: { not: null } },
+      data: { state: 'fetching', ...NO_FAILURE, updatedAt: new Date() },
+    });
+    const stored = await this.findRepository(projectId);
+    if (count === 1 && stored) return stored;
+    throw await this.fetchRefusal(projectId, stored);
+  }
+
+  markFetched(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
+    return this.transition(
+      projectId,
+      {
+        state: 'ready',
+        headSha: clone.headSha,
+        lastFetchedAt: clone.fetchedAt,
+        ...NO_FAILURE,
+        updatedAt: new Date(),
+      },
+      'fetching',
+    );
+  }
+
+  markFetchFailed(
+    projectId: string,
+    failure: RepositoryFailure,
+    { cloneKept }: { cloneKept: boolean },
+  ): Promise<boolean> {
+    return this.transition(
+      projectId,
+      {
+        ...failureColumns(failure),
+        // The Clone was removed: no usable Clone, so neither its commit nor its fetch time.
+        ...(cloneKept ? {} : { headSha: null, lastFetchedAt: null }),
+      },
+      'fetching',
+    );
+  }
+
+  async failAllFetching(failure: RepositoryFailure): Promise<number> {
+    const { count } = await this.db.repository.updateMany({
+      where: { state: 'fetching' },
+      data: failureColumns(failure),
+    });
+    return count;
+  }
+
   private async transition(
     projectId: string,
     data: Parameters<DatabaseClient['repository']['updateMany']>[0]['data'],
+    from: 'connecting' | 'fetching' = 'connecting',
   ): Promise<boolean> {
     const { count } = await this.db.repository.updateMany({
-      where: { projectId, state: 'connecting' },
+      where: { projectId, state: from },
       data,
     });
     return count === 1;
+  }
+
+  /** Why a fetch could not start, read after the conditional update changed nothing. */
+  private async fetchRefusal(
+    projectId: string,
+    repository: RepositoryConnection | null,
+  ): Promise<Error> {
+    if (!repository) {
+      const project = await this.db.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      return project ? new NoRepositoryError() : new ProjectNotFoundError();
+    }
+    if (repository.state === 'failed' && !repository.hasClone) return new NoUsableCloneError();
+    return new RepositoryBusyError();
   }
 
   /**
