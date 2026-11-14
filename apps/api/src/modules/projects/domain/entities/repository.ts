@@ -18,7 +18,11 @@ export const REPOSITORY_STATES = [
 ] as const;
 export type RepositoryState = (typeof REPOSITORY_STATES)[number];
 
-/** Why a Repository is `failed`: the fixed reason codes of Epic #55. */
+/**
+ * Why a Repository is `failed`: the fixed reason codes of Epic #55, the one list of the API.
+ * The Git port's failure reasons are these codes, the HTTP contract's enum and the database's
+ * CHECK constraint are pinned to them.
+ */
 export const REPOSITORY_FAILURE_CODES = [
   'auth_failed',
   'host_unreachable',
@@ -27,7 +31,9 @@ export const REPOSITORY_FAILURE_CODES = [
   'branch_not_found',
   'timeout',
   'size_limit',
+  /** The remote host is, or resolves to, an address the policy refuses (Issue #69). */
   'remote_not_allowed',
+  /** The remote answered with an HTTP redirect; Studio never follows one (Issue #69). */
   'redirect_refused',
   'unknown',
 ] as const;

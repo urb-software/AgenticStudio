@@ -4,6 +4,11 @@
  * system `git` binary on Linux only; nothing here depends on how.
  */
 
+import {
+  REPOSITORY_FAILURE_CODES,
+  type RepositoryFailureCode,
+} from '../domain/entities/repository.js';
+
 /** DI token for the {@link RepositoryGit} adapter. */
 export const REPOSITORY_GIT = Symbol('REPOSITORY_GIT');
 
@@ -39,23 +44,13 @@ export interface RemoteInspection {
   branchExists: boolean;
 }
 
-/** The fixed failure reasons of a Git operation (Epic #55). */
-export const GIT_FAILURE_REASONS = [
-  'auth_failed',
-  'host_unreachable',
-  'host_key_mismatch',
-  'repository_not_found',
-  'branch_not_found',
-  'timeout',
-  'size_limit',
-  /** The remote host is, or resolves to, an address the policy refuses (Issue #69). */
-  'remote_not_allowed',
-  /** The remote answered with an HTTP redirect; Studio never follows one (Issue #69). */
-  'redirect_refused',
-  'unknown',
-] as const;
+/**
+ * The fixed failure reasons of a Git operation (Epic #55): the Repository failure codes, so a
+ * reason is stored as it is.
+ */
+export const GIT_FAILURE_REASONS = REPOSITORY_FAILURE_CODES;
 
-export type GitFailureReason = (typeof GIT_FAILURE_REASONS)[number];
+export type GitFailureReason = RepositoryFailureCode;
 
 /**
  * Operations on one project are serialized by the adapter (in-process lock: one API
