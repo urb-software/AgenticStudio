@@ -2,13 +2,26 @@
 
 - **Issue:** #86 (B6), parent Epic #84
 - **Provider / CLI:** Anthropic, Claude Code CLI, version 2.1.325 (latest release on the official changelog, dated November 13, 2026)
-- **Decision:** Needs Clarification — operator decision and headless test pending
-- **Accepted by (operator):** pending
-- **Decision date:** pending
-- **Next review date:** three months after the decision date
+- **Decision:** Approved — subscription login (API key not selected; documented fallback)
+- **Accepted by (operator):** the operator (project owner), recorded by the coordinator
+- **Decision date:** 2026-11-14
+- **Next review date:** 2027-02-14
 - **Records prepared on:** 2026-11-14
 
-This record reports what Anthropic's published pages say on the date read. It is not legal advice. Accepting any remaining ambiguity is the operator's decision. `CLAUDE_CODE_ENABLED` stays `false`; this record changes no runtime configuration.
+This record reports what Anthropic's published pages say on the date read. It is not legal advice. Accepting the remaining ambiguity is the operator's decision, recorded under "Operator decision" below. `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it; this record changes no runtime configuration.
+
+## Operator decision
+
+On 2026-11-14 the operator read the findings in this record and approved the **subscription login** for the intended use below.
+
+- The operator **explicitly accepts the ambiguity** listed in the "Unclear / silent" column of the subscription assessment, in particular:
+  - whether the intended use is "ordinary, individual usage" (S4), and whether S11 counts as the provider "explicitly permit[ting]" scripted access under S1 §3;
+  - whether Studio's worker counts as running Claude Code "in your products or services (e.g. in hosted sandboxes or other agent infrastructure)" (S4), which would require the Commercial Terms.
+- The operator accepts that the **risk falls on their own account**, including enforcement "without prior notice" (S4).
+- These unclear items stay listed below as **accepted risks**, not as resolved points.
+- **Selected method:** subscription login. **API key:** not selected. It is the documented fallback, assessed as permitted, and must be revalidated before any switch.
+- **Governing consumer terms:** the EEA/Switzerland version of S1 (confirmed by the operator).
+- Asking Anthropic sales (draft question under "Open questions / notes") is **recommended, not blocking**.
 
 ## Intended use (what is validated)
 
@@ -38,7 +51,7 @@ All sources are Anthropic's own pages. The Claude Code documentation pages and h
 | S11 | Help Centre — Use the Claude Agent SDK with your Claude plan     | https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan   | "Updated over 2 weeks ago"; updates dated June 15, 2026 and October 7, 2026                      | 2026-11-14  |
 | S12 | Help Centre — Monthly API credits for Max, Ultra, and Team plans | https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-ultra-and-team-plans | "Updated over 2 weeks ago" (no date shown)                                                       | 2026-11-14  |
 
-Note on S1: the page has regional versions. The text quoted below is from the version for consumers resident in the EEA or Switzerland; the operator confirms which regional version applies to the account. The clause quoted from §3 is the one relevant here.
+Note on S1: the page has regional versions. The text quoted below is from the version for consumers resident in the EEA or Switzerland; the operator confirmed on 2026-11-14 that this regional version applies to the account. The clause quoted from §3 is the one relevant here.
 
 ### Quotes relied on
 
@@ -141,7 +154,7 @@ and do not apply to
 |                                                                                                                                                                                                                                                                      |                                                                                                                                                  | Long-lived token (`claude setup-token`, `CLAUDE_CODE_OAUTH_TOKEN`): S5 documents it "For CI pipelines, scripts, or other environments where interactive browser login isn't available", but it would put a subscription token into Studio's configuration, which is close to "store" in S4. Not selected.                                                                                                                                                                                                                          |
 |                                                                                                                                                                                                                                                                      |                                                                                                                                                  | Whether Studio's worker, which runs Claude Code on a server, counts as running it "in your products or services (e.g. in hosted sandboxes or other agent infrastructure)" (S4). If it does, S4 says this "requires agreeing to our Commercial Terms of Service", which govern API keys (S1 preamble, S2), not the Consumer Terms under which the subscription is used. S4 frames the section around customers offering Claude Code to their end users; it does not address a single person's own tool.                             |
 
-**Result for subscription login: unclear.** The official text neither clearly permits nor clearly forbids the intended use. Anthropic states it may enforce "without prior notice" (S4), so the risk falls on the operator's everyday account.
+**Result for subscription login: unclear.** The official text neither clearly permits nor clearly forbids the intended use. Anthropic states it may enforce "without prior notice" (S4), so the risk falls on the operator's everyday account. The operator accepted these unclear items as risks on 2026-11-14 (see "Operator decision").
 
 ### Assessment — API key (fallback)
 
@@ -156,7 +169,7 @@ and do not apply to
 
 ### Selected method
 
-Not yet selected. Proposed: subscription login only after Anthropic answers the clarification question (see Open questions); API key path usable now if the operator accepts it.
+**Subscription login** (operator decision, 2026-11-14). The API key path is not selected; it stays the documented fallback and is revalidated before any switch.
 
 ### How credentials are provisioned to the worker (without extraction, interception, sharing or proxying)
 
@@ -210,12 +223,27 @@ claude -p "<operator answer>" --resume <session-id> <same options>
 
 ## Controlled headless execution test
 
-- **Status: pending.** At the time of writing the CLI is not installed in the test environment, and the test needs the operator's own login. It is run by the operator (or with the operator's explicit OK to install the CLI and use its stored login).
-- Environment: Linux (WSL on the operator's machine), CLI 2.1.325 or later, logged in as the operator with the subscription login; a throwaway Git repository in a temporary directory; trivial task; no real project code.
+- **Status: done** on 2026-11-14, run by the coordinator on the operator's machine, two runs.
+- Environment: WSL, Ubuntu 22.04. CLI 2.1.325, installed with the official installer from the setup page. The operator signed in interactively with `claude auth login` (subscription login). `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` were unset. A throwaway Git repository in a temporary directory, deleted afterwards. Trivial task (create a file, then append a line). No real project code. No credentials were read or printed.
+- **Deviation:** the test ran as root inside WSL, not as an ordinary user. The server must run the worker as an ordinary user, as stated under "Intended use". A first run on the server as that user should show the same results (worker story).
 - Command(s) (redacted):
-  - `claude -p "<trivial task>" --output-format stream-json --verbose --permission-mode dontAsk --permission-prompts none --allowedTools "Read,Edit" --setting-sources user --strict-mcp-config --max-turns 5`
-  - `claude -p "<follow-up>" --resume <session-id> <same options>`
-- Result / evidence: pending — to record exit status of each step, event types seen, session id present (yes/no), resume continues the same session (yes/no). Output captured redacted: no account name, email, plan tier, hostname, token, session file or transcript.
+  - Step 1: `claude -p "<trivial task>" --output-format stream-json --verbose --permission-mode dontAsk --permission-prompts none --allowedTools "Read,Edit,Write" --setting-sources user --strict-mcp-config --max-turns 5`
+  - Step 2: `claude -p "<follow-up>" --resume <session-id> <same options>`
+- Result / evidence (redacted summary lines only; no output, session id value or transcript kept):
+
+| Item                     | Run 1                                                                                                | Run 2                                    |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| CLI version              | 2.1.325                                                                                              | 2.1.325                                  |
+| Exit status, step 1 / 2  | 0 / 0                                                                                                | 0 / 0                                    |
+| Event types, step 1      | `assistant`, `rate_limit_event`, `result/success`, `system/commands_changed`, `system/init`, `user`  | same, without `system/commands_changed`  |
+| Event types, step 2      | `assistant`, `rate_limit_event`, `result/success`, `system/init`, `system/permission_denied`, `user` | same, without `system/permission_denied` |
+| Result `is_error`        | false (both steps)                                                                                   | false (both steps)                       |
+| Session id present       | yes                                                                                                  | yes                                      |
+| Resume uses same session | yes                                                                                                  | yes                                      |
+| File content correct     | yes                                                                                                  | yes                                      |
+| stderr                   | empty                                                                                                | empty                                    |
+
+- Interpretation: non-interactive steps with streamed events, a structured result and resume by session id work with the subscription login. Under `dontAsk`, a tool outside the allowlist was denied without a prompt (`system/permission_denied`) and the run still completed. Which tool was denied in run 1 was not captured, and the denial did not recur in run 2 (model behaviour is not deterministic).
 
 ## Revalidation triggers
 
@@ -225,12 +253,21 @@ claude -p "<operator answer>" --resume <session-id> <same options>
 - Change of authentication method (subscription ↔ API key, long-lived token, other provider).
 - Move to a different server, or more than one server.
 - Change in how runs are started (timers, outside events, other people), or the concurrency limit rises above two.
-- Next review date passes.
+- An answer from Anthropic to the question under "Open questions / notes".
+- Next review date (2027-02-14) passes.
 
 ## Open questions / notes
 
-- **Operator decision:** accept the remaining ambiguity for subscription login, ask Anthropic first (draft question in PR), or use the API key path.
-- **Channel for the question:** S4 says "For questions about permitted authentication methods for your use case, please contact sales." The draft question is addressed to that channel.
-- **Headless test:** pending; to be run by the operator.
+- **Question to Anthropic (recommended, not blocking):** S4 says "For questions about permitted authentication methods for your use case, please contact sales." Draft:
+
+  > I am an individual on a Claude subscription plan. I am building a personal tool, used only by me, that runs the unmodified Claude Code CLI (`claude -p`, streamed JSON output, resumed by session id) on one Linux server I control, as an ordinary OS user signed in once with my own account through `claude auth login`. Runs start only when I start them, or later from a workflow I started, never on a timer or an outside event. At most two run at a time, on my own repositories, and they may keep running while I am away. The tool never reads, stores or forwards my credentials and has no other users.
+  >
+  > 1. Is this use permitted with my subscription login under the Consumer Terms (§3, automated access) and the Claude Code "Legal and compliance" page ("ordinary, individual usage"), or should I use an API key from my Console organization?
+  > 2. Does signing in the same account on that server, in addition to my own computer, change the answer?
+  > 3. Does a personal tool like this count as running Claude Code "in your products or services (e.g. in hosted sandboxes or other agent infrastructure)", which the same page says requires the Commercial Terms of Service?
+
+  An answer that restricts the intended use is a revalidation trigger.
+
+- **Server confirmation:** the headless test ran in WSL as root; the first server run as the ordinary worker user should confirm the same results.
 - The help-centre articles show no exact update date; re-read them at each review.
 - Not legal advice. No account name, plan tier, email, hostname, token, session file or unredacted output is recorded here.
