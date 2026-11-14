@@ -60,6 +60,36 @@ describe('remoteIdentity (Issue #60 clarification 6)', () => {
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 
+  // PR #71 review S-SP6 (c), pinned by #72: more edge cases of the identity.
+  it.each([
+    ['resolves "." segments', 'https://github.com/acme/./shop.git', 'github.com/acme/shop'],
+    ['resolves ".." segments', 'https://github.com/acme/x/../shop.git', 'github.com/acme/shop'],
+    [
+      'ignores a user without a password',
+      'https://git@github.com/acme/shop',
+      'github.com/acme/shop',
+    ],
+    [
+      'keeps port 22 on https (default only for ssh)',
+      'https://github.com:22/acme/shop',
+      'github.com:22/acme/shop',
+    ],
+    [
+      'keeps port 443 on ssh (default only for https)',
+      'ssh://git@github.com:443/acme/shop',
+      'github.com:443/acme/shop',
+    ],
+  ])('%s', (_case, input, identity) => {
+    expect(remoteIdentity(input)).toBe(identity);
+  });
+
+  it('does not decode percent-encoding: a known limit of #60 (out of scope for #72)', () => {
+    expect(remoteIdentity('https://github.com/acme/%73hop')).toBe('github.com/acme/%73hop');
+    expect(remoteIdentity('https://github.com/acme/%73hop')).not.toBe(
+      remoteIdentity('https://github.com/acme/shop'),
+    );
+  });
+
   it('gives a file URL its path as identity', () => {
     expect(remoteIdentity('file:///tmp/fixtures/shop.git')).toBe('/tmp/fixtures/shop');
   });

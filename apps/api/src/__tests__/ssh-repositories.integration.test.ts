@@ -369,6 +369,41 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     });
   });
 
+  it('a host presenting another key than the pinned one fails with host_key_mismatch on a Retry (#72)', async () => {
+    const id = await createProject('Pinned');
+    const { publicKey } = (await connect(id, urlOf(unlisted))).body;
+    // The operator confirms the host key, but the Deploy key is not added yet: auth_failed,
+    // with the host key pinned.
+    const asked = await verify(id);
+    await verify(id, { acceptHostKeyFingerprint: asked.body.hostKeyFingerprint });
+    expect(await settled(id)).toMatchObject({
+      state: 'failed',
+      failure: { code: 'auth_failed' },
+      hostKeyFingerprint: fingerprintOf(unlistedKey.publicKey),
+    });
+    // The host's key changes (test setup: the pinned key becomes another one, which is what
+    // Studio sees when the host presents a key other than the pinned one).
+    await db().$executeRaw`
+      UPDATE repositories SET pinned_host_key = ${impostorKey.publicKey} WHERE project_id = ${id}::uuid`;
+    await authorize(unlisted, publicKey);
+
+    // Retry over the same host keeps the Deploy key and the pinned host key, so verify clones
+    // at once, against the pinned key only.
+    const retry = await connect(id, urlOf(unlisted));
+    expect(retry.body).toMatchObject({
+      state: 'awaiting_key',
+      publicKey,
+      hostKeyFingerprint: fingerprintOf(impostorKey.publicKey),
+    });
+    expect((await verify(id)).body.state).toBe('connecting');
+    expect(await settled(id)).toMatchObject({
+      state: 'failed',
+      hasClone: false,
+      failure: { code: 'host_key_mismatch', detail: expect.stringMatching(HOST_KEY_CHANGED) },
+      hostKeyFingerprint: fingerprintOf(impostorKey.publicKey),
+    });
+  });
+
   it('refuses verify outside the verification states (409) and for no repository (404)', async () => {
     const id = await createProject('Refusals');
     expectProblem(await verify(id), 404, 'no-repository');
@@ -450,7 +485,8 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     });
 
     // 503: the queue cannot schedule the clone (test setup: a key of the wrong type where the
-    // job's hash goes makes every Redis call on it fail).
+    // job's hash goes makes every Redis call on it fail). This relies on the platform queue's
+    // BullMQ key layout (`<prefix>:<queue>:<job id>`), acceptable in a test (#72, won't fix).
     const redis = new Redis(services.config.redisUrl);
     const jobKey = `studio:queue:repository-git:repository-${c}`;
     try {

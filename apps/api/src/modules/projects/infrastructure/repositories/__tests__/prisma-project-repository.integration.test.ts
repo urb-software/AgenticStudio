@@ -13,7 +13,10 @@ import {
   type DatabaseClient,
 } from '../../../../../platform/database/database.module.js';
 import { repositoryFailure } from '../../../domain/entities/repository.js';
-import { RepositoryAlreadyConnectedError } from '../../../domain/repositories/project-repository.js';
+import {
+  RemoteAlreadyConnectedError,
+  RepositoryAlreadyConnectedError,
+} from '../../../domain/repositories/project-repository.js';
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 import { PrismaProjectRepository } from '../prisma-project-repository.js';
 
@@ -25,6 +28,9 @@ import { PrismaProjectRepository } from '../prisma-project-repository.js';
 // (RepositoryAlreadyConnectedError) and nothing is written. Key references are throwaway ids;
 // no secret is stored.
 
+// PR #71 review S-SP6 (b), #72: two projects racing to connect one remote, decided by the
+// unique index on the remote's identity.
+//
 // Issue #72: the migration that adds the `interrupted` failure code moves the failures the
 // earlier code stored as `unknown` / 'Interrupted' to it.
 
@@ -147,6 +153,35 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       expect(await projects.findRepository(projectId)).toBeNull();
       expect(await projects.listDeployKeySecretRefs()).toEqual([]);
     });
+  });
+
+  describe('two projects racing for one remote (#72)', () => {
+    it.each([1, 2, 3, 4, 5])(
+      'connects exactly one; the other is told which project holds the remote (round %i)',
+      async () => {
+        const other = (await projects.add(ProjectName.parse('Other'))).id;
+        const attempt = (id: string, url: string) =>
+          projects.beginConnect({
+            projectId: id,
+            url,
+            identity: 'github.com/acme/shop',
+            integrationBranch: 'dev',
+          });
+
+        const results = await Promise.allSettled([
+          attempt(projectId, 'https://github.com/acme/shop.git'),
+          attempt(other, 'git@github.com:acme/shop.git'),
+        ]);
+
+        const [first, second] = results;
+        expect([first.status, second.status].sort()).toEqual(['fulfilled', 'rejected']);
+        const firstWon = first.status === 'fulfilled';
+        const refusal = (firstWon ? second : first) as PromiseRejectedResult;
+        expect(refusal.reason).toBeInstanceOf(RemoteAlreadyConnectedError);
+        expect(refusal.reason.message).toBe(`Already connected to ${firstWon ? 'Shop' : 'Other'}`);
+        expect(await projects.findRepository(firstWon ? other : projectId)).toBeNull();
+      },
+    );
   });
 
   describe('the interrupted migration (#72)', () => {
