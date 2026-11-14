@@ -71,6 +71,15 @@ describe('classifyAddress', () => {
     ['64:ff9b::7f00:1', 'private'],
     ['64:ff9b::808:808', 'public'],
     ['64:ff9b:1::a9fe:a9fe', 'blocked'],
+    ['64:ff9b:1::808:808', 'blocked'],
+    ['::ffff:0:7f00:1', 'private'],
+    ['::ffff:0:a9fe:a9fe', 'blocked'],
+    // 6to4 carries its IPv4 address in groups 1 and 2; Teredo's cannot be read: refused.
+    ['2002:a9fe:a9fe::1', 'blocked'],
+    ['2002:7f00:1::1', 'private'],
+    ['2002:808:808::1', 'public'],
+    ['2001:0:4136:e378:8000:63bf:3fff:fdd2', 'blocked'],
+    ['2001:4860:4860::8888', 'public'],
   ])('IPv6 %s is %s', (address, range) => {
     expect(classifyAddress(address)).toBe(range);
   });

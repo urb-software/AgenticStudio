@@ -3,7 +3,7 @@ import {
   addressAllowed,
   classifyAddress,
   hostLiteral,
-  PRIVATE_REMOTES_SETTING,
+  REFUSED_RANGE_REASON,
 } from '../../../domain/value-objects/remote-address.js';
 import { GitOperationError, GitRequestRejectedError } from '../../../ports/repository-git.js';
 
@@ -28,7 +28,7 @@ export const systemResolveHost: ResolveHost = async (host) =>
 export async function checkedAddresses(
   host: string,
   allowPrivate: boolean,
-  resolve: (host: string) => Promise<string[]>,
+  resolve: ResolveHost,
 ): Promise<string[]> {
   const literal = hostLiteral(host.includes(':') && !host.startsWith('[') ? `[${host}]` : host);
   if (literal.kind === 'invalid') {
@@ -56,11 +56,14 @@ export async function checkedAddresses(
   for (const address of addresses) {
     if (addressAllowed(address, allowPrivate)) continue;
     const what = literal.kind === 'address' ? `${address} is` : `${host} resolves to ${address},`;
+    const range = classifyAddress(address) === 'private' ? 'private' : 'blocked';
+    const kind =
+      range === 'private'
+        ? 'a loopback or private address'
+        : 'a link-local, metadata, multicast or reserved address';
     throw new GitOperationError(
       'remote_not_allowed',
-      classifyAddress(address) === 'private'
-        ? `${what} a loopback or private address. Studio connects to loopback and private addresses only with ${PRIVATE_REMOTES_SETTING}=true.`
-        : `${what} a link-local, metadata, multicast or reserved address. Studio never connects to it.`,
+      `${what} ${kind}. ${REFUSED_RANGE_REASON[range]}`,
     );
   }
   return addresses;

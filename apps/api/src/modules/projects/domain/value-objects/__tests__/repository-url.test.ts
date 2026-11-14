@@ -254,7 +254,7 @@ describe('RepositoryUrl.parse', () => {
       'git@10.0.0.5:acme/shop.git',
     ])('allows the loopback or private %s only with the opt-in', (input) => {
       expect(rejection(input, closed)).toBe(
-        'This address is not allowed: loopback and private addresses need STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true on the Studio server.',
+        'This address is not allowed: Studio connects to loopback and private addresses only with STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true.',
       );
       expect(() => RepositoryUrl.parse(input, open)).not.toThrow();
     });

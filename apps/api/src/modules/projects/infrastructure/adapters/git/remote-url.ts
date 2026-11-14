@@ -108,8 +108,8 @@ export function parseRemoteUrl(
   return { transport, url: url.href };
 }
 
-/** Where an `ssh` remote's server listens. */
-export interface SshEndpoint {
+/** Where a remote's server listens. */
+export interface RemoteEndpoint {
   /** Host name or IP address, without brackets. */
   host: string;
   port: number;
@@ -119,7 +119,7 @@ export interface SshEndpoint {
  * The host and port of an `ssh` remote already validated by {@link parseRemoteUrl}: port 22
  * for the scp-like form and for a URL without a port.
  */
-export function sshEndpoint(remote: RemoteUrl): SshEndpoint {
+export function sshEndpoint(remote: RemoteUrl): RemoteEndpoint {
   if (remote.transport !== 'ssh') reject('only an ssh remote has an SSH endpoint');
   const scp = /^[a-z][a-z\d+.-]*:\/\//i.test(remote.url) ? null : SCP_LIKE.exec(remote.url);
   if (scp) return { host: scp[2]!, port: 22 };
@@ -131,7 +131,7 @@ export function sshEndpoint(remote: RemoteUrl): SshEndpoint {
  * Where an `ssh` or `https` remote's server listens (port 443 for an https URL without a
  * port); `null` for a `file` remote, which names no host.
  */
-export function remoteEndpoint(remote: RemoteUrl): SshEndpoint | null {
+export function remoteEndpoint(remote: RemoteUrl): RemoteEndpoint | null {
   if (remote.transport === 'ssh') return sshEndpoint(remote);
   if (remote.transport === 'file') return null;
   const url = new URL(remote.url);

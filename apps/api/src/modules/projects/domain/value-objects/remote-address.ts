@@ -10,12 +10,21 @@
  *   the LAN): loopback, the private ranges and CGNAT.
  * - `public`: everything else.
  *
- * IPv4-mapped, IPv4-compatible and NAT64 IPv6 addresses count as the IPv4 address they carry.
+ * IPv4-mapped, IPv4-compatible, IPv4-translated, NAT64 (64:ff9b::/96) and 6to4 IPv6 addresses
+ * count as the IPv4 address they carry; local-use NAT64 and Teredo, whose IPv4 address cannot
+ * be read reliably, are `blocked`. Documentation, benchmarking (198.18.0.0/15) and the rest of
+ * 192.0.0.0/24 are not routed to internal services and stay `public`.
  */
 export type RemoteAddressRange = 'public' | 'private' | 'blocked';
 
 /** The setting that opts in to loopback and private remotes; named in refusal messages. */
 export const PRIVATE_REMOTES_SETTING = 'STUDIO_GIT_ALLOW_PRIVATE_REMOTES';
+
+/** Why an address of a refused range is refused: one sentence, shared by every message. */
+export const REFUSED_RANGE_REASON: Record<Exclude<RemoteAddressRange, 'public'>, string> = {
+  private: `Studio connects to loopback and private addresses only with ${PRIVATE_REMOTES_SETTING}=true.`,
+  blocked: 'Studio never connects to link-local, cloud metadata, multicast or reserved addresses.',
+};
 
 type Ipv4Range = readonly [base: number, prefix: number];
 
@@ -106,13 +115,21 @@ function classifyIpv6(groups: number[]): RemoteAddressRange {
     return classifyIpv4(embedded); // IPv4-compatible ::a.b.c.d
   }
   if (upperZero && g5 === 0xffff) return classifyIpv4(embedded); // IPv4-mapped
-  if (
-    g0 === 0x64 &&
-    g1 === 0xff9b &&
-    (g2 === 1 || (g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0))
-  ) {
-    return classifyIpv4(embedded); // NAT64: 64:ff9b::/96 and 64:ff9b:1::/48
+  // IPv4-translated ::ffff:0:a.b.c.d (RFC 2765).
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) {
+    return classifyIpv4(embedded);
   }
+  // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052).
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+    return classifyIpv4(embedded);
+  }
+  // Local-use NAT64 64:ff9b:1::/48 (RFC 8215) places the IPv4 address by an operator-chosen
+  // prefix length, and Teredo 2001::/32 tunnels to an obfuscated one: neither can be read
+  // reliably, so both fail closed.
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return 'blocked';
+  if (g0 === 0x2001 && g1 === 0) return 'blocked';
+  // 6to4 2002:wwxx:yyzz::/48 (RFC 3056) carries its IPv4 address in groups 1 and 2.
+  if (g0 === 0x2002) return classifyIpv4(((g1 << 16) | g2) >>> 0);
   if ((g0 & 0xffc0) === 0xfe80) return 'blocked'; // link-local
   if ((g0 & 0xff00) === 0xff00) return 'blocked'; // multicast
   // AWS's IPv6 metadata service fd00:ec2::254, inside the private range below.

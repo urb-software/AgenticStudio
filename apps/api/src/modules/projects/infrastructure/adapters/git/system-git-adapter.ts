@@ -22,7 +22,7 @@ import {
   remoteEndpoint,
   type GitTransport,
   type RemoteUrl,
-  type SshEndpoint,
+  type RemoteEndpoint,
 } from './remote-url.js';
 
 /**
@@ -134,7 +134,7 @@ function hardeningArgs(transports: readonly GitTransport[]): string[] {
  */
 interface CheckedRemote extends RemoteUrl {
   /** `null` for a `file` remote. */
-  endpoint: SshEndpoint | null;
+  endpoint: RemoteEndpoint | null;
   /** The allowed addresses of the host, in resolver order; empty for a `file` remote. */
   addresses: string[];
 }

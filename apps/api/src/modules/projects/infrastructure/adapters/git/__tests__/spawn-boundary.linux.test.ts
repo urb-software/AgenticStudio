@@ -672,7 +672,7 @@ describe.runIf(process.platform === 'linux')(
               expect(error).toBeInstanceOf(GitOperationError);
               expect(error).toMatchObject({ reason: 'remote_not_allowed' });
               expect((error as GitOperationError).detail).toBe(
-                `git.example.test resolves to ${address}, a link-local, metadata, multicast or reserved address. Studio never connects to it.`,
+                `git.example.test resolves to ${address}, a link-local, metadata, multicast or reserved address. Studio never connects to link-local, cloud metadata, multicast or reserved addresses.`,
               );
             }
           }

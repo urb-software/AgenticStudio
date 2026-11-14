@@ -2,7 +2,7 @@ import {
   addressAllowed,
   classifyAddress,
   hostLiteral,
-  PRIVATE_REMOTES_SETTING,
+  REFUSED_RANGE_REASON,
 } from './remote-address.js';
 
 /** Longest accepted Repository URL, in characters (the Git adapter's own limit). */
@@ -66,11 +66,8 @@ function checkAddress(host: string, policy: AddressPolicy | undefined, example: 
   if (literal.kind === 'invalid') invalid(`Enter a valid host name, ${example}.`);
   if (!policy || literal.kind !== 'address') return;
   if (addressAllowed(literal.address, policy.allowPrivate)) return;
-  invalid(
-    classifyAddress(literal.address) === 'private'
-      ? `This address is not allowed: loopback and private addresses need ${PRIVATE_REMOTES_SETTING}=true on the Studio server.`
-      : 'This address is not allowed: Studio never connects to link-local, cloud metadata, multicast or reserved addresses.',
-  );
+  const range = classifyAddress(literal.address) === 'private' ? 'private' : 'blocked';
+  invalid(`This address is not allowed: ${REFUSED_RANGE_REASON[range]}`);
 }
 
 /** `path` without leading and trailing slashes; a loop, so it stays linear on any input. */
