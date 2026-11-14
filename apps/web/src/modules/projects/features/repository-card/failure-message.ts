@@ -8,11 +8,16 @@ export type FailedOperation = 'clone' | 'fetch';
 /** How Studio reaches the Repository: anonymous HTTPS, or SSH with the Deploy key (#62). */
 export type Transport = 'https' | 'ssh';
 
-/** The detail an earlier API stored for an operation cut off by a crash or a restart. */
-const INTERRUPTED = 'Interrupted';
-
-function interruptedMessage(operation: FailedOperation): string {
-  return `The ${operation} was interrupted, for example by a restart of Studio.`;
+/**
+ * The part of a failure's detail the card shows as Git output. For `host_key_mismatch` the API
+ * puts Studio's own explanation first, then a blank line and the redacted Git output (or only
+ * the explanation, when there is no output); the card's message already gives that advice, so
+ * only the Git output is shown, and nothing when there is none (#72).
+ */
+export function gitOutputOf(failure: Failure): string {
+  if (failure.code !== 'host_key_mismatch') return failure.detail;
+  const end = failure.detail.indexOf('\n\n');
+  return end === -1 ? '' : failure.detail.slice(end + 2);
 }
 
 /**
@@ -56,21 +61,19 @@ export function failureMessage(
       }
       return 'The Git host asked for credentials. Only public repositories can be connected over HTTPS.';
     case 'host_key_mismatch':
-      return 'The Git host presented a different host key than the one Studio trusts, so Studio did not connect. Studio never accepts a changed key on its own: if the change is expected, disconnect the repository and connect it again.';
+      // True for a changed key and for no trusted key at all; the advice is given only here.
+      return "The Git host's key is not one Studio trusts, so Studio did not connect. Studio never accepts a changed key on its own: if the change is expected, disconnect the repository and connect it again.";
     // Issue #69: the remote address policy. The detail names the address and, for a loopback
     // or private one, the setting that allows it.
     case 'remote_not_allowed':
       return 'Studio does not connect to this address: it is link-local, a cloud metadata service, or loopback or private without STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true. The detail below names the address.';
     case 'redirect_refused':
       return 'The Git host redirected Studio to another URL, and Studio does not follow redirects. Connect with the final URL of the repository.';
-    // The structured marker (#72). The `unknown` + 'Interrupted' fallback below goes in the
-    // web clean-up of #72.
+    // An operation cut off by a crash or a restart of Studio (#72), not by the repository.
     case 'interrupted':
-      return interruptedMessage(operation);
+      return `The ${operation} was interrupted, for example by a restart of Studio.`;
     case 'unknown':
-      return failure.detail === INTERRUPTED
-        ? interruptedMessage(operation)
-        : `The ${operation} failed for an unexpected reason.`;
+      return `The ${operation} failed for an unexpected reason.`;
     default:
       return `The ${operation} failed.`;
   }

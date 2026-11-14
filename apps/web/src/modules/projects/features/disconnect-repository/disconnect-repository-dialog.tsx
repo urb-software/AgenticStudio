@@ -12,20 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/shared/ui/dialog';
-import { toast } from '@/shared/ui/sonner';
 import { ApiError } from '../../../../platform/api';
 import { useDisconnectRepository } from '../../api/projects-queries';
-
-/** The confirmation of a finished disconnect. */
-export const DISCONNECTED_MESSAGE = 'Repository disconnected';
-
-/**
- * One toast per project: the dialog's 204 and the card's polling (which can see the Repository
- * gone first, e.g. during a retried disconnect) may both confirm the same disconnect.
- */
-export function disconnectedToastId(projectId: string): string {
-  return `repository-disconnected-${projectId}`;
-}
 
 type DisconnectRepositoryDialogProps = {
   projectId: string;
@@ -33,6 +21,11 @@ type DisconnectRepositoryDialogProps = {
   url: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Confirms a disconnect that removed everything (204). It runs even when the dialog has
+   * unmounted meanwhile, so the confirmation is never lost.
+   */
+  onDisconnected: () => void;
 };
 
 /**
@@ -40,19 +33,18 @@ type DisconnectRepositoryDialogProps = {
  * dialog (alertdialog; a bottom sheet on phones) that names the Repository and says what is
  * kept and what is deleted. Confirming is the operator's explicit authorization of the
  * destructive Git operation (security.md §4). When everything is removed at once it closes
- * with the toast "Repository disconnected"; when the server's cleanup is still pending it
- * closes and the card shows "Disconnecting…". A refusal shows as a banner here.
+ * and `onDisconnected` confirms it (the toast "Repository disconnected"); when the server's
+ * cleanup is still pending it closes and the card shows "Disconnecting…". A refusal shows as a
+ * banner here.
  */
 export function DisconnectRepositoryDialog({
   projectId,
   url,
   open,
   onOpenChange,
+  onDisconnected,
 }: DisconnectRepositoryDialogProps) {
-  const disconnect = useDisconnectRepository(projectId, () => {
-    toast.success(DISCONNECTED_MESSAGE, { id: disconnectedToastId(projectId) });
-    onOpenChange(false);
-  });
+  const disconnect = useDisconnectRepository(projectId, onDisconnected);
   const problem = disconnect.error instanceof ApiError ? disconnect.error.problem : undefined;
 
   function changeOpen(next: boolean) {
@@ -63,6 +55,7 @@ export function DisconnectRepositoryDialog({
 
   function confirm() {
     disconnect.mutate(undefined, {
+      // Closes once, on a 204 and on a 202 alike.
       onSuccess: () => {
         disconnect.reset();
         onOpenChange(false);

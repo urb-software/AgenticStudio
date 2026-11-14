@@ -83,6 +83,18 @@ function isProblem(value: unknown): value is ProblemDetails {
   );
 }
 
+/** A Repository in a response body (a 202 of a disconnect), checked rather than cast. */
+function isRepository(value: unknown): value is RepositoryOutput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'state' in value &&
+    typeof value.state === 'string' &&
+    'url' in value &&
+    typeof value.url === 'string'
+  );
+}
+
 function redirectToLogin(): void {
   if (typeof window !== 'undefined' && window.location.pathname !== LOGIN_PATH) {
     // A full page load, not a client-side push: no protected UI state survives.
@@ -135,13 +147,19 @@ export const api = {
     unwrap(sdk.verifyRepository({ path: { id: projectId }, body })),
   /**
    * `null` when the Repository is gone (204); the Repository in `disconnecting` when its
-   * cleanup is still pending (202).
+   * cleanup is still pending (202). A 202 without a Repository body is not taken as gone: it
+   * fails like any unreadable answer.
    */
-  disconnectRepository: (projectId: string): Promise<RepositoryOutput | null> =>
-    unwrap<RepositoryOutput | null>(
-      sdk.disconnectRepository({ path: { id: projectId } }).then((result) => ({
-        ...result,
-        data: result.response?.status === 202 ? (result.data as RepositoryOutput) : null,
-      })),
-    ),
+  disconnectRepository: async (projectId: string): Promise<RepositoryOutput | null> => {
+    let status = 0;
+    const data = await unwrap(
+      sdk.disconnectRepository({ path: { id: projectId } }).then((result) => {
+        status = result.response?.status ?? 0;
+        return result;
+      }),
+    );
+    if (status === 204) return null;
+    if (!isRepository(data)) throw new Error('The disconnect answer has no Repository.');
+    return data;
+  },
 };

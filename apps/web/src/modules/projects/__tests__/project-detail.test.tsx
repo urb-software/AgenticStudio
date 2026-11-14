@@ -308,16 +308,23 @@ describe('Repository card states', () => {
     },
   );
 
-  it.each([
-    ['the interrupted code (#72)', { code: 'interrupted', detail: '' }],
-    ['the detail an earlier API stored', { code: 'unknown', detail: 'Interrupted' }],
-  ] as const)('failed after a crash (%s): says the clone was interrupted', async (_, failure) => {
-    fakeProjectApi(PROJECT, failed(failure));
+  it('failed after a crash (the interrupted code): says the clone was interrupted', async () => {
+    fakeProjectApi(PROJECT, failed({ code: 'interrupted', detail: '' }));
     await renderLoaded();
 
     expect((await within(card()).findByRole('alert')).textContent).toMatch(
       /The clone was interrupted/,
     );
+  });
+
+  it('reads the failure code, not the detail text: unknown with the detail "Interrupted" is unexpected', async () => {
+    fakeProjectApi(PROJECT, failed({ code: 'unknown', detail: 'Interrupted' }));
+    await renderLoaded();
+
+    const alert = await within(card()).findByRole('alert');
+    expect(alert.textContent).toContain('The clone failed for an unexpected reason.');
+    expect(alert.textContent).not.toMatch(/interrupted/);
+    expect(within(card()).getByLabelText('Git output').textContent).toBe('Interrupted');
   });
 
   it('Retry connects again with the stored URL and branch', async () => {
@@ -366,18 +373,22 @@ describe('Repository card states', () => {
     );
   });
 
-  it('a state this version does not know: shows the repository as unavailable', async () => {
-    fakeProjectApi(PROJECT, {
-      state: 'archived',
-      url: URL,
-      integrationBranch: 'dev',
-    } as unknown as RepositoryOutput);
-    const { container } = await renderLoaded();
+  // `constructor`: an inherited object key is not a state either.
+  it.each(['archived', 'constructor'])(
+    'a state this version does not know (%s): shows the repository as unavailable',
+    async (state) => {
+      fakeProjectApi(PROJECT, {
+        state,
+        url: URL,
+        integrationBranch: 'dev',
+      } as unknown as RepositoryOutput);
+      const { container } = await renderLoaded();
 
-    expect(await within(card()).findByText('Unavailable')).toBeTruthy();
-    expect(within(card()).getByRole('status', { name: '' }).textContent).toMatch(/does not know/);
-    await expect(container).toHaveNoAxeViolations();
-  });
+      expect(await within(card()).findByText('Unavailable')).toBeTruthy();
+      expect(within(card()).getByRole('status', { name: '' }).textContent).toMatch(/does not know/);
+      await expect(container).toHaveNoAxeViolations();
+    },
+  );
 });
 
 describe('polling while connecting (clarification 8)', () => {
@@ -588,7 +599,11 @@ describe('Fetch (Story #61)', () => {
     fakeProjectApi(PROJECT, failed({ code: 'size_limit', detail: '' }));
     await renderLoaded();
 
-    expect((await within(card()).findByRole('alert')).textContent).toMatch(/2 GB limit/);
+    const alert = await within(card()).findByRole('alert');
+    expect(alert.textContent).toMatch(/2 GB limit/);
+    // Neither "Clone failed." nor "Fetch failed.": a connect or a fetch can hit the limit.
+    expect(alert.textContent).toMatch(/^Repository too large\./);
+    expect(alert.textContent).not.toMatch(/(Clone|Fetch) failed/);
     expect(within(card()).getByRole('button', { name: 'Retry' })).toBeTruthy();
     expect(within(card()).queryByRole('button', { name: /^Fetch/ })).toBeNull();
   });
@@ -818,6 +833,67 @@ describe('Disconnect (Story #63)', () => {
     expect(within(card()).getByRole('heading', { name: 'No repository connected' })).toBeTruthy();
   });
 
+  it('does not confirm again when the late 204 lands after the first toast has gone', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeProjectApi(PROJECT, DISCONNECTING);
+    await renderLoaded();
+    await within(card()).findByText('Disconnecting…');
+    await userEvent.click(disconnectAction());
+    const release = api.holdNext('disconnect');
+    await userEvent.click(
+      within(confirmDialog()).getByRole('button', { name: 'Disconnect repository' }),
+    );
+    await waitFor(() => expect(api.calls('disconnect')).toHaveLength(1));
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    expect(await screen.findByText('Repository disconnected')).toBeTruthy();
+
+    // The first toast goes (as its auto-dismiss would) before the held 204 lands.
+    act(() => {
+      toast.dismiss();
+    });
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    await waitFor(() => expect(screen.queryByText('Repository disconnected')).toBeNull());
+    release();
+    await act(() => vi.advanceTimersByTimeAsync(500));
+
+    expect(screen.queryByText('Repository disconnected')).toBeNull();
+    expect(within(card()).getByRole('heading', { name: 'No repository connected' })).toBeTruthy();
+  });
+
+  it('confirms the next disconnect again after reconnecting', async () => {
+    const api = fakeProjectApi(PROJECT, READY);
+    await renderLoaded();
+    await userEvent.click(within(await openConfirm()).getByRole('button', { name: /^Disconnect/ }));
+    expect(await screen.findByText('Repository disconnected')).toBeTruthy();
+    act(() => {
+      toast.dismiss();
+    });
+    await waitFor(() => expect(screen.queryByText('Repository disconnected')).toBeNull());
+
+    await openDialog();
+    await submit(URL);
+    api.state.repository = READY;
+    await within(card()).findByText(/Connecting|Connected/);
+    await userEvent.click(within(await openConfirm()).getByRole('button', { name: /^Disconnect/ }));
+
+    expect(await screen.findByText('Repository disconnected')).toBeTruthy();
+    expect(api.calls('disconnect')).toHaveLength(2);
+  });
+
+  it('does not take a 202 without a Repository body as disconnected', async () => {
+    const api = fakeProjectApi(PROJECT, READY);
+    api.respondNext('disconnect', 202, {});
+    await renderLoaded();
+    const dialog = await openConfirm();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Disconnect repository' }));
+
+    expect((await within(dialog).findByRole('alert')).textContent).toContain(
+      'Could not disconnect the repository. Try again.',
+    );
+    expect(screen.queryByText('Repository disconnected')).toBeNull();
+  });
+
   it('shows a disconnect the API refuses as a banner in the dialog, with the problem title', async () => {
     const api = fakeProjectApi(PROJECT, READY);
     api.respondNext('disconnect', 501, problem(501, 'Unsupported platform'));
@@ -1022,8 +1098,67 @@ describe('SSH repositories with a Deploy key (Story #62)', () => {
     await renderLoaded();
 
     expect((await alertMatching(/Clone failed/)).textContent).toMatch(
-      /different host key.*disconnect the repository and connect it again/,
+      /not one Studio trusts.*disconnect the repository and connect it again/,
     );
+  });
+
+  // The API's detail for host_key_mismatch: Studio's explanation first, then the Git output.
+  const HOST_KEY_CHANGED =
+    "The Git host's key changed. Studio never accepts a changed host key on its own: if the " +
+    'change is expected, disconnect the repository and connect it again.';
+  const advice = /disconnect the repository and connect it again/g;
+
+  it('host_key_mismatch: gives the advice once and shows only the Git output below it', async () => {
+    fakeProjectApi(
+      PROJECT,
+      failedSsh({
+        code: 'host_key_mismatch',
+        detail: `${HOST_KEY_CHANGED}\n\nHost key verification failed.`,
+      }),
+    );
+    const { container } = await renderLoaded();
+
+    await alertMatching(/Clone failed/);
+    expect(within(card()).getByLabelText('Git output').textContent).toBe(
+      'Host key verification failed.',
+    );
+    expect(card().textContent?.match(advice)).toHaveLength(1);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('host_key_mismatch with no Git output (no trusted host key): no Git output block', async () => {
+    fakeProjectApi(
+      PROJECT,
+      failedSsh({
+        code: 'host_key_mismatch',
+        detail:
+          "Studio trusts no host key for this Git host. If the host's key changed as expected, " +
+          'disconnect the repository and connect it again.',
+      }),
+    );
+    await renderLoaded();
+
+    // The message is true for a changed key and for no trusted key alike.
+    expect((await alertMatching(/Clone failed/)).textContent).toMatch(
+      /The Git host's key is not one Studio trusts, so Studio did not connect\./,
+    );
+    expect(within(card()).queryByLabelText('Git output')).toBeNull();
+    expect(card().textContent?.match(advice)).toHaveLength(1);
+  });
+
+  it('a failed SSH fetch with host_key_mismatch also gives the advice once', async () => {
+    fakeProjectApi(PROJECT, {
+      ...READY,
+      url: SSH_URL,
+      publicKey: FAKE_PUBLIC_KEY,
+      state: 'failed',
+      failure: { code: 'host_key_mismatch', detail: `${HOST_KEY_CHANGED}\n\nfatal: <redacted>` },
+    });
+    await renderLoaded();
+
+    await alertMatching(/Fetch failed/);
+    expect(within(card()).getByLabelText('Git output').textContent).toBe('fatal: <redacted>');
+    expect(card().textContent?.match(advice)).toHaveLength(1);
   });
 
   it('a failed SSH fetch names the deploy key, not HTTPS credentials', async () => {
