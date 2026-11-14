@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Locator, type Page, test } from '@playwright/test';
 
@@ -223,6 +228,48 @@ async function expectInBothThemes(page: Page, ready: Locator) {
   }
 }
 
+/** Runs the system `git` on a smoke fixture, isolated from the host's Git configuration. */
+function fixtureGit(cwd: string, args: string[]): string {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      HOME: cwd,
+      LC_ALL: 'C',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_AUTHOR_NAME: 'Smoke Fixture',
+      GIT_AUTHOR_EMAIL: 'fixture@example.test',
+      GIT_COMMITTER_NAME: 'Smoke Fixture',
+      GIT_COMMITTER_EMAIL: 'fixture@example.test',
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(`fixture git ${args.join(' ')} failed: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+/**
+ * Pushes a new commit on `dev` to a smoke fixture (`<base><name>.git`, built by run-smoke.mjs
+ * from `<base><name>-work`), as another client would; returns its short id.
+ */
+function pushFixtureCommit(base: string, name: string): string {
+  const work = join(fileURLToPath(base), `${name}-work`);
+  const change = `change-${randomBytes(4).toString('hex')}`;
+  writeFileSync(join(work, `${change}.txt`), `${change}\n`);
+  fixtureGit(work, ['add', '--all']);
+  fixtureGit(work, ['commit', '--quiet', '-m', change]);
+  fixtureGit(work, ['push', '--quiet', join(fileURLToPath(base), `${name}.git`), 'dev:dev']);
+  return fixtureGit(work, ['rev-parse', '--short=7', 'HEAD']);
+}
+
+/** Deletes `dev` from a smoke fixture's bare repository. */
+function deleteFixtureBranch(base: string, name: string): void {
+  fixtureGit(join(fileURLToPath(base), `${name}.git`), ['update-ref', '-d', 'refs/heads/dev']);
+}
+
 /** Signs in through the login page and lands on Projects. */
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -245,10 +292,12 @@ async function createAndOpenProject(page: Page, name: string) {
   return main;
 }
 
-// Story #60: create a project, open it, connect a fixture Repository over the test-only file
-// transport, see it ready with a commit id, and keep it across a reload. Linux only, like every
-// repository feature; `pnpm e2e:smoke` fails on Linux if this test did not run and pass.
-test('operator connects a repository and sees it ready', async ({ page }, testInfo) => {
+// Stories #60 and #61: create a project, open it, connect a fixture Repository over the
+// test-only file transport, see it ready with a commit id, keep it across a reload, then fetch
+// a commit pushed to the remote, fetch again with nothing new, and see a failed fetch keep the
+// previous commit. Linux only, like every repository feature; `pnpm e2e:smoke` fails on Linux
+// if this test did not run and pass.
+test('operator connects a repository, sees it ready and fetches it', async ({ page }, testInfo) => {
   test.skip(
     process.env.E2E_API_PLATFORM !== 'linux',
     'Repository features run on Linux only; CI runs this test on Linux.',
@@ -318,6 +367,30 @@ test('operator connects a repository and sees it ready', async ({ page }, testIn
   await page.reload();
   await expect(card.getByText('Connected', { exact: true })).toBeVisible();
   await expect(card.locator('code').filter({ hasText: commitId! })).toBeVisible();
+
+  // Story #61: a commit pushed to the remote is picked up by Fetch, confirmed by a toast.
+  const pushed = pushFixtureCommit(base, testInfo.project.name);
+  const fetchButton = card.getByRole('button', { name: 'Fetch', exact: true });
+  await fetchButton.click();
+  await expect(page.getByText(`Fetched dev · ${pushed}`)).toBeVisible({ timeout: 30_000 });
+  await expect(card.locator('code').filter({ hasText: pushed })).toBeVisible();
+  await expect(card.getByText('Connected', { exact: true })).toBeVisible();
+  await expectNoAxeViolations(page);
+
+  // Nothing new on the remote: the commit stays and the toast says so.
+  await fetchButton.click();
+  await expect(page.getByText('Already up to date')).toBeVisible({ timeout: 30_000 });
+  await expect(card.locator('code').filter({ hasText: pushed })).toBeVisible();
+
+  // The branch is gone on the remote: the fetch fails, and the Clone's commit stays visible.
+  deleteFixtureBranch(base, testInfo.project.name);
+  await fetchButton.click();
+  await expect(card.getByText('Failed', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByRole('alert')).toContainText('Fetch failed.');
+  await expect(card.getByRole('alert')).toContainText('"dev" no longer exists on the remote');
+  await expect(card.locator('code').filter({ hasText: pushed })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Fetch', exact: true })).toBeEnabled();
+  await expectInBothThemes(page, card.getByText('Failed', { exact: true }));
 
   await breadcrumb.getByRole('link', { name: 'Projects' }).click();
   await expect(page).toHaveURL(/\/projects$/);
