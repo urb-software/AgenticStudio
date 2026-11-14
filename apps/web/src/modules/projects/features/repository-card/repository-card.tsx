@@ -9,7 +9,14 @@ import {
   ShieldCheckIcon,
   UnplugIcon,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ComponentProps,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Banner } from '@/shared/components/banner';
 import { CopyButton } from '@/shared/components/copy-button';
 import { EmptyState } from '@/shared/components/empty-state';
@@ -21,6 +28,7 @@ import { toast } from '@/shared/ui/sonner';
 import {
   ApiError,
   type RepositoryOutput,
+  type RepositoryStateOutput,
   type RepositorySummaryOutput,
 } from '../../../../platform/api';
 import {
@@ -38,7 +46,7 @@ import {
   DisconnectRepositoryDialog,
   disconnectedToastId,
 } from '../disconnect-repository/disconnect-repository-dialog';
-import { failureMessage, type Transport } from './failure-message';
+import { failureMessage, gitOutputOf, type Transport } from './failure-message';
 
 const TITLE_ID = 'repository-card-title';
 
@@ -78,7 +86,10 @@ function Target({ repository }: { repository: RepositorySummaryOutput }) {
   );
 }
 
-/** SSH Repositories (Issue #62) carry the Deploy key's public half; HTTPS ones do not. */
+/**
+ * SSH Repositories (Issue #62) carry the Deploy key's public half; HTTPS ones do not. The API
+ * exposes neither the transport nor the host (#72), so the card derives them here.
+ */
 function transportOf(repository: RepositoryOutput): Transport {
   return repository.publicKey === undefined ? 'https' : 'ssh';
 }
@@ -259,28 +270,6 @@ function AwaitingHostKeyBody({
   );
 }
 
-/** The header pill: the state in words, coloured by the design system's state tokens. */
-function StatePill({ state }: { state: string }) {
-  switch (state) {
-    case 'awaiting_key':
-      return <StatusPill status="awaiting">Awaiting key</StatusPill>;
-    case 'awaiting_host_key':
-      return <StatusPill status="awaiting">Confirm host</StatusPill>;
-    case 'connecting':
-      return <StatusPill status="running">Connecting</StatusPill>;
-    case 'ready':
-      return <StatusPill status="succeeded">Connected</StatusPill>;
-    case 'fetching':
-      return <StatusPill status="running">Fetching</StatusPill>;
-    case 'failed':
-      return <StatusPill status="failed">Failed</StatusPill>;
-    case 'disconnecting':
-      return <StatusPill status="running">Disconnecting</StatusPill>;
-    default:
-      return <StatusPill status="none">Unavailable</StatusPill>;
-  }
-}
-
 type FetchMutation = ReturnType<typeof useFetchRepository>;
 
 /**
@@ -417,7 +406,7 @@ function FailedFetchBody({
           ? failureMessage(failure, repository.integrationBranch, 'fetch', transportOf(repository))
           : 'The fetch failed.'}
       </Banner>
-      {failure?.detail ? <GitOutput detail={failure.detail} /> : null}
+      {failure ? <GitOutput failure={failure} /> : null}
       <CloneDetails repository={repository} now={now} />
       <FetchAction fetch={fetch} busy={false} variant="primary">
         <Button icon={PencilIcon} disabled={fetch.isPending} onClick={onChangeSettings}>
@@ -428,8 +417,10 @@ function FailedFetchBody({
   );
 }
 
-/** The redacted Git output of a failure. */
-function GitOutput({ detail }: { detail: string }) {
+/** The redacted Git output of a failure, if it has any. */
+function GitOutput({ failure }: { failure: NonNullable<RepositoryOutput['failure']> }) {
+  const detail = gitOutputOf(failure);
+  if (!detail) return null;
   return (
     <pre
       aria-label="Git output"
@@ -464,12 +455,16 @@ function FailedBody({
 
   return (
     <div className="flex flex-col gap-4">
-      <Banner tone="danger" title="Clone failed.">
+      {/* A connect or a fetch can hit the size limit, so its title names neither. */}
+      <Banner
+        tone="danger"
+        title={failure?.code === 'size_limit' ? 'Repository too large.' : 'Clone failed.'}
+      >
         {failure
           ? failureMessage(failure, repository.integrationBranch, 'clone', transport)
           : 'The clone failed.'}
       </Banner>
-      {failure?.detail ? <GitOutput detail={failure.detail} /> : null}
+      {failure ? <GitOutput failure={failure} /> : null}
       {repository.publicKey !== undefined ? <PublicKey publicKey={repository.publicKey} /> : null}
       <Details>
         <Target repository={repository} />
@@ -516,6 +511,110 @@ function DisconnectingBody({ repository }: { repository: RepositorySummaryOutput
       </Details>
     </div>
   );
+}
+
+/** A state this version does not know (added by a later API). */
+function UnavailableBody({ repository }: { repository: RepositorySummaryOutput }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <Banner tone="warning" title="Repository unavailable.">
+        This version of Studio does not know the repository&apos;s current state. Reload the page to
+        get the latest version.
+      </Banner>
+      <Details>
+        <Target repository={repository} />
+      </Details>
+    </div>
+  );
+}
+
+/** What a state's body gets from the card. */
+type StateBodyProps = {
+  projectId: string;
+  repository: RepositoryOutput;
+  /** When the Repository was last read, for "Last fetched". */
+  now: number;
+  fetch: FetchMutation;
+  verify: VerifyMutation;
+  /** Opens the Connect dialog prefilled with the Repository's settings. */
+  onChangeSettings: () => void;
+};
+
+/** How the card shows one state: the header pill (design system state tokens) and the body. */
+type StateView = {
+  pill: { status: ComponentProps<typeof StatusPill>['status']; label: string };
+  body: (props: StateBodyProps) => ReactNode;
+};
+
+/**
+ * Every state the card knows, in one place (#72): a state the API adds must be added here, and
+ * any other value is shown as {@link UNAVAILABLE}.
+ */
+const STATE_VIEWS: Record<RepositoryStateOutput, StateView> = {
+  awaiting_key: {
+    pill: { status: 'awaiting', label: 'Awaiting key' },
+    body: ({ repository, verify }) => <AwaitingKeyBody repository={repository} verify={verify} />,
+  },
+  awaiting_host_key: {
+    pill: { status: 'awaiting', label: 'Confirm host' },
+    body: ({ repository, verify }) => (
+      <AwaitingHostKeyBody
+        key={repository.hostKeyFingerprint}
+        repository={repository}
+        verify={verify}
+      />
+    ),
+  },
+  connecting: {
+    pill: { status: 'running', label: 'Connecting' },
+    body: ({ repository, fetch }) => <ConnectingBody repository={repository} fetch={fetch} />,
+  },
+  ready: {
+    pill: { status: 'succeeded', label: 'Connected' },
+    body: ({ repository, now, fetch }) => (
+      <CloneBody repository={repository} now={now} fetch={fetch} />
+    ),
+  },
+  fetching: {
+    pill: { status: 'running', label: 'Fetching' },
+    body: ({ repository, now, fetch }) => (
+      <CloneBody repository={repository} now={now} fetch={fetch} />
+    ),
+  },
+  failed: {
+    pill: { status: 'failed', label: 'Failed' },
+    body: ({ projectId, repository, now, fetch, onChangeSettings }) =>
+      repository.hasClone ? (
+        <FailedFetchBody
+          repository={repository}
+          now={now}
+          fetch={fetch}
+          onChangeSettings={onChangeSettings}
+        />
+      ) : (
+        <FailedBody
+          projectId={projectId}
+          repository={repository}
+          onChangeSettings={onChangeSettings}
+        />
+      ),
+  },
+  disconnecting: {
+    pill: { status: 'running', label: 'Disconnecting' },
+    body: ({ repository }) => <DisconnectingBody repository={repository} />,
+  },
+};
+
+const UNAVAILABLE: StateView = {
+  pill: { status: 'none', label: 'Unavailable' },
+  body: ({ repository }) => <UnavailableBody repository={repository} />,
+};
+
+/** The view of a state, or {@link UNAVAILABLE} for one this version does not know. */
+function viewOf(state: string): StateView {
+  return Object.hasOwn(STATE_VIEWS, state)
+    ? STATE_VIEWS[state as RepositoryStateOutput]
+    : UNAVAILABLE;
 }
 
 function LoadingBody() {
@@ -589,6 +688,19 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     repositoryQuery.error instanceof ApiError &&
     repositoryQuery.error.status === 404 &&
     repository?.state === 'disconnecting';
+
+  // One confirmation per disconnect: the dialog's 204 and this card's polling can both see the
+  // same disconnect, and the later one can land after the first toast was dismissed (#72). A
+  // Repository seen again (not gone) starts a new disconnect.
+  const disconnectConfirmed = useRef(false);
+  useEffect(() => {
+    if (repository && !gone) disconnectConfirmed.current = false;
+  }, [repository, gone]);
+  const confirmDisconnected = useCallback(() => {
+    if (disconnectConfirmed.current) return;
+    disconnectConfirmed.current = true;
+    toast.success(DISCONNECTED_MESSAGE, { id: disconnectedToastId(projectId) });
+  }, [projectId]);
   // Once per disappearance, however often the card re-renders before the cache is updated.
   const goneHandled = useRef(false);
   useEffect(() => {
@@ -598,9 +710,9 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     }
     if (goneHandled.current) return;
     goneHandled.current = true;
-    toast.success(DISCONNECTED_MESSAGE, { id: disconnectedToastId(projectId) });
+    confirmDisconnected();
     void forgetRepository();
-  }, [gone, forgetRepository, projectId]);
+  }, [gone, forgetRepository, confirmDisconnected]);
 
   let body: ReactNode;
   if (summary === null) {
@@ -632,65 +744,24 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     ) : (
       <LoadingBody />
     );
-  } else if (repository.state === 'awaiting_key') {
-    body = <AwaitingKeyBody repository={repository} verify={verifyRepository} />;
-  } else if (repository.state === 'awaiting_host_key') {
-    body = (
-      <AwaitingHostKeyBody
-        key={repository.hostKeyFingerprint}
-        repository={repository}
-        verify={verifyRepository}
-      />
-    );
-  } else if (repository.state === 'connecting') {
-    body = <ConnectingBody repository={repository} fetch={fetchRepository} />;
-  } else if (repository.state === 'ready' || repository.state === 'fetching') {
-    body = (
-      <CloneBody
-        repository={repository}
-        now={repositoryQuery.dataUpdatedAt}
-        fetch={fetchRepository}
-      />
-    );
-  } else if (repository.state === 'failed' && repository.hasClone) {
-    body = (
-      <FailedFetchBody
-        repository={repository}
-        now={repositoryQuery.dataUpdatedAt}
-        fetch={fetchRepository}
-        onChangeSettings={() => openConnect(repository)}
-      />
-    );
-  } else if (repository.state === 'failed') {
-    body = (
-      <FailedBody
-        projectId={projectId}
-        repository={repository}
-        onChangeSettings={() => openConnect(repository)}
-      />
-    );
-  } else if (repository.state === 'disconnecting') {
-    body = <DisconnectingBody repository={repository} />;
   } else {
-    body = (
-      <div className="flex flex-col gap-4">
-        <Banner tone="warning" title="Repository unavailable.">
-          This version of Studio does not know the repository&apos;s current state. Reload the page
-          to get the latest version.
-        </Banner>
-        <Details>
-          <Target repository={repository} />
-        </Details>
-      </div>
-    );
+    body = viewOf(repository.state).body({
+      projectId,
+      repository,
+      now: repositoryQuery.dataUpdatedAt,
+      fetch: fetchRepository,
+      verify: verifyRepository,
+      onChangeSettings: () => openConnect(repository),
+    });
   }
+  const pill = state ? viewOf(state).pill : undefined;
 
   return (
     <>
       <Card aria-labelledby={TITLE_ID}>
         <CardHeader>
           <CardTitle id={TITLE_ID}>Repository</CardTitle>
-          {state ? <StatePill state={state} /> : null}
+          {pill ? <StatusPill status={pill.status}>{pill.label}</StatusPill> : null}
         </CardHeader>
         <CardContent>
           {summary === null ? (
@@ -713,6 +784,7 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
         url={repository?.url ?? summary?.url ?? ''}
         open={disconnectOpen && summary !== null}
         onOpenChange={setDisconnectOpen}
+        onDisconnected={confirmDisconnected}
       />
       <ConnectRepositoryDialog
         key={dialogKey}

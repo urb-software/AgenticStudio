@@ -43,37 +43,40 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
   const held: Partial<Record<Route, Promise<void>>> = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
-    const response = await answer(request);
-    const route = routeOf(request);
-    const hold = route && held[route];
-    if (route && hold) {
-      delete held[route];
+    const target = targetOf(request);
+    const response = await answer(request, target);
+    const hold = target && held[target.route];
+    if (target && hold) {
+      delete held[target.route];
       await hold;
     }
     return response;
   });
 
-  function routeOf(request: Request): Route | undefined {
+  /** The route and project id of a request, from one parse of its path. */
+  function targetOf(request: Request): { route: Route; projectId: string } | undefined {
     const match = ROUTE.exec(new URL(request.url).pathname);
     if (!match) return undefined;
-    if (!match[2]) return 'project';
-    if (match[3] === '/fetch') return 'fetch';
-    if (match[3] === '/verify') return 'verify';
-    if (request.method === 'DELETE') return 'disconnect';
-    return request.method === 'POST' ? 'connect' : 'repository';
+    const projectId = match[1]!;
+    if (!match[2]) return { route: 'project', projectId };
+    if (match[3] === '/fetch') return { route: 'fetch', projectId };
+    if (match[3] === '/verify') return { route: 'verify', projectId };
+    if (request.method === 'DELETE') return { route: 'disconnect', projectId };
+    return { route: request.method === 'POST' ? 'connect' : 'repository', projectId };
   }
 
-  async function answer(request: Request): Promise<Response> {
-    const { pathname } = new URL(request.url);
-    const match = ROUTE.exec(pathname);
-    if (!match) return json(404, problem(404, 'Not Found'));
-    const route = routeOf(request)!;
+  async function answer(
+    request: Request,
+    target: { route: Route; projectId: string } | undefined,
+  ): Promise<Response> {
+    if (!target) return json(404, problem(404, 'Not Found'));
+    const { route, projectId } = target;
     const body: unknown =
       route === 'connect' || route === 'verify' ? await request.json() : undefined;
     calls.push({ route, body });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
-    if (match[1] !== project.id) return json(404, problem(404, 'Project not found'));
+    if (projectId !== project.id) return json(404, problem(404, 'Project not found'));
     switch (route) {
       case 'project':
         return json(200, {
