@@ -69,7 +69,7 @@ CODEX_CLI_ENABLED=false
 - If approval is revoked or no longer applicable (e.g. the review date passes or a revalidation trigger occurs), the operator disables the flag before any further executions.
 - Required negative tests: [Quality](quality.md) §10.
 
-**Current status:** no provider has been validated; no compliance record exists. Both providers stay disabled until B6/B7 produce `Approved` records.
+**Current status:** no provider has been validated. Claude Code CLI: record [2026-11-14](provider-compliance/2026-11-14-claude-code-cli.md) is `Needs Clarification` (operator decision and headless test pending). Codex CLI: no record yet. Both providers stay disabled until B6/B7 produce `Approved` records.
 
 ## 3. Secrets and credentials
 
