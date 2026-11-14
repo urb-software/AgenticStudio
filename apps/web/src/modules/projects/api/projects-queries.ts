@@ -14,10 +14,13 @@ const PROJECTS_QUERY_KEY = ['projects'] as const;
 /** One project's detail (with its Repository summary). */
 const projectKey = (projectId: string) => ['projects', projectId] as const;
 
-/** One project's Repository; polled while it is connecting. */
+/** One project's Repository; polled while it is connecting or fetching. */
 const repositoryKey = (projectId: string) => ['projects', projectId, 'repository'] as const;
 
-/** How often a connecting Repository is polled while the tab is visible (clarification 8). */
+/**
+ * How often a connecting or fetching Repository is polled while the tab is visible (#60
+ * clarification 8, #61 clarification 7).
+ */
 export const REPOSITORY_POLL_MS = 2_000;
 
 /** The project list, newest first, as the API orders it. */
@@ -39,11 +42,14 @@ export function useProject(projectId: string) {
   return useQuery({ queryKey: projectKey(projectId), queryFn: () => api.getProject(projectId) });
 }
 
+/** The states in which a background operation runs, so the Repository is polled. */
+const BUSY_STATES: readonly string[] = ['connecting', 'fetching'];
+
 /**
- * The project's Repository, from the server only (frontend.md §4). While it is
- * `connecting`, it is refetched every {@link REPOSITORY_POLL_MS} as long as the tab is visible
- * (TanStack Query pauses intervals in a hidden tab and refetches on focus); it stops once the
- * state is `ready`, `failed` or anything else.
+ * The project's Repository, from the server only (frontend.md §4). While it is `connecting`
+ * or `fetching`, it is refetched every {@link REPOSITORY_POLL_MS} as long as the tab is
+ * visible (TanStack Query pauses intervals in a hidden tab and refetches on focus); it stops
+ * once the state is `ready`, `failed` or anything else.
  */
 export function useRepository(projectId: string, enabled: boolean) {
   return useQuery({
@@ -51,7 +57,7 @@ export function useRepository(projectId: string, enabled: boolean) {
     queryFn: () => api.getRepository(projectId),
     enabled,
     refetchInterval: (query) =>
-      query.state.data?.state === 'connecting' ? REPOSITORY_POLL_MS : false,
+      BUSY_STATES.includes(query.state.data?.state ?? '') ? REPOSITORY_POLL_MS : false,
     refetchIntervalInBackground: false,
   });
 }
@@ -64,6 +70,21 @@ export function useConnectRepository(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: ConnectRepositoryRequest) => api.connectRepository(projectId, request),
+    onSuccess: async (repository: RepositoryOutput) => {
+      queryClient.setQueryData(repositoryKey(projectId), repository);
+      await queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });
+    },
+  });
+}
+
+/**
+ * Fetches the Repository. The 202 answer is the Repository in `fetching`; it seeds the polled
+ * query (so polling starts), and the project detail is refetched for its summary.
+ */
+export function useFetchRepository(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.fetchRepository(projectId),
     onSuccess: async (repository: RepositoryOutput) => {
       queryClient.setQueryData(repositoryKey(projectId), repository);
       await queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });

@@ -2,12 +2,13 @@ import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Toaster, toast } from '@/shared/ui/sonner';
 import { ProjectDetail } from '..';
 import type { ProjectOutput, RepositoryOutput } from '../../../platform/api';
 import { fakeProjectApi, fieldProblem } from './fake-project-api';
 import { problem } from './fake-projects-api';
 
-// Project screen seam (Story #60): the public ProjectDetail of the projects module, with the
+// Project screen seam (Stories #60 and #61): the public ProjectDetail of the projects module, with the
 // generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
 
 const PROJECT: ProjectOutput = {
@@ -48,6 +49,7 @@ function renderDetail() {
   return render(
     <QueryClientProvider client={client}>
       <ProjectDetail projectId={PROJECT.id} />
+      <Toaster />
     </QueryClientProvider>,
   );
 }
@@ -86,7 +88,10 @@ async function expectFieldError(input: HTMLInputElement, message: string) {
 }
 
 afterEach(() => {
-  act(() => focusManager.setFocused(undefined));
+  act(() => {
+    focusManager.setFocused(undefined);
+    toast.dismiss();
+  });
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -402,5 +407,166 @@ describe('polling while connecting (clarification 8)', () => {
     api.state.repository = READY;
     act(() => focusManager.setFocused(true));
     expect(await within(card()).findByText('Connected')).toBeTruthy();
+  });
+});
+
+describe('Fetch (Story #61)', () => {
+  const NEW_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
+  const fetchButton = () =>
+    within(card()).getByRole<HTMLButtonElement>('button', { name: /^Fetch/ });
+  const failedFetch = (
+    failure: RepositoryOutput['failure'],
+    integrationBranch = 'dev',
+  ): RepositoryOutput => ({
+    ...READY,
+    integrationBranch,
+    state: 'failed',
+    failure,
+  });
+
+  it('ready: Fetch starts a fetch and the card shows it is fetching, with Fetch disabled', async () => {
+    const api = fakeProjectApi(PROJECT, READY);
+    const { container } = await renderLoaded();
+    await within(card()).findByText('Connected');
+    expect(fetchButton().disabled).toBe(false);
+
+    await userEvent.click(fetchButton());
+
+    expect(await within(card()).findByText('Fetching')).toBeTruthy();
+    expect(api.calls('fetch')).toHaveLength(1);
+    expect(within(card()).getByRole('status').textContent).toMatch(/Fetching dev/);
+    expect(fetchButton().disabled).toBe(true);
+    // The previous commit and fetch time stay visible while fetching.
+    expect(within(card()).getByText('0123456')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('connecting: Fetch is disabled', async () => {
+    fakeProjectApi(PROJECT, CONNECTING);
+    await renderLoaded();
+    await within(card()).findByText('Connecting');
+
+    expect(fetchButton().disabled).toBe(true);
+  });
+
+  it('polls while fetching, then shows the new commit and toasts "Fetched <branch> · <commit>"', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeProjectApi(PROJECT, READY);
+    await renderLoaded();
+    await within(card()).findByText('Connected');
+    await userEvent.click(fetchButton());
+    await within(card()).findByText('Fetching');
+
+    api.state.repository = {
+      ...READY,
+      headSha: NEW_SHA,
+      lastFetchedAt: '2026-11-13T11:00:00.000Z',
+    };
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    expect(await screen.findByText('Fetched dev · fedcba9')).toBeTruthy();
+    expect(within(card()).getByText('fedcba9')).toBeTruthy();
+    expect(within(card()).getByText('Connected')).toBeTruthy();
+    const afterReady = api.calls('repository').length;
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(api.calls('repository').length).toBe(afterReady);
+  });
+
+  it('toasts "Already up to date" when the commit did not change', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeProjectApi(PROJECT, READY);
+    await renderLoaded();
+    await within(card()).findByText('Connected');
+    await userEvent.click(fetchButton());
+    await within(card()).findByText('Fetching');
+
+    api.state.repository = { ...READY, lastFetchedAt: '2026-11-13T11:00:00.000Z' };
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    expect(await screen.findByText('Already up to date')).toBeTruthy();
+  });
+
+  it('does not toast when a ready Repository is merely shown', async () => {
+    fakeProjectApi(PROJECT, READY);
+    await renderLoaded();
+    await within(card()).findByText('Connected');
+
+    expect(screen.queryByText(/Fetched|Already up to date/)).toBeNull();
+  });
+
+  it('failed fetch: keeps the previous commit and Last fetched visible and offers Fetch again', async () => {
+    fakeProjectApi(PROJECT, failedFetch({ code: 'host_unreachable', detail: 'fatal: <redacted>' }));
+    const { container } = await renderLoaded();
+
+    const alert = await within(card()).findByRole('alert');
+    expect(alert.textContent).toContain('Fetch failed.');
+    expect(alert.textContent).toContain('Studio could not reach the Git host.');
+    expect(within(card()).getByLabelText('Git output').textContent).toBe('fatal: <redacted>');
+    expect(within(card()).getByText('0123456')).toBeTruthy();
+    expect(card().querySelector('time')?.getAttribute('dateTime')).toBe(READY.lastFetchedAt);
+    expect(within(card()).getByText('Failed')).toBeTruthy();
+    expect(fetchButton().disabled).toBe(false);
+    expect(within(card()).queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(within(card()).queryByText('No repository connected')).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('failed fetch: Fetch again starts a new fetch', async () => {
+    const api = fakeProjectApi(PROJECT, failedFetch({ code: 'timeout', detail: '' }));
+    await renderLoaded();
+
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Fetch' }));
+
+    await within(card()).findByText('Fetching');
+    expect(api.calls('fetch')).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      'branch_not_found',
+      'The branch "release" no longer exists on the remote. Change the settings to use another branch.',
+    ],
+    ['timeout', 'The Git host took too long, so the fetch was stopped.'],
+    ['unknown', 'The fetch failed for an unexpected reason.'],
+  ] as const)('failed fetch (%s): says so in fetch terms', async (code, message) => {
+    fakeProjectApi(PROJECT, failedFetch({ code, detail: '' }, 'release'));
+    await renderLoaded();
+
+    expect((await within(card()).findByRole('alert')).textContent).toContain(message);
+  });
+
+  it('failed fetch after a crash: says the fetch was interrupted', async () => {
+    fakeProjectApi(PROJECT, failedFetch({ code: 'unknown', detail: 'Interrupted' }));
+    await renderLoaded();
+
+    expect((await within(card()).findByRole('alert')).textContent).toMatch(
+      /The fetch was interrupted/,
+    );
+  });
+
+  it('failed without a usable Clone (size limit hit by a fetch): offers Retry, not Fetch', async () => {
+    fakeProjectApi(PROJECT, failed({ code: 'size_limit', detail: '' }));
+    await renderLoaded();
+
+    expect((await within(card()).findByRole('alert')).textContent).toMatch(/2 GB limit/);
+    expect(within(card()).getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(within(card()).queryByRole('button', { name: /^Fetch/ })).toBeNull();
+  });
+
+  it('shows a Fetch that the API refuses as a banner, with the problem title', async () => {
+    const api = fakeProjectApi(PROJECT, READY);
+    api.respondNext('fetch', 409, problem(409, 'Repository busy'));
+    await renderLoaded();
+    await within(card()).findByText('Connected');
+
+    await userEvent.click(fetchButton());
+
+    await waitFor(() =>
+      expect(
+        within(card())
+          .getAllByRole('alert')
+          .map((alert) => alert.textContent),
+      ).toContainEqual(expect.stringContaining('Repository busy')),
+    );
   });
 });

@@ -7,29 +7,37 @@ interface ScriptedResponse {
   body: unknown;
 }
 
-type Route = 'project' | 'repository' | 'connect';
+type Route = 'project' | 'repository' | 'connect' | 'fetch';
 
 /**
  * A fake of the project detail API behind `fetch` (`GET /api/projects/:id`,
- * `GET|POST /api/projects/:id/repository`), so the generated client, the wrapper and TanStack
- * Query run for real. `repository` is the server's state; tests change it to move the
- * Repository on (as the background clone would) and script error responses.
+ * `GET|POST /api/projects/:id/repository`, `POST /api/projects/:id/repository/fetch`), so the
+ * generated client, the wrapper and TanStack Query run for real. `repository` is the server's
+ * state; tests change it to move the Repository on (as the background clone or fetch would)
+ * and script error responses.
  */
 export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput | null = null) {
   const state = { repository: initial };
-  const scripted: Record<Route, ScriptedResponse[]> = { project: [], repository: [], connect: [] };
+  const scripted: Record<Route, ScriptedResponse[]> = {
+    project: [],
+    repository: [],
+    connect: [],
+    fetch: [],
+  };
   const calls: { route: Route; body?: unknown }[] = [];
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
-    const match = /^\/api\/projects\/([^/]+)(\/repository)?$/.exec(pathname);
+    const match = /^\/api\/projects\/([^/]+)(\/repository(\/fetch)?)?$/.exec(pathname);
     if (!match) return json(404, problem(404, 'Not Found'));
     const route: Route = !match[2]
       ? 'project'
-      : request.method === 'POST'
-        ? 'connect'
-        : 'repository';
-    const body: unknown = request.method === 'POST' ? await request.json() : undefined;
+      : match[3]
+        ? 'fetch'
+        : request.method === 'POST'
+          ? 'connect'
+          : 'repository';
+    const body: unknown = route === 'connect' ? await request.json() : undefined;
     calls.push({ route, body });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
@@ -52,6 +60,17 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
         const { url, integrationBranch } = body as { url: string; integrationBranch: string };
         state.repository = { state: 'connecting', url, integrationBranch, hasClone: false };
         return json(201, state.repository);
+      }
+      case 'fetch': {
+        const current = state.repository;
+        if (!current) return json(404, problem(404, 'No repository'));
+        if (current.state !== 'ready' && !(current.state === 'failed' && current.hasClone)) {
+          return json(409, problem(409, 'Repository busy'));
+        }
+        const { failure, ...rest } = current;
+        void failure; // a fetch clears the previous failure
+        state.repository = { ...rest, state: 'fetching' };
+        return json(202, state.repository);
       }
     }
   });

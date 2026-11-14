@@ -1,6 +1,6 @@
 'use client';
 
-import { GitBranchIcon, PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
+import { DownloadIcon, GitBranchIcon, PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
@@ -8,12 +8,18 @@ import { StatusPill } from '@/shared/components/status-pill';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { toast } from '@/shared/ui/sonner';
 import {
   ApiError,
   type RepositoryOutput,
   type RepositorySummaryOutput,
 } from '../../../../platform/api';
-import { useConnectRepository, useRefreshProject, useRepository } from '../../api/projects-queries';
+import {
+  useConnectRepository,
+  useFetchRepository,
+  useRefreshProject,
+  useRepository,
+} from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
 import { ConnectRepositoryDialog } from '../connect-repository/connect-repository-dialog';
 import { failureMessage } from './failure-message';
@@ -63,6 +69,8 @@ function StatePill({ state }: { state: string }) {
       return <StatusPill status="running">Connecting</StatusPill>;
     case 'ready':
       return <StatusPill status="succeeded">Connected</StatusPill>;
+    case 'fetching':
+      return <StatusPill status="running">Fetching</StatusPill>;
     case 'failed':
       return <StatusPill status="failed">Failed</StatusPill>;
     default:
@@ -70,7 +78,56 @@ function StatePill({ state }: { state: string }) {
   }
 }
 
-function ConnectingBody({ repository }: { repository: RepositorySummaryOutput }) {
+type FetchMutation = ReturnType<typeof useFetchRepository>;
+
+/**
+ * The Fetch action and, above it, the API's refusal (e.g. 409) as a banner. It is disabled
+ * while a connect or fetch runs (`busy`) and while the request is on its way.
+ */
+function FetchAction({
+  fetch,
+  busy,
+  variant = 'secondary',
+  children,
+}: {
+  fetch: FetchMutation;
+  busy: boolean;
+  variant?: 'primary' | 'secondary';
+  /** Further actions next to Fetch. */
+  children?: ReactNode;
+}) {
+  const problem = fetch.error instanceof ApiError ? fetch.error.problem : undefined;
+  const fetching = busy || fetch.isPending;
+  return (
+    <>
+      {fetch.error && !busy ? (
+        <Banner tone="danger" title={problem?.title}>
+          {problem?.detail || 'Could not start the fetch. Try again.'}
+        </Banner>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant={variant}
+          icon={DownloadIcon}
+          loading={fetch.isPending}
+          disabled={fetching}
+          onClick={() => fetch.mutate()}
+        >
+          {fetching ? 'Fetching…' : 'Fetch'}
+        </Button>
+        {children}
+      </div>
+    </>
+  );
+}
+
+function ConnectingBody({
+  repository,
+  fetch,
+}: {
+  repository: RepositorySummaryOutput;
+  fetch: FetchMutation;
+}) {
   return (
     <div className="flex flex-col gap-4">
       <p role="status" className="m-0 text-body text-text-muted">
@@ -79,11 +136,37 @@ function ConnectingBody({ repository }: { repository: RepositorySummaryOutput })
       <Details>
         <Target repository={repository} />
       </Details>
+      <FetchAction fetch={fetch} busy />
     </div>
   );
 }
 
-function ReadyBody({ repository, now }: { repository: RepositoryOutput; now: number }) {
+/** `ready` or `fetching`: the Clone's commit and fetch time, and the Fetch action. */
+function CloneBody({
+  repository,
+  now,
+  fetch,
+}: {
+  repository: RepositoryOutput;
+  now: number;
+  fetch: FetchMutation;
+}) {
+  const fetching = repository.state === 'fetching';
+  return (
+    <div className="flex flex-col gap-4">
+      {fetching ? (
+        <p role="status" className="m-0 text-body text-text-muted">
+          Fetching {repository.integrationBranch} from the remote. You can leave this page.
+        </p>
+      ) : null}
+      <CloneDetails repository={repository} now={now} />
+      <FetchAction fetch={fetch} busy={fetching} />
+    </div>
+  );
+}
+
+/** URL, branch, the Clone's HEAD commit and Last fetched. */
+function CloneDetails({ repository, now }: { repository: RepositoryOutput; now: number }) {
   const fetchedAt = repository.lastFetchedAt ? new Date(repository.lastFetchedAt) : undefined;
   return (
     <Details>
@@ -110,6 +193,51 @@ function ReadyBody({ repository, now }: { repository: RepositoryOutput; now: num
   );
 }
 
+/** `failed` after a fetch that kept the Clone: the previous data stays, and Fetch again. */
+function FailedFetchBody({
+  repository,
+  now,
+  fetch,
+  onChangeSettings,
+}: {
+  repository: RepositoryOutput;
+  now: number;
+  fetch: FetchMutation;
+  /** Opens the Connect dialog prefilled, e.g. to use another branch (branch_not_found). */
+  onChangeSettings: () => void;
+}) {
+  const failure = repository.failure;
+  return (
+    <div className="flex flex-col gap-4">
+      <Banner tone="danger" title="Fetch failed.">
+        {failure
+          ? failureMessage(failure, repository.integrationBranch, 'fetch')
+          : 'The fetch failed.'}
+      </Banner>
+      {failure?.detail ? <GitOutput detail={failure.detail} /> : null}
+      <CloneDetails repository={repository} now={now} />
+      <FetchAction fetch={fetch} busy={false} variant="primary">
+        <Button icon={PencilIcon} disabled={fetch.isPending} onClick={onChangeSettings}>
+          Change settings
+        </Button>
+      </FetchAction>
+    </div>
+  );
+}
+
+/** The redacted Git output of a failure. */
+function GitOutput({ detail }: { detail: string }) {
+  return (
+    <pre
+      aria-label="Git output"
+      className="m-0 max-h-48 overflow-auto rounded-md border border-border bg-bg-subtle px-3 py-2 text-code break-all whitespace-pre-wrap text-text-muted"
+    >
+      {detail}
+    </pre>
+  );
+}
+
+/** `failed` with no usable Clone (a failed connect, or a fetch that hit the size limit). */
 function FailedBody({
   projectId,
   repository,
@@ -129,14 +257,7 @@ function FailedBody({
       <Banner tone="danger" title="Clone failed.">
         {failure ? failureMessage(failure, repository.integrationBranch) : 'The clone failed.'}
       </Banner>
-      {failure?.detail ? (
-        <pre
-          aria-label="Git output"
-          className="m-0 max-h-48 overflow-auto rounded-md border border-border bg-bg-subtle px-3 py-2 text-code break-all whitespace-pre-wrap text-text-muted"
-        >
-          {failure.detail}
-        </pre>
-      ) : null}
+      {failure?.detail ? <GitOutput detail={failure.detail} /> : null}
       <Details>
         <Target repository={repository} />
       </Details>
@@ -186,8 +307,9 @@ type RepositoryCardProps = {
 
 /**
  * The project's one Repository card, in every state: none (connect), connecting (progress,
- * polled), ready, failed (message, redacted detail, Retry) and any state a later API adds
- * ("unavailable"). The state always comes from the server.
+ * polled), ready (Fetch), fetching (progress, polled), failed with a usable Clone (the
+ * previous data, Fetch again), failed without one (message, redacted detail, Retry) and any
+ * state a later API adds ("unavailable"). The state always comes from the server.
  */
 export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   const [connectOpen, setConnectOpen] = useState(false);
@@ -201,16 +323,26 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   };
   const repositoryQuery = useRepository(projectId, summary !== null);
   const refreshProject = useRefreshProject(projectId);
+  const fetchRepository = useFetchRepository(projectId);
   const repository = repositoryQuery.data;
   const state = repository?.state ?? summary?.state;
 
-  // When polling sees the Repository leave a state, the project's summary is refreshed too.
-  const lastState = useRef(repository?.state);
+  // When polling sees the Repository leave a state, the project's summary is refreshed too,
+  // and a fetch that ended well is confirmed with a toast (#61 clarification 7).
+  const last = useRef(repository);
   useEffect(() => {
-    if (repository && lastState.current && lastState.current !== repository.state) {
+    const previous = last.current;
+    if (repository && previous && previous.state !== repository.state) {
       void refreshProject();
+      if (previous.state === 'fetching' && repository.state === 'ready') {
+        toast.success(
+          repository.headSha && repository.headSha !== previous.headSha
+            ? `Fetched ${repository.integrationBranch} · ${shortSha(repository.headSha)}`
+            : 'Already up to date',
+        );
+      }
     }
-    lastState.current = repository?.state;
+    last.current = repository;
   }, [repository, refreshProject]);
 
   let body: ReactNode;
@@ -244,9 +376,24 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
       <LoadingBody />
     );
   } else if (repository.state === 'connecting') {
-    body = <ConnectingBody repository={repository} />;
-  } else if (repository.state === 'ready') {
-    body = <ReadyBody repository={repository} now={repositoryQuery.dataUpdatedAt} />;
+    body = <ConnectingBody repository={repository} fetch={fetchRepository} />;
+  } else if (repository.state === 'ready' || repository.state === 'fetching') {
+    body = (
+      <CloneBody
+        repository={repository}
+        now={repositoryQuery.dataUpdatedAt}
+        fetch={fetchRepository}
+      />
+    );
+  } else if (repository.state === 'failed' && repository.hasClone) {
+    body = (
+      <FailedFetchBody
+        repository={repository}
+        now={repositoryQuery.dataUpdatedAt}
+        fetch={fetchRepository}
+        onChangeSettings={() => openConnect(repository)}
+      />
+    );
   } else if (repository.state === 'failed') {
     body = (
       <FailedBody

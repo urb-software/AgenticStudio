@@ -126,4 +126,6 @@ export const api = {
     projectId: string,
     body: ConnectRepositoryRequest,
   ): Promise<RepositoryOutput> => unwrap(sdk.connectRepository({ path: { id: projectId }, body })),
+  fetchRepository: (projectId: string): Promise<RepositoryOutput> =>
+    unwrap(sdk.fetchRepository({ path: { id: projectId } })),
 };
