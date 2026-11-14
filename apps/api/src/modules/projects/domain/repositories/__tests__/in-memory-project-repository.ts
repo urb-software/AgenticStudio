@@ -64,17 +64,18 @@ export class InMemoryProjectRepository implements ProjectRepository {
     if (!this.projects.has(record.projectId)) throw new ProjectNotFoundError();
     const existing = this.repositories.get(record.projectId);
     if (existing && existing.state !== 'failed') throw new RepositoryAlreadyConnectedError();
+    const owner = [...this.repositories.values()].find(
+      (repository) =>
+        repository.identity === record.identity && repository.projectId !== record.projectId,
+    );
+    if (owner) throw new RemoteAlreadyConnectedError(this.projects.get(owner.projectId)!.name);
+    // Like the adapter: a kept key needs the Repository to exist and still reference it.
     if (
       record.keepsDeployKey &&
       existing?.deployKeySecret !== (record.deployKey?.secretRef ?? null)
     ) {
       throw new RepositoryAlreadyConnectedError();
     }
-    const owner = [...this.repositories.values()].find(
-      (repository) =>
-        repository.identity === record.identity && repository.projectId !== record.projectId,
-    );
-    if (owner) throw new RemoteAlreadyConnectedError(this.projects.get(owner.projectId)!.name);
     this.repositories.set(record.projectId, {
       projectId: record.projectId,
       url: record.url,

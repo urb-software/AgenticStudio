@@ -210,6 +210,9 @@ export class PrismaProjectRepository implements ProjectRepository {
         data: attempt,
       });
       if (replaced.count === 0) {
+        // A kept key belongs to a Repository that must still exist: with it gone (a disconnect
+        // deleted it and its key) or holding another key, nothing is created (PR #77, S-1).
+        if (record.keepsDeployKey) throw await this.conflictFor(record);
         await this.db.repository.create({ data: { projectId: record.projectId, ...attempt } });
       }
     } catch (error) {

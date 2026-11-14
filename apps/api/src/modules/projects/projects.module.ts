@@ -113,8 +113,8 @@ export class ProjectsModule {
         {
           provide: DEPLOY_KEY_SWEEP_SETTINGS,
           useValue: {
-            gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
-            ...options.deployKeySweep,
+            gracePeriodMs:
+              options.deployKeySweep?.gracePeriodMs ?? DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
           } satisfies DeployKeySweepSettings,
         },
         DeployKeyHandler,

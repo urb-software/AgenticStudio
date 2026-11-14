@@ -286,6 +286,21 @@ describe('ConnectRepositoryHandler', () => {
       expect(secrets.values.has(first.deployKeySecret!)).toBe(false);
     });
 
+    it('never recreates a Repository a concurrent disconnect removed (Retry read a stale Repository)', async () => {
+      await failedSsh(hostKey());
+      const stale = (await projects.findRepository(PROJECT))!;
+      await projects.beginDisconnect(PROJECT);
+      await projects.deleteDisconnecting(PROJECT);
+      vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
+
+      await expect(
+        handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
+      ).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
+
+      expect(projects.repositories.has(PROJECT)).toBe(false);
+      expect(jobs.started).toEqual([]);
+    });
+
     describe('when deleting the replaced Deploy key fails (Issue #76)', () => {
       let warnings: string[];
 

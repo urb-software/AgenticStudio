@@ -23,9 +23,10 @@ export interface ConnectRepositoryRecord {
   pinnedHostKey?: string | null;
   /**
    * True when `deployKey` is the failed Repository's own key, kept by a Retry (Issue #76): the
-   * replacement then applies only while the Repository still references that key. A key a
-   * concurrent Connect released may already be deleted by the orphan sweep, so it is never
-   * saved again.
+   * replacement then applies only while the Repository still exists and references that key;
+   * otherwise nothing is written and {@link RepositoryAlreadyConnectedError} (or
+   * {@link RemoteAlreadyConnectedError}) is thrown. A key a concurrent Connect or Disconnect
+   * released may already be deleted, so it is never saved again.
    */
   keepsDeployKey?: boolean;
 }
