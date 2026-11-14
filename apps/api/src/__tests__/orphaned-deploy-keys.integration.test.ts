@@ -151,17 +151,15 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
                                 deploy_key_secret_id, public_key)
       VALUES (${projectId}::uuid, 'git@github.com:acme/shop.git', 'github.com/acme/shop', 'dev',
               'awaiting_key', ${referenced}::uuid, 'placeholder public key')`;
-    // A disconnecting Repository still holds its key until its cleanup deletes it.
-    const disconnecting = await secretStore().put(
-      throwawayValue('disconnecting'),
-      DEPLOY_KEY_OWNER,
-    );
-    const otherProjectId = await createProject('Disconnecting');
+    // A failed SSH Repository keeps its key for a Retry. (A disconnecting one is not used here:
+    // the start-up cleanup that runs before the sweep deletes its key itself.)
+    const failed = await secretStore().put(throwawayValue('failed'), DEPLOY_KEY_OWNER);
+    const otherProjectId = await createProject('Failed');
     await db().$executeRaw`
       INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state,
-                                deploy_key_secret_id, public_key)
+                                failure_code, failure_detail, deploy_key_secret_id, public_key)
       VALUES (${otherProjectId}::uuid, 'git@github.com:acme/old.git', 'github.com/acme/old', 'dev',
-              'disconnecting', ${disconnecting}::uuid, 'placeholder public key')`;
+              'failed', 'auth_failed', '', ${failed}::uuid, 'placeholder public key')`;
     // Another module's secret, which nothing in `projects` references.
     const otherOwners = await secretStore().put(throwawayValue('other'), OTHER_OWNER);
 
@@ -174,7 +172,7 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
     await start(0);
     expect(await exists(crashed)).toBe(false);
     expect(await exists(referenced)).toBe(true);
-    expect(await exists(disconnecting)).toBe(true);
+    expect(await exists(failed)).toBe(true);
     expect(await exists(otherOwners)).toBe(true);
     expect(deletedLines()).toEqual([deletedLine(crashed)]);
     expect(logs.join('\n')).not.toContain(crashedValue.split('\n')[1]!);
