@@ -40,7 +40,8 @@ const LINUX = process.platform === 'linux';
 /** The Playwright projects (tests/e2e/playwright.config.ts); each connects its own fixture. */
 const PLAYWRIGHT_PROJECTS = ['desktop', 'phone'];
 /** Title of the smoke test that connects a fixture Repository (checked by the Linux guard). */
-const REPOSITORY_TEST = 'operator connects a repository, sees it ready and fetches it';
+const REPOSITORY_TEST =
+  'operator connects a repository, fetches it, disconnects it and connects it again';
 
 const cleanups = [];
 let interrupted = false;
