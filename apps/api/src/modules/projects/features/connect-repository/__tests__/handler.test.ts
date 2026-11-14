@@ -445,6 +445,39 @@ describe('ConnectRepositoryHandler', () => {
     });
   });
 
+  it.each([
+    ['the branch', URL, 'main'],
+    ['the URL', 'https://github.com/acme/shop-v2.git', 'release'],
+  ])(
+    'stores "could not be started", not the replaced failure, when the Retry changed %s',
+    async (_, url, integrationBranch) => {
+      await projects.beginConnect({
+        projectId: PROJECT,
+        url: URL,
+        identity: 'github.com/acme/shop',
+        integrationBranch: 'release',
+      });
+      await projects.markFailed(PROJECT, {
+        code: 'branch_not_found',
+        detail: '',
+        remoteDefaultBranch: 'main',
+      });
+      jobs.failWith = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
+
+      await expect(
+        handler().execute({ projectId: PROJECT, url, integrationBranch }),
+      ).rejects.toBeInstanceOf(JobAlreadyActiveError);
+
+      // The new settings are stored, so the replaced failure would describe another attempt.
+      expect(await projects.findRepository(PROJECT)).toMatchObject({
+        state: 'failed',
+        url,
+        integrationBranch,
+        failure: { code: 'unknown', detail: NOT_STARTED_DETAIL, remoteDefaultBranch: null },
+      });
+    },
+  );
+
   it('marks the attempt failed when the clone cannot be scheduled, and rethrows', async () => {
     const busy = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = busy;

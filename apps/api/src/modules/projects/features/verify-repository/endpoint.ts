@@ -61,7 +61,7 @@ function toHttpError(error: unknown): unknown {
       detail: error.message,
     });
   }
-  // #61's generic busy problem (not "clone already running", see #72).
+  // #61's generic busy problem, as for connect.
   if (error instanceof JobAlreadyActiveError) return repositoryBusy();
   if (error instanceof QueueUnavailableError) return queueUnavailable();
   return error;

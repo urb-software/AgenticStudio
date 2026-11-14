@@ -28,7 +28,7 @@ import { GetRepositoryEndpoint } from './features/get-repository/endpoint.js';
 import { GetRepositoryHandler } from './features/get-repository/handler.js';
 import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
 import { ListProjectsHandler } from './features/list-projects/handler.js';
-import { RefreshCloneHandler } from './features/refresh-clone/handler.js';
+import { FetchCloneHandler } from './features/fetch-clone/handler.js';
 import { RepositoryJobsHandler } from './features/repository-jobs/handler.js';
 import {
   DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
@@ -51,6 +51,13 @@ import { REPOSITORY_GIT } from './ports/repository-git.js';
  * Test seam of the module (like the job queue's worker tuning): tests pass shorter Git limits
  * or another platform. Production passes nothing, so the adapter keeps the pinned production
  * settings (`systemGitSettings`).
+ *
+ * Why `platform` stays here (#72): the HTTP suites build the real app (`AppModule.register`)
+ * and need a non-Linux API host on the Linux CI runner to prove the 501 path end to end. Only
+ * code can set it (no configuration or environment variable reaches it), `main.ts` passes no
+ * options, and it can only make the Linux-only guard refuse more: on a host that is not Linux
+ * the adapter refuses whatever it says, since Git operations need Linux anyway (security.md
+ * §4). A provider override would need a second way to build the app for those suites alone.
  */
 export interface ProjectsModuleOptions {
   gitSettings?: Partial<
@@ -121,7 +128,7 @@ export class ProjectsModule {
         DeployKeyHandler,
         SweepOrphanedDeployKeysHandler,
         CloneRepositoryHandler,
-        RefreshCloneHandler,
+        FetchCloneHandler,
         CleanUpRepositoryHandler,
         RepositoryJobsHandler,
         { provide: REPOSITORY_JOBS, useExisting: RepositoryJobsHandler },

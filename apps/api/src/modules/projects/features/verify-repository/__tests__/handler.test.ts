@@ -5,6 +5,10 @@ import {
   ProjectNotFoundError,
   RepositoryNotVerifiableError,
 } from '../../../domain/repositories/project-repository.js';
+import {
+  GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
+  UNEXPECTED_FAILURE_DETAIL,
+} from '../../../domain/entities/repository.js';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { generateDeployKey, hostKeyFingerprint } from '../../../domain/value-objects/ssh-key.js';
 import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
@@ -212,6 +216,19 @@ describe('VerifyRepositoryHandler', () => {
         failure: { code: 'host_unreachable', detail: 'Name or service not known' },
       });
       expect(jobs.started).toEqual([]);
+    });
+
+    it('says Git gave no explanation when the host key scan fails without output, not that Studio stopped (#72)', async () => {
+      git.scanHostKey.mockRejectedValueOnce(new GitOperationError('unknown'));
+      await awaitingKey(UNLISTED_URL);
+
+      const repository = await handler.execute({ projectId: PROJECT });
+
+      expect(repository).toMatchObject({
+        state: 'failed',
+        failure: { code: 'unknown', detail: GIT_FAILURE_WITHOUT_OUTPUT_DETAIL },
+      });
+      expect(repository.failure?.detail).not.toBe(UNEXPECTED_FAILURE_DETAIL);
     });
   });
 

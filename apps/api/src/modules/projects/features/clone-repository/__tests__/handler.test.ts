@@ -8,7 +8,11 @@ import {
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CloneRepositoryHandler } from '../handler.js';
-import { HOST_KEY_CHANGED_DETAIL } from '../../../domain/entities/repository.js';
+import {
+  GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
+  HOST_KEY_CHANGED_DETAIL,
+  UNEXPECTED_FAILURE_DETAIL,
+} from '../../../domain/entities/repository.js';
 import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../deploy-key/handler.js';
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
@@ -86,10 +90,28 @@ describe('CloneRepositoryHandler', () => {
     await run();
 
     expect(git.clone).not.toHaveBeenCalled();
+    // No Git output to show: the code and the default branch say it all (#72).
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
       code: 'branch_not_found',
-      detail: 'Branch "release" was not found on the remote.',
+      detail: '',
       remoteDefaultBranch: 'main',
+    });
+  });
+
+  it.each([
+    ['names a default branch of 255 characters', 255, true],
+    ['leaves out a longer default branch, which no Integration branch can be', 256, false],
+  ] as const)('%s', async (_, length, named) => {
+    await connecting('release');
+    const defaultBranch = 'b'.repeat(length);
+    git.inspectRemote.mockResolvedValueOnce({ defaultBranch, branchExists: false });
+
+    await run();
+
+    expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+      code: 'branch_not_found',
+      detail: '',
+      remoteDefaultBranch: named ? defaultBranch : null,
     });
   });
 
@@ -148,8 +170,8 @@ describe('CloneRepositoryHandler', () => {
   it('does nothing for a job whose Repository is no longer connecting', async () => {
     await connecting();
     await projects.markFailed(PROJECT, {
-      code: 'unknown',
-      detail: 'Interrupted',
+      code: 'interrupted',
+      detail: '',
       remoteDefaultBranch: null,
     });
 
@@ -190,8 +212,8 @@ describe('CloneRepositoryHandler', () => {
   });
 
   it.each([
-    ['stalled', { code: 'unknown', detail: 'Interrupted' }],
-    ['shutdown', { code: 'unknown', detail: 'Interrupted' }],
+    ['stalled', { code: 'interrupted', detail: '' }],
+    ['shutdown', { code: 'interrupted', detail: '' }],
     ['cancelled', { code: 'unknown', detail: 'Cancelled' }],
     ['timeout', { code: 'timeout' }],
   ] as const)('onFailed stores %s as %j', async (reason, failure) => {
@@ -202,19 +224,32 @@ describe('CloneRepositoryHandler', () => {
     expect((await projects.findRepository(PROJECT))?.failure).toMatchObject(failure);
   });
 
-  it('onFailed stores an unexpected error as unknown with no detail', async () => {
+  it('onFailed stores an unexpected error as unknown with a generic detail, never the error', async () => {
     await connecting();
 
-    await handler.onFailed(PROJECT, { reason: 'error', error: new Error('db down') });
+    await handler.onFailed(PROJECT, { reason: 'error', error: new Error('db down at 10.0.0.7') });
 
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
       code: 'unknown',
-      detail: '',
+      detail: UNEXPECTED_FAILURE_DETAIL,
       remoteDefaultBranch: null,
     });
   });
 
-  it('reconcile fails every connecting Repository as Interrupted, idempotently', async () => {
+  it('says Git gave no explanation for an unknown Git failure without output', async () => {
+    await connecting();
+    git.clone.mockRejectedValueOnce(new GitOperationError('unknown'));
+
+    await run();
+
+    expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+      code: 'unknown',
+      detail: GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
+      remoteDefaultBranch: null,
+    });
+  });
+
+  it('reconcile fails every connecting Repository as interrupted, idempotently', async () => {
     await connecting();
     const other = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
     projects.addProject(other, 'Ready one');
@@ -230,8 +265,8 @@ describe('CloneRepositoryHandler', () => {
     await handler.reconcile();
 
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
-      code: 'unknown',
-      detail: 'Interrupted',
+      code: 'interrupted',
+      detail: '',
       remoteDefaultBranch: null,
     });
     expect((await projects.findRepository(other))?.state).toBe('ready');

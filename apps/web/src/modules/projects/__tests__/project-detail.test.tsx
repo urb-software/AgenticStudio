@@ -308,11 +308,16 @@ describe('Repository card states', () => {
     },
   );
 
-  it('failed after a crash: says the clone was interrupted', async () => {
-    fakeProjectApi(PROJECT, failed({ code: 'unknown', detail: 'Interrupted' }));
+  it.each([
+    ['the interrupted code (#72)', { code: 'interrupted', detail: '' }],
+    ['the detail an earlier API stored', { code: 'unknown', detail: 'Interrupted' }],
+  ] as const)('failed after a crash (%s): says the clone was interrupted', async (_, failure) => {
+    fakeProjectApi(PROJECT, failed(failure));
     await renderLoaded();
 
-    expect((await within(card()).findByRole('alert')).textContent).toMatch(/interrupted/);
+    expect((await within(card()).findByRole('alert')).textContent).toMatch(
+      /The clone was interrupted/,
+    );
   });
 
   it('Retry connects again with the stored URL and branch', async () => {
@@ -347,7 +352,7 @@ describe('Repository card states', () => {
 
   it('shows a Retry that the API refuses as a banner, with the problem title', async () => {
     const api = fakeProjectApi(PROJECT, failed({ code: 'timeout', detail: '' }));
-    api.respondNext('connect', 409, problem(409, 'Clone already running'));
+    api.respondNext('connect', 409, problem(409, 'Repository busy'));
     await renderLoaded();
 
     await userEvent.click(await within(card()).findByRole('button', { name: 'Retry' }));
@@ -357,7 +362,7 @@ describe('Repository card states', () => {
         within(card())
           .getAllByRole('alert')
           .map((alert) => alert.textContent),
-      ).toContainEqual(expect.stringContaining('Clone already running')),
+      ).toContainEqual(expect.stringContaining('Repository busy')),
     );
   });
 
@@ -571,7 +576,7 @@ describe('Fetch (Story #61)', () => {
   });
 
   it('failed fetch after a crash: says the fetch was interrupted', async () => {
-    fakeProjectApi(PROJECT, failedFetch({ code: 'unknown', detail: 'Interrupted' }));
+    fakeProjectApi(PROJECT, failedFetch({ code: 'interrupted', detail: '' }));
     await renderLoaded();
 
     expect((await within(card()).findByRole('alert')).textContent).toMatch(

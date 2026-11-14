@@ -228,6 +228,12 @@ describe('problem+json error mapping', () => {
     expect(response.body.errors).toEqual([
       { path: 'name', message: 'A project with this name already exists.' },
     ]);
+    expect(response.body.type).toBe('about:blank');
+  });
+
+  it('refuses a field problem outside 4xx, whose text a 5xx would otherwise keep (#72)', () => {
+    expect(() => new FieldProblemException(500, 'Disk /var/data is full.', [])).toThrow(RangeError);
+    expect(() => new FieldProblemException(302, 'Moved.', [])).toThrow(RangeError);
   });
 
   it('maps an unexpected error to a generic 500 without leaking internals', async () => {

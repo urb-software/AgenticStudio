@@ -350,7 +350,7 @@
             }
           },
           "409": {
-            "description": "The project already has a repository (urn:agentic-studio:problem:repository-already-connected), the remote is connected to another project (urn:agentic-studio:problem:remote-already-connected; field error on url), or an earlier clone is still finishing (urn:agentic-studio:problem:clone-already-running)",
+            "description": "The project already has a repository (urn:agentic-studio:problem:repository-already-connected), the remote is connected to another project (urn:agentic-studio:problem:remote-already-connected; field error on url), or an earlier connect or fetch is still running (urn:agentic-studio:problem:repository-busy)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -714,7 +714,8 @@
         },
         "required": [
           "name"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Project_Output": {
         "type": "object",
@@ -854,9 +855,10 @@
           "size_limit",
           "remote_not_allowed",
           "redirect_refused",
+          "interrupted",
           "unknown"
         ],
-        "description": "The fixed failure reason codes (Epic #55). remote_not_allowed: the remote host is or resolves to an address Studio does not connect to (Issue #69); redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow. Later versions may add values; treat an unknown value as a generic failure."
+        "description": "The fixed failure reason codes (Epic #55). remote_not_allowed: the remote host is or resolves to an address Studio does not connect to (Issue #69); redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by a crash or a restart of Studio, not by the repository (Issue #72). Later versions may add values; treat an unknown value as a generic failure."
       },
       "Repository_Output": {
         "type": "object",
@@ -917,7 +919,8 @@
         "required": [
           "url",
           "integrationBranch"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VerifyRepositoryRequest": {
         "type": "object",
@@ -928,7 +931,8 @@
             "minLength": 1,
             "maxLength": 100
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ProblemDetails": {
         "type": "object",

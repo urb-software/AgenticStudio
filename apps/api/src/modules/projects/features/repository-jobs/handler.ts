@@ -12,7 +12,7 @@ import {
 import type { RepositoryJobs, RepositoryOperation } from '../../ports/repository-jobs.js';
 import { CleanUpRepositoryHandler } from '../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../clone-repository/handler.js';
-import { RefreshCloneHandler } from '../refresh-clone/handler.js';
+import { FetchCloneHandler } from '../fetch-clone/handler.js';
 import { SweepOrphanedDeployKeysHandler } from '../sweep-orphaned-deploy-keys/handler.js';
 
 /** The one queue of background Git operations on Repositories (platform/queue). */
@@ -55,7 +55,7 @@ export function repositoryJobId(projectId: string): string {
 /**
  * Feature: the Repository's background job (the {@link RepositoryJobs} port). It owns the
  * queue, and the Repository's state says which operation a job runs: `connecting` runs the
- * clone (`clone-repository`), `fetching` runs the fetch (`refresh-clone`).
+ * clone (`clone-repository`), `fetching` runs the fetch (`fetch-clone`).
  *
  * Registers its queue during module initialisation; the platform reconciles and starts the
  * worker only after the application has bootstrapped, so after the Git adapter's start-up
@@ -72,7 +72,7 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     private readonly queues: JobQueues,
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     private readonly clone: CloneRepositoryHandler,
-    private readonly refresh: RefreshCloneHandler,
+    private readonly fetchClone: FetchCloneHandler,
     private readonly cleanup: CleanUpRepositoryHandler,
     private readonly orphanedKeys: SweepOrphanedDeployKeysHandler,
   ) {}
@@ -111,19 +111,19 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     signal.throwIfAborted();
     const repository = await this.projects.findRepository(projectId);
     if (repository?.state === 'connecting') return this.clone.process(projectId, signal);
-    if (repository?.state === 'fetching') return this.refresh.process(projectId, signal);
+    if (repository?.state === 'fetching') return this.fetchClone.process(projectId, signal);
     // Otherwise a job left over from before a restart, whose attempt reconciliation failed.
   }
 
   private async onFailed(projectId: string, failure: JobFailure): Promise<void> {
     const repository = await this.projects.findRepository(projectId);
     if (repository?.state === 'connecting') return this.clone.onFailed(projectId, failure);
-    if (repository?.state === 'fetching') return this.refresh.onFailed(projectId, failure);
+    if (repository?.state === 'fetching') return this.fetchClone.onFailed(projectId, failure);
   }
 
   private async reconcile(): Promise<void> {
     await this.clone.reconcile();
-    await this.refresh.reconcile();
+    await this.fetchClone.reconcile();
     await this.cleanup.resumeAll();
     await this.orphanedKeys.sweep();
   }

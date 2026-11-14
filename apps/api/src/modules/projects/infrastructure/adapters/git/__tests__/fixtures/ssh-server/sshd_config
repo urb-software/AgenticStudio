@@ -11,3 +11,7 @@ AllowAgentForwarding no
 AllowTcpForwarding no
 X11Forwarding no
 LogLevel VERBOSE
+# The suites connect from one address many times, failing on purpose (auth_failed, host key
+# mismatch, ssh-keyscan). OpenSSH 9.8+ penalizes such a source and then refuses it, which
+# would fail later tests at random (#72); this server is a test fixture only.
+PerSourcePenalties no

@@ -4,10 +4,13 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
+import { Queue } from 'bullmq';
+import { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
+import { QUEUE_KEY_PREFIX } from '../platform/queue/bullmq-job-queues.js';
 import {
   createGitFixture,
   deleteRemoteBranch,
@@ -254,6 +257,22 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       expectProblem(await getRepository(id), 404, 'no-repository');
     });
 
+    it('rejects an unknown field with 422: the request schema is closed (#72)', async () => {
+      const id = await createProject('Extra field');
+
+      const response = await connect(id, {
+        url: 'https://github.com/acme/shop.git',
+        integrationBranch: 'dev',
+        deployKey: 'ssh-ed25519 AAAA',
+      });
+
+      expectProblem(response, 422);
+      expect(response.body.errors).toEqual([
+        { path: '', message: expect.stringContaining('deployKey') },
+      ]);
+      expectProblem(await getRepository(id), 404, 'no-repository');
+    });
+
     it('rejects a file:// URL when the test-only fixture-remote setting is off', async () => {
       await app.close();
       app = await startStudioApp({ ...services.config, gitAllowFileRemotes: false });
@@ -410,6 +429,15 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
     it('answers 404 for an id that is not a UUID', async () => {
       expectProblem(await verify('not-a-uuid'), 404, 'project-not-found');
     });
+
+    it('rejects an unknown field with 422: the request schema is closed (#72)', async () => {
+      const response = await verify(UNKNOWN_PROJECT, { acceptHostKey: 'ssh-ed25519 AAAA' });
+
+      expectProblem(response, 422);
+      expect(response.body.errors).toEqual([
+        { path: '', message: expect.stringContaining('acceptHostKey') },
+      ]);
+    });
   });
 
   describe('DELETE /api/projects/:id/repository: refused (every platform)', () => {
@@ -419,7 +447,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   });
 
   describe('start-up reconciliation', () => {
-    it('marks a repository left connecting by a crash as failed (unknown, "Interrupted")', async () => {
+    it('marks a repository left connecting by a crash as failed (interrupted)', async () => {
       const id = await createProject('Crashed');
       // Test setup only: a crash mid-clone cannot be produced through the API.
       await db().$executeRaw`
@@ -435,7 +463,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         url: 'https://github.com/acme/crashed.git',
         integrationBranch: 'dev',
         hasClone: false,
-        failure: { code: 'unknown', detail: 'Interrupted' },
+        failure: { code: 'interrupted', detail: '' },
       });
       expect((await getProject(id)).body.repository).toEqual({
         state: 'failed',
@@ -444,7 +472,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       });
     });
 
-    it('marks a repository left fetching by a crash as failed ("Interrupted"), keeping its Clone', async () => {
+    it('marks a repository left fetching by a crash as failed (interrupted), keeping its Clone', async () => {
       const id = await createProject('Crashed fetch');
       const sha = 'e'.repeat(40);
       const fetchedAt = '2026-11-13T10:00:00.000Z';
@@ -462,7 +490,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         hasClone: true,
         headSha: sha,
         lastFetchedAt: fetchedAt,
-        failure: { code: 'unknown', detail: 'Interrupted' },
+        failure: { code: 'interrupted', detail: '' },
       });
     });
   });
@@ -689,11 +717,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         url: fixture.url,
         integrationBranch: 'release',
         hasClone: false,
-        failure: {
-          code: 'branch_not_found',
-          detail: expect.any(String),
-          remoteDefaultBranch: 'main',
-        },
+        failure: { code: 'branch_not_found', detail: '', remoteDefaultBranch: 'main' },
       });
 
       const retry = await connect(id, { url: fixture.url, integrationBranch: 'main' });
@@ -705,6 +729,38 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         hasClone: false,
       });
       expect(await settled(id)).toMatchObject({ state: 'ready', headSha: fixture.commits.main });
+    });
+
+    it('refuses a Retry with 409 repository-busy while an operation of the project is still queued, keeping the failure', async () => {
+      const id = await createProject('Busy retry');
+      expect((await connect(id, { url: fixture.url, integrationBranch: 'release' })).status).toBe(
+        201,
+      );
+      expect((await settled(id)).failure).toMatchObject({ code: 'branch_not_found' });
+      // Test setup only: an earlier operation's job still holds the project's job id (a delayed
+      // job; this relies on the platform queue's BullMQ layout, acceptable in a test).
+      const redis = new Redis(services.config.redisUrl, { maxRetriesPerRequest: null });
+      const queue = new Queue('repository-git', { connection: redis, prefix: QUEUE_KEY_PREFIX });
+      const jobId = `repository-${id}`;
+      try {
+        await queue.add('repository-git', {}, { jobId, delay: 600_000 });
+
+        const response = await connect(id, { url: fixture.url, integrationBranch: 'release' });
+
+        expectProblem(response, 409, 'repository-busy');
+        expect(response.body).toMatchObject({
+          title: 'Repository busy',
+          detail: 'A connect or fetch of this repository is still running. Try again when it ends.',
+        });
+        expect((await getRepository(id)).body).toMatchObject({
+          state: 'failed',
+          failure: { code: 'branch_not_found' },
+        });
+      } finally {
+        await queue.remove(jobId);
+        await queue.close();
+        redis.disconnect();
+      }
     });
 
     it('fails with repository_not_found for a missing repository', async () => {
@@ -895,12 +951,11 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
           hasClone: true,
           headSha: connected.headSha,
           lastFetchedAt: connected.lastFetchedAt,
-          failure: {
-            code: 'branch_not_found',
-            detail: 'Branch "dev" was not found on the remote.',
-          },
+          failure: { code: 'branch_not_found', detail: expect.any(String) },
         });
 
+        // Git's output only, no Studio sentence (#72).
+        expect((await getRepository(id)).body.failure.detail).not.toContain('Branch "dev"');
         restoreRemoteBranch(remote, 'dev');
         const commit = pushCommit(remote, 'dev');
         expect((await fetchRepository(id)).status).toBe(202);
@@ -1176,7 +1231,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
           expect(Date.now() - started).toBeLessThan(10_000);
           expectProblem(await getRepository(id), 404, 'no-repository');
           expect(await entriesOf(id)).toEqual([]);
-          // The shared job id is free: no clone-already-running 409.
+          // The shared job id is free: no repository-busy 409.
           expect((await connect(id, { url: fixture.url, integrationBranch: 'dev' })).status).toBe(
             201,
           );

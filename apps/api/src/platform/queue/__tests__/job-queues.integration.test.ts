@@ -487,7 +487,10 @@ describe('job queues (Redis via Testcontainers)', () => {
         const release = deferred();
         owner.behaviour = (job) => (job.id === 'sync-p1' ? release.promise : stopsOnAbort(job));
         let queue: JobQueue<Payload>;
-        ({ app, queue } = await startApp(redisService.url, owner));
+        // Several Redis round trips happen inside cancel's wait for the job to start, so the
+        // wait is raised from 1 s: a slow runner cannot fail this falsely (PR #78 P-2, #72).
+        // It stays non-vacuous: `newerStartedFirst` below.
+        ({ app, queue } = await startApp(redisService.url, owner, { startWaitMs: 5_000 }));
         // Keep our only worker slot busy so the foreign worker is the one that takes sync-p2.
         await queue.enqueue('sync-p1', { projectId: 'p1' });
         await eventually(() => expect(owner.processed).toHaveLength(1));
@@ -794,9 +797,16 @@ describe('job queues (Redis via Testcontainers)', () => {
         await expect(health.isAvailable()).resolves.toBe(true);
 
         await proxy.down();
-        for (let probe = 0; probe < 3; probe += 1) {
+        // The first probes fail at once (connection refused); later ones wait in ioredis's
+        // reconnect backoff until the check's 1 s limit. Probe until one has waited about that
+        // long, so the timed-out path is exercised whatever ioredis's retry timing (#72).
+        let timedOut = false;
+        for (let probe = 0; probe < 20 && !timedOut; probe += 1) {
+          const started = Date.now();
           await expect(health.isAvailable()).resolves.toBe(false);
+          timedOut = Date.now() - started >= 900;
         }
+        expect(timedOut).toBe(true);
         await proxy.up();
         await eventually(async () => expect(await health.isAvailable()).toBe(true), 15_000);
         await expect(health.isAvailable()).resolves.toBe(true);

@@ -46,6 +46,7 @@ export const repositoryFailureCodeSchema = z
     'size_limit',
     'remote_not_allowed',
     'redirect_refused',
+    'interrupted',
     'unknown',
   ])
   .meta({
@@ -53,14 +54,15 @@ export const repositoryFailureCodeSchema = z
     description:
       'The fixed failure reason codes (Epic #55). remote_not_allowed: the remote host is or resolves ' +
       'to an address Studio does not connect to (Issue #69); redirect_refused: the remote answered ' +
-      'with an HTTP redirect, which Studio does not follow. Later versions may add values; treat an ' +
+      'with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by ' +
+      'a crash or a restart of Studio, not by the repository (Issue #72). Later versions may add values; treat an ' +
       'unknown value as a generic failure.',
   });
 
 export const repositoryFailureSchema = z
   .object({
     code: repositoryFailureCodeSchema,
-    /** Redacted Git output or a short fixed explanation ("Interrupted"); may be empty. */
+    /** Redacted Git output or a short fixed explanation; may be empty. */
     detail: z.string(),
     /** For `branch_not_found`: the remote's default branch, when the remote advertises one. */
     remoteDefaultBranch: z.string().optional(),

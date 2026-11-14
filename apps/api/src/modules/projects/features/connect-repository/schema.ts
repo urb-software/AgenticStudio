@@ -12,10 +12,11 @@ import { REPOSITORY_URL_MAX_LENGTH } from '../../domain/value-objects/repository
  * The branch rule is one pattern, so the generated client gets it as a form hint. The URL
  * rules (HTTPS without credentials, or SSH as `user@host:path` or `ssh://`) depend on the test-only
  * fixture-remote setting, so they run in the handler (`RepositoryUrl`), still before
- * anything is stored or enqueued; the schema publishes only the URL's length.
+ * anything is stored or enqueued; the schema publishes only the URL's length. Closed, like
+ * every request body of this module (#72): an unknown field is a 422, not silently dropped.
  */
 export const connectRepositoryRequestSchema = z
-  .object({
+  .strictObject({
     url: z
       .string()
       .trim()

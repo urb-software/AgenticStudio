@@ -1,58 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import type { JobFailure } from '../../../../platform/queue/job-queue.js';
-import {
-  gitOperationFailure,
-  INTERRUPTED_DETAIL,
-  type RepositoryFailure,
-  type RepositoryFailureCode,
-  repositoryFailure,
-} from '../../domain/entities/repository.js';
+import { interruptedFailure, repositoryFailure } from '../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
 } from '../../domain/repositories/project-repository.js';
+import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
+import { DeployKeyHandler } from '../deploy-key/handler.js';
 import {
-  type GitFailureReason,
-  GitOperationError,
-  REPOSITORY_GIT,
-  type RepositoryGit,
-} from '../../ports/repository-git.js';
-import {
-  DeployKeyHandler,
-  NO_TRUSTED_HOST_KEY_DETAIL,
-  NoTrustedHostKeyError,
-} from '../deploy-key/handler.js';
-
-/** Every Git failure reason is a Repository failure code (both are Epic #55's fixed list). */
-const FAILURE_CODE: Record<GitFailureReason, RepositoryFailureCode> = {
-  auth_failed: 'auth_failed',
-  host_unreachable: 'host_unreachable',
-  host_key_mismatch: 'host_key_mismatch',
-  repository_not_found: 'repository_not_found',
-  branch_not_found: 'branch_not_found',
-  timeout: 'timeout',
-  size_limit: 'size_limit',
-  remote_not_allowed: 'remote_not_allowed',
-  redirect_refused: 'redirect_refused',
-  unknown: 'unknown',
-};
-
-/** The failure stored for a job that did not finish on its own. */
-function failureOf(failure: JobFailure): RepositoryFailure {
-  switch (failure.reason) {
-    case 'timeout':
-      return repositoryFailure('timeout', 'The clone took too long and was stopped.');
-    case 'cancelled':
-      return repositoryFailure('unknown', 'Cancelled');
-    // A crash-like end: the queue lost the job, or the API is shutting down (clarification 2).
-    case 'stalled':
-    case 'shutdown':
-      return repositoryFailure('unknown', INTERRUPTED_DETAIL);
-    case 'error':
-      return repositoryFailure('unknown');
-  }
-}
+  gitStepFailure,
+  isAbortError,
+  unfinishedJobFailure,
+} from '../repository-jobs/job-failures.js';
 
 /**
  * Feature: the background clone of a connecting Repository, run by the Repository's job
@@ -92,11 +52,8 @@ export class CloneRepositoryHandler {
       if (!remote.branchExists) {
         await this.projects.markFailed(
           projectId,
-          repositoryFailure(
-            'branch_not_found',
-            `Branch "${integrationBranch}" was not found on the remote.`,
-            remote.defaultBranch,
-          ),
+          // No Git output to show: the code and the default branch say it all (#72).
+          repositoryFailure('branch_not_found', '', remote.defaultBranch),
         );
         return;
       }
@@ -105,18 +62,9 @@ export class CloneRepositoryHandler {
       await this.projects.markReady(projectId, { headSha: commit, fetchedAt: new Date() });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) throw error;
-      if (error instanceof NoTrustedHostKeyError) {
-        await this.projects.markFailed(
-          projectId,
-          repositoryFailure('host_key_mismatch', NO_TRUSTED_HOST_KEY_DETAIL),
-        );
-        return;
-      }
-      if (error instanceof GitOperationError) {
-        await this.projects.markFailed(
-          projectId,
-          gitOperationFailure(FAILURE_CODE[error.reason], error.detail),
-        );
+      const failure = gitStepFailure(error);
+      if (failure) {
+        await this.projects.markFailed(projectId, failure);
         return;
       }
       // Unexpected (a rejected request, the database): `onFailed` stores `unknown`.
@@ -130,20 +78,14 @@ export class CloneRepositoryHandler {
         `Clone of project ${projectId} failed unexpectedly: ${redactSecrets(String(failure.error))}`,
       );
     }
-    await this.projects.markFailed(projectId, failureOf(failure));
+    await this.projects.markFailed(projectId, unfinishedJobFailure('clone', failure));
   }
 
   /** Idempotent: failing what is already failed changes nothing. */
   async reconcile(): Promise<void> {
-    const failed = await this.projects.failAllConnecting(
-      repositoryFailure('unknown', INTERRUPTED_DETAIL),
-    );
+    const failed = await this.projects.failAllConnecting(interruptedFailure());
     if (failed > 0) {
       this.logger.warn(`Marked ${failed} interrupted repository connection(s) as failed.`);
     }
   }
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
 }

@@ -167,6 +167,16 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(await listedNames()).toEqual([]);
     });
 
+    it('rejects an unknown field with 400: the request schema is closed (#72)', async () => {
+      const response = await createProject({ name: 'Agentic Studio', owner: 'someone' });
+
+      expectProblem(response, 400);
+      expect(response.body.errors).toEqual([
+        { path: '', message: expect.stringContaining('owner') },
+      ]);
+      expect(await listedNames()).toEqual([]);
+    });
+
     it.each([
       ['the same name', 'Agentic Studio'],
       ['a name differing only in case', 'AGENTIC studio'],

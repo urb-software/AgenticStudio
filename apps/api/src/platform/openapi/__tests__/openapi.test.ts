@@ -198,6 +198,7 @@ describe('OpenAPI document', () => {
         'size_limit',
         'remote_not_allowed',
         'redirect_refused',
+        'interrupted',
         'unknown',
       ],
     });
@@ -206,6 +207,14 @@ describe('OpenAPI document', () => {
       'Repository_Output',
       'RepositorySummary_Output',
       'RepositoryFailure_Output',
+    ]) {
+      expect(schemas[name]).toMatchObject({ additionalProperties: false });
+    }
+    // Closed request bodies (#72): an unknown field is refused, not silently dropped.
+    for (const name of [
+      'CreateProjectRequest',
+      'ConnectRepositoryRequest',
+      'VerifyRepositoryRequest',
     ]) {
       expect(schemas[name]).toMatchObject({ additionalProperties: false });
     }

@@ -9,7 +9,7 @@ import { InMemoryProjectRepository } from '../../../domain/repositories/__tests_
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CleanUpRepositoryHandler } from '../../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../../clone-repository/handler.js';
-import { RefreshCloneHandler } from '../../refresh-clone/handler.js';
+import { FetchCloneHandler } from '../../fetch-clone/handler.js';
 import {
   CANCEL_SETTLE_TIMEOUT_MS,
   CLONE_JOB_TIMEOUT_MS,
@@ -52,7 +52,7 @@ describe('RepositoryJobsHandler', () => {
   let projects: InMemoryProjectRepository;
   let queues: RecordingJobQueues;
   let clone: CloneRepositoryHandler;
-  let refresh: RefreshCloneHandler;
+  let fetchClone: FetchCloneHandler;
   let cleanup: CleanUpRepositoryHandler;
   let orphanedKeys: SweepOrphanedDeployKeysHandler;
   let handler: RepositoryJobsHandler;
@@ -83,8 +83,8 @@ describe('RepositoryJobsHandler', () => {
     const git = new FakeRepositoryGit();
     queues = new RecordingJobQueues();
     clone = new CloneRepositoryHandler(projects, git, deployKeys);
-    refresh = new RefreshCloneHandler(projects, git, deployKeys);
-    for (const target of [clone, refresh]) {
+    fetchClone = new FetchCloneHandler(projects, git, deployKeys);
+    for (const target of [clone, fetchClone]) {
       vi.spyOn(target, 'process').mockResolvedValue();
       vi.spyOn(target, 'onFailed');
       vi.spyOn(target, 'reconcile');
@@ -93,7 +93,7 @@ describe('RepositoryJobsHandler', () => {
     vi.spyOn(cleanup, 'resumeAll');
     orphanedKeys = new SweepOrphanedDeployKeysHandler(projects, deployKeys, { gracePeriodMs: 0 });
     vi.spyOn(orphanedKeys, 'sweep');
-    handler = new RepositoryJobsHandler(queues, projects, clone, refresh, cleanup, orphanedKeys);
+    handler = new RepositoryJobsHandler(queues, projects, clone, fetchClone, cleanup, orphanedKeys);
     handler.onModuleInit();
   });
 
@@ -128,7 +128,7 @@ describe('RepositoryJobsHandler', () => {
     await queues.definition!.process(current);
 
     expect(clone.process).toHaveBeenCalledWith(PROJECT, current.signal);
-    expect(refresh.process).not.toHaveBeenCalled();
+    expect(fetchClone.process).not.toHaveBeenCalled();
   });
 
   it('runs a fetch for a fetching Repository', async () => {
@@ -137,7 +137,7 @@ describe('RepositoryJobsHandler', () => {
 
     await queues.definition!.process(current);
 
-    expect(refresh.process).toHaveBeenCalledWith(PROJECT, current.signal);
+    expect(fetchClone.process).toHaveBeenCalledWith(PROJECT, current.signal);
     expect(clone.process).not.toHaveBeenCalled();
   });
 
@@ -148,7 +148,7 @@ describe('RepositoryJobsHandler', () => {
     await queues.definition!.process(running());
 
     expect(clone.process).not.toHaveBeenCalled();
-    expect(refresh.process).not.toHaveBeenCalled();
+    expect(fetchClone.process).not.toHaveBeenCalled();
   });
 
   it('reports a failure to the operation the Repository records', async () => {
@@ -156,7 +156,7 @@ describe('RepositoryJobsHandler', () => {
 
     await queues.definition!.onFailed(job, { reason: 'timeout' });
 
-    expect(refresh.onFailed).toHaveBeenCalledWith(PROJECT, { reason: 'timeout' });
+    expect(fetchClone.onFailed).toHaveBeenCalledWith(PROJECT, { reason: 'timeout' });
     expect(clone.onFailed).not.toHaveBeenCalled();
     expect((await projects.findRepository(PROJECT))?.failure?.code).toBe('timeout');
   });
@@ -167,14 +167,14 @@ describe('RepositoryJobsHandler', () => {
     await queues.definition!.onFailed(job, { reason: 'stalled' });
 
     expect(clone.onFailed).toHaveBeenCalledWith(PROJECT, { reason: 'stalled' });
-    expect(refresh.onFailed).not.toHaveBeenCalled();
+    expect(fetchClone.onFailed).not.toHaveBeenCalled();
   });
 
   it('reconciles interrupted clones and fetches, resumes pending disconnects, then sweeps orphaned Deploy keys', async () => {
     await queues.definition!.reconcile([job]);
 
     expect(clone.reconcile).toHaveBeenCalledOnce();
-    expect(refresh.reconcile).toHaveBeenCalledOnce();
+    expect(fetchClone.reconcile).toHaveBeenCalledOnce();
     expect(cleanup.resumeAll).toHaveBeenCalledOnce();
     expect(orphanedKeys.sweep).toHaveBeenCalledOnce();
     expect(vi.mocked(orphanedKeys.sweep).mock.invocationCallOrder[0]).toBeGreaterThan(
@@ -198,9 +198,9 @@ describe('RepositoryJobsHandler', () => {
     await queues.definition!.onFailed(job, { reason: 'cancelled' });
 
     expect(clone.process).not.toHaveBeenCalled();
-    expect(refresh.process).not.toHaveBeenCalled();
+    expect(fetchClone.process).not.toHaveBeenCalled();
     expect(clone.onFailed).not.toHaveBeenCalled();
-    expect(refresh.onFailed).not.toHaveBeenCalled();
+    expect(fetchClone.onFailed).not.toHaveBeenCalled();
     expect((await projects.findRepository(PROJECT))?.state).toBe('disconnecting');
   });
 });

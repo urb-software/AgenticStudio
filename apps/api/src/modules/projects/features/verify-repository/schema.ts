@@ -7,10 +7,11 @@ export const HOST_KEY_FINGERPRINT_MAX_LENGTH = 100;
 /**
  * `POST /api/projects/:id/repository/verify` body (Issue #62). Empty (`{}`) to verify the
  * Deploy key and start the clone, or, when the Repository is `awaiting_host_key`, with the
- * fingerprint the operator confirmed. Every violation is a 422 with field errors.
+ * fingerprint the operator confirmed. Every violation is a 422 with field errors, an unknown
+ * field too: the schema is closed (#72).
  */
 export const verifyRepositoryRequestSchema = z
-  .object({
+  .strictObject({
     acceptHostKeyFingerprint: z
       .string()
       .trim()
