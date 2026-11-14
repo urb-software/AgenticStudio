@@ -1,3 +1,5 @@
+import { hostKeyFingerprint } from '../value-objects/ssh-key.js';
+
 /**
  * The states of a Repository: the last operation, not whether a Clone exists (see
  * `RepositoryConnection.hasClone`). An SSH Repository starts in `awaiting_key`: its Deploy key
@@ -107,9 +109,22 @@ export interface RepositoryConnection {
   pendingHostKey: string | null;
   /**
    * SHA256 fingerprint of `pendingHostKey` when awaiting confirmation, otherwise of
-   * `pinnedHostKey`; `null` when there is neither.
+   * `pinnedHostKey`; `null` when there is neither. Derived, never stored
+   * ({@link restoreRepository}).
    */
   hostKeyFingerprint: string | null;
+}
+
+/** What a store keeps of a Repository: everything but the derived fields. */
+export type StoredRepositoryConnection = Omit<RepositoryConnection, 'hostKeyFingerprint'>;
+
+/**
+ * A Repository read back from a store, with its derived fields: the host key fingerprint is
+ * a domain rule, so no store computes it itself (#72).
+ */
+export function restoreRepository(stored: StoredRepositoryConnection): RepositoryConnection {
+  const shown = stored.pendingHostKey ?? stored.pinnedHostKey;
+  return { ...stored, hostKeyFingerprint: shown === null ? null : hostKeyFingerprint(shown) };
 }
 
 /**
@@ -117,7 +132,7 @@ export interface RepositoryConnection {
  * without a Clone that is `awaiting_key`, `awaiting_host_key`, or `failed` (Retry keeps the
  * Deploy key).
  */
-export function isVerifiable(repository: RepositoryConnection): boolean {
+export function isVerifiable(repository: StoredRepositoryConnection): boolean {
   return (
     repository.deployKeySecret !== null &&
     !repository.hasClone &&

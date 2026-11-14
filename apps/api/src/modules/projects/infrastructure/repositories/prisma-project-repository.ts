@@ -9,6 +9,7 @@ import {
   REPOSITORY_FAILURE_CODES,
   REPOSITORY_STATES,
   type RepositoryConnection,
+  restoreRepository,
   type RepositoryFailure,
   type RepositoryFailureCode,
   type RepositoryState,
@@ -25,7 +26,6 @@ import {
   RepositoryBusyError,
 } from '../../domain/repositories/project-repository.js';
 import type { ProjectName } from '../../domain/value-objects/project-name.js';
-import { hostKeyFingerprint } from '../../domain/value-objects/ssh-key.js';
 
 const PROJECT_FIELDS = { id: true, name: true, createdAt: true } as const;
 
@@ -75,8 +75,7 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
     throw new Error(`Unexpected repository state in the database: ${row.state}`);
   }
   const code = row.failureCode;
-  const shownHostKey = row.pendingHostKey ?? row.pinnedHostKey;
-  return {
+  return restoreRepository({
     projectId: row.projectId,
     url: row.url,
     integrationBranch: row.integrationBranch,
@@ -97,8 +96,7 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
     deployKeySecret: row.deployKeySecretId,
     pinnedHostKey: row.pinnedHostKey,
     pendingHostKey: row.pendingHostKey,
-    hostKeyFingerprint: shownHostKey === null ? null : hostKeyFingerprint(shownHostKey),
-  };
+  });
 }
 
 const NO_FAILURE = {

@@ -3,9 +3,10 @@ import {
   isVerifiable,
   type RepositoryConnection,
   type RepositoryFailure,
+  restoreRepository,
+  type StoredRepositoryConnection,
 } from '../../entities/repository.js';
 import type { ProjectName } from '../../value-objects/project-name.js';
-import { hostKeyFingerprint } from '../../value-objects/ssh-key.js';
 import {
   type ConnectRepositoryRecord,
   NoRepositoryError,
@@ -23,11 +24,11 @@ import {
  * Repository is replaced, a fetch starts only from `ready` or `failed` with a Clone,
  * transitions out of `connecting` and `fetching` are conditional, verification transitions
  * apply only to a verifiable SSH Repository, and only a `disconnecting` Repository is
- * deleted. The host key fingerprint is derived on read, as the database adapter does.
+ * deleted. Like the database adapter, it stores no host key fingerprint (`restoreRepository`).
  */
 export class InMemoryProjectRepository implements ProjectRepository {
   readonly projects = new Map<string, Project>();
-  readonly repositories = new Map<string, RepositoryConnection & { identity: string }>();
+  readonly repositories = new Map<string, StoredRepositoryConnection & { identity: string }>();
 
   addProject(id: string, name: string): Project {
     const project = { id, name, createdAt: new Date('2026-11-13T10:00:00.000Z') };
@@ -53,11 +54,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
     if (!stored) return Promise.resolve(null);
     const { identity, ...repository } = stored;
     void identity; // stored for the uniqueness rule, not part of a RepositoryConnection
-    const shown = repository.pendingHostKey ?? repository.pinnedHostKey;
-    return Promise.resolve({
-      ...structuredClone(repository),
-      hostKeyFingerprint: shown === null ? null : hostKeyFingerprint(shown),
-    });
+    return Promise.resolve(restoreRepository(structuredClone(repository)));
   }
 
   async beginConnect(record: ConnectRepositoryRecord): Promise<RepositoryConnection> {
@@ -90,7 +87,6 @@ export class InMemoryProjectRepository implements ProjectRepository {
       deployKeySecret: record.deployKey?.secretRef ?? null,
       pinnedHostKey: record.deployKey ? (record.pinnedHostKey ?? null) : null,
       pendingHostKey: null,
-      hostKeyFingerprint: null,
     });
     return (await this.findRepository(record.projectId))!;
   }
@@ -257,7 +253,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
 
   private transition(
     projectId: string,
-    change: (repository: RepositoryConnection) => void,
+    change: (repository: StoredRepositoryConnection) => void,
     from: 'connecting' | 'fetching' = 'connecting',
   ) {
     const repository = this.repositories.get(projectId);

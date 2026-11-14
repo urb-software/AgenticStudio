@@ -232,9 +232,7 @@ describe('problem+json error mapping', () => {
   });
 
   it('refuses a field problem outside 4xx, whose text a 5xx would otherwise keep (#72)', () => {
-    expect(() => new FieldProblemException(500, 'Disk /var/data is full.', [])).toThrow(
-      RangeError,
-    );
+    expect(() => new FieldProblemException(500, 'Disk /var/data is full.', [])).toThrow(RangeError);
     expect(() => new FieldProblemException(302, 'Moved.', [])).toThrow(RangeError);
   });
 
