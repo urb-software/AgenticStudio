@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { queueHealthProvider } from '../queue/queue.module.js';
+import { queueHealthProvider } from '../queue/queue-health.provider.js';
 import { HealthController } from './health.controller.js';
 
 /** The public health endpoint. */

@@ -1,8 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
-import {
-  HandledServerErrorException,
-  ProblemException,
-} from '../../../../platform/http/problem-details.js';
+import { ProblemException, serviceUnavailable } from '../../../../platform/http/problem-details.js';
 
 /**
  * Problem `type` URIs of the projects API (RFC 9457 §3.1.1), shared by several features of
@@ -67,7 +64,7 @@ export function unsupportedPlatform(action: string): ProblemException {
   });
 }
 
-/** 503 when the job queue is down; the queue logs the outage itself (once). */
-export function queueUnavailable(): HandledServerErrorException {
-  return new HandledServerErrorException(HttpStatus.SERVICE_UNAVAILABLE);
+/** 503 (the generic body) when the job queue is down; the queue logs the outage itself (once). */
+export function queueUnavailable(): ProblemException {
+  return serviceUnavailable();
 }

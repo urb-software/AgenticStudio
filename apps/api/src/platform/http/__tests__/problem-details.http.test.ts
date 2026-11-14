@@ -17,10 +17,12 @@ import { testConfig, WITHOUT_QUEUE_WORKERS } from '../../../__tests__/test-confi
 import { AppModule } from '../../../app.module.js';
 import { Public } from '../../auth/public.decorator.js';
 import { buildApp } from '../../../app.js';
+import { HandledServerErrorException } from '../handled-server-error.js';
 import {
   FieldProblemException,
   ProblemException,
   problemDetailsSchema,
+  serviceUnavailable,
 } from '../problem-details.js';
 
 // Test-only endpoints: no production endpoint takes input yet (#12 DoR clarification 1).
@@ -67,6 +69,16 @@ class ProbeController {
   @Get('unavailable')
   unavailable(): never {
     throw new ServiceUnavailableException('Redis at 10.0.0.7:6379 refused AUTH s3cr3t');
+  }
+
+  @Get('service-unavailable')
+  serviceUnavailable(): never {
+    throw serviceUnavailable();
+  }
+
+  @Get('handled-503')
+  handled503(): never {
+    throw new HandledServerErrorException();
   }
 
   @Get('public-5xx')
@@ -246,6 +258,27 @@ describe('problem+json error mapping', () => {
     expectNoInternals(response);
   });
 
+  it('answers serviceUnavailable() with the generic 503 body, unlogged (Issue #70)', async () => {
+    const before = logger.lines.length;
+    const server = app.getHttpServer();
+
+    const response = await request(server).get('/api/__test__/service-unavailable');
+    const handled = await request(server).get('/api/__test__/handled-503');
+
+    // Exactly the body of any other 503 (and of the platform's handled 503): no new text.
+    for (const answer of [response, handled]) {
+      expectProblem(answer, 503, 'Service Unavailable');
+      expect(answer.body).toEqual({
+        type: 'about:blank',
+        title: 'Service Unavailable',
+        status: 503,
+        detail: 'An unexpected error occurred.',
+        correlationId: expect.stringMatching(UUID),
+      });
+    }
+    expect(logger.lines.slice(before)).toEqual([]);
+  });
+
   it('keeps the fixed text and type of a deliberate ProblemException 5xx, unlogged', async () => {
     const before = logger.lines.length;
 
@@ -291,5 +324,17 @@ describe('problem+json error mapping', () => {
     ]);
 
     expect(first.body.correlationId).not.toBe(second.body.correlationId);
+  });
+});
+
+describe('HandledServerErrorException (platform-only, Issue #70)', () => {
+  it('is a 503', () => {
+    expect(new HandledServerErrorException().getStatus()).toBe(503);
+  });
+
+  it('refuses any other status, so a real 5xx cannot be silenced in the logs', () => {
+    for (const status of [500, 502, 504, 404]) {
+      expect(() => new HandledServerErrorException(status as 503)).toThrow(/503/);
+    }
   });
 });

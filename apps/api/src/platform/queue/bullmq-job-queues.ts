@@ -88,17 +88,23 @@ interface StoredJob {
   timeoutMs?: number;
 }
 
+/** A job this process is running: its abort controller and the token of its enqueue. */
+interface Run {
+  controller: AbortController;
+  token: string;
+}
+
 interface Entry {
   definition: QueueDefinition<JobPayload>;
   queue: Queue<StoredJob>;
   worker?: Worker<StoredJob>;
   workerConnection?: Redis;
   /**
-   * Abort controllers of the jobs this process is running, by job id. Authoritative for
-   * "running" (one API instance): an id stays here until its processor settles, even if
-   * BullMQ has lost or dropped the job meanwhile.
+   * The jobs this process is running, by job id. Authoritative for "running" (one API
+   * instance): an id stays here until its processor settles, even if BullMQ has lost or
+   * dropped the job meanwhile.
    */
-  running: Map<string, AbortController>;
+  running: Map<string, Run>;
   /**
    * Per running job id: settles once its run is over (processor returned, `onFailed`
    * completed, the id left `running`). What `cancel` with `settleTimeoutMs` waits for.
@@ -121,6 +127,8 @@ export class BullMqJobQueues
   private readonly producer: Redis;
   private readonly entries = new Map<string, Entry>();
   private bootstrapped = false;
+  /** Whether the last health ping timed out; the first timeout of an outage is logged, once. */
+  private healthPingTimedOut = false;
 
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -171,11 +179,31 @@ export class BullMqJobQueues
     };
   }
 
+  /**
+   * Pings the queue's Redis. A probe calls this every few seconds, so a ping that times out
+   * while connected (Redis slow, not down) is logged once per outage and the recovery once.
+   * While the producer is not connected, a ping waits in the offline queue and times out
+   * too; that is the connection outage logConnectionErrors already logs, so not logged here.
+   */
   async isAvailable(): Promise<boolean> {
     const reply = await withTimeout(
       this.producer.ping().catch(() => undefined),
       HEALTH_TIMEOUT_MS,
     );
+    // Check and update in one synchronous step, so concurrent probes log at most once.
+    if (reply === 'PONG') {
+      if (this.healthPingTimedOut) this.logger.log('Queue Redis health check passes again.');
+      this.healthPingTimedOut = false;
+    } else if (
+      reply === TIMED_OUT &&
+      this.producer.status === 'ready' &&
+      !this.healthPingTimedOut
+    ) {
+      this.healthPingTimedOut = true;
+      this.logger.warn(
+        `Queue Redis health check failed: no answer within ${HEALTH_TIMEOUT_MS} ms.`,
+      );
+    }
     return reply === 'PONG';
   }
 
@@ -225,7 +253,7 @@ export class BullMqJobQueues
         if (!entry.worker) return;
         // close() stops fetching at once and waits for the running jobs, which the aborts end.
         const closing = entry.worker.close();
-        for (const controller of entry.running.values()) {
+        for (const { controller } of entry.running.values()) {
           controller.abort(new JobAbortedError('shutdown'));
         }
         await this.bounded(closing, `stopping worker "${entry.definition.name}"`);
@@ -321,36 +349,42 @@ export class BullMqJobQueues
     if (this.abortRunning(entry, id)) {
       return true;
     }
-    const state = await unavailableOnError(async () => {
+    const found = await unavailableOnError(async () => {
       const job = await entry.queue.getJob(id);
       if (!job) {
         return undefined;
       }
+      const token = job.data.token;
       const current = await job.getState();
       if (WAITING_STATES.has(current)) {
         try {
           await job.remove();
-          return 'removed';
+          return { state: 'removed' as const, token };
         } catch {
           // Our worker took it meanwhile (it holds the lock).
-          return 'active';
+          return { state: 'active' as const, token };
         }
       }
-      return current;
+      return { state: current, token };
     });
-    if (state === 'removed') {
+    if (found?.state === 'removed') {
       return true;
     }
-    if (state !== 'active' || !this.bootstrapped) {
+    if (found?.state !== 'active' || !this.bootstrapped) {
       return false;
     }
     // Active but not running here: either our worker has just taken it and is about to
     // call its processor (wait for that, then abort with a live signal), or it is held by
     // something we cannot abort or has just finished (then there is nothing to cancel).
+    // Only the run of this enqueue (its token) is ours: a newer run with the same id that
+    // starts meanwhile means this job is over, and is never aborted.
     const deadline = Date.now() + START_WAIT_MS;
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
-      if (this.abortRunning(entry, id)) {
+      const run = entry.running.get(id);
+      if (run) {
+        if (run.token !== found.token) return false;
+        run.controller.abort(new JobAbortedError('cancelled'));
         return true;
       }
     }
@@ -358,9 +392,9 @@ export class BullMqJobQueues
   }
 
   private abortRunning(entry: Entry, id: string): boolean {
-    const controller = entry.running.get(id);
-    controller?.abort(new JobAbortedError('cancelled'));
-    return controller !== undefined;
+    const run = entry.running.get(id);
+    run?.controller.abort(new JobAbortedError('cancelled'));
+    return run !== undefined;
   }
 
   private startWorker(entry: Entry): void {
@@ -383,7 +417,7 @@ export class BullMqJobQueues
     // the lock): BullMQ fails it. Abort the processor; the id stays busy until it settles.
     entry.worker.on('stalled', (jobId) => {
       this.logger.warn(`Queue "${definition.name}": job "${jobId}" lost its lock (stalled).`);
-      running.get(jobId)?.abort(new JobAbortedError('stalled'));
+      running.get(jobId)?.controller.abort(new JobAbortedError('stalled'));
     });
   }
 
@@ -396,11 +430,11 @@ export class BullMqJobQueues
   private async run(entry: Entry, job: Job<StoredJob>): Promise<void> {
     const { definition, running } = entry;
     const id = job.id!;
-    const { payload, timeoutMs = definition.timeoutMs } = job.data;
+    const { payload, token, timeoutMs = definition.timeoutMs } = job.data;
     const controller = new AbortController();
     let markSettled!: () => void;
     const settled = new Promise<void>((resolve) => (markSettled = resolve));
-    running.set(id, controller);
+    running.set(id, { controller, token });
     entry.settled.set(id, settled);
     const timer =
       timeoutMs === undefined
@@ -426,7 +460,7 @@ export class BullMqJobQueues
       }
     } finally {
       // Only our own entry: never a newer run's controller.
-      if (running.get(id) === controller) {
+      if (running.get(id)?.controller === controller) {
         running.delete(id);
       }
       if (entry.settled.get(id) === settled) {

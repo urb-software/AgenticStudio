@@ -10,17 +10,16 @@ import {
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import { ZodValidationException } from 'nestjs-zod';
+import { HandledServerErrorException } from './handled-server-error.js';
 import {
   FieldProblemException,
-  HandledServerErrorException,
+  GENERIC_SERVER_DETAIL,
   PROBLEM_JSON,
   type ProblemDetails,
   ProblemException,
   zodFieldErrors,
 } from './problem-details.js';
 import { redactSecrets } from './redact.js';
-
-const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
 
 /**
  * Maps every error to RFC 9457 problem+json. Only 4xx details (and the fixed text of a
