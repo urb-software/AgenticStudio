@@ -20,6 +20,7 @@ import {
 } from '../handler.js';
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
 import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import { SweepOrphanedDeployKeysHandler } from '../../sweep-orphaned-deploy-keys/handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const COMMIT = 'a'.repeat(40);
@@ -53,6 +54,7 @@ describe('RepositoryJobsHandler', () => {
   let clone: CloneRepositoryHandler;
   let refresh: RefreshCloneHandler;
   let cleanup: CleanUpRepositoryHandler;
+  let orphanedKeys: SweepOrphanedDeployKeysHandler;
   let handler: RepositoryJobsHandler;
 
   const job = { id: `repository-${PROJECT}`, payload: { projectId: PROJECT } };
@@ -89,7 +91,9 @@ describe('RepositoryJobsHandler', () => {
     }
     cleanup = new CleanUpRepositoryHandler(projects, git, deployKeys);
     vi.spyOn(cleanup, 'resumeAll');
-    handler = new RepositoryJobsHandler(queues, projects, clone, refresh, cleanup);
+    orphanedKeys = new SweepOrphanedDeployKeysHandler(projects, deployKeys, { gracePeriodMs: 0 });
+    vi.spyOn(orphanedKeys, 'sweep');
+    handler = new RepositoryJobsHandler(queues, projects, clone, refresh, cleanup, orphanedKeys);
     handler.onModuleInit();
   });
 
@@ -166,12 +170,16 @@ describe('RepositoryJobsHandler', () => {
     expect(refresh.onFailed).not.toHaveBeenCalled();
   });
 
-  it('reconciles interrupted clones and fetches and resumes pending disconnects', async () => {
+  it('reconciles interrupted clones and fetches, resumes pending disconnects, then sweeps orphaned Deploy keys', async () => {
     await queues.definition!.reconcile([job]);
 
     expect(clone.reconcile).toHaveBeenCalledOnce();
     expect(refresh.reconcile).toHaveBeenCalledOnce();
     expect(cleanup.resumeAll).toHaveBeenCalledOnce();
+    expect(orphanedKeys.sweep).toHaveBeenCalledOnce();
+    expect(vi.mocked(orphanedKeys.sweep).mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(cleanup.resumeAll).mock.invocationCallOrder[0]!,
+    );
   });
 
   it('cancels the Repository’s job by its shared id and waits for it to settle', async () => {

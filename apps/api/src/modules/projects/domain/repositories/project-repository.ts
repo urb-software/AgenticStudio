@@ -21,6 +21,14 @@ export interface ConnectRepositoryRecord {
   deployKey?: { publicKey: string; secretRef: string } | null;
   /** SSH only: a host key already confirmed for this host, kept across a Retry. */
   pinnedHostKey?: string | null;
+  /**
+   * True when `deployKey` is the failed Repository's own key, kept by a Retry (Issue #76): the
+   * replacement then applies only while the Repository still exists and references that key;
+   * otherwise nothing is written and {@link RepositoryAlreadyConnectedError} (or
+   * {@link RemoteAlreadyConnectedError}) is thrown. A key a concurrent Connect or Disconnect
+   * released may already be deleted, so it is never saved again.
+   */
+  keepsDeployKey?: boolean;
 }
 
 /**
@@ -49,8 +57,9 @@ export interface ProjectRepository {
 
   /**
    * Stores the Repository in state `connecting` (or `awaiting_key` with a Deploy key): a new
-   * one, or a `failed` one replaced by the new attempt. The store, not a prior read, decides conflicts, so concurrent connects
-   * cannot both succeed. Throws {@link ProjectNotFoundError},
+   * one, or a `failed` one replaced by the new attempt (with `keepsDeployKey`, only while it
+   * still references that key). The store, not a prior read, decides conflicts, so concurrent
+   * connects cannot both succeed. Throws {@link ProjectNotFoundError},
    * {@link RepositoryAlreadyConnectedError} (a Repository that is not `failed` exists) or
    * {@link RemoteAlreadyConnectedError} (another Project holds the same remote identity).
    */
@@ -137,6 +146,13 @@ export interface ProjectRepository {
 
   /** The project ids of every `disconnecting` Repository (start-up resumes their cleanup). */
   listDisconnecting(): Promise<string[]>;
+
+  /**
+   * The secret store reference of every Repository's Deploy key, in any state (a
+   * `disconnecting` one still holds its key until its cleanup forgets it). The orphan sweep
+   * deletes only Deploy keys outside this list (Issue #76).
+   */
+  listDeployKeySecretRefs(): Promise<string[]>;
 }
 
 /** Another project already has this name (compared by `ProjectName.uniquenessKey`). */

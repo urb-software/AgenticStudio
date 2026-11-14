@@ -43,6 +43,9 @@ const SECRET_VALUE =
 /** Text a test trigger puts into a PostgreSQL error next to the ciphertext it was given. */
 const DB_ERROR_MARKER = 'db-error-carries-ciphertext';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The owner label of the values this suite stores (Issue #76). */
+const TEST_OWNER = { owner: 'tests.secret-store' } as const;
+const HOUR_MS = 60 * 60 * 1000;
 
 interface SecretRow {
   id: string;
@@ -50,6 +53,7 @@ interface SecretRow {
   nonce: Uint8Array;
   auth_tag: Uint8Array;
   key_version: number;
+  owner: string;
   created_at: Date;
 }
 
@@ -74,7 +78,7 @@ class SecretProbeController {
 
   @Post()
   async store(): Promise<{ stored: true }> {
-    await this.secrets.put(SECRET_VALUE);
+    await this.secrets.put(SECRET_VALUE, TEST_OWNER);
     return { stored: true };
   }
 
@@ -123,11 +127,17 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
 
   const rowOf = async (reference: SecretReference): Promise<SecretRow> => {
     const [row] = await db.$queryRaw<SecretRow[]>`
-      SELECT id::text AS id, ciphertext, nonce, auth_tag, key_version, created_at
+      SELECT id::text AS id, ciphertext, nonce, auth_tag, key_version, owner, created_at
       FROM secrets WHERE id = ${reference}::uuid`;
     if (!row) throw new Error(`no secrets row for ${reference}`);
     return row;
   };
+
+  /** Test setup: makes a stored value `ms` older than it is (the store stamps created_at). */
+  const age = (reference: SecretReference, ms: number) =>
+    db.$executeRaw`
+      UPDATE secrets SET created_at = created_at - ${ms} * interval '1 millisecond'
+      WHERE id = ${reference}::uuid`;
 
   beforeAll(async () => {
     postgres = await startPostgres();
@@ -152,7 +162,9 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   it('is provided by the production app', async () => {
     const production = await createApp(config, WITHOUT_QUEUE_WORKERS);
     try {
-      const reference = await production.get<SecretStore>(SECRET_STORE).put(SECRET_VALUE);
+      const reference = await production
+        .get<SecretStore>(SECRET_STORE)
+        .put(SECRET_VALUE, TEST_OWNER);
       expect(await store.get(reference)).toBe(SECRET_VALUE);
     } finally {
       await production.close();
@@ -160,18 +172,18 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('round-trips a value through an opaque reference', async () => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
 
     expect(reference).toMatch(UUID);
     expect(await store.get(reference)).toBe(SECRET_VALUE);
   });
 
   it('round-trips an empty value', async () => {
-    expect(await store.get(await store.put(''))).toBe('');
+    expect(await store.get(await store.put('', TEST_OWNER))).toBe('');
   });
 
   it('stores only AES-256-GCM ciphertext, a 12-byte nonce, a 16-byte tag and key version 1', async () => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
 
     const row = await rowOf(reference);
     const plaintext = Buffer.from(SECRET_VALUE, 'utf8');
@@ -187,7 +199,9 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('uses a fresh nonce for every value, even when the value repeats', async () => {
-    const references = await Promise.all(Array.from({ length: 20 }, () => store.put(SECRET_VALUE)));
+    const references = await Promise.all(
+      Array.from({ length: 20 }, () => store.put(SECRET_VALUE, TEST_OWNER)),
+    );
 
     const rows = await Promise.all(references.map(rowOf));
     expect(new Set(references).size).toBe(20);
@@ -196,7 +210,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('fails closed when the master key is not the one that sealed the value', async () => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
     const otherKeyApp = await createApp(
       testConfig({ ...config, secretsKey: throwawaySecretsKey() }),
       WITHOUT_QUEUE_WORKERS,
@@ -221,7 +235,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
     ['nonce', 'nonce'],
     ['authentication tag', 'auth_tag'],
   ] as const)('fails closed when the stored %s is tampered with', async (_, column) => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
     const tampered = Buffer.from((await rowOf(reference))[column]);
     tampered[0]! ^= 0x01;
 
@@ -238,8 +252,8 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('fails closed when a sealed value is copied into another row (reference bound as AAD)', async () => {
-    const original = await store.put(SECRET_VALUE);
-    const victim = await store.put('another throwaway value');
+    const original = await store.put(SECRET_VALUE, TEST_OWNER);
+    const victim = await store.put('another throwaway value', TEST_OWNER);
     const sealed = await rowOf(original);
 
     await db.$executeRaw`
@@ -252,7 +266,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('fails closed on a row sealed with an unknown key version', async () => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
 
     await db.$executeRaw`UPDATE secrets SET key_version = 2 WHERE id = ${reference}::uuid`;
 
@@ -270,8 +284,8 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('forgets a deleted value, and deleting it again is a no-op', async () => {
-    const reference = await store.put(SECRET_VALUE);
-    const kept = await store.put('kept throwaway value');
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
+    const kept = await store.put('kept throwaway value', TEST_OWNER);
 
     await store.delete(reference);
     await store.delete(reference);
@@ -281,8 +295,79 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
     expect(await store.get(kept)).toBe('kept throwaway value');
   });
 
+  describe('owner labels (Issue #76)', () => {
+    const DEPLOY_KEYS = { owner: 'projects.deploy-key' } as const;
+
+    it('stores the owner label with the value', async () => {
+      const reference = await store.put(SECRET_VALUE, DEPLOY_KEYS);
+
+      expect((await rowOf(reference)).owner).toBe('projects.deploy-key');
+      expect(await store.get(reference)).toBe(SECRET_VALUE);
+    });
+
+    it("lists only the owner's references older than the age, never another owner's", async () => {
+      const old = await store.put(SECRET_VALUE, DEPLOY_KEYS);
+      const older = await store.put(SECRET_VALUE, DEPLOY_KEYS);
+      const fresh = await store.put(SECRET_VALUE, DEPLOY_KEYS);
+      const otherOwners = await store.put(SECRET_VALUE, TEST_OWNER);
+      await age(old, 2 * HOUR_MS);
+      await age(older, 3 * HOUR_MS);
+      await age(otherOwners, 3 * HOUR_MS);
+      await age(fresh, HOUR_MS / 2);
+
+      const listed = await store.listOlderThan('projects.deploy-key', HOUR_MS);
+
+      expect(listed).toEqual([older, old]);
+      expect(listed).not.toContain(fresh);
+      expect(await store.listOlderThan('tests.secret-store', HOUR_MS)).toEqual([otherOwners]);
+      expect(await store.listOlderThan('tests.nobody', 0)).toEqual([]);
+    });
+
+    it('lists a value as soon as it is older than an age of zero', async () => {
+      const reference = await store.put(SECRET_VALUE, DEPLOY_KEYS);
+
+      expect(await store.listOlderThan('projects.deploy-key', 0)).toEqual([reference]);
+    });
+
+    it.each([
+      ['an empty label', ''],
+      ['upper case', 'Projects.deploy-key'],
+      ['spaces', 'projects deploy-key'],
+      ['an SQL fragment', "x' OR '1'='1"],
+      ['a label over 64 characters', `a${'.b'.repeat(32)}`],
+    ])('refuses an owner label with %s, storing nothing', async (_, owner) => {
+      const put = await captureRejection(store.put(SECRET_VALUE, { owner }));
+      const list = await captureRejection(store.listOlderThan(owner, 0));
+
+      for (const error of [put, list]) {
+        expect(error).toBeInstanceOf(RangeError);
+        expect(error.message).toBe('The secret owner label is invalid.');
+      }
+      expect(await db.$queryRaw<unknown[]>`SELECT id FROM secrets`).toEqual([]);
+    });
+
+    it.each([
+      ['a negative age', -1],
+      ['a fractional age', 1.5],
+      ['not a number', Number.NaN],
+    ])('refuses %s when listing', async (_, ageMs) => {
+      const error = await captureRejection(store.listOlderThan('projects.deploy-key', ageMs));
+
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error.message).toBe('The secret age is invalid.');
+    });
+
+    it('rejects an invalid owner label at the database level', async () => {
+      const reference = await store.put(SECRET_VALUE, DEPLOY_KEYS);
+
+      const update = db.$executeRaw`UPDATE secrets SET owner = 'Not A Label' WHERE id = ${reference}::uuid`;
+
+      await expect(update).rejects.toThrow(/check constraint/i);
+    });
+  });
+
   it('throws typed errors with fixed messages that carry no value, ciphertext or key', async () => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
     const sealed = await rowOf(reference);
     await db.$executeRaw`UPDATE secrets SET auth_tag = ${Buffer.alloc(16)} WHERE id = ${reference}::uuid`;
 
@@ -311,10 +396,10 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
   });
 
   it('keeps the value out of problem+json bodies and logs when resolving fails', async () => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
     const sealed = await rowOf(reference);
     await db.$executeRaw`UPDATE secrets SET key_version = 99 WHERE id = ${reference}::uuid`;
-    const tamperedReference = await store.put(SECRET_VALUE);
+    const tamperedReference = await store.put(SECRET_VALUE, TEST_OWNER);
     await db.$executeRaw`UPDATE secrets SET ciphertext = ${Buffer.alloc(sealed.ciphertext.length)} WHERE id = ${tamperedReference}::uuid`;
 
     for (const path of [reference, tamperedReference, '9b2f6c1e-4d0a-4f7b-8e3c-2a1d5f6b7c8d']) {
@@ -337,7 +422,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
     ['a tag that is not 16 bytes', 'auth_tag', Buffer.alloc(4)],
     ['a key version below 1', 'key_version', 0],
   ] as const)('rejects a row with %s at the database level', async (_, column, value) => {
-    const reference = await store.put(SECRET_VALUE);
+    const reference = await store.put(SECRET_VALUE, TEST_OWNER);
 
     // The column name comes from the fixed list above, never from input.
     const update = db.$executeRawUnsafe(
@@ -382,7 +467,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
     it('drops a database error that carries the ciphertext on put', async () => {
       await installLeakyTrigger();
       try {
-        expectNoLeak(await captureRejection(store.put(SECRET_VALUE)));
+        expectNoLeak(await captureRejection(store.put(SECRET_VALUE, TEST_OWNER)));
 
         const response = await request(app.getHttpServer())
           .post('/api/__test__/secrets')
@@ -400,16 +485,17 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
       }
     });
 
-    it('reports an unreachable database on put, get and delete without its error text', async () => {
+    it('reports an unreachable database on put, get, delete and listing without its error text', async () => {
       // testConfig() points at an unreachable database (127.0.0.1:1).
       const unreachable = await buildApp(probeRootModule(testConfig()), { logger });
       await unreachable.init();
       try {
         const broken = unreachable.get<SecretStore>(SECRET_STORE);
         const reference = '9b2f6c1e-4d0a-4f7b-8e3c-2a1d5f6b7c8d';
-        expectNoLeak(await captureRejection(broken.put(SECRET_VALUE)));
+        expectNoLeak(await captureRejection(broken.put(SECRET_VALUE, TEST_OWNER)));
         expectNoLeak(await captureRejection(broken.get(reference)));
         expectNoLeak(await captureRejection(broken.delete(reference)));
+        expectNoLeak(await captureRejection(broken.listOlderThan('projects.deploy-key', 0)));
 
         const response = await request(unreachable.getHttpServer()).get(
           `/api/__test__/secrets/${reference}`,

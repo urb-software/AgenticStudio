@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { Logger } from '@nestjs/common';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JobAlreadyActiveError } from '../../../../../platform/queue/job-queue.js';
 import {
   ProjectNotFoundError,
   RemoteAlreadyConnectedError,
+  RepositoryAlreadyConnectedError,
 } from '../../../domain/repositories/project-repository.js';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InvalidIntegrationBranchError } from '../../../domain/value-objects/integration-branch.js';
@@ -14,6 +16,10 @@ import { SecretStoreUnavailableError } from '../../../../../platform/secrets/ind
 import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
 import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import {
+  DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
+  SweepOrphanedDeployKeysHandler,
+} from '../../sweep-orphaned-deploy-keys/handler.js';
 import { ConnectRepositoryHandler, NOT_STARTED_DETAIL } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -28,14 +34,23 @@ describe('ConnectRepositoryHandler', () => {
   let jobs: RecordingRepositoryJobs;
   let secrets: InMemorySecretStore;
 
-  const handler = (allowFileRemotes = false) =>
-    new ConnectRepositoryHandler(
+  const handler = (allowFileRemotes = false) => {
+    const deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
+    return new ConnectRepositoryHandler(
       projects,
       git,
       jobs,
       { allowFileRemotes },
-      new DeployKeyHandler(secrets, { knownHosts: [] }),
+      deployKeys,
+      new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
+        gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
+      }),
     );
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   beforeEach(() => {
     projects = new InMemoryProjectRepository();
@@ -246,6 +261,114 @@ describe('ConnectRepositoryHandler', () => {
       });
       expect(secrets.values.size).toBe(0);
       expect(jobs.started).toEqual([[PROJECT, 'clone']]);
+    });
+
+    it('never saves again a kept key a concurrent connect released (Retry read a stale Repository)', async () => {
+      const first = await failedSsh(hostKey());
+      const stale = (await projects.findRepository(PROJECT))!;
+      // Meanwhile another connect replaced it over HTTPS (deleting the key), and that failed.
+      await handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'dev' });
+      await projects.markFailed(PROJECT, {
+        code: 'unknown',
+        detail: '',
+        remoteDefaultBranch: null,
+      });
+      vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
+
+      await expect(
+        handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
+      ).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
+
+      expect(projects.repositories.get(PROJECT)).toMatchObject({
+        state: 'failed',
+        deployKeySecret: null,
+      });
+      expect(secrets.values.has(first.deployKeySecret!)).toBe(false);
+    });
+
+    it('never recreates a Repository a concurrent disconnect removed (Retry read a stale Repository)', async () => {
+      await failedSsh(hostKey());
+      const stale = (await projects.findRepository(PROJECT))!;
+      await projects.beginDisconnect(PROJECT);
+      await projects.deleteDisconnecting(PROJECT);
+      vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
+
+      await expect(
+        handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
+      ).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
+
+      expect(projects.repositories.has(PROJECT)).toBe(false);
+      expect(jobs.started).toEqual([]);
+    });
+
+    describe('when deleting the replaced Deploy key fails (Issue #76)', () => {
+      let warnings: string[];
+
+      beforeEach(() => {
+        warnings = [];
+        vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
+          warnings.push(String(message));
+        });
+        vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      });
+
+      it('still connects, and the sweep that follows deletes the key once past the grace period', async () => {
+        const first = await failedSsh(hostKey());
+        secrets.now += DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS;
+        secrets.failNextDeleteWith = new SecretStoreUnavailableError();
+
+        const replaced = await handler().execute({
+          projectId: PROJECT,
+          url: URL,
+          integrationBranch: 'dev',
+        });
+
+        expect(replaced).toMatchObject({ state: 'connecting', deployKeySecret: null });
+        expect(warnings).toEqual([
+          expect.stringMatching(
+            /could not delete an unused Deploy key\. .*SecretStoreUnavailableError/,
+          ),
+        ]);
+        expect(secrets.values.has(first.deployKeySecret!)).toBe(false);
+        expect(jobs.started).toEqual([[PROJECT, 'clone']]);
+      });
+
+      it('keeps a new key whose Repository was refused for a later sweep when its delete fails', async () => {
+        projects.addProject(OTHER_PROJECT, 'Other');
+        await handler().execute({ projectId: OTHER_PROJECT, url: URL, integrationBranch: 'dev' });
+        secrets.failNextDeleteWith = new SecretStoreUnavailableError();
+
+        await expect(
+          handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
+        ).rejects.toBeInstanceOf(RemoteAlreadyConnectedError);
+
+        // Fresh, so the sweep that follows keeps it; it is deleted once past the grace period.
+        expect(secrets.values.size).toBe(1);
+        secrets.now += DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS;
+        await new SweepOrphanedDeployKeysHandler(
+          projects,
+          new DeployKeyHandler(secrets, { knownHosts: [] }),
+          { gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS },
+        ).sweep();
+        expect(secrets.values.size).toBe(0);
+      });
+
+      it('keeps a key inside the grace period for a later sweep', async () => {
+        const first = await failedSsh(hostKey());
+        secrets.now += DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS - 1;
+        secrets.failNextDeleteWith = new SecretStoreUnavailableError();
+
+        await handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'dev' });
+        expect(secrets.values.has(first.deployKeySecret!)).toBe(true);
+
+        secrets.now += 1;
+        await new SweepOrphanedDeployKeysHandler(
+          projects,
+          new DeployKeyHandler(secrets, { knownHosts: [] }),
+          { gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS },
+        ).sweep();
+        expect(secrets.values.size).toBe(0);
+      });
     });
   });
 

@@ -21,3 +21,7 @@ Connecting private Repositories makes Studio hold the first secrets it must stor
 - **A lost master key means reconnecting Repositories:** encrypted secrets cannot be recovered without it; the operator disconnects and connects again, which generates new Deploy keys that must be registered on the Git host.
 - **Rotation tooling is deferred:** the key-version field makes rotation possible later, but no rotation command exists yet.
 - Only the `SecretStore` adapter handles the ciphertext and the master key; callers hold references and resolve the plaintext only at the point of authorized use ([Security](../../engineering/security.md) §3).
+
+## Amendment (Issue #76, 2026-11-14)
+
+Every stored secret carries the **owner label** of the business module that stored it (`put(value, { owner })`, for example `projects.deploy-key`), in a non-secret `owner` column. `listOlderThan(owner, ageMs)` returns the references, never the values, of one owner's secrets older than an age measured by the store's clock. This lets a module delete its own secrets that nothing references any more without touching another module's: `projects` sweeps unreferenced Deploy keys older than a one-hour grace period at start-up and after a failed delete, logging each deleted secret by its id only. The migration labels every existing secret `projects.deploy-key`, since Deploy keys are the only secrets Studio has ever stored, so orphans from before the change are swept too. The label format also admits `unowned`, kept for future use.
