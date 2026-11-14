@@ -9,6 +9,7 @@ import {
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CloneRepositoryHandler } from '../handler.js';
 import {
+  GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
   HOST_KEY_CHANGED_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
 } from '../../../domain/entities/repository.js';
@@ -235,7 +236,7 @@ describe('CloneRepositoryHandler', () => {
     });
   });
 
-  it('stores the generic detail for an unknown Git failure without output', async () => {
+  it('says Git gave no explanation for an unknown Git failure without output', async () => {
     await connecting();
     git.clone.mockRejectedValueOnce(new GitOperationError('unknown'));
 
@@ -243,7 +244,7 @@ describe('CloneRepositoryHandler', () => {
 
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
       code: 'unknown',
-      detail: UNEXPECTED_FAILURE_DETAIL,
+      detail: GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
       remoteDefaultBranch: null,
     });
   });

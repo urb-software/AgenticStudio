@@ -67,6 +67,13 @@ export const REMOTE_DEFAULT_BRANCH_MAX_LENGTH = 255;
 export const UNEXPECTED_FAILURE_DETAIL =
   'Studio stopped because of an unexpected error. The Studio API log has the details.';
 
+/**
+ * The detail of an `unknown` Git failure whose redacted output is empty (#72): Git or
+ * ssh-keyscan failed without saying why. The Git adapter logs every failed run.
+ */
+export const GIT_FAILURE_WITHOUT_OUTPUT_DETAIL =
+  'Git failed without an explanation. The Studio API log has the details.';
+
 export interface RepositoryFailure {
   code: RepositoryFailureCode;
   /** Redacted Git output or a short fixed explanation; never a secret. */
@@ -149,14 +156,16 @@ export const HOST_KEY_CHANGED_DETAIL =
 
 /**
  * The failure of a Git operation: `host_key_mismatch` gets Studio's explanation first, then
- * the redacted Git output; `unknown` without output gets the generic detail; every other
+ * the redacted Git output; `unknown` without output gets a fixed detail saying so; every other
  * reason keeps the Git output as it is.
  */
 export function gitOperationFailure(
   code: RepositoryFailureCode,
   gitOutput = '',
 ): RepositoryFailure {
-  if (code === 'unknown' && !gitOutput) return unexpectedFailure();
+  if (code === 'unknown' && !gitOutput) {
+    return repositoryFailure('unknown', GIT_FAILURE_WITHOUT_OUTPUT_DETAIL);
+  }
   if (code !== 'host_key_mismatch') return repositoryFailure(code, gitOutput);
   return repositoryFailure(
     code,
@@ -164,7 +173,7 @@ export function gitOperationFailure(
   );
 }
 
-/** The failure of an unexpected error: `unknown` with the generic detail. */
+/** The failure of a job's or Studio's own unexpected error: `unknown` with the generic detail. */
 export function unexpectedFailure(): RepositoryFailure {
   return repositoryFailure('unknown', UNEXPECTED_FAILURE_DETAIL);
 }

@@ -20,8 +20,8 @@ import {
   type JobPayload,
   type JobQueue,
   JobQueues,
-  type QueueDefinition,
   JobStillRunningError,
+  type QueueDefinition,
   type QueuedJob,
   QueueUnavailableError,
 } from './job-queue.js';
