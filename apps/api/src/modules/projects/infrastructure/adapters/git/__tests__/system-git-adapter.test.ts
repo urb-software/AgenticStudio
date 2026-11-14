@@ -32,7 +32,15 @@ describe('SystemGitAdapter production wiring', () => {
       cloneTimeoutMs: 600_000,
       fetchTimeoutMs: 120_000,
       maxCloneBytes: 2_147_483_648,
+      allowPrivateRemotes: false,
     });
+  });
+
+  it('refuses loopback and private remotes unless STUDIO_GIT_ALLOW_PRIVATE_REMOTES opts in (Issue #69)', () => {
+    expect(systemGitSettings(testConfig()).allowPrivateRemotes).toBe(false);
+    expect(
+      systemGitSettings(testConfig({ gitAllowPrivateRemotes: true })).allowPrivateRemotes,
+    ).toBe(true);
   });
 
   it('allows exactly ssh and https, plus file only under the test-only setting', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InvalidRepositoryUrlError, remoteIdentity, RepositoryUrl } from '../repository-url.js';
 
-function rejection(input: string, options?: { allowFileRemotes?: boolean }): string {
+function rejection(input: string, options?: Parameters<typeof RepositoryUrl.parse>[1]): string {
   try {
     RepositoryUrl.parse(input, options);
   } catch (error) {
@@ -213,5 +213,72 @@ describe('RepositoryUrl.parse', () => {
     expect(url.identity).toBe('/tmp/fixtures/shop');
     expect(rejection('/tmp/fixtures/shop.git', { allowFileRemotes: true })).toMatch(/^Local paths/);
     expect(rejection('file://host/tmp/shop.git', { allowFileRemotes: true })).toMatch(/host/);
+  });
+
+  describe('IP-literal hosts under the address policy (Issue #69)', () => {
+    const closed = { addressPolicy: { allowPrivate: false } };
+    const open = { addressPolicy: { allowPrivate: true } };
+
+    it.each([
+      'https://169.254.169.254/latest/meta-data.git',
+      'https://[fe80::1]/acme/shop.git',
+      'https://[::ffff:169.254.169.254]/acme/shop.git',
+      'https://100.100.100.200/acme/shop.git',
+      'https://0.0.0.0/acme/shop.git',
+      'https://224.0.0.1/acme/shop.git',
+      'ssh://git@169.254.169.254/srv/repo.git',
+      'git@169.254.169.254:acme/shop.git',
+      'git@0xa9.0xfe.0xa9.0xfe:acme/shop.git',
+      'ssh://git@2852039166/srv/repo.git',
+    ])('never allows %s, even with the opt-in', (input) => {
+      for (const options of [closed, open]) {
+        expect(rejection(input, options)).toMatch(
+          /^This address is not allowed: Studio never connects to link-local, cloud metadata/,
+        );
+      }
+    });
+
+    it.each([
+      'https://127.0.0.1/acme/shop.git',
+      'https://127.1/acme/shop.git',
+      'https://0x7f.1/acme/shop.git',
+      'https://2130706433/acme/shop.git',
+      'https://[::1]/acme/shop.git',
+      'https://[::ffff:127.0.0.1]/acme/shop.git',
+      'https://10.0.0.5/acme/shop.git',
+      'https://192.168.1.10:8443/acme/shop.git',
+      'https://[fd12::1]/acme/shop.git',
+      'ssh://git@0x7f.1:2222/srv/repo.git',
+      'ssh://git@2130706433/srv/repo.git',
+      'git@127.1:acme/shop.git',
+      'git@10.0.0.5:acme/shop.git',
+    ])('allows the loopback or private %s only with the opt-in', (input) => {
+      expect(rejection(input, closed)).toBe(
+        'This address is not allowed: Studio connects to loopback and private addresses only with STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true.',
+      );
+      expect(() => RepositoryUrl.parse(input, open)).not.toThrow();
+    });
+
+    it.each(['ssh://git@256.1.1.1/srv/repo.git', 'git@1.2.3.4.5:acme/shop.git', 'git@08.1:a/b'])(
+      'refuses %s, a numeric host that is no valid address',
+      (input) => {
+        expect(rejection(input, open)).toMatch(/^Enter a valid host name/);
+      },
+    );
+
+    it('keeps the URL as entered and allows public addresses and host names', () => {
+      expect(RepositoryUrl.parse('https://140.82.121.4/acme/shop.git', closed).value).toBe(
+        'https://140.82.121.4/acme/shop.git',
+      );
+      expect(() => RepositoryUrl.parse('git@github.com:acme/shop.git', closed)).not.toThrow();
+      expect(() => RepositoryUrl.parse('https://localhost/acme/shop.git', closed)).not.toThrow();
+    });
+
+    it('checks no address without a policy (reading a stored URL)', () => {
+      expect(RepositoryUrl.parse('ssh://git@127.0.0.1:2222/srv/repo.git').ssh).toEqual({
+        host: '127.0.0.1',
+        port: 2222,
+      });
+    });
   });
 });

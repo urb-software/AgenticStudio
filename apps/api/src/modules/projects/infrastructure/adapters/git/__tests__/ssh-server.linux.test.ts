@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { lookup } from 'node:dns/promises';
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainer
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
 import type { SshCredentials } from '../../../../ports/repository-git.js';
-import { SystemGitAdapter } from '../system-git-adapter.js';
+import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
 
 const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const SERVER_CONTEXT = join(import.meta.dirname, 'fixtures', 'ssh-server');
@@ -86,7 +87,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter over SSH (contain
     await rm(root, { recursive: true, force: true });
   });
 
-  function adapter(): SystemGitAdapter {
+  function adapter(overrides: Partial<SystemGitSettings> = {}): SystemGitAdapter {
     return new SystemGitAdapter({
       dataDir,
       allowedTransports: ['ssh', 'https'],
@@ -95,6 +96,9 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter over SSH (contain
       maxCloneBytes: 50 * 1024 * 1024,
       tempRoot,
       log: () => {},
+      // The container's port is published on the Docker host's loopback: an explicit opt-in.
+      allowPrivateRemotes: true,
+      ...overrides,
     });
   }
 
@@ -157,5 +161,25 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter over SSH (contain
     await expect(
       adapter().inspectRemote(url, 'main', { ssh: credentials(deployKey, otherHostKey) }),
     ).rejects.toMatchObject({ reason: 'host_key_mismatch' });
+  });
+
+  it('connects ssh and ssh-keyscan to the checked address of the host name (Issue #69)', async () => {
+    // A name no DNS server knows: only the pinned address (HostName) leads to the container.
+    const name = 'git.studio-fixture.test';
+    const { address } = await lookup(container.getHost(), { family: 4 });
+    const pinned = adapter({ resolveHost: async (host) => (host === name ? [address] : []) });
+    const named = url.replace(`@${container.getHost()}:`, `@${name}:`);
+
+    await expect(pinned.scanHostKey(named)).resolves.toEqual({ hostKey: hostKey.publicKey });
+    await expect(
+      pinned.inspectRemote(named, 'main', { ssh: credentials(deployKey, hostKey) }),
+    ).resolves.toMatchObject({ branchExists: true });
+    await expect(
+      adapter({ allowPrivateRemotes: false, resolveHost: async () => [address] }).inspectRemote(
+        named,
+        'main',
+        { ssh: credentials(deployKey, hostKey) },
+      ),
+    ).rejects.toMatchObject({ reason: 'remote_not_allowed' });
   });
 });

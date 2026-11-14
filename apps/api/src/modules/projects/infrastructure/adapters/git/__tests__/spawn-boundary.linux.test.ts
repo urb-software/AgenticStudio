@@ -35,8 +35,11 @@ import {
 } from './fixtures/fake-binaries.js';
 
 const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
+const OTHER_PROJECT_ID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 const HTTPS_URL = 'https://git.example.test/owner/repo.git';
 const SSH_URL = 'ssh://git@git.example.test:2222/srv/git/repo.git';
+/** What the injected resolver answers for git.example.test: a public (TEST-NET-3) address. */
+const PUBLIC_ADDRESS = '203.0.113.10';
 // A PEM-shaped placeholder and a public host key: test data, not credentials.
 const SSH_FIXTURE = {
   privateKey:
@@ -71,6 +74,9 @@ const HARDENING = [
   'filter.lfs.required=false',
   'gc.auto=0',
   'maintenance.auto=false',
+  'http.followRedirects=false',
+  // No packfile URIs: a server could otherwise send Git to fetch from another host.
+  'fetch.uriProtocols=',
 ];
 
 /**
@@ -84,7 +90,19 @@ describe.runIf(process.platform === 'linux')(
     let dataDir: string;
     let tempRoot: string;
     let recordDir: string;
+    /** Host names the injected resolver was asked for, in order. */
+    let lookups: string[];
+    /** The injected resolver's answers; git.example.test resolves to a public address. */
+    let answers: Record<string, string[]>;
     const savedEnv = { ...process.env };
+
+    const resolveHost = async (host: string): Promise<string[]> => {
+      lookups.push(host);
+      const answer = answers[host];
+      if (!answer)
+        throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: 'ENOTFOUND' });
+      return answer;
+    };
 
     async function adapter(
       fakeGit: { version?: string; fetch?: FakeFetch } | 'real' = {},
@@ -100,6 +118,8 @@ describe.runIf(process.platform === 'linux')(
         tempRoot,
         log: () => {},
         gitBinary: fakeGit === 'real' ? 'git' : await writeFakeGit(root, recordDir, fakeGit),
+        allowPrivateRemotes: false,
+        resolveHost,
         ...overrides,
       });
     }
@@ -110,6 +130,8 @@ describe.runIf(process.platform === 'linux')(
       tempRoot = join(root, 'tmp');
       recordDir = join(root, 'record');
       await Promise.all([mkdir(dataDir), mkdir(tempRoot), mkdir(recordDir)]);
+      lookups = [];
+      answers = { 'git.example.test': [PUBLIC_ADDRESS] };
     });
 
     afterEach(async () => {
@@ -132,6 +154,13 @@ describe.runIf(process.platform === 'linux')(
         GIT_DIR: '/tmp/evil-git-dir',
         XDG_CONFIG_HOME: '/tmp/evil-xdg',
         DATABASE_URL: 'postgresql://user:do-not-leak@db/studio',
+        // A proxy would connect for Git, around the address check and the pin (Issue #69).
+        http_proxy: 'http://169.254.169.254:80',
+        https_proxy: 'http://169.254.169.254:80',
+        HTTPS_PROXY: 'http://169.254.169.254:80',
+        ALL_PROXY: 'socks5://169.254.169.254:1080',
+        all_proxy: 'socks5://169.254.169.254:1080',
+        NO_PROXY: '',
       });
 
       await expect((await adapter()).inspectRemote(HTTPS_URL, 'main')).rejects.toThrow(
@@ -143,6 +172,9 @@ describe.runIf(process.platform === 'linux')(
       const settings = args.flatMap((arg, i) => (args[i - 1] === '-c' ? [arg] : []));
       expect(settings).toEqual(expect.arrayContaining(HARDENING));
       expect(settings).not.toContain('protocol.file.allow=always');
+      // Pinned to the checked address: Git's own lookup cannot answer differently (rebinding).
+      expect(settings).toContain(`http.curloptResolve=git.example.test:443:${PUBLIC_ADDRESS}`);
+      expect(lookups).toEqual(['git.example.test']);
       expect(args.slice(-5)).toEqual([
         'ls-remote',
         '--symref',
@@ -370,15 +402,16 @@ describe.runIf(process.platform === 'linux')(
     });
 
     describe('start-up version check', () => {
-      it.each(['2.32.0', '2.43.0', '3.0.1'])('accepts git %s', async (version) => {
+      // 2.37 is the first Git with http.curloptResolve, which pins HTTPS to the checked address.
+      it.each(['2.37.0', '2.43.0', '3.0.1'])('accepts git %s', async (version) => {
         await expect((await adapter({ version })).verifyGitVersion()).resolves.toBe(version);
       });
 
-      it.each(['2.31.9', '2.9.5', '1.9.0'])(
+      it.each(['2.36.9', '2.32.0', '2.9.5', '1.9.0'])(
         'refuses git %s with a clear error',
         async (version) => {
           await expect((await adapter({ version })).onModuleInit()).rejects.toThrow(
-            /need git 2\.32\.0 or later; found "git version /,
+            /need git 2\.37\.0 or later; found "git version /,
           );
         },
       );
@@ -386,7 +419,7 @@ describe.runIf(process.platform === 'linux')(
       it('refuses a missing git with a clear error', async () => {
         await expect(
           (await adapter('real', { gitBinary: join(root, 'no-such-git') })).onModuleInit(),
-        ).rejects.toThrow(/need git 2\.32\.0 or later, but git could not be run/);
+        ).rejects.toThrow(/need git 2\.37\.0 or later, but git could not be run/);
       });
     });
 
@@ -426,6 +459,8 @@ describe.runIf(process.platform === 'linux')(
             'PreferredAuthentications=publickey',
             'ForwardX11=no',
             `IdentityFile=${ssh.keyPath}`,
+            // Connects to the checked address; host-key trust stays with the alias (Issue #69).
+            `HostName=${PUBLIC_ADDRESS}`,
           ]),
         );
         expect(ssh.args).toEqual(expect.arrayContaining(['-p', '2222', 'git@git.example.test']));
@@ -535,7 +570,7 @@ describe.runIf(process.platform === 'linux')(
           '-t',
           'ed25519,ecdsa,rsa',
           '--',
-          'git.example.test',
+          PUBLIC_ADDRESS,
         ]);
         expect(scan.env.SSH_AUTH_SOCK).toBeUndefined();
         expect(scan.env.HOME?.startsWith(join(tempRoot, 'studio-git-'))).toBe(true);
@@ -553,7 +588,7 @@ describe.runIf(process.platform === 'linux')(
           (await adapter({}, { keyscanBinary })).scanHostKey('git@git.example.test:owner/repo.git'),
         ).resolves.toEqual({ hostKey: ecdsa });
         expect((await keyscanInvocation(recordDir)).args).toEqual(
-          expect.arrayContaining(['-p', '22', '--', 'git.example.test']),
+          expect.arrayContaining(['-p', '22', '--', PUBLIC_ADDRESS]),
         );
 
         keyscanBinary = await writeFakeKeyscan(root, recordDir, {
@@ -598,6 +633,220 @@ describe.runIf(process.platform === 'linux')(
           GitRequestRejectedError,
         );
         expect(existsSync(join(recordDir, 'keyscan.args'))).toBe(false);
+      });
+    });
+
+    describe('remote address policy (Issue #69)', () => {
+      const settingsOf = (args: string[]) =>
+        args.flatMap((arg, i) => (args[i - 1] === '-c' ? [arg] : []));
+      const keyscanStub = () => writeFakeKeyscan(root, recordDir, { stdout: '' });
+
+      /** Every operation that reaches a remote, against `url`, with what an ssh remote needs. */
+      async function everyRemoteOperation(git: SystemGitAdapter, url: string) {
+        const ssh = url.startsWith('ssh:') || url.startsWith('git@') ? { ssh: SSH } : {};
+        await mkdir(join(dataDir, 'clones', `${PROJECT_ID}.git`, 'objects', 'pack'), {
+          recursive: true,
+        });
+        const attempts = [
+          git.inspectRemote(url, 'main', ssh),
+          git.clone(OTHER_PROJECT_ID, url, 'main', ssh),
+          git.fetch(PROJECT_ID, url, 'main', ssh),
+          ...(ssh.ssh ? [git.scanHostKey(url)] : []),
+        ];
+        return Promise.all(attempts.map((attempt) => attempt.catch((e: unknown) => e)));
+      }
+
+      it.each([
+        ['169.254.169.254', 'a link-local'],
+        ['100.100.100.200', 'a metadata'],
+        ['fd00:ec2::254', 'an IPv6 metadata'],
+        ['fd20:ce::254', 'a Google Cloud IPv6 metadata'],
+        ['::ffff:169.254.169.254', 'an IPv4-mapped link-local'],
+        ['224.0.0.1', 'a multicast'],
+      ])(
+        'refuses a host resolving to %s (%s address) before any process starts, even with the opt-in',
+        async (address) => {
+          answers['git.example.test'] = [address];
+          const keyscanBinary = await keyscanStub();
+          const git = await adapter({}, { allowPrivateRemotes: true, keyscanBinary });
+
+          for (const url of [HTTPS_URL, SSH_URL]) {
+            for (const error of await everyRemoteOperation(git, url)) {
+              expect(error).toBeInstanceOf(GitOperationError);
+              expect(error).toMatchObject({ reason: 'remote_not_allowed' });
+              expect((error as GitOperationError).detail).toBe(
+                `git.example.test resolves to ${address}, a link-local, metadata, multicast or reserved address. Studio never connects to link-local, cloud metadata, multicast or reserved addresses.`,
+              );
+            }
+          }
+          expect(await gitInvocations(recordDir)).toEqual([]);
+          expect(existsSync(join(recordDir, 'keyscan.args'))).toBe(false);
+        },
+      );
+
+      it('refuses a loopback or private address unless STUDIO_GIT_ALLOW_PRIVATE_REMOTES opts in', async () => {
+        answers['git.example.test'] = ['10.0.0.5'];
+        const keyscanBinary = await keyscanStub();
+
+        for (const url of [HTTPS_URL, SSH_URL]) {
+          for (const error of await everyRemoteOperation(
+            await adapter({}, { keyscanBinary }),
+            url,
+          )) {
+            expect(error).toMatchObject({
+              reason: 'remote_not_allowed',
+              detail:
+                'git.example.test resolves to 10.0.0.5, a loopback or private address. Studio connects to loopback and private addresses only with STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true.',
+            });
+          }
+        }
+        expect(await gitInvocations(recordDir)).toEqual([]);
+
+        await (
+          await adapter({}, { allowPrivateRemotes: true })
+        )
+          .inspectRemote(HTTPS_URL, 'main')
+          .catch(() => undefined);
+        const [invocation] = await gitInvocations(recordDir);
+        expect(settingsOf(invocation!.args)).toContain(
+          'http.curloptResolve=git.example.test:443:10.0.0.5',
+        );
+      });
+
+      it('refuses the host when any one of its addresses is refused', async () => {
+        answers['git.example.test'] = [PUBLIC_ADDRESS, '2001:db8::1', '127.0.0.1'];
+
+        await expect((await adapter()).inspectRemote(HTTPS_URL, 'main')).rejects.toMatchObject({
+          reason: 'remote_not_allowed',
+          detail: expect.stringContaining('resolves to 127.0.0.1'),
+        });
+        expect(await gitInvocations(recordDir)).toEqual([]);
+      });
+
+      it('pins HTTPS to every checked address, IPv6 in brackets, on the URL port', async () => {
+        answers['git.example.test'] = [PUBLIC_ADDRESS, '2001:db8::1'];
+
+        await (
+          await adapter()
+        )
+          .inspectRemote('https://git.example.test:8443/owner/repo.git', 'main')
+          .catch(() => undefined);
+
+        const [invocation] = await gitInvocations(recordDir);
+        expect(settingsOf(invocation!.args)).toContain(
+          `http.curloptResolve=git.example.test:8443:${PUBLIC_ADDRESS},[2001:db8::1]`,
+        );
+      });
+
+      it('resolves once per operation and pins that answer: a rebinding resolver cannot redirect Git', async () => {
+        const sequence = [[PUBLIC_ADDRESS], ['169.254.169.254']];
+        const rebinding = async (host: string) => {
+          lookups.push(host);
+          return sequence.shift() ?? ['169.254.169.254'];
+        };
+        const git = await adapter({}, { resolveHost: rebinding });
+
+        await git.clone(PROJECT_ID, HTTPS_URL, 'main').catch(() => undefined);
+
+        expect(lookups).toEqual(['git.example.test']);
+        const fetch = (await gitInvocations(recordDir)).find((call) => call.args.includes('fetch'));
+        expect(settingsOf(fetch!.args)).toEqual(expect.arrayContaining(HARDENING));
+        expect(settingsOf(fetch!.args)).toContain(
+          `http.curloptResolve=git.example.test:443:${PUBLIC_ADDRESS}`,
+        );
+      });
+
+      it('checks IP-literal hosts without a lookup, in their numeric forms too', async () => {
+        const git = await adapter({}, { allowPrivateRemotes: true });
+
+        for (const url of [
+          'https://169.254.169.254/latest/meta-data.git',
+          'https://[fe80::1]/owner/repo.git',
+          'https://[::ffff:a9fe:a9fe]/owner/repo.git',
+          'ssh://git@0xa9.0xfe.0xa9.0xfe/srv/repo.git',
+          'git@2852039166:owner/repo.git',
+        ]) {
+          const ssh = url.startsWith('https:') ? {} : { ssh: SSH };
+          await expect(git.inspectRemote(url, 'main', ssh)).rejects.toMatchObject({
+            reason: 'remote_not_allowed',
+          });
+        }
+        expect(lookups).toEqual([]);
+        expect(await gitInvocations(recordDir)).toEqual([]);
+      });
+
+      it('connects ssh and ssh-keyscan to the first IPv4 address of a dual-stack host', async () => {
+        answers['git.example.test'] = ['2001:db8::1', PUBLIC_ADDRESS];
+        const sshBinary = await writeFakeSsh(root, recordDir, 'deny');
+        const keyscanBinary = await writeFakeKeyscan(root, recordDir, { stdout: '' });
+        const git = await adapter('real', { sshBinary, keyscanBinary });
+
+        await git.inspectRemote(SSH_URL, 'main', { ssh: SSH }).catch(() => undefined);
+        await git.scanHostKey(SSH_URL).catch(() => undefined);
+
+        expect((await sshInvocation(recordDir)).args).toEqual(
+          expect.arrayContaining(['-o', `HostName=${PUBLIC_ADDRESS}`]),
+        );
+        expect((await keyscanInvocation(recordDir)).args.at(-1)).toBe(PUBLIC_ADDRESS);
+      });
+
+      it('connects ssh to the normalized literal address', async () => {
+        const sshBinary = await writeFakeSsh(root, recordDir, 'deny');
+        const git = await adapter('real', { sshBinary, allowPrivateRemotes: true });
+
+        await git
+          .inspectRemote('ssh://git@0x7f.1:2222/srv/repo.git', 'main', { ssh: SSH })
+          .catch(() => undefined);
+
+        const ssh = await sshInvocation(recordDir);
+        expect(ssh.args).toEqual(expect.arrayContaining(['-o', 'HostName=127.0.0.1']));
+        expect(lookups).toEqual([]);
+      });
+
+      it('fails with host_unreachable when the host does not resolve, before Git starts', async () => {
+        const error = await (
+          await adapter()
+        )
+          .inspectRemote('https://nope.example.test/owner/repo.git', 'main')
+          .catch((e: unknown) => e);
+
+        expect(error).toMatchObject({
+          reason: 'host_unreachable',
+          detail: 'Could not resolve host: nope.example.test',
+        });
+        expect(await gitInvocations(recordDir)).toEqual([]);
+      });
+
+      it('counts the lookup against the time limit', async () => {
+        const hanging = () => new Promise<string[]>(() => {});
+        const git = await adapter({}, { resolveHost: hanging, fetchTimeoutMs: 300 });
+
+        await expect(git.inspectRemote(HTTPS_URL, 'main')).rejects.toMatchObject({
+          reason: 'timeout',
+        });
+        expect(await gitInvocations(recordDir)).toEqual([]);
+      });
+
+      it('aborts a pending lookup', async () => {
+        const hanging = () => new Promise<string[]>(() => {});
+        const git = await adapter({}, { resolveHost: hanging });
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 100);
+
+        await expect(
+          git.inspectRemote(HTTPS_URL, 'main', { signal: controller.signal }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+      });
+
+      it('never resolves a file remote', async () => {
+        const git = await adapter({}, { allowedTransports: ['ssh', 'https', 'file'] });
+        await git.inspectRemote('file:///srv/fixture.git', 'main').catch(() => undefined);
+
+        expect(lookups).toEqual([]);
+        const [invocation] = await gitInvocations(recordDir);
+        expect(settingsOf(invocation!.args).some((s) => s.startsWith('http.curloptResolve'))).toBe(
+          false,
+        );
       });
     });
   },

@@ -270,6 +270,16 @@ describe('Repository card states', () => {
       undefined,
       'The repository is larger than the 2 GB limit, so Studio stopped and kept no clone.',
     ],
+    [
+      'remote_not_allowed',
+      undefined,
+      'Studio does not connect to this address: it is link-local, a cloud metadata service, or loopback or private without STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true. The detail below names the address.',
+    ],
+    [
+      'redirect_refused',
+      undefined,
+      'The Git host redirected Studio to another URL, and Studio does not follow redirects. Connect with the final URL of the repository.',
+    ],
     ['unknown', undefined, 'The clone failed for an unexpected reason.'],
   ] as const)(
     'failed (%s): shows its message, the redacted detail in mono and Retry',

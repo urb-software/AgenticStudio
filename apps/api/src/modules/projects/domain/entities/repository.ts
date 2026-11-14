@@ -27,6 +27,8 @@ export const REPOSITORY_FAILURE_CODES = [
   'branch_not_found',
   'timeout',
   'size_limit',
+  'remote_not_allowed',
+  'redirect_refused',
   'unknown',
 ] as const;
 export type RepositoryFailureCode = (typeof REPOSITORY_FAILURE_CODES)[number];

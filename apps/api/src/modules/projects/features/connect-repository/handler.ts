@@ -20,6 +20,8 @@ export const CONNECT_REPOSITORY_SETTINGS = Symbol('CONNECT_REPOSITORY_SETTINGS')
 export interface ConnectRepositorySettings {
   /** The test-only fixture-remote setting (`STUDIO_GIT_ALLOW_FILE_REMOTES`, NODE_ENV=test only). */
   allowFileRemotes: boolean;
+  /** `STUDIO_GIT_ALLOW_PRIVATE_REMOTES` (Issue #69): an IP-literal URL may name a loopback or private address. */
+  allowPrivateRemotes: boolean;
 }
 
 export interface ConnectRepositoryInput {
@@ -64,6 +66,7 @@ export class ConnectRepositoryHandler {
     if (!isProjectId(input.projectId)) throw new ProjectNotFoundError();
     const url = RepositoryUrl.parse(input.url, {
       allowFileRemotes: this.settings.allowFileRemotes,
+      addressPolicy: { allowPrivate: this.settings.allowPrivateRemotes },
     });
     const branch = IntegrationBranch.parse(input.integrationBranch);
     this.git.assertSupported();

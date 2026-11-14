@@ -63,6 +63,7 @@ describe('loadConfig', () => {
       operatorPasswordHash: BASELINE_HASH,
       dataDir: DATA_DIR,
       gitAllowFileRemotes: false,
+      gitAllowPrivateRemotes: false,
       sshKnownHosts: [],
     });
   });
@@ -290,6 +291,36 @@ describe('loadConfig', () => {
         loadConfig({ ...requiredEnv, NODE_ENV: 'test', STUDIO_GIT_ALLOW_FILE_REMOTES: 'yes' }),
       );
       expect(error.message).toMatch(/STUDIO_GIT_ALLOW_FILE_REMOTES/);
+    });
+  });
+
+  describe('STUDIO_GIT_ALLOW_PRIVATE_REMOTES (Issue #69)', () => {
+    it.each([['production'], ['development'], ['test'], [undefined]])(
+      'is closed by default (NODE_ENV=%s): no loopback or private remotes',
+      (nodeEnv) => {
+        expect(loadConfig({ ...requiredEnv, NODE_ENV: nodeEnv }).gitAllowPrivateRemotes).toBe(
+          false,
+        );
+      },
+    );
+
+    it.each([['production'], ['test']])('opens with true, also with NODE_ENV=%s', (nodeEnv) => {
+      expect(
+        loadConfig({ ...requiredEnv, NODE_ENV: nodeEnv, STUDIO_GIT_ALLOW_PRIVATE_REMOTES: 'true' })
+          .gitAllowPrivateRemotes,
+      ).toBe(true);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_GIT_ALLOW_PRIVATE_REMOTES: 'false' })
+          .gitAllowPrivateRemotes,
+      ).toBe(false);
+    });
+
+    it.each([['yes'], ['1'], ['TRUE'], ['']])('rejects %j: only true or false', (value) => {
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_GIT_ALLOW_PRIVATE_REMOTES: value }),
+      );
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toMatch(/STUDIO_GIT_ALLOW_PRIVATE_REMOTES/);
     });
   });
 

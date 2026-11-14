@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
-import { createServer, type Server, type Socket } from 'node:net';
+import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
+import { type AddressInfo, createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -38,6 +40,8 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       maxCloneBytes: 50 * 1024 * 1024,
       tempRoot,
       log: (message) => logs.push(message),
+      // The network fixtures listen on 127.0.0.1: an explicit opt-in (Issue #69).
+      allowPrivateRemotes: true,
       ...overrides,
     });
   }
@@ -393,6 +397,110 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         adapter().inspectRemote(url, 'main', { signal: AbortSignal.abort() }),
       ).rejects.toMatchObject({ name: 'AbortError' });
       expect(sockets.size).toBe(0);
+    });
+  });
+
+  describe('HTTPS remotes: pinned to the checked address, redirects refused (Issue #69)', () => {
+    /** A host name no DNS server knows: only the adapter's pin can lead Git to the fixture. */
+    const HOST = 'git.studio-fixture.test';
+    let certDir: string;
+    let caFile: string;
+    let server: HttpsServer;
+    let port: number;
+    let requests: { host: string | undefined; url: string | undefined }[];
+
+    // A TLS server with a throwaway certificate for HOST: it answers /moved/… with a redirect
+    // to /owner/repo.git and everything else with 404, recording every request.
+    beforeAll(async () => {
+      certDir = await mkdtemp(join(tmpdir(), 'studio-tls-'));
+      caFile = join(certDir, 'cert.pem');
+      const keyFile = join(certDir, 'key.pem');
+      const generated = spawnSync('openssl', [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-nodes',
+        '-days',
+        '1',
+        '-subj',
+        `/CN=${HOST}`,
+        '-addext',
+        `subjectAltName=DNS:${HOST}`,
+        '-keyout',
+        keyFile,
+        '-out',
+        caFile,
+      ]);
+      if (generated.status !== 0) throw new Error(`openssl failed: ${String(generated.stderr)}`);
+      server = createHttpsServer(
+        { key: await readFile(keyFile), cert: await readFile(caFile) },
+        (request, response) => {
+          requests.push({ host: request.headers.host, url: request.url });
+          if (request.url?.startsWith('/moved/')) {
+            response.writeHead(301, { Location: `https://${HOST}:${port}/owner/repo.git` });
+          } else {
+            response.writeHead(404);
+          }
+          response.end();
+        },
+      );
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      port = (server.address() as AddressInfo).port;
+    });
+
+    afterAll(async () => {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+      await rm(certDir, { recursive: true, force: true });
+    });
+
+    beforeEach(() => {
+      requests = [];
+    });
+
+    const fixtureAdapter = (overrides: Partial<SystemGitSettings> = {}) =>
+      adapter({
+        allowedTransports: ['ssh', 'https'],
+        httpsCaFile: caFile,
+        resolveHost: async (host) => (host === HOST ? ['127.0.0.1'] : []),
+        ...overrides,
+      });
+
+    it('connects to the checked address although the name resolves nowhere else', async () => {
+      await expectReason(
+        fixtureAdapter().inspectRemote(`https://${HOST}:${port}/owner/repo.git`, 'main'),
+        'repository_not_found',
+      );
+      expect(requests).toEqual([
+        { host: `${HOST}:${port}`, url: '/owner/repo.git/info/refs?service=git-upload-pack' },
+      ]);
+    });
+
+    it('fails with redirect_refused and never follows the redirect', async () => {
+      const error = await failureOf(
+        fixtureAdapter().clone(PROJECT_ID, `https://${HOST}:${port}/moved/repo.git`, 'main'),
+      );
+
+      expect(error.reason).toBe('redirect_refused');
+      expect(error.detail).toMatch(/returned error: 301/);
+      expect(requests.map((request) => request.url)).toEqual([
+        '/moved/repo.git/info/refs?service=git-upload-pack',
+      ]);
+      expect(await cloneEntries()).toEqual([]);
+    });
+
+    it('with the production default, refuses the loopback address before connecting', async () => {
+      const error = await failureOf(
+        fixtureAdapter({ allowPrivateRemotes: false }).inspectRemote(
+          `https://${HOST}:${port}/owner/repo.git`,
+          'main',
+        ),
+      );
+
+      expect(error.reason).toBe('remote_not_allowed');
+      expect(error.detail).toMatch(/STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true/);
+      expect(requests).toEqual([]);
     });
   });
 

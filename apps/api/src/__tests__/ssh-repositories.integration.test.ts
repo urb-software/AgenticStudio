@@ -245,6 +245,8 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     services.config = {
       ...services.config,
       dataDir,
+      // The SSH servers and closed ports are on the Docker host's loopback: an explicit opt-in.
+      gitAllowPrivateRemotes: true,
       sshKnownHosts: [
         { hosts: [knownHostNameOf(listed)], key: listedKey.publicKey },
         // A stale or wrong entry: the host presents another key.

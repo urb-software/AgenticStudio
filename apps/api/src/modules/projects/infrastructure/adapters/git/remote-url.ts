@@ -1,3 +1,4 @@
+import { hostLiteral } from '../../../domain/value-objects/remote-address.js';
 import { GitRequestRejectedError } from '../../../ports/repository-git.js';
 
 /** Transports a remote URL may use. Production allows exactly `ssh` and `https`. */
@@ -28,6 +29,8 @@ function checkHost(host: string): void {
   if (!HOSTNAME.test(host) && !IPV6_LITERAL.test(host)) {
     reject('the host is not a valid host name');
   }
+  // A numeric host the resolver would read some other way than intended (Issue #69).
+  if (hostLiteral(host).kind === 'invalid') reject('the host is not a valid host name');
 }
 
 function checkPath(path: string): void {
@@ -105,8 +108,8 @@ export function parseRemoteUrl(
   return { transport, url: url.href };
 }
 
-/** Where an `ssh` remote's server listens. */
-export interface SshEndpoint {
+/** Where a remote's server listens. */
+export interface RemoteEndpoint {
   /** Host name or IP address, without brackets. */
   host: string;
   port: number;
@@ -116,12 +119,23 @@ export interface SshEndpoint {
  * The host and port of an `ssh` remote already validated by {@link parseRemoteUrl}: port 22
  * for the scp-like form and for a URL without a port.
  */
-export function sshEndpoint(remote: RemoteUrl): SshEndpoint {
+export function sshEndpoint(remote: RemoteUrl): RemoteEndpoint {
   if (remote.transport !== 'ssh') reject('only an ssh remote has an SSH endpoint');
   const scp = /^[a-z][a-z\d+.-]*:\/\//i.test(remote.url) ? null : SCP_LIKE.exec(remote.url);
   if (scp) return { host: scp[2]!, port: 22 };
   const url = new URL(remote.url);
   return { host: url.hostname.replace(/^\[|\]$/g, ''), port: url.port ? Number(url.port) : 22 };
+}
+
+/**
+ * Where an `ssh` or `https` remote's server listens (port 443 for an https URL without a
+ * port); `null` for a `file` remote, which names no host.
+ */
+export function remoteEndpoint(remote: RemoteUrl): RemoteEndpoint | null {
+  if (remote.transport === 'ssh') return sshEndpoint(remote);
+  if (remote.transport === 'file') return null;
+  const url = new URL(remote.url);
+  return { host: url.hostname.replace(/^\[|\]$/g, ''), port: url.port ? Number(url.port) : 443 };
 }
 
 function isTransport(value: string): value is GitTransport {

@@ -33,6 +33,8 @@ const FAILURE_CODE: Record<GitFailureReason, RepositoryFailureCode> = {
   branch_not_found: 'branch_not_found',
   timeout: 'timeout',
   size_limit: 'size_limit',
+  remote_not_allowed: 'remote_not_allowed',
+  redirect_refused: 'redirect_refused',
   unknown: 'unknown',
 };
 

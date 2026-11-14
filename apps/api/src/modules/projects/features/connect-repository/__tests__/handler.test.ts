@@ -34,13 +34,13 @@ describe('ConnectRepositoryHandler', () => {
   let jobs: RecordingRepositoryJobs;
   let secrets: InMemorySecretStore;
 
-  const handler = (allowFileRemotes = false) => {
+  const handler = (allowFileRemotes = false, allowPrivateRemotes = false) => {
     const deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
     return new ConnectRepositoryHandler(
       projects,
       git,
       jobs,
-      { allowFileRemotes },
+      { allowFileRemotes, allowPrivateRemotes },
       deployKeys,
       new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
         gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
@@ -110,6 +110,40 @@ describe('ConnectRepositoryHandler', () => {
     });
 
     expect(jobs.started).toEqual([[PROJECT, 'clone']]);
+  });
+
+  describe('IP-literal URLs under the address policy (Issue #69)', () => {
+    it.each(['https://169.254.169.254/acme/shop.git', 'git@0x7f.1:acme/shop.git'])(
+      'rejects %s by default as a field error, storing nothing',
+      async (url) => {
+        const error = await handler()
+          .execute({ projectId: PROJECT, url, integrationBranch: 'dev' })
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(InvalidRepositoryUrlError);
+        expect((error as Error).message).toMatch(/^This address is not allowed/);
+        expect(projects.repositories.size).toBe(0);
+        expect(jobs.started).toEqual([]);
+        expect(secrets.values.size).toBe(0);
+      },
+    );
+
+    it('accepts a loopback or private address under STUDIO_GIT_ALLOW_PRIVATE_REMOTES', async () => {
+      await handler(false, true).execute({
+        projectId: PROJECT,
+        url: 'https://10.0.0.5/acme/shop.git',
+        integrationBranch: 'dev',
+      });
+      expect(jobs.started).toEqual([[PROJECT, 'clone']]);
+
+      await expect(
+        handler(false, true).execute({
+          projectId: PROJECT,
+          url: 'https://169.254.169.254/acme/shop.git',
+          integrationBranch: 'dev',
+        }),
+      ).rejects.toBeInstanceOf(InvalidRepositoryUrlError);
+    });
   });
 
   it('rejects an invalid integration branch', async () => {

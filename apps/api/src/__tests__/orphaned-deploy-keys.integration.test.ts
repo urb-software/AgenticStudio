@@ -114,7 +114,13 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
   beforeAll(async () => {
     services = await startStudioServices();
     dataDir = await mkdtemp(join(tmpdir(), 'studio-orphaned-keys-'));
-    services.config = { ...services.config, dataDir, gitAllowFileRemotes: true };
+    // The fixtures (silent servers, closed ports) are on 127.0.0.1: an explicit opt-in (Issue #69).
+    services.config = {
+      ...services.config,
+      dataDir,
+      gitAllowFileRemotes: true,
+      gitAllowPrivateRemotes: true,
+    };
   });
 
   afterAll(async () => {
