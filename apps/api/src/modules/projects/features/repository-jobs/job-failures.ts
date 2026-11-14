@@ -4,6 +4,7 @@ import {
   interruptedFailure,
   type RepositoryFailure,
   repositoryFailure,
+  unexpectedFailure,
 } from '../../domain/entities/repository.js';
 import { GitOperationError } from '../../ports/repository-git.js';
 import type { RepositoryOperation } from '../../ports/repository-jobs.js';
@@ -29,7 +30,7 @@ export function unfinishedJobFailure(
     case 'shutdown':
       return interruptedFailure();
     case 'error':
-      return repositoryFailure('unknown');
+      return unexpectedFailure();
   }
 }
 

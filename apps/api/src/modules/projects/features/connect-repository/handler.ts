@@ -42,7 +42,8 @@ export const NOT_STARTED_DETAIL = 'The clone could not be started. Try again.';
  * new key is generated otherwise, and a key no longer used is deleted. Order: input (field errors on every platform), platform,
  * the store's transition (the real duplicate guard), then the job. If the job cannot be
  * scheduled after the transition, the attempt is marked `failed` again (keeping the reason and
- * detail of the failure a Retry replaced, else "could not be started") and the error is
+ * detail of the failure a Retry with the same URL and branch replaced, else "could not be
+ * started") and the error is
  * rethrown, so nothing stays `connecting`.
  *
  * Throws `GitUnsupportedPlatformError`, `InvalidRepositoryUrlError`,
@@ -71,7 +72,8 @@ export class ConnectRepositoryHandler {
     const branch = IntegrationBranch.parse(input.integrationBranch);
     this.git.assertSupported();
 
-    // A Retry replaces a failed Repository; if the clone cannot be scheduled, its failure is kept.
+    // A Retry replaces a failed Repository; if the clone cannot be scheduled with the same
+    // settings, its failure is kept (with others, it would describe another attempt).
     const previous = await this.projects.findRepository(input.projectId);
     const previousKey: StoredDeployKey | null =
       previous?.state === 'failed' && previous.deployKeySecret && previous.publicKey
@@ -118,9 +120,11 @@ export class ConnectRepositoryHandler {
     try {
       await this.jobs.start(input.projectId, 'clone');
     } catch (error) {
+      const sameSettings =
+        previous?.url === url.value && previous.integrationBranch === branch.value;
       await this.projects.markFailed(
         input.projectId,
-        previous?.state === 'failed' && previous.failure
+        previous?.state === 'failed' && previous.failure && sameSettings
           ? previous.failure
           : repositoryFailure('unknown', NOT_STARTED_DETAIL),
       );

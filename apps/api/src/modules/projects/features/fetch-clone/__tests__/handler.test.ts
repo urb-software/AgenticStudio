@@ -9,7 +9,10 @@ import {
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CLONE_MISSING_DETAIL, FetchCloneHandler } from '../handler.js';
-import { HOST_KEY_CHANGED_DETAIL } from '../../../domain/entities/repository.js';
+import {
+  HOST_KEY_CHANGED_DETAIL,
+  UNEXPECTED_FAILURE_DETAIL,
+} from '../../../domain/entities/repository.js';
 import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../deploy-key/handler.js';
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
@@ -124,7 +127,7 @@ describe('FetchCloneHandler', () => {
     expect((await stored())?.failure?.detail).toBe('fatal: <redacted>');
   });
 
-  it('names the branch when it no longer exists on the remote', async () => {
+  it('keeps the Git output, not a Studio sentence, when the branch is gone from the remote', async () => {
     await fetching('release');
     git.fetch.mockRejectedValueOnce(new GitOperationError('branch_not_found', 'fatal: x'));
 
@@ -132,7 +135,7 @@ describe('FetchCloneHandler', () => {
 
     expect((await stored())?.failure).toEqual({
       code: 'branch_not_found',
-      detail: 'Branch "release" was not found on the remote.',
+      detail: 'fatal: x',
       remoteDefaultBranch: null,
     });
   });
@@ -221,7 +224,7 @@ describe('FetchCloneHandler', () => {
     ['shutdown', { code: 'interrupted', detail: '' }],
     ['cancelled', { code: 'unknown', detail: 'Cancelled' }],
     ['timeout', { code: 'timeout', detail: 'The fetch took too long and was stopped.' }],
-    ['error', { code: 'unknown', detail: '' }],
+    ['error', { code: 'unknown', detail: UNEXPECTED_FAILURE_DETAIL }],
   ] as const)('onFailed stores %s as %j and keeps the Clone', async (reason, failure) => {
     await fetching();
 

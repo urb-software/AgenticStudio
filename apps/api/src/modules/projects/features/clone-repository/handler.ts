@@ -52,11 +52,8 @@ export class CloneRepositoryHandler {
       if (!remote.branchExists) {
         await this.projects.markFailed(
           projectId,
-          repositoryFailure(
-            'branch_not_found',
-            `Branch "${integrationBranch}" was not found on the remote.`,
-            remote.defaultBranch,
-          ),
+          // No Git output to show: the code and the default branch say it all (#72).
+          repositoryFailure('branch_not_found', '', remote.defaultBranch),
         );
         return;
       }

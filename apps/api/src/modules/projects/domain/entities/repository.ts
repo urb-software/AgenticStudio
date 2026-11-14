@@ -52,6 +52,19 @@ export function interruptedFailure(): RepositoryFailure {
 /** Longest stored failure detail; longer redacted Git output is cut. */
 export const FAILURE_DETAIL_MAX_LENGTH = 2000;
 
+/**
+ * Longest remote default branch a failure names (the column's size). A longer name could
+ * never be an Integration branch (255 characters at most), so it is left out, not cut (#72).
+ */
+export const REMOTE_DEFAULT_BRANCH_MAX_LENGTH = 255;
+
+/**
+ * The detail of an `unknown` failure that has nothing else to show (#72): fixed text, never
+ * the error itself, whose redacted form goes to the API log only.
+ */
+export const UNEXPECTED_FAILURE_DETAIL =
+  'Studio stopped because of an unexpected error. The Studio API log has the details.';
+
 export interface RepositoryFailure {
   code: RepositoryFailureCode;
   /** Redacted Git output or a short fixed explanation; never a secret. */
@@ -121,12 +134,14 @@ export const HOST_KEY_CHANGED_DETAIL =
 
 /**
  * The failure of a Git operation: `host_key_mismatch` gets Studio's explanation first, then
- * the redacted Git output; every other reason keeps the Git output as it is.
+ * the redacted Git output; `unknown` without output gets the generic detail; every other
+ * reason keeps the Git output as it is.
  */
 export function gitOperationFailure(
   code: RepositoryFailureCode,
   gitOutput = '',
 ): RepositoryFailure {
+  if (code === 'unknown' && !gitOutput) return unexpectedFailure();
   if (code !== 'host_key_mismatch') return repositoryFailure(code, gitOutput);
   return repositoryFailure(
     code,
@@ -134,7 +149,15 @@ export function gitOperationFailure(
   );
 }
 
-/** Builds a failure, cutting an over-long detail. */
+/** The failure of an unexpected error: `unknown` with the generic detail. */
+export function unexpectedFailure(): RepositoryFailure {
+  return repositoryFailure('unknown', UNEXPECTED_FAILURE_DETAIL);
+}
+
+/**
+ * Builds a failure, cutting an over-long detail and leaving out an over-long default branch
+ * ({@link REMOTE_DEFAULT_BRANCH_MAX_LENGTH}).
+ */
 export function repositoryFailure(
   code: RepositoryFailureCode,
   detail = '',
@@ -144,5 +167,9 @@ export function repositoryFailure(
     detail.length > FAILURE_DETAIL_MAX_LENGTH
       ? `${detail.slice(0, FAILURE_DETAIL_MAX_LENGTH - 1)}…`
       : detail;
-  return { code, detail: cut, remoteDefaultBranch };
+  const defaultBranch =
+    remoteDefaultBranch !== null && remoteDefaultBranch.length <= REMOTE_DEFAULT_BRANCH_MAX_LENGTH
+      ? remoteDefaultBranch
+      : null;
+  return { code, detail: cut, remoteDefaultBranch: defaultBranch };
 }

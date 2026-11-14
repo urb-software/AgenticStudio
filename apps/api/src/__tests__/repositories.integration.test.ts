@@ -692,11 +692,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         url: fixture.url,
         integrationBranch: 'release',
         hasClone: false,
-        failure: {
-          code: 'branch_not_found',
-          detail: expect.any(String),
-          remoteDefaultBranch: 'main',
-        },
+        failure: { code: 'branch_not_found', detail: '', remoteDefaultBranch: 'main' },
       });
 
       const retry = await connect(id, { url: fixture.url, integrationBranch: 'main' });
@@ -930,12 +926,11 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
           hasClone: true,
           headSha: connected.headSha,
           lastFetchedAt: connected.lastFetchedAt,
-          failure: {
-            code: 'branch_not_found',
-            detail: 'Branch "dev" was not found on the remote.',
-          },
+          failure: { code: 'branch_not_found', detail: expect.any(String) },
         });
 
+        // Git's output only, no Studio sentence (#72).
+        expect((await getRepository(id)).body.failure.detail).not.toContain('Branch "dev"');
         restoreRemoteBranch(remote, 'dev');
         const commit = pushCommit(remote, 'dev');
         expect((await fetchRepository(id)).status).toBe(202);

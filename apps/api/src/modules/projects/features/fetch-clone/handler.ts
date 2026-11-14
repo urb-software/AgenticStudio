@@ -8,7 +8,6 @@ import {
 } from '../../domain/repositories/project-repository.js';
 import {
   GitCloneMissingError,
-  GitOperationError,
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
@@ -75,13 +74,7 @@ export class FetchCloneHandler {
         );
         return;
       }
-      const failure =
-        error instanceof GitOperationError && error.reason === 'branch_not_found'
-          ? repositoryFailure(
-              'branch_not_found',
-              `Branch "${integrationBranch}" was not found on the remote.`,
-            )
-          : gitStepFailure(error);
+      const failure = gitStepFailure(error);
       if (failure) {
         // `size_limit`: the adapter removed the Clone (Issue #61 clarification 2).
         await this.projects.markFetchFailed(projectId, failure, {
