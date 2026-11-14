@@ -189,4 +189,14 @@ describeGate('api', apiGate, 'apps/api', [
   },
   { fixture: 'module-uses-secret-model', expected: ['api-secret-model-in-secrets-only'] },
   { fixture: 'module-reads-secrets-key', expected: ['api-secrets-key-reads'] },
+  // Platform-only handled 503 and queue health view (Issue #70).
+  { fixture: 'platform-only-handled-error-and-queue-health', expected: [] },
+  {
+    fixture: 'module-imports-handled-server-error',
+    expected: ['api-handled-server-error-platform-only'],
+  },
+  {
+    fixture: 'module-reaches-queue-health-via-port',
+    expected: ['api-queue-health-platform-only'],
+  },
 ]);

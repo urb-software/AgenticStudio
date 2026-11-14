@@ -2,14 +2,15 @@ import { startRedis, type TestService } from '@agentic-studio/testing';
 import {
   type INestApplicationContext,
   Injectable,
+  Logger,
   Module,
   type OnModuleInit,
   type Provider,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { Queue, Worker } from 'bullmq';
+import { Job, Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { testConfig } from '../../../__tests__/test-config.js';
 import { ConfigModule } from '../../config/config.module.js';
 import {
@@ -24,7 +25,10 @@ import {
   QueueUnavailableError,
   type RunningJob,
 } from '../job-queue.js';
-import { type QueueWorkerTuning, QueueModule, queueHealthProvider } from '../queue.module.js';
+import { QueueHealth } from '../queue-health.js';
+// Test-only: the platform-internal path through which the health module gets QueueHealth.
+import { queueHealthProvider } from '../queue-health.provider.js';
+import { type QueueWorkerTuning, QueueModule } from '../queue.module.js';
 
 type Payload = { projectId: string };
 
@@ -420,6 +424,71 @@ describe('job queues (Redis via Testcontainers)', () => {
       await expect(queue.cancel('sync-unknown')).resolves.toBe(false);
     });
 
+    it('never aborts a newer run with the same id while it waits for the active job to start (Issue #70)', async () => {
+      // sync-p2 is active but held by a foreign worker, so cancel waits for it to reach a
+      // processor here. Meanwhile that job finishes and a new sync-p2 starts in our worker:
+      // a different run, which cancel must not abort.
+      const workerConnection = new Redis(redisService.url, { maxRetriesPerRequest: null });
+      const producerConnection = new Redis(redisService.url);
+      const foreign = new Worker('repository-sync', null, {
+        connection: workerConnection,
+        prefix: 'studio:queue',
+      });
+      const producer = new Queue('repository-sync', {
+        connection: producerConnection,
+        prefix: 'studio:queue',
+      });
+      // Resolves once cancel has read the job's state (and so is waiting for it to start).
+      const stateRead = deferred();
+      const getState = Job.prototype.getState;
+      let spy: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        const owner = new RecordingOwner('repository-sync');
+        const release = deferred();
+        owner.behaviour = (job) => (job.id === 'sync-p1' ? release.promise : stopsOnAbort(job));
+        let queue: JobQueue<Payload>;
+        ({ app, queue } = await startApp(redisService.url, owner));
+        // Keep our only worker slot busy so the foreign worker is the one that takes sync-p2.
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+        await eventually(() => expect(owner.processed).toHaveLength(1));
+        await producer.add(
+          'repository-sync',
+          { payload: { projectId: 'p2' }, token: 'foreign' },
+          { jobId: 'sync-p2' },
+        );
+        const taken = await foreign.getNextJob('foreign-token');
+        expect(taken?.id).toBe('sync-p2');
+
+        spy = vi.spyOn(Job.prototype, 'getState').mockImplementation(async function (this: Job) {
+          const state = await getState.call(this);
+          stateRead.resolve();
+          return state;
+        });
+        const cancelling = queue.cancel('sync-p2');
+        await stateRead.promise;
+        spy.mockRestore();
+        // The foreign run ends; a new run of the same id starts here inside cancel's wait.
+        await taken!.moveToCompleted('done', 'foreign-token', false);
+        await queue.enqueue('sync-p2', { projectId: 'p2' });
+        release.resolve();
+        await eventually(() => expect(owner.processed.map((job) => job.id)).toContain('sync-p2'));
+
+        await expect(cancelling).resolves.toBe(false);
+        const newer = owner.processed.find((job) => job.id === 'sync-p2')!;
+        expect(newer.signal.aborted).toBe(false);
+        expect(owner.failures).toEqual([]);
+
+        // The newer run is still cancellable on its own.
+        await expect(queue.cancel('sync-p2', { settleTimeoutMs: 5_000 })).resolves.toBe(true);
+      } finally {
+        spy?.mockRestore();
+        await foreign.close(true);
+        await producer.close();
+        workerConnection.disconnect();
+        producerConnection.disconnect();
+      }
+    });
+
     describe('waiting for the cancelled job to settle (settleTimeoutMs, Issue #63)', () => {
       it('returns only after the processor and onFailed have finished, with the id free at once', async () => {
         const owner = new RecordingOwner('repository-sync');
@@ -625,6 +694,36 @@ describe('job queues (Redis via Testcontainers)', () => {
       ({ app } = await startApp('redis://127.0.0.1:1', owner, { startWorkers: false }));
 
       expect(owner.reconciled).toEqual([]);
+    });
+  });
+
+  describe('health check (Issue #70)', () => {
+    it('logs a timed-out ping once per outage and once on recovery', async () => {
+      const warned = vi.spyOn(Logger.prototype, 'warn');
+      const logged = vi.spyOn(Logger.prototype, 'log');
+      try {
+        const owner = new RecordingOwner('repository-sync');
+        ({ app } = await startApp(redisService.url, owner, undefined, [queueHealthProvider]));
+        const health = app.get(QueueHealth);
+        await expect(health.isAvailable()).resolves.toBe(true);
+
+        // Redis is slow, not down: every command waits, so the ping times out (1 s).
+        await redis.call('CLIENT', 'PAUSE', '2500', 'ALL');
+        await expect(health.isAvailable()).resolves.toBe(false);
+        await expect(health.isAvailable()).resolves.toBe(false);
+        await eventually(async () => expect(await health.isAvailable()).toBe(true), 10_000);
+        await expect(health.isAvailable()).resolves.toBe(true);
+
+        const lines = (spy: typeof warned) =>
+          spy.mock.calls.map(([message]) => String(message)).filter((m) => /health/i.test(m));
+        expect(lines(warned)).toEqual([
+          'Queue Redis health check failed: no answer within 1000 ms.',
+        ]);
+        expect(lines(logged)).toEqual(['Queue Redis health check passes again.']);
+      } finally {
+        warned.mockRestore();
+        logged.mockRestore();
+      }
     });
   });
 

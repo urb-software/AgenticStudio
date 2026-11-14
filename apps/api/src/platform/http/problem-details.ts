@@ -1,10 +1,13 @@
-import { applyDecorators, HttpException } from '@nestjs/common';
+import { applyDecorators, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiResponse, getSchemaPath } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
 import { z, ZodError } from 'zod';
 
 /** Media type of every API error response (RFC 9457). */
 export const PROBLEM_JSON = 'application/problem+json';
+
+/** The `detail` of every generic 5xx response. */
+export const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
 
 const fieldErrorSchema = z.object({ path: z.string(), message: z.string() });
 
@@ -46,17 +49,6 @@ export class FieldProblemException extends HttpException {
 }
 
 /**
- * A deliberate 5xx (e.g. the health endpoint's 503) whose cause its owner already logs.
- * The response stays generic like every 5xx, but the filter does not log it as an
- * unhandled error.
- */
-export class HandledServerErrorException extends HttpException {
-  constructor(status: number) {
-    super('Handled server error', status);
-  }
-}
-
-/**
  * A deliberate error whose `type`, `title`, `detail` and optional field errors are written for
  * the client, at any status. Unlike other 5xx responses, a 5xx `ProblemException` (e.g. 501
  * "Unsupported platform") keeps its text and is not logged as an unhandled error, so it must
@@ -69,6 +61,18 @@ export class ProblemException extends HttpException {
   ) {
     super(problem.detail, status);
   }
+}
+
+/**
+ * A deliberate 503 whose cause its owner already logs (e.g. the job queue is down). The body
+ * is exactly the generic 5xx body, and it is not logged as an unhandled error.
+ */
+export function serviceUnavailable(): ProblemException {
+  return new ProblemException(HttpStatus.SERVICE_UNAVAILABLE, {
+    type: 'about:blank',
+    title: 'Service Unavailable',
+    detail: GENERIC_SERVER_DETAIL,
+  });
 }
 
 /** The field errors of a Zod validation error, with dot-notation paths. */

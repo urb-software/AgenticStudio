@@ -19,6 +19,8 @@ const SECRETS_DIR = '^src/platform/secrets/';
 /** The secrets capability's two entry points (backend.md §2): the port and the Nest wiring. */
 const SECRETS_ENTRY_POINTS = '^src/platform/secrets/(index|secrets\\.module)\\.ts$';
 const CONTRACTS = '^src/modules/[^/]+/contracts/';
+/** Test files, which may boot the whole app. */
+const TESTS = '(^|/)__tests__/';
 // Workspace packages resolve to their source (`../../packages/database/src/` from apps/api).
 const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
 
@@ -199,6 +201,27 @@ export const apiGate: Gate = {
       severity: 'error',
       from: { pathNot: [SECRETS_DIR, '\\.module\\.ts$'] },
       to: { path: '^src/platform/secrets/secrets\\.module\\.ts$' },
+    },
+    {
+      name: 'api-handled-server-error-platform-only',
+      comment:
+        'HandledServerErrorException (an unlogged 503) is platform-only: no chain of imports leads ' +
+        'a business module to it, so a module cannot silence a real 5xx; modules answer a handled ' +
+        '503 with serviceUnavailable() from platform/http/problem-details.ts (Issue #70). ' +
+        'Tests are exempt: a module test may boot the whole app, which reaches everything.',
+      severity: 'error',
+      from: { path: '^src/modules/', pathNot: TESTS },
+      to: { path: '^src/platform/http/handled-server-error\\.ts$', reachable: true },
+    },
+    {
+      name: 'api-queue-health-platform-only',
+      comment:
+        "The queue's health view (QueueHealth and its provider) is platform-only: no chain of " +
+        'imports leads a business module to it; modules use the JobQueues port (Issue #70). ' +
+        'Tests are exempt: a module test may boot the whole app, which reaches everything.',
+      severity: 'error',
+      from: { path: '^src/modules/', pathNot: TESTS },
+      to: { path: '^src/platform/queue/queue-health(\\.provider)?\\.ts$', reachable: true },
     },
     {
       name: 'api-no-circular',
