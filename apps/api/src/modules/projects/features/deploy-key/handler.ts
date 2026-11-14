@@ -41,8 +41,8 @@ export class NoTrustedHostKeyError extends Error {
 
 /**
  * The Deploy key and host trust of SSH Repositories (Issue #62), shared by connect, verify,
- * clone, fetch and disconnect, and by the orphan sweep (Issue #76). The private key goes only through the secret store's public
- * entry point: it is created and stored here, read here for one Git operation at a time
+ * clone, fetch and disconnect, and by the orphan sweep (Issue #76). The private key goes only
+ * through the secret store's public entry point: it is created and stored here, read here for one Git operation at a time
  * (the Git adapter writes it owner-only for that operation and deletes it), and deleted
  * here. It is never returned to a caller outside the Git port, and never logged.
  */

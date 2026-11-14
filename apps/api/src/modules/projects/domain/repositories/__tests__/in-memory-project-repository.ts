@@ -64,6 +64,12 @@ export class InMemoryProjectRepository implements ProjectRepository {
     if (!this.projects.has(record.projectId)) throw new ProjectNotFoundError();
     const existing = this.repositories.get(record.projectId);
     if (existing && existing.state !== 'failed') throw new RepositoryAlreadyConnectedError();
+    if (
+      record.keepsDeployKey &&
+      existing?.deployKeySecret !== (record.deployKey?.secretRef ?? null)
+    ) {
+      throw new RepositoryAlreadyConnectedError();
+    }
     const owner = [...this.repositories.values()].find(
       (repository) =>
         repository.identity === record.identity && repository.projectId !== record.projectId,
@@ -240,7 +246,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
     );
   }
 
-  listDeployKeySecrets(): Promise<string[]> {
+  listDeployKeySecretRefs(): Promise<string[]> {
     return Promise.resolve(
       [...this.repositories.values()].flatMap((repository) =>
         repository.deployKeySecret === null ? [] : [repository.deployKeySecret],

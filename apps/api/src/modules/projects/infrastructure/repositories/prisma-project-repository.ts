@@ -197,9 +197,16 @@ export class PrismaProjectRepository implements ProjectRepository {
       updatedAt: new Date(),
     };
     try {
-      // Retry: only a failed Repository is replaced, in one conditional statement.
+      // Retry: only a failed Repository is replaced, in one conditional statement; a Retry
+      // that keeps the Deploy key only while the Repository still references it.
       const replaced = await this.db.repository.updateMany({
-        where: { projectId: record.projectId, state: 'failed' },
+        where: {
+          projectId: record.projectId,
+          state: 'failed',
+          ...(record.keepsDeployKey
+            ? { deployKeySecretId: record.deployKey?.secretRef ?? null }
+            : {}),
+        },
         data: attempt,
       });
       if (replaced.count === 0) {
@@ -386,7 +393,7 @@ export class PrismaProjectRepository implements ProjectRepository {
     return rows.map((row) => row.projectId);
   }
 
-  async listDeployKeySecrets(): Promise<string[]> {
+  async listDeployKeySecretRefs(): Promise<string[]> {
     const rows = await this.db.repository.findMany({
       where: { deployKeySecretId: { not: null } },
       select: { deployKeySecretId: true },

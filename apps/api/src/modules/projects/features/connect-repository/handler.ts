@@ -101,6 +101,7 @@ export class ConnectRepositoryHandler {
         integrationBranch: branch.value,
         deployKey,
         pinnedHostKey: deployKey && samePinnedHost ? (previous?.pinnedHostKey ?? null) : null,
+        keepsDeployKey: previousKey !== null && deployKey === previousKey,
       });
     } catch (error) {
       if (createdKey && deployKey) await this.deleteKey(input.projectId, deployKey.secretRef);

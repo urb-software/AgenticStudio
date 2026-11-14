@@ -4,6 +4,7 @@ import { JobAlreadyActiveError } from '../../../../../platform/queue/job-queue.j
 import {
   ProjectNotFoundError,
   RemoteAlreadyConnectedError,
+  RepositoryAlreadyConnectedError,
 } from '../../../domain/repositories/project-repository.js';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InvalidIntegrationBranchError } from '../../../domain/value-objects/integration-branch.js';
@@ -262,6 +263,29 @@ describe('ConnectRepositoryHandler', () => {
       expect(jobs.started).toEqual([[PROJECT, 'clone']]);
     });
 
+    it('never saves again a kept key a concurrent connect released (Retry read a stale Repository)', async () => {
+      const first = await failedSsh(hostKey());
+      const stale = (await projects.findRepository(PROJECT))!;
+      // Meanwhile another connect replaced it over HTTPS (deleting the key), and that failed.
+      await handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'dev' });
+      await projects.markFailed(PROJECT, {
+        code: 'unknown',
+        detail: '',
+        remoteDefaultBranch: null,
+      });
+      vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
+
+      await expect(
+        handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
+      ).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
+
+      expect(projects.repositories.get(PROJECT)).toMatchObject({
+        state: 'failed',
+        deployKeySecret: null,
+      });
+      expect(secrets.values.has(first.deployKeySecret!)).toBe(false);
+    });
+
     describe('when deleting the replaced Deploy key fails (Issue #76)', () => {
       let warnings: string[];
 
@@ -292,6 +316,26 @@ describe('ConnectRepositoryHandler', () => {
         ]);
         expect(secrets.values.has(first.deployKeySecret!)).toBe(false);
         expect(jobs.started).toEqual([[PROJECT, 'clone']]);
+      });
+
+      it('keeps a new key whose Repository was refused for a later sweep when its delete fails', async () => {
+        projects.addProject(OTHER_PROJECT, 'Other');
+        await handler().execute({ projectId: OTHER_PROJECT, url: URL, integrationBranch: 'dev' });
+        secrets.failNextDeleteWith = new SecretStoreUnavailableError();
+
+        await expect(
+          handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
+        ).rejects.toBeInstanceOf(RemoteAlreadyConnectedError);
+
+        // Fresh, so the sweep that follows keeps it; it is deleted once past the grace period.
+        expect(secrets.values.size).toBe(1);
+        secrets.now += DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS;
+        await new SweepOrphanedDeployKeysHandler(
+          projects,
+          new DeployKeyHandler(secrets, { knownHosts: [] }),
+          { gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS },
+        ).sweep();
+        expect(secrets.values.size).toBe(0);
       });
 
       it('keeps a key inside the grace period for a later sweep', async () => {

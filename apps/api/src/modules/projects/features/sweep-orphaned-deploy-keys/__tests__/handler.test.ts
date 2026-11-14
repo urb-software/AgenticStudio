@@ -163,7 +163,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
   it('deletes nothing when the Repositories cannot be read, and never throws', async () => {
     await deployKeys.create('Shop');
     secrets.now += 2 * HOUR_MS;
-    vi.spyOn(projects, 'listDeployKeySecrets').mockRejectedValue(new Error('database down'));
+    vi.spyOn(projects, 'listDeployKeySecretRefs').mockRejectedValue(new Error('database down'));
 
     await expect(sweeper.sweep()).resolves.toBeUndefined();
 

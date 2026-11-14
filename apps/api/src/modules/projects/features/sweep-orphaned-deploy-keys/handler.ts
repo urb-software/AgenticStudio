@@ -28,9 +28,10 @@ export interface DeployKeySweepSettings {
  *
  * Only secrets under the Deploy-key owner label are candidates, and of those only the ones
  * older than the grace period, by the secret store's clock. A candidate any Repository still
- * references, in any state, is never deleted. The candidates are listed before the
- * references: a key older than the grace period becomes referenced only by a Retry that keeps
- * a key its Repository already references, so no reference can appear after it was read.
+ * references, in any state, is never deleted. A key older than the grace period becomes
+ * referenced again only by a Retry that keeps it, and that Retry is saved only while its
+ * Repository still references the key (`keepsDeployKey`), so a key the sweep found
+ * unreferenced is never saved again.
  *
  * Runs at start-up, after the repository queue is reconciled and before its worker starts
  * (`repository-jobs`), and after a Connect fails to delete a replaced key. Each delete is
@@ -52,7 +53,7 @@ export class SweepOrphanedDeployKeysHandler {
     try {
       const candidates = await this.deployKeys.listOlderThan(this.settings.gracePeriodMs);
       if (candidates.length === 0) return;
-      const referenced = new Set(await this.projects.listDeployKeySecrets());
+      const referenced = new Set(await this.projects.listDeployKeySecretRefs());
       orphans = candidates.filter((secretRef) => !referenced.has(secretRef));
     } catch (error) {
       this.logger.warn(

@@ -151,6 +151,17 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
                                 deploy_key_secret_id, public_key)
       VALUES (${projectId}::uuid, 'git@github.com:acme/shop.git', 'github.com/acme/shop', 'dev',
               'awaiting_key', ${referenced}::uuid, 'placeholder public key')`;
+    // A disconnecting Repository still holds its key until its cleanup deletes it.
+    const disconnecting = await secretStore().put(
+      throwawayValue('disconnecting'),
+      DEPLOY_KEY_OWNER,
+    );
+    const otherProjectId = await createProject('Disconnecting');
+    await db().$executeRaw`
+      INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state,
+                                deploy_key_secret_id, public_key)
+      VALUES (${otherProjectId}::uuid, 'git@github.com:acme/old.git', 'github.com/acme/old', 'dev',
+              'disconnecting', ${disconnecting}::uuid, 'placeholder public key')`;
     // Another module's secret, which nothing in `projects` references.
     const otherOwners = await secretStore().put(throwawayValue('other'), OTHER_OWNER);
 
@@ -163,6 +174,7 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
     await start(0);
     expect(await exists(crashed)).toBe(false);
     expect(await exists(referenced)).toBe(true);
+    expect(await exists(disconnecting)).toBe(true);
     expect(await exists(otherOwners)).toBe(true);
     expect(deletedLines()).toEqual([deletedLine(crashed)]);
     expect(logs.join('\n')).not.toContain(crashedValue.split('\n')[1]!);
@@ -236,6 +248,23 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
         expect(logs.join('\n')).toMatch(/could not delete an unused Deploy key/);
         expect(await settled(projectId)).toMatchObject({ state: 'ready' });
       }
+
+      it("never deletes a failed SSH Repository's key; a Retry over SSH keeps it", async () => {
+        const projectId = await createProject('Failed kept');
+        const key = await failedSshRepository(projectId);
+
+        await start(0);
+        expect(await exists(key)).toBe(true);
+        expect(deletedLines()).toEqual([]);
+
+        const retried = await connect(
+          projectId,
+          `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`,
+        );
+        expect(retried.status).toBe(201);
+        expect(retried.body.state).toBe('awaiting_key');
+        expect(await deployKeyRef(projectId)).toBe(key);
+      });
 
       it('keeps the orphan inside the grace period; the start-up sweep deletes it once past it', async () => {
         const projectId = await createProject('Replaced later');

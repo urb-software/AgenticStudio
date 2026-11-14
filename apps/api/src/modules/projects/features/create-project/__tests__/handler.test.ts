@@ -47,7 +47,7 @@ class InMemoryProjectRepository implements ProjectRepository {
   beginDisconnect = notUsed;
   deleteDisconnecting = notUsed;
   listDisconnecting = notUsed;
-  listDeployKeySecrets = notUsed;
+  listDeployKeySecretRefs = notUsed;
   awaitHostKey = notUsed;
   beginVerifiedClone = notUsed;
   failVerification = notUsed;

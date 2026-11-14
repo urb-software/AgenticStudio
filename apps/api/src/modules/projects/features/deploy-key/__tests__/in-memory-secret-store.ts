@@ -10,7 +10,7 @@ import {
  * An in-memory {@link SecretStore} for handler tests: values and owner labels by reference,
  * stamped with the store's own clock `now` (milliseconds, advanced by the test). `failWith`
  * makes the next calls reject (an unavailable store); `failNextDeleteWith` makes only the next
- * delete reject.
+ * delete reject. Like the port, it refuses a malformed owner label or age.
  */
 export class InMemorySecretStore implements SecretStore {
   readonly values = new Map<SecretReference, string>();
@@ -21,6 +21,8 @@ export class InMemorySecretStore implements SecretStore {
   failNextDeleteWith: Error | undefined;
 
   put(value: string, { owner }: { owner: SecretOwner }): Promise<SecretReference> {
+    if (!isOwner(owner))
+      return Promise.reject(new RangeError('The secret owner label is invalid.'));
     if (this.failWith) return Promise.reject(this.failWith);
     const reference = randomUUID();
     this.values.set(reference, value);
@@ -46,6 +48,11 @@ export class InMemorySecretStore implements SecretStore {
   }
 
   listOlderThan(owner: SecretOwner, ageMs: number): Promise<SecretReference[]> {
+    if (!isOwner(owner))
+      return Promise.reject(new RangeError('The secret owner label is invalid.'));
+    if (!Number.isSafeInteger(ageMs) || ageMs < 0) {
+      return Promise.reject(new RangeError('The secret age is invalid.'));
+    }
     if (this.failWith) return Promise.reject(this.failWith);
     return Promise.resolve(
       [...this.storedAt]
@@ -54,4 +61,9 @@ export class InMemorySecretStore implements SecretStore {
         .map(([reference]) => reference),
     );
   }
+}
+
+/** The port's owner label format (`SecretOwner`). */
+function isOwner(owner: string): boolean {
+  return owner.length <= 64 && /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/.test(owner);
 }
