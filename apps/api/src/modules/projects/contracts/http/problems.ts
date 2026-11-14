@@ -1,5 +1,8 @@
 import { HttpStatus } from '@nestjs/common';
-import { ProblemException } from '../../../../platform/http/problem-details.js';
+import {
+  HandledServerErrorException,
+  ProblemException,
+} from '../../../../platform/http/problem-details.js';
 
 /**
  * Problem `type` URIs of the projects API (RFC 9457 §3.1.1), shared by several features of
@@ -40,4 +43,20 @@ export function noRepository(): ProblemException {
     title: 'No repository',
     detail: 'The project has no repository.',
   });
+}
+
+/** 501 when the API host is not Linux; `action` names what the operator tried (connect, fetch). */
+export function unsupportedPlatform(action: string): ProblemException {
+  return new ProblemException(HttpStatus.NOT_IMPLEMENTED, {
+    type: PROJECTS_PROBLEM_TYPES.unsupportedPlatform,
+    title: 'Unsupported platform',
+    detail:
+      'Repository features run on Linux only, and this Studio API is not running on Linux. ' +
+      `Run the API in a Linux container or on a Linux host to ${action} repositories.`,
+  });
+}
+
+/** 503 when the job queue is down; the queue logs the outage itself (once). */
+export function queueUnavailable(): HandledServerErrorException {
+  return new HandledServerErrorException(HttpStatus.SERVICE_UNAVAILABLE);
 }

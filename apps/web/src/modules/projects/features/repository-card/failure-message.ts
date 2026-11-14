@@ -35,7 +35,7 @@ export function failureMessage(
     case 'timeout':
       return `The Git host took too long, so the ${operation} was stopped.`;
     case 'size_limit':
-      return `The repository is larger than the 2 GB limit, so the ${operation} was stopped.`;
+      return 'The repository is larger than the 2 GB limit, so Studio stopped and kept no clone.';
     case 'auth_failed':
       return 'The Git host asked for credentials. Only public repositories can be connected over HTTPS.';
     case 'host_key_mismatch':

@@ -79,13 +79,20 @@ export function useConnectRepository(projectId: string) {
 
 /**
  * Fetches the Repository. The 202 answer is the Repository in `fetching`; it seeds the polled
- * query (so polling starts), and the project detail is refetched for its summary.
+ * query (so polling starts), and the project detail is refetched for its summary. A read of
+ * the Repository still in flight (e.g. a refetch on focus) is cancelled first: its older
+ * `ready` answer would otherwise replace `fetching`, stop the polling and look like a fetch
+ * that ended ("Already up to date").
  */
 export function useFetchRepository(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.fetchRepository(projectId),
+    mutationFn: async () => {
+      await queryClient.cancelQueries({ queryKey: repositoryKey(projectId), exact: true });
+      return api.fetchRepository(projectId);
+    },
     onSuccess: async (repository: RepositoryOutput) => {
+      await queryClient.cancelQueries({ queryKey: repositoryKey(projectId), exact: true });
       queryClient.setQueryData(repositoryKey(projectId), repository);
       await queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });
     },

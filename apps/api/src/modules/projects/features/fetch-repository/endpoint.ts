@@ -3,7 +3,6 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import {
   ApiProblemResponses,
-  HandledServerErrorException,
   ProblemException,
 } from '../../../../platform/http/problem-details.js';
 import {
@@ -14,6 +13,8 @@ import {
   noRepository,
   PROJECTS_PROBLEM_TYPES,
   projectNotFound,
+  queueUnavailable,
+  unsupportedPlatform,
 } from '../../contracts/http/problems.js';
 import {
   RepositoryResponseDto,
@@ -50,19 +51,8 @@ function toHttpError(error: unknown): unknown {
       detail: 'Studio has no usable clone of this repository. Use Retry to clone it again.',
     });
   }
-  if (error instanceof GitUnsupportedPlatformError) {
-    return new ProblemException(HttpStatus.NOT_IMPLEMENTED, {
-      type: PROJECTS_PROBLEM_TYPES.unsupportedPlatform,
-      title: 'Unsupported platform',
-      detail:
-        'Repository features run on Linux only, and this Studio API is not running on Linux. ' +
-        'Run the API in a Linux container or on a Linux host to fetch repositories.',
-    });
-  }
-  // The queue logs the outage itself (once); the response stays a generic 503.
-  if (error instanceof QueueUnavailableError) {
-    return new HandledServerErrorException(HttpStatus.SERVICE_UNAVAILABLE);
-  }
+  if (error instanceof GitUnsupportedPlatformError) return unsupportedPlatform('fetch');
+  if (error instanceof QueueUnavailableError) return queueUnavailable();
   return error;
 }
 

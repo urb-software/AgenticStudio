@@ -259,7 +259,7 @@ describe('Repository card states', () => {
     [
       'size_limit',
       undefined,
-      'The repository is larger than the 2 GB limit, so the clone was stopped.',
+      'The repository is larger than the 2 GB limit, so Studio stopped and kept no clone.',
     ],
     ['unknown', undefined, 'The clone failed for an unexpected reason.'],
   ] as const)(
