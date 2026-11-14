@@ -111,7 +111,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('documents the project detail and repository endpoints (Story #60 contract)', () => {
+  it('documents the project detail and repository endpoints (Stories #60 and #61)', () => {
     const document = createOpenApiDocument(app);
     const ref = (name: string) => ({
       content: { 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } },
@@ -147,9 +147,17 @@ describe('OpenAPI document', () => {
       expect(connect?.responses[status]).toMatchObject(problem);
     }
 
+    const fetch = document.paths['/api/projects/{id}/repository/fetch']?.post;
+    expect(fetch?.operationId).toBe('fetchRepository');
+    expect(fetch?.requestBody).toBeUndefined();
+    expect(fetch?.responses['202']).toMatchObject(ref('Repository_Output'));
+    for (const status of ['404', '409', '501', '503']) {
+      expect(fetch?.responses[status]).toMatchObject(problem);
+    }
+
     const schemas = document.components?.schemas ?? {};
     expect(schemas.RepositoryState_Output).toMatchObject({
-      enum: ['connecting', 'ready', 'failed'],
+      enum: ['connecting', 'ready', 'fetching', 'failed'],
     });
     expect(schemas.RepositoryFailureCode_Output).toMatchObject({
       enum: [
@@ -175,12 +183,13 @@ describe('OpenAPI document', () => {
       'state',
       'url',
       'integrationBranch',
+      'hasClone',
       'headSha',
       'lastFetchedAt',
       'failure',
     ]);
     expect(schemas.Repository_Output).toMatchObject({
-      required: ['state', 'url', 'integrationBranch'],
+      required: ['state', 'url', 'integrationBranch', 'hasClone'],
     });
     expect(schemas.ConnectRepositoryRequest).toMatchObject({
       properties: {
