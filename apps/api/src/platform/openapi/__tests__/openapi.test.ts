@@ -155,6 +155,14 @@ describe('OpenAPI document', () => {
       expect(fetch?.responses[status]).toMatchObject(problem);
     }
 
+    const verify = document.paths['/api/projects/{id}/repository/verify']?.post;
+    expect(verify?.operationId).toBe('verifyRepository');
+    expect(verify?.requestBody).toMatchObject(ref('VerifyRepositoryRequest'));
+    expect(verify?.responses['202']).toMatchObject(ref('Repository_Output'));
+    for (const status of ['404', '409', '422', '501', '503']) {
+      expect(verify?.responses[status]).toMatchObject(problem);
+    }
+
     const disconnect = document.paths['/api/projects/{id}/repository']?.delete;
     expect(disconnect?.operationId).toBe('disconnectRepository');
     expect(disconnect?.requestBody).toBeUndefined();
@@ -169,7 +177,15 @@ describe('OpenAPI document', () => {
 
     const schemas = document.components?.schemas ?? {};
     expect(schemas.RepositoryState_Output).toMatchObject({
-      enum: ['connecting', 'ready', 'fetching', 'failed', 'disconnecting'],
+      enum: [
+        'awaiting_key',
+        'awaiting_host_key',
+        'connecting',
+        'ready',
+        'fetching',
+        'failed',
+        'disconnecting',
+      ],
     });
     expect(schemas.RepositoryFailureCode_Output).toMatchObject({
       enum: [
@@ -199,6 +215,8 @@ describe('OpenAPI document', () => {
       'headSha',
       'lastFetchedAt',
       'failure',
+      'publicKey',
+      'hostKeyFingerprint',
     ]);
     expect(schemas.Repository_Output).toMatchObject({
       required: ['state', 'url', 'integrationBranch', 'hasClone'],
@@ -215,6 +233,11 @@ describe('OpenAPI document', () => {
       },
       required: ['url', 'integrationBranch'],
     });
+    // Optional: `{}` verifies the Deploy key; the fingerprint confirms a host key.
+    expect(schemas.VerifyRepositoryRequest).toMatchObject({
+      properties: { acceptHostKeyFingerprint: { type: 'string', minLength: 1, maxLength: 100 } },
+    });
+    expect(schemas.VerifyRepositoryRequest).not.toHaveProperty('required');
   });
 
   it('documents the problem+json schema as the error response of every operation', () => {

@@ -23,6 +23,8 @@ export const PROJECTS_PROBLEM_TYPES = {
   repositoryBusy: 'urn:agentic-studio:problem:repository-busy',
   /** 409: the Repository has no usable Clone to fetch into; Retry (connect) makes one. */
   noUsableClone: 'urn:agentic-studio:problem:no-usable-clone',
+  /** 409: the Repository is not waiting for its Deploy key or host key to be verified. */
+  repositoryNotVerifiable: 'urn:agentic-studio:problem:repository-not-verifiable',
   /** 501: repository features need a Linux API host. */
   unsupportedPlatform: 'urn:agentic-studio:problem:unsupported-platform',
 } as const;

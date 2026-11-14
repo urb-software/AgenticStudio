@@ -306,7 +306,7 @@
         ]
       },
       "post": {
-        "description": "Connects a public repository over HTTPS: stores it as `connecting` and clones it in the background (poll `GET /api/projects/{id}/repository`). A `failed` repository is replaced by the new attempt (Retry).",
+        "description": "Connects a repository. A public one over HTTPS is stored as `connecting` and cloned in the background (poll `GET /api/projects/{id}/repository`). A private one over SSH (`git@host:owner/repo.git` or `ssh://`) gets a Deploy key generated for the project and is stored as `awaiting_key` with its `publicKey`: add the key on the Git host, then `POST /api/projects/{id}/repository/verify`. A `failed` repository is replaced by the new attempt (an SSH one keeps its Deploy key).",
         "operationId": "connectRepository",
         "parameters": [
           {
@@ -550,6 +550,108 @@
           "projects"
         ]
       }
+    },
+    "/api/projects/{id}/repository/verify": {
+      "post": {
+        "description": "\"Verify and clone\" for an SSH repository (`awaiting_key`, `awaiting_host_key`, or `failed` without a Clone: Retry, with the same Deploy key). A Git host listed in the server's trusted host keys, or whose key is pinned for this repository, is cloned at once: the answer is the repository in `connecting` (poll `GET /api/projects/{id}/repository`). For any other host, Studio first retrieves its host key: the answer is the repository in `awaiting_host_key` with `hostKeyFingerprint` (or in `failed` when the host cannot be reached), and the operator confirms by verifying again with `acceptHostKeyFingerprint`, which pins the key and starts the clone.",
+        "operationId": "verifyRepository",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRepositoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The repository is not waiting to be verified, or no host key awaits confirmation (urn:agentic-studio:problem:repository-not-verifiable), or an earlier clone is still finishing (urn:agentic-studio:problem:clone-already-running)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid body, or acceptHostKeyFingerprint does not match (field errors)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The job queue is unavailable; the attempt is marked failed (generic problem)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      }
     }
   },
   "info": {
@@ -676,13 +778,15 @@
       "RepositoryState_Output": {
         "type": "string",
         "enum": [
+          "awaiting_key",
+          "awaiting_host_key",
           "connecting",
           "ready",
           "fetching",
           "failed",
           "disconnecting"
         ],
-        "description": "connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable."
+        "description": "awaiting_key: an SSH repository whose Deploy key (publicKey) the operator still has to add on the Git host, then verify; awaiting_host_key: the Git host is not trusted yet, and the operator has to confirm its host key fingerprint (hostKeyFingerprint) by verifying with acceptHostKeyFingerprint; connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable."
       },
       "ProjectDetail_Output": {
         "type": "object",
@@ -777,6 +881,12 @@
           },
           "failure": {
             "$ref": "#/components/schemas/RepositoryFailure_Output"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "hostKeyFingerprint": {
+            "type": "string"
           }
         },
         "required": [
@@ -806,6 +916,17 @@
           "url",
           "integrationBranch"
         ]
+      },
+      "VerifyRepositoryRequest": {
+        "type": "object",
+        "properties": {
+          "acceptHostKeyFingerprint": {
+            "description": "The SHA256 fingerprint (`SHA256:…`) of the host key the operator confirmed; it must equal the `hostKeyFingerprint` of the `awaiting_host_key` repository exactly.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
       },
       "ProblemDetails": {
         "type": "object",

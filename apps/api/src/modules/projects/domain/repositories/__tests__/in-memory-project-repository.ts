@@ -69,6 +69,11 @@ export class InMemoryProjectRepository implements ProjectRepository {
       headSha: null,
       lastFetchedAt: null,
       failure: null,
+      publicKey: null,
+      deployKeySecret: null,
+      pinnedHostKey: null,
+      pendingHostKey: null,
+      hostKeyFingerprint: null,
     });
     return (await this.findRepository(record.projectId))!;
   }

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses } from './types.gen';
+import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, VerifyRepositoryData, VerifyRepositoryErrors, VerifyRepositoryResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -54,7 +54,7 @@ export const disconnectRepository = <ThrowOnError extends boolean = false>(optio
 export const getRepository = <ThrowOnError extends boolean = false>(options: Options<GetRepositoryData, ThrowOnError>): RequestResult<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError> => (options.client ?? client).get<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository', ...options });
 
 /**
- * Connects a public repository over HTTPS: stores it as `connecting` and clones it in the background (poll `GET /api/projects/{id}/repository`). A `failed` repository is replaced by the new attempt (Retry).
+ * Connects a repository. A public one over HTTPS is stored as `connecting` and cloned in the background (poll `GET /api/projects/{id}/repository`). A private one over SSH (`git@host:owner/repo.git` or `ssh://`) gets a Deploy key generated for the project and is stored as `awaiting_key` with its `publicKey`: add the key on the Git host, then `POST /api/projects/{id}/repository/verify`. A `failed` repository is replaced by the new attempt (an SSH one keeps its Deploy key).
  */
 export const connectRepository = <ThrowOnError extends boolean = false>(options: Options<ConnectRepositoryData, ThrowOnError>): RequestResult<ConnectRepositoryResponses, ConnectRepositoryErrors, ThrowOnError> => (options.client ?? client).post<ConnectRepositoryResponses, ConnectRepositoryErrors, ThrowOnError>({
     url: '/api/projects/{id}/repository',
@@ -69,3 +69,15 @@ export const connectRepository = <ThrowOnError extends boolean = false>(options:
  * Brings the Clone up to date with the remote in the background: answers at once with the repository in `fetching` (poll `GET /api/projects/{id}/repository`). Allowed when the repository is `ready`, or `failed` with a usable Clone (`hasClone`).
  */
 export const fetchRepository = <ThrowOnError extends boolean = false>(options: Options<FetchRepositoryData, ThrowOnError>): RequestResult<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError> => (options.client ?? client).post<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository/fetch', ...options });
+
+/**
+ * "Verify and clone" for an SSH repository (`awaiting_key`, `awaiting_host_key`, or `failed` without a Clone: Retry, with the same Deploy key). A Git host listed in the server's trusted host keys, or whose key is pinned for this repository, is cloned at once: the answer is the repository in `connecting` (poll `GET /api/projects/{id}/repository`). For any other host, Studio first retrieves its host key: the answer is the repository in `awaiting_host_key` with `hostKeyFingerprint` (or in `failed` when the host cannot be reached), and the operator confirms by verifying again with `acceptHostKeyFingerprint`, which pins the key and starts the clone.
+ */
+export const verifyRepository = <ThrowOnError extends boolean = false>(options: Options<VerifyRepositoryData, ThrowOnError>): RequestResult<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError> => (options.client ?? client).post<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError>({
+    url: '/api/projects/{id}/repository/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});

@@ -43,6 +43,11 @@ describe('ConnectRepositoryHandler', () => {
       headSha: null,
       lastFetchedAt: null,
       failure: null,
+      publicKey: null,
+      deployKeySecret: null,
+      pinnedHostKey: null,
+      pendingHostKey: null,
+      hostKeyFingerprint: null,
     });
     expect(projects.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
     expect(jobs.started).toEqual([[PROJECT, 'clone']]);

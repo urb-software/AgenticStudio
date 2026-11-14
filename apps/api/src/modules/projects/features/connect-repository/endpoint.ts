@@ -100,9 +100,12 @@ export class ConnectRepositoryEndpoint {
   @ApiOperation({
     operationId: 'connectRepository',
     description:
-      'Connects a public repository over HTTPS: stores it as `connecting` and clones it in the ' +
-      'background (poll `GET /api/projects/{id}/repository`). A `failed` repository is ' +
-      'replaced by the new attempt (Retry).',
+      'Connects a repository. A public one over HTTPS is stored as `connecting` and cloned in ' +
+      'the background (poll `GET /api/projects/{id}/repository`). A private one over SSH ' +
+      '(`git@host:owner/repo.git` or `ssh://`) gets a Deploy key generated for the project and ' +
+      'is stored as `awaiting_key` with its `publicKey`: add the key on the Git host, then ' +
+      '`POST /api/projects/{id}/repository/verify`. A `failed` repository is replaced by the ' +
+      'new attempt (an SSH one keeps its Deploy key).',
   })
   @ApiBody({ type: ConnectRepositoryRequestDto })
   @ZodResponse({ status: 201, type: RepositoryResponseDto })

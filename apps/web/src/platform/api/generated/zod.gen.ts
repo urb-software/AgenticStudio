@@ -29,9 +29,11 @@ export const zProjectListOutput = z.object({
 });
 
 /**
- * connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
+ * awaiting_key: an SSH repository whose Deploy key (publicKey) the operator still has to add on the Git host, then verify; awaiting_host_key: the Git host is not trusted yet, and the operator has to confirm its host key fingerprint (hostKeyFingerprint) by verifying with acceptHostKeyFingerprint; connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
  */
 export const zRepositoryStateOutput = z.enum([
+    'awaiting_key',
+    'awaiting_host_key',
     'connecting',
     'ready',
     'fetching',
@@ -79,12 +81,18 @@ export const zRepositoryOutput = z.object({
     hasClone: z.boolean(),
     headSha: z.string().optional(),
     lastFetchedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
-    failure: zRepositoryFailureOutput.optional()
+    failure: zRepositoryFailureOutput.optional(),
+    publicKey: z.string().optional(),
+    hostKeyFingerprint: z.string().optional()
 });
 
 export const zConnectRepositoryRequest = z.object({
     url: z.string().min(1).max(2048),
     integrationBranch: z.string().min(1).max(255).regex(/^(?!@$)(?![-\/.])(?!.*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/)
+});
+
+export const zVerifyRepositoryRequest = z.object({
+    acceptHostKeyFingerprint: z.string().min(1).max(100).optional()
 });
 
 export const zProblemDetails = z.object({
@@ -152,3 +160,11 @@ export const zFetchRepositoryPath = z.object({
 });
 
 export const zFetchRepositoryResponse = zRepositoryOutput;
+
+export const zVerifyRepositoryBody = zVerifyRepositoryRequest;
+
+export const zVerifyRepositoryPath = z.object({
+    id: z.string()
+});
+
+export const zVerifyRepositoryResponse = zRepositoryOutput;

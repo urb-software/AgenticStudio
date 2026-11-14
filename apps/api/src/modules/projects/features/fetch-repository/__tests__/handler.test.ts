@@ -76,6 +76,11 @@ describe('FetchRepositoryHandler', () => {
       headSha: OLD,
       lastFetchedAt: FETCHED_AT,
       failure: null,
+      publicKey: null,
+      deployKeySecret: null,
+      pinnedHostKey: null,
+      pendingHostKey: null,
+      hostKeyFingerprint: null,
     });
     expect(jobs.started).toEqual([[PROJECT, 'fetch']]);
     // No Git runs in the request: the fetch happens in the background job.
@@ -163,6 +168,11 @@ describe('FetchRepositoryHandler', () => {
       headSha: null,
       lastFetchedAt: null,
       failure: null,
+      publicKey: null,
+      deployKeySecret: null,
+      pinnedHostKey: null,
+      pendingHostKey: null,
+      hostKeyFingerprint: null,
     });
     const error = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = error;

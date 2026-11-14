@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 /**
  * The Repository in API responses (Issue #60 contract), shared by the connect, get-repository
- * and get-project features of this module (backend.md §2). Self-contained: it takes plain
+ * and get-project features of this module (backend.md §2); Issue #62 adds the SSH fields. Self-contained: it takes plain
  * shapes, not domain types. The objects are closed (unknown keys are stripped by the response
  * serializer), so no field can carry key material or unredacted Git output.
  */
@@ -12,11 +12,22 @@ import { z } from 'zod';
  * Later stories add states; clients must treat a value they do not know as "unavailable".
  */
 export const repositoryStateSchema = z
-  .enum(['connecting', 'ready', 'fetching', 'failed', 'disconnecting'])
+  .enum([
+    'awaiting_key',
+    'awaiting_host_key',
+    'connecting',
+    'ready',
+    'fetching',
+    'failed',
+    'disconnecting',
+  ])
   .meta({
     id: 'RepositoryState',
     description:
-      'connecting: the first Clone is being made; ready: the Clone is up to date as of ' +
+      'awaiting_key: an SSH repository whose Deploy key (publicKey) the operator still has to ' +
+      'add on the Git host, then verify; awaiting_host_key: the Git host is not trusted yet, and ' +
+      'the operator has to confirm its host key fingerprint (hostKeyFingerprint) by verifying ' +
+      'with acceptHostKeyFingerprint; connecting: the first Clone is being made; ready: the Clone is up to date as of ' +
       'lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last ' +
       'operation failed (hasClone tells whether a usable Clone remains); disconnecting: the ' +
       'operator disconnected the repository and Studio is still removing its data (retried ' +
@@ -73,6 +84,19 @@ export const repositoryResponseSchema = z
     lastFetchedAt: z.iso.datetime().optional(),
     /** Present exactly when `failed`. */
     failure: repositoryFailureSchema.optional(),
+    /**
+     * SSH repositories only: the public half of the project's Deploy key, one OpenSSH line
+     * (`ssh-ed25519 AAAA… studio-<project>`), to add on the Git host as a read-only deploy key.
+     * The private half is never returned.
+     */
+    publicKey: z.string().optional(),
+    /**
+     * SSH repositories only: the SHA256 fingerprint (`SHA256:…`, as `ssh-keygen -l` prints it)
+     * of the host key awaiting the operator's confirmation when `awaiting_host_key`, otherwise
+     * of the host key pinned for this Repository, if any. Absent for a host trusted through
+     * the server's configuration.
+     */
+    hostKeyFingerprint: z.string().optional(),
   })
   .meta({ id: 'Repository' });
 
@@ -94,6 +118,8 @@ export interface RepositoryView {
     detail: string;
     remoteDefaultBranch: string | null;
   } | null;
+  publicKey: string | null;
+  hostKeyFingerprint: string | null;
 }
 
 export function toRepositorySummary(repository: RepositoryView): RepositorySummaryResponse {
@@ -124,5 +150,9 @@ export function toRepositoryResponse(repository: RepositoryView): RepositoryResp
               : { remoteDefaultBranch: failure.remoteDefaultBranch }),
           },
         }),
+    ...(repository.publicKey === null ? {} : { publicKey: repository.publicKey }),
+    ...(repository.hostKeyFingerprint === null
+      ? {}
+      : { hostKeyFingerprint: repository.hostKeyFingerprint }),
   };
 }

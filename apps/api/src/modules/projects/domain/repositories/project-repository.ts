@@ -152,6 +152,18 @@ export class RepositoryBusyError extends Error {
   }
 }
 
+/**
+ * The Repository is not waiting for its Deploy key or host key to be verified (it is not an
+ * SSH Repository, or not `awaiting_key`, `awaiting_host_key` or `failed` without a Clone), or
+ * a fingerprint was confirmed while no host key awaits confirmation.
+ */
+export class RepositoryNotVerifiableError extends Error {
+  constructor(message = 'The repository is not waiting to be verified.') {
+    super(message);
+    this.name = 'RepositoryNotVerifiableError';
+  }
+}
+
 /** The Repository has no usable Clone to fetch into; a Retry (connect) makes a new one. */
 export class NoUsableCloneError extends Error {
   constructor() {

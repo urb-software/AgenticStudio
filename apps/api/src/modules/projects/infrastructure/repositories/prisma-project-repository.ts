@@ -83,6 +83,11 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
             remoteDefaultBranch: row.failureRemoteDefaultBranch,
           }
         : null,
+    publicKey: null,
+    deployKeySecret: null,
+    pinnedHostKey: null,
+    pendingHostKey: null,
+    hostKeyFingerprint: null,
   };
 }
 

@@ -1,11 +1,15 @@
 /**
  * The states of a Repository: the last operation, not whether a Clone exists (see
- * `RepositoryConnection.hasClone`). `connecting`: the first Clone is being made; `ready`: the
+ * `RepositoryConnection.hasClone`). An SSH Repository starts in `awaiting_key`: its Deploy key
+ * still has to be added on the Git host, then verified (Issue #62); `awaiting_host_key`: the
+ * Git host is not trusted yet and the operator has to confirm its host key. `connecting`: the first Clone is being made; `ready`: the
  * Clone is up to date as of the last fetch; `fetching`: the Clone is being brought up to date;
  * `failed`: the last connect or fetch failed; `disconnecting`: the operator disconnected it and
  * its data is still being removed (the record goes last). Later stories add states.
  */
 export const REPOSITORY_STATES = [
+  'awaiting_key',
+  'awaiting_host_key',
   'connecting',
   'ready',
   'fetching',
@@ -59,6 +63,25 @@ export interface RepositoryConnection {
   lastFetchedAt: Date | null;
   /** Set exactly when `failed`. */
   failure: RepositoryFailure | null;
+  /**
+   * SSH Repositories only (Issue #62): the public half of the project's Deploy key, one
+   * OpenSSH line (`ssh-ed25519 AAAA… studio-<project>`); set exactly when `deployKeySecret` is.
+   */
+  publicKey: string | null;
+  /**
+   * The secret store's reference to the Deploy key's private half; never the key itself.
+   * Set exactly for an SSH Repository (until a Disconnect removes it).
+   */
+  deployKeySecret: string | null;
+  /** The host key the operator confirmed, pinned for this Repository: `<type> <base64>`. */
+  pinnedHostKey: string | null;
+  /** The retrieved host key awaiting the operator's confirmation; set exactly when `awaiting_host_key`. */
+  pendingHostKey: string | null;
+  /**
+   * SHA256 fingerprint of `pendingHostKey` when awaiting confirmation, otherwise of
+   * `pinnedHostKey`; `null` when there is neither.
+   */
+  hostKeyFingerprint: string | null;
 }
 
 /** Builds a failure, cutting an over-long detail. */

@@ -24,6 +24,8 @@ import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
 import { ListProjectsHandler } from './features/list-projects/handler.js';
 import { RefreshCloneHandler } from './features/refresh-clone/handler.js';
 import { RepositoryJobsHandler } from './features/repository-jobs/handler.js';
+import { VerifyRepositoryEndpoint } from './features/verify-repository/endpoint.js';
+import { VerifyRepositoryHandler } from './features/verify-repository/handler.js';
 import {
   SystemGitAdapter,
   type SystemGitSettings,
@@ -68,6 +70,7 @@ export class ProjectsModule {
         ConnectRepositoryEndpoint,
         FetchRepositoryEndpoint,
         DisconnectRepositoryEndpoint,
+        VerifyRepositoryEndpoint,
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
@@ -96,6 +99,7 @@ export class ProjectsModule {
         ConnectRepositoryHandler,
         FetchRepositoryHandler,
         DisconnectRepositoryHandler,
+        VerifyRepositoryHandler,
       ],
     };
   }
