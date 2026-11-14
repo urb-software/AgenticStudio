@@ -184,6 +184,29 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
     );
   });
 
+  describe('a remote default branch over 255 characters (#72)', () => {
+    it('stores the failure without it, instead of failing the write', async () => {
+      await projects.beginConnect({
+        projectId,
+        url: 'https://github.com/acme/shop.git',
+        identity: 'github.com/acme/shop',
+        integrationBranch: 'dev',
+      });
+
+      const stored = await projects.markFailed(
+        projectId,
+        repositoryFailure('branch_not_found', '', 'b'.repeat(256)),
+      );
+
+      expect(stored).toBe(true);
+      expect((await projects.findRepository(projectId))?.failure).toEqual({
+        code: 'branch_not_found',
+        detail: '',
+        remoteDefaultBranch: null,
+      });
+    });
+  });
+
   describe('the interrupted migration (#72)', () => {
     it('moves the failures stored as unknown / "Interrupted" to interrupted, and only those', async () => {
       const other = (await projects.add(ProjectName.parse('Other'))).id;

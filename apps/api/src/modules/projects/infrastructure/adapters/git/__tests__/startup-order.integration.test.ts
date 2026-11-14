@@ -61,7 +61,11 @@ class RecordingProjects extends InMemoryProjectRepository {
     return super.listDisconnecting();
   }
 
-  /** The first thing a job does: read the Repository, whose state says what to run. */
+  /**
+   * The first thing a job does: read the Repository, whose state says what to run. Nothing in
+   * the start-up path reads a Repository here (no Repository is connecting, fetching or
+   * disconnecting), so this marks the job; the test also checks it happens at all.
+   */
   override findRepository(...args: Parameters<InMemoryProjectRepository['findRepository']>) {
     events.push('queue: job ran');
     return super.findRepository(...args);

@@ -11,6 +11,10 @@ export type Transport = 'https' | 'ssh';
 /** The detail an earlier API stored for an operation cut off by a crash or a restart. */
 const INTERRUPTED = 'Interrupted';
 
+function interruptedMessage(operation: FailedOperation): string {
+  return `The ${operation} was interrupted, for example by a restart of Studio.`;
+}
+
 /**
  * The operator-facing message for a failure reason code (Epic #55's fixed list). A code this
  * version does not know (added by a later API) gets a generic message; the redacted detail is
@@ -59,12 +63,13 @@ export function failureMessage(
       return 'Studio does not connect to this address: it is link-local, a cloud metadata service, or loopback or private without STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true. The detail below names the address.';
     case 'redirect_refused':
       return 'The Git host redirected Studio to another URL, and Studio does not follow redirects. Connect with the final URL of the repository.';
-    // #72: the structured marker. PR B drops the `unknown` + 'Interrupted' fallback below.
+    // The structured marker (#72). The `unknown` + 'Interrupted' fallback below goes in the
+    // web clean-up of #72.
     case 'interrupted':
-      return `The ${operation} was interrupted, for example by a restart of Studio.`;
+      return interruptedMessage(operation);
     case 'unknown':
       return failure.detail === INTERRUPTED
-        ? `The ${operation} was interrupted, for example by a restart of Studio.`
+        ? interruptedMessage(operation)
         : `The ${operation} failed for an unexpected reason.`;
     default:
       return `The ${operation} failed.`;
