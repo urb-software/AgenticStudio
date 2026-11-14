@@ -21,7 +21,7 @@ export interface SshTrustSettings {
 /** A stored Deploy key: the public half and the secret store's reference to the private half. */
 export interface StoredDeployKey {
   publicKey: string;
-  secret: string;
+  secretRef: string;
 }
 
 /** Stored as the failure detail when no host key is trusted for an SSH operation. */
@@ -54,12 +54,12 @@ export class DeployKeyHandler {
   /** Generates an ed25519 Deploy key commented `studio-<project name>` and stores its private half. */
   async create(projectName: string): Promise<StoredDeployKey> {
     const { privateKey, publicKey } = generateDeployKey(deployKeyComment(projectName));
-    return { publicKey, secret: await this.secrets.put(privateKey) };
+    return { publicKey, secretRef: await this.secrets.put(privateKey) };
   }
 
   /** Deletes the private half; a no-op when it is already gone. */
-  delete(secret: string): Promise<void> {
-    return this.secrets.delete(secret);
+  delete(secretRef: string): Promise<void> {
+    return this.secrets.delete(secretRef);
   }
 
   /**

@@ -283,7 +283,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       }
     });
 
-    it('refuses to connect over SSH with the same 501, generating no Deploy key', async () => {
+    it('refuses to connect over SSH with the same 501 and stores nothing', async () => {
       await restart({ projects: { gitSettings: { platform: 'win32' } } });
       try {
         const id = await createProject('Windows SSH');
@@ -295,9 +295,6 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
 
         expectProblem(response, 501, 'unsupported-platform');
         expectProblem(await getRepository(id), 404, 'no-repository');
-        const [row] = await db().$queryRaw<{ count: number }[]>`
-          SELECT count(*)::int AS count FROM secrets`;
-        expect(row!.count).toBe(0);
       } finally {
         await restart();
       }

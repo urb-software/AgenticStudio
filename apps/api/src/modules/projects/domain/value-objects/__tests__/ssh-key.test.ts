@@ -8,10 +8,34 @@ import {
   trustedHostKeysFor,
 } from '../ssh-key.js';
 
-/** Reads an SSH wire-format string (uint32 length + bytes) at `offset`. */
-function readString(buffer: Buffer, offset: number): [Buffer, number] {
-  const length = buffer.readUInt32BE(offset);
-  return [buffer.subarray(offset + 4, offset + 4 + length), offset + 4 + length];
+/** Reads SSH wire-format fields (uint32, and strings as uint32 length + bytes) in order. */
+class WireReader {
+  private offset = 0;
+
+  constructor(private readonly buffer: Buffer) {}
+
+  uint32(): number {
+    const value = this.buffer.readUInt32BE(this.offset);
+    this.offset += 4;
+    return value;
+  }
+
+  string(): Buffer {
+    const length = this.uint32();
+    const value = this.buffer.subarray(this.offset, this.offset + length);
+    this.offset += length;
+    return value;
+  }
+
+  rest(): Buffer {
+    const value = this.buffer.subarray(this.offset);
+    this.offset = this.buffer.length;
+    return value;
+  }
+
+  get done(): boolean {
+    return this.offset === this.buffer.length;
+  }
 }
 
 /** Decodes an `openssh-key-v1` private key (unencrypted) into its parts. */
@@ -23,38 +47,34 @@ function decodePrivateKey(armoured: string) {
   const blob = Buffer.from(lines.slice(1, -1).join(''), 'base64');
   const magic = 'openssh-key-v1\0';
   expect(blob.subarray(0, magic.length).toString('latin1')).toBe(magic);
-  let offset = magic.length;
-  let cipher, kdf, kdfOptions, publicBlob, privateSection;
-  [cipher, offset] = readString(blob, offset);
-  [kdf, offset] = readString(blob, offset);
-  [kdfOptions, offset] = readString(blob, offset);
-  const count = blob.readUInt32BE(offset);
-  offset += 4;
-  [publicBlob, offset] = readString(blob, offset);
-  [privateSection, offset] = readString(blob, offset);
-  expect(offset).toBe(blob.length);
-  let p = 0;
-  const check1 = privateSection.readUInt32BE(p);
-  const check2 = privateSection.readUInt32BE(p + 4);
-  p += 8;
-  let type, publicKey, secret, comment;
-  [type, p] = readString(privateSection, p);
-  [publicKey, p] = readString(privateSection, p);
-  [secret, p] = readString(privateSection, p);
-  [comment, p] = readString(privateSection, p);
-  const padding = privateSection.subarray(p);
+  const outer = new WireReader(blob.subarray(magic.length));
+  const cipher = outer.string().toString();
+  const kdf = outer.string().toString();
+  const kdfOptions = outer.string().length;
+  const count = outer.uint32();
+  const publicBlob = outer.string();
+  const privateSection = outer.string();
+  expect(outer.done).toBe(true);
+  const inner = new WireReader(privateSection);
+  const check1 = inner.uint32();
+  const check2 = inner.uint32();
+  const type = inner.string().toString();
+  const publicKey = inner.string();
+  const secret = inner.string();
+  const comment = inner.string().toString();
+  const padding = inner.rest();
   return {
-    cipher: cipher.toString(),
-    kdf: kdf.toString(),
-    kdfOptions: kdfOptions.length,
+    cipher,
+    kdf,
+    kdfOptions,
     count,
     publicBlob,
     check1,
     check2,
-    type: type.toString(),
+    type,
     publicKey,
-    secret,
-    comment: comment.toString(),
+    secretBytes: secret,
+    comment,
     padding,
     sectionLength: privateSection.length,
   };
@@ -86,8 +106,8 @@ describe('generateDeployKey', () => {
     // The public blob is the one of the public key line.
     expect(decoded.publicBlob.toString('base64')).toBe(data);
     expect(decoded.publicKey).toHaveLength(32);
-    expect(decoded.secret).toHaveLength(64);
-    expect(decoded.secret.subarray(32)).toEqual(decoded.publicKey);
+    expect(decoded.secretBytes).toHaveLength(64);
+    expect(decoded.secretBytes.subarray(32)).toEqual(decoded.publicKey);
 
     // The seed and the public key are a real ed25519 pair.
     const toBase64Url = (bytes: Buffer) => bytes.toString('base64url');
@@ -95,7 +115,7 @@ describe('generateDeployKey', () => {
       key: {
         kty: 'OKP',
         crv: 'Ed25519',
-        d: toBase64Url(decoded.secret.subarray(0, 32)),
+        d: toBase64Url(decoded.secretBytes.subarray(0, 32)),
         x: toBase64Url(decoded.publicKey),
       },
       format: 'jwk',

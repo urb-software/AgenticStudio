@@ -70,7 +70,7 @@ export class ConnectRepositoryHandler {
     const previous = await this.projects.findRepository(input.projectId);
     const previousKey: StoredDeployKey | null =
       previous?.state === 'failed' && previous.deployKeySecret && previous.publicKey
-        ? { secret: previous.deployKeySecret, publicKey: previous.publicKey }
+        ? { secretRef: previous.deployKeySecret, publicKey: previous.publicKey }
         : null;
 
     let deployKey: StoredDeployKey | null = null;
@@ -99,12 +99,12 @@ export class ConnectRepositoryHandler {
         pinnedHostKey: deployKey && samePinnedHost ? (previous?.pinnedHostKey ?? null) : null,
       });
     } catch (error) {
-      if (createdKey && deployKey) await this.deleteKey(input.projectId, deployKey.secret);
+      if (createdKey && deployKey) await this.deleteKey(input.projectId, deployKey.secretRef);
       throw error;
     }
     // The replaced Repository's key is no longer referenced (it was replaced over HTTPS).
     if (previousKey && previousKey !== deployKey) {
-      await this.deleteKey(input.projectId, previousKey.secret);
+      await this.deleteKey(input.projectId, previousKey.secretRef);
     }
     if (url.ssh) return repository;
     try {
@@ -122,9 +122,9 @@ export class ConnectRepositoryHandler {
   }
 
   /** Deletes a Deploy key no Repository references; a failure is logged (redacted), not thrown. */
-  private async deleteKey(projectId: string, secret: string): Promise<void> {
+  private async deleteKey(projectId: string, secretRef: string): Promise<void> {
     try {
-      await this.deployKeys.delete(secret);
+      await this.deployKeys.delete(secretRef);
     } catch (error) {
       this.logger.warn(
         `Connect of project ${projectId}: could not delete an unused Deploy key. ${redactSecrets(String(error))}`,

@@ -18,7 +18,7 @@ export interface ConnectRepositoryRecord {
    * `awaiting_key` (the operator adds the key on the Git host, then verifies); without it,
    * `connecting`.
    */
-  deployKey?: { publicKey: string; secret: string } | null;
+  deployKey?: { publicKey: string; secretRef: string } | null;
   /** SSH only: a host key already confirmed for this host, kept across a Retry. */
   pinnedHostKey?: string | null;
 }

@@ -80,7 +80,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
       lastFetchedAt: null,
       failure: null,
       publicKey: record.deployKey?.publicKey ?? null,
-      deployKeySecret: record.deployKey?.secret ?? null,
+      deployKeySecret: record.deployKey?.secretRef ?? null,
       pinnedHostKey: record.deployKey ? (record.pinnedHostKey ?? null) : null,
       pendingHostKey: null,
       hostKeyFingerprint: null,

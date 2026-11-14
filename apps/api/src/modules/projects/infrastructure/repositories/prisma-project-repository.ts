@@ -186,7 +186,7 @@ export class PrismaProjectRepository implements ProjectRepository {
       integrationBranch: record.integrationBranch,
       state: record.deployKey ? 'awaiting_key' : 'connecting',
       publicKey: record.deployKey?.publicKey ?? null,
-      deployKeySecretId: record.deployKey?.secret ?? null,
+      deployKeySecretId: record.deployKey?.secretRef ?? null,
       pinnedHostKey: record.deployKey ? (record.pinnedHostKey ?? null) : null,
       pendingHostKey: null,
       headSha: null,

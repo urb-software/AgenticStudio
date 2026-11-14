@@ -13,7 +13,7 @@ import { AppModule } from '../app.module.js';
 import type { AppConfig } from '../platform/config/config.js';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
-import { SECRET_STORE, type SecretStore } from '../platform/secrets/index.js';
+import { SECRET_STORE, SecretNotFoundError, type SecretStore } from '../platform/secrets/index.js';
 import {
   signIn,
   startStudioServices,
@@ -150,6 +150,15 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     return response.body.id as string;
   }
 
+  const secretStore = () => app.get<SecretStore>(SECRET_STORE);
+
+  /** The secret store reference the Repository holds (never a key). */
+  async function deployKeyRef(projectId: string): Promise<string> {
+    const [row] = await db().$queryRaw<{ ref: string }[]>`
+      SELECT deploy_key_secret_id::text AS ref FROM repositories WHERE project_id = ${projectId}::uuid`;
+    return row!.ref;
+  }
+
   /** Connects over SSH and keeps the generated private key for the leak test. */
   async function connect(projectId: string, url: string) {
     const response = await recorded(
@@ -159,9 +168,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
         .send({ url, integrationBranch: 'main' }),
     );
     if (response.status === 201) {
-      const [row] = await db().$queryRaw<{ ref: string }[]>`
-        SELECT deploy_key_secret_id::text AS ref FROM repositories WHERE project_id = ${projectId}::uuid`;
-      privateKeys.add(await app.get<SecretStore>(SECRET_STORE).get(row!.ref));
+      privateKeys.add(await secretStore().get(await deployKeyRef(projectId)));
     }
     return response;
   }
@@ -237,8 +244,8 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
   });
 
   beforeEach(async () => {
-    // Test isolation only; assertions use the API (and the secrets row count).
-    await db().$executeRaw`TRUNCATE TABLE projects, secrets CASCADE`;
+    // Test isolation only; assertions use the API and the secret store's port.
+    await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
   });
 
   it('connects over SSH: 201 awaiting_key with the public key, nothing cloned yet', async () => {
@@ -255,11 +262,10 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
       publicKey: expect.stringMatching(/^ssh-ed25519 [A-Za-z0-9+/]+=* studio-Acme-Shop$/),
     });
     expect((await getRepository(id)).body).toEqual(response.body);
-    // The private key is in the secret store only, sealed.
-    const [row] = await db().$queryRaw<
-      { count: number }[]
-    >`SELECT count(*)::int AS count FROM secrets`;
-    expect(row!.count).toBe(1);
+    // The private key is in the secret store only; the Repository holds its reference.
+    expect(await secretStore().get(await deployKeyRef(id))).toMatch(
+      /^-----BEGIN OPENSSH PRIVATE KEY-----\n/,
+    );
   });
 
   it('listed host: key not added → auth_failed; added → Retry with the same key → ready; Fetch works', async () => {
@@ -356,16 +362,14 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     expectProblem(await verify(id, { acceptHostKeyFingerprint: '' }), 422);
   });
 
-  it('disconnect removes the private key (no secret row left); connecting again generates a new key pair', async () => {
+  it('disconnect removes the private key (no secret left); connecting again generates a new key pair', async () => {
     const id = await createProject('Reconnect');
     const first = (await connect(id, urlOf(unlisted))).body;
     await verify(id);
+    const ref = await deployKeyRef(id);
 
     expect((await disconnect(id)).status).toBe(204);
-    const [row] = await db().$queryRaw<
-      { count: number }[]
-    >`SELECT count(*)::int AS count FROM secrets`;
-    expect(row!.count).toBe(0);
+    await expect(secretStore().get(ref)).rejects.toBeInstanceOf(SecretNotFoundError);
     expectProblem(await getRepository(id), 404, 'no-repository');
 
     const second = await connect(id, urlOf(unlisted));

@@ -256,12 +256,12 @@ describe('CloneRepositoryHandler', () => {
         knownHosts: [{ hosts: ['github.com'], key: trusted }],
       });
       handler = new CloneRepositoryHandler(projects, git, deployKeys);
-      const { secret } = await connectingOverSsh(pinned);
+      const { secretRef } = await connectingOverSsh(pinned);
       git.clone.mockResolvedValueOnce({ commit: COMMIT });
 
       await run();
 
-      const ssh = { privateKey: await secrets.get(secret), hostKeys: [trusted, pinned] };
+      const ssh = { privateKey: await secrets.get(secretRef), hostKeys: [trusted, pinned] };
       expect(git.inspectRemote).toHaveBeenCalledWith(
         SSH_URL,
         'dev',
@@ -289,7 +289,7 @@ describe('CloneRepositoryHandler', () => {
     });
 
     it('fails with auth_failed when the host refuses the key, keeping the key pair', async () => {
-      const { secret, publicKey } = await connectingOverSsh(pinned);
+      const { secretRef, publicKey } = await connectingOverSsh(pinned);
       git.inspectRemote.mockRejectedValueOnce(
         new GitOperationError('auth_failed', 'git@github.com: Permission denied (publickey).'),
       );
@@ -300,9 +300,9 @@ describe('CloneRepositoryHandler', () => {
         state: 'failed',
         failure: { code: 'auth_failed' },
         publicKey,
-        deployKeySecret: secret,
+        deployKeySecret: secretRef,
       });
-      expect(secrets.values.has(secret)).toBe(true);
+      expect(secrets.values.has(secretRef)).toBe(true);
     });
   });
 });

@@ -47,16 +47,16 @@ describe('DeployKeyHandler', () => {
 
     expect(created.publicKey).toMatch(/^ssh-ed25519 [A-Za-z0-9+/]+=* studio-Acme-Shop$/);
     expect(created).not.toHaveProperty('privateKey');
-    const stored = await secrets.get(created.secret);
+    const stored = await secrets.get(created.secretRef);
     expect(stored).toMatch(/^-----BEGIN OPENSSH PRIVATE KEY-----\n/);
     expect(JSON.stringify(created)).not.toContain('PRIVATE KEY');
   });
 
   it('deletes a Deploy key; deleting a missing one is a no-op', async () => {
-    const { secret } = await keys.create('Shop');
+    const { secretRef } = await keys.create('Shop');
 
-    await keys.delete(secret);
-    await keys.delete(secret);
+    await keys.delete(secretRef);
+    await keys.delete(secretRef);
 
     expect(secrets.values.size).toBe(0);
   });
@@ -97,24 +97,28 @@ describe('DeployKeyHandler', () => {
     });
 
     it('reads the private key from the secret store, with the trusted host keys', async () => {
-      const { secret, publicKey } = await keys.create('Shop');
+      const { secretRef, publicKey } = await keys.create('Shop');
 
       const credentials = await keys.credentials(
-        repository({ deployKeySecret: secret, publicKey, pinnedHostKey: PINNED_KEY }),
+        repository({ deployKeySecret: secretRef, publicKey, pinnedHostKey: PINNED_KEY }),
       );
 
       expect(credentials).toEqual({
-        privateKey: await secrets.get(secret),
+        privateKey: await secrets.get(secretRef),
         hostKeys: [GITHUB_KEY, PINNED_KEY],
       });
     });
 
     it('refuses to connect when no host key is trusted', async () => {
-      const { secret, publicKey } = await keys.create('Shop');
+      const { secretRef, publicKey } = await keys.create('Shop');
 
       await expect(
         keys.credentials(
-          repository({ url: 'git@gitlab.com:acme/shop.git', deployKeySecret: secret, publicKey }),
+          repository({
+            url: 'git@gitlab.com:acme/shop.git',
+            deployKeySecret: secretRef,
+            publicKey,
+          }),
         ),
       ).rejects.toBeInstanceOf(NoTrustedHostKeyError);
     });

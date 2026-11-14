@@ -273,7 +273,7 @@ describe('RefreshCloneHandler', () => {
     }
 
     it('fetches with the same Deploy key and the pinned host key', async () => {
-      const { secret } = await fetchingOverSsh(pinned);
+      const { secretRef } = await fetchingOverSsh(pinned);
       git.fetch.mockResolvedValueOnce({ commit: NEW });
 
       await run();
@@ -283,7 +283,7 @@ describe('RefreshCloneHandler', () => {
         SSH_URL,
         'dev',
         expect.objectContaining({
-          ssh: { privateKey: await secrets.get(secret), hostKeys: [pinned] },
+          ssh: { privateKey: await secrets.get(secretRef), hostKeys: [pinned] },
         }),
       );
       expect(await stored()).toMatchObject({ state: 'ready', headSha: NEW });
