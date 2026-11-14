@@ -111,7 +111,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('documents the project detail and repository endpoints (Stories #60 and #61)', () => {
+  it('documents the project detail and repository endpoints (Stories #60, #61 and #63)', () => {
     const document = createOpenApiDocument(app);
     const ref = (name: string) => ({
       content: { 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } },
@@ -155,9 +155,21 @@ describe('OpenAPI document', () => {
       expect(fetch?.responses[status]).toMatchObject(problem);
     }
 
+    const disconnect = document.paths['/api/projects/{id}/repository']?.delete;
+    expect(disconnect?.operationId).toBe('disconnectRepository');
+    expect(disconnect?.requestBody).toBeUndefined();
+    expect(disconnect?.responses['204']).toBeDefined();
+    expect(disconnect?.responses['204']).not.toHaveProperty('content');
+    expect(disconnect?.responses['202']).toMatchObject(ref('Repository_Output'));
+    for (const status of ['404', '501']) {
+      expect(disconnect?.responses[status]).toMatchObject(problem);
+    }
+    // Disconnect wins over a running operation: there is no 409.
+    expect(disconnect?.responses['409']).toBeUndefined();
+
     const schemas = document.components?.schemas ?? {};
     expect(schemas.RepositoryState_Output).toMatchObject({
-      enum: ['connecting', 'ready', 'fetching', 'failed'],
+      enum: ['connecting', 'ready', 'fetching', 'failed', 'disconnecting'],
     });
     expect(schemas.RepositoryFailureCode_Output).toMatchObject({
       enum: [

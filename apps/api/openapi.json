@@ -404,6 +404,69 @@
         "tags": [
           "projects"
         ]
+      },
+      "delete": {
+        "description": "Disconnects the repository: a running connect or fetch is cancelled, then Studio removes its Clone, the Deploy key and the pinned host key (when it has them) and the repository record. The project and the remote repository are untouched. 204 when everything was removed; 202 with the repository in `disconnecting` when some of it could not be removed yet (retried at start-up and by repeating this request). A running operation never blocks it.",
+        "operationId": "disconnectRepository",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Cleanup is pending: the repository stays `disconnecting` until it completes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository_Output"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Disconnected: nothing of the repository is left"
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
       }
     },
     "/api/projects/{id}/repository/fetch": {
@@ -616,9 +679,10 @@
           "connecting",
           "ready",
           "fetching",
-          "failed"
+          "failed",
+          "disconnecting"
         ],
-        "description": "connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains). Later stories add values; treat an unknown value as unavailable."
+        "description": "connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable."
       },
       "ProjectDetail_Output": {
         "type": "object",

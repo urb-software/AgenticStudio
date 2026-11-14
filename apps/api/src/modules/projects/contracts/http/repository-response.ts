@@ -11,14 +11,18 @@ import { z } from 'zod';
 /**
  * Later stories add states; clients must treat a value they do not know as "unavailable".
  */
-export const repositoryStateSchema = z.enum(['connecting', 'ready', 'fetching', 'failed']).meta({
-  id: 'RepositoryState',
-  description:
-    'connecting: the first Clone is being made; ready: the Clone is up to date as of ' +
-    'lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last ' +
-    'operation failed (hasClone tells whether a usable Clone remains). Later stories add ' +
-    'values; treat an unknown value as unavailable.',
-});
+export const repositoryStateSchema = z
+  .enum(['connecting', 'ready', 'fetching', 'failed', 'disconnecting'])
+  .meta({
+    id: 'RepositoryState',
+    description:
+      'connecting: the first Clone is being made; ready: the Clone is up to date as of ' +
+      'lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last ' +
+      'operation failed (hasClone tells whether a usable Clone remains); disconnecting: the ' +
+      'operator disconnected the repository and Studio is still removing its data (retried ' +
+      'at start-up and on a repeated disconnect). Later stories add values; treat an unknown ' +
+      'value as unavailable.',
+  });
 
 export const repositoryFailureCodeSchema = z
   .enum([
@@ -58,8 +62,9 @@ export const repositoryResponseSchema = z
     integrationBranch: z.string(),
     /**
      * Whether Studio holds a usable Clone: true when `ready` or `fetching`, and when `failed`
-     * after a fetch that kept the Clone; false while `connecting` and after a failed connect
-     * or a fetch that had to remove the Clone (`size_limit`), which only Retry repairs.
+     * after a fetch that kept the Clone; false while `connecting` or `disconnecting`, and after
+     * a failed connect or a fetch that had to remove the Clone (`size_limit`), which only
+     * Retry repairs.
      */
     hasClone: z.boolean(),
     /** Commit id of the Integration branch in the Clone; present exactly when `hasClone`. */

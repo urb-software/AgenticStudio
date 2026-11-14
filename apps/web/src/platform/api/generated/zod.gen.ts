@@ -29,13 +29,14 @@ export const zProjectListOutput = z.object({
 });
 
 /**
- * connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains). Later stories add values; treat an unknown value as unavailable.
+ * connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
  */
 export const zRepositoryStateOutput = z.enum([
     'connecting',
     'ready',
     'fetching',
-    'failed'
+    'failed',
+    'disconnecting'
 ]);
 
 export const zRepositorySummaryOutput = z.object({
@@ -122,6 +123,15 @@ export const zGetProjectPath = z.object({
 });
 
 export const zGetProjectResponse = zProjectDetailOutput;
+
+export const zDisconnectRepositoryPath = z.object({
+    id: z.string()
+});
+
+export const zDisconnectRepositoryResponse = z.union([
+    zRepositoryOutput,
+    z.void()
+]);
 
 export const zGetRepositoryPath = z.object({
     id: z.string()

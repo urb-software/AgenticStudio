@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses } from './types.gen';
+import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -45,6 +45,11 @@ export const createProject = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 export const getProject = <ThrowOnError extends boolean = false>(options: Options<GetProjectData, ThrowOnError>): RequestResult<GetProjectResponses, GetProjectErrors, ThrowOnError> => (options.client ?? client).get<GetProjectResponses, GetProjectErrors, ThrowOnError>({ url: '/api/projects/{id}', ...options });
+
+/**
+ * Disconnects the repository: a running connect or fetch is cancelled, then Studio removes its Clone, the Deploy key and the pinned host key (when it has them) and the repository record. The project and the remote repository are untouched. 204 when everything was removed; 202 with the repository in `disconnecting` when some of it could not be removed yet (retried at start-up and by repeating this request). A running operation never blocks it.
+ */
+export const disconnectRepository = <ThrowOnError extends boolean = false>(options: Options<DisconnectRepositoryData, ThrowOnError>): RequestResult<DisconnectRepositoryResponses, DisconnectRepositoryErrors, ThrowOnError> => (options.client ?? client).delete<DisconnectRepositoryResponses, DisconnectRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository', ...options });
 
 export const getRepository = <ThrowOnError extends boolean = false>(options: Options<GetRepositoryData, ThrowOnError>): RequestResult<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError> => (options.client ?? client).get<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository', ...options });
 

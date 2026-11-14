@@ -37,9 +37,9 @@ export type RepositorySummaryOutput = {
 };
 
 /**
- * connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains). Later stories add values; treat an unknown value as unavailable.
+ * connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
  */
-export type RepositoryStateOutput = 'connecting' | 'ready' | 'fetching' | 'failed';
+export type RepositoryStateOutput = 'connecting' | 'ready' | 'fetching' | 'failed' | 'disconnecting';
 
 export type ProjectDetailOutput = {
     id: string;
@@ -248,6 +248,45 @@ export type GetProjectResponses = {
 };
 
 export type GetProjectResponse = GetProjectResponses[keyof GetProjectResponses];
+
+export type DisconnectRepositoryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/repository';
+};
+
+export type DisconnectRepositoryErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)
+     */
+    404: ProblemDetails;
+    /**
+     * The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)
+     */
+    501: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type DisconnectRepositoryError = DisconnectRepositoryErrors[keyof DisconnectRepositoryErrors];
+
+export type DisconnectRepositoryResponses = {
+    /**
+     * Cleanup is pending: the repository stays `disconnecting` until it completes
+     */
+    202: RepositoryOutput;
+    /**
+     * Disconnected: nothing of the repository is left
+     */
+    204: void;
+};
+
+export type DisconnectRepositoryResponse = DisconnectRepositoryResponses[keyof DisconnectRepositoryResponses];
 
 export type GetRepositoryData = {
     body?: never;

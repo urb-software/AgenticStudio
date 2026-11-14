@@ -9,6 +9,8 @@ import {
   ConnectRepositoryHandler,
   type ConnectRepositorySettings,
 } from './features/connect-repository/handler.js';
+import { DisconnectRepositoryEndpoint } from './features/disconnect-repository/endpoint.js';
+import { DisconnectRepositoryHandler } from './features/disconnect-repository/handler.js';
 import { FetchRepositoryEndpoint } from './features/fetch-repository/endpoint.js';
 import { FetchRepositoryHandler } from './features/fetch-repository/handler.js';
 import { CreateProjectEndpoint } from './features/create-project/endpoint.js';
@@ -64,6 +66,7 @@ export class ProjectsModule {
         GetRepositoryEndpoint,
         ConnectRepositoryEndpoint,
         FetchRepositoryEndpoint,
+        DisconnectRepositoryEndpoint,
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
@@ -90,6 +93,7 @@ export class ProjectsModule {
         GetRepositoryHandler,
         ConnectRepositoryHandler,
         FetchRepositoryHandler,
+        DisconnectRepositoryHandler,
       ],
     };
   }
