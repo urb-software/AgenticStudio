@@ -199,6 +199,10 @@ describeGate('api', apiGate, 'apps/api', [
     ],
   },
   {
+    fixture: 'module-reaches-handled-server-error-via-problem-details',
+    expected: ['api-handled-server-error-platform-only'],
+  },
+  {
     fixture: 'module-test-imports-handled-server-error',
     expected: ['api-platform-only-http-and-queue-health-imports'],
   },

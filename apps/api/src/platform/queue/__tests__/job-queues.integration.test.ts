@@ -1,3 +1,4 @@
+import { createServer, type Server, type Socket, connect as connectTcp } from 'node:net';
 import { startRedis, type TestService } from '@agentic-studio/testing';
 import {
   type INestApplicationContext,
@@ -63,6 +64,45 @@ async function eventually(check: () => void | Promise<void>, timeoutMs = 10_000)
       await new Promise((r) => setTimeout(r, 25));
     }
   }
+}
+
+/**
+ * A TCP proxy to Redis that can go down (connections refused) and come back on the same port,
+ * so a client sees a real outage and then a recovery under one URL.
+ */
+async function redisProxy(target: string) {
+  const { hostname, port } = new URL(target);
+  const sockets = new Set<Socket>();
+  let server: Server | undefined;
+  const listen = (listenPort: number) =>
+    new Promise<number>((resolve) => {
+      server = createServer((client) => {
+        const upstream = connectTcp(Number(port), hostname);
+        for (const socket of [client, upstream]) {
+          sockets.add(socket);
+          socket.on('close', () => sockets.delete(socket));
+          socket.on('error', () => socket.destroy());
+        }
+        client.pipe(upstream).pipe(client);
+      });
+      server.listen(listenPort, '127.0.0.1', () => {
+        const address = server!.address();
+        resolve(typeof address === 'object' && address ? address.port : listenPort);
+      });
+    });
+  const proxyPort = await listen(0);
+  const down = () =>
+    new Promise<void>((resolve) => {
+      server!.close(() => resolve());
+      for (const socket of sockets) socket.destroy();
+    });
+  return {
+    url: `redis://127.0.0.1:${proxyPort}`,
+    down,
+    up: async () => {
+      await listen(proxyPort);
+    },
+  };
 }
 
 /** A queue owner that records everything the platform tells it. */
@@ -729,6 +769,48 @@ describe('job queues (Redis via Testcontainers)', () => {
       } finally {
         warned.mockRestore();
         logged.mockRestore();
+      }
+    });
+  });
+
+  describe('health check during a Redis outage (Issue #70)', () => {
+    it('logs one outage line and one recovery line, however many probes fail', async () => {
+      const proxy = await redisProxy(redisService.url);
+      const warned = vi.spyOn(Logger.prototype, 'warn');
+      const logged = vi.spyOn(Logger.prototype, 'log');
+      // Every line the queue service logs (context JobQueues), in order.
+      const queueLines = (spy: typeof warned) =>
+        spy.mock.calls
+          .filter(
+            (_call, n) => (spy.mock.contexts[n] as { context?: string }).context === 'JobQueues',
+          )
+          .map(([message]) => String(message));
+      try {
+        const owner = new RecordingOwner('repository-sync');
+        ({ app } = await startApp(proxy.url, owner, { startWorkers: false }, [
+          queueHealthProvider,
+        ]));
+        const health = app.get(QueueHealth);
+        await expect(health.isAvailable()).resolves.toBe(true);
+
+        await proxy.down();
+        for (let probe = 0; probe < 3; probe += 1) {
+          await expect(health.isAvailable()).resolves.toBe(false);
+        }
+        await proxy.up();
+        await eventually(async () => expect(await health.isAvailable()).toBe(true), 15_000);
+        await expect(health.isAvailable()).resolves.toBe(true);
+
+        expect(queueLines(warned)).toEqual([
+          expect.stringMatching(/^Queue Redis \(producer\) unavailable: /),
+        ]);
+        expect(queueLines(logged)).toEqual(['Queue Redis (producer) available again.']);
+      } finally {
+        warned.mockRestore();
+        logged.mockRestore();
+        await app?.close();
+        app = undefined;
+        await proxy.down();
       }
     });
   });

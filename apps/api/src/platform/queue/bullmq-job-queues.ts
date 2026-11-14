@@ -181,8 +181,9 @@ export class BullMqJobQueues
 
   /**
    * Pings the queue's Redis. A probe calls this every few seconds, so a ping that times out
-   * (Redis slow, not down) is logged once per outage and the recovery once. A connection
-   * error needs no line here: logConnectionErrors already logs that outage, redacted.
+   * while connected (Redis slow, not down) is logged once per outage and the recovery once.
+   * While the producer is not connected, a ping waits in the offline queue and times out
+   * too; that is the connection outage logConnectionErrors already logs, so not logged here.
    */
   async isAvailable(): Promise<boolean> {
     const reply = await withTimeout(
@@ -190,15 +191,19 @@ export class BullMqJobQueues
       HEALTH_TIMEOUT_MS,
     );
     // Check and update in one synchronous step, so concurrent probes log at most once.
-    if (reply === TIMED_OUT && !this.healthPingTimedOut) {
+    if (reply === 'PONG') {
+      if (this.healthPingTimedOut) this.logger.log('Queue Redis health check passes again.');
+      this.healthPingTimedOut = false;
+    } else if (
+      reply === TIMED_OUT &&
+      this.producer.status === 'ready' &&
+      !this.healthPingTimedOut
+    ) {
+      this.healthPingTimedOut = true;
       this.logger.warn(
         `Queue Redis health check failed: no answer within ${HEALTH_TIMEOUT_MS} ms.`,
       );
-    } else if (reply === 'PONG' && this.healthPingTimedOut) {
-      this.logger.log('Queue Redis health check passes again.');
     }
-    if (reply === TIMED_OUT) this.healthPingTimedOut = true;
-    if (reply === 'PONG') this.healthPingTimedOut = false;
     return reply === 'PONG';
   }
 

@@ -1,3 +1,4 @@
+import { STATUS_CODES } from 'node:http';
 import { applyDecorators, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiResponse, getSchemaPath } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
@@ -70,7 +71,7 @@ export class ProblemException extends HttpException {
 export function serviceUnavailable(): ProblemException {
   return new ProblemException(HttpStatus.SERVICE_UNAVAILABLE, {
     type: 'about:blank',
-    title: 'Service Unavailable',
+    title: STATUS_CODES[HttpStatus.SERVICE_UNAVAILABLE]!,
     detail: GENERIC_SERVER_DETAIL,
   });
 }

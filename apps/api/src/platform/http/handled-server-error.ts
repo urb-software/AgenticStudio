@@ -1,11 +1,13 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 /**
- * Platform-only: the health endpoint's 503 when the job queue is down, whose cause the queue
- * already logs. The response stays generic like every 5xx, but the filter does not log it as
- * an unhandled error. Restricted to 503 so a real 5xx can never be silenced this way.
- * Business modules use `serviceUnavailable()` from `problem-details.ts` instead; they cannot
- * import this file (architecture:api `api-handled-server-error-platform-only`).
+ * Platform-only marker for an unlogged 503: the health endpoint's answer when the job queue
+ * is down, whose cause the queue already logs. The response stays generic like every 5xx,
+ * but the filter does not log it as an unhandled error. It refuses any other status, so this
+ * marker cannot hide a different 5xx. Business modules use `serviceUnavailable()` from
+ * `problem-details.ts` instead and cannot import this file (architecture:api
+ * `api-handled-server-error-platform-only`). That rule keeps the marker out of modules; it
+ * does not stop a module from throwing an unlogged 5xx `ProblemException`.
  */
 export class HandledServerErrorException extends HttpException {
   constructor(status: typeof HttpStatus.SERVICE_UNAVAILABLE = HttpStatus.SERVICE_UNAVAILABLE) {

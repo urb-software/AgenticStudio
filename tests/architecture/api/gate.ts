@@ -205,9 +205,10 @@ export const apiGate: Gate = {
     {
       name: 'api-handled-server-error-platform-only',
       comment:
-        'HandledServerErrorException (an unlogged 503) is platform-only: no chain of imports leads ' +
-        'a business module to it, so a module cannot silence a real 5xx; modules answer a handled ' +
-        '503 with serviceUnavailable() from platform/http/problem-details.ts (Issue #70). ' +
+        "HandledServerErrorException (the platform's unlogged 503 marker) is platform-only: no " +
+        'chain of imports leads business-module production code to it. Modules answer a handled ' +
+        '503 with serviceUnavailable() from platform/http/problem-details.ts (Issue #70). This ' +
+        'does not stop a module from throwing an unlogged 5xx ProblemException. ' +
         'Module tests are exempt from the chain check only (an existing adapter test under ' +
         'infrastructure/ boots the whole app); direct imports stay forbidden below.',
       severity: 'error',
