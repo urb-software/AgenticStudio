@@ -30,6 +30,12 @@ import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
 import { ListProjectsHandler } from './features/list-projects/handler.js';
 import { RefreshCloneHandler } from './features/refresh-clone/handler.js';
 import { RepositoryJobsHandler } from './features/repository-jobs/handler.js';
+import {
+  DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
+  DEPLOY_KEY_SWEEP_SETTINGS,
+  type DeployKeySweepSettings,
+  SweepOrphanedDeployKeysHandler,
+} from './features/sweep-orphaned-deploy-keys/handler.js';
 import { VerifyRepositoryEndpoint } from './features/verify-repository/endpoint.js';
 import { VerifyRepositoryHandler } from './features/verify-repository/handler.js';
 import {
@@ -53,6 +59,8 @@ export interface ProjectsModuleOptions {
       'cloneTimeoutMs' | 'fetchTimeoutMs' | 'maxCloneBytes' | 'sizePollIntervalMs' | 'platform'
     >
   >;
+  /** A shorter grace period for the orphaned Deploy-key sweep (Issue #76). */
+  deployKeySweep?: Partial<DeployKeySweepSettings>;
 }
 
 /**
@@ -61,7 +69,8 @@ export interface ProjectsModuleOptions {
  * one over SSH with a generated Deploy key (Story #62), fetching it on demand (Story #61) and
  * disconnecting it (Story #63), through the hardened Git adapter (#59). On Linux, start-up checks
  * the Git version and sweeps crash leftovers (`onModuleInit`) before the repository worker
- * starts (after bootstrap).
+ * starts (after bootstrap). Deploy keys no Repository references are deleted at start-up and
+ * after a failed delete (Issue #76).
  */
 @Module({})
 export class ProjectsModule {
@@ -101,7 +110,15 @@ export class ProjectsModule {
           }),
           inject: [APP_CONFIG],
         },
+        {
+          provide: DEPLOY_KEY_SWEEP_SETTINGS,
+          useValue: {
+            gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
+            ...options.deployKeySweep,
+          } satisfies DeployKeySweepSettings,
+        },
         DeployKeyHandler,
+        SweepOrphanedDeployKeysHandler,
         CloneRepositoryHandler,
         RefreshCloneHandler,
         CleanUpRepositoryHandler,

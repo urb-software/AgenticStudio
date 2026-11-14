@@ -240,6 +240,14 @@ export class InMemoryProjectRepository implements ProjectRepository {
     );
   }
 
+  listDeployKeySecrets(): Promise<string[]> {
+    return Promise.resolve(
+      [...this.repositories.values()].flatMap((repository) =>
+        repository.deployKeySecret === null ? [] : [repository.deployKeySecret],
+      ),
+    );
+  }
+
   private transition(
     projectId: string,
     change: (repository: RepositoryConnection) => void,

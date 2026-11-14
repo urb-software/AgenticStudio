@@ -5,6 +5,7 @@ export {
   SECRET_STORE,
   SecretDecryptionFailedError,
   SecretNotFoundError,
+  type SecretOwner,
   type SecretReference,
   type SecretStore,
   SecretStoreError,

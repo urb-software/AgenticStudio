@@ -13,6 +13,7 @@ import type { RepositoryJobs, RepositoryOperation } from '../../ports/repository
 import { CleanUpRepositoryHandler } from '../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../clone-repository/handler.js';
 import { RefreshCloneHandler } from '../refresh-clone/handler.js';
+import { SweepOrphanedDeployKeysHandler } from '../sweep-orphaned-deploy-keys/handler.js';
 
 /** The one queue of background Git operations on Repositories (platform/queue). */
 export const REPOSITORY_QUEUE = 'repository-git';
@@ -59,8 +60,9 @@ export function repositoryJobId(projectId: string): string {
  * Registers its queue during module initialisation; the platform reconciles and starts the
  * worker only after the application has bootstrapped, so after the Git adapter's start-up
  * sweep (`onModuleInit`), which must finish before any Git job (#60 clarification 11).
- * Reconciliation fails every Repository still `connecting` or `fetching` and resumes the
- * cleanup of every Repository still `disconnecting` (`clean-up-repository`, #63).
+ * Reconciliation fails every Repository still `connecting` or `fetching`, resumes the cleanup
+ * of every Repository still `disconnecting` (`clean-up-repository`, #63), then deletes the
+ * Deploy keys no Repository references (`sweep-orphaned-deploy-keys`, #76).
  */
 @Injectable()
 export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
@@ -72,6 +74,7 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     private readonly clone: CloneRepositoryHandler,
     private readonly refresh: RefreshCloneHandler,
     private readonly cleanup: CleanUpRepositoryHandler,
+    private readonly orphanedKeys: SweepOrphanedDeployKeysHandler,
   ) {}
 
   onModuleInit(): void {
@@ -122,5 +125,6 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     await this.clone.reconcile();
     await this.refresh.reconcile();
     await this.cleanup.resumeAll();
+    await this.orphanedKeys.sweep();
   }
 }

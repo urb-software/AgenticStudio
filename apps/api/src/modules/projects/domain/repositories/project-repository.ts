@@ -137,6 +137,13 @@ export interface ProjectRepository {
 
   /** The project ids of every `disconnecting` Repository (start-up resumes their cleanup). */
   listDisconnecting(): Promise<string[]>;
+
+  /**
+   * The secret store reference of every Repository's Deploy key, in any state (a
+   * `disconnecting` one still holds its key until its cleanup forgets it). The orphan sweep
+   * deletes only Deploy keys outside this list (Issue #76).
+   */
+  listDeployKeySecrets(): Promise<string[]>;
 }
 
 /** Another project already has this name (compared by `ProjectName.uniquenessKey`). */

@@ -12,6 +12,7 @@ import { RepositoryUrl } from '../../domain/value-objects/repository-url.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 import { DeployKeyHandler, type StoredDeployKey } from '../deploy-key/handler.js';
+import { SweepOrphanedDeployKeysHandler } from '../sweep-orphaned-deploy-keys/handler.js';
 
 /** DI token for {@link ConnectRepositorySettings}. */
 export const CONNECT_REPOSITORY_SETTINGS = Symbol('CONNECT_REPOSITORY_SETTINGS');
@@ -54,6 +55,7 @@ export class ConnectRepositoryHandler {
     @Inject(REPOSITORY_JOBS) private readonly jobs: RepositoryJobs,
     @Inject(CONNECT_REPOSITORY_SETTINGS) private readonly settings: ConnectRepositorySettings,
     private readonly deployKeys: DeployKeyHandler,
+    private readonly orphanedKeys: SweepOrphanedDeployKeysHandler,
   ) {}
 
   private readonly logger = new Logger('ConnectRepository');
@@ -123,7 +125,11 @@ export class ConnectRepositoryHandler {
     return repository;
   }
 
-  /** Deletes a Deploy key no Repository references; a failure is logged (redacted), not thrown. */
+  /**
+   * Deletes a Deploy key no Repository references; a failure is logged (redacted), not thrown,
+   * and followed by an orphan sweep (Issue #76), which deletes the key once it is past the
+   * sweep's grace period, if not now then at a later sweep.
+   */
   private async deleteKey(projectId: string, secretRef: string): Promise<void> {
     try {
       await this.deployKeys.delete(secretRef);
@@ -131,6 +137,7 @@ export class ConnectRepositoryHandler {
       this.logger.warn(
         `Connect of project ${projectId}: could not delete an unused Deploy key. ${redactSecrets(String(error))}`,
       );
+      await this.orphanedKeys.sweep();
     }
   }
 }

@@ -386,6 +386,14 @@ export class PrismaProjectRepository implements ProjectRepository {
     return rows.map((row) => row.projectId);
   }
 
+  async listDeployKeySecrets(): Promise<string[]> {
+    const rows = await this.db.repository.findMany({
+      where: { deployKeySecretId: { not: null } },
+      select: { deployKeySecretId: true },
+    });
+    return rows.flatMap((row) => (row.deployKeySecretId === null ? [] : [row.deployKeySecretId]));
+  }
+
   private async transition(
     projectId: string,
     data: Parameters<DatabaseClient['repository']['updateMany']>[0]['data'],
