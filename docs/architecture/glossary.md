@@ -44,11 +44,11 @@ _Avoid_: SSH key, access key, credential
 One execution of an agent on an operator's task in a Project, from the operator's start to its result.
 _Avoid_: Job, session, task run
 
+### Cross-cutting
+
 **Working copy**:
 A Run's own clone of the Repository, on a branch named for the Run. It is not the Project's Clone.
 _Avoid_: Worktree, workspace, checkout
-
-### Cross-cutting
 
 **Agent worker**:
 The process that carries out Runs by driving the agent CLIs, on the agents' side of the isolation boundary.

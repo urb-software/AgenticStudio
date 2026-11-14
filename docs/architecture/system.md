@@ -45,7 +45,7 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 
 | Module | Owns | Does not own |
 | --- | --- | --- |
-| `projects` | Project lifecycle, repository connection, Git branches/working copies, diff, approval and merge | Agent definitions, raw Docker privilege |
+| `projects` | Project lifecycle, repository connection, Git branches, diff, approval and merge | Agent definitions, raw Docker privilege |
 | `agents` | `AgentDefinition`, `SkillDefinition`, assignment, native-file definitions, validation and publishing | Task queue execution |
 | `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
 | `executions` | Runs, state transitions, queue scheduling, progress/log/result records | Direct Docker host control or unrelated project Git internals |

@@ -104,7 +104,7 @@ CODEX_CLI_ENABLED=false
 
 Rules every Git operation Studio's Git adapter performs on a connected Repository follows, whatever the calling module. Git commands an agent runs in its working copy do not go through the adapter; the agent user's rights (§2) and the agent account's token limit them.
 
-- **Linux only:** repository features run on Linux (containers, CI, VPS); on non-Linux platforms they report an unsupported platform instead of running.
+- **Linux only:** repository features run on Linux (containers, CI, the server); on non-Linux platforms they report an unsupported platform instead of running.
 - **Transports:** in production configuration, only `ssh` and `https` remote URLs without embedded credentials; every other transport is rejected. Tests may allow local fixture remotes; production configuration refuses that setting.
 - **No submodule recursion** and **no LFS smudge**: Studio downloads only the Repository's own objects.
 - **Hooks never run**, from the Repository or from anywhere else.
@@ -138,7 +138,7 @@ The repository is public: rulesets and secret scanning are enforced for free, an
 - Before applying a stack change, validate repository/project identity, allowed Compose files, volume mounts, ports, images, environment variables, resource limits and credentials.
 - Preview code is **untrusted**: separate origin without administrative Studio cookies, isolated network and storage access, restricted forwarded headers and ports.
 - One default shared Preview per project tracks approved changes in the project's integration branch (default `dev`). A run's working copy does not create a preview.
-- Compose isolation is a pragmatic MVP baseline, **not** microVM-strength isolation. Stronger sandboxing may follow with appropriate VPS/KVM support.
+- Compose isolation is a pragmatic MVP baseline, **not** microVM-strength isolation. Stronger sandboxing may follow with appropriate server/KVM support.
 
 ## 6. MCP and external tools
 
@@ -196,7 +196,7 @@ Enforced controls must **reject** the following, evidenced by automated tests as
 
 - A run reads or writes a file outside its working copy and assigned project scope, including via symlink/path traversal.
 - Agent B reads Agent A's working copy or another project's files.
-- A runner uses the Docker socket or calls unauthorized environment-controller operations.
+- A runner uses the system Docker daemon or its socket, or calls unauthorized environment-controller operations.
 - A malicious `README.md` instructs the agent to output secrets or modify forbidden files.
 - An unapproved MCP tool is invoked, or a tool response includes prompt-injection text.
 - A run requests unauthorized branch merge, credential disclosure, or production DB access.
@@ -212,12 +212,12 @@ Also verify: a canceled or retried execution causes no duplicate irreversible ef
 - The agent user cannot reach Studio's database or Redis ports.
 - Rootless Docker works for the agent user: a Compose stack starts and stops.
 
-All runs share the agent user, so the operating system does not separate one run's or project's files from another's (ADR 0002, accepted risks): until an upgrade path adds separate users, the cross-run and cross-project checks above test guardrails, not the user boundary.
+All runs share the agent user, so user permissions alone do not separate runs or projects; how the cross-run and cross-project checks above are enforced is an open decision in ADR 0002.
 
 ## 10. Security delivery gates
 
 - **Before repository bootstrap:** document required approvals; commit no secrets.
-- **Before real CLI execution:** enforce bounded workspaces, credentials, tool access, timeouts and non-privileged worker behavior, and test denial of forbidden operations. A functional CLI demo alone is insufficient.
+- **Before real CLI execution:** enforce bounded working copies, credentials, tool access, timeouts and non-privileged worker behavior, and test denial of forbidden operations. A functional CLI demo alone is insufficient.
 - **Before exposing Preview externally:** isolate origin, cookies, ports, network and resource scope; review untrusted code execution risks.
 - **Before autonomous merge:** platform-enforced branch protection where supported, or the operator stays the manual merge gate; agents never self-approve.
 
