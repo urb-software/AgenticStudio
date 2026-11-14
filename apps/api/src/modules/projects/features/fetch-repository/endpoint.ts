@@ -14,6 +14,7 @@ import {
   PROJECTS_PROBLEM_TYPES,
   projectNotFound,
   queueUnavailable,
+  repositoryBusy,
   unsupportedPlatform,
 } from '../../contracts/http/problems.js';
 import {
@@ -28,14 +29,6 @@ import {
 } from '../../domain/repositories/project-repository.js';
 import { GitUnsupportedPlatformError } from '../../ports/repository-git.js';
 import { FetchRepositoryHandler } from './handler.js';
-
-function repositoryBusy(): ProblemException {
-  return new ProblemException(HttpStatus.CONFLICT, {
-    type: PROJECTS_PROBLEM_TYPES.repositoryBusy,
-    title: 'Repository busy',
-    detail: 'A connect or fetch of this repository is still running. Try again when it ends.',
-  });
-}
 
 /** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {

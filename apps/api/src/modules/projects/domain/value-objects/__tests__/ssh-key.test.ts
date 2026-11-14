@@ -4,7 +4,6 @@ import {
   deployKeyComment,
   generateDeployKey,
   hostKeyFingerprint,
-  parseHostKey,
   trustedHostKeysFor,
 } from '../ssh-key.js';
 
@@ -147,26 +146,6 @@ describe('deployKeyComment', () => {
     ['x'.repeat(100), `studio-${'x'.repeat(64)}`],
   ])('turns %j into %j', (name, comment) => {
     expect(deployKeyComment(name)).toBe(comment);
-  });
-});
-
-describe('parseHostKey', () => {
-  const { publicKey } = generateDeployKey('host');
-  const [type, data] = publicKey.split(' ') as [string, string];
-
-  it('accepts `<type> <base64>` with an optional comment, normalized without it', () => {
-    expect(parseHostKey(`${type} ${data}`)).toBe(`${type} ${data}`);
-    expect(parseHostKey(`  ${type} ${data} some comment `)).toBe(`${type} ${data}`);
-  });
-
-  it.each([
-    ['an empty string', ''],
-    ['an unknown type', `ssh-dss ${data}`],
-    ['broken base64', `${type} @@@`],
-    ['a type that does not match the blob', `ssh-rsa ${data}`],
-    ['a private key', '-----BEGIN OPENSSH PRIVATE KEY-----'],
-  ])('rejects %s', (_case, value) => {
-    expect(parseHostKey(value)).toBeNull();
   });
 });
 

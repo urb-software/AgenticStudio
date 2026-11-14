@@ -175,6 +175,7 @@ describe('RepositoryUrl.parse', () => {
 
     it.each([
       ['a password', 'ssh://git:secret@github.com/acme/shop.git'],
+      ['an empty password', 'ssh://git:@github.com/acme/shop.git'],
       ['an option-like user', 'ssh://-oProxyCommand=x@github.com/acme/shop.git'],
       ['an option-like scp user', '-oProxyCommand=x@github.com:acme/shop.git'],
       ['an option-like scp host', 'git@-oProxyCommand=x:acme/shop.git'],
@@ -185,6 +186,14 @@ describe('RepositoryUrl.parse', () => {
       ['no repository path', 'ssh://git@github.com/'],
     ])('rejects an SSH URL with %s', (_case, input) => {
       expect(rejection(input)).toEqual(expect.any(String));
+    });
+
+    it('stays linear on many colons in the authority (no polynomial backtracking)', () => {
+      const started = performance.now();
+
+      rejection(`ssh://${':'.repeat(1_000)}@x/${'a'.repeat(1_000)}`);
+      rejection(`ssh://${':'.repeat(1_900)}`);
+      expect(performance.now() - started).toBeLessThan(1_000);
     });
   });
 

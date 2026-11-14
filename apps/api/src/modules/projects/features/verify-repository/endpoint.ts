@@ -16,6 +16,7 @@ import {
   PROJECTS_PROBLEM_TYPES,
   projectNotFound,
   queueUnavailable,
+  repositoryBusy,
   unsupportedPlatform,
 } from '../../contracts/http/problems.js';
 import {
@@ -60,14 +61,8 @@ function toHttpError(error: unknown): unknown {
       detail: error.message,
     });
   }
-  if (error instanceof JobAlreadyActiveError) {
-    // #61's generic busy problem (not "clone already running", see #72).
-    return new ProblemException(HttpStatus.CONFLICT, {
-      type: PROJECTS_PROBLEM_TYPES.repositoryBusy,
-      title: 'Repository busy',
-      detail: 'An earlier operation of this repository is still finishing. Try again in a moment.',
-    });
-  }
+  // #61's generic busy problem (not "clone already running", see #72).
+  if (error instanceof JobAlreadyActiveError) return repositoryBusy();
   if (error instanceof QueueUnavailableError) return queueUnavailable();
   return error;
 }

@@ -182,7 +182,13 @@ export class RepositoryUrl {
 
   /** An `ssh://[user@]host[:port]/path` URL: a login name, never a password. */
   private static parseSshUrl(input: string, url: URL): RepositoryUrl {
-    if (url.password !== '' || /^[^/]*\/\/[^/@]*:[^/@]*@/.test(input)) {
+    // The authority (between `//` and the next `/`) holds userinfo before its last `@`; a `:`
+    // in the userinfo is a password, even an empty one. Index scans: linear on any input.
+    const authorityStart = input.indexOf('//') + 2;
+    const pathStart = input.indexOf('/', authorityStart);
+    const authority = input.slice(authorityStart, pathStart === -1 ? undefined : pathStart);
+    const userinfo = authority.slice(0, Math.max(0, authority.lastIndexOf('@')));
+    if (url.password !== '' || userinfo.includes(':')) {
       invalid('Remove the password from the URL. Studio connects over SSH with a Deploy key.');
     }
     if (url.username !== '' && !SSH_USER.test(decodeURIComponent(url.username))) {

@@ -274,6 +274,22 @@ describe('VerifyRepositoryHandler', () => {
       expect(await stored()).toMatchObject({ state: 'awaiting_key' });
     });
 
+    it('keeps the failure a Retry replaced when the clone cannot be scheduled', async () => {
+      await awaitingKey(TRUSTED_URL);
+      await handler.execute({ projectId: PROJECT });
+      const authFailed = {
+        code: 'auth_failed' as const,
+        detail: 'Permission denied (publickey).',
+        remoteDefaultBranch: null,
+      };
+      await projects.markFailed(PROJECT, authFailed);
+      const busy = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
+      jobs.failWith = busy;
+
+      await expect(handler.execute({ projectId: PROJECT })).rejects.toBe(busy);
+      expect(await stored()).toMatchObject({ state: 'failed', failure: authFailed });
+    });
+
     it('marks the attempt failed when the clone cannot be scheduled, and rethrows', async () => {
       await awaitingKey(TRUSTED_URL);
       const busy = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);

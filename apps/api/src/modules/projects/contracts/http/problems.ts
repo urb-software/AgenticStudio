@@ -47,6 +47,15 @@ export function noRepository(): ProblemException {
   });
 }
 
+/** 409 while a connect or fetch of the Repository is still running (#61). */
+export function repositoryBusy(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: PROJECTS_PROBLEM_TYPES.repositoryBusy,
+    title: 'Repository busy',
+    detail: 'A connect or fetch of this repository is still running. Try again when it ends.',
+  });
+}
+
 /** 501 when the API host is not Linux; `action` names what the operator tried (connect, fetch). */
 export function unsupportedPlatform(action: string): ProblemException {
   return new ProblemException(HttpStatus.NOT_IMPLEMENTED, {

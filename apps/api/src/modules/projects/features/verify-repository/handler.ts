@@ -89,11 +89,11 @@ export class VerifyRepositoryHandler {
       if (hostKeyFingerprint(pending) !== acceptHostKeyFingerprint) {
         throw new HostKeyFingerprintMismatchError();
       }
-      return this.startClone(projectId, { pendingHostKey: pending });
+      return this.startClone(repository, { pendingHostKey: pending });
     }
 
     if (this.deployKeys.trustedHostKeys(repository).length > 0) {
-      return this.startClone(projectId, null);
+      return this.startClone(repository, null);
     }
 
     let hostKey: string;
@@ -114,18 +114,28 @@ export class VerifyRepositoryHandler {
     return awaiting;
   }
 
-  /** → `connecting` (pinning a confirmed key), then schedules the clone. */
+  /**
+   * → `connecting` (pinning a confirmed key), then schedules the clone. If it cannot be
+   * scheduled, the Repository is `failed` again with the failure a Retry replaced (e.g.
+   * `auth_failed` and its guidance), else "could not be started", as connect does.
+   */
   private async startClone(
-    projectId: string,
+    previous: RepositoryConnection,
     confirmed: { pendingHostKey: string } | null,
   ): Promise<RepositoryConnection> {
+    const { projectId } = previous;
     const started = await this.projects.beginVerifiedClone(projectId, confirmed);
     // Another request changed the Repository since it was read.
     if (!started) throw new RepositoryNotVerifiableError();
     try {
       await this.jobs.start(projectId, 'clone');
     } catch (error) {
-      await this.projects.markFailed(projectId, repositoryFailure('unknown', NOT_STARTED_DETAIL));
+      await this.projects.markFailed(
+        projectId,
+        previous.state === 'failed' && previous.failure
+          ? previous.failure
+          : repositoryFailure('unknown', NOT_STARTED_DETAIL),
+      );
       throw error;
     }
     return started;
