@@ -41,6 +41,12 @@ export interface QueueWorkerTuning {
   readonly lockDuration?: number;
   readonly stalledInterval?: number;
   /**
+   * How long `cancel()` waits for a job our worker has taken to reach its processor; default
+   * 1 s. A test that does several Redis round trips inside that wait raises it, so a slow
+   * runner cannot fail it falsely (#72).
+   */
+  readonly startWaitMs?: number;
+  /**
    * `false`: queues register, but bootstrap neither reconciles nor starts workers, so the app
    * needs no Redis to start. For offline builds that run no jobs: OpenAPI generation and
    * HTTP tests without Redis. Production always starts them (default `true`).
@@ -378,7 +384,7 @@ export class BullMqJobQueues
     // something we cannot abort or has just finished (then there is nothing to cancel).
     // Only the run of this enqueue (its token) is ours: a newer run with the same id that
     // starts meanwhile means this job is over, and is never aborted.
-    const deadline = Date.now() + START_WAIT_MS;
+    const deadline = Date.now() + (this.tuning.startWaitMs ?? START_WAIT_MS);
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
       const run = entry.running.get(id);
@@ -410,7 +416,10 @@ export class BullMqJobQueues
       concurrency: definition.concurrency ?? 1,
       // A stalled job fails instead of running a second time (attempts stay at 1).
       maxStalledCount: 0,
-      ...this.tuning,
+      ...(this.tuning.lockDuration === undefined ? {} : { lockDuration: this.tuning.lockDuration }),
+      ...(this.tuning.stalledInterval === undefined
+        ? {}
+        : { stalledInterval: this.tuning.stalledInterval }),
     });
     entry.worker.on('error', (error) => this.logBullMqError(definition.name, error));
     // The lock of a job we are still running was lost (e.g. a Redis outage longer than
