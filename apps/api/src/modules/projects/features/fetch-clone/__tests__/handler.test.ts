@@ -8,7 +8,7 @@ import {
   GitRequestRejectedError,
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
-import { CLONE_MISSING_DETAIL, RefreshCloneHandler } from '../handler.js';
+import { CLONE_MISSING_DETAIL, FetchCloneHandler } from '../handler.js';
 import { HOST_KEY_CHANGED_DETAIL } from '../../../domain/entities/repository.js';
 import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../deploy-key/handler.js';
@@ -27,12 +27,12 @@ function abortError(): Error {
   return error;
 }
 
-describe('RefreshCloneHandler', () => {
+describe('FetchCloneHandler', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: DeployKeyHandler;
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
-  let handler: RefreshCloneHandler;
+  let handler: FetchCloneHandler;
 
   const run = (signal = new AbortController().signal) => handler.process(PROJECT, signal);
   const stored = () => projects.findRepository(PROJECT);
@@ -55,7 +55,7 @@ describe('RefreshCloneHandler', () => {
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
-    handler = new RefreshCloneHandler(projects, git, deployKeys);
+    handler = new FetchCloneHandler(projects, git, deployKeys);
   });
 
   it('fetches the Integration branch and marks the Repository ready with the new commit', async () => {

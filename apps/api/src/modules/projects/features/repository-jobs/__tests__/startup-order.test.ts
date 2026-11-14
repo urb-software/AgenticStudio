@@ -16,7 +16,7 @@ import { CloneRepositoryHandler } from '../../clone-repository/handler.js';
 import { SECRET_STORE } from '../../../../../platform/secrets/index.js';
 import { DeployKeyHandler, SSH_TRUST_SETTINGS } from '../../deploy-key/handler.js';
 import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
-import { RefreshCloneHandler } from '../../refresh-clone/handler.js';
+import { FetchCloneHandler } from '../../fetch-clone/handler.js';
 import {
   DEPLOY_KEY_SWEEP_SETTINGS,
   SweepOrphanedDeployKeysHandler,
@@ -92,7 +92,7 @@ class RecordingSecrets extends InMemorySecretStore {
     DeployKeyHandler,
     SweepOrphanedDeployKeysHandler,
     CloneRepositoryHandler,
-    RefreshCloneHandler,
+    FetchCloneHandler,
     CleanUpRepositoryHandler,
     RepositoryJobsHandler,
   ],

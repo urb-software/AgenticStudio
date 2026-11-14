@@ -62,8 +62,8 @@ function failureOf(failure: JobFailure): RepositoryFailure {
  *   "Interrupted"; its Clone stays usable (a killed fetch leaves the refs unchanged).
  */
 @Injectable()
-export class RefreshCloneHandler {
-  private readonly logger = new Logger('RefreshClone');
+export class FetchCloneHandler {
+  private readonly logger = new Logger('FetchClone');
 
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,

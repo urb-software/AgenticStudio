@@ -28,7 +28,7 @@ import { GetRepositoryEndpoint } from './features/get-repository/endpoint.js';
 import { GetRepositoryHandler } from './features/get-repository/handler.js';
 import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
 import { ListProjectsHandler } from './features/list-projects/handler.js';
-import { RefreshCloneHandler } from './features/refresh-clone/handler.js';
+import { FetchCloneHandler } from './features/fetch-clone/handler.js';
 import { RepositoryJobsHandler } from './features/repository-jobs/handler.js';
 import {
   DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
@@ -121,7 +121,7 @@ export class ProjectsModule {
         DeployKeyHandler,
         SweepOrphanedDeployKeysHandler,
         CloneRepositoryHandler,
-        RefreshCloneHandler,
+        FetchCloneHandler,
         CleanUpRepositoryHandler,
         RepositoryJobsHandler,
         { provide: REPOSITORY_JOBS, useExisting: RepositoryJobsHandler },
