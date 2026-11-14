@@ -69,6 +69,13 @@ export class InMemoryProjectRepository implements ProjectRepository {
         repository.identity === record.identity && repository.projectId !== record.projectId,
     );
     if (owner) throw new RemoteAlreadyConnectedError(this.projects.get(owner.projectId)!.name);
+    // Like the adapter: a kept key needs the Repository to exist and still reference it.
+    if (
+      record.keepsDeployKey &&
+      existing?.deployKeySecret !== (record.deployKey?.secretRef ?? null)
+    ) {
+      throw new RepositoryAlreadyConnectedError();
+    }
     this.repositories.set(record.projectId, {
       projectId: record.projectId,
       url: record.url,
@@ -237,6 +244,14 @@ export class InMemoryProjectRepository implements ProjectRepository {
       [...this.repositories.values()]
         .filter((repository) => repository.state === 'disconnecting')
         .map((repository) => repository.projectId),
+    );
+  }
+
+  listDeployKeySecretRefs(): Promise<string[]> {
+    return Promise.resolve(
+      [...this.repositories.values()].flatMap((repository) =>
+        repository.deployKeySecret === null ? [] : [repository.deployKeySecret],
+      ),
     );
   }
 

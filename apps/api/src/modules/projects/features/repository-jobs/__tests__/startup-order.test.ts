@@ -17,6 +17,10 @@ import { SECRET_STORE } from '../../../../../platform/secrets/index.js';
 import { DeployKeyHandler, SSH_TRUST_SETTINGS } from '../../deploy-key/handler.js';
 import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
 import { RefreshCloneHandler } from '../../refresh-clone/handler.js';
+import {
+  DEPLOY_KEY_SWEEP_SETTINGS,
+  SweepOrphanedDeployKeysHandler,
+} from '../../sweep-orphaned-deploy-keys/handler.js';
 import { RepositoryJobsHandler } from '../handler.js';
 
 // Issue #60 clarification 11: the Git adapter's start-up sweep (its `onModuleInit`) removes
@@ -70,14 +74,23 @@ class RecordingProjects extends InMemoryProjectRepository {
   }
 }
 
+class RecordingSecrets extends InMemorySecretStore {
+  override listOlderThan(...args: Parameters<InMemorySecretStore['listOlderThan']>) {
+    events.push('secrets: orphaned Deploy keys swept');
+    return super.listOlderThan(...args);
+  }
+}
+
 @Module({
   providers: [
     { provide: REPOSITORY_GIT, useClass: SlowSweepGit },
     { provide: PROJECT_REPOSITORY, useClass: RecordingProjects },
     { provide: JobQueues, useClass: BootstrappingJobQueues },
-    { provide: SECRET_STORE, useClass: InMemorySecretStore },
+    { provide: SECRET_STORE, useClass: RecordingSecrets },
     { provide: SSH_TRUST_SETTINGS, useValue: { knownHosts: [] } },
+    { provide: DEPLOY_KEY_SWEEP_SETTINGS, useValue: { gracePeriodMs: 0 } },
     DeployKeyHandler,
+    SweepOrphanedDeployKeysHandler,
     CloneRepositoryHandler,
     RefreshCloneHandler,
     CleanUpRepositoryHandler,
@@ -87,7 +100,7 @@ class RecordingProjects extends InMemoryProjectRepository {
 class StartupModule {}
 
 describe('repository job start-up order', () => {
-  it('reconciles clones and fetches, resumes disconnects and starts the worker only after the Git sweep has finished', async () => {
+  it('reconciles clones and fetches, resumes disconnects, sweeps orphaned Deploy keys and starts the worker only after the Git sweep has finished', async () => {
     const app = await NestFactory.createApplicationContext(StartupModule, { logger: false });
     try {
       await app.init();
@@ -102,10 +115,15 @@ describe('repository job start-up order', () => {
       expect(events.indexOf('projects: pending disconnects resumed')).toBeGreaterThan(
         sweepFinished,
       );
+      // Issue #76: after reconciliation (pending disconnects delete their own keys first).
+      expect(events.indexOf('secrets: orphaned Deploy keys swept')).toBeGreaterThan(
+        events.indexOf('projects: pending disconnects resumed'),
+      );
       for (const reconciled of [
         'projects: interrupted connections failed',
         'projects: interrupted fetches failed',
         'projects: pending disconnects resumed',
+        'secrets: orphaned Deploy keys swept',
       ]) {
         expect(events.indexOf('queue: worker started')).toBeGreaterThan(events.indexOf(reconciled));
       }

@@ -6,6 +6,12 @@ import { sshRemoteOf } from '../../domain/value-objects/repository-url.js';
 import { deployKeyComment, generateDeployKey } from '../../domain/value-objects/ssh-key.js';
 import type { SshCredentials } from '../../ports/repository-git.js';
 
+/**
+ * The secret store owner label of every Deploy key's private half (Issue #76): what the
+ * orphan sweep (`sweep-orphaned-deploy-keys`) lists, and nothing else.
+ */
+export const DEPLOY_KEY_SECRET_OWNER = 'projects.deploy-key';
+
 /** DI token for {@link SshTrustSettings}. */
 export const SSH_TRUST_SETTINGS = Symbol('SSH_TRUST_SETTINGS');
 
@@ -35,8 +41,8 @@ export class NoTrustedHostKeyError extends Error {
 
 /**
  * The Deploy key and host trust of SSH Repositories (Issue #62), shared by connect, verify,
- * clone, fetch and disconnect. The private key goes only through the secret store's public
- * entry point: it is created and stored here, read here for one Git operation at a time
+ * clone, fetch and disconnect, and by the orphan sweep (Issue #76). The private key goes only
+ * through the secret store's public entry point: it is created and stored here, read here for one Git operation at a time
  * (the Git adapter writes it owner-only for that operation and deletes it), and deleted
  * here. It is never returned to a caller outside the Git port, and never logged.
  */
@@ -50,7 +56,18 @@ export class DeployKeyHandler {
   /** Generates an ed25519 Deploy key commented `studio-<project name>` and stores its private half. */
   async create(projectName: string): Promise<StoredDeployKey> {
     const { privateKey, publicKey } = generateDeployKey(deployKeyComment(projectName));
-    return { publicKey, secretRef: await this.secrets.put(privateKey) };
+    return {
+      publicKey,
+      secretRef: await this.secrets.put(privateKey, { owner: DEPLOY_KEY_SECRET_OWNER }),
+    };
+  }
+
+  /**
+   * The references of every stored Deploy key's private half at least `ageMs` old, by the
+   * secret store's clock; never a key.
+   */
+  listOlderThan(ageMs: number): Promise<string[]> {
+    return this.secrets.listOlderThan(DEPLOY_KEY_SECRET_OWNER, ageMs);
   }
 
   /** Deletes the private half; a no-op when it is already gone. */

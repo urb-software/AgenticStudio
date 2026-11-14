@@ -197,12 +197,22 @@ export class PrismaProjectRepository implements ProjectRepository {
       updatedAt: new Date(),
     };
     try {
-      // Retry: only a failed Repository is replaced, in one conditional statement.
+      // Retry: only a failed Repository is replaced, in one conditional statement; a Retry
+      // that keeps the Deploy key only while the Repository still references it.
       const replaced = await this.db.repository.updateMany({
-        where: { projectId: record.projectId, state: 'failed' },
+        where: {
+          projectId: record.projectId,
+          state: 'failed',
+          ...(record.keepsDeployKey
+            ? { deployKeySecretId: record.deployKey?.secretRef ?? null }
+            : {}),
+        },
         data: attempt,
       });
       if (replaced.count === 0) {
+        // A kept key belongs to a Repository that must still exist: with it gone (a disconnect
+        // deleted it and its key) or holding another key, nothing is created (PR #77, S-1).
+        if (record.keepsDeployKey) throw await this.conflictFor(record);
         await this.db.repository.create({ data: { projectId: record.projectId, ...attempt } });
       }
     } catch (error) {
@@ -384,6 +394,14 @@ export class PrismaProjectRepository implements ProjectRepository {
       orderBy: { updatedAt: 'asc' },
     });
     return rows.map((row) => row.projectId);
+  }
+
+  async listDeployKeySecretRefs(): Promise<string[]> {
+    const rows = await this.db.repository.findMany({
+      where: { deployKeySecretId: { not: null } },
+      select: { deployKeySecretId: true },
+    });
+    return rows.flatMap((row) => (row.deployKeySecretId === null ? [] : [row.deployKeySecretId]));
   }
 
   private async transition(

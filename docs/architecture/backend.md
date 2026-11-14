@@ -53,7 +53,7 @@ modules/{module}/
   {module}.module.ts
 ```
 
-**Secrets are a platform capability** ([ADR 0001](adr/0001-secret-store.md), Issue #57). `platform/secrets/` owns the `SecretStore` port, its PostgreSQL adapter, the AES-256-GCM code and the `secrets` table. A business module stores only the opaque reference. It injects `SECRET_STORE` from `platform/secrets/index.ts` (the port and its typed errors), and its `{module}.module.ts` imports `SecretsModule` from `platform/secrets/secrets.module.ts`. Nothing outside `platform/secrets/` imports any other file there, uses the Prisma `secret` model, or reads `secretsKey` from the configuration (only `platform/config/` and `platform/secrets/` do). `architecture:api` enforces these rules.
+**Secrets are a platform capability** ([ADR 0001](adr/0001-secret-store.md), Issue #57). `platform/secrets/` owns the `SecretStore` port, its PostgreSQL adapter, the AES-256-GCM code and the `secrets` table. A business module stores only the opaque reference. It injects `SECRET_STORE` from `platform/secrets/index.ts` (the port and its typed errors), and its `{module}.module.ts` imports `SecretsModule` from `platform/secrets/secrets.module.ts`. Nothing outside `platform/secrets/` imports any other file there, uses the Prisma `secret` model, or reads `secretsKey` from the configuration (only `platform/config/` and `platform/secrets/` do). `architecture:api` enforces these rules. Each secret carries its module's owner label, so a module can list its own unreferenced secrets (references only) and delete them (ADR 0001 amendment, Issue #76).
 
 **No empty mandatory directories.** `handler.ts` is the default feature entry point; `endpoint.ts`, `schema.ts`, `input.ts`, consumers, ports and domain folders exist only when needed.
 

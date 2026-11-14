@@ -17,6 +17,10 @@ import { CleanUpRepositoryHandler } from '../../clean-up-repository/handler.js';
 import { DisconnectRepositoryHandler } from '../handler.js';
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
 import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import {
+  DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
+  SweepOrphanedDeployKeysHandler,
+} from '../../sweep-orphaned-deploy-keys/handler.js';
 import { ConnectRepositoryHandler } from '../../connect-repository/handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -267,6 +271,9 @@ describe('DisconnectRepositoryHandler', () => {
       jobs,
       { allowFileRemotes: false },
       deployKeys,
+      new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
+        gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
+      }),
     );
     const input = {
       projectId: PROJECT,
