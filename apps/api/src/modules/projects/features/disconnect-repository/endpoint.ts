@@ -42,6 +42,9 @@ export class DisconnectRepositoryEndpoint {
   @Delete(':id/repository')
   // The default answer; a completed disconnect switches to 204 below.
   @HttpCode(HttpStatus.ACCEPTED)
+  // Not @ZodResponse: its serializer parses every return value with the response schema,
+  // including the empty body of the 204, so this endpoint documents the 202 with @ApiResponse
+  // and serializes it below with the same closed schema by hand.
   @ApiOperation({
     operationId: 'disconnectRepository',
     description:

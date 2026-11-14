@@ -30,7 +30,11 @@ import {
 } from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
 import { ConnectRepositoryDialog } from '../connect-repository/connect-repository-dialog';
-import { DisconnectRepositoryDialog } from '../disconnect-repository/disconnect-repository-dialog';
+import {
+  DISCONNECTED_MESSAGE,
+  DisconnectRepositoryDialog,
+  disconnectedToastId,
+} from '../disconnect-repository/disconnect-repository-dialog';
 import { failureMessage } from './failure-message';
 
 const TITLE_ID = 'repository-card-title';
@@ -389,9 +393,9 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     }
     if (goneHandled.current) return;
     goneHandled.current = true;
-    toast.success('Repository disconnected');
+    toast.success(DISCONNECTED_MESSAGE, { id: disconnectedToastId(projectId) });
     void forgetRepository();
-  }, [gone, forgetRepository]);
+  }, [gone, forgetRepository, projectId]);
 
   let body: ReactNode;
   if (summary === null) {

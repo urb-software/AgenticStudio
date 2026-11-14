@@ -90,6 +90,25 @@ describe('CleanUpRepositoryHandler', () => {
     expect(logs).toEqual([expect.stringContaining(A)]);
   });
 
+  it.each([
+    ['reading the Repository', 'findRepository'],
+    ['deleting the record', 'deleteDisconnecting'],
+  ] as const)(
+    'reports a store failure while %s as pending (logged redacted), never as an error',
+    async (_case, method) => {
+      await connect(A, 'a');
+      await projects.beginDisconnect(A);
+      vi.spyOn(projects, method).mockRejectedValue(
+        new Error('connect ECONNREFUSED postgres://studio:hunter2@db:5432'),
+      );
+
+      await expect(cleanup.finish(A)).resolves.toBe(false);
+
+      expect(logs).toEqual([expect.stringContaining(A)]);
+      expect(logs[0]).not.toContain('hunter2');
+    },
+  );
+
   it('never deletes a Repository that is not disconnecting', async () => {
     await connect(A, 'a');
 

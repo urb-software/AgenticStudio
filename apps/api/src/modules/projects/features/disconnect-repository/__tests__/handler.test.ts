@@ -199,6 +199,21 @@ describe('DisconnectRepositoryHandler', () => {
       expect(await stored()).toBeNull();
     });
 
+    it('the database fails during cleanup: pending (202), not an error', async () => {
+      await ready();
+      const deleteDisconnecting = projects.deleteDisconnecting.bind(projects);
+      projects.deleteDisconnecting = () => Promise.reject(new Error('database down'));
+
+      await expect(handler.execute(PROJECT)).resolves.toMatchObject({
+        disconnected: false,
+        repository: { state: 'disconnecting' },
+      });
+      expect(logs).toEqual([expect.stringContaining(PROJECT)]);
+
+      projects.deleteDisconnecting = deleteDisconnecting;
+      await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
+    });
+
     it('a Git failure of the removal is pending too', async () => {
       await ready();
       git.removeClone.mockRejectedValueOnce(new GitOperationError('unknown', 'EBUSY'));

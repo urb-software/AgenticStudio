@@ -16,6 +16,17 @@ import { toast } from '@/shared/ui/sonner';
 import { ApiError } from '../../../../platform/api';
 import { useDisconnectRepository } from '../../api/projects-queries';
 
+/** The confirmation of a finished disconnect. */
+export const DISCONNECTED_MESSAGE = 'Repository disconnected';
+
+/**
+ * One toast per project: the dialog's 204 and the card's polling (which can see the Repository
+ * gone first, e.g. during a retried disconnect) may both confirm the same disconnect.
+ */
+export function disconnectedToastId(projectId: string): string {
+  return `repository-disconnected-${projectId}`;
+}
+
 type DisconnectRepositoryDialogProps = {
   projectId: string;
   /** The Repository's URL as entered, named in the dialog. */
@@ -39,7 +50,7 @@ export function DisconnectRepositoryDialog({
   onOpenChange,
 }: DisconnectRepositoryDialogProps) {
   const disconnect = useDisconnectRepository(projectId, () => {
-    toast.success('Repository disconnected');
+    toast.success(DISCONNECTED_MESSAGE, { id: disconnectedToastId(projectId) });
     onOpenChange(false);
   });
   const problem = disconnect.error instanceof ApiError ? disconnect.error.problem : undefined;
@@ -78,7 +89,7 @@ export function DisconnectRepositoryDialog({
             <li>The project is kept.</li>
             <li>Studio&apos;s clone and deploy key are deleted.</li>
             <li>The remote repository is untouched.</li>
-            <li>A deploy key you added on the Git host stays there until you remove it there.</li>
+            <li>A deploy key added on the Git host stays there until removed there.</li>
           </ul>
         </DialogBody>
         <DialogFooter>

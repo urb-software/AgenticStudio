@@ -677,9 +677,7 @@ describe('Disconnect (Story #63)', () => {
     expect(text).toContain('The project is kept.');
     expect(text).toContain("Studio's clone and deploy key are deleted.");
     expect(text).toContain('The remote repository is untouched.');
-    expect(text).toContain(
-      'A deploy key you added on the Git host stays there until you remove it there.',
-    );
+    expect(text).toContain('A deploy key added on the Git host stays there until removed there.');
     const confirm = within(dialog).getByRole('button', { name: 'Disconnect repository' });
     expect(confirm.dataset.variant).toBe('destructive');
     expect(within(dialog).getByRole('button', { name: 'Cancel' }).dataset.variant).toBe('ghost');
@@ -729,6 +727,8 @@ describe('Disconnect (Story #63)', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Disconnect repository' }));
 
+    // The dialog closes on the 202; the card takes over.
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(await within(card()).findByText('Disconnecting…')).toBeTruthy();
     expect(within(card()).queryByRole('heading', { name: 'No repository connected' })).toBeNull();
     expect(screen.queryByText('Repository disconnected')).toBeNull();
@@ -767,6 +767,31 @@ describe('Disconnect (Story #63)', () => {
 
     expect(await screen.findByText('Repository disconnected')).toBeTruthy();
     expect(api.calls('disconnect')).toHaveLength(1);
+  });
+
+  it('confirms once when polling sees the Repository gone before the retried disconnect answers 204', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeProjectApi(PROJECT, DISCONNECTING);
+    await renderLoaded();
+    await within(card()).findByText('Disconnecting…');
+    await userEvent.click(disconnectAction());
+    // The retried DELETE removes everything on the server, but its 204 is held back…
+    const release = api.holdNext('disconnect');
+    await userEvent.click(
+      within(confirmDialog()).getByRole('button', { name: 'Disconnect repository' }),
+    );
+    await waitFor(() => expect(api.calls('disconnect')).toHaveLength(1));
+
+    // …so the next poll sees the Repository gone (404) first and confirms it…
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    expect(await screen.findByText('Repository disconnected')).toBeTruthy();
+
+    // …and the late 204 does not confirm it a second time.
+    release();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(screen.getAllByText('Repository disconnected')).toHaveLength(1);
+    expect(within(card()).getByRole('heading', { name: 'No repository connected' })).toBeTruthy();
   });
 
   it('shows a disconnect the API refuses as a banner in the dialog, with the problem title', async () => {

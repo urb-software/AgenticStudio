@@ -42,12 +42,18 @@ export class CleanUpRepositoryHandler {
   /**
    * Runs every cleanup step of a `disconnecting` Repository, then deletes its record. True when
    * nothing of the Repository is left (also when the record was already gone); false when a
-   * step failed (logged) or the Repository is not `disconnecting`.
+   * step or the store failed (logged, redacted) or the Repository is not `disconnecting`.
+   * Never throws: a failure leaves the Repository `disconnecting` for a retry.
    */
   async finish(projectId: string): Promise<boolean> {
-    const repository = await this.projects.findRepository(projectId);
-    if (!repository) return true;
-    if (repository.state !== 'disconnecting') return false;
+    try {
+      const repository = await this.projects.findRepository(projectId);
+      if (!repository) return true;
+      if (repository.state !== 'disconnecting') return false;
+    } catch (error) {
+      this.logPending(projectId, 'could not read the repository', error);
+      return false;
+    }
     for (const step of this.steps) {
       try {
         await step.run(projectId);
@@ -56,8 +62,13 @@ export class CleanUpRepositoryHandler {
         return false;
       }
     }
-    // Zero rows means a concurrent cleanup deleted it first: nothing is left either way.
-    await this.projects.deleteDisconnecting(projectId);
+    try {
+      // Zero rows means a concurrent cleanup deleted it first: nothing is left either way.
+      await this.projects.deleteDisconnecting(projectId);
+    } catch (error) {
+      this.logPending(projectId, 'could not delete the repository record', error);
+      return false;
+    }
     return true;
   }
 
