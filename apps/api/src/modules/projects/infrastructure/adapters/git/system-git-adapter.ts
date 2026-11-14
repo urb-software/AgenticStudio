@@ -125,6 +125,9 @@ function hardeningArgs(transports: readonly GitTransport[]): string[] {
     'maintenance.auto=false',
     'fetch.writeCommitGraph=false',
     'http.followRedirects=false',
+    // Packfile URIs (protocol v2) would let the server point Git at another host; Git offers
+    // none unless configured, and this keeps it that way explicitly (defence in depth).
+    'fetch.uriProtocols=',
   ].flatMap((setting) => ['-c', setting]);
 }
 

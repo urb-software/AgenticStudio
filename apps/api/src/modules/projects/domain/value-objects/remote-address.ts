@@ -132,9 +132,12 @@ function classifyIpv6(groups: number[]): RemoteAddressRange {
   if (g0 === 0x2002) return classifyIpv4(((g1 << 16) | g2) >>> 0);
   if ((g0 & 0xffc0) === 0xfe80) return 'blocked'; // link-local
   if ((g0 & 0xff00) === 0xff00) return 'blocked'; // multicast
-  // AWS's IPv6 metadata service fd00:ec2::254, inside the private range below.
-  if (g0 === 0xfd00 && g1 === 0xec2 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0) {
-    if (g7 === 0x254) return 'blocked';
+  // IPv6 metadata services, inside the private range below:
+  // - AWS fd00:ec2::254 (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html)
+  // - Google Cloud fd20:ce::254 (https://cloud.google.com/compute/docs/metadata/querying-metadata)
+  const lowZero = g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0 && g7 === 0x254;
+  if (lowZero && ((g0 === 0xfd00 && g1 === 0xec2) || (g0 === 0xfd20 && g1 === 0xce))) {
+    return 'blocked';
   }
   if ((g0 & 0xfe00) === 0xfc00) return 'private'; // unique local
   if ((g0 & 0xffc0) === 0xfec0) return 'private'; // deprecated site-local
@@ -152,10 +155,22 @@ export function classifyAddress(address: string): RemoteAddressRange {
   return v6 === null ? 'blocked' : classifyIpv6(v6);
 }
 
+/**
+ * Why `address` is refused under the opt-in setting's value: `private` when the opt-in would
+ * allow it, `blocked` when nothing would, `null` when it is allowed.
+ */
+export function refusedRange(
+  address: string,
+  allowPrivate: boolean,
+): Exclude<RemoteAddressRange, 'public'> | null {
+  const range = classifyAddress(address);
+  if (range === 'public' || (range === 'private' && allowPrivate)) return null;
+  return range;
+}
+
 /** Whether Studio may connect to `address` under the opt-in setting's value. */
 export function addressAllowed(address: string, allowPrivate: boolean): boolean {
-  const range = classifyAddress(address);
-  return range === 'public' || (range === 'private' && allowPrivate);
+  return refusedRange(address, allowPrivate) === null;
 }
 
 /** What the host part of a remote URL names. */

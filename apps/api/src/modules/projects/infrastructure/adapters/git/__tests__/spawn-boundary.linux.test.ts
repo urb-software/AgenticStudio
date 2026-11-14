@@ -75,6 +75,8 @@ const HARDENING = [
   'gc.auto=0',
   'maintenance.auto=false',
   'http.followRedirects=false',
+  // No packfile URIs: a server could otherwise send Git to fetch from another host.
+  'fetch.uriProtocols=',
 ];
 
 /**
@@ -658,6 +660,7 @@ describe.runIf(process.platform === 'linux')(
         ['169.254.169.254', 'a link-local'],
         ['100.100.100.200', 'a metadata'],
         ['fd00:ec2::254', 'an IPv6 metadata'],
+        ['fd20:ce::254', 'a Google Cloud IPv6 metadata'],
         ['::ffff:169.254.169.254', 'an IPv4-mapped link-local'],
         ['224.0.0.1', 'a multicast'],
       ])(
@@ -747,6 +750,7 @@ describe.runIf(process.platform === 'linux')(
 
         expect(lookups).toEqual(['git.example.test']);
         const fetch = (await gitInvocations(recordDir)).find((call) => call.args.includes('fetch'));
+        expect(settingsOf(fetch!.args)).toEqual(expect.arrayContaining(HARDENING));
         expect(settingsOf(fetch!.args)).toContain(
           `http.curloptResolve=git.example.test:443:${PUBLIC_ADDRESS}`,
         );

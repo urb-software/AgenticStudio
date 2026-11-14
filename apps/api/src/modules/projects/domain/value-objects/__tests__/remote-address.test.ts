@@ -3,6 +3,7 @@ import {
   addressAllowed,
   classifyAddress,
   hostLiteral,
+  refusedRange,
   type RemoteAddressRange,
 } from '../remote-address.js';
 
@@ -52,6 +53,8 @@ describe('classifyAddress', () => {
     ['febf:ffff::1', 'blocked'],
     ['ff02::1', 'blocked'],
     ['fd00:ec2::254', 'blocked'],
+    ['fd20:ce::254', 'blocked'],
+    ['fd20:ce::253', 'private'],
     ['::1', 'private'],
     ['fc00::1', 'private'],
     ['fd12:3456:789a::1', 'private'],
@@ -99,7 +102,20 @@ describe('addressAllowed', () => {
     expect(addressAllowed('10.0.0.5', true)).toBe(true);
     expect(addressAllowed('169.254.169.254', true)).toBe(false);
     expect(addressAllowed('fd00:ec2::254', true)).toBe(false);
+    expect(addressAllowed('fd20:ce::254', false)).toBe(false);
+    expect(addressAllowed('fd20:ce::254', true)).toBe(false);
     expect(addressAllowed('100.100.100.200', true)).toBe(false);
+  });
+});
+
+describe('refusedRange', () => {
+  it('names the range that refuses an address, or null when it is allowed', () => {
+    expect(refusedRange('8.8.8.8', false)).toBeNull();
+    expect(refusedRange('10.0.0.5', false)).toBe('private');
+    expect(refusedRange('10.0.0.5', true)).toBeNull();
+    expect(refusedRange('169.254.169.254', true)).toBe('blocked');
+    expect(refusedRange('fd20:ce::254', true)).toBe('blocked');
+    expect(refusedRange('not an address', true)).toBe('blocked');
   });
 });
 

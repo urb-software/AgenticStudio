@@ -1,9 +1,4 @@
-import {
-  addressAllowed,
-  classifyAddress,
-  hostLiteral,
-  REFUSED_RANGE_REASON,
-} from './remote-address.js';
+import { hostLiteral, REFUSED_RANGE_REASON, refusedRange } from './remote-address.js';
 
 /** Longest accepted Repository URL, in characters (the Git adapter's own limit). */
 export const REPOSITORY_URL_MAX_LENGTH = 2048;
@@ -65,9 +60,8 @@ function checkAddress(host: string, policy: AddressPolicy | undefined, example: 
   const literal = hostLiteral(host);
   if (literal.kind === 'invalid') invalid(`Enter a valid host name, ${example}.`);
   if (!policy || literal.kind !== 'address') return;
-  if (addressAllowed(literal.address, policy.allowPrivate)) return;
-  const range = classifyAddress(literal.address) === 'private' ? 'private' : 'blocked';
-  invalid(`This address is not allowed: ${REFUSED_RANGE_REASON[range]}`);
+  const range = refusedRange(literal.address, policy.allowPrivate);
+  if (range) invalid(`This address is not allowed: ${REFUSED_RANGE_REASON[range]}`);
 }
 
 /** `path` without leading and trailing slashes; a loop, so it stays linear on any input. */

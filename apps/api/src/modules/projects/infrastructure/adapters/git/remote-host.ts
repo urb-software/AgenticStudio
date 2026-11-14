@@ -1,9 +1,8 @@
 import { lookup } from 'node:dns/promises';
 import {
-  addressAllowed,
-  classifyAddress,
   hostLiteral,
   REFUSED_RANGE_REASON,
+  refusedRange,
 } from '../../../domain/value-objects/remote-address.js';
 import { GitOperationError, GitRequestRejectedError } from '../../../ports/repository-git.js';
 
@@ -54,9 +53,9 @@ export async function checkedAddresses(
     }
   }
   for (const address of addresses) {
-    if (addressAllowed(address, allowPrivate)) continue;
+    const range = refusedRange(address, allowPrivate);
+    if (!range) continue;
     const what = literal.kind === 'address' ? `${address} is` : `${host} resolves to ${address},`;
-    const range = classifyAddress(address) === 'private' ? 'private' : 'blocked';
     const kind =
       range === 'private'
         ? 'a loopback or private address'
