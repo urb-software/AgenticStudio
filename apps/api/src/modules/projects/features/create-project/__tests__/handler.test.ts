@@ -40,6 +40,10 @@ class InMemoryProjectRepository implements ProjectRepository {
   markReady = notUsed;
   markFailed = notUsed;
   failAllConnecting = notUsed;
+  beginFetch = notUsed;
+  markFetched = notUsed;
+  markFetchFailed = notUsed;
+  failAllFetching = notUsed;
 }
 
 function notUsed(): Promise<never> {

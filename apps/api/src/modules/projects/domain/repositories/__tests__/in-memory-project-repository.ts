@@ -3,16 +3,20 @@ import type { RepositoryConnection, RepositoryFailure } from '../../entities/rep
 import type { ProjectName } from '../../value-objects/project-name.js';
 import {
   type ConnectRepositoryRecord,
+  NoRepositoryError,
+  NoUsableCloneError,
   ProjectNotFoundError,
   type ProjectRepository,
   RemoteAlreadyConnectedError,
   RepositoryAlreadyConnectedError,
+  RepositoryBusyError,
 } from '../project-repository.js';
 
 /**
  * In-memory adapter of {@link ProjectRepository} for handler tests, with the same rules as
  * the database: one Repository per project, one project per remote identity, only a `failed`
- * Repository is replaced, and transitions out of `connecting` are conditional.
+ * Repository is replaced, a fetch starts only from `ready` or `failed` with a Clone, and
+ * transitions out of `connecting` and `fetching` are conditional.
  */
 export class InMemoryProjectRepository implements ProjectRepository {
   readonly projects = new Map<string, Project>();
@@ -60,6 +64,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
       identity: record.identity,
       integrationBranch: record.integrationBranch,
       state: 'connecting',
+      hasClone: false,
       headSha: null,
       lastFetchedAt: null,
       failure: null,
@@ -70,6 +75,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
   markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
     return this.transition(projectId, (repository) => {
       repository.state = 'ready';
+      repository.hasClone = true;
       repository.headSha = clone.headSha;
       repository.lastFetchedAt = clone.fetchedAt;
     });
@@ -82,6 +88,59 @@ export class InMemoryProjectRepository implements ProjectRepository {
     });
   }
 
+  async beginFetch(projectId: string): Promise<RepositoryConnection> {
+    if (!this.projects.has(projectId)) throw new ProjectNotFoundError();
+    const repository = this.repositories.get(projectId);
+    if (!repository) throw new NoRepositoryError();
+    if (repository.state === 'connecting' || repository.state === 'fetching') {
+      throw new RepositoryBusyError();
+    }
+    if (!repository.hasClone) throw new NoUsableCloneError();
+    repository.state = 'fetching';
+    repository.failure = null;
+    return (await this.findRepository(projectId))!;
+  }
+
+  markFetched(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
+    return this.transition(
+      projectId,
+      (repository) => {
+        repository.state = 'ready';
+        repository.headSha = clone.headSha;
+        repository.lastFetchedAt = clone.fetchedAt;
+      },
+      'fetching',
+    );
+  }
+
+  markFetchFailed(
+    projectId: string,
+    failure: RepositoryFailure,
+    { cloneKept }: { cloneKept: boolean },
+  ): Promise<boolean> {
+    return this.transition(
+      projectId,
+      (repository) => {
+        repository.state = 'failed';
+        repository.failure = failure;
+        if (!cloneKept) {
+          repository.hasClone = false;
+          repository.headSha = null;
+          repository.lastFetchedAt = null;
+        }
+      },
+      'fetching',
+    );
+  }
+
+  async failAllFetching(failure: RepositoryFailure): Promise<number> {
+    let count = 0;
+    for (const projectId of this.repositories.keys()) {
+      if (await this.markFetchFailed(projectId, failure, { cloneKept: true })) count += 1;
+    }
+    return count;
+  }
+
   async failAllConnecting(failure: RepositoryFailure): Promise<number> {
     let count = 0;
     for (const projectId of this.repositories.keys()) {
@@ -90,9 +149,13 @@ export class InMemoryProjectRepository implements ProjectRepository {
     return count;
   }
 
-  private transition(projectId: string, change: (repository: RepositoryConnection) => void) {
+  private transition(
+    projectId: string,
+    change: (repository: RepositoryConnection) => void,
+    from: 'connecting' | 'fetching' = 'connecting',
+  ) {
     const repository = this.repositories.get(projectId);
-    if (repository?.state !== 'connecting') return Promise.resolve(false);
+    if (repository?.state !== from) return Promise.resolve(false);
     change(repository);
     return Promise.resolve(true);
   }

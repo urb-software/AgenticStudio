@@ -1,11 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  JobAbortedError,
-  type JobPayload,
-  type JobQueue,
-  JobQueues,
-  type QueueDefinition,
-} from '../../../../../platform/queue/job-queue.js';
+import { JobAbortedError } from '../../../../../platform/queue/job-queue.js';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import {
   GIT_FAILURE_REASONS,
@@ -13,33 +7,11 @@ import {
   GitRequestRejectedError,
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
-import {
-  CLONE_CONCURRENCY,
-  CLONE_JOB_TIMEOUT_MS,
-  CLONE_QUEUE,
-  CloneRepositoryHandler,
-} from '../handler.js';
+import { CloneRepositoryHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';
 const COMMIT = 'b'.repeat(40);
-
-/** Captures the registered definition and the enqueued jobs. */
-class RecordingJobQueues extends JobQueues {
-  definition: QueueDefinition<JobPayload> | undefined;
-  readonly enqueued: { id: string; payload: JobPayload }[] = [];
-
-  register<P extends JobPayload>(definition: QueueDefinition<P>): JobQueue<P> {
-    this.definition = definition as unknown as QueueDefinition<JobPayload>;
-    return {
-      enqueue: (id, payload) => {
-        this.enqueued.push({ id, payload });
-        return Promise.resolve();
-      },
-      cancel: () => Promise.resolve(false),
-    };
-  }
-}
 
 function abortError(): Error {
   const error = new Error('aborted');
@@ -50,14 +22,9 @@ function abortError(): Error {
 describe('CloneRepositoryHandler', () => {
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
-  let queues: RecordingJobQueues;
   let handler: CloneRepositoryHandler;
 
-  const job = (signal = new AbortController().signal) => ({
-    id: `clone-${PROJECT}`,
-    payload: { projectId: PROJECT },
-    signal,
-  });
+  const run = (signal = new AbortController().signal) => handler.process(PROJECT, signal);
 
   async function connecting(integrationBranch = 'dev') {
     await projects.beginConnect({
@@ -72,35 +39,20 @@ describe('CloneRepositoryHandler', () => {
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
-    queues = new RecordingJobQueues();
-    handler = new CloneRepositoryHandler(queues, projects, git);
-    handler.onModuleInit();
-  });
-
-  it('registers its queue at module initialisation: name, time limit, concurrency', () => {
-    expect(queues.definition).toMatchObject({
-      name: CLONE_QUEUE,
-      timeoutMs: CLONE_JOB_TIMEOUT_MS,
-      concurrency: CLONE_CONCURRENCY,
-    });
-  });
-
-  it('schedules a clone under a deterministic id with the project id as the only payload', async () => {
-    await handler.start(PROJECT);
-
-    expect(queues.enqueued).toEqual([{ id: `clone-${PROJECT}`, payload: { projectId: PROJECT } }]);
+    handler = new CloneRepositoryHandler(projects, git);
   });
 
   it('removes any leftover Clone, inspects the remote, clones, and marks the Repository ready', async () => {
     await connecting();
     git.clone.mockResolvedValueOnce({ commit: COMMIT });
 
-    await handler.process(job());
+    await run();
 
     expect(git.calls).toEqual(['removeClone', 'inspectRemote', 'clone']);
     expect(git.clone).toHaveBeenCalledWith(PROJECT, URL, 'dev', expect.anything());
     expect(await projects.findRepository(PROJECT)).toMatchObject({
       state: 'ready',
+      hasClone: true,
       headSha: COMMIT,
       lastFetchedAt: expect.any(Date),
       failure: null,
@@ -111,7 +63,7 @@ describe('CloneRepositoryHandler', () => {
     await connecting();
     const controller = new AbortController();
 
-    await handler.process(job(controller.signal));
+    await run(controller.signal);
 
     for (const operation of [git.removeClone, git.inspectRemote, git.clone]) {
       expect(operation.mock.calls[0]!.at(-1)).toEqual({ signal: controller.signal });
@@ -122,7 +74,7 @@ describe('CloneRepositoryHandler', () => {
     await connecting('release');
     git.inspectRemote.mockResolvedValueOnce({ defaultBranch: 'main', branchExists: false });
 
-    await handler.process(job());
+    await run();
 
     expect(git.clone).not.toHaveBeenCalled();
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
@@ -136,7 +88,7 @@ describe('CloneRepositoryHandler', () => {
     await connecting('release');
     git.inspectRemote.mockResolvedValueOnce({ defaultBranch: null, branchExists: false });
 
-    await handler.process(job());
+    await run();
 
     expect((await projects.findRepository(PROJECT))?.failure?.remoteDefaultBranch).toBeNull();
   });
@@ -147,7 +99,7 @@ describe('CloneRepositoryHandler', () => {
       await connecting();
       git.clone.mockRejectedValueOnce(new GitOperationError(reason, 'fatal: <redacted>'));
 
-      await handler.process(job());
+      await run();
 
       expect((await projects.findRepository(PROJECT))?.failure).toEqual({
         code: reason,
@@ -157,11 +109,25 @@ describe('CloneRepositoryHandler', () => {
     },
   );
 
+  it('leaves a failed connect with no usable Clone', async () => {
+    await connecting();
+    git.clone.mockRejectedValueOnce(new GitOperationError('host_unreachable'));
+
+    await run();
+
+    expect(await projects.findRepository(PROJECT)).toMatchObject({
+      state: 'failed',
+      hasClone: false,
+      headSha: null,
+      lastFetchedAt: null,
+    });
+  });
+
   it('cuts an over-long detail', async () => {
     await connecting();
     git.inspectRemote.mockRejectedValueOnce(new GitOperationError('unknown', 'x'.repeat(5000)));
 
-    await handler.process(job());
+    await run();
 
     expect((await projects.findRepository(PROJECT))?.failure?.detail).toHaveLength(2000);
   });
@@ -174,7 +140,7 @@ describe('CloneRepositoryHandler', () => {
       remoteDefaultBranch: null,
     });
 
-    await handler.process(job());
+    await run();
 
     expect(git.calls).toEqual([]);
   });
@@ -184,7 +150,7 @@ describe('CloneRepositoryHandler', () => {
     const controller = new AbortController();
     controller.abort(new JobAbortedError('cancelled'));
 
-    await expect(handler.process(job(controller.signal))).rejects.toBeInstanceOf(JobAbortedError);
+    await expect(run(controller.signal)).rejects.toBeInstanceOf(JobAbortedError);
     expect(git.calls).toEqual([]);
   });
 
@@ -196,10 +162,10 @@ describe('CloneRepositoryHandler', () => {
       return Promise.reject(abortError());
     });
 
-    await expect(handler.process(job(controller.signal))).rejects.toThrow('aborted');
+    await expect(run(controller.signal)).rejects.toThrow('aborted');
     expect((await projects.findRepository(PROJECT))?.state).toBe('connecting');
 
-    await queues.definition!.onFailed(job(), { reason: 'timeout' });
+    await handler.onFailed(PROJECT, { reason: 'timeout' });
     expect((await projects.findRepository(PROJECT))?.failure).toMatchObject({ code: 'timeout' });
   });
 
@@ -207,7 +173,7 @@ describe('CloneRepositoryHandler', () => {
     await connecting();
     git.removeClone.mockRejectedValueOnce(new GitRequestRejectedError('unexpected'));
 
-    await expect(handler.process(job())).rejects.toBeInstanceOf(GitRequestRejectedError);
+    await expect(run()).rejects.toBeInstanceOf(GitRequestRejectedError);
   });
 
   it.each([
@@ -218,7 +184,7 @@ describe('CloneRepositoryHandler', () => {
   ] as const)('onFailed stores %s as %j', async (reason, failure) => {
     await connecting();
 
-    await queues.definition!.onFailed(job(), { reason });
+    await handler.onFailed(PROJECT, { reason });
 
     expect((await projects.findRepository(PROJECT))?.failure).toMatchObject(failure);
   });
@@ -226,7 +192,7 @@ describe('CloneRepositoryHandler', () => {
   it('onFailed stores an unexpected error as unknown with no detail', async () => {
     await connecting();
 
-    await queues.definition!.onFailed(job(), { reason: 'error', error: new Error('db down') });
+    await handler.onFailed(PROJECT, { reason: 'error', error: new Error('db down') });
 
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
       code: 'unknown',
@@ -247,10 +213,8 @@ describe('CloneRepositoryHandler', () => {
     });
     await projects.markReady(other, { headSha: COMMIT, fetchedAt: new Date() });
 
-    await queues.definition!.reconcile([]);
-    await queues.definition!.reconcile([
-      { id: `clone-${PROJECT}`, payload: { projectId: PROJECT } },
-    ]);
+    await handler.reconcile();
+    await handler.reconcile();
 
     expect((await projects.findRepository(PROJECT))?.failure).toEqual({
       code: 'unknown',

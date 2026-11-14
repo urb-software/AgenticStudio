@@ -11,11 +11,13 @@ import { PROJECT_REPOSITORY } from '../../../domain/repositories/project-reposit
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { REPOSITORY_GIT } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
-import { CloneRepositoryHandler } from '../handler.js';
+import { CloneRepositoryHandler } from '../../clone-repository/handler.js';
+import { RefreshCloneHandler } from '../../refresh-clone/handler.js';
+import { RepositoryJobsHandler } from '../handler.js';
 
 // Issue #60 clarification 11: the Git adapter's start-up sweep (its `onModuleInit`) removes
-// leftovers of any age, so no clone may reconcile or run before it has finished. The clone
-// queue is registered in `onModuleInit` and the platform queue reconciles and starts its
+// leftovers of any age, so no clone or fetch may reconcile or run before it has finished. The
+// repository queue is registered in `onModuleInit` and the platform queue reconciles and starts its
 // workers in `onApplicationBootstrap` (BullMqJobQueues); Nest runs every `onModuleInit`
 // before any `onApplicationBootstrap`. This pins that order with a deliberately slow sweep.
 
@@ -52,6 +54,11 @@ class RecordingProjects extends InMemoryProjectRepository {
     events.push('projects: interrupted connections failed');
     return super.failAllConnecting(...args);
   }
+
+  override failAllFetching(...args: Parameters<InMemoryProjectRepository['failAllFetching']>) {
+    events.push('projects: interrupted fetches failed');
+    return super.failAllFetching(...args);
+  }
 }
 
 @Module({
@@ -60,25 +67,31 @@ class RecordingProjects extends InMemoryProjectRepository {
     { provide: PROJECT_REPOSITORY, useClass: RecordingProjects },
     { provide: JobQueues, useClass: BootstrappingJobQueues },
     CloneRepositoryHandler,
+    RefreshCloneHandler,
+    RepositoryJobsHandler,
   ],
 })
 class StartupModule {}
 
-describe('clone start-up order', () => {
-  it('reconciles and starts the clone worker only after the Git sweep has finished', async () => {
+describe('repository job start-up order', () => {
+  it('reconciles clones and fetches and starts the worker only after the Git sweep has finished', async () => {
     const app = await NestFactory.createApplicationContext(StartupModule, { logger: false });
     try {
       await app.init();
 
       const sweepFinished = events.indexOf('git: sweep finished');
-      expect(events).toContain('queue: registered repository-clone');
+      expect(events).toContain('queue: registered repository-git');
       expect(sweepFinished).toBeGreaterThanOrEqual(0);
       expect(events.indexOf('projects: interrupted connections failed')).toBeGreaterThan(
         sweepFinished,
       );
-      expect(events.indexOf('queue: worker started')).toBeGreaterThan(
-        events.indexOf('projects: interrupted connections failed'),
-      );
+      expect(events.indexOf('projects: interrupted fetches failed')).toBeGreaterThan(sweepFinished);
+      for (const reconciled of [
+        'projects: interrupted connections failed',
+        'projects: interrupted fetches failed',
+      ]) {
+        expect(events.indexOf('queue: worker started')).toBeGreaterThan(events.indexOf(reconciled));
+      }
     } finally {
       await app.close();
     }

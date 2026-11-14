@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses } from './types.gen';
+import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -59,3 +59,8 @@ export const connectRepository = <ThrowOnError extends boolean = false>(options:
         ...options.headers
     }
 });
+
+/**
+ * Brings the Clone up to date with the remote in the background: answers at once with the repository in `fetching` (poll `GET /api/projects/{id}/repository`). Allowed when the repository is `ready`, or `failed` with a usable Clone (`hasClone`).
+ */
+export const fetchRepository = <ThrowOnError extends boolean = false>(options: Options<FetchRepositoryData, ThrowOnError>): RequestResult<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError> => (options.client ?? client).post<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository/fetch', ...options });

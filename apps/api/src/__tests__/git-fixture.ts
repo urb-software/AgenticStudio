@@ -11,8 +11,12 @@ import { pathToFileURL } from 'node:url';
 export interface GitFixture {
   /** The `file://` URL, accepted only with the test-only fixture-remote setting. */
   url: string;
-  /** Commit id of each branch. */
+  /** Commit id of each branch at creation. */
   commits: Record<string, string>;
+  /** The bare repository's directory. */
+  bare: string;
+  /** The working copy the fixture was built from (pushes to `bare`). */
+  work: string;
 }
 
 function git(cwd: string, args: string[]): string {
@@ -69,5 +73,36 @@ export function createGitFixture(
   }
   git(root, ['clone', '--quiet', '--bare', '--template=', work, bare]);
   git(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
-  return { url: pathToFileURL(bare).href, commits };
+  return { url: pathToFileURL(bare).href, commits, bare, work };
+}
+
+/**
+ * Pushes a new commit on `branch` to the fixture's bare repository (as another client would);
+ * returns its id. `bigFileBytes` adds an incompressible file to the commit.
+ */
+export function pushCommit(
+  fixture: GitFixture,
+  branch: string,
+  options: { bigFileBytes?: number } = {},
+): string {
+  git(fixture.work, ['checkout', '--quiet', branch]);
+  const name = `change-${randomBytes(4).toString('hex')}`;
+  writeFileSync(join(fixture.work, `${name}.txt`), `${name}\n`);
+  if (options.bigFileBytes) {
+    writeFileSync(join(fixture.work, `${name}.bin`), randomBytes(options.bigFileBytes));
+  }
+  git(fixture.work, ['add', '--all']);
+  git(fixture.work, ['commit', '--quiet', '-m', name]);
+  git(fixture.work, ['push', '--quiet', fixture.bare, `${branch}:${branch}`]);
+  return git(fixture.work, ['rev-parse', 'HEAD']);
+}
+
+/** Deletes `branch` from the fixture's bare repository. */
+export function deleteRemoteBranch(fixture: GitFixture, branch: string): void {
+  git(fixture.bare, ['update-ref', '-d', `refs/heads/${branch}`]);
+}
+
+/** Puts `branch` back on the fixture's bare repository at the working copy's commit. */
+export function restoreRemoteBranch(fixture: GitFixture, branch: string): void {
+  git(fixture.work, ['push', '--quiet', fixture.bare, `${branch}:${branch}`]);
 }

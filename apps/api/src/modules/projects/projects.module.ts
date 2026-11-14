@@ -9,6 +9,8 @@ import {
   ConnectRepositoryHandler,
   type ConnectRepositorySettings,
 } from './features/connect-repository/handler.js';
+import { FetchRepositoryEndpoint } from './features/fetch-repository/endpoint.js';
+import { FetchRepositoryHandler } from './features/fetch-repository/handler.js';
 import { CreateProjectEndpoint } from './features/create-project/endpoint.js';
 import { CreateProjectHandler } from './features/create-project/handler.js';
 import { GetProjectEndpoint } from './features/get-project/endpoint.js';
@@ -17,13 +19,15 @@ import { GetRepositoryEndpoint } from './features/get-repository/endpoint.js';
 import { GetRepositoryHandler } from './features/get-repository/handler.js';
 import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
 import { ListProjectsHandler } from './features/list-projects/handler.js';
+import { RefreshCloneHandler } from './features/refresh-clone/handler.js';
+import { RepositoryJobsHandler } from './features/repository-jobs/handler.js';
 import {
   SystemGitAdapter,
   type SystemGitSettings,
   systemGitSettings,
 } from './infrastructure/adapters/git/system-git-adapter.js';
 import { PrismaProjectRepository } from './infrastructure/repositories/prisma-project-repository.js';
-import { CLONE_JOBS } from './ports/clone-jobs.js';
+import { REPOSITORY_JOBS } from './ports/repository-jobs.js';
 import { REPOSITORY_GIT } from './ports/repository-git.js';
 
 /**
@@ -42,9 +46,10 @@ export interface ProjectsModuleOptions {
 
 /**
  * `projects` business module: create and list projects (Story #16); the project detail and
- * connecting a public repository over HTTPS with a background clone (Story #60), through the
- * hardened Git adapter (#59). On Linux, start-up checks the Git version and sweeps crash
- * leftovers (`onModuleInit`) before the clone worker starts (after bootstrap).
+ * connecting a public repository over HTTPS with a background clone (Story #60) and fetching
+ * it on demand (Story #61), through the hardened Git adapter (#59). On Linux, start-up checks
+ * the Git version and sweeps crash leftovers (`onModuleInit`) before the repository worker
+ * starts (after bootstrap).
  */
 @Module({})
 export class ProjectsModule {
@@ -58,6 +63,7 @@ export class ProjectsModule {
         GetProjectEndpoint,
         GetRepositoryEndpoint,
         ConnectRepositoryEndpoint,
+        FetchRepositoryEndpoint,
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
@@ -75,12 +81,15 @@ export class ProjectsModule {
           inject: [APP_CONFIG],
         },
         CloneRepositoryHandler,
-        { provide: CLONE_JOBS, useExisting: CloneRepositoryHandler },
+        RefreshCloneHandler,
+        RepositoryJobsHandler,
+        { provide: REPOSITORY_JOBS, useExisting: RepositoryJobsHandler },
         CreateProjectHandler,
         ListProjectsHandler,
         GetProjectHandler,
         GetRepositoryHandler,
         ConnectRepositoryHandler,
+        FetchRepositoryHandler,
       ],
     };
   }

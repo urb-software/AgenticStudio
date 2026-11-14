@@ -4,29 +4,18 @@ import { ProjectNotFoundError } from '../../../domain/repositories/project-repos
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InvalidIntegrationBranchError } from '../../../domain/value-objects/integration-branch.js';
 import { InvalidRepositoryUrlError } from '../../../domain/value-objects/repository-url.js';
-import type { CloneJobs } from '../../../ports/clone-jobs.js';
 import { GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
+import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { ConnectRepositoryHandler, NOT_STARTED_DETAIL } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';
 
-class RecordingCloneJobs implements CloneJobs {
-  readonly started: string[] = [];
-  failWith: Error | undefined;
-
-  start(projectId: string): Promise<void> {
-    if (this.failWith) return Promise.reject(this.failWith);
-    this.started.push(projectId);
-    return Promise.resolve();
-  }
-}
-
 describe('ConnectRepositoryHandler', () => {
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
-  let jobs: RecordingCloneJobs;
+  let jobs: RecordingRepositoryJobs;
 
   const handler = (allowFileRemotes = false) =>
     new ConnectRepositoryHandler(projects, git, jobs, { allowFileRemotes });
@@ -35,7 +24,7 @@ describe('ConnectRepositoryHandler', () => {
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
-    jobs = new RecordingCloneJobs();
+    jobs = new RecordingRepositoryJobs();
   });
 
   it('stores the Repository as connecting, schedules the clone and returns at once', async () => {
@@ -50,12 +39,13 @@ describe('ConnectRepositoryHandler', () => {
       url: URL,
       integrationBranch: 'dev',
       state: 'connecting',
+      hasClone: false,
       headSha: null,
       lastFetchedAt: null,
       failure: null,
     });
     expect(projects.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
-    expect(jobs.started).toEqual([PROJECT]);
+    expect(jobs.started).toEqual([[PROJECT, 'clone']]);
     // No Git runs in the request: the clone happens in the background job.
     expect(git.calls).toEqual([]);
   });
@@ -80,7 +70,7 @@ describe('ConnectRepositoryHandler', () => {
       integrationBranch: 'dev',
     });
 
-    expect(jobs.started).toEqual([PROJECT]);
+    expect(jobs.started).toEqual([[PROJECT, 'clone']]);
   });
 
   it('rejects an invalid integration branch', async () => {
@@ -134,7 +124,7 @@ describe('ConnectRepositoryHandler', () => {
       detail: 'Branch "release" was not found on the remote.',
       remoteDefaultBranch: 'main',
     });
-    const busy = new JobAlreadyActiveError('repository-clone', `clone-${PROJECT}`);
+    const busy = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = busy;
 
     await expect(
@@ -152,7 +142,7 @@ describe('ConnectRepositoryHandler', () => {
   });
 
   it('marks the attempt failed when the clone cannot be scheduled, and rethrows', async () => {
-    const busy = new JobAlreadyActiveError('repository-clone', `clone-${PROJECT}`);
+    const busy = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = busy;
 
     await expect(
