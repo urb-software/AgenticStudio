@@ -8,6 +8,17 @@ import type { RepositoryConnection } from '../../domain/entities/repository.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 import { DeployKeyHandler } from '../deploy-key/handler.js';
 
+/**
+ * The log line of a Disconnect that stays pending (redacted), written by both the Disconnect
+ * command and this cleanup, each under its own logger context.
+ */
+export function pendingDisconnectMessage(projectId: string, what: string, error: unknown): string {
+  return (
+    `Disconnect of project ${projectId}: ${what}; it stays disconnecting and is retried at ` +
+    `start-up and on a repeated disconnect. ${redactSecrets(String(error))}`
+  );
+}
+
 /** One thing a Disconnect removes; each step is idempotent, so a retry runs them all again. */
 interface CleanupStep {
   /** What the step does, for the log ("remove the Clone"). */
@@ -32,7 +43,7 @@ interface CleanupStep {
  */
 @Injectable()
 export class CleanUpRepositoryHandler {
-  private readonly logger = new Logger('DisconnectRepository');
+  private readonly logger = new Logger('CleanUpRepository');
   private readonly steps: readonly CleanupStep[];
 
   constructor(
@@ -114,10 +125,7 @@ export class CleanUpRepositoryHandler {
   }
 
   /** Logs (redacted) why a Disconnect of the project stays pending. */
-  logPending(projectId: string, what: string, error: unknown): void {
-    this.logger.warn(
-      `Disconnect of project ${projectId}: ${what}; it stays disconnecting and is retried at ` +
-        `start-up and on a repeated disconnect. ${redactSecrets(String(error))}`,
-    );
+  private logPending(projectId: string, what: string, error: unknown): void {
+    this.logger.warn(pendingDisconnectMessage(projectId, what, error));
   }
 }

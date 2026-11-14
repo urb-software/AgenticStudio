@@ -35,21 +35,6 @@ export type FieldError = z.infer<typeof fieldErrorSchema>;
 export class ProblemDetailsDto extends createZodDto(problemDetailsSchema) {}
 
 /**
- * A deliberate 4xx error about specific request fields (e.g. 409 for a name that is
- * already taken). The problem details carry its `errors[]` like a 400 validation error,
- * so the web app shows them next to the fields. A 5xx status stays generic regardless.
- */
-export class FieldProblemException extends HttpException {
-  constructor(
-    status: number,
-    detail: string,
-    readonly errors: FieldError[],
-  ) {
-    super(detail, status);
-  }
-}
-
-/**
  * A deliberate error whose `type`, `title`, `detail` and optional field errors are written for
  * the client, at any status. Unlike other 5xx responses, a 5xx `ProblemException` (e.g. 501
  * "Unsupported platform") keeps its text and is not logged as an unhandled error, so it must
@@ -61,6 +46,22 @@ export class ProblemException extends HttpException {
     readonly problem: { type: string; title: string; detail: string; errors?: FieldError[] },
   ) {
     super(problem.detail, status);
+  }
+}
+
+/**
+ * The plain form of a {@link ProblemException} (#72): a deliberate 4xx error about specific
+ * request fields (e.g. 409 for a name that is already taken), with no problem type of its own
+ * (`about:blank`, the status text as title). The problem details carry its `errors[]` like a
+ * 400 validation error, so the web app shows them next to the fields. 4xx only: a 5xx would
+ * keep its text, so it is refused as a programming error (and then answered as a generic 500).
+ */
+export class FieldProblemException extends ProblemException {
+  constructor(status: number, detail: string, errors: FieldError[]) {
+    if (status < 400 || status >= 500) {
+      throw new RangeError(`A field problem is a 4xx error, not ${status}.`);
+    }
+    super(status, { type: 'about:blank', title: STATUS_CODES[status] ?? 'Error', detail, errors });
   }
 }
 

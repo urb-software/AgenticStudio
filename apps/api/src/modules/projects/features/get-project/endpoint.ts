@@ -5,6 +5,7 @@ import { ApiProblemResponses } from '../../../../platform/http/problem-details.j
 import { toProjectResponse } from '../../contracts/http/project-response.js';
 import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../contracts/http/problems.js';
 import { toRepositorySummary } from '../../contracts/http/repository-response.js';
+import { ProjectNotFoundError } from '../../domain/repositories/project-repository.js';
 import { GetProjectHandler } from './handler.js';
 import { ProjectDetailResponseDto } from './schema.js';
 
@@ -19,8 +20,13 @@ export class GetProjectEndpoint {
   @ZodResponse({ status: 200, type: ProjectDetailResponseDto })
   @ApiProblemResponses({ 404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})` })
   async get(@Param('id') id: string) {
-    const detail = await this.handler.execute(id);
-    if (!detail) throw projectNotFound();
+    let detail;
+    try {
+      detail = await this.handler.execute(id);
+    } catch (error) {
+      if (error instanceof ProjectNotFoundError) throw projectNotFound();
+      throw error;
+    }
     return {
       ...toProjectResponse(detail.project),
       repository: detail.repository ? toRepositorySummary(detail.repository) : null,

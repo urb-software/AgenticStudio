@@ -12,7 +12,6 @@ import { HttpAdapterHost } from '@nestjs/core';
 import { ZodValidationException } from 'nestjs-zod';
 import { HandledServerErrorException } from './handled-server-error.js';
 import {
-  FieldProblemException,
   GENERIC_SERVER_DETAIL,
   PROBLEM_JSON,
   type ProblemDetails,
@@ -61,7 +60,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       correlationId,
     };
 
-    // Deliberate, client-facing text at any status (e.g. 501 "Unsupported platform").
+    // Deliberate, client-facing text at any status (e.g. 501 "Unsupported platform"), and
+    // the field errors of a FieldProblemException.
     if (exception instanceof ProblemException) {
       const { type, title, detail, errors } = exception.problem;
       return { ...base, type, title, detail, ...(errors ? { errors } : {}) };
@@ -75,9 +75,6 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         detail: 'The request is invalid.',
         errors: zodFieldErrors(exception.getZodError()),
       };
-    }
-    if (exception instanceof FieldProblemException) {
-      return { ...base, detail: exception.message, errors: exception.errors };
     }
     // Nest turns malformed JSON (SyntaxError) and bad URI encoding (URIError) into a
     // 400 that carries the parser's message; keep the status, not the internals.

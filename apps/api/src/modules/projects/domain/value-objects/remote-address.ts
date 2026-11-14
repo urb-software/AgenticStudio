@@ -135,8 +135,9 @@ function classifyIpv6(groups: number[]): RemoteAddressRange {
   // IPv6 metadata services, inside the private range below:
   // - AWS fd00:ec2::254 (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html)
   // - Google Cloud fd20:ce::254 (https://cloud.google.com/compute/docs/metadata/querying-metadata)
-  const lowZero = g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0 && g7 === 0x254;
-  if (lowZero && ((g0 === 0xfd00 && g1 === 0xec2) || (g0 === 0xfd20 && g1 === 0xce))) {
+  // Both addresses end in groups 2 to 7 of `::254`.
+  const interfaceIs254 = g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0 && g7 === 0x254;
+  if (interfaceIs254 && ((g0 === 0xfd00 && g1 === 0xec2) || (g0 === 0xfd20 && g1 === 0xce))) {
     return 'blocked';
   }
   if ((g0 & 0xfe00) === 0xfc00) return 'private'; // unique local

@@ -51,6 +51,13 @@ import { REPOSITORY_GIT } from './ports/repository-git.js';
  * Test seam of the module (like the job queue's worker tuning): tests pass shorter Git limits
  * or another platform. Production passes nothing, so the adapter keeps the pinned production
  * settings (`systemGitSettings`).
+ *
+ * Why `platform` stays here (#72): the HTTP suites build the real app (`AppModule.register`)
+ * and need a non-Linux API host on the Linux CI runner to prove the 501 path end to end. Only
+ * code can set it (no configuration or environment variable reaches it), `main.ts` passes no
+ * options, and it can only make the Linux-only guard refuse more: on a host that is not Linux
+ * the adapter refuses whatever it says, since Git operations need Linux anyway (security.md
+ * §4). A provider override would need a second way to build the app for those suites alone.
  */
 export interface ProjectsModuleOptions {
   gitSettings?: Partial<

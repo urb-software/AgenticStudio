@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { isProjectId } from '../../domain/entities/project.js';
 import type { RepositoryConnection } from '../../domain/entities/repository.js';
 import {
@@ -8,7 +8,10 @@ import {
 } from '../../domain/repositories/project-repository.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
-import { CleanUpRepositoryHandler } from '../clean-up-repository/handler.js';
+import {
+  CleanUpRepositoryHandler,
+  pendingDisconnectMessage,
+} from '../clean-up-repository/handler.js';
 
 /** What a disconnect achieved: everything removed, or cleanup still pending. */
 export type DisconnectOutcome =
@@ -34,6 +37,8 @@ export type DisconnectOutcome =
  */
 @Injectable()
 export class DisconnectRepositoryHandler {
+  private readonly logger = new Logger('DisconnectRepository');
+
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
@@ -49,7 +54,9 @@ export class DisconnectRepositoryHandler {
     try {
       await this.jobs.cancel(projectId);
     } catch (error) {
-      this.cleanup.logPending(projectId, 'could not cancel its running operation', error);
+      this.logger.warn(
+        pendingDisconnectMessage(projectId, 'could not cancel its running operation', error),
+      );
       return { disconnected: false, repository };
     }
     if (await this.cleanup.finish(projectId)) return { disconnected: true };

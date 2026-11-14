@@ -21,9 +21,9 @@ import {
   type JobQueue,
   JobQueues,
   type QueueDefinition,
+  JobStillRunningError,
   type QueuedJob,
   QueueUnavailableError,
-  JobStillRunningError,
 } from './job-queue.js';
 import type { QueueHealth } from './queue-health.js';
 
