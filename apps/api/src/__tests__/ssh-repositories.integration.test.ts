@@ -455,7 +455,16 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     const jobKey = `studio:queue:repository-git:repository-${c}`;
     try {
       await redis.set(jobKey, 'not a job');
-      expect((await verify(c)).status).toBe(503);
+      const unavailable = await verify(c);
+      expect(unavailable.status).toBe(503);
+      // The generic 5xx body, unchanged by the switch to serviceUnavailable() (Issue #70).
+      expect(unavailable.body).toEqual({
+        type: 'about:blank',
+        title: 'Service Unavailable',
+        status: 503,
+        detail: 'An unexpected error occurred.',
+        correlationId: expect.any(String),
+      });
     } finally {
       await redis.del(jobKey);
       redis.disconnect();
