@@ -378,6 +378,22 @@ describe('polling while connecting (clarification 8)', () => {
     expect(api.calls('project').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('keeps polling through a transient server error', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeProjectApi(PROJECT, CONNECTING);
+    await renderLoaded();
+    await within(card()).findByText('Connecting');
+
+    api.respondNext('repository', 503, problem(503, 'Service Unavailable'));
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    const afterError = api.calls('repository').length;
+    api.state.repository = READY;
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    expect(api.calls('repository').length).toBeGreaterThan(afterError);
+    expect(await within(card()).findByText('Connected')).toBeTruthy();
+  });
+
   it('stops when the clone failed', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const api = fakeProjectApi(PROJECT, CONNECTING);
@@ -728,6 +744,8 @@ describe('Disconnect (Story #63)', () => {
     expect(
       await within(card()).findByRole('heading', { name: 'No repository connected' }),
     ).toBeTruthy();
+    // Confirmed once, however often the card re-rendered meanwhile.
+    expect(screen.getAllByText('Repository disconnected')).toHaveLength(1);
     const afterGone = api.calls('repository').length;
     await act(() => vi.advanceTimersByTimeAsync(10_000));
     expect(api.calls('repository').length).toBe(afterGone);

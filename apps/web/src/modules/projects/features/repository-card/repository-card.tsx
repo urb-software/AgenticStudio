@@ -6,7 +6,7 @@ import {
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
-  UnlinkIcon,
+  UnplugIcon,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
@@ -380,8 +380,15 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     repositoryQuery.error instanceof ApiError &&
     repositoryQuery.error.status === 404 &&
     repository?.state === 'disconnecting';
+  // Once per disappearance, however often the card re-renders before the cache is updated.
+  const goneHandled = useRef(false);
   useEffect(() => {
-    if (!gone) return;
+    if (!gone) {
+      goneHandled.current = false;
+      return;
+    }
+    if (goneHandled.current) return;
+    goneHandled.current = true;
     toast.success('Repository disconnected');
     void forgetRepository();
   }, [gone, forgetRepository]);
@@ -473,7 +480,7 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
             <div className="flex flex-col gap-4">
               {body}
               <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-                <Button variant="danger" icon={UnlinkIcon} onClick={() => setDisconnectOpen(true)}>
+                <Button variant="danger" icon={UnplugIcon} onClick={() => setDisconnectOpen(true)}>
                   Disconnect
                 </Button>
               </div>
@@ -481,14 +488,13 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
           )}
         </CardContent>
       </Card>
-      {summary === null ? null : (
-        <DisconnectRepositoryDialog
-          projectId={projectId}
-          url={repository?.url ?? summary.url}
-          open={disconnectOpen}
-          onOpenChange={setDisconnectOpen}
-        />
-      )}
+      {/* Mounted in every state, so it can close itself once the Repository is gone. */}
+      <DisconnectRepositoryDialog
+        projectId={projectId}
+        url={repository?.url ?? summary?.url ?? ''}
+        open={disconnectOpen && summary !== null}
+        onOpenChange={setDisconnectOpen}
+      />
       <ConnectRepositoryDialog
         key={dialogKey}
         projectId={projectId}

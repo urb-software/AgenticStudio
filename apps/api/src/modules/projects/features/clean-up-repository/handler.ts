@@ -52,7 +52,7 @@ export class CleanUpRepositoryHandler {
       try {
         await step.run(projectId);
       } catch (error) {
-        this.warn(projectId, `could not ${step.name}`, error);
+        this.logPending(projectId, `could not ${step.name}`, error);
         return false;
       }
     }
@@ -71,12 +71,13 @@ export class CleanUpRepositoryHandler {
       try {
         await this.finish(projectId);
       } catch (error) {
-        this.warn(projectId, 'could not finish', error);
+        this.logPending(projectId, 'could not finish', error);
       }
     }
   }
 
-  private warn(projectId: string, what: string, error: unknown): void {
+  /** Logs (redacted) why a Disconnect of the project stays pending. */
+  logPending(projectId: string, what: string, error: unknown): void {
     this.logger.warn(
       `Disconnect of project ${projectId}: ${what}; it stays disconnecting and is retried at ` +
         `start-up and on a repeated disconnect. ${redactSecrets(String(error))}`,

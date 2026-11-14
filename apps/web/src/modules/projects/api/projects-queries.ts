@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import {
   api,
   ApiError,
@@ -51,8 +52,8 @@ const BUSY_STATES: readonly string[] = ['connecting', 'fetching', 'disconnecting
  * The project's Repository, from the server only (frontend.md §4). While it is `connecting`,
  * `fetching` or `disconnecting`, it is refetched every {@link REPOSITORY_POLL_MS} as long as
  * the tab is visible (TanStack Query pauses intervals in a hidden tab and refetches on focus);
- * it stops once the state is `ready`, `failed` or anything else, and on an error (e.g. the
- * 404 that says a disconnecting Repository is gone).
+ * it stops once the state is `ready`, `failed` or anything else, and on the 404 that says a
+ * Repository is gone (a disconnect finished). Other errors keep the polling going.
  */
 export function useRepository(projectId: string, enabled: boolean) {
   return useQuery({
@@ -60,7 +61,8 @@ export function useRepository(projectId: string, enabled: boolean) {
     queryFn: () => api.getRepository(projectId),
     enabled,
     refetchInterval: (query) =>
-      query.state.status !== 'error' && BUSY_STATES.includes(query.state.data?.state ?? '')
+      !(query.state.error instanceof ApiError && query.state.error.status === 404) &&
+      BUSY_STATES.includes(query.state.data?.state ?? '')
         ? REPOSITORY_POLL_MS
         : false,
     refetchIntervalInBackground: false,
@@ -118,23 +120,25 @@ export function useFetchRepository(projectId: string) {
  */
 export function useForgetRepository(projectId: string) {
   const queryClient = useQueryClient();
-  return async () => {
+  return useCallback(async () => {
     await queryClient.cancelQueries({ queryKey: repositoryKey(projectId), exact: true });
     queryClient.removeQueries({ queryKey: repositoryKey(projectId), exact: true });
     queryClient.setQueryData<ProjectDetailOutput>(projectKey(projectId), (project) =>
       project ? { ...project, repository: null } : project,
     );
     await queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });
-  };
+  }, [queryClient, projectId]);
 }
 
 /**
  * Disconnects the Repository. A 204 (`null`: nothing is left) forgets it; a 202 answer is the
  * Repository in `disconnecting`, which seeds the polled query (polling continues until the
  * server's cleanup is done and the Repository is gone). A read still in flight is cancelled
- * first, so an older answer cannot replace the new state.
+ * first, so an older answer cannot replace the new state. `onDisconnected` runs after a 204,
+ * as part of the mutation, so it runs even when the caller has unmounted meanwhile (the card's
+ * empty state replaces the dialog's owner).
  */
-export function useDisconnectRepository(projectId: string) {
+export function useDisconnectRepository(projectId: string, onDisconnected: () => void) {
   const queryClient = useQueryClient();
   const forget = useForgetRepository(projectId);
   return useMutation({
@@ -144,6 +148,7 @@ export function useDisconnectRepository(projectId: string) {
     },
     onSuccess: async (repository: RepositoryOutput | null) => {
       if (repository === null) {
+        onDisconnected();
         await forget();
         return;
       }

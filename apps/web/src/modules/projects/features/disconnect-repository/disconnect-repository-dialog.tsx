@@ -38,7 +38,10 @@ export function DisconnectRepositoryDialog({
   open,
   onOpenChange,
 }: DisconnectRepositoryDialogProps) {
-  const disconnect = useDisconnectRepository(projectId);
+  const disconnect = useDisconnectRepository(projectId, () => {
+    toast.success('Repository disconnected');
+    onOpenChange(false);
+  });
   const problem = disconnect.error instanceof ApiError ? disconnect.error.problem : undefined;
 
   function changeOpen(next: boolean) {
@@ -49,8 +52,7 @@ export function DisconnectRepositoryDialog({
 
   function confirm() {
     disconnect.mutate(undefined, {
-      onSuccess: (repository) => {
-        if (repository === null) toast.success('Repository disconnected');
+      onSuccess: () => {
         disconnect.reset();
         onOpenChange(false);
       },

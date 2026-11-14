@@ -1,5 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { redactSecrets } from '../../../../platform/http/redact.js';
+import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../domain/entities/project.js';
 import type { RepositoryConnection } from '../../domain/entities/repository.js';
 import {
@@ -35,8 +34,6 @@ export type DisconnectOutcome =
  */
 @Injectable()
 export class DisconnectRepositoryHandler {
-  private readonly logger = new Logger('DisconnectRepository');
-
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
@@ -52,11 +49,7 @@ export class DisconnectRepositoryHandler {
     try {
       await this.jobs.cancel(projectId);
     } catch (error) {
-      this.logger.warn(
-        `Disconnect of project ${projectId}: could not cancel its running operation; it stays ` +
-          `disconnecting and is retried at start-up and on a repeated disconnect. ` +
-          redactSecrets(String(error)),
-      );
+      this.cleanup.logPending(projectId, 'could not cancel its running operation', error);
       return { disconnected: false, repository };
     }
     if (await this.cleanup.finish(projectId)) return { disconnected: true };
