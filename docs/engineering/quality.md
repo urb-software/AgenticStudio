@@ -172,7 +172,7 @@ The canonical three-step DoD is `docs/engineering/definition-of-done.md`: **Impl
 
 ## 10. Runtime security tests
 
-Test that prohibited operations **fail**; the scenario list is canonical in [Security](security.md) §9 (worktree/cross-project escape, Docker access from worker, unapproved MCP tools and controller actions, forbidden merge, secret visibility, production DB access, prompt-injection-driven tool use). A model refusing an instruction is **not** a replacement for enforced privilege boundaries.
+Test that prohibited operations **fail**; the scenario list is canonical in [Security](security.md) §9 (working-copy/cross-project escape, Docker access from worker, unapproved MCP tools and controller actions, forbidden merge, secret visibility, production DB access, prompt-injection-driven tool use). A model refusing an instruction is **not** a replacement for enforced privilege boundaries.
 
 **Provider enablement gate** (agent worker; see [Security](security.md) §2). Required negative tests:
 

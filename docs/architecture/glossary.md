@@ -37,3 +37,23 @@ _Avoid_: Sync, pull, refresh
 **Deploy key**:
 The per-project SSH key pair Studio generates to reach a private Repository.
 _Avoid_: SSH key, access key, credential
+
+### `executions`
+
+**Run**:
+One execution of an agent on an operator's task in a Project, from the operator's start to its result.
+_Avoid_: Job, session, task run
+
+**Working copy**:
+A Run's own clone of the Repository, on a branch named for the Run. It is not the Project's Clone.
+_Avoid_: Worktree, workspace, checkout
+
+### Cross-cutting
+
+**Agent worker**:
+The process that carries out Runs by driving the agent CLIs, on the agents' side of the isolation boundary.
+_Avoid_: Executor, agent host
+
+**Agent account**:
+The separate Git host account through which agents push their Run branches and open pull requests; it is not the operator's account.
+_Avoid_: Bot account, machine user, operator account

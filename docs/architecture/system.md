@@ -9,7 +9,7 @@
 - Exactly **six business modules** in the API, not six microservices.
 - Separate **technical processes** for background execution and narrowly privileged environment management.
 - Git-first / file-native configuration of coding agents and skills where their CLIs support it.
-- Human-controlled changes: isolated branches/worktrees, tests, review, and approval before merge.
+- Human-controlled changes: isolated branches and working copies, tests, review, and approval before merge.
 - Self-hosted, single operator; least privilege, isolation, observability, recoverability.
 - Abstractions answer a concrete use case; no empty scaffolding.
 
@@ -22,13 +22,14 @@ Human operator
 Next.js Studio (apps/web)
   │  REST + SSE (via approved auth)
   ▼
-NestJS API (apps/api) ───────── PostgreSQL
+NestJS API (apps/api) ───────── PostgreSQL, Redis + BullMQ
   │  projects / agents / workflows / executions / environments / mcp
   │
-  ├──────── Redis + BullMQ ───── agent-worker (apps/agent-worker)
-  │                               │
-  │                               └── Official Claude/Codex CLI
-  │                                   in isolated Git worktrees
+  ├◄─────── run handling calls ── agent-worker (apps/agent-worker)
+  │         (worker → API only)    host, agent user
+  │                                 │
+  │                                 └── Official Claude/Codex CLI
+  │                                     in a working copy per run
   │
   └── Authorized environment actions → environment-controller
                                           │
@@ -44,7 +45,7 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 
 | Module | Owns | Does not own |
 | --- | --- | --- |
-| `projects` | Project lifecycle, repository connection, Git worktrees/branches, diff, approval and merge | Agent definitions, raw Docker privilege |
+| `projects` | Project lifecycle, repository connection, Git branches/working copies, diff, approval and merge | Agent definitions, raw Docker privilege |
 | `agents` | `AgentDefinition`, `SkillDefinition`, assignment, native-file definitions, validation and publishing | Task queue execution |
 | `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
 | `executions` | Runs, state transitions, queue scheduling, progress/log/result records | Direct Docker host control or unrelated project Git internals |
@@ -72,7 +73,7 @@ logging/    # Structured logs, correlation/tracing
 
 - `apps/web`: UI only; never connects directly to privileged infrastructure or the agent worker.
 - `apps/api`: authoritative business operations, state, authentication, coordination; REST for operations, SSE for realtime delivery.
-- `apps/agent-worker`: consumes approved execution jobs, runs official CLI adapters with constrained filesystem/network/process permissions, publishes results and status. **Must not receive the Docker host socket.**
+- `apps/agent-worker`: runs on the host as the agent user, outside Studio's containers ([ADR 0002](adr/0002-agent-run-isolation.md)). It always calls the API, with a token limited to handling runs, to take approved runs and report status, events and results; the API never reaches into the host, and the worker has no access to the database or Redis. It runs official CLI adapters in a working copy per run. **Never gets access to the system Docker daemon or its socket**; agents may use the agent user's rootless Docker daemon ([Security](../engineering/security.md) §2).
 - `apps/environment-controller`: narrow privileged interface for validated, authorized Docker Compose operations; no generic shell/Docker command interface.
 - `packages/contracts`: a cross-process contract is extracted here **only if** multiple runtime apps need it. One source of truth; never the same schema in both a module and a shared package.
 
@@ -88,14 +89,17 @@ logging/    # Structured logs, correlation/tracing
 
 ## 7. Git and project collaboration
 
-- Each running coding agent gets an assigned worktree and branch with scoped filesystem permissions.
+- Each run gets its own working copy: a clone made from a per-project cache, at the exact commit Studio recorded, on a branch named for the run ([ADR 0002](adr/0002-agent-run-isolation.md)).
+- Agents push their run branches and open pull requests through the agent account, whose token is limited to the managed repositories; branch protection keeps protected branches under the operator's approval. Studio's own Git operations use its Git adapter and the Project's Deploy key, which never reaches the agent ([Security](../engineering/security.md) §4).
 - Outputs are examined as diffs, tested and reviewed before a controlled merge to the project's integration branch (default `dev`).
 - Each project has **one shared default Preview** reflecting the project's integration branch (default `dev`) after approved merges; **not** a Preview per agent.
 - Merge and production deployment are protected operations, never direct worker privileges.
 
 ## 8. Deployment and trust boundaries
 
-- Target: Docker Compose on a standard VPS with Traefik, PostgreSQL, Redis, API, web, workers and controller.
+- Target: one dedicated server, single operator, with no production credentials on it and backups kept off it ([ADR 0002](adr/0002-agent-run-isolation.md)).
+- **Studio's side:** the reverse proxy, database, queue, API, web and environment-controller run as a Docker Compose stack under the system Docker daemon, which only root controls.
+- **The agent side:** the agent worker and the agents run on the host as an ordinary user (the agent user), not in the `docker` group and without passwordless `sudo`, with their own rootless Docker daemon. This operating-system boundary is the security boundary; CLI hooks and permission rules are guardrails only.
 - MVP has no mandatory GPU, Kubernetes, multi-tenant infrastructure, or microVM/KVM dependency.
 - Compose is a starting point, **not security-equivalent to a sandbox/microVM**; stronger isolation can follow a risk assessment.
 - Keep the Studio administrative session separate from untrusted Preview origins. Restrict exposed ports, networking, filesystem mounts and privileges.
@@ -115,7 +119,7 @@ Sequencing, exact bootstrap commands and role ownership: [Bootstrap](../engineer
 
 ## 10. Decisions intentionally deferred
 
-- Exact server/container isolation strategy, worker credentials, network egress policies, resource budgets.
+- Network egress policies and resource budgets. The run isolation model is decided in [ADR 0002](adr/0002-agent-run-isolation.md); its open decisions are listed there.
 - Outcome of the per-provider CLI terms/auth validation, provider credential handling and throttling (the CLI-only approach and its acceptance gate are decided; see [Security](../engineering/security.md) §2).
 - External identity integration (OAuth/SSO, multi-operator RBAC) and precise production domain/TLS topology; the minimal single-operator session strategy above is **not deferred**.
 - Exact scope and configuration semantics of MCP management in the first release.

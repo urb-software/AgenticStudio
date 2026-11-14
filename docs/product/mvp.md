@@ -17,7 +17,7 @@ It is **not** a public SaaS, a model provider, or a replacement for the native C
 1. Create or connect a software project and its Git repository.
 2. Define or import agent configurations and reusable skills; select approved MCP integrations.
 3. Describe a task or compose an initial workflow.
-4. Execute a CLI-backed agent in an isolated project worktree/branch.
+4. Execute a CLI-backed agent in an isolated working copy and branch.
 5. Observe execution status, logs, errors, and results.
 6. Review diff/tests and explicitly approve changes.
 7. Merge approved changes into the project's integration branch (default `dev`).
@@ -29,7 +29,7 @@ This is a **capability roadmap**; not all of it belongs in the first implemented
 
 | Module | Product responsibility |
 | --- | --- |
-| `projects` | Projects, repository connection, Git branches/worktrees, diff, review, approval, merge |
+| `projects` | Projects, repository connection, Git branches/working copies, diff, review, approval, merge |
 | `agents` | Agent and skill definitions, assignment, file/Git-first editing, validation, publication |
 | `workflows` | Definition, steps, sequencing, orchestration, human approvals |
 | `executions` | Runs, queueing, cancellation, status, logs, results |
@@ -45,7 +45,7 @@ Agent and skill definitions are separate domain models *within* `agents`; MCP is
 - REST for commands/queries; SSE for progress/logs.
 - Initial workflow orchestration centered on a **small sequential flow and human approval**; advanced branching/parallelism may be deferred.
 - Native CLI definitions where practical; immutable approved configuration snapshots for runs.
-- Per-agent Git worktrees/branches and controlled merge of reviewed changes.
+- Per-run working copies/branches and controlled merge of reviewed changes.
 - Docker Compose environments controlled by a separate, narrowly privileged process, with one shared Preview built from the project's integration branch (default `dev`) after merge.
 - Secret storage outside Git and minimal access to external tools.
 
