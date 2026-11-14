@@ -15,17 +15,6 @@ import {
 import { ApiError } from '../../../../platform/api';
 import { useDisconnectRepository } from '../../api/projects-queries';
 
-/** The confirmation of a finished disconnect. */
-export const DISCONNECTED_MESSAGE = 'Repository disconnected';
-
-/**
- * One toast per project: the dialog's 204 and the card's polling (which can see the Repository
- * gone first, e.g. during a retried disconnect) may both confirm the same disconnect.
- */
-export function disconnectedToastId(projectId: string): string {
-  return `repository-disconnected-${projectId}`;
-}
-
 type DisconnectRepositoryDialogProps = {
   projectId: string;
   /** The Repository's URL as entered, named in the dialog. */

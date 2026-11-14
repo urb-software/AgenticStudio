@@ -1098,7 +1098,7 @@ describe('SSH repositories with a Deploy key (Story #62)', () => {
     await renderLoaded();
 
     expect((await alertMatching(/Clone failed/)).textContent).toMatch(
-      /different host key.*disconnect the repository and connect it again/,
+      /not one Studio trusts.*disconnect the repository and connect it again/,
     );
   });
 
@@ -1138,7 +1138,10 @@ describe('SSH repositories with a Deploy key (Story #62)', () => {
     );
     await renderLoaded();
 
-    await alertMatching(/Clone failed/);
+    // The message is true for a changed key and for no trusted key alike.
+    expect((await alertMatching(/Clone failed/)).textContent).toMatch(
+      /The Git host's key is not one Studio trusts, so Studio did not connect\./,
+    );
     expect(within(card()).queryByLabelText('Git output')).toBeNull();
     expect(card().textContent?.match(advice)).toHaveLength(1);
   });

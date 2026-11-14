@@ -147,14 +147,19 @@ export const api = {
     unwrap(sdk.verifyRepository({ path: { id: projectId }, body })),
   /**
    * `null` when the Repository is gone (204); the Repository in `disconnecting` when its
-   * cleanup is still pending (202). A success without a Repository body is not taken as gone:
-   * it fails like any unreadable answer.
+   * cleanup is still pending (202). A 202 without a Repository body is not taken as gone: it
+   * fails like any unreadable answer.
    */
   disconnectRepository: async (projectId: string): Promise<RepositoryOutput | null> => {
-    const result = await sdk.disconnectRepository({ path: { id: projectId } });
-    const data = await unwrap(Promise.resolve(result));
-    if (result.response?.status === 204) return null;
-    if (!isRepository(data)) throw new ApiError(result.response?.status ?? 0, undefined, undefined);
+    let status = 0;
+    const data = await unwrap(
+      sdk.disconnectRepository({ path: { id: projectId } }).then((result) => {
+        status = result.response?.status ?? 0;
+        return result;
+      }),
+    );
+    if (status === 204) return null;
+    if (!isRepository(data)) throw new Error('The disconnect answer has no Repository.');
     return data;
   },
 };

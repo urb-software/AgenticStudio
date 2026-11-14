@@ -41,14 +41,21 @@ import {
 } from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
 import { ConnectRepositoryDialog } from '../connect-repository/connect-repository-dialog';
-import {
-  DISCONNECTED_MESSAGE,
-  DisconnectRepositoryDialog,
-  disconnectedToastId,
-} from '../disconnect-repository/disconnect-repository-dialog';
+import { DisconnectRepositoryDialog } from '../disconnect-repository/disconnect-repository-dialog';
 import { failureMessage, gitOutputOf, type Transport } from './failure-message';
 
 const TITLE_ID = 'repository-card-title';
+
+/** The confirmation of a finished disconnect. */
+const DISCONNECTED_MESSAGE = 'Repository disconnected';
+
+/**
+ * One toast per project, also across a remount of the card while a disconnect is answered
+ * (each card instance confirms a disconnect only once, see `confirmDisconnected`).
+ */
+function disconnectedToastId(projectId: string): string {
+  return `repository-disconnected-${projectId}`;
+}
 
 /** The commit id as the card shows it: the first 7 hex digits, like Git's short form. */
 function shortSha(sha: string): string {
@@ -691,7 +698,8 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
 
   // One confirmation per disconnect: the dialog's 204 and this card's polling can both see the
   // same disconnect, and the later one can land after the first toast was dismissed (#72). A
-  // Repository seen again (not gone) starts a new disconnect.
+  // Repository seen again (not gone) starts a new disconnect. (`goneHandled` below guards the
+  // polling path's forget; this guards the toast across both paths.)
   const disconnectConfirmed = useRef(false);
   useEffect(() => {
     if (repository && !gone) disconnectConfirmed.current = false;

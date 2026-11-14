@@ -61,7 +61,8 @@ export function failureMessage(
       }
       return 'The Git host asked for credentials. Only public repositories can be connected over HTTPS.';
     case 'host_key_mismatch':
-      return 'The Git host presented a different host key than the one Studio trusts, so Studio did not connect. Studio never accepts a changed key on its own: if the change is expected, disconnect the repository and connect it again.';
+      // True for a changed key and for no trusted key at all; the advice is given only here.
+      return "The Git host's key is not one Studio trusts, so Studio did not connect. Studio never accepts a changed key on its own: if the change is expected, disconnect the repository and connect it again.";
     // Issue #69: the remote address policy. The detail names the address and, for a loopback
     // or private one, the setting that allows it.
     case 'remote_not_allowed':
