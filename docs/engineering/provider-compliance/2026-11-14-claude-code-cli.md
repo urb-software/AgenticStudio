@@ -243,7 +243,7 @@ claude -p "<operator answer>" --resume <session-id> <same options>
 | File content correct     | yes                                                                                                  | yes                                      |
 | stderr                   | empty                                                                                                | empty                                    |
 
-- Interpretation: non-interactive steps with streamed events, a structured result and resume by session id work with the subscription login. Under `dontAsk`, a tool outside the allowlist was denied without a prompt (`system/permission_denied`) and the run still completed. Which tool was denied in run 1 was not captured, and the denial did not recur in run 2 (model behaviour is not deterministic).
+- Interpretation: non-interactive steps with streamed events, a structured result and resume by session id work with the subscription login. Under `dontAsk`, a tool call was denied without a prompt (`system/permission_denied`) and the run still completed. Which tool was denied in run 1 was not captured, and the denial did not recur in run 2 (model behaviour is not deterministic).
 
 ## Revalidation triggers
 
