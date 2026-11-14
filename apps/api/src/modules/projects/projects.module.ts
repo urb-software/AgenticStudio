@@ -1,6 +1,7 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
+import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
 import { CleanUpRepositoryHandler } from './features/clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from './features/clone-repository/handler.js';
@@ -15,6 +16,11 @@ import { DisconnectRepositoryHandler } from './features/disconnect-repository/ha
 import { FetchRepositoryEndpoint } from './features/fetch-repository/endpoint.js';
 import { FetchRepositoryHandler } from './features/fetch-repository/handler.js';
 import { CreateProjectEndpoint } from './features/create-project/endpoint.js';
+import {
+  DeployKeyHandler,
+  SSH_TRUST_SETTINGS,
+  type SshTrustSettings,
+} from './features/deploy-key/handler.js';
 import { CreateProjectHandler } from './features/create-project/handler.js';
 import { GetProjectEndpoint } from './features/get-project/endpoint.js';
 import { GetProjectHandler } from './features/get-project/handler.js';
@@ -51,8 +57,9 @@ export interface ProjectsModuleOptions {
 
 /**
  * `projects` business module: create and list projects (Story #16); the project detail and
- * connecting a public repository over HTTPS with a background clone (Story #60) and fetching
- * it on demand (Story #61) and disconnecting it (Story #63), through the hardened Git adapter (#59). On Linux, start-up checks
+ * connecting a public repository over HTTPS with a background clone (Story #60), or a private
+ * one over SSH with a generated Deploy key (Story #62), fetching it on demand (Story #61) and
+ * disconnecting it (Story #63), through the hardened Git adapter (#59). On Linux, start-up checks
  * the Git version and sweeps crash leftovers (`onModuleInit`) before the repository worker
  * starts (after bootstrap).
  */
@@ -61,7 +68,7 @@ export class ProjectsModule {
   static register(options: ProjectsModuleOptions = {}): DynamicModule {
     return {
       module: ProjectsModule,
-      imports: [DatabaseModule],
+      imports: [DatabaseModule, SecretsModule],
       controllers: [
         CreateProjectEndpoint,
         ListProjectsEndpoint,
@@ -87,6 +94,14 @@ export class ProjectsModule {
           }),
           inject: [APP_CONFIG],
         },
+        {
+          provide: SSH_TRUST_SETTINGS,
+          useFactory: (config: AppConfig): SshTrustSettings => ({
+            knownHosts: config.sshKnownHosts,
+          }),
+          inject: [APP_CONFIG],
+        },
+        DeployKeyHandler,
         CloneRepositoryHandler,
         RefreshCloneHandler,
         CleanUpRepositoryHandler,

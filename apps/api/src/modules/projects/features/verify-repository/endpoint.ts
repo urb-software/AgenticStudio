@@ -61,10 +61,11 @@ function toHttpError(error: unknown): unknown {
     });
   }
   if (error instanceof JobAlreadyActiveError) {
+    // #61's generic busy problem (not "clone already running", see #72).
     return new ProblemException(HttpStatus.CONFLICT, {
-      type: PROJECTS_PROBLEM_TYPES.cloneAlreadyRunning,
-      title: 'Clone already running',
-      detail: 'An earlier clone of this project is still finishing. Try again in a moment.',
+      type: PROJECTS_PROBLEM_TYPES.repositoryBusy,
+      title: 'Repository busy',
+      detail: 'An earlier operation of this repository is still finishing. Try again in a moment.',
     });
   }
   if (error instanceof QueueUnavailableError) return queueUnavailable();
@@ -99,8 +100,8 @@ export class VerifyRepositoryEndpoint {
       `(${PROJECTS_PROBLEM_TYPES.noRepository})`,
     409:
       'The repository is not waiting to be verified, or no host key awaits confirmation ' +
-      `(${PROJECTS_PROBLEM_TYPES.repositoryNotVerifiable}), or an earlier clone is still ` +
-      `finishing (${PROJECTS_PROBLEM_TYPES.cloneAlreadyRunning})`,
+      `(${PROJECTS_PROBLEM_TYPES.repositoryNotVerifiable}), or an earlier operation is still ` +
+      `finishing (${PROJECTS_PROBLEM_TYPES.repositoryBusy})`,
     422: 'Invalid body, or acceptHostKeyFingerprint does not match (field errors)',
     501: `The API host is not Linux (${PROJECTS_PROBLEM_TYPES.unsupportedPlatform})`,
     503: 'The job queue is unavailable; the attempt is marked failed (generic problem)',

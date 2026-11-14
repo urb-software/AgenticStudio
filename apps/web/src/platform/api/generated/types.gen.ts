@@ -424,7 +424,7 @@ export type VerifyRepositoryErrors = {
      */
     404: ProblemDetails;
     /**
-     * The repository is not waiting to be verified, or no host key awaits confirmation (urn:agentic-studio:problem:repository-not-verifiable), or an earlier clone is still finishing (urn:agentic-studio:problem:clone-already-running)
+     * The repository is not waiting to be verified, or no host key awaits confirmation (urn:agentic-studio:problem:repository-not-verifiable), or an earlier operation is still finishing (urn:agentic-studio:problem:repository-busy)
      */
     409: ProblemDetails;
     /**

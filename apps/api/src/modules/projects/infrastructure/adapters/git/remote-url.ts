@@ -105,6 +105,25 @@ export function parseRemoteUrl(
   return { transport, url: url.href };
 }
 
+/** Where an `ssh` remote's server listens. */
+export interface SshEndpoint {
+  /** Host name or IP address, without brackets. */
+  host: string;
+  port: number;
+}
+
+/**
+ * The host and port of an `ssh` remote already validated by {@link parseRemoteUrl}: port 22
+ * for the scp-like form and for a URL without a port.
+ */
+export function sshEndpoint(remote: RemoteUrl): SshEndpoint {
+  if (remote.transport !== 'ssh') reject('only an ssh remote has an SSH endpoint');
+  const scp = /^[a-z][a-z\d+.-]*:\/\//i.test(remote.url) ? null : SCP_LIKE.exec(remote.url);
+  if (scp) return { host: scp[2]!, port: 22 };
+  const url = new URL(remote.url);
+  return { host: url.hostname.replace(/^\[|\]$/g, ''), port: url.port ? Number(url.port) : 22 };
+}
+
 function isTransport(value: string): value is GitTransport {
   return value === 'ssh' || value === 'https' || value === 'file';
 }

@@ -1,5 +1,16 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -11,8 +22,10 @@ import {
 import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
 import {
   gitInvocations,
+  keyscanInvocation,
   sshInvocation,
   writeFakeGit,
+  writeFakeKeyscan,
   writeFakeSsh,
   type FakeFetch,
 } from './fixtures/fake-binaries.js';
@@ -21,11 +34,22 @@ const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HTTPS_URL = 'https://git.example.test/owner/repo.git';
 const SSH_URL = 'ssh://git@git.example.test:2222/srv/git/repo.git';
 // A PEM-shaped placeholder and a public host key: test data, not credentials.
-const SSH: SshCredentials = {
+const SSH_FIXTURE = {
   privateKey:
     '-----BEGIN OPENSSH PRIVATE KEY-----\nZmFrZS10ZXN0LWtleQ==\n-----END OPENSSH PRIVATE KEY-----\n',
   hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeHostKeyForTestsOnly0000000000000000000 host',
 };
+const SSH: SshCredentials = { privateKey: SSH_FIXTURE.privateKey, hostKeys: [SSH_FIXTURE.hostKey] };
+
+/** A throwaway public key as `<type> <base64>`, generated with ssh-keygen for this run. */
+async function generatedPublicKey(dir: string, type: 'ed25519' | 'ecdsa' | 'rsa'): Promise<string> {
+  const path = join(dir, `generated-${type}-${Math.random().toString(16).slice(2)}`);
+  const result = spawnSync('ssh-keygen', ['-q', '-t', type, '-N', '', '-f', path]);
+  if (result.status !== 0) throw new Error(`ssh-keygen failed: ${String(result.stderr)}`);
+  const [keyType, data] = (await readFile(`${path}.pub`, 'utf8')).trim().split(' ');
+  await rm(path, { force: true });
+  return `${keyType} ${data}`;
+}
 
 /** Settings every hardened Git command must carry (security.md §4). */
 const HARDENING = [
@@ -168,7 +192,11 @@ describe.runIf(process.platform === 'linux')(
         git.inspectRemote(HTTPS_URL, 'a..b'),
         git.inspectRemote(HTTPS_URL, '/main'),
         git.inspectRemote(SSH_URL, 'main'),
-        git.inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, hostKey: 'not a key' } }),
+        git.inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, hostKeys: ['not a key'] } }),
+        git.inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, hostKeys: [] } }),
+        git.inspectRemote(SSH_URL, 'main', {
+          ssh: { ...SSH, hostKeys: [SSH_FIXTURE.hostKey, 'ssh-ed25519 broken!'] },
+        }),
         git.inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, privateKey: 'not a key' } }),
         git.clone('../escape', HTTPS_URL, 'main'),
         git.fetch(PROJECT_ID, 'ext::sh', 'main'),
@@ -408,6 +436,21 @@ describe.runIf(process.platform === 'linux')(
         expect(existsSync(ssh.keyPath)).toBe(false);
       });
 
+      it('trusts every supplied host key of the host, all pinned to the alias', async () => {
+        const sshBinary = await writeFakeSsh(root, recordDir, 'deny');
+        const git = await adapter('real', { sshBinary });
+        const other = await generatedPublicKey(root, 'ecdsa');
+
+        await git
+          .inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, hostKeys: [SSH.hostKeys[0]!, other] } })
+          .catch(() => undefined);
+
+        const [first = ''] = SSH.hostKeys[0]!.split(' host');
+        expect((await sshInvocation(recordDir)).knownHosts).toBe(
+          `studio-remote ${first}\nstudio-remote ${other}\n`,
+        );
+      });
+
       it('deletes the key when the operation is aborted', async () => {
         const sshBinary = await writeFakeSsh(root, recordDir, 'hang');
         const git = await adapter('real', { sshBinary });
@@ -431,6 +474,97 @@ describe.runIf(process.platform === 'linux')(
           reason: 'timeout',
         });
         // afterEach: the temporary root, which held the key, is empty.
+      });
+    });
+
+    describe('scanHostKey', () => {
+      it("runs ssh-keyscan isolated, for the URL's host and port, and prefers ed25519", async () => {
+        Object.assign(process.env, { SSH_AUTH_SOCK: '/tmp/agent.sock' });
+        const [ed25519, ecdsa, rsa] = await Promise.all([
+          generatedPublicKey(root, 'ed25519'),
+          generatedPublicKey(root, 'ecdsa'),
+          generatedPublicKey(root, 'rsa'),
+        ]);
+        const keyscanBinary = await writeFakeKeyscan(root, recordDir, {
+          stdout: `[git.example.test]:2222 ${rsa}\n[git.example.test]:2222 ${ecdsa}\n[git.example.test]:2222 ${ed25519}\n`,
+          stderr: '# git.example.test:2222 SSH-2.0-OpenSSH_9.6\n',
+        });
+        const git = await adapter({}, { keyscanBinary });
+
+        await expect(git.scanHostKey(SSH_URL)).resolves.toEqual({ hostKey: ed25519 });
+
+        const scan = await keyscanInvocation(recordDir);
+        expect(scan.args).toEqual([
+          '-T',
+          expect.stringMatching(/^\d+$/),
+          '-p',
+          '2222',
+          '-t',
+          'ed25519,ecdsa,rsa',
+          '--',
+          'git.example.test',
+        ]);
+        expect(scan.env.SSH_AUTH_SOCK).toBeUndefined();
+        expect(scan.env.HOME?.startsWith(join(tempRoot, 'studio-git-'))).toBe(true);
+      });
+
+      it('takes ECDSA, then RSA, when the host has no ed25519 key; port 22 for scp-like URLs', async () => {
+        const [ecdsa, rsa] = await Promise.all([
+          generatedPublicKey(root, 'ecdsa'),
+          generatedPublicKey(root, 'rsa'),
+        ]);
+        let keyscanBinary = await writeFakeKeyscan(root, recordDir, {
+          stdout: `git.example.test ${rsa}\ngit.example.test ${ecdsa}\n`,
+        });
+        await expect(
+          (await adapter({}, { keyscanBinary })).scanHostKey('git@git.example.test:owner/repo.git'),
+        ).resolves.toEqual({ hostKey: ecdsa });
+        expect((await keyscanInvocation(recordDir)).args).toEqual(
+          expect.arrayContaining(['-p', '22', '--', 'git.example.test']),
+        );
+
+        keyscanBinary = await writeFakeKeyscan(root, recordDir, {
+          stdout: `git.example.test ${rsa}\n`,
+        });
+        await expect(
+          (await adapter({}, { keyscanBinary })).scanHostKey('git@git.example.test:owner/repo.git'),
+        ).resolves.toEqual({ hostKey: rsa });
+      });
+
+      it('fails with host_unreachable, redacted, when the host presents no usable key', async () => {
+        const keyscanBinary = await writeFakeKeyscan(root, recordDir, {
+          stdout: 'git.example.test ssh-ed25519 not-base64!\n',
+          stderr: `getaddrinfo git.example.test: Name or service not known (${root})\n`,
+        });
+
+        const error = await (
+          await adapter({}, { keyscanBinary })
+        )
+          .scanHostKey(SSH_URL)
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(GitOperationError);
+        expect(error).toMatchObject({ reason: 'host_unreachable' });
+        expect((error as GitOperationError).detail).not.toContain(root);
+      });
+
+      it('fails with timeout when ssh-keyscan hangs, leaving no temporary directory', async () => {
+        const keyscanBinary = await writeFakeKeyscan(root, recordDir, 'hang');
+        const git = await adapter({}, { keyscanBinary, fetchTimeoutMs: 700 });
+
+        await expect(git.scanHostKey(SSH_URL)).rejects.toMatchObject({ reason: 'timeout' });
+        // afterEach: the temporary root is empty.
+      });
+
+      it('refuses a remote that is not ssh before anything runs', async () => {
+        const keyscanBinary = await writeFakeKeyscan(root, recordDir, { stdout: '' });
+        const git = await adapter({}, { keyscanBinary });
+
+        await expect(git.scanHostKey(HTTPS_URL)).rejects.toThrow(GitRequestRejectedError);
+        await expect(git.scanHostKey('ssh://git@-oProxyCommand=x/repo.git')).rejects.toThrow(
+          GitRequestRejectedError,
+        );
+        expect(existsSync(join(recordDir, 'keyscan.args'))).toBe(false);
       });
     });
   },

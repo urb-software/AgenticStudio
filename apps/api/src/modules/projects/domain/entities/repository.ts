@@ -84,6 +84,21 @@ export interface RepositoryConnection {
   hostKeyFingerprint: string | null;
 }
 
+/**
+ * Whether "Verify and clone" applies (Issue #62): an SSH Repository (it has a Deploy key)
+ * without a Clone that is `awaiting_key`, `awaiting_host_key`, or `failed` (Retry keeps the
+ * Deploy key).
+ */
+export function isVerifiable(repository: RepositoryConnection): boolean {
+  return (
+    repository.deployKeySecret !== null &&
+    !repository.hasClone &&
+    (repository.state === 'awaiting_key' ||
+      repository.state === 'awaiting_host_key' ||
+      repository.state === 'failed')
+  );
+}
+
 /** Builds a failure, cutting an over-long detail. */
 export function repositoryFailure(
   code: RepositoryFailureCode,

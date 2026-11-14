@@ -15,7 +15,7 @@ import {
 import { ClonePaths } from './clone-paths.js';
 import { classifyGitFailure, redactGitOutput } from './git-output.js';
 import { diskUsage, GitProcessInterrupted, runGitProcess, type SizeWatch } from './git-process.js';
-import { parseRemoteUrl, type GitTransport, type RemoteUrl } from './remote-url.js';
+import { parseRemoteUrl, sshEndpoint, type GitTransport, type RemoteUrl } from './remote-url.js';
 
 /**
  * The lowest Git that supports every mechanism the adapter relies on: `GIT_CONFIG_GLOBAL`
@@ -53,6 +53,8 @@ export interface SystemGitSettings {
   gitBinary?: string;
   /** Default `ssh` from `PATH`. */
   sshBinary?: string;
+  /** Default `ssh-keyscan` from `PATH` (part of the OpenSSH client). */
+  keyscanBinary?: string;
   /**
    * Where per-operation private directories (`studio-git-*`: SSH key, known hosts) go.
    * Default `<dataDir>/tmp`, created owner-only; never inside a Clone.
@@ -105,6 +107,11 @@ const HOST_KEY =
 const PRIVATE_KEY =
   /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----\n[\s\S]+\n-----END [A-Z0-9 ]*PRIVATE KEY-----\n?$/;
 const GIT_VERSION = /^git version (\d+)\.(\d+)\.(\d+)/;
+/** Host key types `scanHostKey` asks for, and its preference among them (first wins). */
+const SCANNED_KEY_TYPES = 'ed25519,ecdsa,rsa';
+const SCAN_PREFERENCE = [/^ssh-ed25519$/, /^ecdsa-sha2-/, /^ssh-rsa$/];
+/** Longest ssh-keyscan connection timeout, in seconds. */
+const MAX_SCAN_TIMEOUT_S = 30;
 /** Prefix of per-operation private directories. */
 const OPERATION_DIR_PREFIX = 'studio-git-';
 /** A leftover is stale once it is older than the clone limit plus this margin. */
@@ -174,6 +181,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly platform: NodeJS.Platform;
   private readonly gitBinary: string;
   private readonly sshBinary: string;
+  private readonly keyscanBinary: string;
   private readonly tempRoot: string;
   private readonly sizePollIntervalMs: number;
   private readonly log: (message: string) => void;
@@ -187,6 +195,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.platform = settings.platform ?? process.platform;
     this.gitBinary = settings.gitBinary ?? 'git';
     this.sshBinary = settings.sshBinary ?? 'ssh';
+    this.keyscanBinary = settings.keyscanBinary ?? 'ssh-keyscan';
     this.tempRoot = settings.tempRoot ?? join(settings.dataDir, 'tmp');
     this.ownsTempRoot = settings.tempRoot === undefined;
     this.sizePollIntervalMs = settings.sizePollIntervalMs ?? 1000;
@@ -303,6 +312,52 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       }
     }
     return { defaultBranch, branchExists };
+  }
+
+  async scanHostKey(
+    remoteUrl: string,
+    options: GitOperationOptions = {},
+  ): Promise<{ hostKey: string }> {
+    this.assertSupportedPlatform();
+    const remote = parseRemoteUrl(remoteUrl, this.settings.allowedTransports);
+    if (remote.transport !== 'ssh') {
+      throw new GitRequestRejectedError('Only an ssh remote has a host key to retrieve.');
+    }
+    const { host, port } = sshEndpoint(remote);
+    return this.guarded('ssh-keyscan', () =>
+      this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+        const seconds = Math.min(
+          MAX_SCAN_TIMEOUT_S,
+          Math.max(1, Math.ceil((context.deadline - Date.now()) / 1000)),
+        );
+        const result = await this.run(context, this.keyscanBinary, [
+          '-T',
+          String(seconds),
+          '-p',
+          String(port),
+          '-t',
+          SCANNED_KEY_TYPES,
+          '--',
+          host,
+        ]);
+        const keys = result.stdout
+          .split('\n')
+          .filter((line) => line.trim() !== '' && !line.startsWith('#'))
+          .map((line) => line.trim().split(/\s+/).slice(1, 3).join(' '))
+          .filter((key) => HOST_KEY.test(key));
+        for (const preferred of SCAN_PREFERENCE) {
+          const key = keys.find((candidate) => preferred.test(candidate.split(' ')[0]!));
+          if (key) return { hostKey: key };
+        }
+        const detail = redactGitOutput(result.stderr);
+        const reason = classifyGitFailure(result.stderr);
+        this.log(`ssh-keyscan found no host key: ${detail}`);
+        throw new GitOperationError(
+          reason === 'unknown' || reason === 'auth_failed' ? 'host_unreachable' : reason,
+          detail,
+        );
+      }),
+    );
   }
 
   async clone(
@@ -508,8 +563,11 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       if (!PRIVATE_KEY.test(options.ssh.privateKey.replace(/\r\n/g, '\n'))) {
         throw new GitRequestRejectedError('The Deploy key is not a PEM-armoured private key.');
       }
-      if (!HOST_KEY.test(options.ssh.hostKey.trim())) {
-        throw new GitRequestRejectedError('The host key is not a valid OpenSSH public key.');
+      const { hostKeys } = options.ssh;
+      if (hostKeys.length === 0 || !hostKeys.every((key) => HOST_KEY.test(key.trim()))) {
+        throw new GitRequestRejectedError(
+          'The host keys are missing or not valid OpenSSH public keys.',
+        );
       }
     }
     return remote;
@@ -565,7 +623,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
-   * Writes the Deploy key (owner-only) and the pinned host key into the operation's
+   * Writes the Deploy key (owner-only) and the trusted host keys into the operation's
    * private directory and returns the environment that makes Git's `ssh` use exactly
    * them: no agent, no other identity, no user or system SSH configuration, strict
    * host-key checking.
@@ -588,11 +646,11 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       mode: 0o600,
       flag: 'wx',
     });
-    const [keyType, keyData] = credentials.hostKey.trim().split(' ');
-    await writeFile(knownHosts, `${HOST_KEY_ALIAS} ${keyType} ${keyData}\n`, {
-      mode: 0o600,
-      flag: 'wx',
+    const lines = credentials.hostKeys.map((hostKey) => {
+      const [keyType, keyData] = hostKey.trim().split(/\s+/);
+      return `${HOST_KEY_ALIAS} ${keyType} ${keyData}\n`;
     });
+    await writeFile(knownHosts, lines.join(''), { mode: 0o600, flag: 'wx' });
     const sshOptions = [
       'BatchMode=yes',
       'StrictHostKeyChecking=yes',
@@ -699,11 +757,21 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     return result;
   }
 
-  private async git(context: OperationContext, args: string[], watch?: SizeWatch) {
+  private git(context: OperationContext, args: string[], watch?: SizeWatch) {
+    return this.run(
+      context,
+      this.gitBinary,
+      [...hardeningArgs(this.settings.allowedTransports), ...args],
+      watch,
+    );
+  }
+
+  /** Runs a binary in the operation's directory and environment, under its deadline. */
+  private async run(context: OperationContext, binary: string, args: string[], watch?: SizeWatch) {
     try {
       return await runGitProcess({
-        binary: this.gitBinary,
-        args: [...hardeningArgs(this.settings.allowedTransports), ...args],
+        binary,
+        args,
         cwd: context.dir,
         env: context.env,
         deadline: context.deadline,

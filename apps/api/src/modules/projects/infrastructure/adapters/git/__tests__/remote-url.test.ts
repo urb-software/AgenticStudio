@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GitRequestRejectedError } from '../../../../ports/repository-git.js';
-import { parseRemoteUrl, type GitTransport } from '../remote-url.js';
+import { parseRemoteUrl, sshEndpoint, type GitTransport } from '../remote-url.js';
 
 const PRODUCTION: GitTransport[] = ['ssh', 'https'];
 
@@ -80,5 +80,22 @@ describe('parseRemoteUrl', () => {
       throw new Error('expected a rejection');
     })();
     expect(error.message).not.toContain('do-not-leak');
+  });
+});
+
+describe('sshEndpoint', () => {
+  it.each([
+    ['git@github.com:owner/repo.git', 'github.com', 22],
+    ['ssh://git@github.com/owner/repo.git', 'github.com', 22],
+    ['ssh://git@git.example.test:2222/srv/git/repo.git', 'git.example.test', 2222],
+    ['ssh://git@[::1]:2222/srv/git/repo.git', '::1', 2222],
+  ])('reads the host and port of %s', (input, host, port) => {
+    expect(sshEndpoint(parseRemoteUrl(input, PRODUCTION))).toEqual({ host, port });
+  });
+
+  it('refuses a remote that is not ssh', () => {
+    expect(() =>
+      sshEndpoint(parseRemoteUrl('https://github.com/owner/repo.git', PRODUCTION)),
+    ).toThrow(GitRequestRejectedError);
   });
 });

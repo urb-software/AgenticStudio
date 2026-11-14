@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  InvalidRepositoryUrlError,
-  remoteIdentity,
-  RepositoryUrl,
-  SSH_NOT_SUPPORTED_MESSAGE,
-} from '../repository-url.js';
+import { InvalidRepositoryUrlError, remoteIdentity, RepositoryUrl } from '../repository-url.js';
 
 function rejection(input: string, options?: { allowFileRemotes?: boolean }): string {
   try {
@@ -88,9 +83,11 @@ describe('RepositoryUrl.parse', () => {
   it.each([
     ['an empty URL', '', 'Enter the repository URL.'],
     ['a blank URL', '   ', 'Enter the repository URL.'],
-    ['a scp-like SSH URL', 'git@github.com:acme/shop.git', SSH_NOT_SUPPORTED_MESSAGE],
-    ['an ssh:// URL', 'ssh://git@github.com/acme/shop.git', SSH_NOT_SUPPORTED_MESSAGE],
-    ['a git+ssh:// URL', 'git+ssh://git@github.com/acme/shop.git', SSH_NOT_SUPPORTED_MESSAGE],
+    [
+      'a git+ssh:// URL',
+      'git+ssh://git@github.com/acme/shop.git',
+      'Use git@host:owner/repo.git or ssh://git@host/owner/repo.git for SSH.',
+    ],
     [
       'an http:// URL',
       'http://github.com/acme/shop.git',
@@ -140,6 +137,55 @@ describe('RepositoryUrl.parse', () => {
     ['a URL over 2048 characters', `https://github.com/${'a'.repeat(2040)}`],
   ])('rejects a malformed URL: %s', (_case, input) => {
     expect(rejection(input)).toEqual(expect.any(String));
+  });
+
+  describe('SSH URLs (Issue #62)', () => {
+    it.each([
+      ['scp-like', 'git@github.com:acme/shop.git', 'github.com', 'github.com/acme/shop'],
+      ['ssh://', 'ssh://git@github.com/acme/shop.git', 'github.com', 'github.com/acme/shop'],
+      [
+        'ssh:// on port 22',
+        'ssh://git@GitHub.com:22/acme/shop',
+        'github.com',
+        'github.com/acme/shop',
+      ],
+      [
+        'ssh:// on another port',
+        'ssh://git@git.example.com:2222/acme/shop.git',
+        '[git.example.com]:2222',
+        'git.example.com:2222/acme/shop',
+      ],
+      [
+        'ssh:// without a user',
+        'ssh://git.example.com/srv/shop.git',
+        'git.example.com',
+        'git.example.com/srv/shop',
+      ],
+    ])('accepts a %s URL with its known_hosts name', (_case, input, hostName, identity) => {
+      const url = RepositoryUrl.parse(`  ${input} `);
+
+      expect(url.value).toBe(input);
+      expect(url.ssh).toEqual({ hostName });
+      expect(url.identity).toBe(identity);
+    });
+
+    it('marks an HTTPS URL as not SSH', () => {
+      expect(RepositoryUrl.parse('https://github.com/acme/shop.git').ssh).toBeNull();
+    });
+
+    it.each([
+      ['a password', 'ssh://git:secret@github.com/acme/shop.git'],
+      ['an option-like user', 'ssh://-oProxyCommand=x@github.com/acme/shop.git'],
+      ['an option-like scp user', '-oProxyCommand=x@github.com:acme/shop.git'],
+      ['an option-like scp host', 'git@-oProxyCommand=x:acme/shop.git'],
+      ['an invalid host', 'git@exa_mple.com:acme/shop.git'],
+      ['an option-like path segment', 'git@github.com:-acme/shop.git'],
+      ['an option-like ssh:// path segment', 'ssh://git@github.com/-acme/shop.git'],
+      ['a query', 'ssh://git@github.com/acme/shop.git?x=1'],
+      ['no repository path', 'ssh://git@github.com/'],
+    ])('rejects an SSH URL with %s', (_case, input) => {
+      expect(rejection(input)).toEqual(expect.any(String));
+    });
   });
 
   it('accepts a file:// URL only under the test-only fixture-remote setting', () => {

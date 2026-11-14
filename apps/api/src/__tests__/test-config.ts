@@ -34,6 +34,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     // Nothing is written there unless a test clones; such tests pass their own directory.
     dataDir: tmpdir(),
     gitAllowFileRemotes: false,
+    sshKnownHosts: [],
     ...overrides,
   };
 }
