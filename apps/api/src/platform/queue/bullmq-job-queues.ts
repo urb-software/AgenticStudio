@@ -12,6 +12,7 @@ import { Redis } from 'ioredis';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { redactSecrets } from '../http/redact.js';
 import {
+  type CancelOptions,
   type EnqueueOptions,
   JobAbortedError,
   JobAlreadyActiveError,
@@ -22,6 +23,7 @@ import {
   type QueueDefinition,
   type QueuedJob,
   QueueUnavailableError,
+  JobStillRunningError,
 } from './job-queue.js';
 import type { QueueHealth } from './queue-health.js';
 
@@ -71,6 +73,8 @@ const CLOSE_TIMEOUT_MS = 5_000;
 // How long cancel() waits for a job our worker has taken to reach its processor.
 const START_WAIT_MS = 1_000;
 const START_POLL_MS = 10;
+// How often cancel() checks that BullMQ has finished a settled job (its id is free again).
+const SETTLE_POLL_MS = 10;
 const TIMED_OUT = Symbol('timed out');
 // Errors that mean "Redis is unreachable"; logged once per outage by logConnectionErrors.
 const CONNECTION_ERROR =
@@ -95,6 +99,11 @@ interface Entry {
    * BullMQ has lost or dropped the job meanwhile.
    */
   running: Map<string, AbortController>;
+  /**
+   * Per running job id: settles once its run is over (processor returned, `onFailed`
+   * completed, the id left `running`). What `cancel` with `settleTimeoutMs` waits for.
+   */
+  settled: Map<string, Promise<void>>;
 }
 
 /**
@@ -153,11 +162,12 @@ export class BullMqJobQueues
       definition: definition as unknown as QueueDefinition<JobPayload>,
       queue,
       running: new Map(),
+      settled: new Map(),
     };
     this.entries.set(definition.name, entry);
     return {
       enqueue: (id, payload, options) => this.enqueue(entry, id, payload, options),
-      cancel: (id) => this.cancel(entry, id),
+      cancel: (id, options) => this.cancel(entry, id, options),
     };
   }
 
@@ -273,8 +283,41 @@ export class BullMqJobQueues
     }
   }
 
-  private async cancel(entry: Entry, id: string): Promise<boolean> {
+  private async cancel(entry: Entry, id: string, options: CancelOptions = {}): Promise<boolean> {
     assertJobId(id);
+    assertTimeout(options.settleTimeoutMs);
+    const cancelled = await this.signalCancel(entry, id);
+    if (cancelled && options.settleTimeoutMs !== undefined) {
+      await this.waitUntilSettled(entry, id, Date.now() + options.settleTimeoutMs);
+    }
+    return cancelled;
+  }
+
+  /**
+   * Waits until the cancelled job's run is over in this process and BullMQ no longer holds
+   * the id as unfinished (it moves a failed job out of `active` just after the processor
+   * returns), so the id is free for a new job.
+   */
+  private async waitUntilSettled(entry: Entry, id: string, deadline: number): Promise<void> {
+    const { definition, queue } = entry;
+    const settled = entry.settled.get(id);
+    if (settled && (await withTimeout(settled, deadline - Date.now())) === TIMED_OUT) {
+      throw new JobStillRunningError(definition.name, id);
+    }
+    for (;;) {
+      const busy = await unavailableOnError(async () => {
+        const job = await queue.getJob(id);
+        return job !== undefined && UNFINISHED_STATES.has(await job.getState());
+      });
+      // A new run of the same id (another caller's enqueue) is not ours to wait for.
+      if (!busy || entry.running.has(id)) return;
+      if (Date.now() >= deadline) throw new JobStillRunningError(definition.name, id);
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+    }
+  }
+
+  /** Signals the cancel (abort, or removal of a waiting job); true if there was a job to cancel. */
+  private async signalCancel(entry: Entry, id: string): Promise<boolean> {
     if (this.abortRunning(entry, id)) {
       return true;
     }
@@ -355,7 +398,10 @@ export class BullMqJobQueues
     const id = job.id!;
     const { payload, timeoutMs = definition.timeoutMs } = job.data;
     const controller = new AbortController();
+    let markSettled!: () => void;
+    const settled = new Promise<void>((resolve) => (markSettled = resolve));
     running.set(id, controller);
+    entry.settled.set(id, settled);
     const timer =
       timeoutMs === undefined
         ? undefined
@@ -383,6 +429,10 @@ export class BullMqJobQueues
       if (running.get(id) === controller) {
         running.delete(id);
       }
+      if (entry.settled.get(id) === settled) {
+        entry.settled.delete(id);
+      }
+      markSettled();
     }
   }
 

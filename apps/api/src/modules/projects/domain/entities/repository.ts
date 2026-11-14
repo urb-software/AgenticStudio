@@ -2,9 +2,16 @@
  * The states of a Repository: the last operation, not whether a Clone exists (see
  * `RepositoryConnection.hasClone`). `connecting`: the first Clone is being made; `ready`: the
  * Clone is up to date as of the last fetch; `fetching`: the Clone is being brought up to date;
- * `failed`: the last connect or fetch failed. Later stories add states.
+ * `failed`: the last connect or fetch failed; `disconnecting`: the operator disconnected it and
+ * its data is still being removed (the record goes last). Later stories add states.
  */
-export const REPOSITORY_STATES = ['connecting', 'ready', 'fetching', 'failed'] as const;
+export const REPOSITORY_STATES = [
+  'connecting',
+  'ready',
+  'fetching',
+  'failed',
+  'disconnecting',
+] as const;
 export type RepositoryState = (typeof REPOSITORY_STATES)[number];
 
 /** Why a Repository is `failed`: the fixed reason codes of Epic #55. */
@@ -43,7 +50,7 @@ export interface RepositoryConnection {
   state: RepositoryState;
   /**
    * Whether a usable Clone exists: always when `ready` or `fetching`; when `failed`, only if
-   * the failure was a fetch that kept the Clone. Never while `connecting`.
+   * the failure was a fetch that kept the Clone. Never while `connecting` or `disconnecting`.
    */
   hasClone: boolean;
   /** Commit id of the Integration branch in the Clone; set exactly when `hasClone`. */

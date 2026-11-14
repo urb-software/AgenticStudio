@@ -19,4 +19,13 @@ export interface RepositoryJobs {
    * @throws QueueUnavailableError (platform/queue) if the queue cannot be reached.
    */
   start(projectId: string, operation: RepositoryOperation): Promise<void>;
+
+  /**
+   * Cancels the project's operation, waiting or running, and returns once it has settled
+   * (its last write, if any, is done and its job id is free for a new operation). A no-op
+   * when nothing is scheduled.
+   * @throws JobStillRunningError (platform/queue) if a running operation did not stop in time.
+   * @throws QueueUnavailableError (platform/queue) if the queue cannot be reached.
+   */
+  cancel(projectId: string): Promise<void>;
 }

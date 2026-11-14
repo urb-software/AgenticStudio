@@ -1,6 +1,13 @@
 'use client';
 
-import { DownloadIcon, GitBranchIcon, PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
+import {
+  DownloadIcon,
+  GitBranchIcon,
+  PencilIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  UnplugIcon,
+} from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
@@ -17,11 +24,17 @@ import {
 import {
   useConnectRepository,
   useFetchRepository,
+  useForgetRepository,
   useRefreshProject,
   useRepository,
 } from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
 import { ConnectRepositoryDialog } from '../connect-repository/connect-repository-dialog';
+import {
+  DISCONNECTED_MESSAGE,
+  DisconnectRepositoryDialog,
+  disconnectedToastId,
+} from '../disconnect-repository/disconnect-repository-dialog';
 import { failureMessage } from './failure-message';
 
 const TITLE_ID = 'repository-card-title';
@@ -73,6 +86,8 @@ function StatePill({ state }: { state: string }) {
       return <StatusPill status="running">Fetching</StatusPill>;
     case 'failed':
       return <StatusPill status="failed">Failed</StatusPill>;
+    case 'disconnecting':
+      return <StatusPill status="running">Disconnecting</StatusPill>;
     default:
       return <StatusPill status="none">Unavailable</StatusPill>;
   }
@@ -285,6 +300,21 @@ function FailedBody({
   );
 }
 
+/** `disconnecting`: the server is still removing Studio's data; it retries on its own. */
+function DisconnectingBody({ repository }: { repository: RepositorySummaryOutput }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <p role="status" className="m-0 text-body text-text-muted">
+        <strong className="font-medium text-text">Disconnecting…</strong> Removing Studio&apos;s
+        copy of the repository. Studio keeps trying on its own; Disconnect tries again now.
+      </p>
+      <Details>
+        <Target repository={repository} />
+      </Details>
+    </div>
+  );
+}
+
 function LoadingBody() {
   return (
     <div
@@ -308,8 +338,9 @@ type RepositoryCardProps = {
 /**
  * The project's one Repository card, in every state: none (connect), connecting (progress,
  * polled), ready (Fetch), fetching (progress, polled), failed with a usable Clone (the
- * previous data, Fetch again), failed without one (message, redacted detail, Retry) and any
- * state a later API adds ("unavailable"). The state always comes from the server.
+ * previous data, Fetch again), failed without one (message, redacted detail, Retry),
+ * disconnecting (progress, polled) and any state a later API adds ("unavailable"). Every state
+ * but none offers Disconnect (#63). The state always comes from the server.
  */
 export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   const [connectOpen, setConnectOpen] = useState(false);
@@ -321,8 +352,10 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     setDialogKey((key) => key + 1);
     setConnectOpen(true);
   };
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
   const repositoryQuery = useRepository(projectId, summary !== null);
   const refreshProject = useRefreshProject(projectId);
+  const forgetRepository = useForgetRepository(projectId);
   const fetchRepository = useFetchRepository(projectId);
   const repository = repositoryQuery.data;
   const state = repository?.state ?? summary?.state;
@@ -344,6 +377,25 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     }
     last.current = repository;
   }, [repository, refreshProject]);
+
+  // A disconnecting Repository that polling no longer finds (404) is gone: the server's
+  // cleanup finished. Confirm it and show the empty state (#63 clarification 8).
+  const gone =
+    repositoryQuery.error instanceof ApiError &&
+    repositoryQuery.error.status === 404 &&
+    repository?.state === 'disconnecting';
+  // Once per disappearance, however often the card re-renders before the cache is updated.
+  const goneHandled = useRef(false);
+  useEffect(() => {
+    if (!gone) {
+      goneHandled.current = false;
+      return;
+    }
+    if (goneHandled.current) return;
+    goneHandled.current = true;
+    toast.success(DISCONNECTED_MESSAGE, { id: disconnectedToastId(projectId) });
+    void forgetRepository();
+  }, [gone, forgetRepository, projectId]);
 
   let body: ReactNode;
   if (summary === null) {
@@ -402,6 +454,8 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
         onChangeSettings={() => openConnect(repository)}
       />
     );
+  } else if (repository.state === 'disconnecting') {
+    body = <DisconnectingBody repository={repository} />;
   } else {
     body = (
       <div className="flex flex-col gap-4">
@@ -423,8 +477,28 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
           <CardTitle id={TITLE_ID}>Repository</CardTitle>
           {state ? <StatePill state={state} /> : null}
         </CardHeader>
-        <CardContent>{body}</CardContent>
+        <CardContent>
+          {summary === null ? (
+            body
+          ) : (
+            <div className="flex flex-col gap-4">
+              {body}
+              <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+                <Button variant="danger" icon={UnplugIcon} onClick={() => setDisconnectOpen(true)}>
+                  Disconnect
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
       </Card>
+      {/* Mounted in every state, so it can close itself once the Repository is gone. */}
+      <DisconnectRepositoryDialog
+        projectId={projectId}
+        url={repository?.url ?? summary?.url ?? ''}
+        open={disconnectOpen && summary !== null}
+        onOpenChange={setDisconnectOpen}
+      />
       <ConnectRepositoryDialog
         key={dialogKey}
         projectId={projectId}

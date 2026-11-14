@@ -292,12 +292,15 @@ async function createAndOpenProject(page: Page, name: string) {
   return main;
 }
 
-// Stories #60 and #61: create a project, open it, connect a fixture Repository over the
+// Stories #60, #61 and #63: create a project, open it, connect a fixture Repository over the
 // test-only file transport, see it ready with a commit id, keep it across a reload, then fetch
-// a commit pushed to the remote, fetch again with nothing new, and see a failed fetch keep the
-// previous commit. Linux only, like every repository feature; `pnpm e2e:smoke` fails on Linux
-// if this test did not run and pass.
-test('operator connects a repository, sees it ready and fetches it', async ({ page }, testInfo) => {
+// a commit pushed to the remote, fetch again with nothing new, see a failed fetch keep the
+// previous commit, disconnect it (confirm dialog) and connect the same remote again. Linux
+// only, like every repository feature; `pnpm e2e:smoke` fails on Linux if this test did not
+// run and pass.
+test('operator connects a repository, fetches it, disconnects it and connects it again', async ({
+  page,
+}, testInfo) => {
   test.skip(
     process.env.E2E_API_PLATFORM !== 'linux',
     'Repository features run on Linux only; CI runs this test on Linux.',
@@ -391,6 +394,53 @@ test('operator connects a repository, sees it ready and fetches it', async ({ pa
   await expect(card.locator('code').filter({ hasText: pushed })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Fetch', exact: true })).toBeEnabled();
   await expectInBothThemes(page, card.getByText('Failed', { exact: true }));
+
+  // Story #63: Disconnect is an outlined action that opens a destructive confirm (a bottom
+  // sheet on phones), scanned in both themes; Esc closes it without disconnecting.
+  const disconnectButton = card.getByRole('button', { name: 'Disconnect', exact: true });
+  const confirm = page.getByRole('alertdialog', { name: 'Disconnect repository' });
+  for (const theme of ['light', 'dark']) {
+    await disconnectButton.click();
+    await expect(confirm.getByText(url)).toBeVisible();
+    await expect(confirm.getByText('The project is kept.')).toBeVisible();
+    await expect(confirm).toHaveCSS('opacity', '1');
+    if (phone) {
+      const viewport = page.viewportSize()!;
+      await expect
+        .poll(async () => {
+          const box = await confirm.boundingBox();
+          return box && { width: box.width, bottom: Math.round(box.y + box.height) };
+        })
+        .toEqual({ width: viewport.width, bottom: viewport.height });
+    }
+    await expectNoHorizontalScroll(page);
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(confirm).toHaveCount(0);
+    await expect(card.getByText('Failed', { exact: true })).toBeVisible();
+    await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+    await expect(card.getByText('Failed', { exact: true })).toBeVisible();
+  }
+
+  // Confirming removes the Repository: a toast, then the empty state.
+  await disconnectButton.click();
+  await confirm.getByRole('button', { name: 'Disconnect repository' }).click();
+  await expect(page.getByText('Repository disconnected')).toBeVisible({ timeout: 30_000 });
+  await expect(confirm).toHaveCount(0);
+  await expect(card.getByRole('heading', { name: 'No repository connected' })).toBeVisible();
+  await page.reload();
+  await expect(card.getByRole('heading', { name: 'No repository connected' })).toBeVisible();
+
+  // The same remote connects again (its `dev` branch is gone now, so `main`).
+  await card.getByRole('button', { name: 'Connect repository' }).click();
+  await dialog.getByLabel('Repository URL').fill(url);
+  await dialog.getByLabel('Integration branch').fill('main');
+  await dialog.getByRole('button', { name: 'Connect repository' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(card.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByText('main', { exact: true })).toBeVisible();
 
   await breadcrumb.getByRole('link', { name: 'Projects' }).click();
   await expect(page).toHaveURL(/\/projects$/);

@@ -44,7 +44,7 @@ model Repository {
   /// any URL form. Unique, so one remote cannot be connected to two projects.
   urlNormalized              String    @unique(map: "repositories_url_normalized_key") @map("url_normalized")
   integrationBranch          String    @map("integration_branch") @db.VarChar(255)
-  /// connecting | ready | fetching | failed (later stories add values).
+  /// connecting | ready | fetching | failed | disconnecting (later stories add values).
   state                      String    @db.VarChar(32)
   /// Commit id of the integration branch in the Clone; set exactly while a usable Clone exists
   /// (always when ready or fetching; kept by a failed fetch, cleared when it removes the Clone).

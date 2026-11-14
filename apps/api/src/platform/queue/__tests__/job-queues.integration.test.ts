@@ -18,6 +18,7 @@ import {
   type JobFailure,
   type JobQueue,
   JobQueues,
+  JobStillRunningError,
   type QueueDefinition,
   type QueuedJob,
   QueueUnavailableError,
@@ -417,6 +418,87 @@ describe('job queues (Redis via Testcontainers)', () => {
       ({ app, queue } = await startApp(redisService.url, owner));
 
       await expect(queue.cancel('sync-unknown')).resolves.toBe(false);
+    });
+
+    describe('waiting for the cancelled job to settle (settleTimeoutMs, Issue #63)', () => {
+      it('returns only after the processor and onFailed have finished, with the id free at once', async () => {
+        const owner = new RecordingOwner('repository-sync');
+        const reported = deferred();
+        owner.behaviour = async (job) => {
+          await stopsOnAbort(job).catch(async (reason: unknown) => {
+            // A slow stop: the processor needs a moment after the abort.
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            throw reason;
+          });
+        };
+        const onFailed = owner.onFailed.bind(owner);
+        owner.onFailed = async (job, failure) => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          await onFailed(job, failure);
+          reported.resolve();
+        };
+        let queue: JobQueue<Payload>;
+        ({ app, queue } = await startApp(redisService.url, owner));
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+        await eventually(() => expect(owner.processed).toHaveLength(1));
+
+        await expect(queue.cancel('sync-p1', { settleTimeoutMs: 5_000 })).resolves.toBe(true);
+
+        // Settled: the failure is already reported, and the same id is accepted right away
+        // (no retry loop), so a new job cannot be confused with the cancelled one.
+        expect(owner.failures.map((entry) => entry.failure)).toEqual([{ reason: 'cancelled' }]);
+        owner.behaviour = async () => {};
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+        await eventually(() => expect(owner.processed).toHaveLength(2));
+        await reported.promise;
+      });
+
+      it('throws JobStillRunningError when the processor ignores the abort past the limit', async () => {
+        const owner = new RecordingOwner('repository-sync');
+        const release = deferred();
+        owner.behaviour = async (job) => {
+          await release.promise; // ignores the signal
+          job.signal.throwIfAborted();
+        };
+        let queue: JobQueue<Payload>;
+        ({ app, queue } = await startApp(redisService.url, owner));
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+        await eventually(() => expect(owner.processed).toHaveLength(1));
+
+        await expect(queue.cancel('sync-p1', { settleTimeoutMs: 200 })).rejects.toThrow(
+          JobStillRunningError,
+        );
+
+        // Still aborted: once the processor settles, it is reported as cancelled.
+        expect(owner.processed[0]!.signal.aborted).toBe(true);
+        release.resolve();
+        await eventually(() =>
+          expect(owner.failures.map((entry) => entry.failure)).toEqual([{ reason: 'cancelled' }]),
+        );
+      });
+
+      it('removes a waiting job and returns true without waiting', async () => {
+        const owner = new RecordingOwner('repository-sync');
+        const release = deferred();
+        owner.behaviour = () => release.promise;
+        let queue: JobQueue<Payload>;
+        ({ app, queue } = await startApp(redisService.url, owner));
+        await queue.enqueue('sync-p1', { projectId: 'p1' });
+        await eventually(() => expect(owner.processed).toHaveLength(1));
+        await queue.enqueue('sync-p2', { projectId: 'p2' });
+
+        await expect(queue.cancel('sync-p2', { settleTimeoutMs: 5_000 })).resolves.toBe(true);
+        await queue.enqueue('sync-p2', { projectId: 'p2' });
+        release.resolve();
+      });
+
+      it('returns false when there is nothing to cancel', async () => {
+        const owner = new RecordingOwner('repository-sync');
+        let queue: JobQueue<Payload>;
+        ({ app, queue } = await startApp(redisService.url, owner));
+
+        await expect(queue.cancel('sync-unknown', { settleTimeoutMs: 1_000 })).resolves.toBe(false);
+      });
     });
   });
 
