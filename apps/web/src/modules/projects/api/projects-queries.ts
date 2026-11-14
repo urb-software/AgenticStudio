@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api,
+  ApiError,
   type ConnectRepositoryRequest,
   type CreateProjectRequest,
   type RepositoryOutput,
@@ -82,7 +83,7 @@ export function useConnectRepository(projectId: string) {
  * query (so polling starts), and the project detail is refetched for its summary. A read of
  * the Repository still in flight (e.g. a refetch on focus) is cancelled first: its older
  * `ready` answer would otherwise replace `fetching`, stop the polling and look like a fetch
- * that ended ("Already up to date").
+ * that ended ("Already up to date"). A 409 refetches the Repository.
  */
 export function useFetchRepository(projectId: string) {
   const queryClient = useQueryClient();
@@ -95,6 +96,13 @@ export function useFetchRepository(projectId: string) {
       await queryClient.cancelQueries({ queryKey: repositoryKey(projectId), exact: true });
       queryClient.setQueryData(repositoryKey(projectId), repository);
       await queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });
+    },
+    // 409: the server is ahead of this card (e.g. a fetch already running), so read it again;
+    // a `fetching` answer then starts the polling.
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: repositoryKey(projectId), exact: true });
+      }
     },
   });
 }

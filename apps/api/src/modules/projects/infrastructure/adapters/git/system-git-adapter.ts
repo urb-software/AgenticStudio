@@ -3,6 +3,7 @@ import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/p
 import { dirname, join } from 'node:path';
 import { type AppConfig, SHELL_SAFE_PATH } from '../../../../../platform/config/config.js';
 import {
+  GitCloneMissingError,
   type GitOperationOptions,
   GitOperationError,
   GitRequestRejectedError,
@@ -360,7 +361,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
         const clone = await this.paths.existingClone(projectId);
         if (!clone) {
-          throw new GitRequestRejectedError('The project has no Clone.');
+          throw new GitCloneMissingError();
         }
         // Under the lock no other Git process works on this Clone: any lock file is stale.
         await removeStaleLocks(clone);
@@ -399,7 +400,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
         const clone = await this.paths.existingClone(projectId);
         if (!clone) {
-          throw new GitRequestRejectedError('The project has no Clone.');
+          throw new GitCloneMissingError();
         }
         return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => ({
           commit: await this.revParse(context, clone, branch),

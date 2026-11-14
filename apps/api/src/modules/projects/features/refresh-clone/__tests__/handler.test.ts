@@ -3,11 +3,12 @@ import { JobAbortedError } from '../../../../../platform/queue/job-queue.js';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import {
   GIT_FAILURE_REASONS,
+  GitCloneMissingError,
   GitOperationError,
   GitRequestRejectedError,
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
-import { RefreshCloneHandler } from '../handler.js';
+import { CLONE_MISSING_DETAIL, RefreshCloneHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';
@@ -184,9 +185,24 @@ describe('RefreshCloneHandler', () => {
     });
   });
 
+  it('records no usable Clone when the Clone is missing on disk, so only Retry helps', async () => {
+    await fetching();
+    git.fetch.mockRejectedValueOnce(new GitCloneMissingError());
+
+    await run();
+
+    expect(await stored()).toMatchObject({
+      state: 'failed',
+      hasClone: false,
+      headSha: null,
+      lastFetchedAt: null,
+      failure: { code: 'unknown', detail: CLONE_MISSING_DETAIL },
+    });
+  });
+
   it('rethrows an unexpected error, so onFailed stores unknown', async () => {
     await fetching();
-    git.fetch.mockRejectedValueOnce(new GitRequestRejectedError('The project has no Clone.'));
+    git.fetch.mockRejectedValueOnce(new GitRequestRejectedError('Invalid remote URL.'));
 
     await expect(run()).rejects.toBeInstanceOf(GitRequestRejectedError);
   });

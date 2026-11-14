@@ -553,6 +553,46 @@ describe('Fetch (Story #61)', () => {
     expect(within(card()).queryByRole('button', { name: /^Fetch/ })).toBeNull();
   });
 
+  it('on a 409 (a fetch already running) reads the Repository again and shows it fetching', async () => {
+    const api = fakeProjectApi(PROJECT, READY);
+    await renderLoaded();
+    await within(card()).findByText('Connected');
+    // Another tab started a fetch: the server is ahead of this card.
+    api.state.repository = { ...READY, state: 'fetching' };
+    const reads = api.calls('repository').length;
+
+    await userEvent.click(fetchButton());
+
+    expect(await within(card()).findByText('Fetching')).toBeTruthy();
+    expect(api.calls('fetch')).toHaveLength(1);
+    expect(api.calls('repository').length).toBeGreaterThan(reads);
+    expect(fetchButton().disabled).toBe(true);
+  });
+
+  it('ignores an older read still in flight when Fetch starts (no false toast, keeps polling)', async () => {
+    const api = fakeProjectApi(PROJECT, READY);
+    await renderLoaded();
+    await within(card()).findByText('Connected');
+    // A refetch on focus is on its way and will answer with the old `ready`.
+    const release = api.holdNext('repository');
+    const reads = api.calls('repository').length;
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(api.calls('repository').length).toBe(reads + 1));
+
+    await userEvent.click(fetchButton());
+    await within(card()).findByText('Fetching');
+    await act(async () => {
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(within(card()).getByText('Fetching')).toBeTruthy();
+    expect(screen.queryByText(/Already up to date|Fetched/)).toBeNull();
+  });
+
   it('shows a Fetch that the API refuses as a banner, with the problem title', async () => {
     const api = fakeProjectApi(PROJECT, READY);
     api.respondNext('fetch', 409, problem(409, 'Repository busy'));

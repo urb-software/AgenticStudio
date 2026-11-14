@@ -124,6 +124,17 @@ export class GitRequestRejectedError extends Error {
   }
 }
 
+/**
+ * The operation needs the Project's Clone, and there is none on disk (a fetch or a read of
+ * a Clone that was removed, or never made). A {@link GitRequestRejectedError}.
+ */
+export class GitCloneMissingError extends GitRequestRejectedError {
+  constructor() {
+    super('The project has no Clone.');
+    this.name = 'GitCloneMissingError';
+  }
+}
+
 /** Repository features run on Linux only (security.md §4). */
 export class GitUnsupportedPlatformError extends Error {
   constructor(readonly platform: string) {

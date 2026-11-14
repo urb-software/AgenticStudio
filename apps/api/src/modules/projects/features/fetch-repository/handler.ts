@@ -33,26 +33,33 @@ export class FetchRepositoryHandler {
     if (!isProjectId(projectId)) throw new ProjectNotFoundError();
     this.git.assertSupported();
 
-    const previous = await this.projects.findRepository(projectId);
+    // Only for the failure a restore puts back; the transition below is the real guard.
+    const before = await this.projects.findRepository(projectId);
     const repository = await this.projects.beginFetch(projectId);
     try {
       await this.jobs.start(projectId, 'fetch');
     } catch (error) {
-      await this.restore(projectId, previous);
+      await this.restore(repository, before);
       throw error;
     }
     return repository;
   }
 
-  /** Puts back the state the transition replaced (a Repository that could fetch has a Clone). */
-  private async restore(projectId: string, previous: RepositoryConnection | null): Promise<void> {
-    if (previous?.state === 'failed' && previous.failure) {
-      await this.projects.markFetchFailed(projectId, previous.failure, { cloneKept: true });
-    } else if (previous?.headSha && previous.lastFetchedAt) {
-      await this.projects.markFetched(projectId, {
-        headSha: previous.headSha,
-        fetchedAt: previous.lastFetchedAt,
-      });
+  /**
+   * Leaves `fetching` again, with the Clone's commit and fetch time from the transition itself
+   * (always set: only a Repository with a Clone can start a fetch). The failure comes from the
+   * read before it; if that read is stale (the Repository changed in between), the
+   * Repository goes back to `ready`, never stays `fetching`.
+   */
+  private async restore(
+    repository: RepositoryConnection,
+    before: RepositoryConnection | null,
+  ): Promise<void> {
+    const { projectId, headSha, lastFetchedAt } = repository;
+    if (before?.state === 'failed' && before.failure) {
+      await this.projects.markFetchFailed(projectId, before.failure, { cloneKept: true });
+    } else if (headSha && lastFetchedAt) {
+      await this.projects.markFetched(projectId, { headSha, fetchedAt: lastFetchedAt });
     }
   }
 }

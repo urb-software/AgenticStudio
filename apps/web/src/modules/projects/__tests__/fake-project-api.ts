@@ -25,8 +25,30 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     fetch: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
+  const held: Partial<Record<Route, Promise<void>>> = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
+    const response = await answer(request);
+    const route = routeOf(request);
+    const hold = route && held[route];
+    if (route && hold) {
+      delete held[route];
+      await hold;
+    }
+    return response;
+  });
+
+  function routeOf(request: Request): Route | undefined {
+    const match = /^\/api\/projects\/([^/]+)(\/repository(\/fetch)?)?$/.exec(
+      new URL(request.url).pathname,
+    );
+    if (!match) return undefined;
+    if (!match[2]) return 'project';
+    if (match[3]) return 'fetch';
+    return request.method === 'POST' ? 'connect' : 'repository';
+  }
+
+  async function answer(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
     const match = /^\/api\/projects\/([^/]+)(\/repository(\/fetch)?)?$/.exec(pathname);
     if (!match) return json(404, problem(404, 'Not Found'));
@@ -73,13 +95,22 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
         return json(202, state.repository);
       }
     }
-  });
+  }
   vi.stubGlobal('fetch', fetch);
 
   return {
     state,
     /** Requests to one route, in order. */
     calls: (route: Route) => calls.filter((call) => call.route === route),
+    /**
+     * Holds the answer to the next request to `route` (computed when the request arrives, so
+     * it reflects the state at that time) until the returned function is called.
+     */
+    holdNext(route: Route): () => void {
+      let release!: () => void;
+      held[route] = new Promise<void>((resolve) => (release = resolve));
+      return () => release();
+    },
     /** The next request to `route` gets this response instead of the default. */
     respondNext(route: Route, status: number, body: unknown) {
       scripted[route].push({ status, body });

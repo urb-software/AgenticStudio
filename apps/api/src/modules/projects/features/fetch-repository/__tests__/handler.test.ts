@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   JobAlreadyActiveError,
   QueueUnavailableError,
@@ -139,6 +139,32 @@ describe('FetchRepositoryHandler', () => {
     ['a job is still active', new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`)],
   ])('restores a ready Repository when %s, and rethrows', async (_case, error) => {
     await ready();
+    jobs.failWith = error;
+
+    await expect(handler.execute(PROJECT)).rejects.toBe(error);
+    expect(await stored()).toMatchObject({
+      state: 'ready',
+      hasClone: true,
+      headSha: OLD,
+      lastFetchedAt: FETCHED_AT,
+      failure: null,
+    });
+  });
+
+  it('never leaves the Repository fetching when the read before the transition was stale', async () => {
+    await ready();
+    // The read sees the Repository as it was a moment earlier (still connecting).
+    vi.spyOn(projects, 'findRepository').mockResolvedValueOnce({
+      projectId: PROJECT,
+      url: URL,
+      integrationBranch: 'dev',
+      state: 'connecting',
+      hasClone: false,
+      headSha: null,
+      lastFetchedAt: null,
+      failure: null,
+    });
+    const error = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = error;
 
     await expect(handler.execute(PROJECT)).rejects.toBe(error);

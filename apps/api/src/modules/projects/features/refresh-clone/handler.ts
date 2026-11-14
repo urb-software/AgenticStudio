@@ -11,10 +11,15 @@ import {
   type ProjectRepository,
 } from '../../domain/repositories/project-repository.js';
 import {
+  GitCloneMissingError,
   GitOperationError,
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
+
+/** Stored when the Clone the Repository records is missing on disk. */
+export const CLONE_MISSING_DETAIL =
+  "Studio's clone of the repository is missing. Retry to clone it again.";
 
 /** The failure stored for a fetch job that did not finish on its own; the Clone is kept. */
 function failureOf(failure: JobFailure): RepositoryFailure {
@@ -42,7 +47,8 @@ function failureOf(failure: JobFailure): RepositoryFailure {
  *   `fetching`.
  * - A failed fetch keeps the Clone and its previous commit and fetch time, except
  *   `size_limit`: the adapter then removes the Clone, so the Repository has no usable Clone
- *   and only a Retry (connect) repairs it (Issue #61 clarification 2).
+ *   and only a Retry (connect) repairs it (Issue #61 clarification 2). The same holds when the
+ *   Clone turns out to be missing on disk.
  * - `reconcile` (start-up, before the worker) fails every Repository still `fetching` as
  *   "Interrupted"; its Clone stays usable (a killed fetch leaves the refs unchanged).
  */
@@ -80,6 +86,16 @@ export class RefreshCloneHandler {
         await this.projects.markFetchFailed(projectId, failure, {
           cloneKept: error.reason !== 'size_limit',
         });
+        return;
+      }
+      if (error instanceof GitCloneMissingError) {
+        // The database said there was a Clone, but it is gone from disk: record that there is
+        // no usable Clone, so the card offers Retry instead of a Fetch that always fails.
+        await this.projects.markFetchFailed(
+          projectId,
+          repositoryFailure('unknown', CLONE_MISSING_DETAIL),
+          { cloneKept: false },
+        );
         return;
       }
       // Unexpected (a rejected request, the database): `onFailed` stores `unknown`.

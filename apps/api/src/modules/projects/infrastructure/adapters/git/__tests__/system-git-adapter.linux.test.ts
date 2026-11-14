@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  GitCloneMissingError,
   GitOperationError,
   GitRequestRejectedError,
   type GitFailureReason,
@@ -144,10 +145,10 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         GitRequestRejectedError,
       );
       await expect(git.fetch(OTHER_PROJECT_ID, fixture.url, 'dev')).rejects.toThrow(
-        GitRequestRejectedError,
+        GitCloneMissingError,
       );
       await expect(git.readBranchCommit(OTHER_PROJECT_ID, 'dev')).rejects.toThrow(
-        GitRequestRejectedError,
+        GitCloneMissingError,
       );
     });
 
