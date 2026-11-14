@@ -3,16 +3,14 @@
 -- secrets that nothing references any more and delete them, without touching another
 -- module's. The label is not secret; values and ciphertext stay as they are.
 --
--- Backfill: until now only Deploy keys were stored, but a row no Repository references cannot
--- be told apart from anything else, so only the referenced rows become `projects.deploy-key`.
--- Every other existing row becomes `unowned`, a label no module stores or sweeps.
+-- Backfill (operator decision on #76): the Deploy key is the only secret Studio has ever
+-- stored, so every existing row becomes `projects.deploy-key`, referenced or not. An
+-- unreferenced one is an orphan from before this change, which the sweep then deletes once it
+-- is past the grace period. The format below also admits `unowned`, kept for future use.
 
 ALTER TABLE "secrets" ADD COLUMN "owner" VARCHAR(64);
 
-UPDATE "secrets" SET "owner" = 'projects.deploy-key'
-WHERE "id" IN (SELECT "deploy_key_secret_id" FROM "repositories" WHERE "deploy_key_secret_id" IS NOT NULL);
-
-UPDATE "secrets" SET "owner" = 'unowned' WHERE "owner" IS NULL;
+UPDATE "secrets" SET "owner" = 'projects.deploy-key';
 
 ALTER TABLE "secrets" ALTER COLUMN "owner" SET NOT NULL;
 

@@ -90,7 +90,7 @@ model Secret {
   keyVersion Int      @map("key_version")
   /// The business module's label the value was stored under (e.g. `projects.deploy-key`,
   /// Issue #76), so a module can find its own unreferenced secrets. Not secret. Rows from
-  /// before the label existed that no Repository referenced are `unowned`.
+  /// before the label existed are all `projects.deploy-key` (the only secret stored then).
   owner      String   @db.VarChar(64)
   createdAt  DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
 

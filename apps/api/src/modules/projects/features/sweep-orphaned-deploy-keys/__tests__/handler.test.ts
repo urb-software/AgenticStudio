@@ -89,7 +89,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
 
   it("never touches another owner's secrets, however old", async () => {
     const other = await secrets.put('another module value', { owner: 'agents.token' });
-    const unowned = await secrets.put('a row from before owner labels', { owner: 'unowned' });
+    const unowned = await secrets.put('a value under the reserved label', { owner: 'unowned' });
     secrets.now += 30 * 24 * HOUR_MS;
 
     await sweeper.sweep();
