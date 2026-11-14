@@ -16,6 +16,11 @@ import {
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
+import {
+  DeployKeyHandler,
+  NO_TRUSTED_HOST_KEY_DETAIL,
+  NoTrustedHostKeyError,
+} from '../deploy-key/handler.js';
 
 /** Stored when the Clone the Repository records is missing on disk. */
 export const CLONE_MISSING_DETAIL =
@@ -49,6 +54,9 @@ function failureOf(failure: JobFailure): RepositoryFailure {
  *   `size_limit`: the adapter then removes the Clone, so the Repository has no usable Clone
  *   and only a Retry (connect) repairs it (Issue #61 clarification 2). The same holds when the
  *   Clone turns out to be missing on disk.
+ * - An SSH Repository (Issue #62) fetches with its Deploy key and only its trusted host keys
+ *   (configured or pinned): a host presenting another key fails with `host_key_mismatch`,
+ *   never accepted automatically; with no key trusted any more, it fails the same way.
  * - `reconcile` (start-up, before the worker) fails every Repository still `fetching` as
  *   "Interrupted"; its Clone stays usable (a killed fetch leaves the refs unchanged).
  */
@@ -59,6 +67,7 @@ export class RefreshCloneHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
+    private readonly deployKeys: DeployKeyHandler,
   ) {}
 
   /** Runs one fetch. Aborts propagate, so the queue reports them through `onFailed`. */
@@ -69,11 +78,20 @@ export class RefreshCloneHandler {
     if (repository?.state !== 'fetching') return;
     const { url, integrationBranch } = repository;
     try {
-      const { commit } = await this.git.fetch(projectId, url, integrationBranch, { signal });
+      const ssh = await this.deployKeys.credentials(repository);
+      const { commit } = await this.git.fetch(projectId, url, integrationBranch, { signal, ssh });
       signal.throwIfAborted();
       await this.projects.markFetched(projectId, { headSha: commit, fetchedAt: new Date() });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) throw error;
+      if (error instanceof NoTrustedHostKeyError) {
+        await this.projects.markFetchFailed(
+          projectId,
+          repositoryFailure('host_key_mismatch', NO_TRUSTED_HOST_KEY_DETAIL),
+          { cloneKept: true },
+        );
+        return;
+      }
       if (error instanceof GitOperationError) {
         // The Git failure reasons are the Repository failure codes (pinned by a contract test).
         const failure =

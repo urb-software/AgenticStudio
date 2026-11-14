@@ -17,6 +17,11 @@ import {
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
+import {
+  DeployKeyHandler,
+  NO_TRUSTED_HOST_KEY_DETAIL,
+  NoTrustedHostKeyError,
+} from '../deploy-key/handler.js';
 
 /** Every Git failure reason is a Repository failure code (both are Epic #55's fixed list). */
 const FAILURE_CODE: Record<GitFailureReason, RepositoryFailureCode> = {
@@ -55,6 +60,9 @@ function failureOf(failure: JobFailure): RepositoryFailure {
  * - A job removes any leftover Clone, inspects the remote (so `branch_not_found` can name the
  *   remote's default branch), clones, then marks the Repository `ready` or `failed`. Every
  *   write is conditional on the Repository still being `connecting`.
+ * - An SSH Repository (Issue #62) uses its Deploy key, read from the secret store for this
+ *   job only, and only its trusted host keys (configured or pinned); with none trusted it
+ *   fails with `host_key_mismatch` before Git runs.
  */
 @Injectable()
 export class CloneRepositoryHandler {
@@ -63,6 +71,7 @@ export class CloneRepositoryHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
+    private readonly deployKeys: DeployKeyHandler,
   ) {}
 
   /** Runs one clone. Aborts propagate, so the queue reports them through `onFailed`. */
@@ -73,9 +82,10 @@ export class CloneRepositoryHandler {
     if (repository?.state !== 'connecting') return;
     const { url, integrationBranch } = repository;
     try {
+      const ssh = await this.deployKeys.credentials(repository);
       // Retry and every first clone start clean: a partial or stale Clone is removed first.
       await this.git.removeClone(projectId, { signal });
-      const remote = await this.git.inspectRemote(url, integrationBranch, { signal });
+      const remote = await this.git.inspectRemote(url, integrationBranch, { signal, ssh });
       if (!remote.branchExists) {
         await this.projects.markFailed(
           projectId,
@@ -87,11 +97,18 @@ export class CloneRepositoryHandler {
         );
         return;
       }
-      const { commit } = await this.git.clone(projectId, url, integrationBranch, { signal });
+      const { commit } = await this.git.clone(projectId, url, integrationBranch, { signal, ssh });
       signal.throwIfAborted();
       await this.projects.markReady(projectId, { headSha: commit, fetchedAt: new Date() });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) throw error;
+      if (error instanceof NoTrustedHostKeyError) {
+        await this.projects.markFailed(
+          projectId,
+          repositoryFailure('host_key_mismatch', NO_TRUSTED_HOST_KEY_DETAIL),
+        );
+        return;
+      }
       if (error instanceof GitOperationError) {
         await this.projects.markFailed(
           projectId,

@@ -18,6 +18,8 @@ import {
   REPOSITORY_QUEUE,
   RepositoryJobsHandler,
 } from '../handler.js';
+import { DeployKeyHandler } from '../../deploy-key/handler.js';
+import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const COMMIT = 'a'.repeat(40);
@@ -44,6 +46,8 @@ class RecordingJobQueues extends JobQueues {
 }
 
 describe('RepositoryJobsHandler', () => {
+  let secrets: InMemorySecretStore;
+  let deployKeys: DeployKeyHandler;
   let projects: InMemoryProjectRepository;
   let queues: RecordingJobQueues;
   let clone: CloneRepositoryHandler;
@@ -70,18 +74,20 @@ describe('RepositoryJobsHandler', () => {
   }
 
   beforeEach(() => {
+    secrets = new InMemorySecretStore();
+    deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     const git = new FakeRepositoryGit();
     queues = new RecordingJobQueues();
-    clone = new CloneRepositoryHandler(projects, git);
-    refresh = new RefreshCloneHandler(projects, git);
+    clone = new CloneRepositoryHandler(projects, git, deployKeys);
+    refresh = new RefreshCloneHandler(projects, git, deployKeys);
     for (const target of [clone, refresh]) {
       vi.spyOn(target, 'process').mockResolvedValue();
       vi.spyOn(target, 'onFailed');
       vi.spyOn(target, 'reconcile');
     }
-    cleanup = new CleanUpRepositoryHandler(projects, git);
+    cleanup = new CleanUpRepositoryHandler(projects, git, deployKeys);
     vi.spyOn(cleanup, 'resumeAll');
     handler = new RepositoryJobsHandler(queues, projects, clone, refresh, cleanup);
     handler.onModuleInit();

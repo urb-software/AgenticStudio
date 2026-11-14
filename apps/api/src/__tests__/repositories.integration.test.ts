@@ -23,7 +23,8 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Stories #60 (connect), #61 (fetch) and #63 (disconnect), main seam: the real app over HTTP with PostgreSQL and Redis (Testcontainers) and
+// Stories #60 (connect), #61 (fetch) and #63 (disconnect), main seam (SSH, #62, in
+// ssh-repositories.integration.test.ts): the real app over HTTP with PostgreSQL and Redis (Testcontainers) and
 // the real job queue. Cases that clone need the real `git` and run on Linux only (CI runs
 // them; a guard at the end fails CI if they were skipped). Fixture remotes are `file://`
 // URLs, accepted only under the test-only setting this suite turns on.
@@ -32,7 +33,6 @@ const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SHA = /^[0-9a-f]{40}$/;
 const UNKNOWN_PROJECT = '00000000-0000-4000-8000-000000000000';
 const PROBLEM = 'urn:agentic-studio:problem:';
-const SSH_MESSAGE = 'Private repositories over SSH are not supported yet.';
 const linux = process.platform === 'linux';
 
 function expectProblem(response: request.Response, status: number, type?: string) {
@@ -82,6 +82,23 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
     request(server())
       .post(`/api/projects/${projectId}/repository/fetch`)
       .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+
+  const verify = (projectId: string, body: object = {}) =>
+    request(server())
+      .post(`/api/projects/${projectId}/repository/verify`)
+      .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+      .send(body);
+
+  /**
+   * Test setup only: an SSH Repository awaiting its key, without a real Deploy key (the
+   * secret reference points nowhere; these tests never reach Git).
+   */
+  async function insertAwaitingKey(projectId: string, name: string) {
+    await db().$executeRaw`
+      INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state, deploy_key_secret_id, public_key)
+      VALUES (${projectId}::uuid, ${`git@github.com:acme/${name}.git`}, ${`github.com/acme/${name}`}, 'dev',
+              'awaiting_key', gen_random_uuid(), 'placeholder public key')`;
+  }
 
   const disconnect = (projectId: string) =>
     request(server())
@@ -169,8 +186,8 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       ['git://', 'git://github.com/acme/shop.git', undefined],
       ['an absolute local path', '/srv/repos/shop.git', undefined],
       ['a relative local path', '../shop', undefined],
-      ['a scp-like SSH URL', 'git@github.com:acme/shop.git', SSH_MESSAGE],
-      ['an ssh:// URL', 'ssh://git@github.com/acme/shop.git', SSH_MESSAGE],
+      ['a git+ssh:// URL', 'git+ssh://git@github.com/acme/shop.git', undefined],
+      ['an SSH URL with a password', 'ssh://git:secret@github.com/acme/shop.git', undefined],
     ])('rejects %s with 422 and a field error on url', async (_case, url, message) => {
       const id = await createProject('Invalid URL');
 
@@ -266,6 +283,39 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       }
     });
 
+    it('refuses to connect over SSH with the same 501, generating no Deploy key', async () => {
+      await restart({ projects: { gitSettings: { platform: 'win32' } } });
+      try {
+        const id = await createProject('Windows SSH');
+
+        const response = await connect(id, {
+          url: 'git@github.com:acme/shop.git',
+          integrationBranch: 'dev',
+        });
+
+        expectProblem(response, 501, 'unsupported-platform');
+        expectProblem(await getRepository(id), 404, 'no-repository');
+        const [row] = await db().$queryRaw<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM secrets`;
+        expect(row!.count).toBe(0);
+      } finally {
+        await restart();
+      }
+    });
+
+    it('refuses to verify with 501 and leaves the repository as it was', async () => {
+      await restart({ projects: { gitSettings: { platform: 'win32' } } });
+      try {
+        const id = await createProject('Windows verify');
+        await insertAwaitingKey(id, 'win-v');
+
+        expectProblem(await verify(id), 501, 'unsupported-platform');
+        expect((await getRepository(id)).body.state).toBe('awaiting_key');
+      } finally {
+        await restart();
+      }
+    });
+
     it('refuses to disconnect with 501 and leaves the repository as it was', async () => {
       await restart({ projects: { gitSettings: { platform: 'win32' } } });
       try {
@@ -302,6 +352,12 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   describe('POST /api/projects/:id/repository/fetch: refused (every platform)', () => {
     it('answers 404 for an id that is not a UUID', async () => {
       expectProblem(await fetchRepository('not-a-uuid'), 404, 'project-not-found');
+    });
+  });
+
+  describe('POST /api/projects/:id/repository/verify: refused (every platform)', () => {
+    it('answers 404 for an id that is not a UUID', async () => {
+      expectProblem(await verify('not-a-uuid'), 404, 'project-not-found');
     });
   });
 
@@ -403,6 +459,27 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         403,
       );
       expect((await getRepository(id)).body.state).toBe('failed');
+    });
+
+    it('rejects an anonymous verify with 401 and one with a foreign Origin with 403', async () => {
+      const id = await createProject('Guarded verify');
+      await insertAwaitingKey(id, 'guarded-v');
+
+      expectProblem(
+        await request(server())
+          .post(`/api/projects/${id}/repository/verify`)
+          .set('Origin', STUDIO_ORIGIN)
+          .send({}),
+        401,
+      );
+      expectProblem(
+        await request(server())
+          .post(`/api/projects/${id}/repository/verify`)
+          .set({ Origin: 'http://evil.example', Cookie: cookie })
+          .send({}),
+        403,
+      );
+      expect((await getRepository(id)).body.state).toBe('awaiting_key');
     });
 
     it('rejects a fetch with a foreign Origin', async () => {

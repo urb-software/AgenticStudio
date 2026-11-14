@@ -13,6 +13,9 @@ import { REPOSITORY_GIT } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CleanUpRepositoryHandler } from '../../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../../clone-repository/handler.js';
+import { SECRET_STORE } from '../../../../../platform/secrets/index.js';
+import { DeployKeyHandler, SSH_TRUST_SETTINGS } from '../../deploy-key/handler.js';
+import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
 import { RefreshCloneHandler } from '../../refresh-clone/handler.js';
 import { RepositoryJobsHandler } from '../handler.js';
 
@@ -72,6 +75,9 @@ class RecordingProjects extends InMemoryProjectRepository {
     { provide: REPOSITORY_GIT, useClass: SlowSweepGit },
     { provide: PROJECT_REPOSITORY, useClass: RecordingProjects },
     { provide: JobQueues, useClass: BootstrappingJobQueues },
+    { provide: SECRET_STORE, useClass: InMemorySecretStore },
+    { provide: SSH_TRUST_SETTINGS, useValue: { knownHosts: [] } },
+    DeployKeyHandler,
     CloneRepositoryHandler,
     RefreshCloneHandler,
     CleanUpRepositoryHandler,

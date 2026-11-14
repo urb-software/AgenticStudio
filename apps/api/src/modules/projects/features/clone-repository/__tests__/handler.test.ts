@@ -8,6 +8,10 @@ import {
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CloneRepositoryHandler } from '../handler.js';
+import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
+import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../deploy-key/handler.js';
+import { DeployKeyHandler } from '../../deploy-key/handler.js';
+import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';
@@ -20,6 +24,8 @@ function abortError(): Error {
 }
 
 describe('CloneRepositoryHandler', () => {
+  let secrets: InMemorySecretStore;
+  let deployKeys: DeployKeyHandler;
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
   let handler: CloneRepositoryHandler;
@@ -36,10 +42,12 @@ describe('CloneRepositoryHandler', () => {
   }
 
   beforeEach(() => {
+    secrets = new InMemorySecretStore();
+    deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
-    handler = new CloneRepositoryHandler(projects, git);
+    handler = new CloneRepositoryHandler(projects, git, deployKeys);
   });
 
   it('removes any leftover Clone, inspects the remote, clones, and marks the Repository ready', async () => {
@@ -222,5 +230,79 @@ describe('CloneRepositoryHandler', () => {
       remoteDefaultBranch: null,
     });
     expect((await projects.findRepository(other))?.state).toBe('ready');
+  });
+
+  describe('an SSH Repository (Issue #62)', () => {
+    const SSH_URL = 'git@github.com:acme/shop.git';
+    const trusted = generateDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
+    const pinned = generateDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
+
+    async function connectingOverSsh(pinnedHostKey: string | null) {
+      const deployKey = await deployKeys.create('Shop');
+      await projects.beginConnect({
+        projectId: PROJECT,
+        url: SSH_URL,
+        identity: 'github.com/acme/shop',
+        integrationBranch: 'dev',
+        deployKey,
+        pinnedHostKey,
+      });
+      await projects.beginVerifiedClone(PROJECT, null);
+      return deployKey;
+    }
+
+    it('clones with the Deploy key from the secret store and the trusted host keys only', async () => {
+      deployKeys = new DeployKeyHandler(secrets, {
+        knownHosts: [{ hosts: ['github.com'], key: trusted }],
+      });
+      handler = new CloneRepositoryHandler(projects, git, deployKeys);
+      const { secret } = await connectingOverSsh(pinned);
+      git.clone.mockResolvedValueOnce({ commit: COMMIT });
+
+      await run();
+
+      const ssh = { privateKey: await secrets.get(secret), hostKeys: [trusted, pinned] };
+      expect(git.inspectRemote).toHaveBeenCalledWith(
+        SSH_URL,
+        'dev',
+        expect.objectContaining({ ssh }),
+      );
+      expect(git.clone).toHaveBeenCalledWith(
+        PROJECT,
+        SSH_URL,
+        'dev',
+        expect.objectContaining({ ssh }),
+      );
+      expect(await projects.findRepository(PROJECT)).toMatchObject({ state: 'ready' });
+    });
+
+    it('fails with host_key_mismatch before Git runs when no host key is trusted', async () => {
+      await connectingOverSsh(null);
+
+      await run();
+
+      expect(git.calls).toEqual([]);
+      expect(await projects.findRepository(PROJECT)).toMatchObject({
+        state: 'failed',
+        failure: { code: 'host_key_mismatch', detail: NO_TRUSTED_HOST_KEY_DETAIL },
+      });
+    });
+
+    it('fails with auth_failed when the host refuses the key, keeping the key pair', async () => {
+      const { secret, publicKey } = await connectingOverSsh(pinned);
+      git.inspectRemote.mockRejectedValueOnce(
+        new GitOperationError('auth_failed', 'git@github.com: Permission denied (publickey).'),
+      );
+
+      await run();
+
+      expect(await projects.findRepository(PROJECT)).toMatchObject({
+        state: 'failed',
+        failure: { code: 'auth_failed' },
+        publicKey,
+        deployKeySecret: secret,
+      });
+      expect(secrets.values.has(secret)).toBe(true);
+    });
   });
 });
