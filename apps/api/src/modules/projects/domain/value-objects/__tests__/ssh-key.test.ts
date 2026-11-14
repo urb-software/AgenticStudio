@@ -185,21 +185,25 @@ describe('hostKeyFingerprint', () => {
 
 describe('trustedHostKeysFor', () => {
   const entries = [
-    { hosts: ['github.com'], key: 'ssh-ed25519 AAAAgithub' },
-    { hosts: ['github.com', 'gh.example'], key: 'ecdsa-sha2-nistp256 AAAAgithub2' },
-    { hosts: ['[git.example]:2222'], key: 'ssh-ed25519 AAAAport' },
+    { hosts: ['github.com'], key: 'ssh-ed25519 placeholder-github-1' },
+    { hosts: ['github.com', 'gh.example'], key: 'ecdsa-sha2-nistp256 placeholder-github-2' },
+    { hosts: ['[git.example]:2222'], key: 'ssh-ed25519 placeholder-port' },
   ];
 
   it('returns the keys of every entry naming the host', () => {
     expect(trustedHostKeysFor(entries, 'github.com')).toEqual([
-      'ssh-ed25519 AAAAgithub',
-      'ecdsa-sha2-nistp256 AAAAgithub2',
+      'ssh-ed25519 placeholder-github-1',
+      'ecdsa-sha2-nistp256 placeholder-github-2',
     ]);
-    expect(trustedHostKeysFor(entries, 'gh.example')).toEqual(['ecdsa-sha2-nistp256 AAAAgithub2']);
+    expect(trustedHostKeysFor(entries, 'gh.example')).toEqual([
+      'ecdsa-sha2-nistp256 placeholder-github-2',
+    ]);
   });
 
   it('matches a non-default port only in the [host]:port form', () => {
-    expect(trustedHostKeysFor(entries, '[git.example]:2222')).toEqual(['ssh-ed25519 AAAAport']);
+    expect(trustedHostKeysFor(entries, '[git.example]:2222')).toEqual([
+      'ssh-ed25519 placeholder-port',
+    ]);
     expect(trustedHostKeysFor(entries, 'git.example')).toEqual([]);
   });
 
