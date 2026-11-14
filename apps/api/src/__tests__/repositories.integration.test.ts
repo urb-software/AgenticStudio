@@ -257,6 +257,22 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       expectProblem(await getRepository(id), 404, 'no-repository');
     });
 
+    it('rejects an unknown field with 422: the request schema is closed (#72)', async () => {
+      const id = await createProject('Extra field');
+
+      const response = await connect(id, {
+        url: 'https://github.com/acme/shop.git',
+        integrationBranch: 'dev',
+        deployKey: 'ssh-ed25519 AAAA',
+      });
+
+      expectProblem(response, 422);
+      expect(response.body.errors).toEqual([
+        { path: '', message: expect.stringContaining('deployKey') },
+      ]);
+      expectProblem(await getRepository(id), 404, 'no-repository');
+    });
+
     it('rejects a file:// URL when the test-only fixture-remote setting is off', async () => {
       await app.close();
       app = await startStudioApp({ ...services.config, gitAllowFileRemotes: false });
@@ -412,6 +428,15 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   describe('POST /api/projects/:id/repository/verify: refused (every platform)', () => {
     it('answers 404 for an id that is not a UUID', async () => {
       expectProblem(await verify('not-a-uuid'), 404, 'project-not-found');
+    });
+
+    it('rejects an unknown field with 422: the request schema is closed (#72)', async () => {
+      const response = await verify(UNKNOWN_PROJECT, { acceptHostKey: 'ssh-ed25519 AAAA' });
+
+      expectProblem(response, 422);
+      expect(response.body.errors).toEqual([
+        { path: '', message: expect.stringContaining('acceptHostKey') },
+      ]);
     });
   });
 

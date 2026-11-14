@@ -714,7 +714,8 @@
         },
         "required": [
           "name"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Project_Output": {
         "type": "object",
@@ -918,7 +919,8 @@
         "required": [
           "url",
           "integrationBranch"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VerifyRepositoryRequest": {
         "type": "object",
@@ -929,7 +931,8 @@
             "minLength": 1,
             "maxLength": 100
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ProblemDetails": {
         "type": "object",

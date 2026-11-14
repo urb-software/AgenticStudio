@@ -210,6 +210,14 @@ describe('OpenAPI document', () => {
     ]) {
       expect(schemas[name]).toMatchObject({ additionalProperties: false });
     }
+    // Closed request bodies (#72): an unknown field is refused, not silently dropped.
+    for (const name of [
+      'CreateProjectRequest',
+      'ConnectRepositoryRequest',
+      'VerifyRepositoryRequest',
+    ]) {
+      expect(schemas[name]).toMatchObject({ additionalProperties: false });
+    }
     expect(Object.keys((schemas.Repository_Output as { properties: object }).properties)).toEqual([
       'state',
       'url',
