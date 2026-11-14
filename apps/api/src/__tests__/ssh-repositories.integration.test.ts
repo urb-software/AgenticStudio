@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rename, rm, symlink } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { format } from 'node:util';
 import type { INestApplication, LoggerService } from '@nestjs/common';
+import { Redis } from 'ioredis';
 import request from 'supertest';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -34,6 +36,18 @@ const SERVER_CONTEXT = join(
 );
 const PROBLEM = 'urn:agentic-studio:problem:';
 const FINGERPRINT = /^SHA256:[A-Za-z0-9+/]{43}$/;
+/** Studio's explanation leads a host_key_mismatch detail, then the redacted Git output. */
+const HOST_KEY_CHANGED =
+  /^The Git host's key changed\. .*disconnect the repository and connect it again\.\n\n\S/s;
+
+/** A local port with nothing listening on it. */
+async function closedPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
 
 interface KeyPair {
   privateKey: string;
@@ -133,8 +147,11 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     return response;
   }
 
-  async function startApp(config: AppConfig) {
-    app = await buildApp(AppModule.register(config), { logger });
+  async function startApp(
+    config: AppConfig,
+    options: Parameters<typeof AppModule.register>[1] = {},
+  ) {
+    app = await buildApp(AppModule.register(config, options), { logger });
     await app.init();
     cookie = await signIn(app);
   }
@@ -332,7 +349,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     expect(await settled(id)).toMatchObject({
       state: 'failed',
       hasClone: true,
-      failure: { code: 'host_key_mismatch' },
+      failure: { code: 'host_key_mismatch', detail: expect.stringMatching(HOST_KEY_CHANGED) },
       hostKeyFingerprint: fingerprintOf(unlistedKey.publicKey),
     });
   });
@@ -346,7 +363,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     expect(await settled(id)).toMatchObject({
       state: 'failed',
       hasClone: false,
-      failure: { code: 'host_key_mismatch' },
+      failure: { code: 'host_key_mismatch', detail: expect.stringMatching(HOST_KEY_CHANGED) },
     });
   });
 
@@ -378,11 +395,95 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     expect(second.body).not.toHaveProperty('hostKeyFingerprint');
   });
 
-  // Runs last: everything the tests above sent back or logged.
+  // Self-contained: it drives every state and failure path itself, then checks everything the
+  // app sent back or logged meanwhile.
   it('never returns or logs private key material, in any state or failure', async () => {
-    expect(privateKeys.size).toBeGreaterThanOrEqual(6);
-    expect(responses.length).toBeGreaterThan(20);
-    expect(logs.length).toBeGreaterThan(0);
+    responses.length = 0;
+    logs.length = 0;
+    privateKeys.clear();
+    const clonesDir = join(dataDir, 'clones');
+
+    // awaiting_key → awaiting_host_key → 422 → confirmed → ready → fetch → ready; 409 after.
+    const a = await createProject('Leak unlisted');
+    const keyA = (await connect(a, urlOf(unlisted))).body.publicKey as string;
+    await authorize(unlisted, keyA);
+    const asked = await verify(a);
+    expect(asked.body.state).toBe('awaiting_host_key');
+    expectProblem(
+      await verify(a, { acceptHostKeyFingerprint: fingerprintOf(listedKey.publicKey) }),
+      422,
+    );
+    expect(
+      (await verify(a, { acceptHostKeyFingerprint: asked.body.hostKeyFingerprint })).status,
+    ).toBe(202);
+    expect((await settled(a)).state).toBe('ready');
+    expect((await fetchRepository(a)).status).toBe(202);
+    expect((await settled(a)).state).toBe('ready');
+    expectProblem(await verify(a), 409, 'repository-not-verifiable');
+
+    // auth_failed (the key is not added on a listed host).
+    const b = await createProject('Leak auth');
+    await connect(b, urlOf(listed));
+    await verify(b);
+    expect(await settled(b)).toMatchObject({ failure: { code: 'auth_failed' } });
+
+    // A secret-store failure in the clone job: the private key is gone from the store.
+    await secretStore().delete(await deployKeyRef(b));
+    expect((await verify(b)).status).toBe(202);
+    expect(await settled(b)).toMatchObject({ state: 'failed', failure: { code: 'unknown' } });
+    expect(logs.join('\n')).toMatch(/SecretNotFoundError/);
+
+    // host_key_mismatch (a listed host presenting another key).
+    const c = await createProject('Leak mismatch');
+    await connect(c, urlOf(impostor));
+    await verify(c);
+    expect(await settled(c)).toMatchObject({ failure: { code: 'host_key_mismatch' } });
+
+    // host_unreachable while retrieving the host key (nothing listens).
+    const d = await createProject('Leak unreachable');
+    await connect(d, `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`);
+    expect((await verify(d)).body).toMatchObject({
+      state: 'failed',
+      failure: { code: 'host_unreachable' },
+    });
+
+    // 503: the queue cannot schedule the clone (test setup: a key of the wrong type where the
+    // job's hash goes makes every Redis call on it fail).
+    const redis = new Redis(services.config.redisUrl);
+    const jobKey = `studio:queue:repository-git:repository-${c}`;
+    try {
+      await redis.set(jobKey, 'not a job');
+      expect((await verify(c)).status).toBe(503);
+    } finally {
+      await redis.del(jobKey);
+      redis.disconnect();
+    }
+
+    // 501 on a host that is not Linux, for connect and verify.
+    await app.close();
+    await startApp(services.config, { projects: { gitSettings: { platform: 'win32' } } });
+    try {
+      const e = await createProject('Leak windows');
+      expectProblem(await connect(e, `${urlOf(unlisted).replace('repo.git', 'other.git')}`), 501);
+      expectProblem(await verify(b), 501, 'unsupported-platform');
+    } finally {
+      await app.close();
+      await startApp(services.config);
+    }
+
+    // A disconnect whose cleanup is pending (logged), then completed.
+    await rename(clonesDir, `${clonesDir}-real`);
+    await symlink(`${clonesDir}-real`, clonesDir);
+    try {
+      expect((await disconnect(a)).status).toBe(202);
+      expect(logs.join('\n')).toMatch(/stays disconnecting/);
+    } finally {
+      await rm(clonesDir, { force: true });
+      await rename(`${clonesDir}-real`, clonesDir);
+    }
+    for (const id of [a, b, c, d]) expect((await disconnect(id)).status).toBe(204);
+
+    expect(privateKeys.size).toBe(4);
     const haystacks = [...responses, ...logs];
     const fragments = [...privateKeys].flatMap((key) =>
       key
@@ -392,11 +493,12 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
         // A short last line could occur anywhere by chance; full lines cannot.
         .filter((line) => line.length >= 16),
     );
+    expect(fragments.length).toBeGreaterThan(0);
     for (const text of haystacks) {
       expect(text).not.toMatch(/PRIVATE KEY/);
       for (const fragment of fragments) expect(text.includes(fragment)).toBe(false);
     }
-  });
+  }, 180_000);
 });
 
 // Guard against a silent skip: in CI these Linux-only cases must run.

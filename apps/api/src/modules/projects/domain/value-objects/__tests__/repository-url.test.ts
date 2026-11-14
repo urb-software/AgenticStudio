@@ -141,31 +141,41 @@ describe('RepositoryUrl.parse', () => {
 
   describe('SSH URLs (Issue #62)', () => {
     it.each([
-      ['scp-like', 'git@github.com:acme/shop.git', 'github.com', 'github.com/acme/shop'],
-      ['ssh://', 'ssh://git@github.com/acme/shop.git', 'github.com', 'github.com/acme/shop'],
+      [
+        'scp-like',
+        'git@github.com:acme/shop.git',
+        { host: 'github.com', port: 22 },
+        'github.com/acme/shop',
+      ],
+      [
+        'ssh://',
+        'ssh://git@github.com/acme/shop.git',
+        { host: 'github.com', port: 22 },
+        'github.com/acme/shop',
+      ],
       [
         'ssh:// on port 22',
         'ssh://git@GitHub.com:22/acme/shop',
-        'github.com',
+        { host: 'github.com', port: 22 },
         'github.com/acme/shop',
       ],
       [
         'ssh:// on another port',
         'ssh://git@git.example.com:2222/acme/shop.git',
-        '[git.example.com]:2222',
+        { host: 'git.example.com', port: 2222 },
         'git.example.com:2222/acme/shop',
       ],
       [
         'ssh:// without a user',
         'ssh://git.example.com/srv/shop.git',
-        'git.example.com',
+        { host: 'git.example.com', port: 22 },
         'git.example.com/srv/shop',
       ],
-    ])('accepts a %s URL with its known_hosts name', (_case, input, hostName, identity) => {
+    ])('accepts a %s URL with its host and port', (_case, input, remote, identity) => {
       const url = RepositoryUrl.parse(`  ${input} `);
 
       expect(url.value).toBe(input);
-      expect(url.ssh).toEqual({ hostName });
+      expect(url.ssh).toEqual(remote);
       expect(url.identity).toBe(identity);
     });
 

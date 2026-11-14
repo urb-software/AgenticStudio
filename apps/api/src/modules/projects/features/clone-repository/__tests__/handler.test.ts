@@ -8,6 +8,7 @@ import {
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CloneRepositoryHandler } from '../handler.js';
+import { HOST_KEY_CHANGED_DETAIL } from '../../../domain/entities/repository.js';
 import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../deploy-key/handler.js';
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
@@ -111,7 +112,11 @@ describe('CloneRepositoryHandler', () => {
 
       expect((await projects.findRepository(PROJECT))?.failure).toEqual({
         code: reason,
-        detail: 'fatal: <redacted>',
+        // A host key mismatch leads with Studio's explanation (Issue #62).
+        detail:
+          reason === 'host_key_mismatch'
+            ? `${HOST_KEY_CHANGED_DETAIL}\n\nfatal: <redacted>`
+            : 'fatal: <redacted>',
         remoteDefaultBranch: null,
       });
     },
@@ -285,6 +290,23 @@ describe('CloneRepositoryHandler', () => {
       expect(await projects.findRepository(PROJECT)).toMatchObject({
         state: 'failed',
         failure: { code: 'host_key_mismatch', detail: NO_TRUSTED_HOST_KEY_DETAIL },
+      });
+    });
+
+    it("fails with host_key_mismatch with Studio's explanation first, then the Git output", async () => {
+      await connectingOverSsh(pinned);
+      git.inspectRemote.mockRejectedValueOnce(
+        new GitOperationError('host_key_mismatch', 'Host key verification failed.'),
+      );
+
+      await run();
+
+      expect(await projects.findRepository(PROJECT)).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'host_key_mismatch',
+          detail: `${HOST_KEY_CHANGED_DETAIL}\n\nHost key verification failed.`,
+        },
       });
     });
 

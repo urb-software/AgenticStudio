@@ -2,6 +2,7 @@ import { Logger, type OnModuleInit } from '@nestjs/common';
 import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { type AppConfig, SHELL_SAFE_PATH } from '../../../../../platform/config/config.js';
+import { parseSshHostKey } from '../../../../../platform/config/ssh-known-hosts.js';
 import {
   GitCloneMissingError,
   type GitOperationOptions,
@@ -102,8 +103,6 @@ function hardeningArgs(transports: readonly GitTransport[]): string[] {
 
 /** Alias the supplied host key is pinned to, whatever host or port the URL names. */
 const HOST_KEY_ALIAS = 'studio-remote';
-const HOST_KEY =
-  /^(ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) ([A-Za-z0-9+/]+={0,3})(?: [^\r\n]*)?$/;
 const PRIVATE_KEY =
   /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----\n[\s\S]+\n-----END [A-Z0-9 ]*PRIVATE KEY-----\n?$/;
 const GIT_VERSION = /^git version (\d+)\.(\d+)\.(\d+)/;
@@ -343,8 +342,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         const keys = result.stdout
           .split('\n')
           .filter((line) => line.trim() !== '' && !line.startsWith('#'))
-          .map((line) => line.trim().split(/\s+/).slice(1, 3).join(' '))
-          .filter((key) => HOST_KEY.test(key));
+          .map((line) => parseSshHostKey(line.trim().split(/\s+/).slice(1, 3).join(' ')))
+          .filter((key): key is string => key !== null);
         for (const preferred of SCAN_PREFERENCE) {
           const key = keys.find((candidate) => preferred.test(candidate.split(' ')[0]!));
           if (key) return { hostKey: key };
@@ -564,7 +563,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         throw new GitRequestRejectedError('The Deploy key is not a PEM-armoured private key.');
       }
       const { hostKeys } = options.ssh;
-      if (hostKeys.length === 0 || !hostKeys.every((key) => HOST_KEY.test(key.trim()))) {
+      // The same accepted types and checks as STUDIO_SSH_KNOWN_HOSTS (ssh-known-hosts.ts).
+      if (hostKeys.length === 0 || !hostKeys.every((key) => parseSshHostKey(key) !== null)) {
         throw new GitRequestRejectedError(
           'The host keys are missing or not valid OpenSSH public keys.',
         );
@@ -646,10 +646,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       mode: 0o600,
       flag: 'wx',
     });
-    const lines = credentials.hostKeys.map((hostKey) => {
-      const [keyType, keyData] = hostKey.trim().split(/\s+/);
-      return `${HOST_KEY_ALIAS} ${keyType} ${keyData}\n`;
-    });
+    const lines = credentials.hostKeys.map(
+      (hostKey) => `${HOST_KEY_ALIAS} ${parseSshHostKey(hostKey)}\n`,
+    );
     await writeFile(knownHosts, lines.join(''), { mode: 0o600, flag: 'wx' });
     const sshOptions = [
       'BatchMode=yes',

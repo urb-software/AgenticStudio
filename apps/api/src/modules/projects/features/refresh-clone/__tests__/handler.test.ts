@@ -9,6 +9,7 @@ import {
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CLONE_MISSING_DETAIL, RefreshCloneHandler } from '../handler.js';
+import { HOST_KEY_CHANGED_DETAIL } from '../../../domain/entities/repository.js';
 import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../deploy-key/handler.js';
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
@@ -302,7 +303,10 @@ describe('RefreshCloneHandler', () => {
         hasClone: true,
         headSha: OLD,
         pinnedHostKey: pinned,
-        failure: { code: 'host_key_mismatch' },
+        failure: {
+          code: 'host_key_mismatch',
+          detail: `${HOST_KEY_CHANGED_DETAIL}\n\nHost key verification failed.`,
+        },
       });
     });
 

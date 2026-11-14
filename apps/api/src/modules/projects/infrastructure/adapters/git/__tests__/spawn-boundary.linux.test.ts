@@ -21,6 +21,10 @@ import {
 } from '../../../../ports/repository-git.js';
 import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
 import {
+  parseKnownHosts,
+  SSH_HOST_KEY_TYPES,
+} from '../../../../../../platform/config/ssh-known-hosts.js';
+import {
   gitInvocations,
   keyscanInvocation,
   sshInvocation,
@@ -449,6 +453,35 @@ describe.runIf(process.platform === 'linux')(
         expect((await sshInvocation(recordDir)).knownHosts).toBe(
           `studio-remote ${first}\nstudio-remote ${other}\n`,
         );
+      });
+
+      it('accepts exactly the host keys STUDIO_SSH_KNOWN_HOSTS accepts (one shared allowlist)', async () => {
+        const sshBinary = await writeFakeSsh(root, recordDir, 'deny');
+        const git = await adapter('real', { sshBinary });
+        const keyOfType = (type: string) => {
+          const name = Buffer.from(type, 'latin1');
+          const length = Buffer.alloc(4);
+          length.writeUInt32BE(name.length);
+          return `${type} ${Buffer.concat([length, name, Buffer.alloc(32, 7)]).toString('base64')}`;
+        };
+        const verdicts = async (key: string) => {
+          const config = parseKnownHosts(`git.example.test ${key}`).problems.length === 0;
+          const error = await git
+            .inspectRemote(SSH_URL, 'main', { ssh: { ...SSH, hostKeys: [key] } })
+            .catch((e: unknown) => e);
+          return { config, adapter: !(error instanceof GitRequestRejectedError) };
+        };
+
+        for (const type of SSH_HOST_KEY_TYPES) {
+          expect(await verdicts(keyOfType(type))).toEqual({ config: true, adapter: true });
+        }
+        for (const key of [
+          keyOfType('ssh-dss'),
+          `ssh-rsa ${keyOfType('ssh-ed25519').split(' ')[1]}`,
+          'ssh-ed25519 not-base64!',
+        ]) {
+          expect(await verdicts(key)).toEqual({ config: false, adapter: false });
+        }
       });
 
       it('deletes the key when the operation is aborted', async () => {

@@ -99,6 +99,26 @@ export function isVerifiable(repository: RepositoryConnection): boolean {
   );
 }
 
+/** Studio's own explanation of a `host_key_mismatch`, first in the failure detail (Issue #62). */
+export const HOST_KEY_CHANGED_DETAIL =
+  "The Git host's key changed. Studio never accepts a changed host key on its own: if the " +
+  'change is expected, disconnect the repository and connect it again.';
+
+/**
+ * The failure of a Git operation: `host_key_mismatch` gets Studio's explanation first, then
+ * the redacted Git output; every other reason keeps the Git output as it is.
+ */
+export function gitOperationFailure(
+  code: RepositoryFailureCode,
+  gitOutput = '',
+): RepositoryFailure {
+  if (code !== 'host_key_mismatch') return repositoryFailure(code, gitOutput);
+  return repositoryFailure(
+    code,
+    gitOutput ? `${HOST_KEY_CHANGED_DETAIL}\n\n${gitOutput}` : HOST_KEY_CHANGED_DETAIL,
+  );
+}
+
 /** Builds a failure, cutting an over-long detail. */
 export function repositoryFailure(
   code: RepositoryFailureCode,

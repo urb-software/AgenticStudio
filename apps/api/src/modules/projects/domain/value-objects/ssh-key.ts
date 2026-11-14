@@ -14,14 +14,6 @@ export interface GeneratedDeployKey {
   publicKey: string;
 }
 
-/** An entry of the trusted host keys (`STUDIO_SSH_KNOWN_HOSTS`), already validated. */
-export interface TrustedHostKey {
-  /** known_hosts host names: `host`, or `[host]:port` for a port other than 22; lower case. */
-  hosts: readonly string[];
-  /** `<type> <base64>`. */
-  key: string;
-}
-
 const ED25519 = 'ssh-ed25519';
 /** Longest Deploy key comment after `studio-`. */
 const COMMENT_NAME_MAX_LENGTH = 64;
@@ -102,10 +94,4 @@ export function hostKeyFingerprint(hostKey: string): string {
   const data = hostKey.trim().split(/\s+/)[1] ?? '';
   const digest = createHash('sha256').update(Buffer.from(data, 'base64')).digest('base64');
   return `SHA256:${digest.replace(/=+$/, '')}`;
-}
-
-/** The trusted host keys listed for `hostName` (a known_hosts name, see {@link TrustedHostKey}). */
-export function trustedHostKeysFor(entries: readonly TrustedHostKey[], hostName: string): string[] {
-  const name = hostName.toLowerCase();
-  return entries.filter((entry) => entry.hosts.includes(name)).map((entry) => entry.key);
 }

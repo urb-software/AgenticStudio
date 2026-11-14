@@ -8,7 +8,7 @@ import {
   type ProjectRepository,
 } from '../../domain/repositories/project-repository.js';
 import { IntegrationBranch } from '../../domain/value-objects/integration-branch.js';
-import { RepositoryUrl, sshHostName } from '../../domain/value-objects/repository-url.js';
+import { RepositoryUrl } from '../../domain/value-objects/repository-url.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 import { DeployKeyHandler, type StoredDeployKey } from '../deploy-key/handler.js';
@@ -86,7 +86,9 @@ export class ConnectRepositoryHandler {
       }
     }
     const samePinnedHost =
-      url.ssh !== null && previous !== null && sshHostName(previous.url) === url.ssh.hostName;
+      url.ssh !== null &&
+      previous !== null &&
+      this.deployKeys.hostNameOf(previous.url) === this.deployKeys.hostNameOf(url.value);
 
     let repository: RepositoryConnection;
     try {

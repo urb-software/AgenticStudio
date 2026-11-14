@@ -3,6 +3,9 @@ import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:
 import { isIP } from 'node:net';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
+import { parseKnownHosts, type SshKnownHost } from './ssh-known-hosts.js';
+
+export type { SshKnownHost } from './ssh-known-hosts.js';
 
 const DEFAULT_API_PORT = 3001;
 
@@ -116,85 +119,17 @@ export function isSameOrInside(parent: string, child: string): boolean {
 /** Characters a path may hold to be embedded, single-quoted, in `GIT_SSH_COMMAND`. */
 export const SHELL_SAFE_PATH = /^\/[A-Za-z0-9._/-]+$/;
 
-/** One trusted host key from `STUDIO_SSH_KNOWN_HOSTS`. */
-export interface SshKnownHost {
-  /** known_hosts host names, lower case: `host`, or `[host]:port` for a port other than 22. */
-  hosts: string[];
-  /** `<type> <base64>`. */
-  key: string;
-}
-
-const KNOWN_HOST_NAME =
-  /^(?=.{1,253}$)[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
-const KNOWN_HOST_WITH_PORT = /^\[([^\]]+)\]:(\d{1,5})$/;
-/** Host key types the Git adapter accepts (security.md §4). */
-const KNOWN_HOST_KEY_TYPES = new Set([
-  'ssh-ed25519',
-  'ecdsa-sha2-nistp256',
-  'ecdsa-sha2-nistp384',
-  'ecdsa-sha2-nistp521',
-  'ssh-rsa',
-  'sk-ssh-ed25519@openssh.com',
-  'sk-ecdsa-sha2-nistp256@openssh.com',
-]);
-const KEY_BASE64 = /^[A-Za-z0-9+/]+={0,3}$/;
-
-/** A known_hosts host name in its normal form, or `null` when it is not a plain one. */
-function knownHostName(pattern: string): string | null {
-  const withPort = KNOWN_HOST_WITH_PORT.exec(pattern);
-  const host = withPort ? withPort[1]! : pattern;
-  const port = withPort ? Number(withPort[2]) : 22;
-  if (!KNOWN_HOST_NAME.test(host) || port < 1 || port > 65535) return null;
-  return port === 22 ? host.toLowerCase() : `[${host.toLowerCase()}]:${port}`;
-}
-
-/** Why a known_hosts line is refused (fixed text, never the line), or the parsed entry. */
-function parseKnownHostLine(line: string): SshKnownHost | string {
-  const [hostField = '', type = '', data = ''] = line.split(/\s+/);
-  if (!data) return 'expected "<host>[,<host>…] <key type> <base64 key>"';
-  if (hostField.startsWith('@'))
-    return 'markers such as @cert-authority or @revoked are not supported';
-  if (hostField.startsWith('|')) return 'hashed host names are not supported; use plain host names';
-  if (/[*?!]/.test(hostField)) return 'wildcards and negated host names are not supported';
-  const hosts = hostField.split(',').map(knownHostName);
-  if (hosts.some((host) => host === null)) {
-    return 'each host must be a host name or [host]:port';
-  }
-  if (!KNOWN_HOST_KEY_TYPES.has(type)) return 'unsupported key type';
-  const blob = KEY_BASE64.test(data) ? Buffer.from(data, 'base64') : Buffer.alloc(0);
-  const typeLength = blob.length >= 4 ? blob.readUInt32BE(0) : -1;
-  if (
-    typeLength < 0 ||
-    typeLength + 4 > blob.length ||
-    blob.subarray(4, 4 + typeLength).toString('latin1') !== type
-  ) {
-    return 'the key is not a valid base64 OpenSSH public key of the stated type';
-  }
-  return { hosts: hosts as string[], key: `${type} ${data}` };
-}
-
 /**
  * `STUDIO_SSH_KNOWN_HOSTS` (Issue #62): the Git hosts Studio trusts without asking, as
- * standard known_hosts lines, one per line (a double-quoted multi-line `.env` value) or
- * separated by a literal `\n` (an environment variable set on one line). Blank lines and
- * `#` comments are ignored; an empty value trusts no host. Messages name the line number,
- * never its content.
+ * standard known_hosts lines (see `ssh-known-hosts.ts`, shared with the Git adapter). An
+ * empty value trusts no host. Messages name the line number, never its content.
  */
 const sshKnownHostsSchema = z
   .string()
   .default('')
   .transform((value, context) => {
-    const entries: SshKnownHost[] = [];
-    value.split(/\r?\n|\\n/).forEach((raw, index) => {
-      const line = raw.trim();
-      if (line === '' || line.startsWith('#')) return;
-      const parsed = parseKnownHostLine(line);
-      if (typeof parsed === 'string') {
-        context.addIssue({ code: 'custom', message: `line ${index + 1}: ${parsed}` });
-      } else {
-        entries.push(parsed);
-      }
-    });
+    const { entries, problems } = parseKnownHosts(value);
+    for (const message of problems) context.addIssue({ code: 'custom', message });
     return entries;
   });
 

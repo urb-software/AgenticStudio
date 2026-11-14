@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import type { JobFailure } from '../../../../platform/queue/job-queue.js';
 import {
+  gitOperationFailure,
   INTERRUPTED_DETAIL,
   type RepositoryFailure,
   repositoryFailure,
@@ -100,7 +101,7 @@ export class RefreshCloneHandler {
                 'branch_not_found',
                 `Branch "${integrationBranch}" was not found on the remote.`,
               )
-            : repositoryFailure(error.reason, error.detail);
+            : gitOperationFailure(error.reason, error.detail);
         await this.projects.markFetchFailed(projectId, failure, {
           cloneKept: error.reason !== 'size_limit',
         });

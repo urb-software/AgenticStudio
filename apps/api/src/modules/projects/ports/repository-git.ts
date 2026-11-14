@@ -88,7 +88,8 @@ export interface RepositoryGit {
 
   /**
    * Retrieves the host key an `ssh` remote's server presents (`ssh-keyscan`, under the same
-   * isolated environment and the 2-minute limit), preferring ed25519, then ECDSA, then RSA:
+   * isolated environment), within the caller's `timeoutMs` (verify passes 30 s; at most the
+   * adapter's 2-minute limit), preferring ed25519, then ECDSA, then RSA:
    * `<key-type> <base64>`. Nothing is trusted, stored or authenticated: the caller has the
    * operator confirm its fingerprint. Fails with `host_unreachable` (or `timeout`) when the
    * host presents no usable key.

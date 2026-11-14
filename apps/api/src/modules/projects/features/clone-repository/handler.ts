@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import type { JobFailure } from '../../../../platform/queue/job-queue.js';
 import {
+  gitOperationFailure,
   INTERRUPTED_DETAIL,
   type RepositoryFailure,
   type RepositoryFailureCode,
@@ -112,7 +113,7 @@ export class CloneRepositoryHandler {
       if (error instanceof GitOperationError) {
         await this.projects.markFailed(
           projectId,
-          repositoryFailure(FAILURE_CODE[error.reason], error.detail),
+          gitOperationFailure(FAILURE_CODE[error.reason], error.detail),
         );
         return;
       }

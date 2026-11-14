@@ -1,11 +1,6 @@
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import {
-  deployKeyComment,
-  generateDeployKey,
-  hostKeyFingerprint,
-  trustedHostKeysFor,
-} from '../ssh-key.js';
+import { deployKeyComment, generateDeployKey, hostKeyFingerprint } from '../ssh-key.js';
 
 /** Reads SSH wire-format fields (uint32, and strings as uint32 length + bytes) in order. */
 class WireReader {
@@ -159,35 +154,5 @@ describe('hostKeyFingerprint', () => {
       .replace(/=+$/, '');
     expect(hostKeyFingerprint(`${type} ${data}`)).toBe(`SHA256:${expected}`);
     expect(hostKeyFingerprint(`${type} ${data}`)).toMatch(/^SHA256:[A-Za-z0-9+/]{43}$/);
-  });
-});
-
-describe('trustedHostKeysFor', () => {
-  const entries = [
-    { hosts: ['github.com'], key: 'ssh-ed25519 placeholder-github-1' },
-    { hosts: ['github.com', 'gh.example'], key: 'ecdsa-sha2-nistp256 placeholder-github-2' },
-    { hosts: ['[git.example]:2222'], key: 'ssh-ed25519 placeholder-port' },
-  ];
-
-  it('returns the keys of every entry naming the host', () => {
-    expect(trustedHostKeysFor(entries, 'github.com')).toEqual([
-      'ssh-ed25519 placeholder-github-1',
-      'ecdsa-sha2-nistp256 placeholder-github-2',
-    ]);
-    expect(trustedHostKeysFor(entries, 'gh.example')).toEqual([
-      'ecdsa-sha2-nistp256 placeholder-github-2',
-    ]);
-  });
-
-  it('matches a non-default port only in the [host]:port form', () => {
-    expect(trustedHostKeysFor(entries, '[git.example]:2222')).toEqual([
-      'ssh-ed25519 placeholder-port',
-    ]);
-    expect(trustedHostKeysFor(entries, 'git.example')).toEqual([]);
-  });
-
-  it('returns nothing for an unlisted host', () => {
-    expect(trustedHostKeysFor(entries, 'gitlab.com')).toEqual([]);
-    expect(trustedHostKeysFor([], 'github.com')).toEqual([]);
   });
 });

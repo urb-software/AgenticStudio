@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../domain/entities/project.js';
 import {
+  gitOperationFailure,
   isVerifiable,
   type RepositoryConnection,
   repositoryFailure,
@@ -105,7 +106,7 @@ export class VerifyRepositoryHandler {
       if (!(error instanceof GitOperationError)) throw error;
       await this.projects.failVerification(
         projectId,
-        repositoryFailure(error.reason, error.detail),
+        gitOperationFailure(error.reason, error.detail),
       );
       return this.current(projectId);
     }

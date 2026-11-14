@@ -79,19 +79,10 @@ export function remoteIdentity(input: string): string | null {
   return `${url.hostname.toLowerCase()}${port}/${path}`;
 }
 
-/** What an SSH URL says about its Git host. */
+/** Where an SSH URL's Git host listens: its host (lower case) and port (22 by default). */
 export interface SshRemote {
-  /**
-   * The host as known_hosts names it: `host` (lower case) for port 22, `[host]:port`
-   * otherwise. Trusted host keys are looked up by it.
-   */
-  hostName: string;
-}
-
-/** `host` for port 22, `[host]:port` otherwise: the known_hosts form. */
-function knownHostName(host: string, port: string): string {
-  const name = host.toLowerCase();
-  return port === '' || port === '22' ? name : `[${name}]:${port}`;
+  host: string;
+  port: number;
 }
 
 function parseScpLike(input: string, match: RegExpExecArray): SshRemote {
@@ -102,7 +93,7 @@ function parseScpLike(input: string, match: RegExpExecArray): SshRemote {
     invalid('A path segment must not start with "-".');
   }
   if (!remoteIdentity(input)) invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
-  return { hostName: knownHostName(host, '') };
+  return { host: host.toLowerCase(), port: 22 };
 }
 
 /**
@@ -203,17 +194,17 @@ export class RepositoryUrl {
     }
     const identity = remoteIdentity(input);
     if (!identity) invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
-    return new RepositoryUrl(input, identity, { hostName: knownHostName(url.hostname, url.port) });
+    return new RepositoryUrl(input, identity, {
+      host: url.hostname.toLowerCase(),
+      port: url.port === '' ? 22 : Number(url.port),
+    });
   }
 }
 
-/**
- * The known_hosts name of a stored Repository URL's Git host (see {@link SshRemote}), or
- * `null` when the URL is not an SSH URL.
- */
-export function sshHostName(url: string): string | null {
+/** The Git host of a stored Repository URL, or `null` when it is not an SSH URL. */
+export function sshRemoteOf(url: string): SshRemote | null {
   try {
-    return RepositoryUrl.parse(url).ssh?.hostName ?? null;
+    return RepositoryUrl.parse(url).ssh;
   } catch {
     return null;
   }

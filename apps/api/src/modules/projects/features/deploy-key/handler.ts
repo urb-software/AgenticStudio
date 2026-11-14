@@ -1,13 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/index.js';
 import type { RepositoryConnection } from '../../domain/entities/repository.js';
-import { sshHostName } from '../../domain/value-objects/repository-url.js';
-import {
-  deployKeyComment,
-  generateDeployKey,
-  type TrustedHostKey,
-  trustedHostKeysFor,
-} from '../../domain/value-objects/ssh-key.js';
+import { knownHostName, type SshKnownHost } from '../../../../platform/config/ssh-known-hosts.js';
+import { sshRemoteOf } from '../../domain/value-objects/repository-url.js';
+import { deployKeyComment, generateDeployKey } from '../../domain/value-objects/ssh-key.js';
 import type { SshCredentials } from '../../ports/repository-git.js';
 
 /** DI token for {@link SshTrustSettings}. */
@@ -15,7 +11,7 @@ export const SSH_TRUST_SETTINGS = Symbol('SSH_TRUST_SETTINGS');
 
 export interface SshTrustSettings {
   /** The Git hosts trusted without asking (`STUDIO_SSH_KNOWN_HOSTS`). */
-  knownHosts: readonly TrustedHostKey[];
+  knownHosts: readonly SshKnownHost[];
 }
 
 /** A stored Deploy key: the public half and the secret store's reference to the private half. */
@@ -68,10 +64,18 @@ export class DeployKeyHandler {
    * URL that is not SSH.
    */
   trustedHostKeys(repository: RepositoryConnection): string[] {
-    const hostName = sshHostName(repository.url);
+    const hostName = this.hostNameOf(repository.url);
     if (hostName === null) return [];
-    const keys = trustedHostKeysFor(this.settings.knownHosts, hostName);
+    const keys = this.settings.knownHosts
+      .filter((entry) => entry.hosts.includes(hostName))
+      .map((entry) => entry.key);
     return repository.pinnedHostKey ? [...keys, repository.pinnedHostKey] : keys;
+  }
+
+  /** The known_hosts name of an SSH URL's Git host (`host` or `[host]:port`), else `null`. */
+  hostNameOf(url: string): string | null {
+    const remote = sshRemoteOf(url);
+    return remote ? knownHostName(remote.host, remote.port) : null;
   }
 
   /**
