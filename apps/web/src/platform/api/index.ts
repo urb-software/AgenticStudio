@@ -14,6 +14,7 @@ import type {
   ProjectOutput,
   RepositoryOutput,
   SessionResponseOutput,
+  VerifyRepositoryRequest,
 } from './generated';
 import { client } from './generated/client.gen';
 import { zConnectRepositoryRequest, zCreateProjectRequest } from './generated/zod.gen';
@@ -31,6 +32,7 @@ export type {
   RepositoryStateOutput,
   RepositorySummaryOutput,
   SessionResponseOutput,
+  VerifyRepositoryRequest,
 } from './generated';
 
 /**
@@ -128,6 +130,9 @@ export const api = {
   ): Promise<RepositoryOutput> => unwrap(sdk.connectRepository({ path: { id: projectId }, body })),
   fetchRepository: (projectId: string): Promise<RepositoryOutput> =>
     unwrap(sdk.fetchRepository({ path: { id: projectId } })),
+  /** "Verify and clone" of an SSH Repository; with a fingerprint, confirms the host key. */
+  verifyRepository: (projectId: string, body: VerifyRepositoryRequest): Promise<RepositoryOutput> =>
+    unwrap(sdk.verifyRepository({ path: { id: projectId }, body })),
   /**
    * `null` when the Repository is gone (204); the Repository in `disconnecting` when its
    * cleanup is still pending (202).

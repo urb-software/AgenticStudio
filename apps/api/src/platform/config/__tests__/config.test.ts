@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -63,6 +63,7 @@ describe('loadConfig', () => {
       operatorPasswordHash: BASELINE_HASH,
       dataDir: DATA_DIR,
       gitAllowFileRemotes: false,
+      sshKnownHosts: [],
     });
   });
 
@@ -289,6 +290,78 @@ describe('loadConfig', () => {
         loadConfig({ ...requiredEnv, NODE_ENV: 'test', STUDIO_GIT_ALLOW_FILE_REMOTES: 'yes' }),
       );
       expect(error.message).toMatch(/STUDIO_GIT_ALLOW_FILE_REMOTES/);
+    });
+  });
+
+  describe('STUDIO_SSH_KNOWN_HOSTS (Issue #62)', () => {
+    /** A throwaway ed25519 public key as `ssh-ed25519 <base64>`, generated per run. */
+    function hostKey(): string {
+      const der = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' });
+      const sshString = (bytes: Buffer) => {
+        const length = Buffer.alloc(4);
+        length.writeUInt32BE(bytes.length);
+        return Buffer.concat([length, bytes]);
+      };
+      const blob = Buffer.concat([
+        sshString(Buffer.from('ssh-ed25519')),
+        sshString(der.subarray(der.length - 32)),
+      ]);
+      return `ssh-ed25519 ${blob.toString('base64')}`;
+    }
+    const keyA = hostKey();
+    const keyB = hostKey();
+    const load = (value: string) =>
+      loadConfig({ ...requiredEnv, STUDIO_SSH_KNOWN_HOSTS: value }).sshKnownHosts;
+
+    it('is optional and may be empty', () => {
+      expect(loadConfig(requiredEnv).sshKnownHosts).toEqual([]);
+      expect(load('')).toEqual([]);
+      expect(load('  \n ')).toEqual([]);
+    });
+
+    it('reads one known_hosts line per line (a double-quoted multi-line .env value)', () => {
+      expect(
+        load(`github.com ${keyA}\n[git.example.com]:2222,Git.Example.org ${keyB} comment\n`),
+      ).toEqual([
+        { hosts: ['github.com'], key: keyA },
+        { hosts: ['[git.example.com]:2222', 'git.example.org'], key: keyB },
+      ]);
+    });
+
+    it('also reads lines separated by a literal \n (an env var set on one line)', () => {
+      expect(load(`github.com ${keyA}\ngitlab.com ${keyB}`)).toEqual([
+        { hosts: ['github.com'], key: keyA },
+        { hosts: ['gitlab.com'], key: keyB },
+      ]);
+    });
+
+    it('ignores blank lines and comments, and reads CRLF', () => {
+      expect(load(`# GitHub\r\n\r\n  github.com ${keyA}  \r\n# end`)).toEqual([
+        { hosts: ['github.com'], key: keyA },
+      ]);
+    });
+
+    it('writes port 22 as the plain host name', () => {
+      expect(load(`[github.com]:22 ${keyA}`)).toEqual([{ hosts: ['github.com'], key: keyA }]);
+    });
+
+    it.each([
+      ['too few fields', 'github.com'],
+      ['a hashed host name', `|1|c2FsdA==|aGFzaA== ${keyA}`],
+      ['a marker', `@cert-authority github.com ${keyA}`],
+      ['a wildcard', `*.github.com ${keyA}`],
+      ['a negated host', `!github.com ${keyA}`],
+      ['an invalid host', `exa_mple.com ${keyA}`],
+      ['an invalid port', `[github.com]:70000 ${keyA}`],
+      ['an unknown key type', `github.com ssh-dss ${keyA.split(' ')[1]}`],
+      ['broken base64', 'github.com ssh-ed25519 @@@@'],
+      ['a type that does not match the key', `github.com ssh-rsa ${keyA.split(' ')[1]}`],
+    ])('refuses to start on %s, naming the line but not its value', (_case, line) => {
+      const error = captureError(() => load(`# comment\ngithub.com ${keyB}\n${line}`));
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toMatch(/STUDIO_SSH_KNOWN_HOSTS: line 3: /);
+      expect(error.message).not.toContain(line);
+      expect(error.message).not.toContain(keyA.split(' ')[1]);
     });
   });
 });

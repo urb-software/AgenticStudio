@@ -78,6 +78,40 @@ ${end}
   return writeExecutable(join(dir, 'fake-ssh'), script);
 }
 
+/**
+ * A fake `ssh-keyscan` that records its arguments and environment, then prints `stdout`
+ * (known_hosts lines) and `stderr`, or hangs.
+ */
+export async function writeFakeKeyscan(
+  dir: string,
+  recordDir: string,
+  behaviour: { stdout?: string; stderr?: string } | 'hang',
+): Promise<string> {
+  const output =
+    behaviour === 'hang'
+      ? 'exec sleep 30'
+      : `cat "$rec/keyscan.stdout"; cat "$rec/keyscan.stderr" >&2; exit 0`;
+  if (behaviour !== 'hang') {
+    await writeFile(join(recordDir, 'keyscan.stdout'), behaviour.stdout ?? '');
+    await writeFile(join(recordDir, 'keyscan.stderr'), behaviour.stderr ?? '');
+  }
+  const script = `#!/bin/sh
+rec='${recordDir}'
+printf '%s\\0' "$@" > "$rec/keyscan.args"
+env -0 > "$rec/keyscan.env"
+${output}
+`;
+  return writeExecutable(join(dir, 'fake-ssh-keyscan'), script);
+}
+
+export async function keyscanInvocation(recordDir: string) {
+  const read = (name: string) => readFile(join(recordDir, name), 'utf8');
+  return {
+    args: (await read('keyscan.args')).split('\0').slice(0, -1),
+    env: parseEnv(await read('keyscan.env')),
+  };
+}
+
 async function writeExecutable(path: string, script: string): Promise<string> {
   await writeFile(path, script);
   await chmod(path, 0o755);

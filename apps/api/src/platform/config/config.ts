@@ -3,6 +3,9 @@ import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:
 import { isIP } from 'node:net';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
+import { parseKnownHosts, type SshKnownHost } from './ssh-known-hosts.js';
+
+export type { SshKnownHost } from './ssh-known-hosts.js';
 
 const DEFAULT_API_PORT = 3001;
 
@@ -117,6 +120,20 @@ export function isSameOrInside(parent: string, child: string): boolean {
 export const SHELL_SAFE_PATH = /^\/[A-Za-z0-9._/-]+$/;
 
 /**
+ * `STUDIO_SSH_KNOWN_HOSTS` (Issue #62): the Git hosts Studio trusts without asking, as
+ * standard known_hosts lines (see `ssh-known-hosts.ts`, shared with the Git adapter). An
+ * empty value trusts no host. Messages name the line number, never its content.
+ */
+const sshKnownHostsSchema = z
+  .string()
+  .default('')
+  .transform((value, context) => {
+    const { entries, problems } = parseKnownHosts(value);
+    for (const message of problems) context.addIssue({ code: 'custom', message });
+    return entries;
+  });
+
+/**
  * `STUDIO_DATA_DIR` (Clones and other repository data, Epic #55): an absolute, existing,
  * writable directory outside the repository checkout. Messages never echo the path.
  */
@@ -176,6 +193,8 @@ const environmentSchema = z.object({
   STUDIO_SECRETS_KEY: secretsKeySchema,
   // Test-only: adds `file` remotes to the Git adapter's transports (local fixture remotes).
   STUDIO_GIT_ALLOW_FILE_REMOTES: z.enum(['true', 'false']).default('false'),
+  // Git hosts trusted without asking (Issue #62): known_hosts lines; may be empty.
+  STUDIO_SSH_KNOWN_HOSTS: sshKnownHostsSchema,
   NODE_ENV: z.string().optional(),
 });
 
@@ -203,6 +222,8 @@ export interface AppConfig {
   dataDir: string;
   /** Test-only: whether the Git adapter also accepts `file` remotes. */
   gitAllowFileRemotes: boolean;
+  /** Trusted Git host keys (`STUDIO_SSH_KNOWN_HOSTS`); empty trusts no host without asking. */
+  sshKnownHosts: SshKnownHost[];
 }
 
 export interface LoadConfigOptions {
@@ -245,5 +266,6 @@ export function loadConfig(
     secretsKey: result.data.STUDIO_SECRETS_KEY,
     dataDir: result.data.STUDIO_DATA_DIR,
     gitAllowFileRemotes: result.data.STUDIO_GIT_ALLOW_FILE_REMOTES === 'true',
+    sshKnownHosts: result.data.STUDIO_SSH_KNOWN_HOSTS,
   };
 }

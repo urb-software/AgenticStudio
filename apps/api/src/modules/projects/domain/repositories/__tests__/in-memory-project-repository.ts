@@ -1,6 +1,11 @@
 import type { Project } from '../../entities/project.js';
-import type { RepositoryConnection, RepositoryFailure } from '../../entities/repository.js';
+import {
+  isVerifiable,
+  type RepositoryConnection,
+  type RepositoryFailure,
+} from '../../entities/repository.js';
 import type { ProjectName } from '../../value-objects/project-name.js';
+import { hostKeyFingerprint } from '../../value-objects/ssh-key.js';
 import {
   type ConnectRepositoryRecord,
   NoRepositoryError,
@@ -16,8 +21,9 @@ import {
  * In-memory adapter of {@link ProjectRepository} for handler tests, with the same rules as
  * the database: one Repository per project, one project per remote identity, only a `failed`
  * Repository is replaced, a fetch starts only from `ready` or `failed` with a Clone,
- * transitions out of `connecting` and `fetching` are conditional, and only a `disconnecting`
- * Repository is deleted.
+ * transitions out of `connecting` and `fetching` are conditional, verification transitions
+ * apply only to a verifiable SSH Repository, and only a `disconnecting` Repository is
+ * deleted. The host key fingerprint is derived on read, as the database adapter does.
  */
 export class InMemoryProjectRepository implements ProjectRepository {
   readonly projects = new Map<string, Project>();
@@ -47,7 +53,11 @@ export class InMemoryProjectRepository implements ProjectRepository {
     if (!stored) return Promise.resolve(null);
     const { identity, ...repository } = stored;
     void identity; // stored for the uniqueness rule, not part of a RepositoryConnection
-    return Promise.resolve(structuredClone(repository));
+    const shown = repository.pendingHostKey ?? repository.pinnedHostKey;
+    return Promise.resolve({
+      ...structuredClone(repository),
+      hostKeyFingerprint: shown === null ? null : hostKeyFingerprint(shown),
+    });
   }
 
   async beginConnect(record: ConnectRepositoryRecord): Promise<RepositoryConnection> {
@@ -64,13 +74,66 @@ export class InMemoryProjectRepository implements ProjectRepository {
       url: record.url,
       identity: record.identity,
       integrationBranch: record.integrationBranch,
-      state: 'connecting',
+      state: record.deployKey ? 'awaiting_key' : 'connecting',
       hasClone: false,
       headSha: null,
       lastFetchedAt: null,
       failure: null,
+      publicKey: record.deployKey?.publicKey ?? null,
+      deployKeySecret: record.deployKey?.secretRef ?? null,
+      pinnedHostKey: record.deployKey ? (record.pinnedHostKey ?? null) : null,
+      pendingHostKey: null,
+      hostKeyFingerprint: null,
     });
     return (await this.findRepository(record.projectId))!;
+  }
+
+  async awaitHostKey(projectId: string, hostKey: string): Promise<RepositoryConnection | null> {
+    const repository = this.repositories.get(projectId);
+    if (!repository || !isVerifiable(repository)) return null;
+    repository.state = 'awaiting_host_key';
+    repository.pendingHostKey = hostKey;
+    repository.failure = null;
+    return this.findRepository(projectId);
+  }
+
+  async beginVerifiedClone(
+    projectId: string,
+    confirmed: { pendingHostKey: string } | null,
+  ): Promise<RepositoryConnection | null> {
+    const repository = this.repositories.get(projectId);
+    if (!repository || !isVerifiable(repository)) return null;
+    if (
+      confirmed &&
+      (repository.state !== 'awaiting_host_key' ||
+        repository.pendingHostKey !== confirmed.pendingHostKey)
+    ) {
+      return null;
+    }
+    if (confirmed) repository.pinnedHostKey = confirmed.pendingHostKey;
+    repository.state = 'connecting';
+    repository.pendingHostKey = null;
+    repository.failure = null;
+    return this.findRepository(projectId);
+  }
+
+  failVerification(projectId: string, failure: RepositoryFailure): Promise<boolean> {
+    const repository = this.repositories.get(projectId);
+    if (!repository || !isVerifiable(repository)) return Promise.resolve(false);
+    repository.state = 'failed';
+    repository.pendingHostKey = null;
+    repository.failure = failure;
+    return Promise.resolve(true);
+  }
+
+  forgetDeployKey(projectId: string): Promise<boolean> {
+    const repository = this.repositories.get(projectId);
+    if (repository?.state !== 'disconnecting') return Promise.resolve(false);
+    repository.publicKey = null;
+    repository.deployKeySecret = null;
+    repository.pinnedHostKey = null;
+    repository.pendingHostKey = null;
+    return Promise.resolve(true);
   }
 
   markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
@@ -156,6 +219,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
     if (!repository) throw new NoRepositoryError();
     repository.state = 'disconnecting';
     repository.failure = null;
+    repository.pendingHostKey = null;
     repository.hasClone = false;
     repository.headSha = null;
     repository.lastFetchedAt = null;

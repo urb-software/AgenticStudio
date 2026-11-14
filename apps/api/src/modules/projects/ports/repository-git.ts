@@ -11,8 +11,11 @@ export const REPOSITORY_GIT = Symbol('REPOSITORY_GIT');
 export interface SshCredentials {
   /** The Project's Deploy key: an OpenSSH private key, PEM-armoured. */
   privateKey: string;
-  /** The only host key accepted for the remote: `<key-type> <base64>`, e.g. `ssh-ed25519 AAAA…`. */
-  hostKey: string;
+  /**
+   * The only host keys accepted for the remote (at least one): `<key-type> <base64>`, e.g.
+   * `ssh-ed25519 AAAA…`. A host may have several (one per key type), all trusted alike.
+   */
+  hostKeys: readonly string[];
 }
 
 /** Per-operation options. */
@@ -82,6 +85,16 @@ export interface RepositoryGit {
     branch: string,
     options?: GitOperationOptions,
   ): Promise<{ commit: string }>;
+
+  /**
+   * Retrieves the host key an `ssh` remote's server presents (`ssh-keyscan`, under the same
+   * isolated environment), within the caller's `timeoutMs` (verify passes 30 s; at most the
+   * adapter's 2-minute limit), preferring ed25519, then ECDSA, then RSA:
+   * `<key-type> <base64>`. Nothing is trusted, stored or authenticated: the caller has the
+   * operator confirm its fingerprint. Fails with `host_unreachable` (or `timeout`) when the
+   * host presents no usable key.
+   */
+  scanHostKey(remoteUrl: string, options?: GitOperationOptions): Promise<{ hostKey: string }>;
 
   /** Brings `branch` of the existing Clone up to date with the remote; returns its commit id. */
   fetch(

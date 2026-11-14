@@ -25,6 +25,7 @@ import {
   RepositoryBusyError,
 } from '../../domain/repositories/project-repository.js';
 import type { ProjectName } from '../../domain/value-objects/project-name.js';
+import { hostKeyFingerprint } from '../../domain/value-objects/ssh-key.js';
 
 const PROJECT_FIELDS = { id: true, name: true, createdAt: true } as const;
 
@@ -38,6 +39,10 @@ const REPOSITORY_FIELDS = {
   failureCode: true,
   failureDetail: true,
   failureRemoteDefaultBranch: true,
+  publicKey: true,
+  deployKeySecretId: true,
+  pinnedHostKey: true,
+  pendingHostKey: true,
 } as const;
 
 interface RepositoryRow {
@@ -50,6 +55,10 @@ interface RepositoryRow {
   failureCode: string | null;
   failureDetail: string | null;
   failureRemoteDefaultBranch: string | null;
+  publicKey: string | null;
+  deployKeySecretId: string | null;
+  pinnedHostKey: string | null;
+  pendingHostKey: string | null;
 }
 
 function isState(value: string): value is RepositoryState {
@@ -66,6 +75,7 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
     throw new Error(`Unexpected repository state in the database: ${row.state}`);
   }
   const code = row.failureCode;
+  const shownHostKey = row.pendingHostKey ?? row.pinnedHostKey;
   return {
     projectId: row.projectId,
     url: row.url,
@@ -83,6 +93,11 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
             remoteDefaultBranch: row.failureRemoteDefaultBranch,
           }
         : null,
+    publicKey: row.publicKey,
+    deployKeySecret: row.deployKeySecretId,
+    pinnedHostKey: row.pinnedHostKey,
+    pendingHostKey: row.pendingHostKey,
+    hostKeyFingerprint: shownHostKey === null ? null : hostKeyFingerprint(shownHostKey),
   };
 }
 
@@ -91,6 +106,16 @@ const NO_FAILURE = {
   failureDetail: null,
   failureRemoteDefaultBranch: null,
 } as const;
+
+/**
+ * Where a verification transition applies (`isVerifiable`): an SSH Repository (it has a
+ * Deploy key) without a Clone, waiting for its key or host key, or failed (Retry).
+ */
+const VERIFIABLE = {
+  state: { in: ['awaiting_key', 'awaiting_host_key', 'failed'] as string[] },
+  deployKeySecretId: { not: null },
+  headSha: null,
+};
 
 function failureColumns(failure: RepositoryFailure) {
   return {
@@ -159,7 +184,11 @@ export class PrismaProjectRepository implements ProjectRepository {
       url: record.url,
       urlNormalized: record.identity,
       integrationBranch: record.integrationBranch,
-      state: 'connecting',
+      state: record.deployKey ? 'awaiting_key' : 'connecting',
+      publicKey: record.deployKey?.publicKey ?? null,
+      deployKeySecretId: record.deployKey?.secretRef ?? null,
+      pinnedHostKey: record.deployKey ? (record.pinnedHostKey ?? null) : null,
+      pendingHostKey: null,
       headSha: null,
       lastFetchedAt: null,
       failureCode: null,
@@ -185,6 +214,65 @@ export class PrismaProjectRepository implements ProjectRepository {
     const stored = await this.findRepository(record.projectId);
     if (!stored) throw new Error('The repository vanished right after it was stored.');
     return stored;
+  }
+
+  async awaitHostKey(projectId: string, hostKey: string): Promise<RepositoryConnection | null> {
+    const { count } = await this.db.repository.updateMany({
+      where: { projectId, ...VERIFIABLE },
+      data: {
+        state: 'awaiting_host_key',
+        pendingHostKey: hostKey,
+        ...NO_FAILURE,
+        updatedAt: new Date(),
+      },
+    });
+    return count === 1 ? this.findRepository(projectId) : null;
+  }
+
+  async beginVerifiedClone(
+    projectId: string,
+    confirmed: { pendingHostKey: string } | null,
+  ): Promise<RepositoryConnection | null> {
+    const { count } = await this.db.repository.updateMany({
+      where: confirmed
+        ? {
+            projectId,
+            ...VERIFIABLE,
+            state: 'awaiting_host_key',
+            pendingHostKey: confirmed.pendingHostKey,
+          }
+        : { projectId, ...VERIFIABLE },
+      data: {
+        state: 'connecting',
+        pendingHostKey: null,
+        ...(confirmed ? { pinnedHostKey: confirmed.pendingHostKey } : {}),
+        ...NO_FAILURE,
+        updatedAt: new Date(),
+      },
+    });
+    return count === 1 ? this.findRepository(projectId) : null;
+  }
+
+  async failVerification(projectId: string, failure: RepositoryFailure): Promise<boolean> {
+    const { count } = await this.db.repository.updateMany({
+      where: { projectId, ...VERIFIABLE },
+      data: { ...failureColumns(failure), pendingHostKey: null },
+    });
+    return count === 1;
+  }
+
+  async forgetDeployKey(projectId: string): Promise<boolean> {
+    const { count } = await this.db.repository.updateMany({
+      where: { projectId, state: 'disconnecting' },
+      data: {
+        publicKey: null,
+        deployKeySecretId: null,
+        pinnedHostKey: null,
+        pendingHostKey: null,
+        updatedAt: new Date(),
+      },
+    });
+    return count === 1;
   }
 
   markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
@@ -268,6 +356,7 @@ export class PrismaProjectRepository implements ProjectRepository {
         state: 'disconnecting',
         headSha: null,
         lastFetchedAt: null,
+        pendingHostKey: null,
         ...NO_FAILURE,
         updatedAt: new Date(),
       },

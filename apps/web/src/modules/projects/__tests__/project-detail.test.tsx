@@ -5,10 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Toaster, toast } from '@/shared/ui/sonner';
 import { ProjectDetail } from '..';
 import type { ProjectOutput, RepositoryOutput } from '../../../platform/api';
-import { fakeProjectApi, fieldProblem } from './fake-project-api';
+import {
+  FAKE_FINGERPRINT,
+  FAKE_PUBLIC_KEY,
+  fakeProjectApi,
+  fieldProblem,
+} from './fake-project-api';
 import { problem } from './fake-projects-api';
 
-// Project screen seam (Stories #60 and #61): the public ProjectDetail of the projects module, with the
+// Project screen seam (Stories #60, #61, #62 and #63): the public ProjectDetail of the projects module, with the
 // generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
 
 const PROJECT: ProjectOutput = {
@@ -173,7 +178,11 @@ describe('Connect repository dialog', () => {
   });
 
   it.each([
-    ['an SSH URL (422)', 422, 'Private repositories over SSH are not supported yet.'],
+    [
+      'a git+ssh URL (422)',
+      422,
+      'Use git@host:owner/repo.git or ssh://git@host/owner/repo.git for SSH.',
+    ],
     ['a remote connected to another project (409)', 409, 'Already connected to Other Project'],
   ])('shows the API field error for %s on the URL field', async (_case, status, message) => {
     const api = fakeProjectApi(PROJECT);
@@ -811,5 +820,209 @@ describe('Disconnect (Story #63)', () => {
         'Connected',
       ),
     ).toBeTruthy();
+  });
+});
+
+describe('SSH repositories with a Deploy key (Story #62)', () => {
+  const SSH_URL = 'git@github.com:acme/shop.git';
+  const AWAITING_KEY: RepositoryOutput = {
+    state: 'awaiting_key',
+    url: SSH_URL,
+    integrationBranch: 'dev',
+    hasClone: false,
+    publicKey: FAKE_PUBLIC_KEY,
+  };
+  const AWAITING_HOST_KEY: RepositoryOutput = {
+    ...AWAITING_KEY,
+    state: 'awaiting_host_key',
+    hostKeyFingerprint: FAKE_FINGERPRINT,
+  };
+  /** The card's alert whose text matches, once it is shown. */
+  const alertMatching = (pattern: RegExp) =>
+    waitFor(() => {
+      const alert = within(card())
+        .getAllByRole('alert')
+        .find((element) => pattern.test(element.textContent ?? ''));
+      if (!alert) throw new Error(`no alert matches ${pattern}`);
+      return alert;
+    });
+
+  const failedSsh = (failure: RepositoryOutput['failure']): RepositoryOutput => ({
+    ...AWAITING_KEY,
+    state: 'failed',
+    failure,
+  });
+
+  it('connecting an SSH URL shows the public key to add, in mono, with its comment and Copy', async () => {
+    const api = fakeProjectApi(PROJECT);
+    const { container } = await renderLoaded();
+    await openDialog();
+
+    await submit(SSH_URL);
+
+    await within(card()).findByText('Awaiting key');
+    expect(api.calls('connect')).toEqual([
+      { route: 'connect', body: { url: SSH_URL, integrationBranch: 'dev' } },
+    ]);
+    const key = within(card()).getByLabelText('Public key');
+    expect(key.tagName).toBe('PRE');
+    expect(key.textContent).toBe(FAKE_PUBLIC_KEY);
+    // One long line that scrolls inside its own box (390px), reachable by keyboard.
+    expect(key.className.split(' ')).toEqual(
+      expect.arrayContaining(['overflow-x-auto', 'whitespace-pre', 'min-w-0', 'text-code']),
+    );
+    expect(key.getAttribute('tabindex')).toBe('0');
+    expect(within(card()).getByText('studio-Acme-Shop').tagName).toBe('CODE');
+    expect(card().textContent).toContain(
+      'Add this as a deploy key on your Git host. Read access is enough for now.',
+    );
+    expect(within(card()).getByRole('button', { name: 'Verify and clone' })).toBeTruthy();
+    // No private key ever reaches the screen.
+    expect(card().textContent).not.toMatch(/PRIVATE KEY/);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('Copy puts the public key on the clipboard', async () => {
+    fakeProjectApi(PROJECT, AWAITING_KEY);
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.click(await within(card()).findByRole('button', { name: 'Copy public key' }));
+
+    expect(await navigator.clipboard.readText()).toBe(FAKE_PUBLIC_KEY);
+    expect(within(card()).getByRole('button', { name: 'Copy public key' }).textContent).toMatch(
+      /Copied/,
+    );
+  });
+
+  it('Verify and clone on a trusted host starts the clone and polls', async () => {
+    const api = fakeProjectApi(PROJECT, AWAITING_KEY);
+    api.state.hostTrusted = true;
+    await renderLoaded();
+
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Verify and clone' }));
+
+    await within(card()).findByText('Connecting');
+    expect(api.calls('verify')).toEqual([{ route: 'verify', body: {} }]);
+    expect(within(card()).getByRole('status').textContent).toMatch(/Cloning the repository/);
+  });
+
+  it('an unknown host: shows the host and fingerprint in mono; Confirm pins it and clones', async () => {
+    const api = fakeProjectApi(PROJECT, AWAITING_KEY);
+    const { container } = await renderLoaded();
+
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Verify and clone' }));
+
+    const question = await within(card()).findByRole('region', {
+      name: "Confirm the Git host's key",
+    });
+    expect(within(question).getByText('github.com').tagName).toBe('CODE');
+    expect(within(question).getByText(FAKE_FINGERPRINT).tagName).toBe('CODE');
+    expect(within(card()).getByText('Confirm host')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+
+    await userEvent.click(within(question).getByRole('button', { name: 'Confirm and clone' }));
+
+    await within(card()).findByText('Connecting');
+    expect(api.calls('verify')).toEqual([
+      { route: 'verify', body: {} },
+      { route: 'verify', body: { acceptHostKeyFingerprint: FAKE_FINGERPRINT } },
+    ]);
+  });
+
+  it('Cancel trusts nothing; Verify and clone asks again', async () => {
+    const api = fakeProjectApi(PROJECT, AWAITING_HOST_KEY);
+    await renderLoaded();
+
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Cancel' }));
+
+    expect(within(card()).queryByRole('region', { name: "Confirm the Git host's key" })).toBeNull();
+    expect(within(card()).getByText(/Host key not confirmed/)).toBeTruthy();
+    expect(api.calls('verify')).toEqual([]);
+
+    await userEvent.click(within(card()).getByRole('button', { name: 'Verify and clone' }));
+
+    await within(card()).findByRole('region', { name: "Confirm the Git host's key" });
+    expect(api.calls('verify')).toEqual([{ route: 'verify', body: {} }]);
+  });
+
+  it('a fingerprint the API refuses (422) is shown next to the question', async () => {
+    const api = fakeProjectApi(PROJECT, AWAITING_HOST_KEY);
+    api.respondNext(
+      'verify',
+      422,
+      fieldProblem(422, 'Unprocessable Entity', [
+        {
+          path: 'acceptHostKeyFingerprint',
+          message: 'The fingerprint does not match the host key Studio retrieved.',
+        },
+      ]),
+    );
+    await renderLoaded();
+
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Confirm and clone' }));
+
+    await alertMatching(/Fingerprint changed\..*does not match the host key Studio retrieved/);
+    expect(within(card()).getByText('Confirm host')).toBeTruthy();
+  });
+
+  it('a verify the API refuses (501) is shown as a banner with the problem title', async () => {
+    const api = fakeProjectApi(PROJECT, AWAITING_KEY);
+    api.respondNext('verify', 501, problem(501, 'Unsupported platform'));
+    await renderLoaded();
+
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Verify and clone' }));
+
+    await waitFor(() =>
+      expect(
+        within(card())
+          .getAllByRole('alert')
+          .map((alert) => alert.textContent),
+      ).toContainEqual(expect.stringContaining('Unsupported platform')),
+    );
+  });
+
+  it('auth_failed: points back to the deploy key, keeps it on screen, and Retry verifies again', async () => {
+    const api = fakeProjectApi(
+      PROJECT,
+      failedSsh({ code: 'auth_failed', detail: 'git@github.com: Permission denied (publickey).' }),
+    );
+    api.state.hostTrusted = true;
+    await renderLoaded();
+
+    expect((await alertMatching(/Clone failed/)).textContent).toMatch(
+      /refused Studio's deploy key.*The key stays the same/,
+    );
+    expect(within(card()).getByLabelText('Public key').textContent).toBe(FAKE_PUBLIC_KEY);
+
+    await userEvent.click(within(card()).getByRole('button', { name: 'Retry' }));
+
+    await within(card()).findByText('Connecting');
+    expect(api.calls('verify')).toEqual([{ route: 'verify', body: {} }]);
+    expect(api.calls('connect')).toEqual([]);
+  });
+
+  it('host_key_mismatch: says the key changed and how to accept an expected change', async () => {
+    fakeProjectApi(PROJECT, failedSsh({ code: 'host_key_mismatch', detail: '' }));
+    await renderLoaded();
+
+    expect((await alertMatching(/Clone failed/)).textContent).toMatch(
+      /different host key.*disconnect the repository and connect it again/,
+    );
+  });
+
+  it('a failed SSH fetch names the deploy key, not HTTPS credentials', async () => {
+    fakeProjectApi(PROJECT, {
+      ...READY,
+      url: SSH_URL,
+      publicKey: FAKE_PUBLIC_KEY,
+      state: 'failed',
+      failure: { code: 'auth_failed', detail: '' },
+    });
+    await renderLoaded();
+
+    const alert = await alertMatching(/Fetch failed/);
+    expect(alert.textContent).toMatch(/deploy key/);
+    expect(alert.textContent).not.toMatch(/HTTPS/);
   });
 });

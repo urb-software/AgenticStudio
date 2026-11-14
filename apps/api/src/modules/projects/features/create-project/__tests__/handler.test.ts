@@ -47,6 +47,10 @@ class InMemoryProjectRepository implements ProjectRepository {
   beginDisconnect = notUsed;
   deleteDisconnecting = notUsed;
   listDisconnecting = notUsed;
+  awaitHostKey = notUsed;
+  beginVerifiedClone = notUsed;
+  failVerification = notUsed;
+  forgetDeployKey = notUsed;
 }
 
 function notUsed(): Promise<never> {

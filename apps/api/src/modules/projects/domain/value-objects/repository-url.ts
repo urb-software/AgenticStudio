@@ -1,10 +1,8 @@
 /** Longest accepted Repository URL, in characters (the Git adapter's own limit). */
 export const REPOSITORY_URL_MAX_LENGTH = 2048;
 
-/** The field error for an SSH URL until the Deploy key story lands (Issue #60). */
-export const SSH_NOT_SUPPORTED_MESSAGE = 'Private repositories over SSH are not supported yet.';
-
 const EXAMPLE = 'e.g. https://github.com/owner/repo.git';
+const SSH_EXAMPLE = 'e.g. git@github.com:owner/repo.git';
 
 /** The URL is not one a Repository can be connected with; `message` is the field error. */
 export class InvalidRepositoryUrlError extends Error {
@@ -25,6 +23,8 @@ const UNSAFE_CHARACTERS = /[\s\u0000-\u001f\u007f\\]/;
 const HOSTNAME =
   /^(?=.{1,253}$)[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
 const IPV6_LITERAL = /^\[[\da-f:.]+\]$/i;
+/** An SSH login name: no option-like or shell-significant characters (the Git adapter's rule). */
+const SSH_USER = /^[a-z_][a-z\d._-]{0,31}$/i;
 
 /** URL protocols of SSH remotes, whose default port is 22. */
 const SSH_SCHEMES = new Set(['ssh:', 'git+ssh:', 'ssh+git:']);
@@ -79,11 +79,29 @@ export function remoteIdentity(input: string): string | null {
   return `${url.hostname.toLowerCase()}${port}/${path}`;
 }
 
+/** Where an SSH URL's Git host listens: its host (lower case) and port (22 by default). */
+export interface SshRemote {
+  host: string;
+  port: number;
+}
+
+function parseScpLike(input: string, match: RegExpExecArray): SshRemote {
+  const [, user = '', host = '', path = ''] = match;
+  if (!SSH_USER.test(user)) invalid(`Enter a valid SSH user name, ${SSH_EXAMPLE}.`);
+  if (!HOSTNAME.test(host)) invalid(`Enter a valid host name, ${SSH_EXAMPLE}.`);
+  if (path.split('/').some((segment) => segment.startsWith('-'))) {
+    invalid('A path segment must not start with "-".');
+  }
+  if (!remoteIdentity(input)) invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
+  return { host: host.toLowerCase(), port: 22 };
+}
+
 /**
- * The URL a Repository is connected with: public over anonymous HTTPS only (Issue #60). An
- * SSH URL is refused with {@link SSH_NOT_SUPPORTED_MESSAGE}; `file://` is accepted only under
- * the test-only fixture-remote setting. The Git adapter validates the URL again before Git
- * starts; this is the operator-facing rule with field-error messages.
+ * The URL a Repository is connected with: public over anonymous HTTPS (Issue #60), or
+ * private over SSH with the project's Deploy key (Issue #62), as `user@host:path` or
+ * `ssh://`. `file://` is accepted only under the test-only fixture-remote setting. The Git
+ * adapter validates the URL again before Git starts; this is the operator-facing rule with
+ * field-error messages.
  */
 export class RepositoryUrl {
   private constructor(
@@ -91,6 +109,8 @@ export class RepositoryUrl {
     readonly value: string,
     /** {@link remoteIdentity}: what makes two URLs the same remote. */
     readonly identity: string,
+    /** Set exactly for an SSH URL. */
+    readonly ssh: SshRemote | null = null,
   ) {}
 
   static parse(raw: string, options: { allowFileRemotes?: boolean } = {}): RepositoryUrl {
@@ -105,21 +125,24 @@ export class RepositoryUrl {
 
     const scheme = SCHEME.exec(input)?.[1]?.toLowerCase();
     if (!scheme) {
-      if (SCP_LIKE.test(input)) invalid(SSH_NOT_SUPPORTED_MESSAGE);
+      const scp = SCP_LIKE.exec(input);
+      if (scp) return new RepositoryUrl(input, remoteIdentity(input)!, parseScpLike(input, scp));
       if (LOCAL_PATH.test(input)) {
         invalid(`Local paths are not allowed. Enter an https:// URL, ${EXAMPLE}.`);
       }
       invalid(`Enter a full https:// URL, ${EXAMPLE}.`);
     }
-    if (scheme === 'ssh' || scheme === 'git+ssh' || scheme === 'ssh+git') {
-      invalid(SSH_NOT_SUPPORTED_MESSAGE);
+    if (scheme === 'git+ssh' || scheme === 'ssh+git') {
+      invalid('Use git@host:owner/repo.git or ssh://git@host/owner/repo.git for SSH.');
     }
     if (scheme === 'http') invalid('Use https://. Plain http:// is not allowed.');
     if (scheme === 'git') invalid('The git:// protocol is not allowed. Use https://.');
     if (scheme === 'file' && !options.allowFileRemotes) {
       invalid(`Local paths and file:// URLs are not allowed. Enter an https:// URL, ${EXAMPLE}.`);
     }
-    if (scheme !== 'https' && scheme !== 'file') invalid(`Use an https:// URL, ${EXAMPLE}.`);
+    if (scheme !== 'https' && scheme !== 'file' && scheme !== 'ssh') {
+      invalid(`Use an https:// URL, ${EXAMPLE}.`);
+    }
 
     let url: URL;
     try {
@@ -127,6 +150,7 @@ export class RepositoryUrl {
     } catch {
       return invalid(`Enter a valid https:// URL, ${EXAMPLE}.`);
     }
+    if (scheme === 'ssh') return RepositoryUrl.parseSshUrl(input, url);
     if (url.username !== '' || url.password !== '' || /^[^/]*\/\/[^/]*@/.test(input)) {
       invalid(
         'Remove the user name and password from the URL. Only public repositories are supported over HTTPS.',
@@ -145,5 +169,43 @@ export class RepositoryUrl {
     const identity = remoteIdentity(input);
     if (!identity) invalid(`Enter the full repository URL, ${EXAMPLE}.`);
     return new RepositoryUrl(input, identity);
+  }
+
+  /** An `ssh://[user@]host[:port]/path` URL: a login name, never a password. */
+  private static parseSshUrl(input: string, url: URL): RepositoryUrl {
+    // The authority (between `//` and the next `/`) holds userinfo before its last `@`; a `:`
+    // in the userinfo is a password, even an empty one. Index scans: linear on any input.
+    const authorityStart = input.indexOf('//') + 2;
+    const pathStart = input.indexOf('/', authorityStart);
+    const authority = input.slice(authorityStart, pathStart === -1 ? undefined : pathStart);
+    const userinfo = authority.slice(0, Math.max(0, authority.lastIndexOf('@')));
+    if (url.password !== '' || userinfo.includes(':')) {
+      invalid('Remove the password from the URL. Studio connects over SSH with a Deploy key.');
+    }
+    if (url.username !== '' && !SSH_USER.test(decodeURIComponent(url.username))) {
+      invalid(`Enter a valid SSH user name, ${SSH_EXAMPLE}.`);
+    }
+    if (url.search !== '' || url.hash !== '' || input.includes('?') || input.includes('#')) {
+      invalid('Remove the query or fragment from the URL.');
+    }
+    if (!HOSTNAME.test(url.hostname)) invalid(`Enter a valid host name, ${SSH_EXAMPLE}.`);
+    if (url.pathname.split('/').some((segment) => segment.startsWith('-'))) {
+      invalid('A path segment must not start with "-".');
+    }
+    const identity = remoteIdentity(input);
+    if (!identity) invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
+    return new RepositoryUrl(input, identity, {
+      host: url.hostname.toLowerCase(),
+      port: url.port === '' ? 22 : Number(url.port),
+    });
+  }
+}
+
+/** The Git host of a stored Repository URL, or `null` when it is not an SSH URL. */
+export function sshRemoteOf(url: string): SshRemote | null {
+  try {
+    return RepositoryUrl.parse(url).ssh;
+  } catch {
+    return null;
   }
 }

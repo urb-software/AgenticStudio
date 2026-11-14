@@ -23,6 +23,8 @@ export const PROJECTS_PROBLEM_TYPES = {
   repositoryBusy: 'urn:agentic-studio:problem:repository-busy',
   /** 409: the Repository has no usable Clone to fetch into; Retry (connect) makes one. */
   noUsableClone: 'urn:agentic-studio:problem:no-usable-clone',
+  /** 409: the Repository is not waiting for its Deploy key or host key to be verified. */
+  repositoryNotVerifiable: 'urn:agentic-studio:problem:repository-not-verifiable',
   /** 501: repository features need a Linux API host. */
   unsupportedPlatform: 'urn:agentic-studio:problem:unsupported-platform',
 } as const;
@@ -42,6 +44,15 @@ export function noRepository(): ProblemException {
     type: PROJECTS_PROBLEM_TYPES.noRepository,
     title: 'No repository',
     detail: 'The project has no repository.',
+  });
+}
+
+/** 409 while a connect or fetch of the Repository is still running (#61). */
+export function repositoryBusy(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: PROJECTS_PROBLEM_TYPES.repositoryBusy,
+    title: 'Repository busy',
+    detail: 'A connect or fetch of this repository is still running. Try again when it ends.',
   });
 }
 

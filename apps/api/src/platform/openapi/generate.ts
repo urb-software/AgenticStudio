@@ -32,6 +32,7 @@ const app = await buildApp(
       // Nothing is cloned: the generator runs no Git operation.
       dataDir: tmpdir(),
       gitAllowFileRemotes: false,
+      sshKnownHosts: [],
     },
     { queue: { startWorkers: false } },
   ),

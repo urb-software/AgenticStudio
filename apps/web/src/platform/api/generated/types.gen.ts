@@ -37,9 +37,9 @@ export type RepositorySummaryOutput = {
 };
 
 /**
- * connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
+ * awaiting_key: an SSH repository whose Deploy key (publicKey) the operator still has to add on the Git host, then verify; awaiting_host_key: the Git host is not trusted yet, and the operator has to confirm its host key fingerprint (hostKeyFingerprint) by verifying with acceptHostKeyFingerprint; connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
  */
-export type RepositoryStateOutput = 'connecting' | 'ready' | 'fetching' | 'failed' | 'disconnecting';
+export type RepositoryStateOutput = 'awaiting_key' | 'awaiting_host_key' | 'connecting' | 'ready' | 'fetching' | 'failed' | 'disconnecting';
 
 export type ProjectDetailOutput = {
     id: string;
@@ -67,11 +67,20 @@ export type RepositoryOutput = {
     headSha?: string;
     lastFetchedAt?: string;
     failure?: RepositoryFailureOutput;
+    publicKey?: string;
+    hostKeyFingerprint?: string;
 };
 
 export type ConnectRepositoryRequest = {
     url: string;
     integrationBranch: string;
+};
+
+export type VerifyRepositoryRequest = {
+    /**
+     * The SHA256 fingerprint (`SHA256:…`) of the host key the operator confirmed; it must equal the `hostKeyFingerprint` of the `awaiting_host_key` repository exactly.
+     */
+    acceptHostKeyFingerprint?: string;
 };
 
 export type ProblemDetails = {
@@ -399,3 +408,47 @@ export type FetchRepositoryResponses = {
 };
 
 export type FetchRepositoryResponse = FetchRepositoryResponses[keyof FetchRepositoryResponses];
+
+export type VerifyRepositoryData = {
+    body: VerifyRepositoryRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/repository/verify';
+};
+
+export type VerifyRepositoryErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found) or no repository (urn:agentic-studio:problem:no-repository)
+     */
+    404: ProblemDetails;
+    /**
+     * The repository is not waiting to be verified, or no host key awaits confirmation (urn:agentic-studio:problem:repository-not-verifiable), or an earlier operation is still finishing (urn:agentic-studio:problem:repository-busy)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid body, or acceptHostKeyFingerprint does not match (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * The API host is not Linux (urn:agentic-studio:problem:unsupported-platform)
+     */
+    501: ProblemDetails;
+    /**
+     * The job queue is unavailable; the attempt is marked failed (generic problem)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type VerifyRepositoryError = VerifyRepositoryErrors[keyof VerifyRepositoryErrors];
+
+export type VerifyRepositoryResponses = {
+    202: RepositoryOutput;
+};
+
+export type VerifyRepositoryResponse = VerifyRepositoryResponses[keyof VerifyRepositoryResponses];

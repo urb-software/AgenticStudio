@@ -92,6 +92,7 @@ describe('SystemGitAdapter on a platform other than Linux', () => {
         git.fetch(PROJECT_ID, URL, 'main'),
         git.readBranchCommit(PROJECT_ID, 'main'),
         git.removeClone(PROJECT_ID),
+        git.scanHostKey('ssh://git@github.com/owner/repo.git'),
       ];
       for (const operation of operations) {
         await expect(operation).rejects.toBeInstanceOf(GitUnsupportedPlatformError);

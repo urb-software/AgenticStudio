@@ -1,7 +1,14 @@
 import { vi } from 'vitest';
 import { GitUnsupportedPlatformError, type RepositoryGit } from '../repository-git.js';
 
-const OPERATIONS = ['removeClone', 'inspectRemote', 'clone', 'fetch', 'readBranchCommit'] as const;
+const OPERATIONS = [
+  'removeClone',
+  'inspectRemote',
+  'clone',
+  'fetch',
+  'readBranchCommit',
+  'scanHostKey',
+] as const;
 
 /**
  * A scripted {@link RepositoryGit} for handler tests: the branch exists and the clone
@@ -27,6 +34,8 @@ export class FakeRepositoryGit implements RepositoryGit {
   );
 
   removeClone = vi.fn<RepositoryGit['removeClone']>(() => Promise.resolve());
+
+  scanHostKey = vi.fn<RepositoryGit['scanHostKey']>(() => Promise.reject(new Error('not used')));
 
   /** The Git operations called so far, in order. */
   get calls(): string[] {

@@ -13,6 +13,14 @@ export interface ConnectRepositoryRecord {
   /** The remote's identity (`remoteIdentity`); unique across Projects. */
   identity: string;
   integrationBranch: string;
+  /**
+   * SSH only (Issue #62): the project's Deploy key. With it the Repository is stored
+   * `awaiting_key` (the operator adds the key on the Git host, then verifies); without it,
+   * `connecting`.
+   */
+  deployKey?: { publicKey: string; secretRef: string } | null;
+  /** SSH only: a host key already confirmed for this host, kept across a Retry. */
+  pinnedHostKey?: string | null;
 }
 
 /**
@@ -40,13 +48,40 @@ export interface ProjectRepository {
   findRepository(projectId: string): Promise<RepositoryConnection | null>;
 
   /**
-   * Stores the Repository in state `connecting`: a new one, or a `failed` one replaced by
-   * the new attempt. The store, not a prior read, decides conflicts, so concurrent connects
+   * Stores the Repository in state `connecting` (or `awaiting_key` with a Deploy key): a new
+   * one, or a `failed` one replaced by the new attempt. The store, not a prior read, decides conflicts, so concurrent connects
    * cannot both succeed. Throws {@link ProjectNotFoundError},
    * {@link RepositoryAlreadyConnectedError} (a Repository that is not `failed` exists) or
    * {@link RemoteAlreadyConnectedError} (another Project holds the same remote identity).
    */
   beginConnect(record: ConnectRepositoryRecord): Promise<RepositoryConnection>;
+
+  /**
+   * A verifiable Repository (`isVerifiable`) → `awaiting_host_key` with the retrieved host key
+   * awaiting confirmation (the failure is cleared); `null` if it was not verifiable.
+   */
+  awaitHostKey(projectId: string, hostKey: string): Promise<RepositoryConnection | null>;
+
+  /**
+   * Starts the clone of a verified SSH Repository: → `connecting`, the failure and any
+   * pending host key cleared. Without `confirmed`, from any verifiable state. With it, only
+   * from `awaiting_host_key` with exactly that pending host key, which is then pinned. In one
+   * conditional write; `null` if the condition did not hold.
+   */
+  beginVerifiedClone(
+    projectId: string,
+    confirmed: { pendingHostKey: string } | null,
+  ): Promise<RepositoryConnection | null>;
+
+  /** A verifiable Repository → `failed` (its host could not be reached); false if it was not. */
+  failVerification(projectId: string, failure: RepositoryFailure): Promise<boolean>;
+
+  /**
+   * A `disconnecting` Repository forgets its Deploy key reference, public key and host keys
+   * (a Disconnect step, after the secret itself is deleted); false if it is not
+   * `disconnecting`.
+   */
+  forgetDeployKey(projectId: string): Promise<boolean>;
 
   /** `connecting` → `ready` with the Clone's commit; false if the state was not `connecting`. */
   markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean>;
@@ -149,6 +184,18 @@ export class RepositoryBusyError extends Error {
   constructor() {
     super('A connect or fetch of the repository is still running.');
     this.name = 'RepositoryBusyError';
+  }
+}
+
+/**
+ * The Repository is not waiting for its Deploy key or host key to be verified (it is not an
+ * SSH Repository, or not `awaiting_key`, `awaiting_host_key` or `failed` without a Clone), or
+ * a fingerprint was confirmed while no host key awaits confirmation.
+ */
+export class RepositoryNotVerifiableError extends Error {
+  constructor(message = 'The repository is not waiting to be verified.') {
+    super(message);
+    this.name = 'RepositoryNotVerifiableError';
   }
 }
 

@@ -15,6 +15,9 @@ import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { CleanUpRepositoryHandler } from '../../clean-up-repository/handler.js';
 import { DisconnectRepositoryHandler } from '../handler.js';
+import { DeployKeyHandler } from '../../deploy-key/handler.js';
+import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import { ConnectRepositoryHandler } from '../../connect-repository/handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
@@ -26,6 +29,8 @@ const FAILURE = repositoryFailure('host_unreachable', 'fatal: x');
 const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 
 describe('DisconnectRepositoryHandler', () => {
+  let secrets: InMemorySecretStore;
+  let deployKeys: DeployKeyHandler;
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
   let jobs: RecordingRepositoryJobs;
@@ -58,6 +63,8 @@ describe('DisconnectRepositoryHandler', () => {
   });
 
   beforeEach(() => {
+    secrets = new InMemorySecretStore();
+    deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     projects.addProject(OTHER, 'Other');
@@ -67,7 +74,7 @@ describe('DisconnectRepositoryHandler', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
       logs.push(String(message));
     });
-    const cleanup = new CleanUpRepositoryHandler(projects, git);
+    const cleanup = new CleanUpRepositoryHandler(projects, git, deployKeys);
     handler = new DisconnectRepositoryHandler(projects, git, jobs, cleanup);
   });
 
@@ -251,5 +258,32 @@ describe('DisconnectRepositoryHandler', () => {
     await expect(handler.execute(PROJECT)).rejects.toThrow(GitUnsupportedPlatformError);
     expect((await stored())?.state).toBe('ready');
     expect(jobs.cancelled).toEqual([]);
+  });
+
+  it("removes an SSH Repository's Deploy key; connecting again generates a new key pair (Issue #62)", async () => {
+    const connect = new ConnectRepositoryHandler(
+      projects,
+      git,
+      jobs,
+      { allowFileRemotes: false },
+      deployKeys,
+    );
+    const input = {
+      projectId: PROJECT,
+      url: 'git@github.com:acme/shop.git',
+      integrationBranch: 'dev',
+    };
+    const first = await connect.execute(input);
+    expect(secrets.values.size).toBe(1);
+
+    expect(await handler.execute(PROJECT)).toEqual({ disconnected: true });
+    expect(secrets.values.size).toBe(0);
+    expect(await projects.findRepository(PROJECT)).toBeNull();
+
+    const second = await connect.execute(input);
+    expect(second.state).toBe('awaiting_key');
+    expect(second.publicKey).not.toBe(first.publicKey);
+    expect(second.deployKeySecret).not.toBe(first.deployKeySecret);
+    expect([...secrets.values.keys()]).toEqual([second.deployKeySecret]);
   });
 });
