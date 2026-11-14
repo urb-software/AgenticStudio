@@ -92,6 +92,7 @@ cp .env.example .env
 | `STUDIO_OPERATOR_PASSWORD_HASH` | API | Required. Argon2id hash of the operator password (see [Operator login](#operator-login)), in single quotes in `.env`. Never the plaintext. |
 | `STUDIO_SECRETS_KEY` | API | Required. Master key for secrets stored in PostgreSQL: 32 random bytes, base64. See [Secrets key](#secrets-key). |
 | `STUDIO_DATA_DIR` | API | Required on every platform. Absolute path of an existing, writable directory **outside the repository checkout** (e.g. `/home/you/.local/share/agentic-studio`) where Studio keeps repository data such as Clones. Outside Windows it may contain only letters, digits and `._/-` (no spaces): the SSH key path under it is passed to `ssh` on a command line. See [Repository features (Linux only)](#repository-features-linux-only). |
+| `STUDIO_SSH_KNOWN_HOSTS` | API | Optional, default empty. Git hosts trusted over SSH without asking, as known_hosts lines. See [Trusted SSH hosts](#trusted-ssh-hosts). |
 | `STUDIO_GIT_ALLOW_FILE_REMOTES` | API | Test-only. `true` lets the Git adapter use local `file://` fixture remotes. Accepted only with `NODE_ENV=test`; any other environment refuses to start. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
 | `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
@@ -101,6 +102,27 @@ The API validates its environment with Zod at start-up (`apps/api/src/platform/c
 ### Repository features (Linux only)
 
 Connected Repositories (Epic #55) run the system `git` binary and an SSH client under the hardening baseline of [Security](docs/engineering/security.md) §4. They work on **Linux only** (containers, CI, a VPS). On Linux the API checks at start-up that `git` 2.32.0 or later is installed and refuses to start otherwise. On other platforms, including native Windows, the API starts and everything else works; Git operations report an unsupported platform. `STUDIO_DATA_DIR` is required everywhere, so the configuration is the same on every platform.
+
+### Trusted SSH hosts
+
+A private repository is connected over SSH (`git@host:owner/repo.git` or `ssh://…`) with a Deploy key Studio generates for the project (Story #62): Studio shows the public key, you add it on the Git host as a read-only deploy key, then choose **Verify and clone**. Before it trusts a Git host, Studio checks the host's key:
+
+- Hosts listed in `STUDIO_SSH_KNOWN_HOSTS` are trusted without asking. The value holds standard known_hosts lines (`<host>[,<host>] <key type> <base64 key>`; `[host]:port` for a port other than 22). Hashed host names, wildcards and `@cert-authority`/`@revoked` markers are not supported.
+- Any other host (also github.com when it is not listed): Studio retrieves its key and shows its SHA256 fingerprint; compare it with the one the provider publishes and confirm. The key is then pinned for that repository.
+- A host that later presents another key fails with `host_key_mismatch` and is never accepted automatically. If a provider rotated its key, update `STUDIO_SSH_KNOWN_HOSTS`, or disconnect and connect the repository again.
+
+Copy the lines from the provider's official page, never from a scan of the network you are on: [GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints) (also the `ssh_keys` of `https://api.github.com/meta`), [GitLab.com](https://docs.gitlab.com/user/gitlab_com/#ssh-known_hosts-entries), [Bitbucket Cloud](https://support.atlassian.com/bitbucket-cloud/docs/configure-ssh-and-two-step-verification/). No host key is committed to this repository. Two ways to write several lines:
+
+```sh
+# .env: one line per entry, inside double quotes (Node's --env-file reads multi-line values)
+STUDIO_SSH_KNOWN_HOSTS="github.com ssh-ed25519 <key from the provider's page>
+gitlab.com ssh-ed25519 <key from the provider's page>"
+
+# an environment variable set on one line: separate the entries with a literal \n
+STUDIO_SSH_KNOWN_HOSTS='github.com ssh-ed25519 <key>\ngitlab.com ssh-ed25519 <key>'
+```
+
+Blank lines and `#` comments are ignored. The API refuses to start on a malformed line and names its line number, never its content. Retrieving a host key needs `ssh-keyscan` (part of the OpenSSH client, like `ssh`).
 
 ### Operator login
 
