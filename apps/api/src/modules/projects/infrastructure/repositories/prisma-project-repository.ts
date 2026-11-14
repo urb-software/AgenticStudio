@@ -107,7 +107,8 @@ function failureColumns(failure: RepositoryFailure) {
  * duplicates: `projects.name_normalized` for names, the `repositories` primary key (one per
  * project) and `repositories.url_normalized` (one project per remote) for Connect. Every
  * Repository transition is a conditional update on the current state, and a usable Clone is
- * recorded by its commit: `head_sha` is set exactly while one exists.
+ * recorded by its commit: `head_sha` is set exactly while one exists. Only a `disconnecting`
+ * Repository is ever deleted (the last step of a Disconnect).
  */
 @Injectable()
 export class PrismaProjectRepository implements ProjectRepository {
@@ -257,6 +258,43 @@ export class PrismaProjectRepository implements ProjectRepository {
       data: failureColumns(failure),
     });
     return count;
+  }
+
+  async beginDisconnect(projectId: string): Promise<RepositoryConnection> {
+    // Any state, one statement: the failure and the Clone's commit go (the Clone is removed).
+    const { count } = await this.db.repository.updateMany({
+      where: { projectId },
+      data: {
+        state: 'disconnecting',
+        headSha: null,
+        lastFetchedAt: null,
+        ...NO_FAILURE,
+        updatedAt: new Date(),
+      },
+    });
+    const stored = count === 1 ? await this.findRepository(projectId) : null;
+    if (stored) return stored;
+    const project = await this.db.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    throw project ? new NoRepositoryError() : new ProjectNotFoundError();
+  }
+
+  async deleteDisconnecting(projectId: string): Promise<boolean> {
+    const { count } = await this.db.repository.deleteMany({
+      where: { projectId, state: 'disconnecting' },
+    });
+    return count === 1;
+  }
+
+  async listDisconnecting(): Promise<string[]> {
+    const rows = await this.db.repository.findMany({
+      where: { state: 'disconnecting' },
+      select: { projectId: true },
+      orderBy: { updatedAt: 'asc' },
+    });
+    return rows.map((row) => row.projectId);
   }
 
   private async transition(

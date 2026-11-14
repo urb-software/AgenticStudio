@@ -7,9 +7,11 @@ import {
 } from '../../../../../platform/queue/job-queue.js';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
+import { CleanUpRepositoryHandler } from '../../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../../clone-repository/handler.js';
 import { RefreshCloneHandler } from '../../refresh-clone/handler.js';
 import {
+  CANCEL_SETTLE_TIMEOUT_MS,
   CLONE_JOB_TIMEOUT_MS,
   FETCH_JOB_TIMEOUT_MS,
   REPOSITORY_JOB_CONCURRENCY,
@@ -24,6 +26,7 @@ const COMMIT = 'a'.repeat(40);
 class RecordingJobQueues extends JobQueues {
   definition: QueueDefinition<JobPayload> | undefined;
   readonly enqueued: { id: string; payload: JobPayload; timeoutMs?: number }[] = [];
+  readonly cancelled: { id: string; settleTimeoutMs?: number }[] = [];
 
   register<P extends JobPayload>(definition: QueueDefinition<P>): JobQueue<P> {
     this.definition = definition as unknown as QueueDefinition<JobPayload>;
@@ -32,7 +35,10 @@ class RecordingJobQueues extends JobQueues {
         this.enqueued.push({ id, payload, ...options });
         return Promise.resolve();
       },
-      cancel: () => Promise.resolve(false),
+      cancel: (id, options) => {
+        this.cancelled.push({ id, ...options });
+        return Promise.resolve(true);
+      },
     };
   }
 }
@@ -42,6 +48,7 @@ describe('RepositoryJobsHandler', () => {
   let queues: RecordingJobQueues;
   let clone: CloneRepositoryHandler;
   let refresh: RefreshCloneHandler;
+  let cleanup: CleanUpRepositoryHandler;
   let handler: RepositoryJobsHandler;
 
   const job = { id: `repository-${PROJECT}`, payload: { projectId: PROJECT } };
@@ -74,7 +81,9 @@ describe('RepositoryJobsHandler', () => {
       vi.spyOn(target, 'onFailed');
       vi.spyOn(target, 'reconcile');
     }
-    handler = new RepositoryJobsHandler(queues, projects, clone, refresh);
+    cleanup = new CleanUpRepositoryHandler(projects, git);
+    vi.spyOn(cleanup, 'resumeAll');
+    handler = new RepositoryJobsHandler(queues, projects, clone, refresh, cleanup);
     handler.onModuleInit();
   });
 
@@ -151,10 +160,33 @@ describe('RepositoryJobsHandler', () => {
     expect(refresh.onFailed).not.toHaveBeenCalled();
   });
 
-  it('reconciles interrupted clones and fetches', async () => {
+  it('reconciles interrupted clones and fetches and resumes pending disconnects', async () => {
     await queues.definition!.reconcile([job]);
 
     expect(clone.reconcile).toHaveBeenCalledOnce();
     expect(refresh.reconcile).toHaveBeenCalledOnce();
+    expect(cleanup.resumeAll).toHaveBeenCalledOnce();
+  });
+
+  it('cancels the Repository’s job by its shared id and waits for it to settle', async () => {
+    await handler.cancel(PROJECT);
+
+    expect(queues.cancelled).toEqual([
+      { id: `repository-${PROJECT}`, settleTimeoutMs: CANCEL_SETTLE_TIMEOUT_MS },
+    ]);
+  });
+
+  it('does nothing for a job of a disconnecting Repository: not run, no failure written', async () => {
+    await fetching();
+    await projects.beginDisconnect(PROJECT);
+
+    await queues.definition!.process(running());
+    await queues.definition!.onFailed(job, { reason: 'cancelled' });
+
+    expect(clone.process).not.toHaveBeenCalled();
+    expect(refresh.process).not.toHaveBeenCalled();
+    expect(clone.onFailed).not.toHaveBeenCalled();
+    expect(refresh.onFailed).not.toHaveBeenCalled();
+    expect((await projects.findRepository(PROJECT))?.state).toBe('disconnecting');
   });
 });

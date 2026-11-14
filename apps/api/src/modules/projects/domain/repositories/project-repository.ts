@@ -84,6 +84,24 @@ export interface ProjectRepository {
    * how many.
    */
   failAllFetching(failure: RepositoryFailure): Promise<number>;
+
+  /**
+   * Any state → `disconnecting`, in one write: the failure and the Clone's commit and fetch
+   * time are cleared (the Clone is about to be removed). Repeating it on a `disconnecting`
+   * Repository changes nothing. From then on no transition out of `connecting` or `fetching`
+   * applies, so a job still running cannot overwrite it. Throws {@link ProjectNotFoundError}
+   * or {@link NoRepositoryError}.
+   */
+  beginDisconnect(projectId: string): Promise<RepositoryConnection>;
+
+  /**
+   * Deletes the Repository record if it is `disconnecting` (the last step of a Disconnect),
+   * which frees its remote for another connect; false if nothing was deleted.
+   */
+  deleteDisconnecting(projectId: string): Promise<boolean>;
+
+  /** The project ids of every `disconnecting` Repository (start-up resumes their cleanup). */
+  listDisconnecting(): Promise<string[]>;
 }
 
 /** Another project already has this name (compared by `ProjectName.uniquenessKey`). */

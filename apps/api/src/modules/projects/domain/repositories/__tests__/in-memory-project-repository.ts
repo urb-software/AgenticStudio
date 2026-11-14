@@ -15,8 +15,9 @@ import {
 /**
  * In-memory adapter of {@link ProjectRepository} for handler tests, with the same rules as
  * the database: one Repository per project, one project per remote identity, only a `failed`
- * Repository is replaced, a fetch starts only from `ready` or `failed` with a Clone, and
- * transitions out of `connecting` and `fetching` are conditional.
+ * Repository is replaced, a fetch starts only from `ready` or `failed` with a Clone,
+ * transitions out of `connecting` and `fetching` are conditional, and only a `disconnecting`
+ * Repository is deleted.
  */
 export class InMemoryProjectRepository implements ProjectRepository {
   readonly projects = new Map<string, Project>();
@@ -147,6 +148,32 @@ export class InMemoryProjectRepository implements ProjectRepository {
       if (await this.markFailed(projectId, failure)) count += 1;
     }
     return count;
+  }
+
+  async beginDisconnect(projectId: string): Promise<RepositoryConnection> {
+    if (!this.projects.has(projectId)) throw new ProjectNotFoundError();
+    const repository = this.repositories.get(projectId);
+    if (!repository) throw new NoRepositoryError();
+    repository.state = 'disconnecting';
+    repository.failure = null;
+    repository.hasClone = false;
+    repository.headSha = null;
+    repository.lastFetchedAt = null;
+    return (await this.findRepository(projectId))!;
+  }
+
+  deleteDisconnecting(projectId: string): Promise<boolean> {
+    if (this.repositories.get(projectId)?.state !== 'disconnecting') return Promise.resolve(false);
+    this.repositories.delete(projectId);
+    return Promise.resolve(true);
+  }
+
+  listDisconnecting(): Promise<string[]> {
+    return Promise.resolve(
+      [...this.repositories.values()]
+        .filter((repository) => repository.state === 'disconnecting')
+        .map((repository) => repository.projectId),
+    );
   }
 
   private transition(

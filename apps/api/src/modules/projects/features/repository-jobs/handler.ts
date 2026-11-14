@@ -10,6 +10,7 @@ import {
   type ProjectRepository,
 } from '../../domain/repositories/project-repository.js';
 import type { RepositoryJobs, RepositoryOperation } from '../../ports/repository-jobs.js';
+import { CleanUpRepositoryHandler } from '../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../clone-repository/handler.js';
 import { RefreshCloneHandler } from '../refresh-clone/handler.js';
 
@@ -29,6 +30,12 @@ const TIMEOUT_MS: Record<RepositoryOperation, number> = {
   clone: CLONE_JOB_TIMEOUT_MS,
   fetch: FETCH_JOB_TIMEOUT_MS,
 };
+
+/**
+ * How long a disconnect waits for a cancelled operation to stop (#63 clarification 1). The Git
+ * adapter kills an aborted Git process tree at once, so this only bounds a stuck processor.
+ */
+export const CANCEL_SETTLE_TIMEOUT_MS = 10_000;
 
 /** Operations of different projects run in parallel up to this; one project's never overlap. */
 export const REPOSITORY_JOB_CONCURRENCY = 2;
@@ -52,7 +59,8 @@ export function repositoryJobId(projectId: string): string {
  * Registers its queue during module initialisation; the platform reconciles and starts the
  * worker only after the application has bootstrapped, so after the Git adapter's start-up
  * sweep (`onModuleInit`), which must finish before any Git job (#60 clarification 11).
- * Reconciliation fails every Repository still `connecting` or `fetching`.
+ * Reconciliation fails every Repository still `connecting` or `fetching` and resumes the
+ * cleanup of every Repository still `disconnecting` (`clean-up-repository`, #63).
  */
 @Injectable()
 export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
@@ -63,6 +71,7 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     private readonly clone: CloneRepositoryHandler,
     private readonly refresh: RefreshCloneHandler,
+    private readonly cleanup: CleanUpRepositoryHandler,
   ) {}
 
   onModuleInit(): void {
@@ -85,6 +94,13 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     );
   }
 
+  async cancel(projectId: string): Promise<void> {
+    if (!this.queue) throw new Error('The repository queue is not registered yet.');
+    await this.queue.cancel(repositoryJobId(projectId), {
+      settleTimeoutMs: CANCEL_SETTLE_TIMEOUT_MS,
+    });
+  }
+
   private async process({
     payload: { projectId },
     signal,
@@ -105,5 +121,6 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
   private async reconcile(): Promise<void> {
     await this.clone.reconcile();
     await this.refresh.reconcile();
+    await this.cleanup.resumeAll();
   }
 }

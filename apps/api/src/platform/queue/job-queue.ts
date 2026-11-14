@@ -94,9 +94,22 @@ export interface JobQueue<P extends JobPayload> {
    * Cancels a job: a running job's signal aborts (its owner gets `onFailed` with
    * `cancelled`); a waiting job is removed without running and without `onFailed`.
    * Returns false if there was nothing this process could cancel.
+   *
+   * Without options it returns once the abort is signalled; the job's id stays busy until its
+   * processor settles. With `settleTimeoutMs` it also waits until the cancelled job has
+   * settled: its processor has returned, its owner's `onFailed` has completed and its id is
+   * free for a new job, so no late write of the cancelled job can follow.
+   * @throws JobStillRunningError if the job has not settled within `settleTimeoutMs`.
    * @throws QueueUnavailableError if Redis cannot be reached.
    */
-  cancel(id: string): Promise<boolean>;
+  cancel(id: string, options?: CancelOptions): Promise<boolean>;
+}
+
+export interface CancelOptions {
+  /**
+   * Waits up to this long (milliseconds, 1 to 2^31−1) for a cancelled running job to settle.
+   */
+  readonly settleTimeoutMs?: number;
 }
 
 /**
@@ -115,6 +128,20 @@ export class JobAlreadyActiveError extends Error {
   ) {
     super(`A job with id "${jobId}" is already waiting or running in queue "${queue}".`);
     this.name = 'JobAlreadyActiveError';
+  }
+}
+
+/**
+ * A cancelled job did not settle in the time its canceller allowed (its processor ignores the
+ * abort or is slow to stop). The job stays aborted and settles later on its own.
+ */
+export class JobStillRunningError extends Error {
+  constructor(
+    readonly queue: string,
+    readonly jobId: string,
+  ) {
+    super(`The cancelled job "${jobId}" in queue "${queue}" is still running.`);
+    this.name = 'JobStillRunningError';
   }
 }
 

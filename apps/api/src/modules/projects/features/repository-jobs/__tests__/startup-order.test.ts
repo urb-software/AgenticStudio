@@ -11,6 +11,7 @@ import { PROJECT_REPOSITORY } from '../../../domain/repositories/project-reposit
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { REPOSITORY_GIT } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
+import { CleanUpRepositoryHandler } from '../../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../../clone-repository/handler.js';
 import { RefreshCloneHandler } from '../../refresh-clone/handler.js';
 import { RepositoryJobsHandler } from '../handler.js';
@@ -59,6 +60,11 @@ class RecordingProjects extends InMemoryProjectRepository {
     events.push('projects: interrupted fetches failed');
     return super.failAllFetching(...args);
   }
+
+  override listDisconnecting() {
+    events.push('projects: pending disconnects resumed');
+    return super.listDisconnecting();
+  }
 }
 
 @Module({
@@ -68,13 +74,14 @@ class RecordingProjects extends InMemoryProjectRepository {
     { provide: JobQueues, useClass: BootstrappingJobQueues },
     CloneRepositoryHandler,
     RefreshCloneHandler,
+    CleanUpRepositoryHandler,
     RepositoryJobsHandler,
   ],
 })
 class StartupModule {}
 
 describe('repository job start-up order', () => {
-  it('reconciles clones and fetches and starts the worker only after the Git sweep has finished', async () => {
+  it('reconciles clones and fetches, resumes disconnects and starts the worker only after the Git sweep has finished', async () => {
     const app = await NestFactory.createApplicationContext(StartupModule, { logger: false });
     try {
       await app.init();
@@ -86,9 +93,13 @@ describe('repository job start-up order', () => {
         sweepFinished,
       );
       expect(events.indexOf('projects: interrupted fetches failed')).toBeGreaterThan(sweepFinished);
+      expect(events.indexOf('projects: pending disconnects resumed')).toBeGreaterThan(
+        sweepFinished,
+      );
       for (const reconciled of [
         'projects: interrupted connections failed',
         'projects: interrupted fetches failed',
+        'projects: pending disconnects resumed',
       ]) {
         expect(events.indexOf('queue: worker started')).toBeGreaterThan(events.indexOf(reconciled));
       }

@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +23,7 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Stories #60 (connect) and #61 (fetch), main seam: the real app over HTTP with PostgreSQL and Redis (Testcontainers) and
+// Stories #60 (connect), #61 (fetch) and #63 (disconnect), main seam: the real app over HTTP with PostgreSQL and Redis (Testcontainers) and
 // the real job queue. Cases that clone need the real `git` and run on Linux only (CI runs
 // them; a guard at the end fails CI if they were skipped). Fixture remotes are `file://`
 // URLs, accepted only under the test-only setting this suite turns on.
@@ -80,6 +81,11 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   const fetchRepository = (projectId: string) =>
     request(server())
       .post(`/api/projects/${projectId}/repository/fetch`)
+      .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+
+  const disconnect = (projectId: string) =>
+    request(server())
+      .delete(`/api/projects/${projectId}/repository`)
       .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
 
   /** Polls the repository until it leaves `connecting` and `fetching`, as the web app does. */
@@ -260,6 +266,22 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       }
     });
 
+    it('refuses to disconnect with 501 and leaves the repository as it was', async () => {
+      await restart({ projects: { gitSettings: { platform: 'win32' } } });
+      try {
+        const id = await createProject('Windows disconnect');
+        // Test setup only: a ready repository cannot be connected on this host.
+        await db().$executeRaw`
+          INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state, head_sha, last_fetched_at)
+          VALUES (${id}::uuid, 'https://github.com/acme/win-d.git', 'github.com/acme/win-d', 'dev', 'ready', ${'d'.repeat(40)}, now())`;
+
+        expectProblem(await disconnect(id), 501, 'unsupported-platform');
+        expect((await getRepository(id)).body.state).toBe('ready');
+      } finally {
+        await restart();
+      }
+    });
+
     it('refuses to fetch with 501 and leaves the repository as it was', async () => {
       await restart({ projects: { gitSettings: { platform: 'win32' } } });
       try {
@@ -280,6 +302,12 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   describe('POST /api/projects/:id/repository/fetch: refused (every platform)', () => {
     it('answers 404 for an id that is not a UUID', async () => {
       expectProblem(await fetchRepository('not-a-uuid'), 404, 'project-not-found');
+    });
+  });
+
+  describe('DELETE /api/projects/:id/repository: refused (every platform)', () => {
+    it('answers 404 for an id that is not a UUID', async () => {
+      expectProblem(await disconnect('not-a-uuid'), 404, 'project-not-found');
     });
   });
 
@@ -353,6 +381,28 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
           .set('Origin', STUDIO_ORIGIN),
         401,
       );
+    });
+
+    it('rejects an anonymous disconnect with 401 and one with a foreign Origin with 403', async () => {
+      const id = await createProject('Guarded disconnect');
+      // Test setup only: any state will do; nothing may change.
+      await db().$executeRaw`
+        INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state, failure_code, failure_detail)
+        VALUES (${id}::uuid, 'https://github.com/acme/guarded.git', 'github.com/acme/guarded', 'dev', 'failed', 'unknown', '')`;
+
+      expectProblem(
+        await request(server())
+          .delete(`/api/projects/${id}/repository`)
+          .set('Origin', STUDIO_ORIGIN),
+        401,
+      );
+      expectProblem(
+        await request(server())
+          .delete(`/api/projects/${id}/repository`)
+          .set({ Origin: 'http://evil.example', Cookie: cookie }),
+        403,
+      );
+      expect((await getRepository(id)).body.state).toBe('failed');
     });
 
     it('rejects a fetch with a foreign Origin', async () => {
@@ -781,6 +831,254 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       it('answers 404 for an unknown project and for a project without a repository', async () => {
         expectProblem(await fetchRepository(UNKNOWN_PROJECT), 404, 'project-not-found');
         expectProblem(await fetchRepository(await createProject('Empty')), 404, 'no-repository');
+      });
+    });
+
+    describe('disconnect', () => {
+      const clonesDir = () => join(dataDir, 'clones');
+      const clonePath = (projectId: string) => join(clonesDir(), `${projectId}.git`);
+      /** Entries of the clones folder that belong to the project (its Clone, partial Clones). */
+      const entriesOf = async (projectId: string) =>
+        existsSync(clonesDir())
+          ? (await readdir(clonesDir())).filter((name) => name.startsWith(projectId))
+          : [];
+
+      async function connectedProject(name: string, remote: GitFixture = fixture) {
+        const id = await createProject(name);
+        expect((await connect(id, { url: remote.url, integrationBranch: 'dev' })).status).toBe(201);
+        expect(await settled(id)).toMatchObject({ state: 'ready' });
+        expect(existsSync(clonePath(id))).toBe(true);
+        return id;
+      }
+
+      it('disconnects a ready repository: 204, the Clone and the record are gone, the project stays', async () => {
+        const id = await connectedProject('Disconnect me');
+
+        const response = await disconnect(id);
+
+        expect(response.status).toBe(204);
+        expect(response.text).toBe('');
+        expectProblem(await getRepository(id), 404, 'no-repository');
+        expect((await getProject(id)).body).toMatchObject({ id, repository: null });
+        expect(await entriesOf(id)).toEqual([]);
+        // Idempotent: there is nothing left to disconnect.
+        expectProblem(await disconnect(id), 404, 'no-repository');
+      });
+
+      it('removes only the directory derived from that project id (path safety)', async () => {
+        const target = await connectedProject('Target');
+        const neighbour = await connectedProject(
+          'Neighbour',
+          createGitFixture(fixtures, `neighbour-${Date.now()}`),
+        );
+        // Look-alikes next to the Clone and elsewhere in the data directory must survive.
+        const decoyFile = join(clonesDir(), `${target}.git-decoy`);
+        const decoyDirs = [join(clonesDir(), target), join(dataDir, `${target}.git`)];
+        const keep = join(dataDir, 'keep.txt');
+        for (const dir of decoyDirs) await mkdir(dir, { recursive: true });
+        await writeFile(decoyFile, 'decoy');
+        await writeFile(keep, 'keep');
+        try {
+          expect((await disconnect(target)).status).toBe(204);
+
+          expect(existsSync(clonePath(target))).toBe(false);
+          for (const decoy of [decoyFile, ...decoyDirs, keep]) {
+            expect(existsSync(decoy), decoy).toBe(true);
+          }
+          expect(existsSync(join(clonePath(neighbour), 'HEAD'))).toBe(true);
+          expect((await getRepository(neighbour)).body.state).toBe('ready');
+          expect((await fetchRepository(neighbour)).status).toBe(202);
+          expect((await settled(neighbour)).state).toBe('ready');
+        } finally {
+          await Promise.all(
+            [decoyFile, ...decoyDirs, keep].map((path) =>
+              rm(path, { recursive: true, force: true }),
+            ),
+          );
+        }
+      });
+
+      it('answers 404 for an unknown project and for a project without a repository', async () => {
+        expectProblem(await disconnect(UNKNOWN_PROJECT), 404, 'project-not-found');
+        expectProblem(await disconnect(await createProject('Nothing here')), 404, 'no-repository');
+      });
+
+      it('disconnects a failed repository', async () => {
+        const id = await createProject('Failed then disconnected');
+        const url = fixture.url.replace(/shop\.git$/, 'nowhere.git');
+        expect((await connect(id, { url, integrationBranch: 'dev' })).status).toBe(201);
+        expect((await settled(id)).state).toBe('failed');
+
+        expect((await disconnect(id)).status).toBe(204);
+        expectProblem(await getRepository(id), 404, 'no-repository');
+      });
+
+      it('frees the remote: the same remote connects again to another project, then back to the first', async () => {
+        const first = await connectedProject('First holder');
+        const second = await createProject('Second holder');
+        expectProblem(
+          await connect(second, { url: fixture.url, integrationBranch: 'dev' }),
+          409,
+          'remote-already-connected',
+        );
+
+        expect((await disconnect(first)).status).toBe(204);
+
+        expect((await connect(second, { url: fixture.url, integrationBranch: 'dev' })).status).toBe(
+          201,
+        );
+        expect(await settled(second)).toMatchObject({
+          state: 'ready',
+          headSha: fixture.commits.dev,
+        });
+        expect((await disconnect(second)).status).toBe(204);
+        expect((await connect(first, { url: fixture.url, integrationBranch: 'main' })).status).toBe(
+          201,
+        );
+        expect(await settled(first)).toMatchObject({
+          state: 'ready',
+          headSha: fixture.commits.main,
+        });
+      });
+
+      describe('when files cannot be removed', () => {
+        // The Git adapter refuses a clones folder that is not a plain directory, so swapping it
+        // for a symlink makes the removal fail (also as root, unlike a permission change).
+        async function breakClonesFolder() {
+          await rename(clonesDir(), `${clonesDir()}-real`);
+          await symlink(`${clonesDir()}-real`, clonesDir());
+        }
+        async function repairClonesFolder() {
+          await rm(clonesDir(), { force: true });
+          await rename(`${clonesDir()}-real`, clonesDir());
+        }
+
+        it('answers 202 disconnecting, keeps it on a repeat, and completes once removal works', async () => {
+          const id = await connectedProject('Stuck files');
+          await breakClonesFolder();
+          try {
+            const response = await disconnect(id);
+
+            expect(response.status).toBe(202);
+            expect(response.body).toEqual({
+              state: 'disconnecting',
+              url: fixture.url,
+              integrationBranch: 'dev',
+              hasClone: false,
+            });
+            expect((await getRepository(id)).body).toEqual(response.body);
+            expect((await getProject(id)).body.repository).toEqual({
+              state: 'disconnecting',
+              url: fixture.url,
+              integrationBranch: 'dev',
+            });
+            // A fetch or a new connect cannot start meanwhile.
+            expectProblem(await fetchRepository(id), 409, 'repository-busy');
+            expectProblem(
+              await connect(id, { url: fixture.url, integrationBranch: 'dev' }),
+              409,
+              'repository-already-connected',
+            );
+            expect((await disconnect(id)).status).toBe(202);
+          } finally {
+            await repairClonesFolder();
+          }
+
+          expect((await disconnect(id)).status).toBe(204);
+          expectProblem(await getRepository(id), 404, 'no-repository');
+          expect(await entriesOf(id)).toEqual([]);
+        });
+
+        it('resumes the cleanup at start-up', async () => {
+          const id = await connectedProject('Resumed at start-up');
+          await breakClonesFolder();
+          try {
+            expect((await disconnect(id)).status).toBe(202);
+          } finally {
+            await repairClonesFolder();
+          }
+
+          await restart();
+
+          expectProblem(await getRepository(id), 404, 'no-repository');
+          expect(await entriesOf(id)).toEqual([]);
+        });
+      });
+
+      describe('while an operation runs', () => {
+        let silent: Server;
+        let silentPort: number;
+        const sockets = new Set<Socket>();
+
+        beforeAll(async () => {
+          // Accepts connections and never answers: the clone or fetch hangs until cancelled.
+          silent = createServer((socket) => {
+            sockets.add(socket);
+            socket.on('close', () => sockets.delete(socket));
+          });
+          await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+          silentPort = (silent.address() as { port: number }).port;
+        });
+
+        afterAll(async () => {
+          for (const socket of sockets) socket.destroy();
+          sockets.clear();
+          await new Promise((resolve) => silent.close(resolve));
+        });
+
+        /** Waits until the remote has been contacted, so the operation is really running. */
+        async function untilContacted() {
+          const deadline = Date.now() + 10_000;
+          while (sockets.size === 0) {
+            if (Date.now() > deadline) throw new Error('the operation never reached the remote');
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+        }
+
+        it('cancels a running connect: 204, no partial Clone, and the same id connects again at once', async () => {
+          const id = await createProject('Cancelled connect');
+          const hanging = `https://127.0.0.1:${silentPort}/acme/hang.git`;
+          expect((await connect(id, { url: hanging, integrationBranch: 'dev' })).status).toBe(201);
+          await untilContacted();
+          expect((await getRepository(id)).body.state).toBe('connecting');
+
+          const started = Date.now();
+          expect((await disconnect(id)).status).toBe(204);
+
+          expect(Date.now() - started).toBeLessThan(10_000);
+          expectProblem(await getRepository(id), 404, 'no-repository');
+          expect(await entriesOf(id)).toEqual([]);
+          // The shared job id is free: no clone-already-running 409.
+          expect((await connect(id, { url: fixture.url, integrationBranch: 'dev' })).status).toBe(
+            201,
+          );
+          expect(await settled(id)).toMatchObject({ state: 'ready', headSha: fixture.commits.dev });
+        });
+
+        it('cancels a running fetch: 204, and the aborted fetch writes nothing afterwards', async () => {
+          const id = await connectedProject(
+            'Cancelled fetch',
+            createGitFixture(fixtures, `cancelled-fetch-${Date.now()}`),
+          );
+          for (const socket of sockets) socket.destroy();
+          sockets.clear();
+          // Test setup only: the remote moves to a host that hangs.
+          await db().$executeRaw`
+            UPDATE repositories SET url = ${`https://127.0.0.1:${silentPort}/acme/hang.git`}
+            WHERE project_id = ${id}::uuid`;
+          expect((await fetchRepository(id)).status).toBe(202);
+          await untilContacted();
+
+          expect((await disconnect(id)).status).toBe(204);
+
+          expectProblem(await getRepository(id), 404, 'no-repository');
+          expect(await entriesOf(id)).toEqual([]);
+          // A new connect of the project is not touched by the cancelled fetch.
+          expect((await connect(id, { url: fixture.url, integrationBranch: 'dev' })).status).toBe(
+            201,
+          );
+          expect(await settled(id)).toMatchObject({ state: 'ready', headSha: fixture.commits.dev });
+        });
       });
     });
   });
