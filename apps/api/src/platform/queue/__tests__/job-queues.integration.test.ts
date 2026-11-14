@@ -465,6 +465,11 @@ describe('job queues (Redis via Testcontainers)', () => {
           return state;
         });
         const cancelling = queue.cancel('sync-p2');
+        // Not vacuous: cancel must still be waiting when the newer run starts.
+        let newerStartedFirst = false;
+        void cancelling.finally(() => {
+          newerStartedFirst = owner.processed.some((job) => job.id === 'sync-p2');
+        });
         await stateRead.promise;
         spy.mockRestore();
         // The foreign run ends; a new run of the same id starts here inside cancel's wait.
@@ -474,6 +479,7 @@ describe('job queues (Redis via Testcontainers)', () => {
         await eventually(() => expect(owner.processed.map((job) => job.id)).toContain('sync-p2'));
 
         await expect(cancelling).resolves.toBe(false);
+        expect(newerStartedFirst).toBe(true);
         const newer = owner.processed.find((job) => job.id === 'sync-p2')!;
         expect(newer.signal.aborted).toBe(false);
         expect(owner.failures).toEqual([]);
@@ -708,7 +714,7 @@ describe('job queues (Redis via Testcontainers)', () => {
         await expect(health.isAvailable()).resolves.toBe(true);
 
         // Redis is slow, not down: every command waits, so the ping times out (1 s).
-        await redis.call('CLIENT', 'PAUSE', '2500', 'ALL');
+        await redis.call('CLIENT', 'PAUSE', '4000', 'ALL');
         await expect(health.isAvailable()).resolves.toBe(false);
         await expect(health.isAvailable()).resolves.toBe(false);
         await eventually(async () => expect(await health.isAvailable()).toBe(true), 10_000);

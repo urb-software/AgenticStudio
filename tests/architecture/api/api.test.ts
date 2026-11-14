@@ -193,7 +193,14 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'platform-only-handled-error-and-queue-health', expected: [] },
   {
     fixture: 'module-imports-handled-server-error',
-    expected: ['api-handled-server-error-platform-only'],
+    expected: [
+      'api-handled-server-error-platform-only',
+      'api-platform-only-http-and-queue-health-imports',
+    ],
+  },
+  {
+    fixture: 'module-test-imports-handled-server-error',
+    expected: ['api-platform-only-http-and-queue-health-imports'],
   },
   {
     fixture: 'module-reaches-queue-health-via-port',

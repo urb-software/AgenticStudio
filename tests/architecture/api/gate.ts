@@ -208,7 +208,8 @@ export const apiGate: Gate = {
         'HandledServerErrorException (an unlogged 503) is platform-only: no chain of imports leads ' +
         'a business module to it, so a module cannot silence a real 5xx; modules answer a handled ' +
         '503 with serviceUnavailable() from platform/http/problem-details.ts (Issue #70). ' +
-        'Tests are exempt: a module test may boot the whole app, which reaches everything.',
+        'Module tests are exempt from the chain check only (an existing adapter test under ' +
+        'infrastructure/ boots the whole app); direct imports stay forbidden below.',
       severity: 'error',
       from: { path: '^src/modules/', pathNot: TESTS },
       to: { path: '^src/platform/http/handled-server-error\\.ts$', reachable: true },
@@ -218,10 +219,25 @@ export const apiGate: Gate = {
       comment:
         "The queue's health view (QueueHealth and its provider) is platform-only: no chain of " +
         'imports leads a business module to it; modules use the JobQueues port (Issue #70). ' +
-        'Tests are exempt: a module test may boot the whole app, which reaches everything.',
+        'Module tests are exempt from the chain check only; direct imports stay forbidden below.',
       severity: 'error',
       from: { path: '^src/modules/', pathNot: TESTS },
       to: { path: '^src/platform/queue/queue-health(\\.provider)?\\.ts$', reachable: true },
+    },
+    {
+      name: 'api-platform-only-http-and-queue-health-imports',
+      comment:
+        'No file under src/modules/, tests included, imports HandledServerErrorException or the ' +
+        "queue's health view directly; the two reachable rules above cover production code " +
+        'through any chain (Issue #70).',
+      severity: 'error',
+      from: { path: '^src/modules/' },
+      to: {
+        path: [
+          '^src/platform/http/handled-server-error\\.ts$',
+          '^src/platform/queue/queue-health(\\.provider)?\\.ts$',
+        ],
+      },
     },
     {
       name: 'api-no-circular',

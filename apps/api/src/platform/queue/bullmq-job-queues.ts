@@ -127,8 +127,8 @@ export class BullMqJobQueues
   private readonly producer: Redis;
   private readonly entries = new Map<string, Entry>();
   private bootstrapped = false;
-  /** Outcome of the last health check; the first failure after a pass is logged, once. */
-  private healthCheckPassing = true;
+  /** Whether the last health ping timed out; the first timeout of an outage is logged, once. */
+  private healthPingTimedOut = false;
 
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -180,27 +180,26 @@ export class BullMqJobQueues
   }
 
   /**
-   * Pings the queue's Redis. A probe calls this every few seconds, so a failure (e.g. Redis
-   * too slow to answer) is logged once per outage, redacted, and the recovery once.
+   * Pings the queue's Redis. A probe calls this every few seconds, so a ping that times out
+   * (Redis slow, not down) is logged once per outage and the recovery once. A connection
+   * error needs no line here: logConnectionErrors already logs that outage, redacted.
    */
   async isAvailable(): Promise<boolean> {
-    let failure = 'unexpected reply.';
     const reply = await withTimeout(
-      this.producer.ping().catch((error: unknown) => {
-        failure = redactSecrets(errorMessage(error));
-        return undefined;
-      }),
+      this.producer.ping().catch(() => undefined),
       HEALTH_TIMEOUT_MS,
     );
-    const passing = reply === 'PONG';
-    if (!passing && this.healthCheckPassing) {
-      const reason = reply === TIMED_OUT ? `no answer within ${HEALTH_TIMEOUT_MS} ms.` : failure;
-      this.logger.warn(`Queue Redis health check failed: ${reason}`);
-    } else if (passing && !this.healthCheckPassing) {
+    // Check and update in one synchronous step, so concurrent probes log at most once.
+    if (reply === TIMED_OUT && !this.healthPingTimedOut) {
+      this.logger.warn(
+        `Queue Redis health check failed: no answer within ${HEALTH_TIMEOUT_MS} ms.`,
+      );
+    } else if (reply === 'PONG' && this.healthPingTimedOut) {
       this.logger.log('Queue Redis health check passes again.');
     }
-    this.healthCheckPassing = passing;
-    return passing;
+    if (reply === TIMED_OUT) this.healthPingTimedOut = true;
+    if (reply === 'PONG') this.healthPingTimedOut = false;
+    return reply === 'PONG';
   }
 
   /**
@@ -379,7 +378,9 @@ export class BullMqJobQueues
       await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
       const run = entry.running.get(id);
       if (run) {
-        return run.token === found.token && this.abortRunning(entry, id);
+        if (run.token !== found.token) return false;
+        run.controller.abort(new JobAbortedError('cancelled'));
+        return true;
       }
     }
     return false;
