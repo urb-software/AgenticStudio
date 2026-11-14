@@ -159,8 +159,9 @@ export function ConnectRepositoryDialog({
           <DialogHeader>
             <DialogTitle>Connect repository</DialogTitle>
             <DialogDescription>
-              A public repository over HTTPS. Studio clones it; agents later branch from the
-              integration branch.
+              A public repository over HTTPS, or a private one over SSH (git@host:owner/repo.git)
+              with a deploy key Studio generates for this project. Studio clones it; agents later
+              branch from the integration branch.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -172,7 +173,9 @@ export function ConnectRepositoryDialog({
             <TextField
               id="repository-url"
               label="Repository URL"
-              type="url"
+              // Not type="url": the scp-like SSH form (git@host:owner/repo.git) is no URL to a
+              // browser. The API validates the URL.
+              type="text"
               inputMode="url"
               mono
               autoComplete="off"

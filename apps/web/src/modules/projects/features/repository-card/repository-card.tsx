@@ -6,10 +6,12 @@ import {
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
+  ShieldCheckIcon,
   UnplugIcon,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
+import { CopyButton } from '@/shared/components/copy-button';
 import { EmptyState } from '@/shared/components/empty-state';
 import { StatusPill } from '@/shared/components/status-pill';
 import { Button } from '@/shared/ui/button';
@@ -27,6 +29,7 @@ import {
   useForgetRepository,
   useRefreshProject,
   useRepository,
+  useVerifyRepository,
 } from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
 import { ConnectRepositoryDialog } from '../connect-repository/connect-repository-dialog';
@@ -35,7 +38,7 @@ import {
   DisconnectRepositoryDialog,
   disconnectedToastId,
 } from '../disconnect-repository/disconnect-repository-dialog';
-import { failureMessage } from './failure-message';
+import { failureMessage, type Transport } from './failure-message';
 
 const TITLE_ID = 'repository-card-title';
 
@@ -75,9 +78,194 @@ function Target({ repository }: { repository: RepositorySummaryOutput }) {
   );
 }
 
+/** SSH Repositories (Issue #62) carry the Deploy key's public half; HTTPS ones do not. */
+function transportOf(repository: RepositoryOutput): Transport {
+  return repository.publicKey === undefined ? 'https' : 'ssh';
+}
+
+/** The Git host of an SSH URL as the operator wrote it (`host` or `host:port`). */
+function hostOf(url: string): string {
+  const scp = /^[^@/:\s]+@([^@/:\s]+):/.exec(url);
+  if (scp && !url.includes('://')) return scp[1]!;
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/** The comment of a public key line: its last field (`studio-<project name>`). */
+function keyComment(publicKey: string): string | undefined {
+  const fields = publicKey.trim().split(/\s+/);
+  return fields.length > 2 ? fields.at(-1) : undefined;
+}
+
+/**
+ * The Deploy key's public half (Issue #62) in mono, scrolling inside its own box (one long
+ * line), with a Copy button and the instruction. The private half never reaches the browser.
+ */
+function PublicKey({ publicKey }: { publicKey: string }) {
+  const comment = keyComment(publicKey);
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="m-0 text-body">
+        Add this as a deploy key on your Git host. Read access is enough for now.
+      </p>
+      <div className="flex min-w-0 items-start gap-2">
+        <pre
+          aria-label="Public key"
+          tabIndex={0}
+          className="m-0 min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-bg-subtle px-3 py-2 text-code whitespace-pre text-text"
+        >
+          {publicKey}
+        </pre>
+        <CopyButton value={publicKey} label="Copy public key" className="shrink-0" />
+      </div>
+      {comment ? (
+        <p className="m-0 text-small text-text-muted">
+          Key comment: <code className="text-code">{comment}</code>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+type VerifyMutation = ReturnType<typeof useVerifyRepository>;
+
+/** The API's refusal of a verify (e.g. 409, 501) as a banner; field errors are shown inline. */
+function VerifyError({ verify }: { verify: VerifyMutation }) {
+  if (!verify.error) return null;
+  const problem = verify.error instanceof ApiError ? verify.error.problem : undefined;
+  if (problem?.errors?.some((error) => error.path === 'acceptHostKeyFingerprint')) return null;
+  return (
+    <Banner tone="danger" title={problem?.title}>
+      {problem?.detail || 'Could not verify the repository. Try again.'}
+    </Banner>
+  );
+}
+
+/** `awaiting_key`: the Deploy key to add on the Git host, then "Verify and clone". */
+function AwaitingKeyBody({
+  repository,
+  verify,
+}: {
+  repository: RepositoryOutput;
+  verify: VerifyMutation;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <PublicKey publicKey={repository.publicKey ?? ''} />
+      <Details>
+        <Target repository={repository} />
+      </Details>
+      <VerifyError verify={verify} />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="primary"
+          icon={ShieldCheckIcon}
+          loading={verify.isPending}
+          onClick={() => verify.mutate({})}
+        >
+          {verify.isPending ? 'Verifying…' : 'Verify and clone'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * `awaiting_host_key`: the Git host is not trusted yet. Shows the host and its SHA256
+ * fingerprint in mono and asks for an explicit confirmation. Cancel only closes the question
+ * here (nothing is trusted); "Verify and clone" retrieves the host key again.
+ */
+function AwaitingHostKeyBody({
+  repository,
+  verify,
+}: {
+  repository: RepositoryOutput;
+  verify: VerifyMutation;
+}) {
+  const [cancelled, setCancelled] = useState(false);
+  const fingerprint = repository.hostKeyFingerprint ?? '';
+  const problem = verify.error instanceof ApiError ? verify.error.problem : undefined;
+  const mismatch = problem?.errors?.find((error) => error.path === 'acceptHostKeyFingerprint');
+  return (
+    <div className="flex flex-col gap-4">
+      {cancelled ? (
+        <p role="status" className="m-0 text-body text-text-muted">
+          Host key not confirmed. Studio connects to this host only after you confirm its key.
+        </p>
+      ) : (
+        <section
+          aria-labelledby="host-key-title"
+          className="flex flex-col gap-3 rounded-md border border-border bg-bg-subtle p-4"
+        >
+          <h3 id="host-key-title" className="m-0 text-body font-medium">
+            Confirm the Git host&apos;s key
+          </h3>
+          <p className="m-0 text-body text-text-muted">
+            Studio has not connected to this host before. Compare the fingerprint with the one your
+            Git host publishes, and confirm only if they match.
+          </p>
+          <Details>
+            <Detail term="Host">
+              <code className="text-code break-all">{hostOf(repository.url)}</code>
+            </Detail>
+            <Detail term="Fingerprint">
+              <code className="text-code break-all">{fingerprint}</code>
+            </Detail>
+          </Details>
+          {mismatch ? (
+            <Banner tone="danger" title="Fingerprint changed.">
+              {mismatch.message}
+            </Banner>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              icon={ShieldCheckIcon}
+              loading={verify.isPending}
+              onClick={() => verify.mutate({ acceptHostKeyFingerprint: fingerprint })}
+            >
+              {verify.isPending ? 'Confirming…' : 'Confirm and clone'}
+            </Button>
+            <Button disabled={verify.isPending} onClick={() => setCancelled(true)}>
+              Cancel
+            </Button>
+          </div>
+        </section>
+      )}
+      <VerifyError verify={verify} />
+      {cancelled ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            icon={ShieldCheckIcon}
+            loading={verify.isPending}
+            onClick={() => {
+              setCancelled(false);
+              verify.mutate({});
+            }}
+          >
+            Verify and clone
+          </Button>
+        </div>
+      ) : null}
+      <PublicKey publicKey={repository.publicKey ?? ''} />
+      <Details>
+        <Target repository={repository} />
+      </Details>
+    </div>
+  );
+}
+
 /** The header pill: the state in words, coloured by the design system's state tokens. */
 function StatePill({ state }: { state: string }) {
   switch (state) {
+    case 'awaiting_key':
+      return <StatusPill status="awaiting">Awaiting key</StatusPill>;
+    case 'awaiting_host_key':
+      return <StatusPill status="awaiting">Confirm host</StatusPill>;
     case 'connecting':
       return <StatusPill status="running">Connecting</StatusPill>;
     case 'ready':
@@ -226,7 +414,7 @@ function FailedFetchBody({
     <div className="flex flex-col gap-4">
       <Banner tone="danger" title="Fetch failed.">
         {failure
-          ? failureMessage(failure, repository.integrationBranch, 'fetch')
+          ? failureMessage(failure, repository.integrationBranch, 'fetch', transportOf(repository))
           : 'The fetch failed.'}
       </Banner>
       {failure?.detail ? <GitOutput detail={failure.detail} /> : null}
@@ -252,7 +440,11 @@ function GitOutput({ detail }: { detail: string }) {
   );
 }
 
-/** `failed` with no usable Clone (a failed connect, or a fetch that hit the size limit). */
+/**
+ * `failed` with no usable Clone (a failed connect, or a fetch that hit the size limit). Retry
+ * connects again over HTTPS; over SSH it verifies again with the same Deploy key (#62), which
+ * stays on screen so it can be added on the Git host.
+ */
 function FailedBody({
   projectId,
   repository,
@@ -263,16 +455,22 @@ function FailedBody({
   /** Opens the Connect dialog prefilled, to fix the URL or the branch (e.g. branch_not_found). */
   onChangeSettings: () => void;
 }) {
-  const retry = useConnectRepository(projectId);
+  const reconnect = useConnectRepository(projectId);
+  const verify = useVerifyRepository(projectId);
+  const transport = transportOf(repository);
+  const retry = transport === 'ssh' ? verify : reconnect;
   const failure = repository.failure;
   const retryProblem = retry.error instanceof ApiError ? retry.error.problem : undefined;
 
   return (
     <div className="flex flex-col gap-4">
       <Banner tone="danger" title="Clone failed.">
-        {failure ? failureMessage(failure, repository.integrationBranch) : 'The clone failed.'}
+        {failure
+          ? failureMessage(failure, repository.integrationBranch, 'clone', transport)
+          : 'The clone failed.'}
       </Banner>
       {failure?.detail ? <GitOutput detail={failure.detail} /> : null}
+      {repository.publicKey !== undefined ? <PublicKey publicKey={repository.publicKey} /> : null}
       <Details>
         <Target repository={repository} />
       </Details>
@@ -287,7 +485,12 @@ function FailedBody({
           icon={RefreshCwIcon}
           loading={retry.isPending}
           onClick={() =>
-            retry.mutate({ url: repository.url, integrationBranch: repository.integrationBranch })
+            transport === 'ssh'
+              ? verify.mutate({})
+              : reconnect.mutate({
+                  url: repository.url,
+                  integrationBranch: repository.integrationBranch,
+                })
           }
         >
           {retry.isPending ? 'Retrying…' : 'Retry'}
@@ -336,7 +539,8 @@ type RepositoryCardProps = {
 };
 
 /**
- * The project's one Repository card, in every state: none (connect), connecting (progress,
+ * The project's one Repository card, in every state: none (connect), awaiting_key (the Deploy
+ * key to add, Verify and clone), awaiting_host_key (confirm the host's fingerprint), connecting (progress,
  * polled), ready (Fetch), fetching (progress, polled), failed with a usable Clone (the
  * previous data, Fetch again), failed without one (message, redacted detail, Retry),
  * disconnecting (progress, polled) and any state a later API adds ("unavailable"). Every state
@@ -357,6 +561,7 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   const refreshProject = useRefreshProject(projectId);
   const forgetRepository = useForgetRepository(projectId);
   const fetchRepository = useFetchRepository(projectId);
+  const verifyRepository = useVerifyRepository(projectId);
   const repository = repositoryQuery.data;
   const state = repository?.state ?? summary?.state;
 
@@ -403,7 +608,7 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
       <EmptyState
         icon={GitBranchIcon}
         title="No repository connected"
-        description="Connect a public Git repository over HTTPS. Studio keeps its own clone, which agents later work from."
+        description="Connect a public Git repository over HTTPS, or a private one over SSH with a deploy key Studio generates. Studio keeps its own clone, which agents later work from."
         action={
           <Button variant="primary" icon={PlusIcon} onClick={() => openConnect()}>
             Connect repository
@@ -426,6 +631,16 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
       </Banner>
     ) : (
       <LoadingBody />
+    );
+  } else if (repository.state === 'awaiting_key') {
+    body = <AwaitingKeyBody repository={repository} verify={verifyRepository} />;
+  } else if (repository.state === 'awaiting_host_key') {
+    body = (
+      <AwaitingHostKeyBody
+        key={repository.hostKeyFingerprint}
+        repository={repository}
+        verify={verifyRepository}
+      />
     );
   } else if (repository.state === 'connecting') {
     body = <ConnectingBody repository={repository} fetch={fetchRepository} />;

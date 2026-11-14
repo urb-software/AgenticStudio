@@ -9,6 +9,7 @@ import {
   type CreateProjectRequest,
   type ProjectDetailOutput,
   type RepositoryOutput,
+  type VerifyRepositoryRequest,
 } from '../../../platform/api';
 
 /** The one cache entry for the project list; TanStack Query owns this server state. */
@@ -105,6 +106,32 @@ export function useFetchRepository(projectId: string) {
     },
     // 409: the server is ahead of this card (e.g. a fetch already running), so read it again;
     // a `fetching` answer then starts the polling.
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: repositoryKey(projectId), exact: true });
+      }
+    },
+  });
+}
+
+/**
+ * "Verify and clone" of an SSH Repository (also its Retry), or the confirmation of a host key
+ * (`acceptHostKeyFingerprint`). The 202 answer (`connecting`, `awaiting_host_key` or `failed`)
+ * seeds the polled query, so a `connecting` answer starts the polling. A 409 reads the
+ * Repository again (the server is ahead of the card).
+ */
+export function useVerifyRepository(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (request: VerifyRepositoryRequest) => {
+      await queryClient.cancelQueries({ queryKey: repositoryKey(projectId), exact: true });
+      return api.verifyRepository(projectId, request);
+    },
+    onSuccess: async (repository: RepositoryOutput) => {
+      await queryClient.cancelQueries({ queryKey: repositoryKey(projectId), exact: true });
+      queryClient.setQueryData(repositoryKey(projectId), repository);
+      await queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });
+    },
     onError: async (error) => {
       if (error instanceof ApiError && error.status === 409) {
         await queryClient.invalidateQueries({ queryKey: repositoryKey(projectId), exact: true });

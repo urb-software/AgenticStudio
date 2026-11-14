@@ -2,82 +2,188 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, VerifyRepositoryData, VerifyRepositoryErrors, VerifyRepositoryResponses } from './types.gen';
+import type {
+  ConnectRepositoryData,
+  ConnectRepositoryErrors,
+  ConnectRepositoryResponses,
+  CreateProjectData,
+  CreateProjectErrors,
+  CreateProjectResponses,
+  DisconnectRepositoryData,
+  DisconnectRepositoryErrors,
+  DisconnectRepositoryResponses,
+  FetchRepositoryData,
+  FetchRepositoryErrors,
+  FetchRepositoryResponses,
+  GetHealthData,
+  GetHealthErrors,
+  GetHealthResponses,
+  GetProjectData,
+  GetProjectErrors,
+  GetProjectResponses,
+  GetRepositoryData,
+  GetRepositoryErrors,
+  GetRepositoryResponses,
+  GetSessionData,
+  GetSessionErrors,
+  GetSessionResponses,
+  ListProjectsData,
+  ListProjectsErrors,
+  ListProjectsResponses,
+  LoginData,
+  LoginErrors,
+  LoginResponses,
+  LogoutData,
+  LogoutErrors,
+  LogoutResponses,
+  VerifyRepositoryData,
+  VerifyRepositoryErrors,
+  VerifyRepositoryResponses,
+} from './types.gen';
 
-export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
-    /**
-     * You can provide a client instance returned by `createClient()` instead of
-     * individual options. This might be also useful if you want to implement a
-     * custom client.
-     */
-    client?: Client;
-    /**
-     * You can pass arbitrary values through the `meta` object. This can be
-     * used to access values that aren't defined as part of the SDK function.
-     */
-    meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
+export type Options<
+  TData extends TDataShape = TDataShape,
+  ThrowOnError extends boolean = boolean,
+  TResponse = unknown,
+> = Options2<TData, ThrowOnError, TResponse> & {
+  /**
+   * You can provide a client instance returned by `createClient()` instead of
+   * individual options. This might be also useful if you want to implement a
+   * custom client.
+   */
+  client?: Client;
+  /**
+   * You can pass arbitrary values through the `meta` object. This can be
+   * used to access values that aren't defined as part of the SDK function.
+   */
+  meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
 
-export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, GetHealthErrors, ThrowOnError> => (options?.client ?? client).get<GetHealthResponses, GetHealthErrors, ThrowOnError>({ url: '/api/health', ...options });
+export const getHealth = <ThrowOnError extends boolean = false>(
+  options?: Options<GetHealthData, ThrowOnError>,
+): RequestResult<GetHealthResponses, GetHealthErrors, ThrowOnError> =>
+  (options?.client ?? client).get<GetHealthResponses, GetHealthErrors, ThrowOnError>({
+    url: '/api/health',
+    ...options,
+  });
 
-export const login = <ThrowOnError extends boolean = false>(options: Options<LoginData, ThrowOnError>): RequestResult<LoginResponses, LoginErrors, ThrowOnError> => (options.client ?? client).post<LoginResponses, LoginErrors, ThrowOnError>({
+export const login = <ThrowOnError extends boolean = false>(
+  options: Options<LoginData, ThrowOnError>,
+): RequestResult<LoginResponses, LoginErrors, ThrowOnError> =>
+  (options.client ?? client).post<LoginResponses, LoginErrors, ThrowOnError>({
     url: '/api/auth/login',
     ...options,
     headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
 
-export const getSession = <ThrowOnError extends boolean = false>(options?: Options<GetSessionData, ThrowOnError>): RequestResult<GetSessionResponses, GetSessionErrors, ThrowOnError> => (options?.client ?? client).get<GetSessionResponses, GetSessionErrors, ThrowOnError>({ url: '/api/auth/session', ...options });
+export const getSession = <ThrowOnError extends boolean = false>(
+  options?: Options<GetSessionData, ThrowOnError>,
+): RequestResult<GetSessionResponses, GetSessionErrors, ThrowOnError> =>
+  (options?.client ?? client).get<GetSessionResponses, GetSessionErrors, ThrowOnError>({
+    url: '/api/auth/session',
+    ...options,
+  });
 
-export const logout = <ThrowOnError extends boolean = false>(options?: Options<LogoutData, ThrowOnError>): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> => (options?.client ?? client).post<LogoutResponses, LogoutErrors, ThrowOnError>({ url: '/api/auth/logout', ...options });
+export const logout = <ThrowOnError extends boolean = false>(
+  options?: Options<LogoutData, ThrowOnError>,
+): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> =>
+  (options?.client ?? client).post<LogoutResponses, LogoutErrors, ThrowOnError>({
+    url: '/api/auth/logout',
+    ...options,
+  });
 
-export const listProjects = <ThrowOnError extends boolean = false>(options?: Options<ListProjectsData, ThrowOnError>): RequestResult<ListProjectsResponses, ListProjectsErrors, ThrowOnError> => (options?.client ?? client).get<ListProjectsResponses, ListProjectsErrors, ThrowOnError>({ url: '/api/projects', ...options });
+export const listProjects = <ThrowOnError extends boolean = false>(
+  options?: Options<ListProjectsData, ThrowOnError>,
+): RequestResult<ListProjectsResponses, ListProjectsErrors, ThrowOnError> =>
+  (options?.client ?? client).get<ListProjectsResponses, ListProjectsErrors, ThrowOnError>({
+    url: '/api/projects',
+    ...options,
+  });
 
-export const createProject = <ThrowOnError extends boolean = false>(options: Options<CreateProjectData, ThrowOnError>): RequestResult<CreateProjectResponses, CreateProjectErrors, ThrowOnError> => (options.client ?? client).post<CreateProjectResponses, CreateProjectErrors, ThrowOnError>({
+export const createProject = <ThrowOnError extends boolean = false>(
+  options: Options<CreateProjectData, ThrowOnError>,
+): RequestResult<CreateProjectResponses, CreateProjectErrors, ThrowOnError> =>
+  (options.client ?? client).post<CreateProjectResponses, CreateProjectErrors, ThrowOnError>({
     url: '/api/projects',
     ...options,
     headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
 
-export const getProject = <ThrowOnError extends boolean = false>(options: Options<GetProjectData, ThrowOnError>): RequestResult<GetProjectResponses, GetProjectErrors, ThrowOnError> => (options.client ?? client).get<GetProjectResponses, GetProjectErrors, ThrowOnError>({ url: '/api/projects/{id}', ...options });
+export const getProject = <ThrowOnError extends boolean = false>(
+  options: Options<GetProjectData, ThrowOnError>,
+): RequestResult<GetProjectResponses, GetProjectErrors, ThrowOnError> =>
+  (options.client ?? client).get<GetProjectResponses, GetProjectErrors, ThrowOnError>({
+    url: '/api/projects/{id}',
+    ...options,
+  });
 
 /**
  * Disconnects the repository: a running connect or fetch is cancelled, then Studio removes its Clone, the Deploy key and the pinned host key (when it has them) and the repository record. The project and the remote repository are untouched. 204 when everything was removed; 202 with the repository in `disconnecting` when some of it could not be removed yet (retried at start-up and by repeating this request). A running operation never blocks it.
  */
-export const disconnectRepository = <ThrowOnError extends boolean = false>(options: Options<DisconnectRepositoryData, ThrowOnError>): RequestResult<DisconnectRepositoryResponses, DisconnectRepositoryErrors, ThrowOnError> => (options.client ?? client).delete<DisconnectRepositoryResponses, DisconnectRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository', ...options });
+export const disconnectRepository = <ThrowOnError extends boolean = false>(
+  options: Options<DisconnectRepositoryData, ThrowOnError>,
+): RequestResult<DisconnectRepositoryResponses, DisconnectRepositoryErrors, ThrowOnError> =>
+  (options.client ?? client).delete<
+    DisconnectRepositoryResponses,
+    DisconnectRepositoryErrors,
+    ThrowOnError
+  >({ url: '/api/projects/{id}/repository', ...options });
 
-export const getRepository = <ThrowOnError extends boolean = false>(options: Options<GetRepositoryData, ThrowOnError>): RequestResult<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError> => (options.client ?? client).get<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository', ...options });
+export const getRepository = <ThrowOnError extends boolean = false>(
+  options: Options<GetRepositoryData, ThrowOnError>,
+): RequestResult<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError> =>
+  (options.client ?? client).get<GetRepositoryResponses, GetRepositoryErrors, ThrowOnError>({
+    url: '/api/projects/{id}/repository',
+    ...options,
+  });
 
 /**
  * Connects a repository. A public one over HTTPS is stored as `connecting` and cloned in the background (poll `GET /api/projects/{id}/repository`). A private one over SSH (`git@host:owner/repo.git` or `ssh://`) gets a Deploy key generated for the project and is stored as `awaiting_key` with its `publicKey`: add the key on the Git host, then `POST /api/projects/{id}/repository/verify`. A `failed` repository is replaced by the new attempt (an SSH one keeps its Deploy key).
  */
-export const connectRepository = <ThrowOnError extends boolean = false>(options: Options<ConnectRepositoryData, ThrowOnError>): RequestResult<ConnectRepositoryResponses, ConnectRepositoryErrors, ThrowOnError> => (options.client ?? client).post<ConnectRepositoryResponses, ConnectRepositoryErrors, ThrowOnError>({
+export const connectRepository = <ThrowOnError extends boolean = false>(
+  options: Options<ConnectRepositoryData, ThrowOnError>,
+): RequestResult<ConnectRepositoryResponses, ConnectRepositoryErrors, ThrowOnError> =>
+  (options.client ?? client).post<
+    ConnectRepositoryResponses,
+    ConnectRepositoryErrors,
+    ThrowOnError
+  >({
     url: '/api/projects/{id}/repository',
     ...options,
     headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
 
 /**
  * Brings the Clone up to date with the remote in the background: answers at once with the repository in `fetching` (poll `GET /api/projects/{id}/repository`). Allowed when the repository is `ready`, or `failed` with a usable Clone (`hasClone`).
  */
-export const fetchRepository = <ThrowOnError extends boolean = false>(options: Options<FetchRepositoryData, ThrowOnError>): RequestResult<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError> => (options.client ?? client).post<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError>({ url: '/api/projects/{id}/repository/fetch', ...options });
+export const fetchRepository = <ThrowOnError extends boolean = false>(
+  options: Options<FetchRepositoryData, ThrowOnError>,
+): RequestResult<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError> =>
+  (options.client ?? client).post<FetchRepositoryResponses, FetchRepositoryErrors, ThrowOnError>({
+    url: '/api/projects/{id}/repository/fetch',
+    ...options,
+  });
 
 /**
  * "Verify and clone" for an SSH repository (`awaiting_key`, `awaiting_host_key`, or `failed` without a Clone: Retry, with the same Deploy key). A Git host listed in the server's trusted host keys, or whose key is pinned for this repository, is cloned at once: the answer is the repository in `connecting` (poll `GET /api/projects/{id}/repository`). For any other host, Studio first retrieves its host key: the answer is the repository in `awaiting_host_key` with `hostKeyFingerprint` (or in `failed` when the host cannot be reached), and the operator confirms by verifying again with `acceptHostKeyFingerprint`, which pins the key and starts the clone.
  */
-export const verifyRepository = <ThrowOnError extends boolean = false>(options: Options<VerifyRepositoryData, ThrowOnError>): RequestResult<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError> => (options.client ?? client).post<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError>({
+export const verifyRepository = <ThrowOnError extends boolean = false>(
+  options: Options<VerifyRepositoryData, ThrowOnError>,
+): RequestResult<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError> =>
+  (options.client ?? client).post<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError>({
     url: '/api/projects/{id}/repository/verify',
     ...options,
     headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });

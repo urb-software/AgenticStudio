@@ -7,24 +7,37 @@ interface ScriptedResponse {
   body: unknown;
 }
 
-type Route = 'project' | 'repository' | 'connect' | 'fetch' | 'disconnect';
+type Route = 'project' | 'repository' | 'connect' | 'fetch' | 'disconnect' | 'verify';
+
+/** A synthetic public key line for SSH connects (not key material). */
+export const FAKE_PUBLIC_KEY =
+  'ssh-ed25519 c3ludGhldGljLXB1YmxpYy1rZXktZm9yLXRlc3Rz studio-Acme-Shop';
+/** A synthetic SHA256 fingerprint of the Git host's key. */
+export const FAKE_FINGERPRINT = 'SHA256:c3ludGhldGljLWZpbmdlcnByaW50LWZvci10ZXN0cw';
+
+const ROUTE = /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?)?$/;
 
 /**
  * A fake of the project detail API behind `fetch` (`GET /api/projects/:id`,
- * `GET|POST|DELETE /api/projects/:id/repository`, `POST /api/projects/:id/repository/fetch`), so the
+ * `GET|POST|DELETE /api/projects/:id/repository`, `POST /api/projects/:id/repository/fetch` and
+ * `/verify`), so the
  * generated client, the wrapper and TanStack Query run for real. `repository` is the server's
  * state; tests change it to move the Repository on (as the background clone or fetch would)
  * and script error responses.
  */
 export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput | null = null) {
-  /** `cleanupPending`: a disconnect cannot remove everything yet (202, `disconnecting`). */
-  const state = { repository: initial, cleanupPending: false };
+  /**
+   * `cleanupPending`: a disconnect cannot remove everything yet (202, `disconnecting`).
+   * `hostTrusted`: verify clones at once; otherwise it asks to confirm `FAKE_FINGERPRINT`.
+   */
+  const state = { repository: initial, cleanupPending: false, hostTrusted: false };
   const scripted: Record<Route, ScriptedResponse[]> = {
     project: [],
     repository: [],
     connect: [],
     fetch: [],
     disconnect: [],
+    verify: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
   const held: Partial<Record<Route, Promise<void>>> = {};
@@ -41,22 +54,22 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
   });
 
   function routeOf(request: Request): Route | undefined {
-    const match = /^\/api\/projects\/([^/]+)(\/repository(\/fetch)?)?$/.exec(
-      new URL(request.url).pathname,
-    );
+    const match = ROUTE.exec(new URL(request.url).pathname);
     if (!match) return undefined;
     if (!match[2]) return 'project';
-    if (match[3]) return 'fetch';
+    if (match[3] === '/fetch') return 'fetch';
+    if (match[3] === '/verify') return 'verify';
     if (request.method === 'DELETE') return 'disconnect';
     return request.method === 'POST' ? 'connect' : 'repository';
   }
 
   async function answer(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
-    const match = /^\/api\/projects\/([^/]+)(\/repository(\/fetch)?)?$/.exec(pathname);
+    const match = ROUTE.exec(pathname);
     if (!match) return json(404, problem(404, 'Not Found'));
     const route = routeOf(request)!;
-    const body: unknown = route === 'connect' ? await request.json() : undefined;
+    const body: unknown =
+      route === 'connect' || route === 'verify' ? await request.json() : undefined;
     calls.push({ route, body });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
@@ -77,8 +90,58 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
           : json(404, problem(404, 'No repository'));
       case 'connect': {
         const { url, integrationBranch } = body as { url: string; integrationBranch: string };
-        state.repository = { state: 'connecting', url, integrationBranch, hasClone: false };
+        state.repository = /^(ssh:\/\/|[^@/:]+@[^@/:]+:)/.test(url)
+          ? {
+              state: 'awaiting_key',
+              url,
+              integrationBranch,
+              hasClone: false,
+              publicKey: FAKE_PUBLIC_KEY,
+            }
+          : { state: 'connecting', url, integrationBranch, hasClone: false };
         return json(201, state.repository);
+      }
+      case 'verify': {
+        const current = state.repository;
+        if (!current) return json(404, problem(404, 'No repository'));
+        const { acceptHostKeyFingerprint } = body as { acceptHostKeyFingerprint?: string };
+        const verifiable =
+          current.publicKey !== undefined &&
+          (['awaiting_key', 'awaiting_host_key'].includes(current.state) ||
+            (current.state === 'failed' && !current.hasClone));
+        if (!verifiable) return json(409, problem(409, 'Nothing to verify'));
+        const { failure, hostKeyFingerprint, ...rest } = current;
+        void failure;
+        if (acceptHostKeyFingerprint !== undefined) {
+          if (current.state !== 'awaiting_host_key')
+            return json(409, problem(409, 'Nothing to verify'));
+          if (acceptHostKeyFingerprint !== hostKeyFingerprint) {
+            return json(
+              422,
+              fieldProblem(422, 'Unprocessable Entity', [
+                { path: 'acceptHostKeyFingerprint', message: 'The fingerprint does not match.' },
+              ]),
+            );
+          }
+          state.repository = { ...rest, state: 'connecting', hostKeyFingerprint };
+          return json(202, state.repository);
+        }
+        state.repository =
+          state.hostTrusted || hostKeyFingerprint
+            ? {
+                ...rest,
+                ...(hostKeyFingerprint ? { hostKeyFingerprint } : {}),
+                state: 'connecting',
+              }
+            : { ...rest, state: 'awaiting_host_key', hostKeyFingerprint: FAKE_FINGERPRINT };
+        if (current.state === 'awaiting_host_key') {
+          state.repository = {
+            ...rest,
+            state: 'awaiting_host_key',
+            hostKeyFingerprint: FAKE_FINGERPRINT,
+          };
+        }
+        return json(202, state.repository);
       }
       case 'fetch': {
         const current = state.repository;
