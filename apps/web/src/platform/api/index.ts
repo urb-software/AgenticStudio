@@ -128,4 +128,15 @@ export const api = {
   ): Promise<RepositoryOutput> => unwrap(sdk.connectRepository({ path: { id: projectId }, body })),
   fetchRepository: (projectId: string): Promise<RepositoryOutput> =>
     unwrap(sdk.fetchRepository({ path: { id: projectId } })),
+  /**
+   * `null` when the Repository is gone (204); the Repository in `disconnecting` when its
+   * cleanup is still pending (202).
+   */
+  disconnectRepository: (projectId: string): Promise<RepositoryOutput | null> =>
+    unwrap<RepositoryOutput | null>(
+      sdk.disconnectRepository({ path: { id: projectId } }).then((result) => ({
+        ...result,
+        data: result.response?.status === 202 ? (result.data as RepositoryOutput) : null,
+      })),
+    ),
 };
