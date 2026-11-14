@@ -122,13 +122,14 @@ executions/features/complete-execution/handler.ts
 
 ## 7. Worker, Git and privileged infrastructure
 
-- Jobs flow through Redis + BullMQ to `apps/agent-worker`, which operates through a narrowly defined CLI runner adapter and an assigned Git worktree.
+- `apps/agent-worker` runs on the host as the agent user, outside Studio's containers ([ADR 0002](adr/0002-agent-run-isolation.md)). It always calls the API, with a token limited to handling runs; the API never reaches into the host, and the worker has no access to the database, Redis or BullMQ. It operates through a narrowly defined CLI runner adapter in a working copy per run.
+- A run is a sequence of non-interactive CLI steps. Each step streams events, ends with a structured result, and can be resumed by session id. An agent question pauses the run ("waiting for operator"); the operator's answer resumes the same session.
 - **Non-agent background work** (e.g. cloning and fetching a repository) runs in BullMQ processors **hosted inside the API process**, through the platform queue capability in `platform/queue/`: a module injects the `JobQueues` port, registers a named queue with its processor during module initialisation, and enqueues jobs under deterministic ids (a duplicate waiting or running id raises `JobAlreadyActiveError`). Jobs run at most once (no automatic retries), can be cancelled and time-limited through an abort signal, and report failures to the owning module; jobs interrupted by a crash are handed to the owner's `reconcile` hook on startup and never re-run. Payloads carry identifiers only; keys live under `studio:queue`; BullMQ types stay inside `platform/queue/`. Reconciliation assumes a single API instance (the MVP deployment): it treats every job still active at startup as interrupted. `apps/agent-worker` remains reserved for CLI agent execution.
 - The runner port is small and provider-agnostic; each provider (Claude Code CLI, Codex CLI) gets its own adapter. API/SDK runners are out of scope for MVP.
 - Provider gate (canonical in [Security](../engineering/security.md) §2): the worker checks the fail-closed per-provider flag (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`) before spawning any CLI subprocess, and never extracts, intercepts, shares or proxies subscription credentials.
-- Workers have **no Docker socket**, privileged Compose access, production DB credentials or unrestricted filesystem access.
+- The worker and its agents have **no access to the system Docker daemon or socket**, privileged Compose access, production DB credentials, Studio's files or unrestricted filesystem access. Agents may use the agent user's rootless Docker daemon ([Security](../engineering/security.md) §2).
 - Docker Compose actions go through `apps/environment-controller`, behind authorization and approved operations.
-- Git belongs to `projects`; other modules consume its public interfaces, not its adapter or repositories.
+- Git belongs to `projects`; other modules consume its public interfaces, not its adapter or repositories. Agents push their run branches through the agent account, not through the adapter ([Security](../engineering/security.md) §4).
 - External Git/Docker/CLI operations cannot be rolled back by a DB transaction: expose explicit states, timeouts, error handling and reconciliation.
 - `agents` owns separate `AgentDefinition` and `SkillDefinition` models; `mcp` owns reusable server definitions/bindings.
 
@@ -139,7 +140,7 @@ executions/features/complete-execution/handler.ts
 - HTTP integration tests that build the whole app (`AppModule`, real database client) live in `apps/api/src/__tests__/`, outside `src/modules/`: building the app reaches the database client, which `architecture:api` forbids for anything under a feature folder, tests included. Unit tests of a feature stay in its `__tests__/` with fakes of the ports.
 - Contract: REST DTO/schema compatibility and event versions.
 - Architecture: full dependency graph and structural rules in **`architecture:api`**.
-- Security/reliability: authorization failures, duplicate events, retry, cancellation, filesystem/worktree isolation, privileged-action rejection.
+- Security/reliability: authorization failures, duplicate events, retry, cancellation, filesystem/working-copy isolation, privileged-action rejection.
 
 Preferred runner: **Vitest**; supporting tools: `@nestjs/testing`, Supertest, Testcontainers. No global coverage percentage target at bootstrap; prioritize meaningful business cases. Architecture tests block merge once CI is implemented.
 

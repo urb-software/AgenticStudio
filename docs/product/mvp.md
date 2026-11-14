@@ -4,7 +4,7 @@
 
 ## 1. Product intent
 
-A **private, self-hosted AI coding workspace** for one human operator: manage software projects and agent definitions, run coding tasks through official Claude Code / Codex CLIs, inspect generated code changes, and preview integrated results on a VPS.
+A **private, self-hosted AI coding workspace** for one human operator: manage software projects and agent definitions, run coding tasks through official Claude Code / Codex CLIs, inspect generated code changes, and preview integrated results on a dedicated server.
 
 It is **not** a public SaaS, a model provider, or a replacement for the native CLI tools. Provider-native file/configuration formats are preserved where supported.
 
@@ -17,7 +17,7 @@ It is **not** a public SaaS, a model provider, or a replacement for the native C
 1. Create or connect a software project and its Git repository.
 2. Define or import agent configurations and reusable skills; select approved MCP integrations.
 3. Describe a task or compose an initial workflow.
-4. Execute a CLI-backed agent in an isolated project worktree/branch.
+4. Execute a CLI-backed agent in an isolated working copy and branch.
 5. Observe execution status, logs, errors, and results.
 6. Review diff/tests and explicitly approve changes.
 7. Merge approved changes into the project's integration branch (default `dev`).
@@ -29,7 +29,7 @@ This is a **capability roadmap**; not all of it belongs in the first implemented
 
 | Module | Product responsibility |
 | --- | --- |
-| `projects` | Projects, repository connection, Git branches/worktrees, diff, review, approval, merge |
+| `projects` | Projects, repository connection, Git branches, diff, review, approval, merge |
 | `agents` | Agent and skill definitions, assignment, file/Git-first editing, validation, publication |
 | `workflows` | Definition, steps, sequencing, orchestration, human approvals |
 | `executions` | Runs, queueing, cancellation, status, logs, results |
@@ -45,7 +45,7 @@ Agent and skill definitions are separate domain models *within* `agents`; MCP is
 - REST for commands/queries; SSE for progress/logs.
 - Initial workflow orchestration centered on a **small sequential flow and human approval**; advanced branching/parallelism may be deferred.
 - Native CLI definitions where practical; immutable approved configuration snapshots for runs.
-- Per-agent Git worktrees/branches and controlled merge of reviewed changes.
+- Per-run working copies/branches and controlled merge of reviewed changes.
 - Docker Compose environments controlled by a separate, narrowly privileged process, with one shared Preview built from the project's integration branch (default `dev`) after merge.
 - Secret storage outside Git and minimal access to external tools.
 
@@ -71,8 +71,8 @@ The MVP demonstrates that an operator can complete the end-to-end cycle with con
 ## 7. Unresolved decisions — turn into refinement/Technical Tasks
 
 - Validate CLI terms, authentication and headless use for **each** provider (tasks B6/B7); automated execution stays disabled per provider until then (acceptance gate in [Security](../engineering/security.md) §2).
-- Confirm VPS hardware, isolation model, networking, and how agent/provider credentials are managed before enabling real agent execution. Studio's own secret store is decided in [ADR 0001](../architecture/adr/0001-secret-store.md).
-- **Decided** (Epic #55): Git access strategy and credential scope. Private Repositories use a per-project SSH Deploy key, public ones anonymous HTTPS; no tokens and no host credentials. See [Security](../engineering/security.md) §3–§4 and [ADR 0001](../architecture/adr/0001-secret-store.md). Protecting connected Repositories and their integration branches on push and merge is refined with the merge capability.
+- **Decided** (Epic #84): the run isolation model and which credentials an agent run holds, in [ADR 0002](../architecture/adr/0002-agent-run-isolation.md). Still open before real agent execution: server hardware, networking, and the ADR's pending inputs and open decisions. Studio's own secret store is decided in [ADR 0001](../architecture/adr/0001-secret-store.md).
+- **Decided** (Epic #55): Git access strategy and credential scope. Private Repositories use a per-project SSH Deploy key, public ones anonymous HTTPS; Studio's own Git access uses no tokens and no host credentials. Agents push their run branches and open pull requests through the separate agent account, with a token limited to the managed repositories ([ADR 0002](../architecture/adr/0002-agent-run-isolation.md)). See [Security](../engineering/security.md) §3–§4 and [ADR 0001](../architecture/adr/0001-secret-store.md). Protecting connected Repositories and their integration branches on push and merge is refined with the merge capability.
 - Refine exact workflow step semantics and human approval model.
 - Specify baseline project schema, auth/session strategy, API contracts, and Preview exposure only when the relevant slice begins.
 - Agree on frontend state-library versions/policy before installing them in feature code.

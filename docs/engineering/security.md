@@ -8,7 +8,7 @@ The system runs code and tools against potentially hostile repository content. K
 
 - Prompt injection in repository files, Issues, README files, logs, MCP tool responses, fetched documentation.
 - Data exfiltration via shell, logs, arbitrary HTTP/network egress, commit contents, agent-visible environment variables.
-- Cross-project filesystem escape, symlink traversal, path confusion, rogue worktrees, Git credential misuse.
+- Cross-project filesystem escape, symlink traversal, path confusion, rogue working copies, Git credential misuse.
 - Docker privilege escalation, unapproved Compose actions, host access, untrusted Preview content.
 - Unsafe dependency installation, arbitrary shell hooks, malicious configuration.
 - Duplicated jobs/events, replay, stale authorization, unintended merges, destructive migrations.
@@ -17,11 +17,16 @@ The system runs code and tools against potentially hostile repository content. K
 
 ## 2. Agent execution policy
 
-- Each agent execution has an **assigned project, worktree, branch, approved tool set, time/resource budget and explicit run identity**.
-- A Git worktree is an organization/isolation mechanism, **not a complete sandbox**. Enforce filesystem permissions and container/process isolation; test path traversal and symlink escape.
-- Agent-worker **must not mount `/var/run/docker.sock` or obtain privileged Docker host access**, and never runs as a privileged container.
+Run isolation model: [ADR 0002](../architecture/adr/0002-agent-run-isolation.md).
+
+- Each run has an **assigned project, working copy, branch, approved tool set, time/resource budget and explicit run identity**.
+- **Where runs execute.** Studio (web, API, database, secrets, repository copies) runs in containers under the system Docker daemon, which only root controls. The agent worker and the agents it starts run on the host as an ordinary user, the **agent user**: never in the `docker` group, no passwordless `sudo`, no access to Studio's files. This operating-system boundary is the security boundary.
+- **Working copy per run.** Each run works in its own clone, made from a per-project cache at the exact commit Studio recorded, on a branch named for the run; the agent definition, task and logs sit beside it, outside the repository. A working copy is an organization mechanism, **not a sandbox**. Enforce filesystem permissions and the user boundary; test path traversal and symlink escape.
+- **Docker.** The agent worker and the agents **never obtain privileged Docker host access**: no access to the system Docker daemon or its socket (`/var/run/docker.sock`), no `docker` group membership, never a privileged container. Agents may use a **rootless Docker daemon owned by the agent user** for Compose stacks, integration and end-to-end tests; it grants nothing beyond the agent user's own rights. It is separate from the `environment-controller` (§5), which manages project Preview stacks on Studio's side.
+- **The worker always calls Studio**; Studio never reaches into the host. The worker's token is limited to handling runs.
+- CLI **hooks and permission rules are guardrails** against destructive mistakes, **not the security boundary**; the user boundary must hold without them.
 - User/project code runs with the least capabilities possible: restricted host mounts, file access, process execution, network egress and inter-project access, per task.
-- No production credentials or production data for coding agents; separate development/test accounts and databases.
+- No production credentials or production data for coding agents, and none anywhere on the server; separate development/test accounts and databases.
 - Configure execution timeout, cancellation, CPU/RAM/storage limits and output-size/log quotas; repeated operations are idempotent where appropriate.
 - No unapproved MCP tools and no configuration changes outside permitted boundaries.
 
@@ -72,6 +77,8 @@ CODEX_CLI_ENABLED=false
 - DB/Git definitions store secret references where appropriate, **not secret values**.
 - **Chosen mechanism ([ADR 0001](../architecture/adr/0001-secret-store.md)):** Studio-held secrets, such as the private half of a Project's Deploy key, are encrypted in PostgreSQL (AES-256-GCM) behind the `SecretStore` port, with a key-version field per record. The master key comes from the environment (`STUDIO_SECRETS_KEY`, 32 random bytes, base64) and never enters the database, Git, logs or API responses. Key rotation tooling and an external secret manager are deferred.
 - Inject only the necessary secret values at the point of authorized use; minimize lifetime and visibility.
+- **What an agent run can see ([ADR 0002](../architecture/adr/0002-agent-run-isolation.md)).** Everything the agent user can read is visible to the agent: its own provider CLI logins (subscription login, or an API key as fallback), the agent account's token and the worker's token. These are accepted risks, so each is kept narrow and revocable: the agent account's token is limited to the managed repositories, the worker's token to handling runs.
+- **What an agent run cannot see.** Studio's files and secrets: the `SecretStore` contents and master key, Deploy keys, the operator password hash, sessions, and the database and Redis credentials; the system Docker daemon; production credentials, which never exist on the server.
 - Redact secrets and sensitive commands/paths from logs, error messages, SSE payloads, CI artifacts, PR descriptions and agent handoffs.
 - External or provider session credentials are not copied to other agents unless explicitly supported and authorized.
 - Scan source/commits/PRs for secret leaks; test that run logs cannot disclose protected values.
@@ -85,17 +92,19 @@ CODEX_CLI_ENABLED=false
 
 ## 4. Git, branch and merge protection
 
-- Each running agent works in an assigned branch/worktree and cannot write to another agent's workspace.
-- Git operations go through public `projects` contracts and an authorized, path-validated Git adapter. Workers cannot bypass approval by merging to the project's integration branch (default `dev`) directly.
+- Each run works in its own working copy and branch ([ADR 0002](../architecture/adr/0002-agent-run-isolation.md)) and does not write to another run's working copy.
+- Studio's own Git operations go through public `projects` contracts and an authorized, path-validated Git adapter, with the Project's Deploy key.
+- **Agents reach the Git host only through the agent account**: a separate account, not the operator's, whose token is limited to the managed repositories. Agents push only their own run branches and open pull requests. Studio's Deploy keys never reach the agent.
+- Branch protection on each managed Repository keeps protected branches, including the integration branch (default `dev`), under the operator's approval: agents cannot merge, or push to them, directly. Merge stays with the operator.
 - A User Story normally lands through one integrated PR; subtasks normally produce commits; independent Technical Tasks may land separately when safe. `dev` is the GitHub default/integration branch; `main` is reserved for stable/release integration.
 - Review the diff and relevant test results. Explicit authorization is required for approval/merge, force push, history rewrite, branch deletion, and repository credential changes.
 - CI and independent review are preconditions for merge. **The operator is the final manual merge gate**; agents have no unrestricted merge authority.
 
 ### Git adapter hardening baseline (connected Repositories)
 
-Rules every Git operation on a connected Repository follows, whatever the caller:
+Rules every Git operation Studio's Git adapter performs on a connected Repository follows, whatever the calling module. Git commands an agent runs in its working copy do not go through the adapter; the agent user's rights (§2) and the agent account's token limit them.
 
-- **Linux only:** repository features run on Linux (containers, CI, VPS); on non-Linux platforms they report an unsupported platform instead of running.
+- **Linux only:** repository features run on Linux (containers, CI, the server); on non-Linux platforms they report an unsupported platform instead of running.
 - **Transports:** in production configuration, only `ssh` and `https` remote URLs without embedded credentials; every other transport is rejected. Tests may allow local fixture remotes; production configuration refuses that setting.
 - **No submodule recursion** and **no LFS smudge**: Studio downloads only the Repository's own objects.
 - **Hooks never run**, from the Repository or from anywhere else.
@@ -128,8 +137,8 @@ The repository is public: rulesets and secret scanning are enforced for free, an
 - The controller exposes *specific authorized operations* (e.g. start, stop, status, logs, controlled refresh) against validated project definitions, not an arbitrary Docker command surface.
 - Before applying a stack change, validate repository/project identity, allowed Compose files, volume mounts, ports, images, environment variables, resource limits and credentials.
 - Preview code is **untrusted**: separate origin without administrative Studio cookies, isolated network and storage access, restricted forwarded headers and ports.
-- One default shared Preview per project tracks approved changes in the project's integration branch (default `dev`). Opening a worktree does not create a preview.
-- Compose isolation is a pragmatic MVP baseline, **not** microVM-strength isolation. Stronger sandboxing may follow with appropriate VPS/KVM support.
+- One default shared Preview per project tracks approved changes in the project's integration branch (default `dev`). A run's working copy does not create a preview.
+- Compose isolation is a pragmatic MVP baseline, **not** microVM-strength isolation. Stronger sandboxing may follow with appropriate server/KVM support.
 
 ## 6. MCP and external tools
 
@@ -185,9 +194,9 @@ A prompt saying "ask for approval" is not an access control. The backend/runtime
 
 Enforced controls must **reject** the following, evidenced by automated tests as each capability is implemented:
 
-- A worktree reads or writes a file outside its assigned project scope, including via symlink/path traversal.
-- Agent B reads Agent A's workspace or another project's files.
-- A runner uses the Docker socket or calls unauthorized environment-controller operations.
+- A run reads or writes a file outside its working copy and assigned project scope, including via symlink/path traversal.
+- Agent B reads Agent A's working copy or another project's files.
+- A runner uses the system Docker daemon or its socket, or calls unauthorized environment-controller operations.
 - A malicious `README.md` instructs the agent to output secrets or modify forbidden files.
 - An unapproved MCP tool is invoked, or a tool response includes prompt-injection text.
 - A run requests unauthorized branch merge, credential disclosure, or production DB access.
@@ -195,10 +204,20 @@ Enforced controls must **reject** the following, evidenced by automated tests as
 
 Also verify: a canceled or retried execution causes no duplicate irreversible effects.
 
+**Run isolation model ([ADR 0002](../architecture/adr/0002-agent-run-isolation.md)).** The deployed model must pass these checks, run as the agent user (implemented by a later story):
+
+- The agent user cannot read Studio's files.
+- The agent user cannot reach the system Docker socket.
+- The agent user cannot use `sudo` without a password.
+- The agent user cannot reach Studio's database or Redis ports.
+- Rootless Docker works for the agent user: a Compose stack starts and stops.
+
+All runs share the agent user, so user permissions alone do not separate runs or projects; how the cross-run and cross-project checks above are enforced is an open decision in ADR 0002.
+
 ## 10. Security delivery gates
 
 - **Before repository bootstrap:** document required approvals; commit no secrets.
-- **Before real CLI execution:** enforce bounded workspaces, credentials, tool access, timeouts and non-privileged worker behavior, and test denial of forbidden operations. A functional CLI demo alone is insufficient.
+- **Before real CLI execution:** enforce bounded working copies, credentials, tool access, timeouts and non-privileged worker behavior, and test denial of forbidden operations. A functional CLI demo alone is insufficient.
 - **Before exposing Preview externally:** isolate origin, cookies, ports, network and resource scope; review untrusted code execution risks.
 - **Before autonomous merge:** platform-enforced branch protection where supported, or the operator stays the manual merge gate; agents never self-approve.
 
