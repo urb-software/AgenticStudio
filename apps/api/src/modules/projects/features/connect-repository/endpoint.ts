@@ -15,6 +15,7 @@ import {
   PROJECTS_PROBLEM_TYPES,
   projectNotFound,
   queueUnavailable,
+  repositoryBusy,
   unsupportedPlatform,
 } from '../../contracts/http/problems.js';
 import {
@@ -78,13 +79,8 @@ function toHttpError(error: unknown): unknown {
       errors: [{ path: 'url', message: error.message }],
     });
   }
-  if (error instanceof JobAlreadyActiveError) {
-    return new ProblemException(HttpStatus.CONFLICT, {
-      type: PROJECTS_PROBLEM_TYPES.cloneAlreadyRunning,
-      title: 'Clone already running',
-      detail: 'An earlier clone of this project is still finishing. Try again in a moment.',
-    });
-  }
+  // The job may be an earlier clone or a fetch: #61's generic busy problem (#72).
+  if (error instanceof JobAlreadyActiveError) return repositoryBusy();
   if (error instanceof QueueUnavailableError) return queueUnavailable();
   return error;
 }
@@ -114,8 +110,8 @@ export class ConnectRepositoryEndpoint {
     409:
       `The project already has a repository (${PROJECTS_PROBLEM_TYPES.repositoryAlreadyConnected}), ` +
       `the remote is connected to another project (${PROJECTS_PROBLEM_TYPES.remoteAlreadyConnected}; ` +
-      `field error on url), or an earlier clone is still finishing ` +
-      `(${PROJECTS_PROBLEM_TYPES.cloneAlreadyRunning})`,
+      `field error on url), or an earlier connect or fetch is still running ` +
+      `(${PROJECTS_PROBLEM_TYPES.repositoryBusy})`,
     422: 'Invalid url or integrationBranch (field errors)',
     501: `The API host is not Linux (${PROJECTS_PROBLEM_TYPES.unsupportedPlatform})`,
     503: 'The job queue is unavailable; the attempt is marked failed (generic problem)',

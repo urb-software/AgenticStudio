@@ -352,7 +352,7 @@ describe('Repository card states', () => {
 
   it('shows a Retry that the API refuses as a banner, with the problem title', async () => {
     const api = fakeProjectApi(PROJECT, failed({ code: 'timeout', detail: '' }));
-    api.respondNext('connect', 409, problem(409, 'Clone already running'));
+    api.respondNext('connect', 409, problem(409, 'Repository busy'));
     await renderLoaded();
 
     await userEvent.click(await within(card()).findByRole('button', { name: 'Retry' }));
@@ -362,7 +362,7 @@ describe('Repository card states', () => {
         within(card())
           .getAllByRole('alert')
           .map((alert) => alert.textContent),
-      ).toContainEqual(expect.stringContaining('Clone already running')),
+      ).toContainEqual(expect.stringContaining('Repository busy')),
     );
   });
 

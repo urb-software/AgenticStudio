@@ -4,10 +4,13 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
+import { Queue } from 'bullmq';
+import { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
+import { QUEUE_KEY_PREFIX } from '../platform/queue/bullmq-job-queues.js';
 import {
   createGitFixture,
   deleteRemoteBranch,
@@ -707,6 +710,38 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       expect(await settled(id)).toMatchObject({ state: 'ready', headSha: fixture.commits.main });
     });
 
+    it('refuses a Retry with 409 repository-busy while an operation of the project is still queued, keeping the failure', async () => {
+      const id = await createProject('Busy retry');
+      expect((await connect(id, { url: fixture.url, integrationBranch: 'release' })).status).toBe(
+        201,
+      );
+      expect((await settled(id)).failure).toMatchObject({ code: 'branch_not_found' });
+      // Test setup only: an earlier operation's job still holds the project's job id (a delayed
+      // job; this relies on the platform queue's BullMQ layout, acceptable in a test).
+      const redis = new Redis(services.config.redisUrl, { maxRetriesPerRequest: null });
+      const queue = new Queue('repository-git', { connection: redis, prefix: QUEUE_KEY_PREFIX });
+      const jobId = `repository-${id}`;
+      try {
+        await queue.add('repository-git', {}, { jobId, delay: 600_000 });
+
+        const response = await connect(id, { url: fixture.url, integrationBranch: 'release' });
+
+        expectProblem(response, 409, 'repository-busy');
+        expect(response.body).toMatchObject({
+          title: 'Repository busy',
+          detail: 'A connect or fetch of this repository is still running. Try again when it ends.',
+        });
+        expect((await getRepository(id)).body).toMatchObject({
+          state: 'failed',
+          failure: { code: 'branch_not_found' },
+        });
+      } finally {
+        await queue.remove(jobId);
+        await queue.close();
+        redis.disconnect();
+      }
+    });
+
     it('fails with repository_not_found for a missing repository', async () => {
       const id = await createProject('Missing');
       const url = fixture.url.replace(/shop\.git$/, 'missing.git');
@@ -1176,7 +1211,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
           expect(Date.now() - started).toBeLessThan(10_000);
           expectProblem(await getRepository(id), 404, 'no-repository');
           expect(await entriesOf(id)).toEqual([]);
-          // The shared job id is free: no clone-already-running 409.
+          // The shared job id is free: no repository-busy 409.
           expect((await connect(id, { url: fixture.url, integrationBranch: 'dev' })).status).toBe(
             201,
           );

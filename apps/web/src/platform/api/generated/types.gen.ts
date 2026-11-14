@@ -340,7 +340,7 @@ export type ConnectRepositoryErrors = {
      */
     404: ProblemDetails;
     /**
-     * The project already has a repository (urn:agentic-studio:problem:repository-already-connected), the remote is connected to another project (urn:agentic-studio:problem:remote-already-connected; field error on url), or an earlier clone is still finishing (urn:agentic-studio:problem:clone-already-running)
+     * The project already has a repository (urn:agentic-studio:problem:repository-already-connected), the remote is connected to another project (urn:agentic-studio:problem:remote-already-connected; field error on url), or an earlier connect or fetch is still running (urn:agentic-studio:problem:repository-busy)
      */
     409: ProblemDetails;
     /**

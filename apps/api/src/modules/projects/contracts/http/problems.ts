@@ -14,8 +14,6 @@ export const PROJECTS_PROBLEM_TYPES = {
   repositoryAlreadyConnected: 'urn:agentic-studio:problem:repository-already-connected',
   /** 409: another project holds the same remote; a field error on `url` names it. */
   remoteAlreadyConnected: 'urn:agentic-studio:problem:remote-already-connected',
-  /** 409: an earlier clone of the project is still waiting or running. */
-  cloneAlreadyRunning: 'urn:agentic-studio:problem:clone-already-running',
   /** 409: a connect or fetch of the Repository is still running. */
   repositoryBusy: 'urn:agentic-studio:problem:repository-busy',
   /** 409: the Repository has no usable Clone to fetch into; Retry (connect) makes one. */
