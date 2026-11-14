@@ -77,6 +77,15 @@ describe('classifyGitFailure', () => {
       "fatal: unable to access 'https://nope.invalid/r/': Could not resolve host: nope.invalid",
       'host_unreachable',
     ],
+    // http.followRedirects=false (Issue #69): Git's message for a redirect it did not follow.
+    [
+      "fatal: unable to access 'https://git.example.test/r.git/': The requested URL returned error: 301",
+      'redirect_refused',
+    ],
+    [
+      "fatal: unable to access 'https://git.example.test/r.git/': The requested URL returned error: 307",
+      'redirect_refused',
+    ],
     ["fatal: couldn't find remote ref refs/heads/nope", 'branch_not_found'],
     [
       'ERROR: Repository not found.\nfatal: Could not read from remote repository.',

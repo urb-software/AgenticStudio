@@ -16,15 +16,24 @@ import {
 import { ClonePaths } from './clone-paths.js';
 import { classifyGitFailure, redactGitOutput } from './git-output.js';
 import { diskUsage, GitProcessInterrupted, runGitProcess, type SizeWatch } from './git-process.js';
-import { parseRemoteUrl, sshEndpoint, type GitTransport, type RemoteUrl } from './remote-url.js';
+import { checkedAddresses, type ResolveHost, systemResolveHost } from './remote-host.js';
+import {
+  parseRemoteUrl,
+  remoteEndpoint,
+  type GitTransport,
+  type RemoteUrl,
+  type SshEndpoint,
+} from './remote-url.js';
 
 /**
- * The lowest Git that supports every mechanism the adapter relies on: `GIT_CONFIG_GLOBAL`
- * (2.32; with `GIT_CONFIG_NOSYSTEM` it isolates the host's Git configuration),
- * `--no-write-fetch-head` (2.29), `protocol.allow` / `GIT_ALLOW_PROTOCOL`,
- * `core.hooksPath`, `ls-remote --symref` and `init --template=` (all older).
+ * The lowest Git that supports every mechanism the adapter relies on:
+ * `http.curloptResolve` (2.37; pins HTTPS to the checked address, Issue #69),
+ * `GIT_CONFIG_GLOBAL` (2.32; with `GIT_CONFIG_NOSYSTEM` it isolates the host's Git
+ * configuration), `--no-write-fetch-head` (2.29), `protocol.allow` / `GIT_ALLOW_PROTOCOL`,
+ * `http.followRedirects`, `core.hooksPath`, `ls-remote --symref` and `init --template=` (all
+ * older).
  */
-export const MIN_GIT_VERSION = '2.32.0';
+export const MIN_GIT_VERSION = '2.37.0';
 
 /** Production limits (security.md §4). The adapter takes them as inputs; tests pass smaller ones. */
 export const PRODUCTION_GIT_LIMITS = {
@@ -65,9 +74,24 @@ export interface SystemGitSettings {
   log?: (message: string) => void;
   /** The user whose stale leftovers the start-up sweep may remove. Default `process.getuid()`. */
   uid?: number;
+  /**
+   * `STUDIO_GIT_ALLOW_PRIVATE_REMOTES` (Issue #69): whether remotes on loopback and private
+   * addresses are allowed. Link-local, metadata, multicast and reserved addresses never are.
+   */
+  allowPrivateRemotes: boolean;
+  /** Default: the system resolver. Tests inject one. */
+  resolveHost?: ResolveHost;
+  /**
+   * Test-only: a CA certificate file Git trusts for HTTPS, for local TLS fixture servers.
+   * The production wiring never sets it.
+   */
+  httpsCaFile?: string;
 }
 
-/** The production wiring: limits and transports pinned, file remotes only under the test-only setting. */
+/**
+ * The production wiring: limits and transports pinned, file remotes only under the test-only
+ * setting, loopback and private remotes only under `STUDIO_GIT_ALLOW_PRIVATE_REMOTES`.
+ */
 export function systemGitSettings(config: AppConfig): SystemGitSettings {
   return {
     dataDir: config.dataDir,
@@ -75,13 +99,15 @@ export function systemGitSettings(config: AppConfig): SystemGitSettings {
       ? [...PRODUCTION_TRANSPORTS, 'file']
       : PRODUCTION_TRANSPORTS,
     ...PRODUCTION_GIT_LIMITS,
+    allowPrivateRemotes: config.gitAllowPrivateRemotes,
   };
 }
 
 /**
  * Hardening applied to every Git command (security.md §4): hooks never run, credential
  * helpers and fsmonitor are off, only the allowed transports work, submodules are never
- * recursed into, LFS never smudges, and no background maintenance outlives the command.
+ * recursed into, LFS never smudges, no background maintenance outlives the command, and an
+ * HTTP redirect is never followed (it could lead past the address check, Issue #69).
  */
 function hardeningArgs(transports: readonly GitTransport[]): string[] {
   return [
@@ -98,7 +124,40 @@ function hardeningArgs(transports: readonly GitTransport[]): string[] {
     'gc.auto=0',
     'maintenance.auto=false',
     'fetch.writeCommitGraph=false',
+    'http.followRedirects=false',
   ].flatMap((setting) => ['-c', setting]);
+}
+
+/**
+ * A remote whose host was checked against the address policy (Issue #69): Git and ssh
+ * connect only to `addresses`, never to what a second lookup might return.
+ */
+interface CheckedRemote extends RemoteUrl {
+  /** `null` for a `file` remote. */
+  endpoint: SshEndpoint | null;
+  /** The allowed addresses of the host, in resolver order; empty for a `file` remote. */
+  addresses: string[];
+}
+
+/**
+ * The one checked address ssh and ssh-keyscan connect to (`HostName` takes one): the first
+ * IPv4 address, else the first. IPv4 first, because unlike ssh itself the pinned connection
+ * cannot fall back to the next address when IPv6 is not reachable.
+ */
+function sshAddress(addresses: string[]): string {
+  return addresses.find((address) => !address.includes(':')) ?? addresses[0]!;
+}
+
+/** `-c` settings that pin an https remote's host to its checked addresses (curl's resolve list). */
+function pinArgs(remote: CheckedRemote): string[] {
+  if (remote.transport !== 'https' || !remote.endpoint) return [];
+  const { host, port } = remote.endpoint;
+  // An IP-literal host is never looked up; pinning it would change nothing.
+  if (remote.addresses.length === 1 && remote.addresses[0] === host) return [];
+  const addresses = remote.addresses.map((address) =>
+    address.includes(':') ? `[${address}]` : address,
+  );
+  return ['-c', `http.curloptResolve=${host}:${port}:${addresses.join(',')}`];
 }
 
 /** Alias the supplied host key is pinned to, whatever host or port the URL names. */
@@ -181,6 +240,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly gitBinary: string;
   private readonly sshBinary: string;
   private readonly keyscanBinary: string;
+  private readonly resolveHost: ResolveHost;
   private readonly tempRoot: string;
   private readonly sizePollIntervalMs: number;
   private readonly log: (message: string) => void;
@@ -195,6 +255,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.gitBinary = settings.gitBinary ?? 'git';
     this.sshBinary = settings.sshBinary ?? 'ssh';
     this.keyscanBinary = settings.keyscanBinary ?? 'ssh-keyscan';
+    this.resolveHost = settings.resolveHost ?? systemResolveHost;
     this.tempRoot = settings.tempRoot ?? join(settings.dataDir, 'tmp');
     this.ownsTempRoot = settings.tempRoot === undefined;
     this.sizePollIntervalMs = settings.sizePollIntervalMs ?? 1000;
@@ -292,11 +353,11 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     const remote = this.parseRemote(remoteUrl, options);
     this.assertBranch(branch);
     const { stdout } = await this.guarded('ls-remote', () =>
-      this.withOperation(this.settings.fetchTimeoutMs, options, (context) =>
+      this.withOperation(this.settings.fetchTimeoutMs, options, async (context) =>
         this.gitOrFail(
           context,
           ['ls-remote', '--symref', remote.url, 'HEAD', `refs/heads/${branch}`],
-          remote,
+          await this.checkRemote(context, remote),
           options.ssh,
         ),
       ),
@@ -322,9 +383,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     if (remote.transport !== 'ssh') {
       throw new GitRequestRejectedError('Only an ssh remote has a host key to retrieve.');
     }
-    const { host, port } = sshEndpoint(remote);
     return this.guarded('ssh-keyscan', () =>
       this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+        const { endpoint, addresses } = await this.checkRemote(context, remote);
         const seconds = Math.min(
           MAX_SCAN_TIMEOUT_S,
           Math.max(1, Math.ceil((context.deadline - Date.now()) / 1000)),
@@ -333,11 +394,12 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
           '-T',
           String(seconds),
           '-p',
-          String(port),
+          String(endpoint!.port),
           '-t',
           SCANNED_KEY_TYPES,
           '--',
-          host,
+          // The checked address, never the name: ssh-keyscan would look it up again.
+          sshAddress(addresses),
         ]);
         const keys = result.stdout
           .split('\n')
@@ -381,6 +443,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             this.settings.cloneTimeoutMs,
             options,
             async (context) => {
+              const checked = await this.checkRemote(context, remote);
               await this.gitOrFail(context, ['init', '--bare', '--quiet', '--template=', partial]);
               await this.gitOrFail(context, [
                 `--git-dir=${partial}`,
@@ -388,7 +451,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
                 'HEAD',
                 `refs/heads/${branch}`,
               ]);
-              await this.fetchInto(context, partial, remote, branch, options.ssh);
+              await this.fetchInto(context, partial, checked, branch, options.ssh);
               const commit = await this.revParse(context, partial, branch);
               await rename(partial, target);
               return { commit };
@@ -424,7 +487,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             this.settings.fetchTimeoutMs,
             options,
             async (context) => {
-              await this.fetchInto(context, clone, remote, branch, options.ssh);
+              const checked = await this.checkRemote(context, remote);
+              await this.fetchInto(context, clone, checked, branch, options.ssh);
               return { commit: await this.revParse(context, clone, branch) };
             },
           );
@@ -574,6 +638,43 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
+   * Checks the remote's host against the address policy before any process reaches it
+   * (Issue #69): its addresses are resolved once, under the operation's deadline and abort
+   * signal, and every one must be allowed. Git and ssh are then pinned to them.
+   */
+  private async checkRemote(context: OperationContext, remote: RemoteUrl): Promise<CheckedRemote> {
+    const endpoint = remoteEndpoint(remote);
+    if (!endpoint) return { ...remote, endpoint, addresses: [] };
+    const addresses = await checkedAddresses(
+      endpoint.host,
+      this.settings.allowPrivateRemotes,
+      (host) => this.withinDeadline(context, this.resolveHost(host)),
+    );
+    return { ...remote, endpoint, addresses };
+  }
+
+  /** `work`, unless the operation's deadline passes (`timeout`) or it is aborted first. */
+  private async withinDeadline<T>(context: OperationContext, work: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const interrupted = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new GitOperationError('timeout')),
+        Math.max(0, context.deadline - Date.now()),
+      );
+      onAbort = () => reject(abortError());
+      if (context.signal?.aborted) onAbort();
+      context.signal?.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([work, interrupted]);
+    } finally {
+      clearTimeout(timer);
+      if (onAbort) context.signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
+  /**
    * Runs `work` with a private temporary directory and a fresh environment, under one
    * deadline (the caller's limit if shorter than the adapter's). The directory, and with
    * it any SSH key, is deleted afterwards, also on failure, timeout or abort.
@@ -626,11 +727,13 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
    * Writes the Deploy key (owner-only) and the trusted host keys into the operation's
    * private directory and returns the environment that makes Git's `ssh` use exactly
    * them: no agent, no other identity, no user or system SSH configuration, strict
-   * host-key checking.
+   * host-key checking, and a connection to the checked `address` only (`HostName`; host-key
+   * trust stays with the alias).
    */
   private async sshEnvironment(
     context: OperationContext,
     credentials: SshCredentials,
+    address: string,
   ): Promise<Record<string, string>> {
     const keyFile = join(context.dir, 'deploy_key');
     const knownHosts = join(context.dir, 'known_hosts');
@@ -651,6 +754,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     );
     await writeFile(knownHosts, lines.join(''), { mode: 0o600, flag: 'wx' });
     const sshOptions = [
+      // An IP address (digits, hex, `.` and `:`): safe on the shell command line.
+      `HostName=${address}`,
       'BatchMode=yes',
       'StrictHostKeyChecking=yes',
       `UserKnownHostsFile='${knownHosts}'`,
@@ -684,7 +789,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private async fetchInto(
     context: OperationContext,
     gitDir: string,
-    remote: RemoteUrl,
+    remote: CheckedRemote,
     branch: string,
     ssh: SshCredentials | undefined,
   ): Promise<void> {
@@ -734,19 +839,26 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     return commit;
   }
 
-  /** Runs a Git command; fails with a fixed reason and redacted detail on a non-zero exit. */
+  /**
+   * Runs a Git command, connecting to a `remote` only at its checked addresses; fails with a
+   * fixed reason and redacted detail on a non-zero exit.
+   */
   private async gitOrFail(
     context: OperationContext,
     args: string[],
-    remote?: RemoteUrl,
+    remote?: CheckedRemote,
     ssh?: SshCredentials,
     watch?: SizeWatch,
   ): Promise<{ stdout: string }> {
     const env =
       remote?.transport === 'ssh' && ssh
-        ? { ...context.env, ...(await this.sshEnvironment(context, ssh)) }
+        ? {
+            ...context.env,
+            ...(await this.sshEnvironment(context, ssh, sshAddress(remote.addresses))),
+          }
         : context.env;
-    const result = await this.git({ ...context, env }, args, watch);
+    const config = remote ? pinArgs(remote) : [];
+    const result = await this.git({ ...context, env }, [...config, ...args], watch);
     if (result.exitCode !== 0) {
       const detail = redactGitOutput(result.stderr);
       const reason = classifyGitFailure(result.stderr);
@@ -757,10 +869,13 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   private git(context: OperationContext, args: string[], watch?: SizeWatch) {
+    const caFile = this.settings.httpsCaFile
+      ? ['-c', `http.sslCAInfo=${this.settings.httpsCaFile}`]
+      : [];
     return this.run(
       context,
       this.gitBinary,
-      [...hardeningArgs(this.settings.allowedTransports), ...args],
+      [...hardeningArgs(this.settings.allowedTransports), ...caFile, ...args],
       watch,
     );
   }

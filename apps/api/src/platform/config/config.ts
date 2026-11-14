@@ -193,6 +193,8 @@ const environmentSchema = z.object({
   STUDIO_SECRETS_KEY: secretsKeySchema,
   // Test-only: adds `file` remotes to the Git adapter's transports (local fixture remotes).
   STUDIO_GIT_ALLOW_FILE_REMOTES: z.enum(['true', 'false']).default('false'),
+  // Git remotes on loopback and private addresses (Issue #69): closed unless set to true.
+  STUDIO_GIT_ALLOW_PRIVATE_REMOTES: z.enum(['true', 'false']).default('false'),
   // Git hosts trusted without asking (Issue #62): known_hosts lines; may be empty.
   STUDIO_SSH_KNOWN_HOSTS: sshKnownHostsSchema,
   NODE_ENV: z.string().optional(),
@@ -222,6 +224,11 @@ export interface AppConfig {
   dataDir: string;
   /** Test-only: whether the Git adapter also accepts `file` remotes. */
   gitAllowFileRemotes: boolean;
+  /**
+   * Whether Git remotes on loopback and private addresses are allowed (a self-hosted Git
+   * server on the LAN). Link-local and metadata addresses are refused regardless.
+   */
+  gitAllowPrivateRemotes: boolean;
   /** Trusted Git host keys (`STUDIO_SSH_KNOWN_HOSTS`); empty trusts no host without asking. */
   sshKnownHosts: SshKnownHost[];
 }
@@ -266,6 +273,7 @@ export function loadConfig(
     secretsKey: result.data.STUDIO_SECRETS_KEY,
     dataDir: result.data.STUDIO_DATA_DIR,
     gitAllowFileRemotes: result.data.STUDIO_GIT_ALLOW_FILE_REMOTES === 'true',
+    gitAllowPrivateRemotes: result.data.STUDIO_GIT_ALLOW_PRIVATE_REMOTES === 'true',
     sshKnownHosts: result.data.STUDIO_SSH_KNOWN_HOSTS,
   };
 }

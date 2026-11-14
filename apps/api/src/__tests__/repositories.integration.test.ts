@@ -120,7 +120,13 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   beforeAll(async () => {
     services = await startStudioServices();
     dataDir = await mkdtemp(join(tmpdir(), 'studio-repo-http-'));
-    services.config = { ...services.config, dataDir, gitAllowFileRemotes: true };
+    // The fixtures (silent servers, closed ports) are on 127.0.0.1: an explicit opt-in (Issue #69).
+    services.config = {
+      ...services.config,
+      dataDir,
+      gitAllowFileRemotes: true,
+      gitAllowPrivateRemotes: true,
+    };
     app = await startStudioApp(services.config);
     cookie = await signIn(app);
   });
@@ -170,6 +176,54 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       'answers 404 for the unknown project %s',
       async (id) => {
         expectProblem(await getRepository(id), 404, 'project-not-found');
+      },
+    );
+  });
+
+  describe('the remote address policy at its production default (Issue #69)', () => {
+    beforeAll(async () => {
+      await app.close();
+      app = await startStudioApp({ ...services.config, gitAllowPrivateRemotes: false });
+      cookie = await signIn(app);
+    });
+
+    afterAll(() => restart());
+
+    it.each([
+      ['https://169.254.169.254/latest/meta-data.git', /never connects to link-local/],
+      ['https://[fe80::1]/acme/shop.git', /never connects to link-local/],
+      ['https://127.0.0.1/acme/shop.git', /STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true/],
+      ['https://0x7f.1/acme/shop.git', /STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true/],
+      ['git@10.0.0.5:acme/shop.git', /STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true/],
+    ])('rejects the IP-literal URL %s with 422 and a field error on url', async (url, message) => {
+      const id = await createProject('Address policy');
+
+      const response = await connect(id, { url, integrationBranch: 'dev' });
+
+      expectProblem(response, 422);
+      expect(response.body.errors).toEqual([
+        { path: 'url', message: expect.stringMatching(/^This address is not allowed: /) },
+      ]);
+      expect(response.body.errors[0].message).toMatch(message);
+      expectProblem(await getRepository(id), 404, 'no-repository');
+    });
+
+    it.runIf(linux)(
+      'fails the clone with remote_not_allowed when the host name resolves to loopback',
+      async () => {
+        const id = await createProject('Loopback name');
+        const url = 'https://localhost:1/acme/shop.git';
+        expect((await connect(id, { url, integrationBranch: 'dev' })).status).toBe(201);
+
+        const failed = await settled(id);
+
+        expect(failed.state).toBe('failed');
+        expect(failed.failure).toEqual({
+          code: 'remote_not_allowed',
+          detail: expect.stringMatching(
+            /^localhost resolves to (127\.0\.0\.1|::1), a loopback or private address\. .*STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true/,
+          ),
+        });
       },
     );
   });

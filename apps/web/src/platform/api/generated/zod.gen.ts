@@ -55,7 +55,7 @@ export const zProjectDetailOutput = z.object({
 });
 
 /**
- * The fixed failure reason codes (Epic #55).
+ * The fixed failure reason codes (Epic #55). remote_not_allowed: the remote host is or resolves to an address Studio does not connect to (Issue #69); redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow. Later versions may add values; treat an unknown value as a generic failure.
  */
 export const zRepositoryFailureCodeOutput = z.enum([
     'auth_failed',
@@ -65,6 +65,8 @@ export const zRepositoryFailureCodeOutput = z.enum([
     'branch_not_found',
     'timeout',
     'size_limit',
+    'remote_not_allowed',
+    'redirect_refused',
     'unknown'
 ]);
 

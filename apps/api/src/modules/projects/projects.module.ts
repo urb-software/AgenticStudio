@@ -100,6 +100,7 @@ export class ProjectsModule {
           provide: CONNECT_REPOSITORY_SETTINGS,
           useFactory: (config: AppConfig): ConnectRepositorySettings => ({
             allowFileRemotes: config.gitAllowFileRemotes,
+            allowPrivateRemotes: config.gitAllowPrivateRemotes,
           }),
           inject: [APP_CONFIG],
         },

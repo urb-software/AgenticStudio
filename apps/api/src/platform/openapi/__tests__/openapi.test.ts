@@ -196,6 +196,8 @@ describe('OpenAPI document', () => {
         'branch_not_found',
         'timeout',
         'size_limit',
+        'remote_not_allowed',
+        'redirect_refused',
         'unknown',
       ],
     });

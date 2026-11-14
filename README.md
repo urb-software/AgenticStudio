@@ -93,6 +93,7 @@ cp .env.example .env
 | `STUDIO_SECRETS_KEY` | API | Required. Master key for secrets stored in PostgreSQL: 32 random bytes, base64. See [Secrets key](#secrets-key). |
 | `STUDIO_DATA_DIR` | API | Required on every platform. Absolute path of an existing, writable directory **outside the repository checkout** (e.g. `/home/you/.local/share/agentic-studio`) where Studio keeps repository data such as Clones. Outside Windows it may contain only letters, digits and `._/-` (no spaces): the SSH key path under it is passed to `ssh` on a command line. See [Repository features (Linux only)](#repository-features-linux-only). |
 | `STUDIO_SSH_KNOWN_HOSTS` | API | Optional, default empty. Git hosts trusted over SSH without asking, as known_hosts lines. See [Trusted SSH hosts](#trusted-ssh-hosts). |
+| `STUDIO_GIT_ALLOW_PRIVATE_REMOTES` | API | Default `false`. `true` lets Studio connect to Git remotes on loopback and private addresses (`127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`), e.g. a self-hosted Git server on your LAN. Link-local and cloud metadata addresses are refused regardless. See [Remote address policy](#remote-address-policy). |
 | `STUDIO_GIT_ALLOW_FILE_REMOTES` | API | Test-only. `true` lets the Git adapter use local `file://` fixture remotes. Accepted only with `NODE_ENV=test`; any other environment refuses to start. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
 | `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
@@ -101,7 +102,16 @@ The API validates its environment with Zod at start-up (`apps/api/src/platform/c
 
 ### Repository features (Linux only)
 
-Connected Repositories (Epic #55) run the system `git` binary and an SSH client under the hardening baseline of [Security](docs/engineering/security.md) §4. They work on **Linux only** (containers, CI, a VPS). On Linux the API checks at start-up that `git` 2.32.0 or later is installed and refuses to start otherwise. On other platforms, including native Windows, the API starts and everything else works; Git operations report an unsupported platform. `STUDIO_DATA_DIR` is required everywhere, so the configuration is the same on every platform.
+Connected Repositories (Epic #55) run the system `git` binary and an SSH client under the hardening baseline of [Security](docs/engineering/security.md) §4. They work on **Linux only** (containers, CI, a VPS). On Linux the API checks at start-up that `git` 2.37.0 or later is installed and refuses to start otherwise. On other platforms, including native Windows, the API starts and everything else works; Git operations report an unsupported platform. `STUDIO_DATA_DIR` is required everywhere, so the configuration is the same on every platform.
+
+### Remote address policy
+
+Studio connects only to Git remotes on public addresses unless told otherwise (Issue #69; [Security](docs/engineering/security.md) §4). Before Git or ssh starts, the remote's host is resolved and **every** address it resolves to is checked; Git and ssh then connect only to a checked address, so a second DNS answer cannot redirect them. HTTP redirects are never followed: connect with the repository's final URL.
+
+- **Always refused:** link-local addresses (`169.254.0.0/16`, `fe80::/10`, including the cloud metadata service `169.254.169.254`), other known metadata addresses (`100.100.100.200`, `192.0.0.192`, `168.63.129.16`, `fd00:ec2::254`), `0.0.0.0/8`, `::`, multicast and reserved ranges.
+- **Only with `STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true`:** loopback and private ranges, for a self-hosted Git server on your LAN.
+
+An IP-literal URL (also in numeric forms such as `0x7f.1` or `2130706433`) that the policy refuses is a field error at Connect; a host name that resolves to a refused address fails the clone with the reason `remote_not_allowed`.
 
 ### Trusted SSH hosts
 

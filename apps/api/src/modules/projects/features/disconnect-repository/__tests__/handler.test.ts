@@ -269,7 +269,7 @@ describe('DisconnectRepositoryHandler', () => {
       projects,
       git,
       jobs,
-      { allowFileRemotes: false },
+      { allowFileRemotes: false, allowPrivateRemotes: false },
       deployKeys,
       new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
         gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,

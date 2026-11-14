@@ -1,3 +1,10 @@
+import {
+  addressAllowed,
+  classifyAddress,
+  hostLiteral,
+  PRIVATE_REMOTES_SETTING,
+} from './remote-address.js';
+
 /** Longest accepted Repository URL, in characters (the Git adapter's own limit). */
 export const REPOSITORY_URL_MAX_LENGTH = 2048;
 
@@ -31,6 +38,39 @@ const SSH_SCHEMES = new Set(['ssh:', 'git+ssh:', 'ssh+git:']);
 
 function invalid(message: string): never {
   throw new InvalidRepositoryUrlError(message);
+}
+
+/** How {@link RepositoryUrl.parse} treats an IP-literal host (Issue #69). */
+export interface AddressPolicy {
+  /** `STUDIO_GIT_ALLOW_PRIVATE_REMOTES`: loopback and private addresses are allowed. */
+  allowPrivate: boolean;
+}
+
+export interface RepositoryUrlOptions {
+  /** The test-only fixture-remote setting. */
+  allowFileRemotes?: boolean;
+  /**
+   * Checks an IP-literal host against the address policy (a new URL at Connect). Without it no
+   * address is checked (reading a stored URL); the Git adapter checks every address anyway.
+   */
+  addressPolicy?: AddressPolicy;
+}
+
+/**
+ * An IP-literal host (any numeric form the resolver accepts) must be allowed by the policy;
+ * a numeric host that is no valid address is refused. Host names are checked by the Git
+ * adapter once resolved.
+ */
+function checkAddress(host: string, policy: AddressPolicy | undefined, example: string): void {
+  const literal = hostLiteral(host);
+  if (literal.kind === 'invalid') invalid(`Enter a valid host name, ${example}.`);
+  if (!policy || literal.kind !== 'address') return;
+  if (addressAllowed(literal.address, policy.allowPrivate)) return;
+  invalid(
+    classifyAddress(literal.address) === 'private'
+      ? `This address is not allowed: loopback and private addresses need ${PRIVATE_REMOTES_SETTING}=true on the Studio server.`
+      : 'This address is not allowed: Studio never connects to link-local, cloud metadata, multicast or reserved addresses.',
+  );
 }
 
 /** `path` without leading and trailing slashes; a loop, so it stays linear on any input. */
@@ -85,10 +125,15 @@ export interface SshRemote {
   port: number;
 }
 
-function parseScpLike(input: string, match: RegExpExecArray): SshRemote {
+function parseScpLike(
+  input: string,
+  match: RegExpExecArray,
+  policy: AddressPolicy | undefined,
+): SshRemote {
   const [, user = '', host = '', path = ''] = match;
   if (!SSH_USER.test(user)) invalid(`Enter a valid SSH user name, ${SSH_EXAMPLE}.`);
   if (!HOSTNAME.test(host)) invalid(`Enter a valid host name, ${SSH_EXAMPLE}.`);
+  checkAddress(host, policy, SSH_EXAMPLE);
   if (path.split('/').some((segment) => segment.startsWith('-'))) {
     invalid('A path segment must not start with "-".');
   }
@@ -113,7 +158,7 @@ export class RepositoryUrl {
     readonly ssh: SshRemote | null = null,
   ) {}
 
-  static parse(raw: string, options: { allowFileRemotes?: boolean } = {}): RepositoryUrl {
+  static parse(raw: string, options: RepositoryUrlOptions = {}): RepositoryUrl {
     const input = raw.trim();
     if (input.length === 0) invalid('Enter the repository URL.');
     if (input.length > REPOSITORY_URL_MAX_LENGTH) {
@@ -126,7 +171,10 @@ export class RepositoryUrl {
     const scheme = SCHEME.exec(input)?.[1]?.toLowerCase();
     if (!scheme) {
       const scp = SCP_LIKE.exec(input);
-      if (scp) return new RepositoryUrl(input, remoteIdentity(input)!, parseScpLike(input, scp));
+      if (scp) {
+        const ssh = parseScpLike(input, scp, options.addressPolicy);
+        return new RepositoryUrl(input, remoteIdentity(input)!, ssh);
+      }
       if (LOCAL_PATH.test(input)) {
         invalid(`Local paths are not allowed. Enter an https:// URL, ${EXAMPLE}.`);
       }
@@ -150,7 +198,7 @@ export class RepositoryUrl {
     } catch {
       return invalid(`Enter a valid https:// URL, ${EXAMPLE}.`);
     }
-    if (scheme === 'ssh') return RepositoryUrl.parseSshUrl(input, url);
+    if (scheme === 'ssh') return RepositoryUrl.parseSshUrl(input, url, options.addressPolicy);
     if (url.username !== '' || url.password !== '' || /^[^/]*\/\/[^/]*@/.test(input)) {
       invalid(
         'Remove the user name and password from the URL. Only public repositories are supported over HTTPS.',
@@ -162,6 +210,7 @@ export class RepositoryUrl {
     if (scheme === 'https' && !HOSTNAME.test(url.hostname) && !IPV6_LITERAL.test(url.hostname)) {
       invalid(`Enter a valid host name, ${EXAMPLE}.`);
     }
+    if (scheme === 'https') checkAddress(url.hostname, options.addressPolicy, EXAMPLE);
     if (scheme === 'file' && url.host !== '') invalid('A file:// URL must not name a host.');
     if (url.pathname.split('/').some((segment) => segment.startsWith('-'))) {
       invalid('A path segment must not start with "-".');
@@ -172,7 +221,11 @@ export class RepositoryUrl {
   }
 
   /** An `ssh://[user@]host[:port]/path` URL: a login name, never a password. */
-  private static parseSshUrl(input: string, url: URL): RepositoryUrl {
+  private static parseSshUrl(
+    input: string,
+    url: URL,
+    policy: AddressPolicy | undefined,
+  ): RepositoryUrl {
     // The authority (between `//` and the next `/`) holds userinfo before its last `@`; a `:`
     // in the userinfo is a password, even an empty one. Index scans: linear on any input.
     const authorityStart = input.indexOf('//') + 2;
@@ -189,6 +242,7 @@ export class RepositoryUrl {
       invalid('Remove the query or fragment from the URL.');
     }
     if (!HOSTNAME.test(url.hostname)) invalid(`Enter a valid host name, ${SSH_EXAMPLE}.`);
+    checkAddress(url.hostname, policy, SSH_EXAMPLE);
     if (url.pathname.split('/').some((segment) => segment.startsWith('-'))) {
       invalid('A path segment must not start with "-".');
     }

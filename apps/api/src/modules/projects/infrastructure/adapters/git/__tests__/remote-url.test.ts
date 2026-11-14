@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GitRequestRejectedError } from '../../../../ports/repository-git.js';
-import { parseRemoteUrl, sshEndpoint, type GitTransport } from '../remote-url.js';
+import { parseRemoteUrl, remoteEndpoint, sshEndpoint, type GitTransport } from '../remote-url.js';
 
 const PRODUCTION: GitTransport[] = ['ssh', 'https'];
 
@@ -98,4 +98,25 @@ describe('sshEndpoint', () => {
       sshEndpoint(parseRemoteUrl('https://github.com/owner/repo.git', PRODUCTION)),
     ).toThrow(GitRequestRejectedError);
   });
+});
+
+describe('remoteEndpoint (Issue #69)', () => {
+  it.each([
+    ['https://github.com/owner/repo.git', { host: 'github.com', port: 443 }],
+    ['https://git.example.test:8443/owner/repo.git', { host: 'git.example.test', port: 8443 }],
+    ['https://[::1]/owner/repo.git', { host: '::1', port: 443 }],
+    ['https://0x7f.1/owner/repo.git', { host: '127.0.0.1', port: 443 }],
+    ['ssh://git@git.example.test:2222/srv/repo.git', { host: 'git.example.test', port: 2222 }],
+    ['git@github.com:owner/repo.git', { host: 'github.com', port: 22 }],
+    ['file:///srv/repo.git', null],
+  ])('reads where %s listens', (input, endpoint) => {
+    expect(remoteEndpoint(parseRemoteUrl(input, ['ssh', 'https', 'file']))).toEqual(endpoint);
+  });
+
+  it.each(['ssh://git@256.1.1.1/srv/repo.git', 'git@08.1:owner/repo.git', 'git@1.2.3.4.5:o/r'])(
+    'refuses %s, a numeric host that is no valid address',
+    (input) => {
+      expect(() => parseRemoteUrl(input, PRODUCTION)).toThrow(GitRequestRejectedError);
+    },
+  );
 });

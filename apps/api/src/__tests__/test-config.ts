@@ -34,6 +34,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     // Nothing is written there unless a test clones; such tests pass their own directory.
     dataDir: tmpdir(),
     gitAllowFileRemotes: false,
+    // The production default: loopback and private remotes are refused. Suites whose fixtures
+    // listen on 127.0.0.1 opt in explicitly (Issue #69).
+    gitAllowPrivateRemotes: false,
     sshKnownHosts: [],
     ...overrides,
   };

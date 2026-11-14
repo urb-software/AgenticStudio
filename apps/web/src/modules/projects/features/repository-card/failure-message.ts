@@ -53,6 +53,12 @@ export function failureMessage(
       return 'The Git host asked for credentials. Only public repositories can be connected over HTTPS.';
     case 'host_key_mismatch':
       return 'The Git host presented a different host key than the one Studio trusts, so Studio did not connect. Studio never accepts a changed key on its own: if the change is expected, disconnect the repository and connect it again.';
+    // Issue #69: the remote address policy. The detail names the address and, for a loopback
+    // or private one, the setting that allows it.
+    case 'remote_not_allowed':
+      return 'Studio does not connect to this address: it is link-local, a cloud metadata service, or loopback or private without STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true. The detail below names the address.';
+    case 'redirect_refused':
+      return 'The Git host redirected Studio to another URL, and Studio does not follow redirects. Connect with the final URL of the repository.';
     case 'unknown':
       return failure.detail === INTERRUPTED
         ? `The ${operation} was interrupted, for example by a restart of Studio.`

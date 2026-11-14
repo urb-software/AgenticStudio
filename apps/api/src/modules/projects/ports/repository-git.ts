@@ -48,6 +48,10 @@ export const GIT_FAILURE_REASONS = [
   'branch_not_found',
   'timeout',
   'size_limit',
+  /** The remote host is, or resolves to, an address the policy refuses (Issue #69). */
+  'remote_not_allowed',
+  /** The remote answered with an HTTP redirect; Studio never follows one (Issue #69). */
+  'redirect_refused',
   'unknown',
 ] as const;
 

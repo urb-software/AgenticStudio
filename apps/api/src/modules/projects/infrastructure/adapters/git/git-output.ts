@@ -43,6 +43,8 @@ const REASON_PATTERNS: [GitFailureReason, RegExp][] = [
     'host_unreachable',
     /Could not resolve host|Could not resolve hostname|Connection refused|Connection timed out|Network is unreachable|No route to host|Failed to connect to|connect to host .* port \d+|Connection reset by peer|Connection closed by remote host|kex_exchange_identification|unable to access .*: (SSL|TLS|OpenSSL|gnutls)|server certificate verification failed/i,
   ],
+  // Git runs with http.followRedirects=false: a redirect ends the request with its 3xx status.
+  ['redirect_refused', /requested URL returned error: 3\d\d\b/i],
   [
     'branch_not_found',
     /couldn't find remote ref|Remote branch .* not found|fatal: invalid refspec/i,
