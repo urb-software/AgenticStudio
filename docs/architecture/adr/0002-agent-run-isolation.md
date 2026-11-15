@@ -21,7 +21,7 @@ Studio (web, API, database, secrets, repository copies) runs in containers under
 - **Two sides, separated by the operating system.** Studio runs in containers managed by the system Docker daemon, which only root controls. Agents and the agent worker run on the host as the agent user: not in the `docker` group, no passwordless `sudo`, no access to Studio's files.
 - **Rootless Docker for agents.** The agent user has its own private Docker daemon, so agents can run Compose stacks, integration and end-to-end tests without any access to the system daemon or its socket.
 - **The agent worker runs on the host as the agent user** and always calls Studio; Studio never reaches into the host. The worker's token is limited to handling runs.
-- **A working copy per run.** Each run gets its own clone, made from a per-project cache, at the exact commit Studio recorded, on a branch named for the run. The agent definition, the task and the logs sit beside the working copy, outside the repository.
+- **A working copy per run.** Each run gets its own clone, made from a per-project cache, at the exact commit Studio recorded, on a branch named for the run. The agent definition, the task and the logs sit beside the working copy, outside the repository. Working copies belong to the `executions` module, which owns Runs (operator decision, 2026-11-15): their creation, retention and removal follow the Run's state. `projects` supplies the remote and the recorded commit through its public entry point and keeps Studio's own Clones.
 - **A separate agent account on the Git host.** Agents push their own run branches and open pull requests through an account that is not the operator's, with a token limited to the managed repositories. Branch protection keeps protected branches under the operator's approval, and merge stays with the operator. Studio's Deploy keys never reach the agent.
 - **CLI hooks and permission rules are guardrails, not the security boundary.** They guard against destructive mistakes; a misled agent is assumed able to get around them, and the operating system boundary must hold without them.
 - **Runs are a sequence of non-interactive CLI steps.** Each step streams events, ends with a structured result, and can be resumed by session id. An agent question pauses the run ("waiting for operator"); the operator's answer resumes the same session.
@@ -38,10 +38,11 @@ Studio (web, API, database, secrets, repository copies) runs in containers under
 ## Consequences and accepted risks
 
 - **The agent can read what its user can read.** That includes its own CLI logins, the agent account's token and the worker's token. A misled agent could misuse or leak them; the tokens are therefore kept narrow (managed repositories only; run handling only) and revocable.
-- **Both providers share one host user.** One provider's agent can read the other provider's login. With one agent user, user permissions alone do not separate one run's working copy from another's or from another project's files; how that separation is enforced is an open decision (below). Dedicated users per provider are an upgrade path.
+- **Both providers share one host user.** One provider's agent can read the other provider's login. With one agent user, user permissions alone do not separate one run's working copy from another's or from another project's files. Dedicated users per provider are an upgrade path.
 - **A kernel vulnerability could cross the boundary.** The model relies on the kernel separating users and on rootless Docker's user namespaces. Keeping the host patched is part of the model.
 - **No production credentials may be placed on the server**, on either side of the boundary.
 - **Off-server backups are required**, so that a compromised or wiped server can be rebuilt.
+- **Runs and projects are kept apart by guardrails only (operator decision, 2026-11-15).** For the first version, cross-run and cross-project separation relies on the CLIs' hooks and permission rules. A misled agent could get around them and read or change another run's working copy or another project's files through the agent user's rights. The operator accepts that risk for the intended use: runs started only on the operator's action, on the operator's own projects, at most two at a time. Confinement inside the agent user (mount and user namespaces, or a rootless container per run) was not chosen: the agent user's own Docker daemon can mount anything that user can read, so it would bypass such confinement as soon as agents use Docker.
 - **Studio's own Git rules do not cover the agent's Git commands.** The hardened Git adapter ([Security](../../engineering/security.md) §4) serves Studio's own operations; what an agent does with Git in its working copy is limited by the agent user's rights and the agent account's token.
 
 ## Upgrade paths
@@ -49,6 +50,7 @@ Studio (web, API, database, secrets, repository copies) runs in containers under
 Each keeps the same runner interface, so the run model and Studio's side stay unchanged:
 
 - **Dedicated host users per provider**, so that one provider's agent cannot read the other's logins or working copies.
+- **Dedicated host users per project**, each with its own CLI logins, per-project cache and rootless Docker daemon. This keeps different projects apart even while agents use Docker, since each project's daemon sees only its own user's files. Runs of the same project would still share a user.
 - **Short-lived tokens for the agent account**, issued per run instead of one long-lived token.
 - **A separate machine for agent runs**, with the worker still calling Studio over the network.
 
@@ -70,9 +72,3 @@ Not decided in refinement; each blocks Ready of the stories it touches.
 - **Concurrency per project:** whether at most one run per project may be active at a time.
 - **Working-copy retention:** how long finished working copies are kept, and what removes them.
 - **The per-project cache:** where it lives and how it is kept current, given that the agent user cannot read Studio's Clones.
-- **Cross-run and cross-project isolation** ([Security](../../engineering/security.md) §9): how one run is kept from reading or writing another run's working copy or another project's files, given that all runs share the agent user. Options:
-  - A separate operating-system user per run (or per project).
-  - Per-run confinement under the agent user, such as mount and user namespaces that expose only the run's own working copy.
-  - A rootless container per run under the agent user's own Docker daemon.
-  - Guardrails only (hooks and permission rules), with the operator explicitly accepting the risk.
-- **Ownership of working copies:** which business module owns them (the run that uses them, or `projects`, which owns Git branches).

@@ -21,7 +21,7 @@ Run isolation model: [ADR 0002](../architecture/adr/0002-agent-run-isolation.md)
 
 - Each run has an **assigned project, working copy, branch, approved tool set, time/resource budget and explicit run identity**.
 - **Where runs execute.** Studio (web, API, database, secrets, repository copies) runs in containers under the system Docker daemon, which only root controls. The agent worker and the agents it starts run on the host as an ordinary user, the **agent user**: never in the `docker` group, no passwordless `sudo`, no access to Studio's files. This operating-system boundary is the security boundary.
-- **Working copy per run.** Each run works in its own clone, made from a per-project cache at the exact commit Studio recorded, on a branch named for the run; the agent definition, task and logs sit beside it, outside the repository. A working copy is an organization mechanism, **not a sandbox**. Enforce filesystem permissions and the user boundary; test path traversal and symlink escape.
+- **Working copy per run.** Each run works in its own clone, made from a per-project cache at the exact commit Studio recorded, on a branch named for the run; the agent definition, task and logs sit beside it, outside the repository. A working copy is an organization mechanism, **not a sandbox**. Enforce filesystem permissions and the user boundary between the agent user and Studio; how runs are kept apart from each other is set in [ADR 0002](../architecture/adr/0002-agent-run-isolation.md). Test path traversal and symlink escape.
 - **Docker.** The agent worker and the agents **never obtain privileged Docker host access**: no access to the system Docker daemon or its socket (`/var/run/docker.sock`), no `docker` group membership, never a privileged container. Agents may use a **rootless Docker daemon owned by the agent user** for Compose stacks, integration and end-to-end tests; it grants nothing beyond the agent user's own rights. It is separate from the `environment-controller` (§5), which manages project Preview stacks on Studio's side.
 - **The worker always calls Studio**; Studio never reaches into the host. The worker's token is limited to handling runs.
 - CLI **hooks and permission rules are guardrails** against destructive mistakes, **not the security boundary**; the user boundary must hold without them.
@@ -212,7 +212,7 @@ Also verify: a canceled or retried execution causes no duplicate irreversible ef
 - The agent user cannot reach Studio's database or Redis ports.
 - Rootless Docker works for the agent user: a Compose stack starts and stops.
 
-All runs share the agent user, so user permissions alone do not separate runs or projects; how the cross-run and cross-project checks above are enforced is an open decision in ADR 0002.
+All runs share the agent user, so user permissions alone do not separate runs or projects. For the first version the operator accepted guardrails only for that separation (ADR 0002, 2026-11-15): the cross-run and cross-project checks above show that the guardrails block ordinary attempts, not that a misled agent is contained. Dedicated host users per project are the recorded upgrade path for cross-project separation.
 
 ## 10. Security delivery gates
 
