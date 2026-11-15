@@ -213,6 +213,10 @@ Also verify: a canceled or retried execution causes no duplicate irreversible ef
 - The agent user cannot use `sudo` without a password.
 - The agent user cannot reach Studio's database or Redis ports.
 - Rootless Docker works for the agent user: a Compose stack starts and stops.
+- The agent user cannot start programs outside the Linux system or write to another operating system's drives. On WSL with default settings, interop runs Windows programs as the Windows user and the Windows drive mount is world-writable, so WSL is not an isolation boundary ([trial](../architecture/adr/0002-trial-rootless-docker.md#security-finding-wsl), 2026-11-15). The server is native Linux; a WSL host needs interop and automount disabled.
+- Container resource limits apply to the agent user's rootless Docker: the server runs cgroup v2 with systemd (under WSL's cgroup v1 no limits applied).
+
+The [rootless Docker trial](../architecture/adr/0002-trial-rootless-docker.md) (2026-11-15, WSL) showed the system socket, `sudo` and rootless Compose checks passing, and the WSL check and the resource-limit (cgroup) check failing under WSL with default settings; the server setup task (#107) runs all of them on the target server.
 
 All runs share the agent user, so user permissions alone do not separate runs or projects. For the first version the operator accepted guardrails only for that separation (ADR 0002, 2026-11-15): the cross-run and cross-project checks above show that the guardrails block ordinary attempts, not that a misled agent is contained. Dedicated host users per project are the recorded upgrade path for cross-project separation.
 
