@@ -119,7 +119,7 @@ Sequencing, exact bootstrap commands and role ownership: [Bootstrap](../engineer
 
 ## 10. Decisions intentionally deferred
 
-- Network egress policies and resource budgets. The run isolation model is decided in [ADR 0002](adr/0002-agent-run-isolation.md); its open decisions are listed there.
+- Network egress policies and resource budgets. The run isolation model is decided in [ADR 0002](adr/0002-agent-run-isolation.md); its pending inputs are listed there.
 - Outcome of the per-provider CLI terms/auth validation, provider credential handling and throttling (the CLI-only approach and its acceptance gate are decided; see [Security](../engineering/security.md) §2).
 - External identity integration (OAuth/SSO, multi-operator RBAC) and precise production domain/TLS topology; the minimal single-operator session strategy above is **not deferred**.
 - Exact scope and configuration semantics of MCP management in the first release.
