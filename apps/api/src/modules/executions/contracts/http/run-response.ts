@@ -52,6 +52,8 @@ export const runResponseSchema = z
     commits: z.array(z.object({ id: z.string(), subject: z.string() })).optional(),
     /** Whether the Working copy held uncommitted changes after the latest Run step. */
     hasUncommittedChanges: z.boolean().optional(),
+    /** Whether the Run was given its Project's Environment file when it was claimed (Issue #104). */
+    environmentFileSupplied: z.boolean(),
   })
   .meta({ id: 'Run' });
 
@@ -80,6 +82,7 @@ export function toRunResponse(run: {
     commits: { id: string; subject: string }[];
     hasUncommittedChanges: boolean;
   } | null;
+  environmentFileSupplied: boolean;
 }): RunResponse {
   return {
     id: run.id,
@@ -89,6 +92,7 @@ export function toRunResponse(run: {
     state: run.state,
     startCommit: run.startCommit,
     createdAt: run.createdAt.toISOString(),
+    environmentFileSupplied: run.environmentFileSupplied,
     ...(run.startedAt ? { startedAt: run.startedAt.toISOString() } : {}),
     ...(run.finishedAt ? { finishedAt: run.finishedAt.toISOString() } : {}),
     ...(run.failure ? { failure: { code: run.failure.code, detail: run.failure.detail } } : {}),

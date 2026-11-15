@@ -98,6 +98,17 @@ export const zVerifyRepositoryRequest = z.object({
     acceptHostKeyFingerprint: z.string().min(1).max(100).optional()
 });
 
+export const zSetEnvironmentFileRequest = z.object({
+    path: z.string().max(255),
+    content: z.string().max(65536)
+});
+
+export const zEnvironmentFileInfoOutput = z.object({
+    path: z.string(),
+    sizeBytes: z.int().gte(0).lte(9007199254740991),
+    updatedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+});
+
 export const zStartRunRequest = z.object({
     task: z.string().min(1).max(20000),
     provider: z.enum(['claude_code', 'codex'])
@@ -139,7 +150,8 @@ export const zRunOutput = z.object({
         id: z.string(),
         subject: z.string()
     })).optional(),
-    hasUncommittedChanges: z.boolean().optional()
+    hasUncommittedChanges: z.boolean().optional(),
+    environmentFileSupplied: z.boolean()
 });
 
 export const zRunListOutput = z.array(zRunOutput);
@@ -269,6 +281,32 @@ export const zVerifyRepositoryPath = z.object({
 });
 
 export const zVerifyRepositoryResponse = zRepositoryOutput;
+
+export const zRemoveEnvironmentFilePath = z.object({
+    id: z.string()
+});
+
+/**
+ * Removed (or there was none)
+ */
+export const zRemoveEnvironmentFileResponse = z.void();
+
+export const zGetEnvironmentFilePath = z.object({
+    id: z.string()
+});
+
+/**
+ * The Environment file, or null when none is set
+ */
+export const zGetEnvironmentFileResponse = zEnvironmentFileInfoOutput.nullable();
+
+export const zSetEnvironmentFileBody = zSetEnvironmentFileRequest;
+
+export const zSetEnvironmentFilePath = z.object({
+    id: z.string()
+});
+
+export const zSetEnvironmentFileResponse = zEnvironmentFileInfoOutput;
 
 export const zListProjectRunsPath = z.object({
     id: z.string()

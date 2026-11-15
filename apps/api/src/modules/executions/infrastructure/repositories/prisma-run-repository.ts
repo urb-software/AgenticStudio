@@ -7,6 +7,7 @@ import {
 import {
   ACTIVE_RUN_STATES,
   CLAIMED_RUN_STATES,
+  FINAL_RUN_STATES,
   isFinal,
   MAX_ACTIVE_RUNS,
   PROVIDERS,
@@ -45,6 +46,7 @@ const RUN_FIELDS = {
   failureCode: true,
   failureDetail: true,
   claimedBy: true,
+  environmentFileSupplied: true,
 } as const;
 
 interface RunRow {
@@ -64,6 +66,7 @@ interface RunRow {
   failureCode: string | null;
   failureDetail: string | null;
   claimedBy: string | null;
+  environmentFileSupplied: boolean;
 }
 
 const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
@@ -111,6 +114,7 @@ function toRun(row: RunRow): Run {
     failure:
       code === null ? null : { code: code as RunFailureCode, detail: row.failureDetail ?? '' },
     claimedBy: row.claimedBy,
+    environmentFileSupplied: row.environmentFileSupplied,
   };
 }
 
@@ -283,5 +287,48 @@ export class PrismaRunRepository implements RunRepository {
       },
     });
     return count;
+  }
+
+  async attachEnvironmentFile(
+    runId: string,
+    workerId: string,
+    secretRef: string,
+  ): Promise<boolean> {
+    const { count } = await this.db.run.updateMany({
+      where: { id: runId, state: 'preparing', claimedBy: workerId },
+      data: { environmentFileSupplied: true, environmentFileSecretId: secretRef },
+    });
+    return count === 1;
+  }
+
+  async findEnvironmentFileSecret(runId: string): Promise<string | null> {
+    const row = await this.db.run.findUnique({
+      where: { id: runId },
+      select: { environmentFileSecretId: true },
+    });
+    return row?.environmentFileSecretId ?? null;
+  }
+
+  async listFinalEnvironmentFileSecrets(): Promise<{ runId: string; secretRef: string }[]> {
+    const rows = await this.db.run.findMany({
+      where: { state: { in: [...FINAL_RUN_STATES] }, environmentFileSecretId: { not: null } },
+      select: { id: true, environmentFileSecretId: true },
+    });
+    return rows.map((row) => ({ runId: row.id, secretRef: row.environmentFileSecretId! }));
+  }
+
+  async clearEnvironmentFileSecret(runId: string, secretRef: string): Promise<void> {
+    await this.db.run.updateMany({
+      where: { id: runId, environmentFileSecretId: secretRef },
+      data: { environmentFileSecretId: null },
+    });
+  }
+
+  async listEnvironmentFileSecretRefs(): Promise<string[]> {
+    const rows = await this.db.run.findMany({
+      where: { environmentFileSecretId: { not: null } },
+      select: { environmentFileSecretId: true },
+    });
+    return rows.map((row) => row.environmentFileSecretId!);
   }
 }

@@ -100,6 +100,11 @@ export interface Run {
   failure: RunFailure | null;
   /** The agent worker holding it; set exactly when `preparing` or `running`. */
   claimedBy: string | null;
+  /**
+   * Whether the Run was given its Project's Environment file when it was claimed (Issue #104):
+   * a snapshot taken then; later changes to the file affect only later Runs. Never the content.
+   */
+  environmentFileSupplied: boolean;
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {

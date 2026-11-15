@@ -1,4 +1,5 @@
 import type { RunPayload } from '@agentic-studio/contracts';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -135,6 +136,8 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       runBranch: prepared.runBranch,
       startCommit: first,
       composeProjectName: `studio-run-${run.runId.replaceAll('-', '').slice(0, 12)}`,
+      // Issue #104: no file placed by Studio in this Run.
+      studioPaths: [],
     });
     expect(readdirSync(prepared.runDir).sort()).toEqual(['repo', 'run.json', 'task.md']);
     expect(prepared.env).toEqual({
@@ -457,6 +460,114 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
 
       expect((await copies.report(prepared, signal())).hasUncommittedChanges).toBe(false);
       expect(FAKE_CHANGE_FILE).toBe('FAKE_CHANGE.md');
+    });
+  });
+
+  describe('Environment file (Issue #104)', () => {
+    // A test value only.
+    const CONTENT = 'DB_PASSWORD=test-only-pw\nAPI_URL=http://localhost:3000\n';
+    const withFile = (path: string, overrides: Partial<RunPayload> = {}) =>
+      payload({ environmentFile: { path, content: CONTENT }, ...overrides });
+
+    it('writes it at its path in the Working copy, owner-only, creating parent directories', async () => {
+      const prepared = await workingCopies().prepare(withFile('config/test.env'), signal());
+
+      const file = join(prepared.repoDir, 'config', 'test.env');
+      expect(readFileSync(file, 'utf8')).toBe(CONTENT);
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(lstatSync(join(prepared.repoDir, 'config')).isDirectory()).toBe(true);
+      // Listed in the Run file, for delivery to leave it out (Issue #102).
+      expect(JSON.parse(readFileSync(join(prepared.runDir, 'run.json'), 'utf8'))).toMatchObject({
+        studioPaths: ['config/test.env'],
+      });
+    });
+
+    it("excludes it locally, never touching the repository's own ignore file", async () => {
+      const copies = workingCopies();
+      const prepared = await copies.prepare(withFile('.env'), signal());
+
+      const exclude = readFileSync(join(prepared.repoDir, '.git', 'info', 'exclude'), 'utf8');
+      expect(exclude.endsWith(`${STUDIO_EXCLUDE_SECTION}/.env\n`)).toBe(true);
+      expect(existsSync(join(prepared.repoDir, '.gitignore'))).toBe(false);
+      expect(inRepo(prepared.repoDir, ['status', '--porcelain', '--untracked-files=all'])).toBe('');
+      expect((await copies.report(prepared, signal())).hasUncommittedChanges).toBe(false);
+    });
+
+    it('stays out of what the agent commits with `git add -A`', async () => {
+      const prepared = await workingCopies().prepare(withFile('.env'), signal());
+      writeFileSync(join(prepared.repoDir, 'feature.ts'), 'export {};\n');
+
+      inRepo(prepared.repoDir, ['add', '-A']);
+      inRepo(prepared.repoDir, ['commit', '--quiet', '--no-verify', '-m', 'Add a feature']);
+
+      expect(
+        inRepo(prepared.repoDir, ['show', '--name-only', '--format=', 'HEAD']).split('\n'),
+      ).toEqual(['feature.ts']);
+      expect(inRepo(prepared.repoDir, ['ls-files', '.env'])).toBe('');
+    });
+
+    it('matches only its own path in the exclude file, glob characters and all', async () => {
+      const prepared = await workingCopies().prepare(withFile('conf/[a]*.env'), signal());
+      writeFileSync(join(prepared.repoDir, 'conf', 'a.env'), 'not placed by Studio\n');
+
+      expect(inRepo(prepared.repoDir, ['status', '--porcelain', '--untracked-files=all'])).toBe(
+        '?? conf/a.env',
+      );
+      expect(readFileSync(join(prepared.repoDir, 'conf', '[a]*.env'), 'utf8')).toBe(CONTENT);
+    });
+
+    it('fails preparation when the path is tracked at the start commit, overwriting nothing', async () => {
+      const tracked = remote.commit('Commit an env file', { '.env': 'TRACKED=1\n' });
+
+      const error = await workingCopies()
+        .prepare(withFile('.env', { startCommit: tracked }), signal())
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PreparationFailedError);
+      expect((error as PreparationFailedError).detail).toBe(
+        'Environment file path is tracked in the repository',
+      );
+    });
+
+    it('fails preparation when the path is a tracked directory', async () => {
+      const tracked = remote.commit('Add config', { 'config/app.json': '{}\n' });
+
+      await expect(
+        workingCopies().prepare(withFile('config', { startCommit: tracked }), signal()),
+      ).rejects.toThrow('Environment file path is tracked in the repository');
+    });
+
+    it('never writes through a symlink the repository puts on the path', async () => {
+      const outside = join(root, 'outside');
+      mkdirSync(outside);
+      const hostile = remote.commit('Link', {}, { config: outside });
+
+      await expect(
+        workingCopies().prepare(withFile('config/test.env', { startCommit: hostile }), signal()),
+      ).rejects.toThrow(PreparationFailedError);
+      expect(readdirSync(outside)).toEqual([]);
+    });
+
+    it('refuses an unsafe path before touching anything', async () => {
+      const run = payload({ environmentFile: { path: '../escape.env', content: CONTENT } });
+
+      await expect(workingCopies().prepare(run, signal())).rejects.toThrow(PreparationFailedError);
+      expect(existsSync(join(dataDir, 'runs', run.runId))).toBe(false);
+      expect(existsSync(join(dataDir, 'runs', 'escape.env'))).toBe(false);
+    });
+
+    it('is removed with the Working copy and kept nowhere else on the agent side', async () => {
+      const prepared = await workingCopies().prepare(withFile('.env'), signal());
+      const holding = execFileSync('grep', ['-rl', 'test-only-pw', dataDir], { encoding: 'utf8' })
+        .trim()
+        .split('\n');
+      expect(holding).toEqual([join(prepared.repoDir, '.env')]);
+
+      rmSync(prepared.runDir, { recursive: true, force: true });
+
+      expect(spawnSync('grep', ['-rl', 'test-only-pw', dataDir], { encoding: 'utf8' }).stdout).toBe(
+        '',
+      );
     });
   });
 });

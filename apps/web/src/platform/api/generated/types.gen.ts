@@ -83,6 +83,23 @@ export type VerifyRepositoryRequest = {
     acceptHostKeyFingerprint?: string;
 };
 
+export type SetEnvironmentFileRequest = {
+    /**
+     * Relative POSIX path in the repository (e.g. `.env`): no leading `/`, no `..`, `.` or empty segments, not inside `.git`, and not tracked in the repository.
+     */
+    path: string;
+    /**
+     * The file's content, UTF-8, at most 65536 bytes. Test values only: the agent can read this file. Never returned by any endpoint.
+     */
+    content: string;
+};
+
+export type EnvironmentFileInfoOutput = {
+    path: string;
+    sizeBytes: number;
+    updatedAt: string;
+};
+
 export type StartRunRequest = {
     task: string;
     provider: 'claude_code' | 'codex';
@@ -108,6 +125,7 @@ export type RunOutput = {
         subject: string;
     }>;
     hasUncommittedChanges?: boolean;
+    environmentFileSupplied: boolean;
 };
 
 export type RunListOutput = Array<RunOutput>;
@@ -522,6 +540,100 @@ export type VerifyRepositoryResponses = {
 };
 
 export type VerifyRepositoryResponse = VerifyRepositoryResponses[keyof VerifyRepositoryResponses];
+
+export type RemoveEnvironmentFileData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/environment-file';
+};
+
+export type RemoveEnvironmentFileErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RemoveEnvironmentFileError = RemoveEnvironmentFileErrors[keyof RemoveEnvironmentFileErrors];
+
+export type RemoveEnvironmentFileResponses = {
+    /**
+     * Removed (or there was none)
+     */
+    204: void;
+};
+
+export type RemoveEnvironmentFileResponse = RemoveEnvironmentFileResponses[keyof RemoveEnvironmentFileResponses];
+
+export type GetEnvironmentFileData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/environment-file';
+};
+
+export type GetEnvironmentFileErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetEnvironmentFileError = GetEnvironmentFileErrors[keyof GetEnvironmentFileErrors];
+
+export type GetEnvironmentFileResponses = {
+    /**
+     * The Environment file, or null when none is set
+     */
+    200: EnvironmentFileInfoOutput | null;
+};
+
+export type GetEnvironmentFileResponse = GetEnvironmentFileResponses[keyof GetEnvironmentFileResponses];
+
+export type SetEnvironmentFileData = {
+    body: SetEnvironmentFileRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/environment-file';
+};
+
+export type SetEnvironmentFileErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Invalid path (not a safe relative path, inside .git, or tracked in the repository) or content (over 64 KiB, not UTF-8); field errors on path or content say why
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type SetEnvironmentFileError = SetEnvironmentFileErrors[keyof SetEnvironmentFileErrors];
+
+export type SetEnvironmentFileResponses = {
+    200: EnvironmentFileInfoOutput;
+};
+
+export type SetEnvironmentFileResponse = SetEnvironmentFileResponses[keyof SetEnvironmentFileResponses];
 
 export type ListProjectRunsData = {
     body?: never;

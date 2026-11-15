@@ -27,7 +27,7 @@ const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[
  * conditional on state and holder, steps are stored only for a held `running` Run.
  */
 export class InMemoryRunRepository implements RunRepository {
-  readonly runs: (Run & { heartbeatAt: Date | null })[] = [];
+  readonly runs: (Run & { heartbeatAt: Date | null; environmentFileSecret: string | null })[] = [];
   readonly steps: { runId: string; index: number; step: RunStepRecord }[] = [];
   private sequence = 0;
 
@@ -44,6 +44,8 @@ export class InMemoryRunRepository implements RunRepository {
       claimedBy: null,
       heartbeatAt: null,
       workingCopy: null,
+      environmentFileSupplied: false,
+      environmentFileSecret: null,
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -158,9 +160,46 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(stale.length);
   }
 
-  private view(run: Run & { heartbeatAt: Date | null }): Run {
-    const { heartbeatAt, ...rest } = run;
-    void heartbeatAt; // internal: not part of a Run
+  attachEnvironmentFile(runId: string, workerId: string, secretRef: string): Promise<boolean> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || run.state !== 'preparing' || run.claimedBy !== workerId) {
+      return Promise.resolve(false);
+    }
+    Object.assign(run, { environmentFileSupplied: true, environmentFileSecret: secretRef });
+    return Promise.resolve(true);
+  }
+
+  findEnvironmentFileSecret(runId: string): Promise<string | null> {
+    return Promise.resolve(
+      this.runs.find((candidate) => candidate.id === runId)?.environmentFileSecret ?? null,
+    );
+  }
+
+  listFinalEnvironmentFileSecrets(): Promise<{ runId: string; secretRef: string }[]> {
+    return Promise.resolve(
+      this.runs
+        .filter((run) => isFinal(run.state) && run.environmentFileSecret !== null)
+        .map((run) => ({ runId: run.id, secretRef: run.environmentFileSecret! })),
+    );
+  }
+
+  clearEnvironmentFileSecret(runId: string, secretRef: string): Promise<void> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (run?.environmentFileSecret === secretRef) run.environmentFileSecret = null;
+    return Promise.resolve();
+  }
+
+  listEnvironmentFileSecretRefs(): Promise<string[]> {
+    return Promise.resolve(
+      this.runs.flatMap((run) => (run.environmentFileSecret ? [run.environmentFileSecret] : [])),
+    );
+  }
+
+  private view(run: Run & { heartbeatAt: Date | null; environmentFileSecret: string | null }): Run {
+    const { heartbeatAt, environmentFileSecret, ...rest } = run;
+    // Internal: not part of a Run.
+    void heartbeatAt;
+    void environmentFileSecret;
     return structuredClone(rest);
   }
 }

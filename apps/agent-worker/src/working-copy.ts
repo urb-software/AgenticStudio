@@ -1,12 +1,14 @@
 import {
   COMMIT_SUBJECT_MAX_LENGTH,
+  type EnvironmentFile,
+  environmentFilePathProblem,
   jsonByteLength,
   type RunPayload,
   WORKING_COPY_COMMITS_MAX,
   WORKING_COPY_REPORT_MAX_BYTES,
   type WorkingCopyReport,
 } from '@agentic-studio/contracts';
-import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import {
   GIT_TIMEOUTS,
@@ -49,6 +51,11 @@ export interface RunFile {
   runBranch: string;
   startCommit: string;
   composeProjectName: string;
+  /**
+   * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment
+   * file (#104): never committed or pushed (Issue #102). Absent in a Run file from before.
+   */
+  studioPaths?: string[];
 }
 
 /** The Working copy port of the worker loop: {@link WorkingCopies} in production. */
@@ -109,7 +116,10 @@ export const STUDIO_EXCLUDE_SECTION =
  * 3. the Working copy is a local clone of the cache (objects hardlinked: it shares the
  *    cache's history on disk), checked out at exactly the start commit on the Run branch;
  * 4. its Git identity is the Agent account's, its `origin` the Project's remote URL; no
- *    credential is written. The Task and the Run file sit beside it, outside the repository.
+ *    credential is written. The Task and the Run file sit beside it, outside the repository;
+ * 5. the Run's Environment file, if it has one (Issue #104), is written at its path in the
+ *    Working copy, owner-only, listed under Studio's section of `.git/info/exclude` and in the
+ *    Run file's `studioPaths`, so it is never committed; it goes with the Working copy.
  */
 export class WorkingCopies implements WorkingCopyPort {
   constructor(private readonly options: WorkingCopiesOptions) {}
@@ -135,6 +145,11 @@ export class WorkingCopies implements WorkingCopyPort {
         "The Project's remote is a local path; only a development or test agent worker accepts one.",
       );
     }
+    // The payload is validated already; this is the worker's own guard before any write.
+    const environmentFile = run.environmentFile;
+    if (environmentFile && environmentFilePathProblem(environmentFile.path) !== null) {
+      throw new PreparationFailedError('The Environment file path is not a safe relative path.');
+    }
 
     await assertRealDirectory(cachesDirectory(dataDir), true);
     await assertRealDirectory(runsDirectory(dataDir), true);
@@ -147,6 +162,7 @@ export class WorkingCopies implements WorkingCopyPort {
       runBranch,
       startCommit,
       composeProjectName: compose,
+      studioPaths: environmentFile ? [environmentFile.path] : [],
     };
     await writeFile(paths.runFile, `${JSON.stringify(runFile, null, 2)}\n`, {
       flag: 'wx',
@@ -190,6 +206,10 @@ export class WorkingCopies implements WorkingCopyPort {
     const exclude = posix.join(paths.repoDir, '.git', 'info', 'exclude');
     await mkdir(posix.dirname(exclude), { recursive: true });
     await appendFile(exclude, STUDIO_EXCLUDE_SECTION);
+    if (environmentFile) {
+      await this.placeEnvironmentFile(paths.repoDir, startCommit, environmentFile, signal);
+      await appendFile(exclude, `${excludePattern(environmentFile.path)}\n`);
+    }
 
     return {
       runId: run.runId,
@@ -248,6 +268,64 @@ export class WorkingCopies implements WorkingCopyPort {
       report.commits.shift();
     }
     return report;
+  }
+
+  /**
+   * Writes the Run's Environment file into the Working copy (Issue #104), owner-only (0600).
+   * Refused when the path is tracked at the start commit (a tracked file is never
+   * overwritten), or when any part of it is a symlink or not a directory (repository content
+   * is untrusted: nothing is written outside the Working copy). Missing parent directories are
+   * created inside the Working copy; the file itself is created new, never written through.
+   */
+  private async placeEnvironmentFile(
+    repoDir: string,
+    startCommit: string,
+    file: EnvironmentFile,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const options = {
+      cwd: repoDir,
+      timeoutMs: GIT_TIMEOUTS.local,
+      signal,
+      ceiling: this.options.dataDir,
+    };
+    // `<commit>:<path>` names a tracked file or directory at that path, taken literally.
+    const tracked = await this.options.git
+      .run(['rev-parse', '--verify', '--quiet', `${startCommit}:${file.path}`], options)
+      .then(() => true)
+      .catch((error: unknown) => {
+        if (error instanceof GitCommandError && error.reason === 'exit') return false;
+        throw error;
+      });
+    if (tracked) {
+      throw new PreparationFailedError('Environment file path is tracked in the repository');
+    }
+    const segments = file.path.split('/');
+    let current = repoDir;
+    for (const segment of segments.slice(0, -1)) {
+      current = posix.join(current, segment);
+      const stats = await lstat(current).catch(() => null);
+      if (!stats) {
+        await mkdir(current, { mode: 0o700 });
+      } else if (stats.isSymbolicLink() || !stats.isDirectory()) {
+        throw new PreparationFailedError(
+          'The Environment file path leads through a symlink or a file in the repository.',
+        );
+      }
+    }
+    const target = posix.join(current, segments.at(-1)!);
+    // `wx`: created exclusively, so an existing file or symlink at the path is never followed.
+    const handle = await open(target, 'wx', 0o600).catch((error: unknown) => {
+      throw new PreparationFailedError(
+        `The Environment file could not be written (${(error as NodeJS.ErrnoException).code ?? 'error'}).`,
+      );
+    });
+    try {
+      await handle.chmod(0o600);
+      await handle.writeFile(file.content, 'utf8');
+    } finally {
+      await handle.close();
+    }
   }
 
   /** Transports for talking to the Project's remote. */
@@ -353,6 +431,15 @@ export class WorkingCopies implements WorkingCopyPort {
       error instanceof GitCommandError ? `${error.message}: ${error.stderr.trim()}` : String(error);
     this.options.logger.error(`${context}: ${detail}`);
   }
+}
+
+/**
+ * The `.git/info/exclude` line that matches exactly `path` (relative, validated): anchored at
+ * the top with `/`, glob characters escaped, and trailing spaces kept (escaped).
+ */
+export function excludePattern(path: string): string {
+  const escaped = path.replace(/[*?[]/g, (character) => `\\${character}`);
+  return `/${escaped.replace(/ +$/, (spaces) => spaces.replace(/ /g, '\\ '))}`;
 }
 
 /** A subject within the protocol's limit, never ending in half a surrogate pair. */

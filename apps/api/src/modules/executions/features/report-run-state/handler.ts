@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   assertTransition,
+  isFinal,
   isRunId,
   type Run,
   type RunFailure,
@@ -15,6 +16,7 @@ import {
 } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
+import { ReleaseEnvironmentFileSnapshotsHandler } from '../release-environment-file-snapshots/handler.js';
 
 export interface ReportRunStateInput {
   runId: string;
@@ -30,7 +32,8 @@ export interface ReportRunStateInput {
 /**
  * Command (Issue #96): the agent worker holding a Run reports a change of state. Throws
  * {@link RunNotFoundError}, {@link RunNotHeldError} (another worker holds it, or nobody does)
- * or `IllegalRunTransitionError`. Wakes the Run's live log streams.
+ * or `IllegalRunTransitionError`. Wakes the Run's live log streams; a final Run's Environment
+ * file snapshot is deleted (Issue #104).
  */
 @Injectable()
 export class ReportRunStateHandler {
@@ -38,6 +41,7 @@ export class ReportRunStateHandler {
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
+    private readonly snapshots: ReleaseEnvironmentFileSnapshotsHandler,
   ) {}
 
   async execute(input: ReportRunStateInput): Promise<Run> {
@@ -59,6 +63,8 @@ export class ReportRunStateHandler {
     if (!changed) throw new RunNotHeldError();
     // Live log streams re-read the state: a final Run ends them (Issue #99).
     this.signal.notify(run.id);
+    // A final Run stores no more events: its Environment file snapshot goes (Issue #104).
+    if (isFinal(changed.state)) await this.snapshots.releaseFor(run.id);
     return changed;
   }
 }

@@ -10,6 +10,7 @@ import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/ru
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
+import { ReleaseEnvironmentFileSnapshotsHandler } from '../release-environment-file-snapshots/handler.js';
 
 /**
  * Command (Issue #96): every held Run (`preparing` or `running`) whose last heartbeat is
@@ -35,7 +36,8 @@ const MAX_SWEEP_INTERVAL_MS = 30_000;
 
 /**
  * Runs the sweep on an interval once the app has started, so a lost worker is noticed even
- * when no other worker claims. The timer is `unref`'d (it never keeps the process alive) and
+ * when no other worker claims, and releases the Environment file snapshots of final Runs
+ * (Issue #104). The timer is `unref`'d (it never keeps the process alive) and
  * cleared on shutdown; a failed sweep is logged and retried at the next tick.
  */
 @Injectable()
@@ -47,6 +49,7 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
   constructor(
     private readonly sweep: SweepLostWorkersHandler,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
+    private readonly snapshots: ReleaseEnvironmentFileSnapshotsHandler,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -66,6 +69,8 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
     try {
       const failed = await this.sweep.execute();
       if (failed > 0) this.logger.warn(`${failed} run(s) failed: their agent worker was lost.`);
+      // Environment file snapshots of Runs that ended any way (Issue #104); never throws.
+      await this.snapshots.releaseFinal();
     } catch (error) {
       this.logger.error(
         'The lost-worker sweep failed; it runs again at the next interval.',

@@ -305,7 +305,44 @@ describe('OpenAPI document', () => {
     expect(document.paths['/api/runs']?.get?.operationId).toBe('listRuns');
     expect(document.paths['/api/runs/{runId}']?.get?.operationId).toBe('getRun');
     expect(document.components?.schemas?.Run_Output).toMatchObject({
-      required: ['id', 'projectId', 'provider', 'task', 'state', 'startCommit', 'createdAt'],
+      required: [
+        'id',
+        'projectId',
+        'provider',
+        'task',
+        'state',
+        'startCommit',
+        'createdAt',
+        'environmentFileSupplied',
+      ],
+    });
+  });
+
+  it("documents a project's Environment file endpoints, none returning the content (Issue #104)", () => {
+    const document = createOpenApiDocument(app);
+
+    const path = document.paths['/api/projects/{id}/environment-file'];
+    expect(path?.get?.operationId).toBe('getEnvironmentFile');
+    expect(path?.put?.operationId).toBe('setEnvironmentFile');
+    expect(path?.delete?.operationId).toBe('removeEnvironmentFile');
+    expect(Object.keys(path?.put?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '404', '422']),
+    );
+    expect(Object.keys(path?.delete?.responses ?? {})).toEqual(
+      expect.arrayContaining(['204', '404']),
+    );
+    expect(document.components?.schemas?.EnvironmentFileInfo_Output).toMatchObject({
+      required: ['path', 'sizeBytes', 'updatedAt'],
+    });
+    expect(
+      Object.keys(
+        (document.components?.schemas?.EnvironmentFileInfo_Output as { properties: object })
+          .properties,
+      ),
+    ).toEqual(['path', 'sizeBytes', 'updatedAt']);
+    expect(document.components?.schemas?.SetEnvironmentFileRequest).toMatchObject({
+      required: ['path', 'content'],
+      additionalProperties: false,
     });
   });
 

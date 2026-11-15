@@ -14,6 +14,7 @@ import { CleanUpRepositoryHandler } from '../clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../clone-repository/handler.js';
 import { FetchCloneHandler } from '../fetch-clone/handler.js';
 import { SweepOrphanedDeployKeysHandler } from '../sweep-orphaned-deploy-keys/handler.js';
+import { SweepOrphanedEnvironmentFilesHandler } from '../sweep-orphaned-environment-files/handler.js';
 
 /** The one queue of background Git operations on Repositories (platform/queue). */
 export const REPOSITORY_QUEUE = 'repository-git';
@@ -62,7 +63,8 @@ export function repositoryJobId(projectId: string): string {
  * sweep (`onModuleInit`), which must finish before any Git job (#60 clarification 11).
  * Reconciliation fails every Repository still `connecting` or `fetching`, resumes the cleanup
  * of every Repository still `disconnecting` (`clean-up-repository`, #63), then deletes the
- * Deploy keys no Repository references (`sweep-orphaned-deploy-keys`, #76).
+ * Deploy keys no Repository references (`sweep-orphaned-deploy-keys`, #76) and the Environment
+ * file contents no project references (`sweep-orphaned-environment-files`, #104).
  */
 @Injectable()
 export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
@@ -75,6 +77,7 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     private readonly fetchClone: FetchCloneHandler,
     private readonly cleanup: CleanUpRepositoryHandler,
     private readonly orphanedKeys: SweepOrphanedDeployKeysHandler,
+    private readonly orphanedEnvironmentFiles: SweepOrphanedEnvironmentFilesHandler,
   ) {}
 
   onModuleInit(): void {
@@ -126,5 +129,6 @@ export class RepositoryJobsHandler implements RepositoryJobs, OnModuleInit {
     await this.fetchClone.reconcile();
     await this.cleanup.resumeAll();
     await this.orphanedKeys.sweep();
+    await this.orphanedEnvironmentFiles.sweep();
   }
 }

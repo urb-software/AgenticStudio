@@ -2,7 +2,8 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
-import { RUN_START_POINTS } from './contracts/index.js';
+import { RUN_ENVIRONMENT_FILES, RUN_START_POINTS } from './contracts/index.js';
+import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
 import { CleanUpRepositoryHandler } from './features/clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from './features/clone-repository/handler.js';
@@ -27,6 +28,14 @@ import { GetProjectEndpoint } from './features/get-project/endpoint.js';
 import { GetProjectHandler } from './features/get-project/handler.js';
 import { GetRepositoryEndpoint } from './features/get-repository/endpoint.js';
 import { GetRepositoryHandler } from './features/get-repository/handler.js';
+import { GetEnvironmentFileEndpoint } from './features/get-environment-file/endpoint.js';
+import { GetEnvironmentFileHandler } from './features/get-environment-file/handler.js';
+import { GetRunEnvironmentFileHandler } from './features/get-run-environment-file/handler.js';
+import { RemoveEnvironmentFileEndpoint } from './features/remove-environment-file/endpoint.js';
+import { RemoveEnvironmentFileHandler } from './features/remove-environment-file/handler.js';
+import { SetEnvironmentFileEndpoint } from './features/set-environment-file/endpoint.js';
+import { SetEnvironmentFileHandler } from './features/set-environment-file/handler.js';
+import { SweepOrphanedEnvironmentFilesHandler } from './features/sweep-orphaned-environment-files/handler.js';
 import { GetRunStartPointHandler } from './features/get-run-start-point/handler.js';
 import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
 import { ListProjectsHandler } from './features/list-projects/handler.js';
@@ -46,6 +55,7 @@ import {
   systemGitSettings,
 } from './infrastructure/adapters/git/system-git-adapter.js';
 import { PrismaProjectRepository } from './infrastructure/repositories/prisma-project-repository.js';
+import { PrismaEnvironmentFileRepository } from './infrastructure/repositories/prisma-environment-file-repository.js';
 import { REPOSITORY_JOBS } from './ports/repository-jobs.js';
 import { REPOSITORY_GIT } from './ports/repository-git.js';
 
@@ -80,7 +90,9 @@ export interface ProjectsModuleOptions {
  * the Git version and sweeps crash leftovers (`onModuleInit`) before the repository worker
  * starts (after bootstrap). Deploy keys no Repository references are deleted at start-up and
  * after a failed delete (Issue #76). Other modules get a Run's start point through the public
- * {@link RUN_START_POINTS} contract (Issue #96).
+ * {@link RUN_START_POINTS} contract (Issue #96). Each project may have one Environment file
+ * (Issue #104), its content in the secret store; `executions` reads it when a Run is claimed
+ * through the public {@link RUN_ENVIRONMENT_FILES} contract.
  */
 @Module({})
 export class ProjectsModule {
@@ -97,9 +109,13 @@ export class ProjectsModule {
         FetchRepositoryEndpoint,
         DisconnectRepositoryEndpoint,
         VerifyRepositoryEndpoint,
+        GetEnvironmentFileEndpoint,
+        SetEnvironmentFileEndpoint,
+        RemoveEnvironmentFileEndpoint,
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
+        { provide: ENVIRONMENT_FILE_REPOSITORY, useClass: PrismaEnvironmentFileRepository },
         {
           provide: REPOSITORY_GIT,
           useFactory: (config: AppConfig) =>
@@ -145,8 +161,14 @@ export class ProjectsModule {
         VerifyRepositoryHandler,
         GetRunStartPointHandler,
         { provide: RUN_START_POINTS, useExisting: GetRunStartPointHandler },
+        GetEnvironmentFileHandler,
+        SetEnvironmentFileHandler,
+        RemoveEnvironmentFileHandler,
+        SweepOrphanedEnvironmentFilesHandler,
+        GetRunEnvironmentFileHandler,
+        { provide: RUN_ENVIRONMENT_FILES, useExisting: GetRunEnvironmentFileHandler },
       ],
-      exports: [RUN_START_POINTS],
+      exports: [RUN_START_POINTS, RUN_ENVIRONMENT_FILES],
     };
   }
 }

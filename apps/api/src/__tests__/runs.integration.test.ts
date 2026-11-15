@@ -160,6 +160,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         state: 'queued',
         startCommit: project.head,
         createdAt: expect.stringMatching(ISO_8601),
+        // Issue #104: set when the Run is claimed.
+        environmentFileSupplied: false,
       });
       expect((await getRun(created.body.id)).body).toEqual(created.body);
       const projectRuns = await http()

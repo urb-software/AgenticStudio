@@ -103,6 +103,25 @@ export interface RunRepository {
    * `failed` with `failure`, released and finished at `now`; returns how many.
    */
   failStaleClaims(staleBefore: Date, failure: RunFailure, now: Date): Promise<number>;
+
+  /**
+   * Records that a `preparing` Run held by `workerId` was given its Project's Environment file
+   * (Issue #104), with the secret store's reference to its snapshot; false (nothing changed)
+   * if the Run is no longer `preparing` or held by it.
+   */
+  attachEnvironmentFile(runId: string, workerId: string, secretRef: string): Promise<boolean>;
+
+  /** The reference to the Run's Environment file snapshot, or `null` (none, or already deleted). */
+  findEnvironmentFileSecret(runId: string): Promise<string | null>;
+
+  /** The Runs in a final state that still hold an Environment file snapshot reference. */
+  listFinalEnvironmentFileSecrets(): Promise<{ runId: string; secretRef: string }[]>;
+
+  /** Forgets the Run's snapshot reference if it is still `secretRef` (after its secret is deleted). */
+  clearEnvironmentFileSecret(runId: string, secretRef: string): Promise<void>;
+
+  /** Every snapshot reference any Run holds (the orphan sweep keeps these). */
+  listEnvironmentFileSecretRefs(): Promise<string[]>;
 }
 
 /** No Run has this id. */

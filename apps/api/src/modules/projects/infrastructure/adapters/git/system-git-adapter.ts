@@ -1,3 +1,4 @@
+import { environmentFilePathProblem } from '@agentic-studio/contracts';
 import { Logger, type OnModuleInit } from '@nestjs/common';
 import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -179,6 +180,9 @@ const OPERATION_DIR_PREFIX = 'studio-git-';
 const STALE_MARGIN_MS = 5 * 60 * 1000;
 /** Git lock files at the top of a Clone that a killed process may leave behind. */
 const TOP_LEVEL_LOCK = /\.lock$/;
+
+/** A full commit id (SHA-1 or SHA-256). */
+const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 function isValidBranchName(branch: string): boolean {
   return (
@@ -526,6 +530,51 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => ({
           commit: await this.revParse(context, clone, branch),
         }));
+      }),
+    );
+  }
+
+  async isPathTracked(
+    projectId: string,
+    commit: string,
+    path: string,
+    options: GitOperationOptions = {},
+  ): Promise<boolean> {
+    this.assertSupportedPlatform();
+    if (!COMMIT_ID.test(commit)) {
+      throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    if (environmentFilePathProblem(path) !== null) {
+      throw new GitRequestRejectedError('The path is not a safe relative path.');
+    }
+    this.paths.clone(projectId);
+    return this.guarded('rev-parse', () =>
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+          const gitDir = `--git-dir=${clone}`;
+          const known = await this.git(context, [
+            gitDir,
+            'rev-parse',
+            '--verify',
+            '--quiet',
+            `${commit}^{commit}`,
+          ]);
+          if (known.exitCode !== 0) throw new GitOperationError('unknown');
+          // `<commit>:<path>` names the tracked file or directory at that path, if any; the path
+          // is everything after the commit id's colon, taken literally (no pathspec magic).
+          const entry = await this.git(context, [
+            gitDir,
+            'rev-parse',
+            '--verify',
+            '--quiet',
+            `${commit}:${path}`,
+          ]);
+          return entry.exitCode === 0;
+        });
       }),
     );
   }

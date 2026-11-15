@@ -34,6 +34,7 @@ describe('fakeScenarioOf', () => {
     ['[fake:commit] Add a file', 'commit'],
     ['[fake:dirty]', 'dirty'],
     ['[fake:secret]', 'secret'],
+    ['Print it [fake:print-env]', 'print-env'],
     ['[fake:unknown]', 'success'],
   ])('reads %j as %s', (task, scenario) => {
     expect(fakeScenarioOf(task)).toBe(scenario);

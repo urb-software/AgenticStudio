@@ -1,3 +1,4 @@
+import { runStepResultSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId, type RunWorkingCopy } from '../../domain/entities/run.js';
 import {
@@ -7,7 +8,7 @@ import {
   type RunRepository,
   type RunStepRecord,
 } from '../../domain/repositories/run-repository.js';
-import { redactJsonStrings } from '../../domain/services/log-redaction.js';
+import { redactRunStepResult } from '../../domain/services/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
 export interface ReportRunStepInput extends RunStepRecord {
@@ -20,8 +21,9 @@ export interface ReportRunStepInput extends RunStepRecord {
 /**
  * Command (Issue #96): the agent worker holding a `running` Run reports the structured result
  * of a Run step; it is stored (internal for now), and the Working copy's state it reports
- * becomes the Run's latest (Issue #98). Every string of the result is redacted before it is
- * stored, like the log (Issue #99); reads redact again for rows stored before. Returns the
+ * becomes the Run's latest (Issue #98). Its free-text fields are redacted before it is stored,
+ * like the log (Issue #99; never its enum fields, #104); reads redact again for rows stored
+ * before. Returns the
  * step's number. Throws
  * {@link RunNotFoundError} or {@link RunNotHeldError} (not running, or not held by it).
  */
@@ -40,7 +42,10 @@ export class ReportRunStepHandler {
     const index = await this.runs.appendStep(
       input.runId,
       input.workerId,
-      { kind: input.kind, result: redactJsonStrings(input.result, known) },
+      {
+        kind: input.kind,
+        result: redactRunStepResult(runStepResultSchema.parse(input.result), known),
+      },
       input.workingCopy,
     );
     if (index === null) throw new RunNotHeldError();

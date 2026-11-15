@@ -6,7 +6,8 @@ import { ClaimRunRequestDto } from './schema.js';
 
 /**
  * `POST /api/worker/runs/claim` (Issue #96), worker token only: 200 with the Run payload, or
- * 204 when no Run is eligible. The payload carries what a Run needs and nothing else.
+ * 204 when no Run is eligible. The payload carries what a Run needs and nothing else; the
+ * Project's Environment file (Issue #104) is the one secret value in it.
  */
 @WorkerController('runs')
 export class ClaimRunEndpoint {
@@ -30,6 +31,8 @@ export class ClaimRunEndpoint {
       task: run.task,
       startCommit: run.startCommit,
       repository: { remoteUrl: run.remoteUrl },
+      // Issue #104: the snapshot, to the claiming worker only; never logged.
+      ...(run.environmentFile ? { environmentFile: run.environmentFile } : {}),
     });
   }
 }

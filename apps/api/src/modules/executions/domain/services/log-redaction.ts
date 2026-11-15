@@ -1,3 +1,5 @@
+import type { RunStepResult } from '@agentic-studio/contracts';
+
 /**
  * Redaction of Run event text before it is stored (Issue #99, security.md §3), the one place
  * it is written. **Best effort:** it catches the Run's known secret values, common token
@@ -88,16 +90,37 @@ export function redactLogText(text: string, knownSecrets: readonly string[]): st
 }
 
 /**
- * `value` (JSON data, e.g. a Run step's structured result) with every string in it redacted
- * by {@link redactLogText}; keys, numbers and the shape stay as they are.
+ * A Run step's structured result (validated by the worker protocol) with its free-text fields
+ * redacted by {@link redactLogText}: the summary, the question, the pull request's title and
+ * body, and each check's name and detail. The enum fields (`outcome`, each check's `result`)
+ * are never touched, so a known value that equals one (e.g. an Environment file value `done`)
+ * cannot make the stored result invalid (#104, from the #119 review).
  */
-export function redactJsonStrings(value: unknown, knownSecrets: readonly string[]): unknown {
-  if (typeof value === 'string') return redactLogText(value, knownSecrets);
-  if (Array.isArray(value)) return value.map((item) => redactJsonStrings(item, knownSecrets));
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, redactJsonStrings(item, knownSecrets)]),
-    );
-  }
-  return value;
+export function redactRunStepResult(
+  result: RunStepResult,
+  knownSecrets: readonly string[],
+): RunStepResult {
+  const redact = (text: string) => redactLogText(text, knownSecrets);
+  return {
+    ...result,
+    summary: redact(result.summary),
+    ...(result.question === undefined ? {} : { question: redact(result.question) }),
+    ...(result.pullRequest === undefined
+      ? {}
+      : {
+          pullRequest: {
+            title: redact(result.pullRequest.title),
+            body: redact(result.pullRequest.body),
+          },
+        }),
+    ...(result.checks === undefined
+      ? {}
+      : {
+          checks: result.checks.map((check) => ({
+            ...check,
+            name: redact(check.name),
+            ...(check.detail === undefined ? {} : { detail: redact(check.detail) }),
+          })),
+        }),
+  };
 }

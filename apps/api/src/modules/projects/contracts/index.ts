@@ -23,3 +23,22 @@ export interface RunStartPoints {
   /** The start point of a Run of this project; an id that is not a UUID names no project. */
   forProject(projectId: string): Promise<RunStartPoint>;
 }
+
+/** DI token of {@link RunEnvironmentFiles}. */
+export const RUN_ENVIRONMENT_FILES = Symbol('RUN_ENVIRONMENT_FILES');
+
+/**
+ * A project's Environment file with its content (Issue #104): a secret value (test values
+ * only), for the agent worker that claimed a Run, never for an operator response or a log.
+ */
+export interface RunEnvironmentFile {
+  /** Relative POSIX path in the repository. */
+  path: string;
+  content: string;
+}
+
+/** What `projects` tells `executions` about a project's Environment file (Issue #104). */
+export interface RunEnvironmentFiles {
+  /** The project's current Environment file, or `null` when none is set. */
+  forProject(projectId: string): Promise<RunEnvironmentFile | null>;
+}

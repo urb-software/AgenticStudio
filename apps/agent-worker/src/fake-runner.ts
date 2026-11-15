@@ -1,5 +1,5 @@
 import type { RunStepResult } from '@agentic-studio/contracts';
-import { rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { GIT_TIMEOUTS, GitRunner } from './git.js';
@@ -22,10 +22,11 @@ export const FAKE_SCENARIOS = [
   'commit',
   'dirty',
   'secret',
+  'print-env',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
-const MARKER = /\[fake:([a-z]+)\]/;
+const MARKER = /\[fake:([a-z][a-z-]*)\]/;
 
 /** The scenario a Task asks for; `success` without a (known) marker. */
 export function fakeScenarioOf(task: string): FakeScenario {
@@ -66,6 +67,9 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  * - `secret` (Issue #99): prints a token-shaped string (redaction is proven end to end), then
  *   succeeds.
  * Each step streams an agent message, a command and its output, like a real agent.
+ * - `print-env` (Issue #104): prints every file Studio placed in the Working copy (the
+ *   Environment file; its paths from the Run file), as an agent could, then succeeds; the leak
+ *   test proves Studio redacts it.
  * - `crash`: the runner itself breaks (a plain error).
  * `resume` always succeeds.
  */
@@ -110,6 +114,12 @@ export class FakeRunner implements Runner {
         yield { type: 'command', text: 'printenv GITHUB_TOKEN' };
         yield { type: 'output', text: FAKE_TOKEN };
         return done();
+      case 'print-env':
+        for (const path of await studioPaths(workspace)) {
+          yield { type: 'command', text: `cat ${path}` };
+          yield { type: 'output', text: await readFile(join(workspace.repoDir, path), 'utf8') };
+        }
+        return done();
       case 'commit':
         await this.change(workspace, signal, true);
         yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}` };
@@ -144,6 +154,14 @@ export class FakeRunner implements Runner {
     signal.throwIfAborted();
     return done();
   }
+}
+
+/** The paths Studio placed in the Working copy, from the Run file beside it. */
+async function studioPaths(workspace: RunWorkspace): Promise<string[]> {
+  const runFile = JSON.parse(await readFile(join(workspace.runDir, 'run.json'), 'utf8')) as {
+    studioPaths?: string[];
+  };
+  return runFile.studioPaths ?? [];
 }
 
 function done(): RunStepResult {

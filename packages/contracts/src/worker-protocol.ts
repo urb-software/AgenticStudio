@@ -73,9 +73,70 @@ const workerIdSchema = z.uuid();
 /** Longest Repository remote URL, in characters (the Repository's own limit). */
 export const REMOTE_URL_MAX_LENGTH = 2048;
 
+/** Largest Environment file content, in UTF-8 bytes (64 KiB, Issue #104). */
+export const ENVIRONMENT_FILE_MAX_BYTES = 64 * 1024;
+
+/** Longest Environment file path, in characters. */
+export const ENVIRONMENT_FILE_PATH_MAX_LENGTH = 255;
+
+/** A C0 control character or DEL. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
+/**
+ * Why `path` cannot be an Environment file path (Issue #104), or `null` when it can: a
+ * relative POSIX path inside the repository, at most {@link ENVIRONMENT_FILE_PATH_MAX_LENGTH}
+ * characters, with no empty, `.` or `..` segment, no leading `/`, no `\`, no control
+ * character, and no `.git` segment (in any letter case). The API checks it when the operator
+ * saves the path, and the agent worker again before it writes the file. Whether the path is
+ * tracked in the repository is a separate check (it needs the repository).
+ */
+export function environmentFilePathProblem(path: string): string | null {
+  if (path.length === 0) return 'Enter a path.';
+  if (path.length > ENVIRONMENT_FILE_PATH_MAX_LENGTH) {
+    return `The path is longer than ${ENVIRONMENT_FILE_PATH_MAX_LENGTH} characters.`;
+  }
+  if (CONTROL_CHARACTER.test(path)) return 'The path contains a control character.';
+  if (path.includes('\\')) return 'Use forward slashes (/) in the path, not backslashes.';
+  if (path.startsWith('/')) {
+    return 'The path must be relative to the repository root, without a leading /.';
+  }
+  const segments = path.split('/');
+  if (segments.includes('..')) return 'The path must stay inside the repository (no ..).';
+  if (segments.includes('.')) return 'The path must not contain . segments.';
+  if (segments.includes(''))
+    return 'The path must not contain empty segments (// or a trailing /).';
+  if (segments.some((segment) => segment.toLowerCase() === '.git')) {
+    return 'The path must not be inside .git.';
+  }
+  return null;
+}
+
+/**
+ * The Run's Environment file (Issue #104): its path in the Working copy and its content, a
+ * snapshot taken when the Run was claimed. Test values only (security.md §3); the worker
+ * writes it owner-only and never commits it.
+ */
+export const environmentFileSchema = z.strictObject({
+  path: z
+    .string()
+    .max(ENVIRONMENT_FILE_PATH_MAX_LENGTH)
+    .refine((path) => environmentFilePathProblem(path) === null, {
+      message: 'The Environment file path is not a safe relative path.',
+    }),
+  content: z
+    .string()
+    .max(ENVIRONMENT_FILE_MAX_BYTES)
+    .refine((content) => new TextEncoder().encode(content).length <= ENVIRONMENT_FILE_MAX_BYTES, {
+      message: `The Environment file is larger than ${ENVIRONMENT_FILE_MAX_BYTES} bytes.`,
+    }),
+});
+export type EnvironmentFile = z.infer<typeof environmentFileSchema>;
+
 /**
  * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
- * Clone path, secret references or keys). Closed, so an extra field is an error on both sides.
+ * Clone path, secret references or keys; the Environment file's content is the one secret
+ * value, Issue #104). Closed, so an extra field is an error on both sides.
  */
 export const runPayloadSchema = z.strictObject({
   runId: z.uuid(),
@@ -89,6 +150,11 @@ export const runPayloadSchema = z.strictObject({
    * a credential. The agent worker fetches it with the agent user's own Git credentials.
    */
   repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
+  /**
+   * The Project's Environment file as it was when the Run was claimed (Issue #104), only for
+   * the worker that claimed the Run. Never logged.
+   */
+  environmentFile: environmentFileSchema.optional(),
 });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
