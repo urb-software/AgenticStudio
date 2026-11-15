@@ -45,8 +45,12 @@ class FakeWorkingCopies implements WorkingCopyPort {
     };
   }
 
+  /** When set, reading the Working copy fails. */
+  reportFailure: Error | undefined;
+
   async report(prepared: PreparedRun): Promise<WorkingCopyReport> {
     this.reported.push(prepared.runId);
+    if (this.reportFailure) throw this.reportFailure;
     return REPORT;
   }
 }
@@ -219,6 +223,35 @@ describe('AgentWorker', () => {
     expect(started).toBe(false);
   });
 
+  it("sends a crashed step's Working copy state with the failure (Issue #98)", async () => {
+    const run = payload('[fake:crash]');
+    const api = new RecordingApi([run]);
+    startWorker(api);
+
+    await until(() => api.reports().length === 2);
+
+    expect(api.reports()[1]?.[2]).toMatchObject({
+      state: 'failed',
+      failure: { code: 'unknown' },
+      workingCopy: REPORT,
+    });
+  });
+
+  it('still reports the failure when the Working copy cannot be read', async () => {
+    const run = payload('[fake:fail]');
+    const api = new RecordingApi([run]);
+    const workingCopies = new FakeWorkingCopies();
+    workingCopies.reportFailure = new Error('git status failed');
+    startWorker(api, undefined, workingCopies);
+
+    await until(() => api.reports().length === 2);
+
+    expect(api.reports()[1]?.[2]).toEqual({
+      state: 'failed',
+      failure: { code: 'agent_failed', detail: 'The fake agent failed.' },
+    });
+  });
+
   it('reports an unexpected preparation error as unknown, without its text', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
@@ -253,7 +286,12 @@ describe('AgentWorker', () => {
     expect(api.reports()[1]).toEqual([
       'state',
       run.runId,
-      { state: 'failed', failure: { code: 'agent_failed', detail: 'The fake agent failed.' } },
+      {
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: 'The fake agent failed.' },
+        // Coordinator decision on #98: what the failed step left in the Working copy.
+        workingCopy: REPORT,
+      },
     ]);
   });
 
@@ -337,7 +375,7 @@ describe('AgentWorker', () => {
 
     expect(api.reports()).toEqual([
       ['state', run.runId, { state: 'running' }],
-      ['state', run.runId, { state: 'failed', failure: SHUTDOWN_FAILURE }],
+      ['state', run.runId, { state: 'failed', failure: SHUTDOWN_FAILURE, workingCopy: REPORT }],
     ]);
     expect(SHUTDOWN_FAILURE).toEqual({ code: 'worker_lost', detail: 'worker shut down' });
     const claims = api.claims;

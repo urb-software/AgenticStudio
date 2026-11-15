@@ -14,6 +14,14 @@ import { runProcess } from './process-runner.js';
 
 /** Transports a worker's Git command may use (`protocol.allow`, `GIT_ALLOW_PROTOCOL`). */
 export const WORKER_GIT_TRANSPORTS = ['file', 'https', 'ssh'] as const;
+export type GitTransport = (typeof WORKER_GIT_TRANSPORTS)[number];
+
+/**
+ * Transports for talking to a Project's remote in production: never `file` (a local path is
+ * not a Repository; coordinator decision on #98). Local commands (the Working copy's clone of
+ * the cache) use `file`.
+ */
+export const REMOTE_GIT_TRANSPORTS: readonly GitTransport[] = ['https', 'ssh'];
 
 /** Time limits of the worker's Git commands. */
 export const GIT_TIMEOUTS = {
@@ -27,8 +35,6 @@ export const GIT_TIMEOUTS = {
 export const GIT_HARDENING: readonly string[] = [
   'core.hooksPath=/dev/null',
   'core.fsmonitor=false',
-  'protocol.allow=never',
-  ...WORKER_GIT_TRANSPORTS.map((transport) => `protocol.${transport}.allow=always`),
   'submodule.recurse=false',
   'fetch.recurseSubmodules=false',
   'filter.lfs.smudge=',
@@ -66,6 +72,8 @@ export interface GitOptions {
   signal?: AbortSignal;
   /** `GIT_CEILING_DIRECTORIES`: Git never looks for a repository above these. */
   ceiling?: string;
+  /** The transports this command may use (default: all of {@link WORKER_GIT_TRANSPORTS}). */
+  transports?: readonly GitTransport[];
 }
 
 export interface GitRunnerOptions {
@@ -104,16 +112,21 @@ export class GitRunner {
   /** Runs `git <hardening> <args>`; resolves with its standard output, rejects with {@link GitCommandError}. */
   async run(args: readonly string[], options: GitOptions): Promise<string> {
     const command = args[0] ?? '';
+    const transports = options.transports ?? WORKER_GIT_TRANSPORTS;
+    const protocols = [
+      'protocol.allow=never',
+      ...transports.map((transport) => `protocol.${transport}.allow=always`),
+    ].flatMap((setting) => ['-c', setting]);
     const result = await runProcess({
       binary: this.binary,
-      args: [...GIT_HARDENING, ...args],
+      args: [...GIT_HARDENING, ...protocols, ...args],
       cwd: options.cwd,
       env: {
         ...this.baseEnv,
         LC_ALL: 'C.UTF-8',
         GIT_TERMINAL_PROMPT: '0',
         GIT_CONFIG_NOSYSTEM: '1',
-        GIT_ALLOW_PROTOCOL: WORKER_GIT_TRANSPORTS.join(':'),
+        GIT_ALLOW_PROTOCOL: transports.join(':'),
         GIT_LFS_SKIP_SMUDGE: '1',
         GIT_NO_REPLACE_OBJECTS: '1',
         SSH_ASKPASS_REQUIRE: 'never',

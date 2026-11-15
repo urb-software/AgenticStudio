@@ -90,6 +90,8 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
         git,
         agentGitName: 'Studio Agent',
         agentGitEmail: 'agent@example.test',
+        // The fixture remote is a file:// URL: a test worker.
+        allowFileRemotes: true,
         logger,
       }),
       pollMs: 50,
@@ -327,6 +329,10 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(run).toMatchObject({
       state: 'failed',
       failure: { code: 'agent_failed', detail: 'The fake agent failed.' },
+      // Coordinator decision on #98: the failed step's Working copy state is recorded too.
+      runBranch: `agent/fake-fail-break-it-r${runId.slice(0, 8)}`,
+      commits: [],
+      hasUncommittedChanges: false,
     });
   });
 

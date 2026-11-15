@@ -23,6 +23,7 @@ export class ReportRunStateEndpoint {
         workerId: body.workerId,
         state: body.state,
         failure: body.failure ?? null,
+        workingCopy: body.workingCopy ?? null,
       });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

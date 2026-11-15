@@ -191,6 +191,13 @@ export class PrismaRunRepository implements RunRepository {
         claimedBy: held ? change.workerId : null,
         heartbeatAt: held ? change.now : null,
         ...(isFinal(change.to) ? { finishedAt: change.now } : {}),
+        ...(change.workingCopy
+          ? {
+              runBranch: change.workingCopy.runBranch,
+              commits: change.workingCopy.commits as unknown as Prisma.InputJsonValue,
+              hasUncommittedChanges: change.workingCopy.hasUncommittedChanges,
+            }
+          : {}),
       },
     });
     return count === 1 ? this.findById(change.runId) : null;

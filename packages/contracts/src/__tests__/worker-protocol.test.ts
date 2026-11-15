@@ -97,6 +97,25 @@ describe('worker requests', () => {
     expect(report({ state: 'failed', failure: { code: 'oops', detail: '' } })).toBe(false);
   });
 
+  it("carries a failed Run's Working copy state, and only with the state failed (Issue #98)", () => {
+    const workingCopy = {
+      runBranch: 'agent/x-r0b8e5c2d',
+      commits: [{ id: 'c'.repeat(40), subject: 'Half done' }],
+      hasUncommittedChanges: true,
+    };
+    const failure = { code: 'agent_failed', detail: 'exit 1' };
+    const report = (body: object) =>
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+
+    expect(report({ state: 'failed', failure, workingCopy })).toBe(true);
+    expect(report({ state: 'failed', failure })).toBe(true);
+    expect(report({ state: 'succeeded', workingCopy })).toBe(false);
+    expect(report({ state: 'running', workingCopy })).toBe(false);
+    expect(
+      report({ state: 'failed', failure, workingCopy: { ...workingCopy, commits: [{ id: 'x' }] } }),
+    ).toBe(false);
+  });
+
   it('caps a failure detail at 2000 characters', () => {
     const failure = { code: 'agent_failed', detail: 'x'.repeat(2001) };
     expect(

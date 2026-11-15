@@ -93,6 +93,7 @@ export class InMemoryRunRepository implements RunRepository {
       claimedBy: held ? change.workerId : null,
       heartbeatAt: held ? change.now : null,
       finishedAt: isFinal(change.to) ? change.now : null,
+      ...(change.workingCopy ? { workingCopy: structuredClone(change.workingCopy) } : {}),
     });
     return Promise.resolve(this.view(run));
   }

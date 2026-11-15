@@ -95,19 +95,6 @@ export const WORKER_REPORTED_STATES = [
   'failed',
 ] as const;
 
-/** `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. */
-export const reportRunStateRequestSchema = z
-  .strictObject({
-    workerId: workerIdSchema,
-    state: z.enum(WORKER_REPORTED_STATES),
-    failure: runFailureSchema.optional(),
-  })
-  .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
-    path: ['failure'],
-    message: 'A failure is reported exactly with the state failed.',
-  });
-export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
-
 /** The agent's account of one check it ran. */
 export const runCheckSchema = z.strictObject({
   name: z.string().min(1).max(200),
@@ -165,9 +152,9 @@ export const COMMIT_SUBJECT_MAX_LENGTH = 200;
 export const WORKING_COPY_REPORT_MAX_BYTES = 64 * 1024;
 
 /**
- * Largest JSON request body the API accepts (192 KiB). A maximal step report (a result of
- * {@link RUN_STEP_RESULT_MAX_BYTES}, a Working copy report of
- * {@link WORKING_COPY_REPORT_MAX_BYTES} and the envelope) stays under it.
+ * Largest JSON body of the worker's step and state reports (192 KiB); every other API route
+ * keeps 100 KiB. A maximal report (a result of {@link RUN_STEP_RESULT_MAX_BYTES}, a Working
+ * copy report of {@link WORKING_COPY_REPORT_MAX_BYTES} and the envelope) stays under it.
  */
 export const WORKER_REQUEST_MAX_BYTES = 192 * 1024;
 
@@ -193,6 +180,28 @@ export const workingCopyReportSchema = z
     message: `The Working copy report is larger than ${WORKING_COPY_REPORT_MAX_BYTES} bytes as JSON.`,
   });
 export type WorkingCopyReport = z.infer<typeof workingCopyReportSchema>;
+
+/**
+ * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
+ * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
+ * commits of a step that failed or crashed are recorded too.
+ */
+export const reportRunStateRequestSchema = z
+  .strictObject({
+    workerId: workerIdSchema,
+    state: z.enum(WORKER_REPORTED_STATES),
+    failure: runFailureSchema.optional(),
+    workingCopy: workingCopyReportSchema.optional(),
+  })
+  .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
+    path: ['failure'],
+    message: 'A failure is reported exactly with the state failed.',
+  })
+  .refine((report) => report.workingCopy === undefined || report.state === 'failed', {
+    path: ['workingCopy'],
+    message: 'A Working copy state comes with a step report, or with the state failed.',
+  });
+export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 
 /** `POST /api/worker/runs/:runId/steps` body: the step's result and the Working copy's state. */
 export const reportRunStepRequestSchema = z.strictObject({

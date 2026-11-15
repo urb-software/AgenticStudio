@@ -48,6 +48,8 @@ const worker = new AgentWorker({
     git,
     agentGitName: config.agentGitName,
     agentGitEmail: config.agentGitEmail,
+    // Local (file) remotes only for a development or test worker (coordinator decision, #98).
+    allowFileRemotes: config.environment !== 'production',
     logger,
   }),
   pollMs: config.pollMs,

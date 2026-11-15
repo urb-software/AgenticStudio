@@ -435,6 +435,58 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await reportStep(run.id, { ...result, summary: `é${result.summary.slice(1)}` }),
         400,
       );
+      // A failure report with the same Working copy report fits too (coordinator decision 1).
+      expect(
+        (
+          await report(run.id, {
+            state: 'failed',
+            failure: { code: 'agent_failed', detail: 'd'.repeat(2000) },
+            workingCopy,
+          })
+        ).status,
+      ).toBe(204);
+    });
+
+    it('keeps the 100 KiB body limit on every other route (coordinator decision 2)', async () => {
+      const big = 'x'.repeat(110 * 1024);
+      const login = await http()
+        .post('/api/auth/login')
+        .set({ Origin: STUDIO_ORIGIN, 'Content-Type': 'application/json' })
+        .send(JSON.stringify({ password: big }));
+      expect(login.status).toBe(413);
+      const claimed = await http()
+        .post('/api/worker/runs/claim')
+        .set({ Authorization: `Bearer ${WORKER_TOKEN}`, 'Content-Type': 'application/json' })
+        .send(JSON.stringify({ workerId: W1, padding: big }));
+      expect(claimed.status).toBe(413);
+      const project = await readyProject('Shop');
+      const started = await http()
+        .post(`/api/projects/${project.id}/runs`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie, 'Content-Type': 'application/json' })
+        .send(JSON.stringify({ task: big, provider: 'codex' }));
+      expect(started.status).toBe(413);
+    });
+
+    it("records a failed Run's Working copy state from the failure report (coordinator decision 1)", async () => {
+      const project = await readyProject('Shop');
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      const workingCopy = {
+        runBranch: WORKING_COPY.runBranch,
+        commits: [{ id: 'e'.repeat(40), subject: 'Half done' }],
+        hasUncommittedChanges: true,
+      };
+
+      const failed = await report(run.id, {
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: 'The agent exited with code 1.' },
+        workingCopy,
+      });
+
+      expect(failed.status).toBe(204);
+      expect((await getRun(run.id)).body).toMatchObject({ state: 'failed', ...workingCopy });
+      expectProblem(await report(run.id, { state: 'succeeded', workingCopy }), 400);
     });
 
     it('fails a Run during preparation', async () => {

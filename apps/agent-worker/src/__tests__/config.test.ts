@@ -35,6 +35,7 @@ describe('loadWorkerConfig', () => {
       pollMs: 5000,
       heartbeatMs: 10_000,
       requestTimeoutMs: 30_000,
+      environment: 'production',
       dataDir: '/var/lib/studio-agent',
       agentGitName: 'Studio Agent',
       agentGitEmail: 'agent@example.test',
@@ -42,6 +43,15 @@ describe('loadWorkerConfig', () => {
       retentionMaxPerProject: 10,
     });
   });
+
+  it.each(['development', 'test', 'production'] as const)(
+    'reads the worker environment %s',
+    (environment) => {
+      expect(loadWorkerConfig({ ...env, STUDIO_WORKER_ENVIRONMENT: environment })).toMatchObject({
+        environment,
+      });
+    },
+  );
 
   it('reads the retention settings (Issue #98)', () => {
     expect(
@@ -72,6 +82,11 @@ describe('loadWorkerConfig', () => {
       'a too short request timeout',
       { ...env, STUDIO_WORKER_REQUEST_TIMEOUT_MS: '10' },
       /STUDIO_WORKER_REQUEST_TIMEOUT_MS/,
+    ],
+    [
+      'an unknown environment',
+      { ...env, STUDIO_WORKER_ENVIRONMENT: 'prod' },
+      /STUDIO_WORKER_ENVIRONMENT/,
     ],
     ['no data directory', { ...env, STUDIO_WORKER_DATA_DIR: undefined }, /STUDIO_WORKER_DATA_DIR/],
     [

@@ -8,7 +8,14 @@ import {
 } from '@agentic-studio/contracts';
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
-import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from './git.js';
+import {
+  GIT_TIMEOUTS,
+  GitCommandError,
+  type GitRunner,
+  type GitTransport,
+  REMOTE_GIT_TRANSPORTS,
+  WORKER_GIT_TRANSPORTS,
+} from './git.js';
 import {
   cacheDirectory,
   cachesDirectory,
@@ -71,8 +78,16 @@ export interface WorkingCopiesOptions {
   /** The Agent account's Git identity, set in each Working copy. */
   agentGitName: string;
   agentGitEmail: string;
+  /**
+   * Whether a Project's remote may be a local path (`file://`, the fixture remotes of tests):
+   * only a development or test worker (`STUDIO_WORKER_ENVIRONMENT`) allows it.
+   */
+  allowFileRemotes: boolean;
   logger: WorkingCopyLogger;
 }
+
+/** An https or SSH remote (URL or scp-like `user@host:path`); anything else is local. */
+const NETWORK_REMOTE = /^(?:https:\/\/|ssh:\/\/|git\+ssh:\/\/|ssh\+git:\/\/|[^@/:\s]+@[^@/:\s]+:)/i;
 
 const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
@@ -113,6 +128,11 @@ export class WorkingCopies implements WorkingCopyPort {
     const remoteUrl = run.repository.remoteUrl;
     if (remoteUrl.startsWith('-')) {
       throw new PreparationFailedError("The Project's remote URL is not valid.");
+    }
+    if (!this.options.allowFileRemotes && !NETWORK_REMOTE.test(remoteUrl)) {
+      throw new PreparationFailedError(
+        "The Project's remote is a local path; only a development or test agent worker accepts one.",
+      );
     }
 
     await mkdir(cachesDirectory(dataDir), { recursive: true, mode: 0o700 });
@@ -229,6 +249,11 @@ export class WorkingCopies implements WorkingCopyPort {
     return report;
   }
 
+  /** Transports for talking to the Project's remote. */
+  private get remoteTransports(): readonly GitTransport[] {
+    return this.options.allowFileRemotes ? WORKER_GIT_TRANSPORTS : REMOTE_GIT_TRANSPORTS;
+  }
+
   /**
    * Creates the cache, or refreshes it. It is discarded and rebuilt only when its remote
    * differs (or it has none, i.e. it is not a usable cache); a failed refresh keeps it, so a
@@ -241,6 +266,7 @@ export class WorkingCopies implements WorkingCopyPort {
       timeoutMs: GIT_TIMEOUTS.network,
       signal,
       ceiling: dataDir,
+      transports: this.remoteTransports,
     };
     const current = await git
       .run(['config', '--get', 'remote.origin.url'], {
@@ -278,7 +304,11 @@ export class WorkingCopies implements WorkingCopyPort {
         .catch(() => false);
     if (await present()) return;
     await git
-      .run(['fetch', '--quiet', 'origin', commit], { ...options, timeoutMs: GIT_TIMEOUTS.network })
+      .run(['fetch', '--quiet', 'origin', commit], {
+        ...options,
+        timeoutMs: GIT_TIMEOUTS.network,
+        transports: this.remoteTransports,
+      })
       .catch(() => undefined);
     signal.throwIfAborted();
     if (await present()) return;

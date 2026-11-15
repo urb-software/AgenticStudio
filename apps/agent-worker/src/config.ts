@@ -3,6 +3,10 @@ import { z } from 'zod';
 /** Shortest accepted worker token; the API applies the same rule (Issue #96). */
 export const WORKER_TOKEN_MIN_LENGTH = 32;
 
+/** Where the worker is deployed (the same setting as #101's): production unless said otherwise. */
+export const WORKER_ENVIRONMENTS = ['production', 'development', 'test'] as const;
+export type WorkerEnvironment = (typeof WORKER_ENVIRONMENTS)[number];
+
 const intervalMs = (fallback: number) =>
   z.coerce.number().int().min(100).max(600_000).default(fallback);
 
@@ -22,6 +26,8 @@ const environmentSchema = z.object({
   STUDIO_WORKER_HEARTBEAT_MS: intervalMs(10_000),
   // Longest wait for one call to the Studio API before it is abandoned.
   STUDIO_WORKER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(30_000),
+  // Production unless said otherwise; only development and test accept a local (file) remote.
+  STUDIO_WORKER_ENVIRONMENT: z.enum(WORKER_ENVIRONMENTS).default('production'),
   // Issue #98: where the worker keeps the per-project caches and the Runs' directories.
   STUDIO_WORKER_DATA_DIR: z
     .string({ error: 'is required: an absolute directory path' })
@@ -69,6 +75,8 @@ export interface WorkerConfig {
   heartbeatMs: number;
   /** Timeout of one call to the Studio API. */
   requestTimeoutMs: number;
+  /** Where the worker is deployed; only development and test accept file remotes. */
+  environment: WorkerEnvironment;
   /** Absolute directory of the per-project caches and the Runs' directories (Issue #98). */
   dataDir: string;
   /** The Agent account's Git identity, set in each Working copy. */
@@ -116,6 +124,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     pollMs: result.data.STUDIO_WORKER_POLL_MS,
     heartbeatMs: result.data.STUDIO_WORKER_HEARTBEAT_MS,
     requestTimeoutMs: result.data.STUDIO_WORKER_REQUEST_TIMEOUT_MS,
+    environment: result.data.STUDIO_WORKER_ENVIRONMENT,
     dataDir: result.data.STUDIO_WORKER_DATA_DIR,
     agentGitName: result.data.STUDIO_AGENT_GIT_NAME,
     agentGitEmail: result.data.STUDIO_AGENT_GIT_EMAIL,

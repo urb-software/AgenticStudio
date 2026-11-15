@@ -137,6 +137,8 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
     STUDIO_WORKER_DATA_DIR: dataDir,
     STUDIO_AGENT_GIT_NAME: 'Studio Agent',
     STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
+    // The fixture remote is a file:// URL, which only a development or test worker accepts.
+    STUDIO_WORKER_ENVIRONMENT: 'test',
   });
 
   afterEach(async () => {

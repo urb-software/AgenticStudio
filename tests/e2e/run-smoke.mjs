@@ -315,6 +315,8 @@ async function main() {
         STUDIO_WORKER_DATA_DIR: join(scratch, 'agent-worker-data'),
         STUDIO_AGENT_GIT_NAME: 'Smoke Agent',
         STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
+        // The fixture Repositories are file:// remotes: a test worker accepts them (#98).
+        STUDIO_WORKER_ENVIRONMENT: 'test',
       },
       { clean: true },
     );

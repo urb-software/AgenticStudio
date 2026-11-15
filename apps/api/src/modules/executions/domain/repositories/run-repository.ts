@@ -19,6 +19,8 @@ export interface ClaimedRunChange {
   to: RunState;
   /** Exactly when `to` is `failed`. */
   failure: RunFailure | null;
+  /** When set, becomes the Run's latest Working copy state (a failed Run, Issue #98). */
+  workingCopy?: RunWorkingCopy | null;
   now: Date;
 }
 

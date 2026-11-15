@@ -3,6 +3,7 @@ import {
   type RunPayload,
   type RunStepResult,
   runStepResultSchema,
+  type WorkingCopyReport,
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AgentFailedError, drainRunStep, type Runner } from './runner.js';
@@ -29,6 +30,9 @@ export interface AgentWorkerOptions {
   heartbeatMs: number;
   logger: WorkerLogger;
 }
+
+/** Longest wait for the Working copy's state that goes with a failure report. */
+const FAILURE_REPORT_TIMEOUT_MS = 30_000;
 
 /** The failure reported for the Run being carried when the worker shuts down (Issue #96). */
 export const SHUTDOWN_FAILURE: RunFailure = { code: 'worker_lost', detail: 'worker shut down' };
@@ -102,6 +106,7 @@ export class AgentWorker {
     this.current = abort;
     this.currentRunId = run.runId;
     let lost = false;
+    let prepared: PreparedRun | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
     const heartbeats = setInterval(() => {
       api.heartbeat(run.runId, this.shutdown.signal).catch((error: unknown) => {
@@ -118,7 +123,7 @@ export class AgentWorker {
       if (this.stopping) abort.abort(new Error('worker shut down'));
       abort.signal.throwIfAborted();
       const signal = this.shutdown.signal;
-      const prepared = await this.options.workingCopies.prepare(run, abort.signal);
+      prepared = await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
       await api.reportState(run.runId, { state: 'running' }, signal);
       const result = await this.executeStart(run, prepared, abort.signal);
@@ -132,7 +137,7 @@ export class AgentWorker {
       );
       logger.info(`Run ${run.runId} reported: ${result.outcome}.`);
     } catch (error) {
-      await this.reportFailure(run, lost ? new RunLostError() : error);
+      await this.reportFailure(run, lost ? new RunLostError() : error, prepared);
     } finally {
       clearInterval(heartbeats);
       this.current = undefined;
@@ -155,7 +160,11 @@ export class AgentWorker {
     return parsed.data;
   }
 
-  private async reportFailure(run: RunPayload, error: unknown): Promise<void> {
+  private async reportFailure(
+    run: RunPayload,
+    error: unknown,
+    prepared: PreparedRun | undefined,
+  ): Promise<void> {
     const { api, logger } = this.options;
     if (isRunLost(error) || error instanceof RunLostError) {
       logger.error(`Run ${run.runId} is no longer held by this worker; dropping it.`);
@@ -176,10 +185,35 @@ export class AgentWorker {
     try {
       // Not tied to the shutdown signal: on stop this is the report that must still go out
       // (bounded by the request timeout).
-      await api.reportState(run.runId, { state: 'failed', failure });
+      // What the failed or crashed step left in the Working copy (coordinator decision on #98),
+      // when it can be read; the failure is reported either way.
+      const workingCopy = prepared ? await this.readWorkingCopy(run, prepared) : undefined;
+      await api.reportState(run.runId, {
+        state: 'failed',
+        failure,
+        ...(workingCopy ? { workingCopy } : {}),
+      });
       logger.info(`Run ${run.runId} reported: failed (${failure.code}).`);
     } catch (reportError) {
       logger.error(`Reporting run ${run.runId} as failed failed: ${describe(reportError)}`);
+    }
+  }
+
+  /** The Working copy's state for a failure report, or `undefined` if it cannot be read in time. */
+  private async readWorkingCopy(
+    run: RunPayload,
+    prepared: PreparedRun,
+  ): Promise<WorkingCopyReport | undefined> {
+    try {
+      return await this.options.workingCopies.report(
+        prepared,
+        AbortSignal.timeout(FAILURE_REPORT_TIMEOUT_MS),
+      );
+    } catch (error) {
+      this.options.logger.error(
+        `Reading the Working copy of run ${run.runId} failed: ${describe(error)}`,
+      );
+      return undefined;
     }
   }
 

@@ -51,11 +51,13 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  function workingCopies(gitEnv: Record<string, string> = { PATH: env.PATH!, HOME: home }) {
+  /** A test worker: its fixture remotes are file:// URLs (allowed outside production only). */
+  function workingCopies(allowFileRemotes = true) {
     return new WorkingCopies({
       dataDir,
-      git: new GitRunner({ env: gitEnv }),
+      git: new GitRunner({ env: { PATH: env.PATH!, HOME: home } }),
       ...AGENT,
+      allowFileRemotes,
       logger: { error: (message) => errors.push(message) },
     });
   }
@@ -251,6 +253,36 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       expect(branch).toMatch(/^agent\/fix-the-login-bug-r[0-9a-f]{8}$/);
       expect(git(root, ['check-ref-format', '--branch', branch], env)).toBe(branch);
     }
+  });
+
+  it('refuses a local remote in a production worker, fetching nothing (coordinator decision 3)', async () => {
+    for (const remoteUrl of [remote.url, remote.url.slice('file://'.length), '../shop.git']) {
+      const failure = await workingCopies(false)
+        .prepare(payload({ repository: { remoteUrl } }), signal())
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(PreparationFailedError);
+      expect((failure as PreparationFailedError).detail).toBe(
+        "The Project's remote is a local path; only a development or test agent worker accepts one.",
+      );
+    }
+    expect(existsSync(cacheDir())).toBe(false);
+  });
+
+  it('refuses the file transport for the remote in production even behind an https-looking URL', async () => {
+    // The agent user's own Git configuration could rewrite an https URL to a local path; the
+    // transport allow-list still refuses it.
+    writeFileSync(
+      join(home, '.gitconfig'),
+      `[url "${remote.url}"]\n\tinsteadOf = https://git.example.test/acme/shop.git\n`,
+    );
+
+    await expect(
+      workingCopies(false).prepare(
+        payload({ repository: { remoteUrl: 'https://git.example.test/acme/shop.git' } }),
+        signal(),
+      ),
+    ).rejects.toThrow(/fetching the Project's repository/);
   });
 
   it('refuses a crafted identifier before touching anything', async () => {
