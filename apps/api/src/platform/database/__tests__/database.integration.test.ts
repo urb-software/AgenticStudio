@@ -63,11 +63,13 @@ describe('database DI against a fresh PostgreSQL', () => {
     // Evidence for review finding 1 on #111: printed in the CI log.
     console.info(`prisma migrate diff (database -> schema):\n${script.trim() || '(empty)'}`);
 
-    // CHECK constraints are invisible to Prisma; the only drift it may propose is dropping the
-    // partial index, which the migration author must delete from a generated migration.
-    expect(
-      statements.filter((line) => line !== 'DROP INDEX "runs_one_active_per_project_key";'),
-    ).toEqual([]);
+    // Observed on CI (PR #112): Prisma proposes neither dropping the partial index nor any CHECK
+    // constraint. Its only drift is re-asserting every `dbgenerated("now()")` column default
+    // (`SET DEFAULT now()`), a no-op present since the baseline, which is left out here.
+    const noOpDefault = /^(ALTER TABLE "\w+" )?ALTER COLUMN "\w+" SET DEFAULT now\(\)[,;]$/;
+    expect(statements.filter((line) => !noOpDefault.test(line))).toEqual([]);
+    expect(script).not.toContain('runs_one_active_per_project_key');
+    expect(script).not.toMatch(/DROP|CONSTRAINT/);
   });
 
   it('round-trips a query through the DI-provided client', async () => {
