@@ -290,6 +290,49 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expectNoContent(await http().get(`/api/projects/${projectId}/runs`).set('Cookie', cookie));
     });
 
+    it('carries the file in the claim only: no other worker route, and no other worker, gets it', async () => {
+      const projectId = await readyProject();
+      await put(projectId, { path: '.env', content: CONTENT });
+      const runId = await startRun(projectId);
+      const W2 = randomUUID();
+      expect((await worker('claim', { workerId: W1 })).body.environmentFile).toBeDefined();
+
+      const responses = [
+        // Another worker asking for work gets nothing: the Run is held.
+        await worker('claim', { workerId: W2 }),
+        await worker(`${runId}/heartbeat`, { workerId: W1 }),
+        await worker('states', { workerId: W1, runIds: [runId] }),
+        await worker(`${runId}/state`, { workerId: W1, state: 'running' }),
+        await worker(`${runId}/events`, {
+          workerId: W1,
+          events: [
+            { seq: 1, at: new Date().toISOString(), stepIndex: 1, kind: 'output', text: 'x' },
+          ],
+        }),
+        await worker(`${runId}/steps`, {
+          workerId: W1,
+          kind: 'start',
+          result: { outcome: 'done', summary: 'Done.' },
+          workingCopy: {
+            runBranch: 'agent/x-r0b8e5c2d',
+            commits: [],
+            hasUncommittedChanges: false,
+          },
+        }),
+        await http()
+          .post('/api/worker/status')
+          .set('Authorization', `Bearer ${WORKER_TOKEN}`)
+          .send({ workerId: W2, runner: 'cli', providers: { claude_code: true, codex: true } }),
+      ];
+
+      expect(responses[0]!.status).toBe(204);
+      for (const response of responses) {
+        expect(response.status).toBeLessThan(300);
+        expectNoContent(response);
+        expect(response.text ?? '').not.toContain('environmentFile');
+      }
+    });
+
     it('supplies nothing to a Run of a project without a file', async () => {
       const projectId = await readyProject();
       const runId = await startRun(projectId);

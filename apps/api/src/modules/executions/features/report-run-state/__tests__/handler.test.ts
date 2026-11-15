@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { IllegalRunTransitionError, type Run } from '../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError, RunNotHeldError } from '../../../domain/repositories/run-repository.js';
-import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
-import { ReleaseEnvironmentFileSnapshotsHandler } from '../../release-environment-file-snapshots/handler.js';
 import { ReportRunStateHandler, type ReportRunStateInput } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -18,7 +16,8 @@ describe('ReportRunStateHandler', () => {
   let handler: ReportRunStateHandler;
   let run: Run;
   let notified: string[];
-  let secrets: InMemorySecretStore;
+  /** The Runs whose Environment file snapshot the handler released (Issue #104). */
+  let released: string[];
 
   const report = (input: Partial<ReportRunStateInput>) =>
     handler.execute({ runId: run.id, workerId: WORKER, state: 'running', failure: null, ...input });
@@ -26,12 +25,15 @@ describe('ReportRunStateHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     notified = [];
-    secrets = new InMemorySecretStore();
+    released = [];
     handler = new ReportRunStateHandler(
       runs,
       { now: () => T1 },
       { notify: (runId) => notified.push(runId), subscribe: () => () => undefined },
-      new ReleaseEnvironmentFileSnapshotsHandler(runs, secrets),
+      {
+        releaseFor: (runId) => Promise.resolve(void released.push(runId)),
+        releaseFinal: () => Promise.resolve(),
+      },
       { forRun: () => Promise.resolve(['test-only-known']) },
     );
     await runs.add({
@@ -64,22 +66,13 @@ describe('ReportRunStateHandler', () => {
     });
   });
 
-  it('keeps the Environment file snapshot while the Run goes on and deletes it once final (Issue #104)', async () => {
-    const snapshot = await secrets.put('A=test-only-value', {
-      owner: 'executions.run-environment-file',
-    });
-    expect(
-      await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: snapshot }),
-    ).toBe(true);
-
+  it("releases the Run's Environment file snapshot once it is final, not before (Issue #104)", async () => {
     await report({ state: 'running' });
-    expect(secrets.values.has(snapshot)).toBe(true);
-    await report({ state: 'succeeded' });
+    expect(released).toEqual([]);
 
-    expect(secrets.values.has(snapshot)).toBe(false);
-    expect(await runs.findEnvironmentFileSecret(run.id)).toBeNull();
-    // What the Run records stays: it was supplied a file.
-    expect((await runs.findById(run.id))?.environmentFileSupplied).toBe(true);
+    await report({ state: 'succeeded', delivery: { outcome: 'none' } });
+
+    expect(released).toEqual([run.id]);
   });
 
   it('redacts known values from the failure detail and commit subjects before storing them (#104)', async () => {
@@ -100,15 +93,10 @@ describe('ReportRunStateHandler', () => {
   });
 
   it('keeps the snapshot of a Run waiting for the operator (not final)', async () => {
-    const snapshot = await secrets.put('A=test-only-value', {
-      owner: 'executions.run-environment-file',
-    });
-    await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: snapshot });
-
     await report({ state: 'running' });
     await report({ state: 'waiting_for_operator' });
 
-    expect(secrets.values.has(snapshot)).toBe(true);
+    expect(released).toEqual([]);
   });
 
   it('wakes the live log streams of the Run on every change, so they can end (Issue #99)', async () => {

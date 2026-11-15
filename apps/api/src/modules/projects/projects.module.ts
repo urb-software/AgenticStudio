@@ -55,6 +55,8 @@ import {
   systemGitSettings,
 } from './infrastructure/adapters/git/system-git-adapter.js';
 import { PrismaProjectRepository } from './infrastructure/repositories/prisma-project-repository.js';
+import { SecretStoreEnvironmentFileContents } from './infrastructure/adapters/secret-store-environment-file-contents.js';
+import { ENVIRONMENT_FILE_CONTENTS } from './ports/environment-file-contents.js';
 import { PrismaEnvironmentFileRepository } from './infrastructure/repositories/prisma-environment-file-repository.js';
 import { REPOSITORY_JOBS } from './ports/repository-jobs.js';
 import { REPOSITORY_GIT } from './ports/repository-git.js';
@@ -116,6 +118,7 @@ export class ProjectsModule {
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
         { provide: ENVIRONMENT_FILE_REPOSITORY, useClass: PrismaEnvironmentFileRepository },
+        { provide: ENVIRONMENT_FILE_CONTENTS, useClass: SecretStoreEnvironmentFileContents },
         {
           provide: REPOSITORY_GIT,
           useFactory: (config: AppConfig) =>

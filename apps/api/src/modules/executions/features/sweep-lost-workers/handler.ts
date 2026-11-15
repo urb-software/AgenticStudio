@@ -10,9 +10,12 @@ import { goneWorkerRule } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import {
+  ENVIRONMENT_FILE_SNAPSHOTS,
+  type EnvironmentFileSnapshots,
+} from '../../ports/environment-file-snapshots.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
-import { ReleaseEnvironmentFileSnapshotsHandler } from '../release-environment-file-snapshots/handler.js';
 
 /**
  * Command (Issue #96): every held Run (`preparing` or `running`) whose last heartbeat is
@@ -77,7 +80,7 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
   constructor(
     private readonly sweep: SweepLostWorkersHandler,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
-    private readonly snapshots: ReleaseEnvironmentFileSnapshotsHandler,
+    @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
   ) {}
 
   onApplicationBootstrap(): void {

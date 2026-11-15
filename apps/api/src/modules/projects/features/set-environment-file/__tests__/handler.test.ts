@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  ENVIRONMENT_FILE_SECRET_OWNER,
   EnvironmentFilePathTrackedError,
   InvalidEnvironmentFileContentError,
   InvalidEnvironmentFilePathError,
@@ -13,7 +12,7 @@ import {
   GitUnsupportedPlatformError,
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
-import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import { InMemoryEnvironmentFileContents } from '../../../ports/__tests__/in-memory-environment-file-contents.js';
 import { GetEnvironmentFileHandler } from '../../get-environment-file/handler.js';
 import { GetRunEnvironmentFileHandler } from '../../get-run-environment-file/handler.js';
 import { RemoveEnvironmentFileHandler } from '../../remove-environment-file/handler.js';
@@ -30,7 +29,7 @@ const CONTENT = 'DB_PASSWORD=test-only-pw-1\nexport API_KEY="test-only-key-2"\n'
 describe('Environment file handlers', () => {
   let projects: InMemoryProjectRepository;
   let files: InMemoryEnvironmentFileRepository;
-  let secrets: InMemorySecretStore;
+  let secrets: InMemoryEnvironmentFileContents;
   let git: FakeRepositoryGit;
   let set: SetEnvironmentFileHandler;
   let get: GetEnvironmentFileHandler;
@@ -51,7 +50,7 @@ describe('Environment file handlers', () => {
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     files = new InMemoryEnvironmentFileRepository();
-    secrets = new InMemorySecretStore();
+    secrets = new InMemoryEnvironmentFileContents();
     git = new FakeRepositoryGit();
     set = new SetEnvironmentFileHandler(projects, files, secrets, git);
     get = new GetEnvironmentFileHandler(projects, files);
@@ -65,7 +64,6 @@ describe('Environment file handlers', () => {
     expect(info).toEqual({ path: '.env', sizeBytes: 60, updatedAt: files.now });
     expect(JSON.stringify(info)).not.toContain('test-only');
     expect([...secrets.values.values()]).toEqual([CONTENT]);
-    expect([...secrets.owners.values()]).toEqual([ENVIRONMENT_FILE_SECRET_OWNER]);
     await expect(get.execute(PROJECT)).resolves.toEqual(info);
   });
 

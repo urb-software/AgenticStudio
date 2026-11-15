@@ -23,6 +23,7 @@ import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret
 import { SweepOrphanedDeployKeysHandler } from '../../sweep-orphaned-deploy-keys/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../../sweep-orphaned-environment-files/handler.js';
 import { InMemoryEnvironmentFileRepository } from '../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
+import { InMemoryEnvironmentFileContents } from '../../../ports/__tests__/in-memory-environment-file-contents.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const COMMIT = 'a'.repeat(40);
@@ -97,8 +98,7 @@ describe('RepositoryJobsHandler', () => {
     vi.spyOn(orphanedKeys, 'sweep');
     const orphanedFiles = new SweepOrphanedEnvironmentFilesHandler(
       new InMemoryEnvironmentFileRepository(),
-      secrets,
-      { gracePeriodMs: 0 },
+      new InMemoryEnvironmentFileContents(),
     );
     handler = new RepositoryJobsHandler(
       queues,

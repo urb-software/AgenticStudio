@@ -1,8 +1,8 @@
+import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/index.js';
 import {
   RUN_ENVIRONMENT_FILES,
-  type RunEnvironmentFile,
   type RunEnvironmentFiles,
 } from '../../../projects/contracts/index.js';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/entities/run-environment-file.js';
@@ -38,7 +38,7 @@ const ENVIRONMENT_FILE_UNAVAILABLE: RunFailure = {
  * delivery retry (the file is already in the Working copy then).
  */
 export interface ClaimedRun extends Run {
-  environmentFile: RunEnvironmentFile | null;
+  environmentFile: EnvironmentFile | null;
 }
 
 /** The snapshot could not be taken; the Run was failed. */
@@ -114,7 +114,7 @@ export class ClaimRunHandler {
     run: Run,
     workerId: string,
     now: Date,
-  ): Promise<RunEnvironmentFile | null | typeof SNAPSHOT_FAILED> {
+  ): Promise<EnvironmentFile | null | typeof SNAPSHOT_FAILED> {
     let secretRef: string | undefined;
     try {
       const file = await this.environmentFiles.forProject(run.projectId);
