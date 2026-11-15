@@ -98,11 +98,14 @@ export function useRunLog(
           setStatus(next === 'refused' ? 'error' : next);
           if (next === 'ended') resultsMayChange.current();
         },
-        connect: ({ onOpen, signal }) =>
+        connect: ({ onOpen, onEvent, signal }) =>
           streamRunEvents(runId, last, {
             onOpen,
             signal,
-            onEvent: (event) => add([event], 'soon'),
+            onEvent: (event) => {
+              onEvent();
+              add([event], 'soon');
+            },
           }),
       });
     })();

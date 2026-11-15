@@ -144,9 +144,24 @@ describe('LogViewer', () => {
   it('shows the reconnecting bar without clearing rows', async () => {
     const { container } = render(<LogViewer label="Run log" rows={rows(3)} reconnecting />);
 
-    expect(screen.getByRole('status').textContent).toContain('Reconnecting…');
+    expect(
+      screen.getAllByRole('status').some((status) => status.textContent?.includes('Reconnecting…')),
+    ).toBe(true);
     expect(screen.getByText('line 3')).toBeTruthy();
     await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('announces what it is told politely, as the log itself is not a live region', () => {
+    const { rerender } = render(<LogViewer label="Run log" rows={rows(1)} />);
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('');
+    expect(log().getAttribute('aria-live')).toBe('off');
+
+    rerender(
+      <LogViewer label="Run log" rows={rows(1)} announcement="The log is streaming live." />,
+    );
+
+    expect(status.textContent).toBe('The log is streaming live.');
   });
 
   it('says why it is empty', () => {

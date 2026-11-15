@@ -47,6 +47,8 @@ export interface FakeStream {
   end(): void;
   /** The connection breaks without `end`. */
   drop(): void;
+  /** Whether the client aborted the request (e.g. the page went away). */
+  aborted(): boolean;
 }
 
 export const PROJECT: ProjectOutput = {
@@ -129,7 +131,11 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         closed = true;
       },
     });
-    signal.addEventListener('abort', close);
+    let aborted = false;
+    signal.addEventListener('abort', () => {
+      aborted = true;
+      close();
+    });
     streams.push({
       runId,
       after,
@@ -147,6 +153,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         close();
       },
       drop: close,
+      aborted: () => aborted,
     });
     return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
   }

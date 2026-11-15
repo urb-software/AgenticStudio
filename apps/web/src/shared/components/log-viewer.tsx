@@ -52,6 +52,11 @@ type LogViewerProps = {
   emptyText?: string;
   /** Extra toolbar content on the right (e.g. a loading note). */
   toolbarEnd?: React.ReactNode;
+  /**
+   * Said politely to assistive technology when it changes (e.g. "The log is streaming live.",
+   * "The log is complete."), since the log itself is not a live region.
+   */
+  announcement?: string;
   className?: string;
 };
 
@@ -71,6 +76,7 @@ function LogViewer({
   reconnecting = false,
   emptyText,
   toolbarEnd,
+  announcement = '',
   className,
 }: LogViewerProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -164,6 +170,9 @@ function LogViewer({
           <span className="pill bg-run-running-soft text-run-running">Streaming</span>
         ) : null}
       </div>
+      <p role="status" className="sr-only m-0">
+        {announcement}
+      </p>
       {reconnecting ? (
         <div
           role="status"
@@ -181,7 +190,7 @@ function LogViewer({
         aria-label={label}
         tabIndex={0}
         onScroll={onScroll}
-        className="h-[360px] overflow-auto py-1.5 font-mono text-code focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
+        className="max-h-[360px] min-h-24 overflow-auto py-1.5 font-mono text-code focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
       >
         {rows.length === 0 && emptyText ? (
           <p className="m-0 px-3 font-sans text-small text-text-dim">{emptyText}</p>
@@ -235,7 +244,7 @@ function LogViewer({
         <button
           type="button"
           onClick={jumpToLatest}
-          className="absolute bottom-3.5 left-1/2 inline-flex h-[30px] -translate-x-1/2 items-center gap-1.5 rounded-full border-0 bg-brand-solid px-3 text-small font-medium text-on-brand shadow-lg hover:bg-brand-solid-hover"
+          className="absolute bottom-3.5 left-1/2 inline-flex h-[30px] -translate-x-1/2 items-center gap-1.5 rounded-full border-0 bg-brand-solid px-3 text-small font-medium text-on-brand shadow-float hover:bg-brand-solid-hover"
         >
           <ArrowDownIcon aria-hidden="true" className="size-3.5" />
           Jump to latest

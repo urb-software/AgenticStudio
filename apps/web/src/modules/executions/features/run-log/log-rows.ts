@@ -1,9 +1,6 @@
 import type { LogRow, LogTone } from '@/shared/components/log-viewer';
 import type { RunEventOutput, RunStepOutput } from '../../../../platform/api';
 
-/** What Studio puts in place of a redacted secret (security.md §3). */
-const REDACTED = '••••••[redacted]';
-
 const KIND_TONE: Record<RunEventOutput['kind'], LogTone> = {
   message: 'plain',
   command: 'command',
@@ -21,9 +18,9 @@ const CHECK_ROW: Record<RunStepOutput['checks'][number]['result'], [string, LogT
 
 const lines = (text: string) => text.replace(/\r\n?/g, '\n').split('\n');
 
-/** A redacted line is shown as a warning, so the operator sees something was hidden. */
-const toneOf = (line: string, tone: LogTone): LogTone =>
-  line.includes(REDACTED) && tone !== 'section' ? 'warn' : tone;
+/** A redacted entry is shown as a warning, so the operator sees something was hidden. */
+const toneOf = (event: RunEventOutput, tone: LogTone): LogTone =>
+  event.redacted && tone !== 'section' ? 'warn' : tone;
 
 /** The structured result shown at the end of its Run step: outcome, summary, checks. */
 function resultRows(step: RunStepOutput): LogRow[] {
@@ -65,7 +62,7 @@ export function toLogRows(
     const tone = KIND_TONE[event.kind];
     lines(event.text).forEach((line, i) => {
       const text = event.kind === 'command' ? `${i === 0 ? '$' : ' '} ${line}` : line;
-      rows.push({ key: `${event.seq}:${i}`, text, tone: toneOf(line, tone) });
+      rows.push({ key: `${event.seq}:${i}`, text, tone: toneOf(event, tone) });
     });
     if (event.truncated) {
       rows.push({

@@ -26,6 +26,7 @@ import type {
 import { client } from './generated/client.gen';
 import {
   zConnectRepositoryRequest,
+  zRunEventOutput,
   zCreateProjectRequest,
   zStartRunRequest,
 } from './generated/zod.gen';
@@ -211,24 +212,9 @@ export const api = {
  */
 export type RunEventStreamEnd = 'end' | 'dropped' | 'refused';
 
-const EVENT_KINDS: readonly string[] = [
-  'message',
-  'command',
-  'output',
-  'step_started',
-  'step_finished',
-  'notice',
-] satisfies readonly RunEventOutput['kind'][];
-
+/** One stream message checked against the generated schema (the one list of event kinds). */
 function isRunEvent(value: unknown): value is RunEventOutput {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as RunEventOutput).seq === 'number' &&
-    typeof (value as RunEventOutput).stepIndex === 'number' &&
-    typeof (value as RunEventOutput).text === 'string' &&
-    EVENT_KINDS.includes((value as RunEventOutput).kind)
-  );
+  return zRunEventOutput.safeParse(value).success;
 }
 
 /**
@@ -246,16 +232,17 @@ export async function streamRunEvents(
 ): Promise<RunEventStreamEnd> {
   let opened = false;
   let ended = false;
-  let refusedStatus = 0;
+  let status = 0;
   const { stream } = await sdk.streamRunEvents({
     path: { runId },
     query: { after },
     signal: handlers.signal,
     sseMaxRetryAttempts: 1,
-    onSseError: (error) => {
-      // The generated client reports a non-2xx answer as `SSE failed: <status> …`.
-      const status = Number(/^SSE failed: (\d{3})/.exec(String((error as Error)?.message))?.[1]);
-      if (status >= 400 && status < 500) refusedStatus = status;
+    // Records the answer's status code, so a 4xx is told apart from a dropped connection.
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fetch(input, init);
+      status = response.status;
+      return response;
     },
     onSseEvent: (message) => {
       if (!opened) {
@@ -269,7 +256,7 @@ export async function streamRunEvents(
     if (ended) break;
     if (isRunEvent(data)) handlers.onEvent(data);
   }
-  if (refusedStatus === 401) redirectToLogin();
-  if (refusedStatus) return 'refused';
+  if (status === 401) redirectToLogin();
+  if (status >= 400 && status < 500) return 'refused';
   return ended ? 'end' : 'dropped';
 }

@@ -57,7 +57,7 @@ describe('Run log', () => {
       anEvent(1, { kind: 'step_started', text: 'Run step 1 started' }),
       anEvent(2, { kind: 'message', text: 'I will add a health check.' }),
       anEvent(3, { kind: 'command', text: 'pnpm test' }),
-      anEvent(4, { text: 'PASS 12 tests\nTOKEN=••••••[redacted]' }),
+      anEvent(4, { text: 'PASS 12 tests\nTOKEN=••••••[redacted]', redacted: true }),
       anEvent(5, { kind: 'step_finished', text: 'Run step 1 finished: done' }),
     );
     api.setSteps(run.id, [STEP]);
@@ -192,6 +192,57 @@ describe('Run log', () => {
     await act(() => vi.advanceTimersByTimeAsync(2_500));
 
     await waitFor(async () => expect(await shown()).toContain('Result: needs input'));
+    vi.useRealTimers();
+  });
+
+  it('sends the browser to the login page on a 401 from the stream, without reconnecting', async () => {
+    const replace = vi.fn();
+    vi.stubGlobal('location', { ...window.location, pathname: '/executions/x', replace });
+    const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
+    const api = fakeRunsApi([run]);
+    api.respondNext('stream', 401, { status: 401, title: 'Unauthorized', detail: 'No session.' });
+    renderRun(run.id);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
+    expect(await screen.findByText('Couldn’t load the log.')).toBeTruthy();
+    expect(api.calls('stream')).toHaveLength(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('closes the live stream when the page goes away', async () => {
+    const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
+    const api = fakeRunsApi([run]);
+    const { unmount } = renderRun(run.id);
+    await waitFor(() => expect(api.streams()).toHaveLength(1));
+
+    unmount();
+
+    expect(api.streams()[0]!.aborted()).toBe(true);
+  });
+
+  it('backs off further while connections drop before they are stable', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
+    const api = fakeRunsApi([run]);
+    renderRun(run.id);
+    await waitFor(() => expect(api.streams()).toHaveLength(1));
+
+    // Open, then dropped at once (no event, under 10 s): 1 s, then 2 s before reconnecting.
+    act(() => api.streams()[0]!.drop());
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    await waitFor(() => expect(api.streams()).toHaveLength(2));
+    act(() => api.streams()[1]!.drop());
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    expect(api.streams()).toHaveLength(2);
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    await waitFor(() => expect(api.streams()).toHaveLength(3));
+
+    // A connection that delivered an event was stable: the next wait is 1 s again.
+    act(() => api.streams()[2]!.push(anEvent(1)));
+    await waitFor(async () => expect(await shown()).toEqual(['line 1']));
+    act(() => api.streams()[2]!.drop());
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    await waitFor(() => expect(api.streams()).toHaveLength(4));
     vi.useRealTimers();
   });
 

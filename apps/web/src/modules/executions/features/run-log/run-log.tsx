@@ -14,6 +14,17 @@ import { type RunLogStatus, useRunLog } from './use-run-log';
 
 const NO_STEPS: ReadonlyMap<number, RunStepOutput> = new Map();
 
+/** What a screen reader hears when the live log starts and ends (the log is not a live region). */
+const ANNOUNCEMENT: Record<RunLogStatus, string> = {
+  loading: '',
+  connecting: '',
+  live: 'The log is streaming live.',
+  reconnecting: '',
+  ended: 'The run has ended; the log is complete.',
+  complete: '',
+  error: '',
+};
+
 function emptyText(status: RunLogStatus, run: RunOutput): string {
   if (status === 'loading') return 'Loading the log…';
   if (status === 'complete' || status === 'ended') return 'This run has no log.';
@@ -78,6 +89,7 @@ export function RunLog({ run }: { run: RunOutput }) {
           reconnecting={log.status === 'reconnecting'}
           emptyText={log.status === 'error' ? undefined : emptyText(log.status, run)}
           toolbarEnd={<LogNote status={log.status} events={log.events} />}
+          announcement={ANNOUNCEMENT[log.status]}
         />
       </CardContent>
     </Card>
