@@ -22,15 +22,6 @@ export interface ReportRunStepInput extends RunStepRecord {
  * Returns the step's number. Throws
  * {@link RunNotFoundError} or {@link RunNotHeldError} (not running, or not held by it).
  */
-/** The names of the checks a structured result reports `failed` (validated by the contract). */
-function failingChecks(result: unknown): string[] {
-  const checks = (result as { checks?: unknown } | null)?.checks;
-  if (!Array.isArray(checks)) return [];
-  return checks
-    .filter((check: { result?: unknown }) => check?.result === 'failed')
-    .map((check: { name?: unknown }) => String(check.name));
-}
-
 @Injectable()
 export class ReportRunStepHandler {
   constructor(@Inject(RUN_REPOSITORY) private readonly runs: RunRepository) {}
@@ -49,4 +40,13 @@ export class ReportRunStepHandler {
     if (index === null) throw new RunNotHeldError();
     return index;
   }
+}
+
+/** The names of the checks a structured result reports `failed` (validated by the contract). */
+function failingChecks(result: unknown): string[] {
+  const checks = (result as { checks?: unknown } | null)?.checks;
+  if (!Array.isArray(checks)) return [];
+  return checks
+    .filter((check: { result?: unknown }) => check?.result === 'failed')
+    .map((check: { name?: unknown }) => String(check.name));
 }

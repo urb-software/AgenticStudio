@@ -85,6 +85,12 @@ export interface GitOptions {
    * push header).
    */
   config?: readonly (readonly [key: string, value: string])[];
+  /**
+   * `false`: the agent user's own global Git configuration is not read either
+   * (`GIT_CONFIG_GLOBAL=/dev/null`), so nothing the agent could have written there (a URL
+   * rewrite, a proxy, a credential helper) applies. For the token-carrying HTTPS push (#102).
+   */
+  userConfig?: false;
 }
 
 export interface GitRunnerOptions {
@@ -155,6 +161,7 @@ export class GitRunner {
         GIT_NO_REPLACE_OBJECTS: '1',
         SSH_ASKPASS_REQUIRE: 'never',
         ...(options.ceiling ? { GIT_CEILING_DIRECTORIES: options.ceiling } : {}),
+        ...(options.userConfig === false ? { GIT_CONFIG_GLOBAL: '/dev/null' } : {}),
         ...configEnvironment(options.config ?? []),
       },
       timeoutMs: options.timeoutMs,

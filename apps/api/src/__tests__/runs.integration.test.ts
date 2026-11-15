@@ -421,7 +421,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect((await reportStep(run.id, result)).status).toBe(204);
       expect((await heartbeat(run.id)).status).toBe(204);
       advance(5);
-      expect((await report(run.id, { state: 'succeeded' })).status).toBe(204);
+      expect(
+        (await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } })).status,
+      ).toBe(204);
 
       const finished = (await getRun(run.id)).body;
       expect(finished).toMatchObject({
@@ -677,11 +679,39 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expect((await getRun(run.id)).body).not.toHaveProperty('deliveryRetryRequested');
       });
 
+      it('counts a held delivery retry toward the limits: its project and the server', async () => {
+        const run = await failedDelivery();
+        const [{ projectId }] = await db().$queryRaw<{ projectId: string }[]>`
+          SELECT project_id AS "projectId" FROM runs WHERE id = ${run.id}::uuid`;
+        await retryDelivery(run.id);
+        expect((await claim(W2)).body).toMatchObject({ runId: run.id, kind: 'deliver' });
+        const sameProject = await queuedRun(projectId!);
+        const other = await queuedRun((await readyProject('Other')).id);
+        const third = await queuedRun((await readyProject('Third')).id);
+
+        expect((await claim()).body).toMatchObject({ runId: other.id });
+        expect((await claim()).status).toBe(204);
+        expect((await getRun(sameProject.id)).body.state).toBe('queued');
+        expect((await getRun(third.id)).body.state).toBe('queued');
+      });
+
       it('refuses a retry for a Run whose delivery did not fail (409) and an unknown Run (404)', async () => {
         const project = await readyProject('Shop');
         const queued = await queuedRun(project.id);
+        const succeeded = await steppedRun();
+        await report(succeeded.id, { state: 'succeeded', delivery: { outcome: 'none' } });
+        const agentFailed = await queuedRun((await readyProject('Other')).id);
+        await claim();
+        await report(agentFailed.id, { state: 'running' });
+        await report(agentFailed.id, {
+          state: 'failed',
+          failure: { code: 'agent_failed', detail: 'exit 1' },
+        });
 
         expectProblem(await retryDelivery(queued.id), 409, PROBLEM.deliveryNotRetryable);
+        expectProblem(await retryDelivery(succeeded.id), 409, PROBLEM.deliveryNotRetryable);
+        expectProblem(await retryDelivery(agentFailed.id), 409, PROBLEM.deliveryNotRetryable);
+        expect((await getRun(agentFailed.id)).body).not.toHaveProperty('deliveryRetryRequested');
         expectProblem(await retryDelivery(randomUUID()), 404, PROBLEM.runNotFound);
         expectProblem(await retryDelivery('nope'), 404, PROBLEM.runNotFound);
       });
@@ -867,7 +897,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expect((await getRun(c1.id)).body.state).toBe('queued');
 
         await report(a1.id, { state: 'running' }, W1);
-        await report(a1.id, { state: 'succeeded' }, W1);
+        await report(a1.id, { state: 'succeeded', delivery: { outcome: 'none' } }, W1);
         expect((await claim(W1)).body.runId).toBe(a2.id);
         expect((await claim(W1)).status).toBe(204);
       });
@@ -916,7 +946,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           },
         });
         expectProblem(await heartbeat(run.id, W1), 409, PROBLEM.runNotHeld);
-        expectProblem(await report(run.id, { state: 'succeeded' }, W1), 409, PROBLEM.runNotHeld);
+        expectProblem(
+          await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } }, W1),
+          409,
+          PROBLEM.runNotHeld,
+        );
       });
 
       it('keeps a Run whose worker sends heartbeats', async () => {
@@ -1015,7 +1049,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const run = await queuedRun(project.id);
         await claim(W1);
 
-        const response = await report(run.id, { state: 'succeeded' }, W1);
+        const response = await report(
+          run.id,
+          { state: 'succeeded', delivery: { outcome: 'none' } },
+          W1,
+        );
 
         expectProblem(response, 409, PROBLEM.illegalRunTransition);
         expect(response.body.detail).toBe('A Run cannot go from preparing to succeeded.');

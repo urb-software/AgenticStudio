@@ -83,10 +83,23 @@ class FakeDeliveries implements DeliveryPort {
     this.onCall?.('commit');
     if (this.commitFailure) throw this.commitFailure;
   }
-  async deliver(prepared: PreparedRun) {
+  /** When set, delivering waits until it is aborted (a slow push). */
+  deliverHangs = false;
+
+  async deliver(
+    prepared: PreparedRun,
+    _run: RunPayload,
+    _result: RunStepResult,
+    signal: AbortSignal,
+  ) {
     this.calls.push(['deliver', prepared.runId]);
     this.onCall?.('deliver');
     if (this.deliverFailure) throw this.deliverFailure;
+    if (this.deliverHangs) {
+      await new Promise((_resolve, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason)),
+      );
+    }
     return this.delivery;
   }
   async locate(run: RunPayload) {
@@ -280,6 +293,22 @@ describe('AgentWorker', () => {
       failure: { code: 'delivery_failed', detail: 'Not on the Run branch.' },
     });
     expect(deliveries.calls.map(([step]) => step)).toEqual(['commit']);
+  });
+
+  it('reports a stop during the delivery as delivery_failed, so it can be retried (review of #122)', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    deliveries.deliverHangs = true;
+    const running = startWorker(api, undefined, undefined, deliveries);
+    await until(() => deliveries.calls.some(([step]) => step === 'deliver'));
+
+    await running.stop();
+
+    expect(api.reports().at(-1)?.[2]).toMatchObject({
+      state: 'failed',
+      failure: { code: 'delivery_failed', detail: expect.stringContaining('shut down') },
+    });
   });
 
   it('delivers nothing for a question or a failed Run (Issue #102)', async () => {

@@ -6,7 +6,7 @@ import {
   type RunStepResult,
   runStepResultSchema,
 } from '@agentic-studio/contracts';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import {
   GIT_TIMEOUTS,
@@ -138,10 +138,10 @@ export class Deliveries implements DeliveryPort {
     }
     await this.gitStep('committing what the agent left', async () => {
       await git.run(['add', '--all'], local);
-      const studioPaths = await this.studioPaths(prepared);
+      const studioPaths = await this.studioPathspecs(prepared);
       // Never staged, even if the agent forced them in (an empty list would reset everything).
       if (studioPaths.length > 0) {
-        await git.run(['reset', '--quiet', 'HEAD', '--', ...literal(studioPaths)], local);
+        await git.run(['reset', '--quiet', 'HEAD', '--', ...studioPaths], local);
       }
       const staged = await git
         .run(['diff', '--cached', '--quiet'], local)
@@ -194,10 +194,10 @@ export class Deliveries implements DeliveryPort {
       });
     if (count === 0) return { outcome: 'none' };
 
-    const studioPaths = await this.studioPaths(prepared);
+    const studioPaths = await this.studioPathspecs(prepared);
     if (studioPaths.length > 0) {
       const touched = await git.run(
-        ['log', '--no-renames', '--format=', '--name-only', range, '--', ...literal(studioPaths)],
+        ['log', '--no-renames', '--format=', '--name-only', range, '--', ...studioPaths],
         local,
       );
       const path = touched.split('\n').find((line) => line.trim() !== '');
@@ -283,7 +283,14 @@ export class Deliveries implements DeliveryPort {
     };
   }
 
-  /** `git push -- <remote> <Run branch>:<Run branch>`: the one command that leaves the host. */
+  /**
+   * `git push -- <remote> <Run branch>:<Run branch>`: the one command that leaves the host. It
+   * runs in a fresh repository the worker makes beside the Working copy (`push.git`), holding
+   * only the Run branch fetched from it: the Working copy's own `.git/config`, which the agent
+   * could write (a URL rewrite, a proxy, a credential helper), never applies to the push. An
+   * HTTPS push also ignores the agent user's global Git configuration, and its header is scoped
+   * to `https://github.com/` (review of #122).
+   */
   private async push(
     prepared: PreparedRun,
     remoteUrl: string,
@@ -291,24 +298,51 @@ export class Deliveries implements DeliveryPort {
     token: string,
     signal: AbortSignal,
   ): Promise<void> {
+    const { git, dataDir } = this.options;
     const ref = `refs/heads/${prepared.runBranch}`;
+    const pushDir = posix.join(prepared.runDir, 'push.git');
+    const local = { cwd: prepared.runDir, timeoutMs: GIT_TIMEOUTS.local, signal, ceiling: dataDir };
+    await rm(pushDir, { recursive: true, force: true });
     try {
-      await this.options.git.run(['push', '--', remoteUrl, `${ref}:${ref}`], {
-        ...this.local(prepared, signal),
+      await this.gitStep('handing the Run branch to the push', async () => {
+        const tip = (
+          await git.run(['rev-parse', '--verify', `${ref}^{commit}`], this.local(prepared, signal))
+        ).trim();
+        await git.run(['init', '--quiet', '--bare', pushDir], local);
+        await git.run(['fetch', '--quiet', '--no-tags', prepared.repoDir, `+${ref}:${ref}`], {
+          ...local,
+          cwd: pushDir,
+          transports: ['file'],
+        });
+        const fetched = (
+          await git.run(['rev-parse', '--verify', ref], { ...local, cwd: pushDir })
+        ).trim();
+        if (fetched !== tip) throw new GitCommandError('fetch', null, 'Run branch moved', 'exit');
+      });
+      await git.run(['push', '--', remoteUrl, `${ref}:${ref}`], {
+        ...local,
+        cwd: pushDir,
         timeoutMs: GIT_TIMEOUTS.network,
         transports: this.options.allowFileRemotes ? WORKER_GIT_TRANSPORTS : REMOTE_GIT_TRANSPORTS,
+        ...(transport === 'https' ? { userConfig: false as const } : {}),
         config: [
           ['push.followTags', 'false'],
           ['push.gpgSign', 'false'],
           ['push.recurseSubmodules', 'no'],
           // The Agent account for this one HTTPS push only: in the environment, never argv
-          // or a config file (coordinator decision on #102).
+          // or a config file (coordinator decision on #102), and only for github.com.
           ...(transport === 'https'
-            ? [['http.extraHeader', `Authorization: Basic ${basicCredentials(token)}`] as const]
+            ? [
+                [
+                  'http.https://github.com/.extraHeader',
+                  `Authorization: Basic ${basicCredentials(token)}`,
+                ] as const,
+              ]
             : []),
         ],
       });
     } catch (error) {
+      if (error instanceof DeliveryFailedError) throw error;
       if (!(error instanceof GitCommandError) || error.reason === 'aborted') throw error;
       this.options.logger.error(
         `Delivery of run ${prepared.runId}: ${error.message}: ${error.stderr.trim()}`,
@@ -330,31 +364,34 @@ export class Deliveries implements DeliveryPort {
           'push to the repository (its token or SSH key on the agent worker), branch ' +
           'protection and the network; the agent worker log has the details.',
       );
+    } finally {
+      await rm(pushDir, { recursive: true, force: true });
     }
   }
 
   /**
-   * The Studio-placed paths of a Run: those recorded in its Run file and those listed under
-   * Studio's section of the Working copy's `.git/info/exclude`. Relative paths only.
+   * Pathspecs of a Run's Studio-placed files: the paths recorded in its Run file (exactly), and
+   * the patterns listed under Studio's section of the Working copy's `.git/info/exclude` (to
+   * the end of the file), matched as Git matches them there: a leading `/` anchors a pattern
+   * at the top, one without a `/` matches at any depth, and globs work (review of #122).
    */
-  private async studioPaths(prepared: PreparedRun): Promise<string[]> {
+  private async studioPathspecs(prepared: PreparedRun): Promise<string[]> {
     const paths = runDirectories(this.options.dataDir, prepared.runId);
-    const recorded = (await readRunFile(paths.runFile))?.studioPaths ?? [];
+    const recorded = ((await readRunFile(paths.runFile))?.studioPaths ?? [])
+      .map((path) => path.replace(/^\/+/, ''))
+      .filter(isRelativePath)
+      .map((path) => `:(literal)${path}`);
     const exclude = await readFile(
       posix.join(prepared.repoDir, '.git', 'info', 'exclude'),
       'utf8',
     ).catch(() => '');
-    const header = STUDIO_EXCLUDE_SECTION.trim();
     const lines = exclude.split('\n').map((line) => line.trim());
-    const start = lines.indexOf(header);
-    const listed =
-      start === -1 ? [] : lines.slice(start + 1).filter((line) => line && !line.startsWith('#'));
-    const relative = [...recorded, ...listed]
-      .map((path) => path.replace(/^\/+/, '').replace(/\/+$/, ''))
-      .filter(
-        (path) => path !== '' && !path.split('/').some((part) => part === '..' || part === '.'),
-      );
-    return [...new Set(relative)];
+    const start = lines.indexOf(STUDIO_EXCLUDE_SECTION.trim());
+    const listed = (start === -1 ? [] : lines.slice(start + 1))
+      .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'))
+      .map(excludePathspec)
+      .filter((spec): spec is string => spec !== null);
+    return [...new Set([...recorded, ...listed])];
   }
 
   private local(prepared: PreparedRun, signal: AbortSignal): GitOptions {
@@ -389,9 +426,19 @@ function basicCredentials(token: string): string {
   return Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
 }
 
-/** Pathspecs that match exactly these paths (no glob or other pathspec magic). */
-function literal(paths: readonly string[]): string[] {
-  return paths.map((path) => `:(literal)${path}`);
+/** A path inside the Working copy: relative, without `.` or `..` parts. */
+function isRelativePath(path: string): boolean {
+  return path !== '' && !path.split('/').some((part) => part === '..' || part === '.');
+}
+
+/** The pathspec matching what an exclude pattern matches (`null` for one that leaves the tree). */
+function excludePathspec(pattern: string): string | null {
+  const trimmed = pattern.replace(/\/+$/, '');
+  const anchored = trimmed.includes('/');
+  const path = trimmed.replace(/^\/+/, '');
+  if (!isRelativePath(path)) return null;
+  // A pathspec also matches everything below a directory it names.
+  return `:(glob)${anchored ? path : `**/${path}`}`;
 }
 
 function firstLine(text: string): string {
@@ -473,7 +520,8 @@ export function pullRequestContent(
     ...listed,
   ].join('\n');
   const room = BODY_MAX_LENGTH - notice.length - footer.length - 1;
-  const description = result.pullRequest?.body ?? result.summary;
+  // An empty description from the agent falls back to the summary, like a missing one.
+  const description = result.pullRequest?.body.trim() ? result.pullRequest.body : result.summary;
   const shortened = description.length > room ? `${cut(description, room - 2)}\n…` : description;
   return { title, body: `${notice}${shortened.trimEnd()}\n${footer}` };
 }

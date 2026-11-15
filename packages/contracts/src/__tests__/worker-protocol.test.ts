@@ -110,13 +110,15 @@ describe('worker requests', () => {
 
     expect(report({ state: 'running' })).toBe(true);
     expect(report({ state: 'waiting_for_operator' })).toBe(true);
-    expect(report({ state: 'succeeded' })).toBe(true);
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none' } })).toBe(true);
     expect(report({ state: 'failed', failure: { code: 'agent_failed', detail: 'exit 1' } })).toBe(
       true,
     );
 
     expect(report({ state: 'failed' })).toBe(false);
     expect(report({ state: 'succeeded', failure: { code: 'unknown', detail: '' } })).toBe(false);
+    // Issue #102 (review of #122): a succeeded Run always says how it was delivered.
+    expect(report({ state: 'succeeded' })).toBe(false);
     expect(report({ state: 'queued' })).toBe(false);
     expect(report({ state: 'cancelled' })).toBe(false);
     expect(report({ state: 'failed', failure: { code: 'oops', detail: '' } })).toBe(false);

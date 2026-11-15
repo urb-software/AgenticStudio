@@ -232,7 +232,7 @@ export type RunDelivery = z.infer<typeof runDeliverySchema>;
 /**
  * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
  * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
- * commits of a step that failed or crashed are recorded too. A delivery outcome comes only
+ * commits of a step that failed or crashed are recorded too. A delivery outcome comes exactly
  * with `succeeded` (Issue #102), and with it the Working copy's state after the delivery
  * (a delivery retry has no step report).
  */
@@ -248,9 +248,9 @@ export const reportRunStateRequestSchema = z
     path: ['failure'],
     message: 'A failure is reported exactly with the state failed.',
   })
-  .refine((report) => report.delivery === undefined || report.state === 'succeeded', {
+  .refine((report) => (report.delivery !== undefined) === (report.state === 'succeeded'), {
     path: ['delivery'],
-    message: 'A delivery outcome is reported only with the state succeeded.',
+    message: 'A delivery outcome is reported exactly with the state succeeded.',
   })
   .refine(
     (report) =>

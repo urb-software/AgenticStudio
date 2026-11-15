@@ -85,6 +85,8 @@ export class AgentWorker {
   private readonly shutdown = new AbortController();
   private current: AbortController | undefined;
   private currentRunId: string | undefined;
+  /** Whether the Run being carried is in its delivery: then every failure is delivery_failed. */
+  private delivering = false;
   private loop: Promise<void> | undefined;
 
   constructor(private readonly options: AgentWorkerOptions) {}
@@ -177,6 +179,8 @@ export class AgentWorker {
         await api.reportState(run.runId, { state: 'waiting_for_operator' }, signal);
       } else {
         if (commitFailure) throw commitFailure;
+        // From here a stop or a crash leaves a delivery to retry, not a lost Run (review of #122).
+        this.delivering = true;
         const delivery = await this.options.deliveries.deliver(prepared, run, result, abort.signal);
         await api.reportState(run.runId, { state: 'succeeded', delivery }, signal);
       }
@@ -185,6 +189,7 @@ export class AgentWorker {
       await this.reportFailure(run, lost ? new RunLostError() : error, prepared);
     } finally {
       clearInterval(heartbeats);
+      this.delivering = false;
       this.current = undefined;
       this.currentRunId = undefined;
     }
@@ -241,7 +246,10 @@ export class AgentWorker {
       logger.error(`Run ${run.runId} is no longer held by this worker; dropping it.`);
       return;
     }
-    const failure = run.kind === 'deliver' ? this.deliveryFailure(error) : this.runFailure(error);
+    const failure =
+      run.kind === 'deliver' || this.delivering
+        ? this.deliveryFailure(error)
+        : this.runFailure(error);
     if (failure === UNEXPECTED_FAILURE || failure === DELIVERY_UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }

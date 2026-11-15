@@ -457,6 +457,91 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect((error as DeliveryFailedError).detail).toMatch(/not on the Run branch/);
   });
 
+  it("never lets the Working copy's own Git config redirect the push (review of #122)", async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    // The agent points pushes to the Project's remote at a remote of its own.
+    const decoy = createRemote(join(root, 'decoy'), 'shop', env);
+    decoy.commit('Decoy', { 'x.md': 'x\n' });
+    inRepo(prepared, ['config', `url.${decoy.url}.pushInsteadOf`, remote.url]);
+    inRepo(prepared, ['config', 'credential.helper', '!echo leaked >&2']);
+
+    await finish(run, prepared);
+
+    const ref = `refs/heads/${prepared.runBranch}`;
+    expect(git(bare(), ['rev-parse', ref], env)).toBe(inRepo(prepared, ['rev-parse', 'HEAD']));
+    expect(git(join(root, 'decoy', 'shop.git'), ['for-each-ref', '--format=%(refname)'], env)).toBe(
+      'refs/heads/main',
+    );
+    const [push] = gitRunner.pushes();
+    expect(push?.options.cwd).toBe(join(prepared.runDir, 'push.git'));
+  });
+
+  it('scopes the HTTPS push header to github.com and reads no user Git config for it', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    gitRunner.interceptPush = true;
+
+    await finish(
+      { ...run, repository: { remoteUrl: 'https://github.com/acme/shop.git' } },
+      prepared,
+    );
+
+    const [push] = gitRunner.pushes();
+    expect(push?.options.userConfig).toBe(false);
+    expect(push?.options.config?.map(([key]) => key)).toContain(
+      'http.https://github.com/.extraHeader',
+    );
+    expect(push?.options.config?.map(([key]) => key)).not.toContain('http.extraHeader');
+  });
+
+  it("keeps files matching a pattern in Studio's exclude section out, at any depth", async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    appendFileSync(join(prepared.repoDir, '.git', 'info', 'exclude'), '*.studio-env\n');
+    mkdirSync(join(prepared.repoDir, 'deep'));
+    agentWrites(prepared, {
+      'deep/app.studio-env': 'SECRET=1\n',
+      'pages.ts': 'x\n',
+    });
+    inRepo(prepared, ['add', '--force', 'deep/app.studio-env']);
+
+    await finish(run, prepared);
+
+    expect(
+      git(bare(), ['ls-tree', '-r', '--name-only', `refs/heads/${prepared.runBranch}`], env),
+    ).toBe('README.md\npages.ts');
+  });
+
+  it('takes the description from the summary when the agent gave an empty one', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+
+    await finish(run, prepared, {
+      outcome: 'done',
+      summary: 'Added pages of 20.',
+      pullRequest: { title: 'Add pagination', body: '  ' },
+    });
+
+    expect(String(stub.created[0]?.body.body)).toMatch(/^Added pages of 20\.\n\n---/);
+  });
+
+  it('fails a retry whose kept result is gone, though the Working copy is there', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    await deliveries().commit(prepared, run, DONE, signal());
+    rmSync(join(prepared.runDir, 'result.json'));
+
+    const error = await deliveries()
+      .locate({ ...run, kind: 'deliver' })
+      .catch((caught: unknown) => caught);
+
+    expect((error as DeliveryFailedError).detail).toMatch(/result for this Run is no longer/);
+  });
+
   it('finds the Working copy and the kept result for a retry, and says when it is gone', async () => {
     const run = payload();
     const prepared = await prepare(run);
