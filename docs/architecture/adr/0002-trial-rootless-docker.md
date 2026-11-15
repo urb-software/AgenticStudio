@@ -109,7 +109,7 @@ The sandbox was also probed directly, without a model call, with `codex sandbox 
 
 - Docker data directory: about 570 MB after the stack and the test images.
 - WSL VM: 2.9 GB in total, about 0.9 GB used at idle with the stack up; all suites completed in that VM.
-- No per-container memory or CPU limits and no `docker stats` numbers: under WSL the daemon runs on cgroup v1 with no cgroup driver. The target server needs cgroup v2 and systemd for container resource limits; disk quotas for the agent user's Docker data directory are a separate setting.
+- No per-container memory or CPU limits and no `docker stats` numbers: under WSL the daemon runs on cgroup v1 with no cgroup driver. The target server needs cgroup v2 and systemd for container resource limits.
 
 ## Security finding: WSL
 
@@ -118,7 +118,7 @@ WSL interop was enabled (the `WSLInterop` binfmt entry): the `agent` user could 
 ## Pitfalls
 
 - **Rootless CLI context.** The setup tool's `rootless` CLI context captured WSLg's `XDG_RUNTIME_DIR` and pointed at the wrong socket. Fixed by removing the context and using `DOCKER_HOST`.
-- **No systemd.** The rootless daemon had to be started by hand; on the server it runs as a systemd user service.
+- **No systemd.** The rootless daemon had to be started by hand; on the server it is to run as a systemd user service, which the server setup task (#107) sets up and checks.
 - **`--allowedTools` is variadic.** It swallowed a following prompt ("Input must be provided either through stdin or as a prompt argument"). End the options with `--` before the prompt.
 - **Trailing punctuation in prompts.** A trailing "." after the command in the prompt was passed as an argument by the Codex agent. Quote commands in backticks.
 
