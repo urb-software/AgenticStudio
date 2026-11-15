@@ -200,6 +200,11 @@ export const api = {
     unwrap(sdk.retryRunDelivery({ path: { runId } })),
   /** Each provider and whether a Run can be started with it now, with the reason when not. */
   listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
+  /**
+   * Cancels a Run (Issue #100; 202: the Run). A queued or waiting Run comes back `cancelled`; a
+   * preparing or running one carries `cancelRequestedAt` until the agent worker confirms.
+   */
+  cancelRun: (runId: string): Promise<RunOutput> => unwrap(sdk.cancelRun({ path: { runId } })),
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),

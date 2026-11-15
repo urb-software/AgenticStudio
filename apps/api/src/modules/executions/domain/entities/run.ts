@@ -118,7 +118,8 @@ export interface RunPullRequest {
 
 /** What an agent worker reports about a successful delivery. */
 export type RunDeliveryOutcome =
-  { outcome: 'none' } | { outcome: 'delivered'; pullRequest: RunPullRequest };
+  /** `branchPushed`: only for a Run cancelled after its push, before a pull request (#124 review). */
+  { outcome: 'none'; branchPushed?: true } | { outcome: 'delivered'; pullRequest: RunPullRequest };
 
 export interface Run {
   id: string;
@@ -178,7 +179,10 @@ export interface Run {
   cancellation: RunCancellation | null;
   /** When it began waiting for the operator; set exactly when `waiting_for_operator`. */
   waitingSince: Date | null;
-  /** When the current (or last) Run step started: set whenever the Run goes to `running`. */
+  /**
+   * When the current Run step started: set whenever the Run goes to `running`, cleared when the
+   * step's result is reported (Studio's time-limit backstop then stops: review of #121).
+   */
   stepStartedAt: Date | null;
   /**
    * The agent worker that released the Run (to `waiting_for_operator` or a final state), so a
@@ -255,6 +259,16 @@ export class RunAlreadyFinishedError extends Error {
 }
 
 /** The cancellation recorded when the operator cancels a Run (Issue #100). */
+/**
+ * The cancellation recorded when the operator's cancel arrived during the delivery, after the
+ * Run branch was pushed but before a pull request was opened (review of #124).
+ */
+export const OPERATOR_CANCELLATION_BRANCH_PUSHED: RunCancellation = {
+  by: 'operator',
+  reason:
+    'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
+};
+
 export const OPERATOR_CANCELLATION: RunCancellation = {
   by: 'operator',
   reason: 'Cancelled by the operator.',

@@ -474,9 +474,38 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // Executions page lists the Runs. Story #99: each Run page shows the Run's log; a slow Run's
 // lines appear live through the web /api proxy (so it does not buffer the stream) and are all
 // there after a reload, and a printed token-shaped string arrives redacted. Linux only;
-// `pnpm e2e:smoke` fails on Linux if this test did not run and pass. The waiting Run stays
-// waiting (no cancel yet), so it runs last.
-test('operator starts runs and follows them to their result', async ({ page }, testInfo) => {
+// `pnpm e2e:smoke` fails on Linux if this test did not run and pass. Story #100: a long Run
+// (`[fake:long]`) is cancelled while it runs, and the waiting Run is cancelled at the end, so
+// the test holds no server slot afterwards and its place in the file no longer matters.
+const RUN_TEST = 'operator starts runs and follows them to their result';
+
+/**
+ * Story #100 (review of #124): whatever happened in the Run test, its project's unfinished Runs
+ * are cancelled afterwards, so no Run of it holds a server slot for a later test.
+ */
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.title !== RUN_TEST || process.env.E2E_API_PLATFORM !== 'linux') return;
+  try {
+    const origin = String(testInfo.project.use.baseURL ?? new URL(page.url()).origin);
+    const projects = await page.request.get('/api/projects');
+    if (!projects.ok()) return;
+    const project = (
+      (await projects.json()) as { items: { id: string; name: string }[] }
+    ).items.find((candidate) => candidate.name === `Runs ${testInfo.project.name}`);
+    if (!project) return;
+    const runs = await page.request.get(`/api/projects/${project.id}/runs`);
+    if (!runs.ok()) return;
+    for (const run of (await runs.json()) as { id: string; state: string }[]) {
+      if (['queued', 'preparing', 'running', 'waiting_for_operator'].includes(run.state)) {
+        await page.request.post(`/api/runs/${run.id}/cancel`, { headers: { Origin: origin } });
+      }
+    }
+  } catch {
+    // Clean-up only: never hides the test's own result.
+  }
+});
+
+test(RUN_TEST, async ({ page }, testInfo) => {
   test.skip(
     process.env.E2E_API_PLATFORM !== 'linux',
     'Repository features and the agent worker run on Linux only; CI runs this test on Linux.',
@@ -594,6 +623,34 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(failure).toContainText('The fake agent failed.');
   await expectInBothThemes(page, pill);
 
+  // Story #100: a long Run is cancelled while it runs. The confirm says what happens; the
+  // worker learns of it with its next heartbeat, stops the step and the Run ends cancelled.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Work for a long time [fake:long]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Work for a long time [fake:long]');
+  await expect(pill).toHaveText('Running', { timeout: 30_000 });
+  await expect(main.getByText(/minutes per run step/)).toBeVisible();
+  const confirmCancel = page.getByRole('alertdialog', { name: 'Cancel run' });
+  // The open confirm, scanned in both themes in a real browser (review of #124).
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+    await main.getByRole('button', { name: 'Cancel run' }).click();
+    await expect(confirmCancel.getByText(/Nothing more is pushed\./)).toBeVisible();
+    await expect(confirmCancel.getByText('The working copy is kept for inspection.')).toBeVisible();
+    await expectNoAxeViolations(page);
+    if (theme === 'light') {
+      await confirmCancel.getByRole('button', { name: 'Keep run' }).click();
+      await expect(confirmCancel).toHaveCount(0);
+    }
+  }
+  await confirmCancel.getByRole('button', { name: 'Cancel run' }).click();
+  await expect(confirmCancel).toHaveCount(0);
+  await expect(pill).toHaveText('Cancelled', { timeout: 45_000 });
+  await expect(main.getByText('Cancelled by the operator.')).toBeVisible();
+
   // A Run that waits for the operator: amber, active, and counted by the run indicator.
   await main.getByRole('button', { name: 'Run again' }).click();
   await dialog.getByLabel('Task').fill('Ask before changing anything [fake:question]');
@@ -613,15 +670,26 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(page).toHaveURL(/\/executions$/);
   const list = main.getByRole('list', { name: 'Runs' });
   const rows = list.getByRole('listitem').filter({ hasText: projectName });
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(7);
   await expect(rows.nth(0)).toContainText('Waiting for you');
-  await expect(rows.nth(1)).toContainText('Failed');
-  await expect(rows.nth(2)).toContainText('Succeeded');
-  // The delivered Run carries its pull request marker (Issue #102).
-  await expect(rows.nth(2)).toContainText('Pull request #1');
+  await expect(rows.nth(1)).toContainText('Cancelled');
+  await expect(rows.nth(2)).toContainText('Failed');
   await expect(rows.nth(3)).toContainText('Succeeded');
+  // The delivered Run carries its pull request marker (Issue #102).
+  await expect(rows.nth(3)).toContainText('Pull request #1');
   await expect(rows.nth(4)).toContainText('Succeeded');
   await expect(rows.nth(5)).toContainText('Succeeded');
+  await expect(rows.nth(6)).toContainText('Succeeded');
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
+
+  // Story #100: the waiting Run is cancelled at once (no worker holds it), freeing its slot.
+  await rows.nth(0).getByRole('link').first().click();
+  await expect(heading).toHaveText('Ask before changing anything [fake:question]');
+  await main.getByRole('button', { name: 'Cancel run' }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Cancel run' })
+    .getByRole('button', { name: 'Cancel run' })
+    .click();
+  await expect(pill).toHaveText('Cancelled', { timeout: 15_000 });
 });

@@ -29,6 +29,7 @@ Run isolation model: [ADR 0002](../architecture/adr/0002-agent-run-isolation.md)
 - User/project code runs with the least capabilities possible: restricted host mounts, file access, process execution, network egress and inter-project access, per task.
 - No production credentials or production data for coding agents, and none anywhere on the server; separate development/test accounts and databases.
 - Configure execution timeout, cancellation, CPU/RAM/storage limits and output-size/log quotas; repeated operations are idempotent where appropriate.
+- **Run limits as built (Issue #100).** The agent worker stops a Run step at its time limit (SIGINT to the step's process groups, then SIGKILL after the grace) and refuses a step beyond the maximum; Studio backs the time limit with a sweep (the step's limit plus 5 minutes) and cancels Runs left waiting for the operator too long. The **delivery** after a step (commit, push, draft pull request) is not under the step clock: it is bounded only by the worker's own Git and GitHub call timeouts, and an operator's cancel lets it finish so the Run records what it pushed.
 - No unapproved MCP tools and no configuration changes outside permitted boundaries.
 
 ### CLI usage and provider terms — MVP decision (canonical)
