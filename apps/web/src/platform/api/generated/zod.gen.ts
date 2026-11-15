@@ -138,6 +138,15 @@ export const zRunOutput = z.object({
 
 export const zRunListOutput = z.array(zRunOutput);
 
+export const zProviderAvailabilityOutput = z.object({
+    id: z.enum(['claude_code', 'codex']),
+    name: z.string(),
+    available: z.boolean(),
+    reason: z.string().optional()
+});
+
+export const zProviderListOutput = z.array(zProviderAvailabilityOutput);
+
 export const zProblemDetails = z.object({
     type: z.string(),
     title: z.string(),
@@ -233,3 +242,5 @@ export const zGetRunPath = z.object({
 });
 
 export const zGetRunResponse = zRunOutput;
+
+export const zListProvidersResponse = zProviderListOutput;
