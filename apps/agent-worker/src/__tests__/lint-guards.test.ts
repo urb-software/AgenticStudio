@@ -25,10 +25,38 @@ describe('agent worker lint guards against hidden module loading', () => {
     expect(await ruleIds(code)).toContain('no-restricted-syntax');
   });
 
-  it.each(['binding', '_linkedBinding', 'dlopen'])('refuses process.%s', async (property) => {
-    expect(await ruleIds(`export const b = process.${property};\n`)).toContain(
-      'no-restricted-properties',
-    );
+  it.each(['binding', '_linkedBinding', 'dlopen', 'getBuiltinModule'])(
+    'refuses the process loader property %s however process is reached',
+    async (property) => {
+      for (const code of [
+        `export const b = process.${property};\n`,
+        `export const b = globalThis.process.${property};\n`,
+        `const p = process;\nexport const b = p.${property};\n`,
+        `export const b = process['${property}'];\n`,
+        `const { ${property}: b } = process;\nexport { b };\n`,
+        `const { '${property}': b } = process;\nexport { b };\n`,
+        `export const b = process[\`${property}\`];\n`,
+        `export const b = Reflect.get(process, '${property}');\n`,
+        `export const b = Reflect.apply(Reflect.get(process, '${property}'), process, []);\n`,
+        `export const b = globalThis.Reflect.get(process, '${property}');\n`,
+      ]) {
+        expect(await ruleIds(code), code).toContain('no-restricted-syntax');
+      }
+    },
+  );
+
+  it.each([
+    ['eval', "export const m = eval('import(\\'node:child_process\\')');\n", 'no-eval'],
+    ['new Function', "export const f = new Function('return 1');\n", 'no-new-func'],
+    ['a string timer', "setTimeout('globalThis.x = 1', 0);\n", 'no-implied-eval'],
+  ])('refuses %s', async (_case, code, rule) => {
+    expect(await ruleIds(code)).toContain(rule);
+  });
+
+  it.each(['node:vm', 'vm'])('refuses importing %s', async (name) => {
+    expect(
+      await ruleIds(`import { runInThisContext } from '${name}';\nexport { runInThisContext };\n`),
+    ).toContain('no-restricted-imports');
   });
 
   it('accepts a literal import()', async () => {

@@ -12,6 +12,7 @@ import type {
   ProjectDetailOutput,
   ProjectListOutput,
   ProjectOutput,
+  ProviderListOutput,
   RepositoryOutput,
   RunEventOutput,
   RunEventPageOutput,
@@ -37,6 +38,8 @@ export type {
   ProjectDetailOutput,
   ProjectListOutput,
   ProjectOutput,
+  ProviderAvailabilityOutput,
+  ProviderListOutput,
   RepositoryFailureCodeOutput,
   RepositoryOutput,
   RepositoryStateOutput,
@@ -191,6 +194,8 @@ export const api = {
   /** Every Run across all projects, newest first. */
   listRuns: (): Promise<RunListOutput> => unwrap(sdk.listRuns()),
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
+  /** Each provider and whether a Run can be started with it now, with the reason when not. */
+  listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),
