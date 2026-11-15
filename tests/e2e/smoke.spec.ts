@@ -501,6 +501,24 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await connect.getByRole('button', { name: 'Connect repository' }).click();
   await expect(card.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
 
+  // Issue #104: an Environment file for the project's Runs, with a throwaway test value. The
+  // dialog warns before saving; afterwards the card shows path and size, never the content.
+  const envValue = `test-only-${randomBytes(8).toString('hex')}`;
+  const envCard = main.getByRole('region', { name: 'Environment file' });
+  await envCard.getByRole('button', { name: 'Set environment file' }).click();
+  const envDialog = page.getByRole('dialog', { name: 'Set environment file' });
+  await expect(envDialog.getByText('Use test values only.')).toBeVisible();
+  await expect(envDialog.getByLabel('Path in the repository')).toHaveValue('.env');
+  await envDialog.getByLabel('Content').fill(`SMOKE_PASSWORD=${envValue}\n`);
+  await envDialog.getByRole('button', { name: 'Save environment file' }).click();
+  await expect(envDialog).toBeHidden();
+  await expect(envCard.getByText('An environment file is set.')).toBeVisible();
+  await expect(envCard.getByText('.env', { exact: true })).toBeVisible();
+  await expect(page.getByText(envValue)).toHaveCount(0);
+  // At this viewport (390 or 1440 px), in both themes: no sideways scroll, no axe violations.
+  await expectInBothThemes(page, envCard.getByText('An environment file is set.'));
+  expect(await page.content()).not.toContain(envValue);
+
   // Start a Run: the dialog opens with Claude Code chosen; submitting opens the Run page.
   await runs.getByRole('button', { name: 'New run' }).click();
   const dialog = page.getByRole('dialog', { name: 'New run' });
@@ -517,6 +535,8 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   // The worker claims it and the fake runner succeeds; the page polls until it is over.
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
   await expect(main.getByText('Claude Code', { exact: true })).toBeVisible();
+  // Issue #104: the Run was given the project's Environment file (not its content).
+  await expect(main.getByText('Environment file supplied')).toBeVisible();
   // Issue #102: the fake agent changed nothing, so nothing was pushed.
   await expect(main.getByText('No changes.')).toBeVisible();
   const breadcrumb = page
@@ -563,6 +583,18 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(runLog).toContainText('••••••[redacted]', { timeout: 30_000 });
   await expect(runLog).not.toContainText('ghp_');
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+
+  // Issue #104: an agent that prints the Environment file shows only redacted values in the
+  // log; the value itself is nowhere on the page.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Print the settings [fake:print-env]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Print the settings [fake:print-env]');
+  await expect(runLog).toContainText('$ cat .env', { timeout: 30_000 });
+  await expect(runLog).toContainText('SMOKE_PASSWORD=••••••[redacted]');
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(main.getByText('Environment file supplied')).toBeVisible();
+  expect(await page.content()).not.toContain(envValue);
 
   // Run again, prefilled; this time the fake agent commits a change and reports a failing
   // check: the Run is delivered as a draft pull request, and the page says so (Issue #102).
