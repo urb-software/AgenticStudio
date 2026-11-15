@@ -20,7 +20,7 @@ export class MissingCliRunner implements Runner {
 
   private async *refuse(): RunStep {
     const name = PROVIDER_NAMES[this.provider];
-    yield { type: 'status', text: `no ${name} runner in this agent worker version` };
+    yield { type: 'message', text: `no ${name} runner in this agent worker version` };
     throw new AgentFailedError(
       `This version of the agent worker cannot run ${name} yet: its CLI runner is not built.`,
     );

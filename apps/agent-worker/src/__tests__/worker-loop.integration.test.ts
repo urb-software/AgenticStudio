@@ -342,6 +342,29 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(cleaned).not.toContain(composeProjectName(waiting));
   });
 
+  it("forwards the Run's log to Studio, redacted, readable by the operator (Issue #99)", async () => {
+    const runId = await startRun('Print a token [fake:secret]');
+    startWorker();
+
+    expect((await runReaches(runId, ['succeeded', 'failed'])).state).toBe('succeeded');
+
+    const response = await fetch(`${apiUrl}/api/runs/${runId}/events`, {
+      headers: { Cookie: cookie },
+    });
+    const { events } = (await response.json()) as {
+      events: { seq: number; kind: string; text: string }[];
+    };
+    expect(events.map((event) => event.kind)).toEqual([
+      'step_started',
+      'message',
+      'command',
+      'output',
+      'step_finished',
+    ]);
+    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(events[3]!.text).toBe('••••••[redacted]');
+  });
+
   it('reports a failing agent as failed with agent_failed', async () => {
     const runId = await startRun('[fake:fail] Break it');
     startWorker();

@@ -144,6 +144,48 @@ export const zRunOutput = z.object({
 
 export const zRunListOutput = z.array(zRunOutput);
 
+export const zRunEventOutput = z.object({
+    seq: z.int().gte(1).lte(9007199254740991),
+    at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    stepIndex: z.int().gte(1).lte(9007199254740991),
+    kind: z.enum([
+        'message',
+        'command',
+        'output',
+        'step_started',
+        'step_finished',
+        'notice'
+    ]),
+    text: z.string(),
+    truncated: z.literal(true).optional()
+});
+
+export const zRunEventPageOutput = z.object({
+    events: z.array(zRunEventOutput),
+    next: z.int().gte(1).lte(9007199254740991).optional()
+});
+
+export const zRunStepOutput = z.object({
+    index: z.int().gte(1).lte(9007199254740991),
+    kind: z.enum(['start', 'resume']),
+    outcome: z.enum(['done', 'needs_input']),
+    summary: z.string(),
+    checks: z.array(z.object({
+        name: z.string(),
+        result: z.enum([
+            'passed',
+            'failed',
+            'not_run'
+        ]),
+        detail: z.string().optional()
+    })),
+    reportedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+});
+
+export const zRunStepListOutput = z.object({
+    steps: z.array(zRunStepOutput)
+});
+
 export const zProviderAvailabilityOutput = z.object({
     id: z.enum(['claude_code', 'codex']),
     name: z.string(),
@@ -248,5 +290,39 @@ export const zGetRunPath = z.object({
 });
 
 export const zGetRunResponse = zRunOutput;
+
+export const zListRunEventsPath = z.object({
+    runId: z.string()
+});
+
+export const zListRunEventsQuery = z.object({
+    after: z.int().gte(0).lte(2147483647).optional().default(0),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
+});
+
+export const zListRunEventsResponse = zRunEventPageOutput;
+
+export const zStreamRunEventsHeaders = z.object({
+    'Last-Event-ID': z.string().optional()
+});
+
+export const zStreamRunEventsPath = z.object({
+    runId: z.string()
+});
+
+export const zStreamRunEventsQuery = z.object({
+    after: z.int().gte(0).lte(2147483647).optional()
+});
+
+/**
+ * Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments.
+ */
+export const zStreamRunEventsResponse = z.string();
+
+export const zListRunStepsPath = z.object({
+    runId: z.string()
+});
+
+export const zListRunStepsResponse = zRunStepListOutput;
 
 export const zListProvidersResponse = zProviderListOutput;

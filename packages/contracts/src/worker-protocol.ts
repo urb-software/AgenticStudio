@@ -225,9 +225,12 @@ export const reportRunStepRequestSchema = z.strictObject({
 });
 export type ReportRunStepRequest = z.infer<typeof reportRunStepRequestSchema>;
 
-/** One event a runner streams while a Run step executes. */
+/**
+ * One event a runner streams while a Run step executes (Issue #99): an agent message, a tool
+ * call with its command, or a tool result (output). The worker forwards each as a Run event.
+ */
 export const runnerEventSchema = z.strictObject({
-  type: z.enum(['status', 'output']),
+  type: z.enum(['message', 'command', 'output']),
   text: z.string().max(20_000),
 });
 export type RunnerEvent = z.infer<typeof runnerEventSchema>;
@@ -257,6 +260,77 @@ export const runStatesResponseSchema = z.array(
   }),
 );
 export type RunStatesResponse = z.infer<typeof runStatesResponseSchema>;
+/**
+ * The kinds of Run event (Issue #99): the runner's three, the markers the worker adds at the
+ * start and end of each Run step, and `notice` for what Studio or the worker says about the
+ * log itself (e.g. "log truncated").
+ */
+export const RUN_EVENT_KINDS = [
+  'message',
+  'command',
+  'output',
+  'step_started',
+  'step_finished',
+  'notice',
+] as const;
+export type RunEventKind = (typeof RUN_EVENT_KINDS)[number];
+
+/**
+ * Largest text of one Run event, in UTF-8 bytes (16 KiB). The worker cuts longer texts before
+ * sending (`truncated: true`); Studio cuts again after redaction, which can lengthen a text.
+ */
+export const RUN_EVENT_TEXT_MAX_BYTES = 16 * 1024;
+
+/** Most events in one append request; the worker also splits batches by size. */
+export const RUN_EVENT_BATCH_MAX = 100;
+
+/**
+ * `text` cut to at most `maxBytes` UTF-8 bytes, at a character boundary; `cut` says whether
+ * anything was removed.
+ */
+export function cutToBytes(text: string, maxBytes: number): { text: string; cut: boolean } {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= maxBytes) return { text, cut: false };
+  let end = maxBytes;
+  // Back off continuation bytes (10xxxxxx) so no character is split.
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return { text: new TextDecoder().decode(bytes.subarray(0, end)), cut: true };
+}
+
+/** Largest seq and step index: PostgreSQL INTEGER. */
+export const RUN_EVENT_SEQ_MAX = 2_147_483_647;
+
+/** One Run event as the worker sends it; `seq` is the worker's, per Run, from 1. */
+export const runEventInputSchema = z.strictObject({
+  seq: z.int().min(1).max(RUN_EVENT_SEQ_MAX),
+  at: z.iso.datetime(),
+  /** The Run step the event belongs to: 1, 2, … */
+  stepIndex: z.int().min(1).max(RUN_EVENT_SEQ_MAX),
+  kind: z.enum(RUN_EVENT_KINDS),
+  // A character count bounds the bytes loosely; the worker cuts to bytes before sending.
+  text: z.string().max(RUN_EVENT_TEXT_MAX_BYTES),
+  /** The worker already cut the text. */
+  truncated: z.boolean().optional(),
+});
+export type RunEventInput = z.infer<typeof runEventInputSchema>;
+
+/**
+ * `POST /api/worker/runs/:runId/events` body (Issue #99): a batch in strictly increasing
+ * `seq` order. Studio ignores events it already stored (an idempotent re-send) and accepts a
+ * gap.
+ */
+export const appendRunEventsRequestSchema = z.strictObject({
+  workerId: workerIdSchema,
+  events: z
+    .array(runEventInputSchema)
+    .min(1)
+    .max(RUN_EVENT_BATCH_MAX)
+    .refine((events) => events.every((event, i) => i === 0 || event.seq > events[i - 1]!.seq), {
+      message: 'Events are in strictly increasing seq order.',
+    }),
+});
+export type AppendRunEventsRequest = z.infer<typeof appendRunEventsRequestSchema>;
+
 /**
  * How the agent worker carries out Runs (Issue #101): `cli` starts the provider's official CLI
  * (production); `fake` uses the scripted fake runner and is allowed only in development and
