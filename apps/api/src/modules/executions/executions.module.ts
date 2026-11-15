@@ -13,6 +13,8 @@ import { ListRunEventsEndpoint } from './features/list-run-events/endpoint.js';
 import { ListRunEventsHandler } from './features/list-run-events/handler.js';
 import { ListRunStepsEndpoint } from './features/list-run-steps/endpoint.js';
 import { ListRunStepsHandler } from './features/list-run-steps/handler.js';
+import { ListProvidersEndpoint } from './features/list-providers/endpoint.js';
+import { ListProvidersHandler } from './features/list-providers/handler.js';
 import { ListProjectRunsEndpoint } from './features/list-project-runs/endpoint.js';
 import { ListProjectRunsHandler } from './features/list-project-runs/handler.js';
 import { ListRunsEndpoint } from './features/list-runs/endpoint.js';
@@ -23,6 +25,8 @@ import { ReportRunStateEndpoint } from './features/report-run-state/endpoint.js'
 import { ReportRunStateHandler } from './features/report-run-state/handler.js';
 import { ReportRunStepEndpoint } from './features/report-run-step/endpoint.js';
 import { ReportRunStepHandler } from './features/report-run-step/handler.js';
+import { ReportWorkerStatusEndpoint } from './features/report-worker-status/endpoint.js';
+import { ReportWorkerStatusHandler } from './features/report-worker-status/handler.js';
 import { StartRunEndpoint } from './features/start-run/endpoint.js';
 import { StartRunHandler } from './features/start-run/handler.js';
 import { StreamRunEventsEndpoint } from './features/stream-run-events/endpoint.js';
@@ -33,12 +37,14 @@ import {
 } from './features/sweep-lost-workers/handler.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
+import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
 import { CLOCK, type Clock } from './ports/clock.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL } from './ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from './ports/run-secret-values.js';
 import { WORKER_LEASE, type WorkerLease } from './ports/worker-lease.js';
+import { WORKER_STATUS_STORE } from './ports/worker-status-store.js';
 
 /**
  * Test seams of the module: a controlled clock for the lease and the lost-worker sweep, a
@@ -85,6 +91,8 @@ export class ExecutionsModule {
         ListRunEventsEndpoint,
         StreamRunEventsEndpoint,
         ListRunStepsEndpoint,
+        ReportWorkerStatusEndpoint,
+        ListProvidersEndpoint,
       ],
       providers: [
         { provide: RUN_REPOSITORY, useClass: PrismaRunRepository },
@@ -100,6 +108,7 @@ export class ExecutionsModule {
           inject: [APP_CONFIG],
         },
         { provide: CLOCK, useValue: options.clock ?? SYSTEM_CLOCK },
+        { provide: WORKER_STATUS_STORE, useClass: InMemoryWorkerStatusStore },
         {
           provide: WORKER_LEASE,
           useFactory: (config: AppConfig): WorkerLease => ({ seconds: config.workerLeaseSeconds }),
@@ -117,6 +126,8 @@ export class ExecutionsModule {
         ListRunEventsHandler,
         StreamRunEventsHandler,
         ListRunStepsHandler,
+        ReportWorkerStatusHandler,
+        ListProvidersHandler,
         SweepLostWorkersHandler,
         LostWorkerSweepSchedule,
       ],

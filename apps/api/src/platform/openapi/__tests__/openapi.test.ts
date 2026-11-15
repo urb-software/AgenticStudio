@@ -309,6 +309,27 @@ describe('OpenAPI document', () => {
     });
   });
 
+  it('documents GET /api/providers with each provider and its availability (Issue #101)', () => {
+    const document = createOpenApiDocument(app);
+
+    const list = document.paths['/api/providers']?.get;
+    expect(list?.operationId).toBe('listProviders');
+    expect(list?.responses['200']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/ProviderList_Output' } },
+      },
+    });
+    expect(document.components?.schemas?.ProviderAvailability_Output).toMatchObject({
+      properties: {
+        id: { type: 'string', enum: ['claude_code', 'codex'] },
+        name: { type: 'string' },
+        available: { type: 'boolean' },
+        reason: { type: 'string' },
+      },
+      required: ['id', 'name', 'available'],
+    });
+  });
+
   it('leaves the worker routes out, so the browser client never contains them (Issue #96)', () => {
     const document = createOpenApiDocument(app);
 

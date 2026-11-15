@@ -66,7 +66,7 @@ describe('FakeRunner', () => {
   });
 
   it('works slowly, printing numbered lines over time, then succeeds (Issue #99)', async () => {
-    const { events, result } = await start('[fake:slow]', undefined, 20);
+    const { events, result } = await start('[fake:slow]', undefined, 200);
 
     const lines = events.filter((event) => event.type === 'output').map((event) => event.text);
     expect(lines.length).toBeGreaterThan(2);

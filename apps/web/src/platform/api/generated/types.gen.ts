@@ -137,6 +137,15 @@ export type RunStepListOutput = {
     steps: Array<RunStepOutput>;
 };
 
+export type ProviderAvailabilityOutput = {
+    id: 'claude_code' | 'codex';
+    name: string;
+    available: boolean;
+    reason?: string;
+};
+
+export type ProviderListOutput = Array<ProviderAvailabilityOutput>;
+
 export type ProblemDetails = {
     type: string;
     title: string;
@@ -550,7 +559,7 @@ export type StartRunErrors = {
      */
     404: ProblemDetails;
     /**
-     * The project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready)
+     * The project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)
      */
     409: ProblemDetails;
     /**
@@ -726,3 +735,25 @@ export type ListRunStepsResponses = {
 };
 
 export type ListRunStepsResponse = ListRunStepsResponses[keyof ListRunStepsResponses];
+
+export type ListProvidersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/providers';
+};
+
+export type ListProvidersErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListProvidersError = ListProvidersErrors[keyof ListProvidersErrors];
+
+export type ListProvidersResponses = {
+    200: ProviderListOutput;
+};
+
+export type ListProvidersResponse = ListProvidersResponses[keyof ListProvidersResponses];

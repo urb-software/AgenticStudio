@@ -3,8 +3,10 @@ import {
   type RunPayload,
   type RunStepResult,
   runStepResultSchema,
+  type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
+import { ProviderDisabledError } from './provider-gate.js';
 import { RunLog } from './run-log.js';
 import { AgentFailedError, drainRunStep, type Runner } from './runner.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
@@ -18,12 +20,17 @@ export interface WorkerLogger {
 /** The worker routes the loop uses ({@link StudioApi} in production). */
 export type WorkerApi = Pick<
   StudioApi,
-  'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'appendEvents'
+  'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'reportStatus' | 'appendEvents'
 >;
 
 export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
+  /**
+   * Reported to Studio before every claim and with every heartbeat (Issue #101), so Studio
+   * knows which providers this worker enables. Fixed for the life of the process.
+   */
+  status: WorkerStatusReport;
   /** Pause between two claims when there is no work, or after the API was unreachable. */
   pollMs: number;
   /** Interval of heartbeats while carrying a Run. */
@@ -84,6 +91,7 @@ export class AgentWorker {
     const { api, logger, pollMs } = this.options;
     while (!this.stopping) {
       let run: RunPayload | null = null;
+      await this.reportStatus();
       try {
         run = await api.claim(this.shutdown.signal);
       } catch (error) {
@@ -110,6 +118,8 @@ export class AgentWorker {
     // The Run's events go to Studio as they happen (Issue #99).
     const log = new RunLog({ api, runId: run.runId, logger, onLost: markLost });
     const heartbeats = setInterval(() => {
+      // Keeps Studio's view of this worker fresh while it carries a long Run.
+      void this.reportStatus();
       api.heartbeat(run.runId, this.shutdown.signal).catch((error: unknown) => {
         if (isRunLost(error) || error instanceof RunLostError) markLost();
         logger.error(`Heartbeat for run ${run.runId} failed: ${describe(error)}`);
@@ -181,11 +191,13 @@ export class AgentWorker {
     }
     const failure = this.stopping
       ? SHUTDOWN_FAILURE
-      : error instanceof AgentFailedError
-        ? { code: 'agent_failed' as const, detail: error.message.slice(0, 2000) }
-        : error instanceof InvalidResultError
-          ? INVALID_RESULT_FAILURE
-          : UNEXPECTED_FAILURE;
+      : error instanceof ProviderDisabledError
+        ? { code: 'provider_disabled' as const, detail: error.message }
+        : error instanceof AgentFailedError
+          ? { code: 'agent_failed' as const, detail: error.message.slice(0, 2000) }
+          : error instanceof InvalidResultError
+            ? INVALID_RESULT_FAILURE
+            : UNEXPECTED_FAILURE;
     if (failure === UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
@@ -196,6 +208,16 @@ export class AgentWorker {
       logger.info(`Run ${run.runId} reported: failed (${failure.code}).`);
     } catch (reportError) {
       logger.error(`Reporting run ${run.runId} as failed failed: ${describe(reportError)}`);
+    }
+  }
+
+  /** Never throws: a failed status report is logged, and the loop goes on. */
+  private async reportStatus(): Promise<void> {
+    try {
+      await this.options.api.reportStatus(this.options.status, this.shutdown.signal);
+    } catch (error) {
+      if (!this.stopping)
+        this.options.logger.error(`Reporting the status failed: ${describe(error)}`);
     }
   }
 
