@@ -413,12 +413,18 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     renderRuns();
 
     await openDialog();
-    expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true');
+    await vi.waitFor(() =>
+      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
+    );
     await userEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
     await openDialog();
 
-    expect(api.calls('providers')).toHaveLength(2);
-    expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true');
+    // The second opening's answer may land after the dialog opens (a race on a busy runner,
+    // seen on #122): wait for it instead of reading the first render.
+    await vi.waitFor(() => expect(api.calls('providers')).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
+    );
     expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('false');
     await userEvent.type(taskInput(), 'Add pagination');
     await userEvent.click(startButton());

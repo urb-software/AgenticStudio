@@ -696,8 +696,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
 
       it('refuses a retry for a Run whose delivery did not fail (409) and an unknown Run (404)', async () => {
-        const project = await readyProject('Shop');
-        const queued = await queuedRun(project.id);
+        // Each Run is claimed before the next is queued, so every claim hands out that Run.
         const succeeded = await steppedRun();
         await report(succeeded.id, { state: 'succeeded', delivery: { outcome: 'none' } });
         const agentFailed = await queuedRun((await readyProject('Other')).id);
@@ -707,6 +706,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           state: 'failed',
           failure: { code: 'agent_failed', detail: 'exit 1' },
         });
+        const queued = await queuedRun((await readyProject('Shop')).id);
 
         expectProblem(await retryDelivery(queued.id), 409, PROBLEM.deliveryNotRetryable);
         expectProblem(await retryDelivery(succeeded.id), 409, PROBLEM.deliveryNotRetryable);
