@@ -5,6 +5,9 @@ import {
   runPayloadSchema,
 } from '@agentic-studio/contracts';
 
+/** Default timeout of one call to the Studio API. */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
 /** A worker route answered with an error status (problem+json); never carries the token. */
 export class StudioApiError extends Error {
   constructor(
@@ -36,36 +39,54 @@ export class StudioApi {
       apiUrl: string;
       token: string;
       workerId: string;
+      /** Longest wait for one call; then it is abandoned (default 30 s). */
+      timeoutMs?: number;
       fetch?: typeof fetch;
     },
   ) {}
 
   /** The next Run to carry out, or `null` when none is eligible (204). */
-  async claim(): Promise<RunPayload | null> {
-    const response = await this.post('runs/claim', {});
+  async claim(signal?: AbortSignal): Promise<RunPayload | null> {
+    const response = await this.post('runs/claim', {}, signal);
     if (response.status === 204) return null;
     return runPayloadSchema.parse(await response.json());
   }
 
-  async reportState(runId: string, report: WithoutWorker<ReportRunStateRequest>): Promise<void> {
-    await this.post(`runs/${encodeURIComponent(runId)}/state`, report);
+  async reportState(
+    runId: string,
+    report: WithoutWorker<ReportRunStateRequest>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.post(`runs/${encodeURIComponent(runId)}/state`, report, signal);
   }
 
-  async reportStep(runId: string, step: WithoutWorker<ReportRunStepRequest>): Promise<void> {
-    await this.post(`runs/${encodeURIComponent(runId)}/steps`, step);
+  async reportStep(
+    runId: string,
+    step: WithoutWorker<ReportRunStepRequest>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.post(`runs/${encodeURIComponent(runId)}/steps`, step, signal);
   }
 
-  async heartbeat(runId: string): Promise<void> {
-    await this.post(`runs/${encodeURIComponent(runId)}/heartbeat`, {});
+  async heartbeat(runId: string, signal?: AbortSignal): Promise<void> {
+    await this.post(`runs/${encodeURIComponent(runId)}/heartbeat`, {}, signal);
   }
 
-  private async post(path: string, body: object): Promise<Response> {
+  /**
+   * One call: abandoned after the timeout, or when `signal` aborts (the worker stops). The
+   * rejection is then the abort reason (a `TimeoutError` or `AbortError`).
+   */
+  private async post(path: string, body: object, signal?: AbortSignal): Promise<Response> {
     const { apiUrl, token, workerId } = this.options;
     const call = this.options.fetch ?? fetch;
     const response = await call(`${apiUrl}/api/worker/${path}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ workerId, ...body }),
+      signal: AbortSignal.any([
+        AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        ...(signal ? [signal] : []),
+      ]),
     });
     if (!response.ok) {
       const problem = (await response.json().catch(() => ({}))) as { type?: unknown };

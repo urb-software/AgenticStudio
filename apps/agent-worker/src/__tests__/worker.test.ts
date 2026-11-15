@@ -20,11 +20,18 @@ class RecordingApi implements WorkerApi {
   claims = 0;
   heartbeatError: Error | undefined;
   claimError: Error | undefined;
+  /** When set, claims hang until their signal aborts (an API that does not answer). */
+  claimHangs = false;
 
   constructor(private readonly queue: RunPayload[]) {}
 
-  async claim() {
+  async claim(signal?: AbortSignal) {
     this.claims++;
+    if (this.claimHangs) {
+      return new Promise<null>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason));
+      });
+    }
     if (this.claimError) {
       const error = this.claimError;
       this.claimError = undefined;
@@ -156,6 +163,18 @@ describe('AgentWorker', () => {
     await until(() => api.claims >= 2);
 
     expect(api.reports()).toEqual([['state', run.runId, { state: 'running' }]]);
+  });
+
+  it('on stop abandons a call in flight instead of waiting for the API (review of #112)', async () => {
+    const api = new RecordingApi([]);
+    api.claimHangs = true;
+    const running = startWorker(api);
+    await until(() => api.claims === 1);
+
+    const started = Date.now();
+    await running.stop();
+
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('keeps polling after the API was unreachable', async () => {

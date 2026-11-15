@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { assertSupportedPlatform, loadWorkerConfig } from './config.js';
+import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
 import { FakeRunner } from './fake-runner.js';
 import { StudioApi } from './studio-api.js';
 import { AgentWorker, type WorkerLogger } from './worker.js';
@@ -13,7 +13,14 @@ try {
   console.error((error as Error).message);
   process.exit(1);
 }
-const config = loadWorkerConfig(process.env);
+let config: WorkerConfig;
+try {
+  config = loadWorkerConfig(process.env);
+} catch (error) {
+  // Names variables, never their values.
+  console.error((error as Error).message);
+  process.exit(1);
+}
 
 const workerId = randomUUID();
 const logger: WorkerLogger = {
@@ -21,7 +28,12 @@ const logger: WorkerLogger = {
   error: (message) => console.error(`[agent-worker ${workerId}] ${message}`),
 };
 const worker = new AgentWorker({
-  api: new StudioApi({ apiUrl: config.apiUrl, token: config.token, workerId }),
+  api: new StudioApi({
+    apiUrl: config.apiUrl,
+    token: config.token,
+    workerId,
+    timeoutMs: config.requestTimeoutMs,
+  }),
   // Every Run uses the fake runner until the provider adapters exist (#96 decision).
   runner: new FakeRunner(),
   pollMs: config.pollMs,

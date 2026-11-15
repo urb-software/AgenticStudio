@@ -48,7 +48,8 @@ const INVALID_RESULT_FAILURE: RunFailure = {
  */
 export class AgentWorker {
   private stopping = false;
-  private readonly idle = new AbortController();
+  /** Aborted by {@link stop}: wakes the idle pause and abandons in-flight calls. */
+  private readonly shutdown = new AbortController();
   private current: AbortController | undefined;
   private loop: Promise<void> | undefined;
 
@@ -63,7 +64,7 @@ export class AgentWorker {
   /** Stops the loop and waits until the Run being carried (if any) has been reported. */
   async stop(): Promise<void> {
     this.stopping = true;
-    this.idle.abort();
+    this.shutdown.abort();
     this.current?.abort(new Error('worker shut down'));
     await this.loop;
   }
@@ -73,7 +74,7 @@ export class AgentWorker {
     while (!this.stopping) {
       let run: RunPayload | null = null;
       try {
-        run = await api.claim();
+        run = await api.claim(this.shutdown.signal);
       } catch (error) {
         logger.error(`Claiming a run failed: ${describe(error)}`);
       }
@@ -92,7 +93,7 @@ export class AgentWorker {
     let lost = false;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
     const heartbeats = setInterval(() => {
-      api.heartbeat(run.runId).catch((error: unknown) => {
+      api.heartbeat(run.runId, this.shutdown.signal).catch((error: unknown) => {
         if (isRunLost(error) || error instanceof RunLostError) {
           lost = true;
           abort.abort(new Error('run lost'));
@@ -105,13 +106,16 @@ export class AgentWorker {
       // A stop that arrived while the claim was in flight.
       if (this.stopping) abort.abort(new Error('worker shut down'));
       abort.signal.throwIfAborted();
-      await api.reportState(run.runId, { state: 'running' });
+      const signal = this.shutdown.signal;
+      await api.reportState(run.runId, { state: 'running' }, signal);
       const result = await this.executeStart(run, abort.signal);
       abort.signal.throwIfAborted();
-      await api.reportStep(run.runId, { kind: 'start', result });
-      await api.reportState(run.runId, {
-        state: result.outcome === 'needs_input' ? 'waiting_for_operator' : 'succeeded',
-      });
+      await api.reportStep(run.runId, { kind: 'start', result }, signal);
+      await api.reportState(
+        run.runId,
+        { state: result.outcome === 'needs_input' ? 'waiting_for_operator' : 'succeeded' },
+        signal,
+      );
       logger.info(`Run ${run.runId} reported: ${result.outcome}.`);
     } catch (error) {
       await this.reportFailure(run, lost ? new RunLostError() : error);
@@ -147,6 +151,8 @@ export class AgentWorker {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
     try {
+      // Not tied to the shutdown signal: on stop this is the report that must still go out
+      // (bounded by the request timeout).
       await api.reportState(run.runId, { state: 'failed', failure });
       logger.info(`Run ${run.runId} reported: failed (${failure.code}).`);
     } catch (reportError) {
@@ -156,7 +162,7 @@ export class AgentWorker {
 
   private async pause(ms: number): Promise<void> {
     try {
-      await delay(ms, undefined, { signal: this.idle.signal });
+      await delay(ms, undefined, { signal: this.shutdown.signal });
     } catch {
       // Woken by stop().
     }
