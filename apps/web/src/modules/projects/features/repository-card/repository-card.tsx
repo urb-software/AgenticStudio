@@ -39,7 +39,7 @@ import {
   useRepository,
   useVerifyRepository,
 } from '../../api/projects-queries';
-import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
+import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
 import { ConnectRepositoryDialog } from '../connect-repository/connect-repository-dialog';
 import { DisconnectRepositoryDialog } from '../disconnect-repository/disconnect-repository-dialog';
 import { failureMessage, gitOutputOf, type Transport } from './failure-message';

@@ -16,6 +16,9 @@ import { problem } from './fake-projects-api';
 // Project screen seam (Stories #60, #61, #62 and #63): the public ProjectDetail of the projects module, with the
 // generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
 
+// The composed Runs section (executions, #97) has the New run dialog, which navigates.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 const PROJECT: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000a1',
   name: 'Acme Shop',
@@ -130,6 +133,40 @@ describe('project screen', () => {
       '/projects',
     );
     await expect(container).toHaveNoAxeViolations();
+  });
+});
+
+describe('Runs section (Story #97, composed from executions)', () => {
+  const runs = () => screen.getByRole('region', { name: 'Runs' });
+
+  it.each([
+    ['no Repository', null, 'Connect a repository to start a run.'],
+    [
+      'a Repository still connecting',
+      CONNECTING,
+      'The repository is not ready yet. Runs start from its integration branch.',
+    ],
+  ] as const)(
+    'disables New run with the reason when the project has %s',
+    async (_, repository, reason) => {
+      fakeProjectApi(PROJECT, repository);
+      renderDetail();
+
+      await screen.findByRole('region', { name: 'Runs' });
+      const newRun = within(runs()).getByRole('button', { name: 'New run' });
+      expect(newRun).toHaveProperty('disabled', true);
+      expect(within(runs()).getByText(reason)).toBeTruthy();
+    },
+  );
+
+  it('offers New run once the Repository is ready', async () => {
+    fakeProjectApi(PROJECT, READY);
+    renderDetail();
+
+    await screen.findByRole('region', { name: 'Runs' });
+    await userEvent.click(within(runs()).getByRole('button', { name: 'New run' }));
+
+    expect(screen.getByRole('dialog', { name: 'New run' })).toBeTruthy();
   });
 });
 

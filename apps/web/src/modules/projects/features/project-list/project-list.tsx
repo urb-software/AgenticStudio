@@ -9,7 +9,7 @@ import { Card } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError } from '../../../../platform/api';
 import { useProjects } from '../../api/projects-queries';
-import { formatExactTime, formatTimeAgo } from '../../components/relative-time';
+import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
 
 /** The request the list makes (generated `listProjects`), shown verbatim when it fails. */
 const LIST_REQUEST = 'GET /api/projects';
