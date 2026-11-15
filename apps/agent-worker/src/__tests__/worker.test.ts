@@ -112,6 +112,7 @@ class RecordingApi implements WorkerApi {
     return { cancelRequested: this.cancelRequested };
   }
   async appendEvents(runId: string, events: RunEventInput[]) {
+    if (this.studioDown) throw this.studioDown;
     if (this.eventsError) throw this.eventsError;
     this.calls.push(['events', runId, events]);
   }
@@ -683,12 +684,26 @@ describe('AgentWorker', () => {
       api.studioDown = new TypeError('fetch failed');
       startWorker(api, new FakeRunner({ slowMs: 100 }));
       await until(() => api.calls.filter(([kind]) => kind === 'heartbeat').length >= 3);
-      // The step finished during the outage; nothing could be reported yet.
+      // The step finished during the outage; nothing could be reported yet, its log neither.
       await delay(150);
       expect(api.reports()).toEqual([]);
+      expect(api.calls.filter(([kind]) => kind === 'events')).toEqual([]);
 
       api.studioDown = undefined;
-      await until(() => api.reports().length === 3);
+      await until(() => api.reports().length === 3, 15_000);
+
+      // The log is delivered too, and before the end report (Studio takes events only while
+      // the worker holds the Run).
+      const events = api.calls
+        .filter(([kind]) => kind === 'events')
+        .flatMap(([, , batch]) => batch as RunEventInput[]);
+      expect(events.map((event) => event.kind)).toContain('step_finished');
+      expect(events.map((event) => event.seq)).toEqual(events.map((_event, i) => i + 1));
+      const lastEvents = api.calls.findLastIndex(([kind]) => kind === 'events');
+      const end = api.calls.findIndex(
+        ([kind, , body]) => kind === 'state' && (body as { state: string }).state === 'succeeded',
+      );
+      expect(lastEvents).toBeLessThan(end);
 
       expect(
         api.reports().map(([kind, , body]) => [kind, (body as { state?: string }).state]),

@@ -131,6 +131,7 @@ export type RunEventOutput = {
     kind: 'message' | 'command' | 'output' | 'step_started' | 'step_finished' | 'notice';
     text: string;
     truncated?: true;
+    redacted?: true;
 };
 
 export type RunEventPageOutput = {
@@ -719,7 +720,7 @@ export type StreamRunEventsData = {
     body?: never;
     headers?: {
         /**
-         * The last seq received; used when `after` is absent.
+         * The last seq received; the stream resumes after the larger of it and `after`.
          */
         'Last-Event-ID'?: string;
     };
@@ -742,6 +743,10 @@ export type StreamRunEventsErrors = {
      */
     404: ProblemDetails;
     /**
+     * Too many live logs open (urn:agentic-studio:problem:too-many-log-streams)
+     */
+    429: ProblemDetails;
+    /**
      * Error (RFC 9457 problem details)
      */
     default: ProblemDetails;
@@ -751,7 +756,7 @@ export type StreamRunEventsError = StreamRunEventsErrors[keyof StreamRunEventsEr
 
 export type StreamRunEventsResponses = {
     /**
-     * Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments.
+     * Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments; `event: end` once the Run is final.
      */
     200: string;
 };

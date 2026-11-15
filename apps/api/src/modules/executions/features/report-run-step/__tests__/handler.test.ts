@@ -6,6 +6,7 @@ import {
   RunNotHeldError,
   StepLimitReachedError,
 } from '../../../domain/repositories/run-repository.js';
+import { REDACTED } from '../../../domain/services/log-redaction.js';
 import { ReportRunStepHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -30,7 +31,11 @@ describe('ReportRunStepHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new ReportRunStepHandler(runs, { now: () => T1 });
+    handler = new ReportRunStepHandler(
+      runs,
+      { now: () => T1 },
+      { forRun: () => Promise.resolve(['known-secret-value']) },
+    );
     await runs.add({
       projectId: PROJECT,
       provider: 'codex',
@@ -53,6 +58,31 @@ describe('ReportRunStepHandler', () => {
       now: T0,
     });
   }
+
+  it('redacts every string of the result before storing it (Issue #99)', async () => {
+    await running();
+    const result = {
+      outcome: 'done',
+      summary: 'Logged in with known-secret-value.',
+      pullRequest: { title: 'Fix', body: 'Token: Bearer abc.def' },
+      checks: [{ name: 'login', result: 'passed', detail: 'used known-secret-value' }],
+    };
+
+    await handler.execute({
+      runId: run.id,
+      workerId: WORKER,
+      kind: 'start',
+      result,
+      workingCopy: WORKING_COPY,
+    });
+
+    expect(runs.steps[0]!.step.result).toEqual({
+      outcome: 'done',
+      summary: `Logged in with ${REDACTED}.`,
+      pullRequest: { title: 'Fix', body: `Token: Bearer ${REDACTED}` },
+      checks: [{ name: 'login', result: 'passed', detail: `used ${REDACTED}` }],
+    });
+  });
 
   it('stores the steps of a running Run, numbered in report order', async () => {
     await running();

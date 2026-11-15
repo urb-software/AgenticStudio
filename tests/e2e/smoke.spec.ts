@@ -469,16 +469,18 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // "Run again" that fails (`[fake:fail]`) and shows its reason, and one that waits for the
 // operator (`[fake:question]`), which the top-bar run indicator then shows. The Run page is
 // scanned with axe in both themes for the failed and the waiting (active) Run, and the
-// Executions page lists the Runs. Linux only; `pnpm e2e:smoke` fails on Linux if this test did
-// not run and pass. Story #100: a slow Run (`[fake:slow]`) is cancelled while it runs, and the
-// waiting Run is cancelled at the end, so the test holds no server slot afterwards and its
-// place in the file no longer matters.
+// Executions page lists the Runs. Story #99: each Run page shows the Run's log; a slow Run's
+// lines appear live through the web /api proxy (so it does not buffer the stream) and are all
+// there after a reload, and a printed token-shaped string arrives redacted. Linux only;
+// `pnpm e2e:smoke` fails on Linux if this test did not run and pass. Story #100: a long Run
+// (`[fake:long]`) is cancelled while it runs, and the waiting Run is cancelled at the end, so
+// the test holds no server slot afterwards and its place in the file no longer matters.
 test('operator starts runs and follows them to their result', async ({ page }, testInfo) => {
   test.skip(
     process.env.E2E_API_PLATFORM !== 'linux',
     'Repository features and the agent worker run on Linux only; CI runs this test on Linux.',
   );
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const base = process.env.E2E_FIXTURE_REPO_BASE;
   if (!base) throw new Error('E2E_FIXTURE_REPO_BASE is not set; run `pnpm e2e:smoke` on Linux');
   const projectName = `Runs ${testInfo.project.name}`;
@@ -519,9 +521,49 @@ test('operator starts runs and follows them to their result', async ({ page }, t
     .getByRole('navigation', { name: 'Breadcrumb' });
   await expect(breadcrumb.getByRole('link', { name: 'Executions' })).toBeVisible();
 
+  // The finished Run's stored log: its step, the commands and the step's result at its end.
+  const runLog = main.getByRole('log', { name: 'Run log' });
+  await expect(runLog).toContainText('Run step 1 started');
+  await expect(runLog).toContainText('$ fake-test --all');
+  await expect(runLog).toContainText('Result: done');
+  await expect(runLog).toContainText('✓ fake check');
+
+  // A slow Run prints a line every half second for about five seconds. Its lines appear while
+  // the step is still going (live, through the same-origin proxy), and after a reload the
+  // stored log has every line.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Work slowly [fake:slow]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Work slowly [fake:slow]');
+  await expect(runLog).toContainText('working slowly: line 2', { timeout: 30_000 });
+  await expect(runLog).not.toContainText('Run step 1 finished');
+  await expect(main.getByText('Streaming', { exact: true })).toBeVisible();
+  await expect(runLog).toContainText('Run step 1 finished: done', { timeout: 30_000 });
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await page.reload();
+  await expect(heading).toHaveText('Work slowly [fake:slow]');
+  for (const line of ['working slowly: line 1', 'working slowly: line 8', 'Result: done']) {
+    await expect(runLog).toContainText(line);
+  }
+  // Every line once, and the wide line scrolls inside the viewer, not the page.
+  await expect(runLog.getByText('working slowly: line 1', { exact: true })).toHaveCount(1);
+  await expect(runLog.getByText('working slowly: line 2', { exact: true })).toHaveCount(1);
+  await expect(runLog).toContainText('wide output: 0123456789');
+  await expectNoHorizontalScroll(page);
+  await expect(main.getByText('Streaming', { exact: true })).toHaveCount(0);
+
+  // A token the agent prints reaches the log redacted.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Print a token [fake:secret]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Print a token [fake:secret]');
+  await expect(runLog).toContainText('••••••[redacted]', { timeout: 30_000 });
+  await expect(runLog).not.toContainText('ghp_');
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+
   // Run again, prefilled; this time the fake agent fails and the page shows the reason.
   await main.getByRole('button', { name: 'Run again' }).click();
-  await expect(dialog.getByLabel('Task')).toHaveValue('Add a smoke note to the README');
+  await expect(dialog.getByLabel('Task')).toHaveValue('Print a token [fake:secret]');
   await dialog.getByLabel('Task').fill('Break on purpose [fake:fail]');
   await dialog.getByRole('button', { name: 'Start run' }).click();
   await expect(heading).toHaveText('Break on purpose [fake:fail]');
@@ -530,12 +572,12 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(failure).toContainText('The fake agent failed.');
   await expectInBothThemes(page, pill);
 
-  // Story #100: a slow Run is cancelled while it runs. The confirm says what happens; the
+  // Story #100: a long Run is cancelled while it runs. The confirm says what happens; the
   // worker learns of it with its next heartbeat, stops the step and the Run ends cancelled.
   await main.getByRole('button', { name: 'Run again' }).click();
-  await dialog.getByLabel('Task').fill('Work for a long time [fake:slow]');
+  await dialog.getByLabel('Task').fill('Work for a long time [fake:long]');
   await dialog.getByRole('button', { name: 'Start run' }).click();
-  await expect(heading).toHaveText('Work for a long time [fake:slow]');
+  await expect(heading).toHaveText('Work for a long time [fake:long]');
   await expect(pill).toHaveText('Running', { timeout: 30_000 });
   await expect(main.getByText(/minutes per run step/)).toBeVisible();
   await main.getByRole('button', { name: 'Cancel run' }).click();
@@ -554,6 +596,8 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await dialog.getByRole('button', { name: 'Start run' }).click();
   await expect(heading).toHaveText('Ask before changing anything [fake:question]');
   await expect(pill).toHaveText('Waiting for you', { timeout: 30_000 });
+  // The step's result arrives after its end marker; the page shows it without a reload.
+  await expect(runLog).toContainText('Result: needs input', { timeout: 15_000 });
   const indicator = page
     .getByRole('banner', { name: 'Top bar' })
     .getByRole('link', { name: /waiting for you/ });
@@ -565,11 +609,13 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(page).toHaveURL(/\/executions$/);
   const list = main.getByRole('list', { name: 'Runs' });
   const rows = list.getByRole('listitem').filter({ hasText: projectName });
-  await expect(rows).toHaveCount(4);
+  await expect(rows).toHaveCount(6);
   await expect(rows.nth(0)).toContainText('Waiting for you');
   await expect(rows.nth(1)).toContainText('Cancelled');
   await expect(rows.nth(2)).toContainText('Failed');
   await expect(rows.nth(3)).toContainText('Succeeded');
+  await expect(rows.nth(4)).toContainText('Succeeded');
+  await expect(rows.nth(5)).toContainText('Succeeded');
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
 

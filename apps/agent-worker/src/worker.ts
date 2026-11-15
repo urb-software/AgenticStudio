@@ -81,6 +81,13 @@ const UNEXPECTED_FAILURE: RunFailure = {
 /** How long a stopping worker still tries to deliver the Run's buffered log (Issue #99). */
 const SHUTDOWN_LOG_DEADLINE_MS = 2000;
 
+/**
+ * How long the worker keeps trying to deliver a Run's log before its end report while Studio is
+ * unreachable (Issue #100): the step's events are part of the buffered reports, so a Studio
+ * outage drops none of them (only the worker's own buffer bound does, as in #99).
+ */
+const LOG_OUTAGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
+
 /** The number of the Run step the worker carries out (resume steps come with #103). */
 const START_STEP = 1;
 
@@ -238,7 +245,7 @@ export class AgentWorker {
       }
       abort.signal.throwIfAborted();
       // The log goes first: Studio accepts events only while the worker holds the Run.
-      await log.close();
+      await this.closeLog(log);
       abort.signal.throwIfAborted();
       const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
       outbox.send('step', (signal) =>
@@ -262,9 +269,7 @@ export class AgentWorker {
           `Run step stopped: its time limit of ${run.limits.stepMinutes} minutes was reached`,
         );
       }
-      if (reason !== 'lost') {
-        await log.close(this.stopping ? SHUTDOWN_LOG_DEADLINE_MS : undefined);
-      }
+      if (reason !== 'lost') await this.closeLog(log);
       await this.finish(run, error, reason, {
         prepared,
         stepStarted: processes !== undefined,
@@ -279,6 +284,24 @@ export class AgentWorker {
       this.stopCurrent = undefined;
       this.currentRunId = undefined;
     }
+  }
+
+  /**
+   * Delivers the Run's buffered log before its end report: through a Studio outage (Issue #100),
+   * but only {@link SHUTDOWN_LOG_DEADLINE_MS} more once the worker stops.
+   */
+  private async closeLog(log: RunLog): Promise<void> {
+    const shutdown = this.shutdown.signal;
+    if (shutdown.aborted) return log.close(SHUTDOWN_LOG_DEADLINE_MS);
+    let onStop: (() => void) | undefined;
+    const stopped = new Promise<void>((resolve) => {
+      onStop = () => resolve();
+      shutdown.addEventListener('abort', onStop, { once: true });
+    });
+    await Promise.race([log.close(LOG_OUTAGE_DEADLINE_MS), stopped]);
+    shutdown.removeEventListener('abort', onStop!);
+    // A later close sets the shorter deadline on the same delivery.
+    if (shutdown.aborted) await log.close(SHUTDOWN_LOG_DEADLINE_MS);
   }
 
   private processesFor(prepared: PreparedRun): StepProcessGroups {
