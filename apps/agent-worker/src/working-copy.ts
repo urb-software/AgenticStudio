@@ -443,8 +443,8 @@ export class WorkingCopies implements WorkingCopyPort {
  * (escaped). A validated path holds no backslash; it is escaped all the same.
  */
 export function excludePattern(path: string): string {
-  const escaped = path.replace(/[\\*?[]/g, (character) => `\\${character}`);
-  return `/${escaped.replace(/ +$/, (spaces) => spaces.replace(/ /g, '\\ '))}`;
+  // One pass: a backslash, a glob character, or a space of the trailing run of spaces.
+  return `/${path.replace(/[\\*?[]| (?= *$)/g, (character) => `\\${character}`)}`;
 }
 
 /** A file-system error's code (e.g. `EACCES`), never its message (it names paths). */
