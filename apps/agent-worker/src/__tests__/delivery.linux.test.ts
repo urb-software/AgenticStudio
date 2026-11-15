@@ -388,7 +388,9 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
 
     const [push] = gitRunner.pushes();
     expect(push?.args.join(' ')).not.toContain(token);
-    const header = push?.options.config?.find(([key]) => key === 'http.extraHeader');
+    const header = push?.options.config?.find(
+      ([key]) => key === 'http.https://github.com/.extraHeader',
+    );
     expect(header?.[1]).toBe(
       `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
     );

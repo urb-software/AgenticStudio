@@ -32,6 +32,8 @@ const RUN = {
   // Issue #98: set to a fixture remote (file://) and its commit in beforeAll.
   startCommit: '',
   repository: { remoteUrl: '' },
+  integrationBranch: 'main',
+  kind: 'start',
 };
 
 /** The test harness runs the worker with the fake runner (Issue #101); no CLI is spawned. */

@@ -137,6 +137,8 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       runBranch: prepared.runBranch,
       startCommit: first,
       composeProjectName: `studio-run-${run.runId.replaceAll('-', '').slice(0, 12)}`,
+      // Issue #102: the files Studio places in the Working copy (none yet; #104 adds one).
+      studioPaths: [],
     });
     expect(readdirSync(prepared.runDir).sort()).toEqual(['repo', 'run.json', 'task.md']);
     expect(prepared.env).toEqual({
@@ -408,7 +410,9 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       expect(report).toMatchObject({ commits: [{ subject: 'Fake change' }] });
       expect(result).toMatchObject({
         outcome: 'done',
-        checks: expect.arrayContaining([{ name: 'fake unit tests', result: 'failed' }]),
+        checks: expect.arrayContaining([
+          expect.objectContaining({ name: 'fake unit tests', result: 'failed' }),
+        ]),
       });
     });
 

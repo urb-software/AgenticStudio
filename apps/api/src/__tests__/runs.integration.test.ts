@@ -525,7 +525,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
       /** A Run carried to the end of its step by W1. */
       async function steppedRun(result: object = DONE) {
-        const project = await readyProject('Shop');
+        const project = await readyProject(`Shop ${randomUUID()}`);
         const run = await queuedRun(project.id);
         await claim();
         await report(run.id, { state: 'running' });
