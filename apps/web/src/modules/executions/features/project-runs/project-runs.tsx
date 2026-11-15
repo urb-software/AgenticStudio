@@ -65,7 +65,6 @@ export function ProjectRuns({ projectId, repository }: ProjectRunsProps) {
   const { data, error, isPending, isError, isRefetching, refetch, dataUpdatedAt } =
     useProjectRuns(projectId);
   const blocked = repository === 'ready' ? undefined : BLOCKED_REASON[repository];
-  const openDialog = () => setDialogOpen(true);
 
   let body;
   if (isPending) {
@@ -89,18 +88,7 @@ export function ProjectRuns({ projectId, repository }: ProjectRunsProps) {
       <EmptyState
         icon={ActivityIcon}
         title="Start your first run"
-        description="A run hands a task to an agent, which works on it in its own copy of the repository."
-        action={
-          <Button
-            variant="primary"
-            icon={PlayIcon}
-            disabled={blocked !== undefined}
-            aria-describedby={blocked ? BLOCKED_ID : undefined}
-            onClick={openDialog}
-          >
-            Start a run
-          </Button>
-        }
+        description="A run hands a task to an agent, which works on it in its own copy of the repository. Use New run to start one."
       />
     );
   } else {
@@ -119,12 +107,14 @@ export function ProjectRuns({ projectId, repository }: ProjectRunsProps) {
               </p>
             ) : null}
             <Button
-              variant={data && data.length === 0 ? 'secondary' : 'primary'}
+              // The section's one primary action, in every list state: its look never changes
+              // under the operator (the empty state points at it instead of repeating it).
+              variant="primary"
               size="sm"
               icon={PlayIcon}
               disabled={blocked !== undefined}
               aria-describedby={blocked ? BLOCKED_ID : undefined}
-              onClick={openDialog}
+              onClick={() => setDialogOpen(true)}
             >
               New run
             </Button>

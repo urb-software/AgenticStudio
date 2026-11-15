@@ -55,12 +55,14 @@ describe('Runs section: list states', () => {
     expect(await rows()).toHaveLength(1);
   });
 
-  it('shows an empty state with one primary action that opens the dialog', async () => {
+  it('shows an empty state that points at the one primary action, New run', async () => {
     fakeRunsApi([]);
     renderRuns();
 
     await within(section()).findByText('Start your first run');
-    await userEvent.click(within(section()).getByRole('button', { name: 'Start a run' }));
+    expect(within(section()).getAllByRole('button')).toEqual([newRunButton()]);
+    expect(newRunButton().dataset.variant).toBe('primary');
+    await userEvent.click(newRunButton());
 
     expect(dialog()).toBeTruthy();
   });
@@ -155,10 +157,6 @@ describe('Runs section: New run availability', () => {
       const description = button.getAttribute('aria-describedby');
       expect(description && document.getElementById(description)?.textContent).toBe(explanation);
       await within(section()).findByText('Start your first run');
-      expect(within(section()).getByRole('button', { name: 'Start a run' })).toHaveProperty(
-        'disabled',
-        true,
-      );
     },
   );
 });
