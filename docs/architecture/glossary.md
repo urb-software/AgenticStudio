@@ -72,5 +72,5 @@ The process that carries out Runs by driving the agent CLIs, on the agents' side
 _Avoid_: Executor, agent host
 
 **Agent account**:
-The separate Git host account through which agents push their Run branches and open pull requests; it is not the operator's account.
+The separate Git host account through which Run branches are pushed and draft pull requests opened; it is not the operator's account.
 _Avoid_: Bot account, machine user, operator account

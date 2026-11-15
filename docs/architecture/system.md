@@ -90,7 +90,7 @@ logging/    # Structured logs, correlation/tracing
 ## 7. Git and project collaboration
 
 - Each run gets its own working copy: a clone made from a per-project cache, at the exact commit Studio recorded, on a branch named for the run ([ADR 0002](adr/0002-agent-run-isolation.md)).
-- Agents push their run branches and open pull requests through the agent account, whose token is limited to the managed repositories; branch protection keeps protected branches under the operator's approval. Studio's own Git operations use its Git adapter and the Project's Deploy key, which never reaches the agent ([Security](../engineering/security.md) §4).
+- The agent worker pushes run branches and opens draft pull requests through the agent account ([ADR 0002](adr/0002-agent-run-isolation.md)), whose token is limited to the managed repositories; branch protection keeps protected branches under the operator's approval. Studio's own Git operations use its Git adapter and the Project's Deploy key, which never reaches the agent ([Security](../engineering/security.md) §4).
 - Outputs are examined as diffs, tested and reviewed before a controlled merge to the project's integration branch (default `dev`).
 - Each project has **one shared default Preview** reflecting the project's integration branch (default `dev`) after approved merges; **not** a Preview per agent.
 - Merge and production deployment are protected operations, never direct worker privileges.
