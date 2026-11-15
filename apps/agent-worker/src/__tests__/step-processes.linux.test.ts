@@ -21,7 +21,8 @@ const silent = { info: () => undefined, error: () => undefined };
  * shell before its `trap`.
  */
 async function startGroup(script: string): Promise<ChildProcess> {
-  const child = spawn('sh', ['-c', `${script.replace('wait', 'echo ready; wait')}`], {
+  const ready = script.includes('echo ready') ? script : script.replace('wait', 'echo ready; wait');
+  const child = spawn('sh', ['-c', ready], {
     detached: true,
     stdio: ['ignore', 'pipe', 'ignore'],
   });
@@ -79,7 +80,11 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
   });
 
   it('stops a whole tree with the interrupt when it exits within the grace', async () => {
-    const group = await track(startGroup('sleep 600 & sleep 600 & wait'));
+    // A shell that exits on the interrupt, and a foreground child that gets it too (background
+    // jobs of a non-interactive shell ignore SIGINT, so they would need the kill).
+    const group = await track(
+      startGroup("trap 'exit 0' INT; echo ready; while :; do sleep 0.1; done"),
+    );
 
     const killed = await terminateProcessGroups([group], { graceMs: 5000 });
 
