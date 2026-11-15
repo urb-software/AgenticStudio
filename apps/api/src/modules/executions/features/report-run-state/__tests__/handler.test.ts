@@ -431,4 +431,38 @@ describe('ReportRunStateHandler', () => {
       ).rejects.toBeInstanceOf(RunNotHeldError);
     });
   });
+
+  // Review round 2 of #121: a cancel that lands during the delivery leaves a trace.
+  it('records the pull request a delivery opened on a Run cancelled during it', async () => {
+    await report({ state: 'running' });
+    await runs.requestCancel(run.id, T0);
+    const pullRequest = { url: 'https://github.com/acme/shop/pull/9', number: 9 };
+
+    expect(
+      await report({ state: 'cancelled', delivery: { outcome: 'delivered', pullRequest } }),
+    ).toMatchObject({
+      state: 'cancelled',
+      cancellation: { by: 'operator' },
+      delivery: 'delivered',
+      pullRequest,
+    });
+  });
+
+  it('records a pushed Run branch without a pull request on a Run cancelled during its delivery', async () => {
+    await report({ state: 'running' });
+    await runs.requestCancel(run.id, T0);
+
+    expect(
+      await report({ state: 'cancelled', delivery: { outcome: 'none', branchPushed: true } }),
+    ).toMatchObject({
+      state: 'cancelled',
+      delivery: 'none',
+      pullRequest: null,
+      cancellation: {
+        by: 'operator',
+        reason:
+          'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
+      },
+    });
+  });
 });

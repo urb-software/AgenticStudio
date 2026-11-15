@@ -161,6 +161,23 @@ export function useStartRun(projectId: string) {
   });
 }
 
+/**
+ * Cancels a Run (Issue #100). The 202 answer replaces the Run's own query (cancelled at once,
+ * or with its cancel request), and every Run list of this module is read again.
+ */
+export function useCancelRun(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.cancelRun(runId),
+    onSuccess: async (run: RunOutput) => {
+      queryClient.setQueryData(runKey(run.id), run);
+      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
+    },
+    // A refusal (e.g. the Run finished meanwhile) also means the page's Run is out of date.
+    onError: () => queryClient.invalidateQueries({ queryKey: runKey(runId) }),
+  });
+}
+
 /** The structured results of a Run's steps, shown at each step's end in its log (Issue #99). */
 const runStepsKey = (runId: string) => ['runs', 'steps', runId] as const;
 

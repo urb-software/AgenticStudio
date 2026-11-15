@@ -120,7 +120,17 @@ export function RunDelivery({ run }: { run: RunOutput }) {
   const deliveryFailed = run.failure?.code === 'delivery_failed';
   return (
     <>
-      {run.delivery === 'delivered' && run.pullRequest ? (
+      {run.state === 'cancelled' && run.delivery === 'delivered' && run.pullRequest ? (
+        <Banner
+          tone="warning"
+          icon={GitPullRequestIcon}
+          title="Cancelled during its delivery: a draft pull request was opened."
+        >
+          <PullRequestLink pullRequest={run.pullRequest} /> stays open on GitHub; close it there if
+          it is not wanted.
+        </Banner>
+      ) : null}
+      {run.state !== 'cancelled' && run.delivery === 'delivered' && run.pullRequest ? (
         <Banner tone="success" icon={GitPullRequestIcon} title="Draft pull request opened.">
           <PullRequestLink pullRequest={run.pullRequest} /> on GitHub
           {run.runBranch ? (
@@ -131,7 +141,7 @@ export function RunDelivery({ run }: { run: RunOutput }) {
           .
         </Banner>
       ) : null}
-      {run.delivery === 'none' ? (
+      {run.delivery === 'none' && run.state === 'succeeded' ? (
         <Banner tone="info" title="No changes.">
           The agent changed nothing, so nothing was pushed and no pull request was opened.
         </Banner>
@@ -139,7 +149,7 @@ export function RunDelivery({ run }: { run: RunOutput }) {
       {run.state === 'succeeded' || deliveryFailed ? <FailingChecks run={run} /> : null}
       {deliveryFailed ? <RetryDelivery run={run} /> : null}
       {run.delivery === 'delivered' || deliveryFailed ? <FirstDeliveryReminder run={run} /> : null}
-      {NOT_DELIVERED.includes(run.state) && !deliveryFailed && run.runBranch ? (
+      {NOT_DELIVERED.includes(run.state) && !deliveryFailed && !run.delivery && run.runBranch ? (
         <Banner tone="info" icon={GitBranchIcon} title="Nothing was pushed.">
           The Run branch <Mono>{run.runBranch}</Mono> stays in the Working copy on the agent worker
           until retention removes it.

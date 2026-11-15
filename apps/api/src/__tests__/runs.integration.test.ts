@@ -1322,6 +1322,50 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expectProblem(await heartbeat(run.id), 409, PROBLEM.runNotHeld);
       });
 
+      // Review round 2 of #121.
+      it('records the pull request on a Run cancelled during its delivery', async () => {
+        const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/9', number: 9 };
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        await http()
+          .post(`/api/runs/${run.id}/cancel`)
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+          .send();
+
+        expect(
+          (
+            await report(run.id, {
+              state: 'cancelled',
+              delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+            })
+          ).status,
+        ).toBe(204);
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'cancelled',
+          cancellation: { by: 'operator' },
+          delivery: 'delivered',
+          pullRequest: PULL_REQUEST,
+        });
+      });
+
+      it("stops Studio's step clock when the step result is reported (a slow delivery is not timed out)", async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        expect((await reportStep(run.id, { outcome: 'done', summary: 'Done.' })).status).toBe(204);
+
+        for (let minute = 0; minute < LIMITS.stepMinutes + 10; minute += 1) {
+          advance(60);
+          expect((await heartbeat(run.id)).status).toBe(200);
+        }
+        await claim(W2);
+
+        expect((await getRun(run.id)).body.state).toBe('running');
+      });
+
       it('renews leases at most once per lease period, so an API crash loop fails a dead worker', async () => {
         const project = await readyProject('Shop');
         const run = await queuedRun(project.id);
