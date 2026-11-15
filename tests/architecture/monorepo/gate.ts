@@ -97,6 +97,15 @@ export const monorepoGate: Gate = {
       },
     },
     {
+      name: 'mono-agent-worker-production-no-test-code',
+      comment:
+        "The agent worker's production code never imports its test code: tests may use the " +
+        'database and test helpers, so importing a test file would bridge the rule above.',
+      severity: 'error',
+      from: { path: '^apps/agent-worker/', pathNot: '(^|/)__tests__/' },
+      to: { path: '^apps/agent-worker/.*__tests__/' },
+    },
+    {
       name: 'mono-workspace-imports-resolve',
       comment: 'An unresolved @agentic-studio/* import would silently drop an edge from the graph.',
       severity: 'error',

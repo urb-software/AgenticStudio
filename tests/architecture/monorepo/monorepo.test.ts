@@ -36,6 +36,11 @@ describeGate('monorepo', monorepoGate, '.', [
     fixture: 'agent-worker-imports-redis-client',
     expected: ['mono-agent-worker-no-studio-infrastructure'],
   },
+  // Production code reaching the database through a test file (review of #112).
+  {
+    fixture: 'agent-worker-imports-test-code',
+    expected: ['mono-agent-worker-production-no-test-code'],
+  },
 ]);
 
 describe('architecture:monorepo web package classification', () => {
