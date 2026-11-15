@@ -477,7 +477,35 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // `pnpm e2e:smoke` fails on Linux if this test did not run and pass. Story #100: a long Run
 // (`[fake:long]`) is cancelled while it runs, and the waiting Run is cancelled at the end, so
 // the test holds no server slot afterwards and its place in the file no longer matters.
-test('operator starts runs and follows them to their result', async ({ page }, testInfo) => {
+const RUN_TEST = 'operator starts runs and follows them to their result';
+
+/**
+ * Story #100 (review of #124): whatever happened in the Run test, its project's unfinished Runs
+ * are cancelled afterwards, so no Run of it holds a server slot for a later test.
+ */
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.title !== RUN_TEST || process.env.E2E_API_PLATFORM !== 'linux') return;
+  try {
+    const origin = String(testInfo.project.use.baseURL ?? new URL(page.url()).origin);
+    const projects = await page.request.get('/api/projects');
+    if (!projects.ok()) return;
+    const project = (
+      (await projects.json()) as { items: { id: string; name: string }[] }
+    ).items.find((candidate) => candidate.name === `Runs ${testInfo.project.name}`);
+    if (!project) return;
+    const runs = await page.request.get(`/api/projects/${project.id}/runs`);
+    if (!runs.ok()) return;
+    for (const run of (await runs.json()) as { id: string; state: string }[]) {
+      if (['queued', 'preparing', 'running', 'waiting_for_operator'].includes(run.state)) {
+        await page.request.post(`/api/runs/${run.id}/cancel`, { headers: { Origin: origin } });
+      }
+    }
+  } catch {
+    // Clean-up only: never hides the test's own result.
+  }
+});
+
+test(RUN_TEST, async ({ page }, testInfo) => {
   test.skip(
     process.env.E2E_API_PLATFORM !== 'linux',
     'Repository features and the agent worker run on Linux only; CI runs this test on Linux.',
@@ -603,11 +631,21 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(heading).toHaveText('Work for a long time [fake:long]');
   await expect(pill).toHaveText('Running', { timeout: 30_000 });
   await expect(main.getByText(/minutes per run step/)).toBeVisible();
-  await main.getByRole('button', { name: 'Cancel run' }).click();
   const confirmCancel = page.getByRole('alertdialog', { name: 'Cancel run' });
-  await expect(confirmCancel.getByText('Nothing is pushed.')).toBeVisible();
-  await expect(confirmCancel.getByText('The working copy is kept for inspection.')).toBeVisible();
-  await expectNoAxeViolations(page);
+  // The open confirm, scanned in both themes in a real browser (review of #124).
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+    await main.getByRole('button', { name: 'Cancel run' }).click();
+    await expect(confirmCancel.getByText(/Nothing more is pushed\./)).toBeVisible();
+    await expect(confirmCancel.getByText('The working copy is kept for inspection.')).toBeVisible();
+    await expectNoAxeViolations(page);
+    if (theme === 'light') {
+      await confirmCancel.getByRole('button', { name: 'Keep run' }).click();
+      await expect(confirmCancel).toHaveCount(0);
+    }
+  }
   await confirmCancel.getByRole('button', { name: 'Cancel run' }).click();
   await expect(confirmCancel).toHaveCount(0);
   await expect(pill).toHaveText('Cancelled', { timeout: 45_000 });

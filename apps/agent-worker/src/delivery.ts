@@ -33,7 +33,14 @@ import { type PreparedRun, readRunFile, STUDIO_EXCLUDE_SECTION } from './working
 
 /** The delivery could not be completed; `detail` says why and what to check (no token, no path). */
 export class DeliveryFailedError extends Error {
-  constructor(readonly detail: string) {
+  /**
+   * @param branchPushed the Run branch was already pushed when the delivery failed (the pull
+   * request could not be opened): a cancelled Run records it (review of #124).
+   */
+  constructor(
+    readonly detail: string,
+    readonly branchPushed = false,
+  ) {
     super(detail);
     this.name = 'DeliveryFailedError';
   }
@@ -245,7 +252,7 @@ export class Deliveries implements DeliveryPort {
     } catch (error) {
       if (error instanceof PullRequestFailedError) {
         this.options.logger.error(`Delivery of run ${run.runId}: ${error.message}`);
-        throw new DeliveryFailedError(error.message);
+        throw new DeliveryFailedError(error.message, true);
       }
       throw error;
     }

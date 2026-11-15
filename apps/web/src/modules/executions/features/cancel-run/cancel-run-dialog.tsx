@@ -63,7 +63,10 @@ export function CancelRunDialog({ run, open, onOpenChange }: CancelRunDialogProp
           ) : null}
           <ul className="m-0 flex list-disc flex-col gap-1.5 pl-5 text-body">
             <li>The agent is stopped.</li>
-            <li>Nothing is pushed.</li>
+            <li>
+              Nothing more is pushed. If its delivery has already started, the draft pull request it
+              opens stays on GitHub.
+            </li>
             <li>The working copy is kept for inspection.</li>
           </ul>
         </DialogBody>

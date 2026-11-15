@@ -69,7 +69,11 @@ describe('Cancel run (Issue #100)', () => {
 
     expect(within(dialog).getByText('Add pagination')).toBeTruthy();
     expect(within(dialog).getByText('The agent is stopped.')).toBeTruthy();
-    expect(within(dialog).getByText('Nothing is pushed.')).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        'Nothing more is pushed. If its delivery has already started, the draft pull request it opens stays on GitHub.',
+      ),
+    ).toBeTruthy();
     expect(within(dialog).getByText('The working copy is kept for inspection.')).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: 'Cancel run' }).dataset.variant).toBe(
       'destructive',
@@ -145,7 +149,11 @@ describe('Cancel run (Issue #100)', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel run' }));
 
-    const alert = await within(dialog).findByRole('alert');
+    // The Run is read again and is now final; the dialog and its answer stay (review of #124).
+    await vi.waitFor(() => expect(pill().textContent).toBe('Succeeded'));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    const stillOpen = screen.getByRole('alertdialog', { name: 'Cancel run' });
+    const alert = within(stillOpen).getByRole('alert');
     expect(within(alert).getByText('Run already finished')).toBeTruthy();
     expect(within(alert).getByText(/There is nothing to cancel/)).toBeTruthy();
   });
@@ -229,5 +237,41 @@ describe('Cancel run (Issue #100)', () => {
     );
     expect(screen.queryByText('Nothing was pushed.')).toBeNull();
     await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says a cancelled Run was cancelled even without a recorded reason', async () => {
+    const run = aRun({ state: 'cancelled', finishedAt: '2026-11-15T10:05:00.000Z' });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    expect(screen.getByText('The run was cancelled.')).toBeTruthy();
+  });
+
+  it('says a Run cancelled after its push left the Run branch without a pull request', async () => {
+    const run = aRun({
+      state: 'cancelled',
+      finishedAt: '2026-11-15T10:05:00.000Z',
+      delivery: 'none',
+      cancellation: {
+        by: 'operator',
+        reason:
+          'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
+      },
+      runBranch: 'agent/x-r1',
+      commits: [],
+      hasUncommittedChanges: false,
+    });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    expect(
+      screen.getByText(
+        'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('No changes.')).toBeNull();
+    expect(screen.queryByText('Nothing was pushed.')).toBeNull();
   });
 });

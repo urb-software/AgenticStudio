@@ -92,6 +92,8 @@ class FakeDeliveries implements DeliveryPort {
   deliverHangs = false;
   /** When set, delivering resolves only once this promise does (review of #121). */
   deliverGate: Promise<void> | undefined;
+  /** Thrown once the gate opened (review of #124: the pull request failed after the push). */
+  deliverFailureAfterGate: Error | undefined;
 
   async deliver(
     prepared: PreparedRun,
@@ -103,6 +105,7 @@ class FakeDeliveries implements DeliveryPort {
     this.onCall?.('deliver');
     if (this.deliverFailure) throw this.deliverFailure;
     if (this.deliverGate) await this.deliverGate;
+    if (this.deliverFailureAfterGate) throw this.deliverFailureAfterGate;
     if (this.deliverHangs) {
       await new Promise((_resolve, reject) =>
         signal.addEventListener('abort', () => reject(signal.reason)),
@@ -1090,6 +1093,27 @@ describe('AgentWorker', () => {
       await until(() => api.reports().length === 3);
 
       expect(api.reports()[2]?.[2]).toEqual({ state: 'cancelled', delivery: DELIVERED });
+    });
+  });
+
+  it('records the pushed Run branch when the pull request fails after a cancel (review of #124)', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    let release!: () => void;
+    deliveries.deliverGate = new Promise((resolve) => (release = resolve));
+    deliveries.deliverFailureAfterGate = new DeliveryFailedError('GitHub answered 502.', true);
+    startWorker(api, undefined, undefined, deliveries);
+    await until(() => deliveries.calls.some(([step]) => step === 'deliver'));
+
+    api.cancelRequested = true;
+    await until(() => api.calls.filter(([kind]) => kind === 'heartbeat').length >= 3);
+    release();
+    await until(() => api.reports().length === 3);
+
+    expect(api.reports()[2]?.[2]).toMatchObject({
+      state: 'cancelled',
+      delivery: { outcome: 'none', branchPushed: true },
     });
   });
 });

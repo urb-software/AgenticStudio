@@ -529,8 +529,14 @@ export class AgentWorker {
     }
     if (reason === 'cancel' || reason === 'timeout') {
       const state = reason === 'cancel' ? 'cancelled' : 'timed_out';
+      // Cancelled while delivering, after the push but before a pull request (review of #124):
+      // the pushed Run branch is recorded.
+      const pushed =
+        reason === 'cancel' && error instanceof DeliveryFailedError && error.branchPushed
+          ? { delivery: { outcome: 'none' as const, branchPushed: true as const } }
+          : {};
       outbox.send(state, (signal) =>
-        api.reportState(run.runId, { state, ...withWorkingCopy }, signal),
+        api.reportState(run.runId, { state, ...withWorkingCopy, ...pushed }, signal),
       );
       await outbox.drain();
       logger.info(`Run ${run.runId} reported: ${state}.`);

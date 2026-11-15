@@ -141,7 +141,7 @@ export function RunDelivery({ run }: { run: RunOutput }) {
           .
         </Banner>
       ) : null}
-      {run.delivery === 'none' ? (
+      {run.delivery === 'none' && run.state === 'succeeded' ? (
         <Banner tone="info" title="No changes.">
           The agent changed nothing, so nothing was pushed and no pull request was opened.
         </Banner>

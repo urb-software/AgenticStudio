@@ -376,4 +376,22 @@ describe('ReportRunStateHandler', () => {
       pullRequest,
     });
   });
+
+  it('records a pushed Run branch without a pull request on a Run cancelled during its delivery', async () => {
+    await report({ state: 'running' });
+    await runs.requestCancel(run.id, T0);
+
+    expect(
+      await report({ state: 'cancelled', delivery: { outcome: 'none', branchPushed: true } }),
+    ).toMatchObject({
+      state: 'cancelled',
+      delivery: 'none',
+      pullRequest: null,
+      cancellation: {
+        by: 'operator',
+        reason:
+          'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
+      },
+    });
+  });
 });

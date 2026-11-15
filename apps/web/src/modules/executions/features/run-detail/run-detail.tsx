@@ -119,8 +119,7 @@ function RunAgain({ run }: { run: RunOutput }) {
  * confirm. Once a running Run carries a cancel request it shows "Cancel requested…" instead,
  * until the agent worker has stopped it.
  */
-function CancelRun({ run }: { run: RunOutput }) {
-  const [open, setOpen] = useState(false);
+function CancelRun({ run, onCancel }: { run: RunOutput; onCancel: () => void }) {
   if (run.cancelRequestedAt) {
     return (
       <Button variant="danger" icon={BanIcon} disabled>
@@ -129,11 +128,27 @@ function CancelRun({ run }: { run: RunOutput }) {
     );
   }
   return (
+    <Button variant="danger" icon={BanIcon} onClick={onCancel}>
+      Cancel run
+    </Button>
+  );
+}
+
+/**
+ * The header's action: "Run again" for a finished Run, "Cancel run" otherwise. The cancel
+ * confirm lives here, outside that switch, so it stays open with its answer when the Run turns
+ * final meanwhile (review of #124: "Run already finished" must stay readable).
+ */
+function RunActions({ run }: { run: RunOutput }) {
+  const [cancelOpen, setCancelOpen] = useState(false);
+  return (
     <>
-      <Button variant="danger" icon={BanIcon} onClick={() => setOpen(true)}>
-        Cancel run
-      </Button>
-      <CancelRunDialog run={run} open={open} onOpenChange={setOpen} />
+      {FINAL_STATES.includes(run.state) ? (
+        <RunAgain run={run} />
+      ) : (
+        <CancelRun run={run} onCancel={() => setCancelOpen(true)} />
+      )}
+      <CancelRunDialog run={run} open={cancelOpen} onOpenChange={setCancelOpen} />
     </>
   );
 }
@@ -151,8 +166,15 @@ function limitsText({ stepMinutes, maxSteps, waitingDays }: RunOutput['limits'])
 
 /** How a Run that was stopped ended (Issue #100): who cancelled it and why, or its time limit. */
 function Stopped({ run }: { run: RunOutput }) {
-  if (run.state === 'cancelled' && run.cancellation) {
-    return <Banner tone="info" icon={BanIcon} title={run.cancellation.reason} />;
+  if (run.state === 'cancelled') {
+    // A Run cancelled before reasons were recorded has none (review of #124).
+    return (
+      <Banner
+        tone="info"
+        icon={BanIcon}
+        title={run.cancellation?.reason || 'The run was cancelled.'}
+      />
+    );
   }
   if (run.state === 'timed_out') {
     return (
@@ -261,7 +283,7 @@ export function RunDetail({ runId }: { runId: string }) {
             </span>
           </p>
         </div>
-        {FINAL_STATES.includes(run.state) ? <RunAgain run={run} /> : <CancelRun run={run} />}
+        <RunActions run={run} />
       </header>
 
       {isError ? (

@@ -615,3 +615,17 @@ describe('a cancel during the delivery (review round 2 of #121)', () => {
     expect(report({ state: 'waiting_for_operator', delivery })).toBe(false);
   });
 });
+
+describe('a pushed branch without a pull request (review of #124)', () => {
+  it('is reported only with cancelled', () => {
+    const report = (state: string) =>
+      reportRunStateRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        state,
+        delivery: { outcome: 'none', branchPushed: true },
+      }).success;
+
+    expect(report('cancelled')).toBe(true);
+    expect(report('succeeded')).toBe(false);
+  });
+});
