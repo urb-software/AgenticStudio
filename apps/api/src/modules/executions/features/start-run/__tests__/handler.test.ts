@@ -14,6 +14,7 @@ const HEAD = 'd'.repeat(40);
 const REMOTE = 'git@github.com:acme/shop.git';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
+const LIMITS = { stepMinutes: 45, maxSteps: 5, waitingDays: 3 };
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
   private current: RecordedWorkerStatus | undefined;
@@ -36,7 +37,7 @@ describe('StartRunHandler', () => {
 
   const startPoints: RunStartPoints = { forProject: () => Promise.resolve(startPoint) };
   const start = () =>
-    new StartRunHandler(runs, startPoints, statuses, clock, LEASE).execute({
+    new StartRunHandler(runs, startPoints, statuses, clock, LEASE, LIMITS).execute({
       projectId: PROJECT,
       provider: 'codex',
       task: 'Fix the login bug',
@@ -59,6 +60,13 @@ describe('StartRunHandler', () => {
     };
     statuses = new InMemoryWorkerStatusStore();
     workerReports(true);
+  });
+
+  it('copies the limits in force onto the Run (Issue #100)', async () => {
+    const run = await start();
+
+    expect(run.limits).toEqual(LIMITS);
+    expect(run).toMatchObject({ cancelRequestedAt: null, cancellation: null, waitingSince: null });
   });
 
   it('queues a Run that starts from the current integration branch commit', async () => {

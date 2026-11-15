@@ -8,7 +8,9 @@ import {
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/entities/run-environment-file.js';
 import type { Run, RunFailure } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
+import { cancelLongWaitingRuns } from '../../domain/services/long-waiting-runs.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
+import { timeOutOverdueSteps } from '../../domain/services/overdue-steps.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
   ENVIRONMENT_FILE_SNAPSHOTS,
@@ -22,6 +24,16 @@ const NO_REMOTE: RunFailure = {
     "The run has no repository remote to prepare from (the project's repository was removed).",
 };
 
+/**
+ * Command (Issue #96): an agent worker asks for work. Lost workers are swept first (their
+ * Runs fail and free their places), Runs waiting too long are cancelled and steps far past
+ * their time limit time out (Issue #100); then the oldest eligible queued Run is handed out
+ * under the concurrency limits; `null` when there is none. A `failed` Run whose delivery retry
+ * was requested is handed out too, for the delivery only (Issue #102). Issue #104: when a
+ * Run is started, the Project's Environment file is copied into a Run-scoped secret (the
+ * Run's snapshot: log redaction uses it, and later changes to the file affect only later
+ * Runs) and handed to the claiming worker only; the Run records its path.
+ */
 const NOT_DELIVERABLE: RunFailure = {
   code: 'delivery_failed',
   detail:
@@ -73,6 +85,10 @@ export class ClaimRunHandler {
   async execute(workerId: string): Promise<ClaimedRun | null> {
     const now = this.clock.now();
     await failLostWorkers(this.runs, now, this.lease.seconds);
+    // A Run left waiting too long holds a slot; it is cancelled first (Issue #100).
+    await cancelLongWaitingRuns(this.runs, now);
+    // A step far past its time limit holds a slot too (review of #121: Studio's backstop).
+    await timeOutOverdueSteps(this.runs, now);
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;
@@ -150,6 +166,7 @@ export class ClaimRunHandler {
       from: 'preparing',
       to: 'failed',
       failure,
+      cancelRequested: false,
       now,
     });
   }

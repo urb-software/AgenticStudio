@@ -19,6 +19,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Deliveries } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
+import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
 import { GitRunner } from '../git.js';
 import { Retention } from '../retention.js';
 import { composeProjectName } from '../run-layout.js';
@@ -50,6 +51,7 @@ const AGENT_GITHUB_TOKEN = `ghp_${randomBytes(18).toString('hex')}`;
 type RunView = {
   id: string;
   state: string;
+  cancellation?: { by: string; reason: string };
   failure?: { code: string; detail: string };
   runBranch?: string;
   commits?: { id: string; subject: string }[];
@@ -110,14 +112,25 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     error: (message: string) => void workerLogs.push(message),
   };
 
+  /** The Run's containers (Issue #100): recorded, never the CI host's Docker. */
+  const cleanedUp: string[] = [];
+
   /** The worker as main.ts composes it in fake mode (Issue #101): the gate before the runner. */
-  function startWorker(token = WORKER_TOKEN, providers = BOTH_ENABLED): AgentWorker {
+  function startWorker(
+    token = WORKER_TOKEN,
+    providers = BOTH_ENABLED,
+    extras: { runner?: Runner; minuteMs?: number; fetch?: typeof fetch } = {},
+  ): AgentWorker {
     const gate = new ProviderGate(providers);
     const git = new GitRunner({ env: { PATH: gitEnv.PATH!, HOME: gitEnv.HOME! } });
-    const fake = new FakeRunner({ slowMs: 60_000, git });
+    const fake = extras.runner ?? new FakeRunner({ slowMs: 60_000, git });
     const worker = new AgentWorker({
-      api: new StudioApi({ apiUrl, token, workerId: randomUUID() }),
+      api: new StudioApi({ apiUrl, token, workerId: randomUUID(), fetch: extras.fetch }),
       runner: new RunnerDispatcher(gate, { claude_code: fake, codex: fake }),
+      gate,
+      resources: { cleanUp: async (project) => void cleanedUp.push(project) },
+      killGraceMs: 500,
+      minuteMs: extras.minuteMs,
       status: { runner: 'fake', providers: gate.snapshot() },
       workingCopies: new WorkingCopies({
         dataDir: workerDataDir,
@@ -581,6 +594,124 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(await getRun(runId)).toMatchObject({
       state: 'failed',
       failure: { code: 'worker_lost', detail: 'worker shut down' },
+    });
+  });
+
+  // Issue #100: cancel, the time limit and process-tree termination through the real API.
+  // Review of #121: Studio applies a report, but its answer never reaches the worker (the
+  // connection drops after the commit). The worker sends it again; the real API treats the repeat
+  // as a no-op, so the Run still ends succeeded with exactly one stored Run step.
+  it('carries a Run through reports whose answers are lost, without a duplicate step', async () => {
+    const lost = new Set(['running', 'steps', 'succeeded']);
+    const lossy: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      const url = String(input);
+      const body =
+        typeof init?.body === 'string' ? (JSON.parse(init.body) as { state?: string }) : {};
+      const label = url.endsWith('/steps') ? 'steps' : url.endsWith('/state') ? body.state : '';
+      if (label && lost.delete(label)) throw new TypeError('fetch failed: the answer was lost');
+      return response;
+    };
+    const runId = await startRun('Add a health check');
+    startWorker(WORKER_TOKEN, BOTH_ENABLED, { fetch: lossy });
+
+    const run = await runReaches(runId, ['succeeded', 'failed']);
+
+    expect(run.state).toBe('succeeded');
+    expect(lost.size).toBe(0);
+    const [steps] = await db.$queryRaw<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM run_steps WHERE run_id = ${runId}::uuid`;
+    expect(steps?.count).toBe(1);
+  });
+
+  describe('cancel and time limit (Issue #100)', () => {
+    const cancel = (runId: string) =>
+      fetch(`${apiUrl}/api/runs/${runId}/cancel`, {
+        method: 'POST',
+        headers: { Origin: STUDIO_ORIGIN, Cookie: cookie },
+      });
+
+    /** A Run step that starts a real process tree in its own group and ignores every stop. */
+    class ProcessTreeRunner implements Runner {
+      group: number | undefined;
+
+      async *start({ processes }: StartRunStepInput): RunStep {
+        // The shell and both children ignore SIGINT: only the SIGKILL after the grace ends them.
+        const child = spawn('sh', ['-c', 'trap "" INT; sleep 600 & sleep 600 & wait'], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.unref();
+        this.group = child.pid!;
+        processes.register(this.group);
+        yield { type: 'message', text: 'process tree started' };
+        await delay(600_000, undefined, { ref: false });
+        return { outcome: 'done', summary: 'never' };
+      }
+
+      resume(): RunStep {
+        throw new Error('not used');
+      }
+    }
+
+    const groupAlive = (group: number) => {
+      try {
+        process.kill(-group, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    it('cancels a running Run: the step stops, its Run ends cancelled, the log so far is kept', async () => {
+      const runId = await startRun('[fake:slow] Work for a long time');
+      startWorker();
+      await runReaches(runId, ['running']);
+
+      expect((await cancel(runId)).status).toBe(202);
+
+      const run = await runReaches(runId, ['cancelled', 'failed', 'succeeded']);
+      expect(run).toMatchObject({ state: 'cancelled', cancellation: { by: 'operator' } });
+      // The Working copy is kept for inspection, and its state recorded.
+      expect(run.runBranch).toMatch(/^agent\//);
+      expect(cleanedUp).toContain(composeProjectName(runId));
+    });
+
+    it('terminates the whole process tree of a step that ignores the interrupt', async () => {
+      const runId = await startRun('Start a process tree');
+      const runner = new ProcessTreeRunner();
+      startWorker(WORKER_TOKEN, BOTH_ENABLED, { runner });
+      await runReaches(runId, ['running']);
+      await until(
+        async () => runner.group,
+        (group) => group !== undefined,
+      );
+      expect(groupAlive(runner.group!)).toBe(true);
+
+      await cancel(runId);
+
+      expect((await runReaches(runId, ['cancelled', 'failed'])).state).toBe('cancelled');
+      expect(groupAlive(runner.group!)).toBe(false);
+    });
+
+    it('stops a step at its time limit: the Run ends timed_out', async () => {
+      const runId = await startRun('[fake:slow] Take too long');
+      // One minute of the 60-minute default lasts 5 ms here: the limit is 300 ms.
+      startWorker(WORKER_TOKEN, BOTH_ENABLED, { minuteMs: 5 });
+
+      expect((await runReaches(runId, ['timed_out', 'failed', 'succeeded'])).state).toBe(
+        'timed_out',
+      );
+    });
+
+    it('cancels a queued Run before any worker claims it', async () => {
+      const runId = await startRun('Never started');
+
+      expect((await cancel(runId)).status).toBe(202);
+      startWorker();
+      await delay(300);
+
+      expect((await getRun(runId)).state).toBe('cancelled');
     });
   });
 

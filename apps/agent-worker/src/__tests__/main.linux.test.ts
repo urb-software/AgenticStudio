@@ -32,6 +32,8 @@ const RUN = {
   // Issue #98: set to a fixture remote (file://) and its commit in beforeAll.
   startCommit: '',
   repository: { remoteUrl: '' },
+  limits: { stepMinutes: 60, maxSteps: 10 },
+  completedSteps: 0,
   integrationBranch: 'main',
   kind: 'start',
   studioPaths: [],
@@ -77,6 +79,13 @@ async function stubStudio(
         return;
       }
       reports.push({ path, body });
+      if (path.endsWith('/heartbeat')) {
+        // Issue #100: the heartbeat answer says whether the operator asked to cancel.
+        response
+          .writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ cancelRequested: false }));
+        return;
+      }
       response.writeHead(204).end();
     });
   });
@@ -261,8 +270,9 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
       await delay(50);
     }
 
+    // Note on #117 (Issue #100): the gate is checked before the Working copy is prepared, so
+    // nothing is fetched, the Run never reports running, and no Working copy state goes along.
     expect(stub.reports.filter((r) => r.path === statePath).map((r) => r.body)).toEqual([
-      { workerId: expect.any(String), state: 'running' },
       {
         workerId: expect.any(String),
         state: 'failed',
@@ -270,8 +280,6 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
           code: 'provider_disabled',
           detail: expect.stringContaining('Codex is switched off'),
         },
-        // Issue #98: the Working copy was prepared, so its (unchanged) state goes with it.
-        workingCopy: expect.objectContaining({ commits: [] }),
       },
     ]);
   });

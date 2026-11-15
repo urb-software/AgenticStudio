@@ -11,17 +11,25 @@ const run = (task: string): RunPayload => ({
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
+  limits: { stepMinutes: 60, maxSteps: 10 },
+  completedSteps: 0,
   integrationBranch: 'dev',
   kind: 'start',
   studioPaths: [],
 });
+const processes = { register: () => undefined };
 // The scenarios here touch no Working copy (commit and dirty: fake-runner.linux.test.ts).
 const workspace = { repoDir: '/nonexistent/repo', runDir: '/nonexistent', env: {} };
 
 async function start(task: string, signal = new AbortController().signal, slowMs = 10) {
   const events: RunnerEvent[] = [];
   const result = await drainRunStep(
-    new FakeRunner({ slowMs, slowLineMs: 2 }).start({ run: run(task), workspace, signal }),
+    new FakeRunner({ slowMs, slowLineMs: 2 }).start({
+      run: run(task),
+      workspace,
+      signal,
+      processes,
+    }),
     (event) => events.push(event),
   );
   return { events, result };
@@ -36,6 +44,7 @@ describe('fakeScenarioOf', () => {
     ['[fake:crash]', 'crash'],
     ['[fake:commit] Add a file', 'commit'],
     ['[fake:dirty]', 'dirty'],
+    ['[fake:stubborn]', 'stubborn'],
     ['[fake:checks-failed] Add a file', 'checks-failed'],
     ['[fake:secret]', 'secret'],
     ['Print it [fake:print-env]', 'print-env'],
@@ -98,6 +107,13 @@ describe('FakeRunner', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('keeps a stubborn step going when aborted (Issue #100: the hard path)', async () => {
+    const abort = new AbortController();
+    const pending = start('[fake:stubborn]', abort.signal, 50);
+    abort.abort();
+    expect((await pending).result.outcome).toBe('done');
+  });
+
   it('resumes with a done result', async () => {
     const result = await drainRunStep(
       new FakeRunner().resume({
@@ -105,6 +121,7 @@ describe('FakeRunner', () => {
         workspace,
         answer: 'Option A',
         signal: new AbortController().signal,
+        processes,
       }),
       () => undefined,
     );

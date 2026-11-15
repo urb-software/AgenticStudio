@@ -1,4 +1,5 @@
 import type { RunnerEvent, RunPayload, RunStepResult } from '@agentic-studio/contracts';
+import type { ProcessGroupRegistry } from './spawn-boundary.js';
 
 /**
  * One Run step as it executes: a stream of events that ends with the structured result
@@ -19,8 +20,14 @@ export interface RunWorkspace {
 export interface StartRunStepInput {
   run: RunPayload;
   workspace: RunWorkspace;
-  /** Aborted when the worker shuts down or loses the Run; the step must stop promptly. */
+  /**
+   * Aborted when the Run step must stop: the operator cancelled it, it reached its time limit,
+   * the worker lost the Run or shuts down (Issue #100). The step must stop promptly; the worker
+   * also interrupts, then kills, every process group registered in `processes`.
+   */
   signal: AbortSignal;
+  /** Where the step's process groups are registered; `spawnProviderCli` does it (Issue #100). */
+  processes: ProcessGroupRegistry;
 }
 
 export interface ResumeRunStepInput extends StartRunStepInput {

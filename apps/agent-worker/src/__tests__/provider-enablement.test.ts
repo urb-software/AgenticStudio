@@ -39,22 +39,37 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
+  limits: { stepMinutes: 60, maxSteps: 10 },
+  completedSteps: 0,
   integrationBranch: 'dev',
   kind: 'start',
   studioPaths: [],
 });
 
+/** Where the spawn boundary registers a CLI's process group (Issue #100); recorded here. */
+class RecordingGroups {
+  readonly groups: number[] = [];
+  register(group: number) {
+    this.groups.push(group);
+  }
+}
+const NO_GROUPS = new RecordingGroups();
+
 /** Issue #98: where a Run step works; these tests never touch it. */
 const WORKSPACE = { repoDir: '/nonexistent/repo', runDir: '/nonexistent', env: {} };
 
 /** The Working copies as a stub (Issue #98): preparation and its report need no Git. */
+const prepared: string[] = [];
 const workingCopies: WorkingCopyPort = {
-  prepare: async (run) => ({
-    runId: run.runId,
-    ...WORKSPACE,
-    runBranch: 'agent/x',
-    startCommit: run.startCommit,
-  }),
+  prepare: async (run) => (
+    prepared.push(run.runId),
+    {
+      runId: run.runId,
+      ...WORKSPACE,
+      runBranch: 'agent/x',
+      startCommit: run.startCommit,
+    }
+  ),
   report: async () => ({ runBranch: 'agent/x', commits: [], hasUncommittedChanges: false }),
 };
 
@@ -76,14 +91,19 @@ const cliOf = (gate: ProviderGate): ProviderCli => ({ gate, binaries: DEFAULT_PR
 class CliRunner implements Runner {
   constructor(private readonly cli: ProviderCli) {}
 
-  async *start({ run }: StartRunStepInput): RunStep {
-    spawnProviderCli(this.cli, { provider: run.provider, args: ['--print', run.task] });
+  async *start({ run, processes }: StartRunStepInput): RunStep {
+    spawnProviderCli(this.cli, { provider: run.provider, args: ['--print', run.task] }, processes);
     yield { type: 'message', text: 'cli started' };
     return DONE;
   }
 
   async *resume({ run }: StartRunStepInput): RunStep {
-    return yield* this.start({ run, workspace: WORKSPACE, signal: new AbortController().signal });
+    return yield* this.start({
+      run,
+      workspace: WORKSPACE,
+      signal: new AbortController().signal,
+      processes: NO_GROUPS,
+    });
   }
 }
 
@@ -101,7 +121,9 @@ class OneRunApi implements WorkerApi {
   async reportStatus() {}
   async appendEvents() {}
   async reportStep() {}
-  async heartbeat() {}
+  async heartbeat() {
+    return { cancelRequested: false };
+  }
   async reportState(_runId: string, report: { state: string; workingCopy?: unknown }) {
     // The Working copy state that goes with a failure (Issue #98) is tested in worker.test.ts.
     const { workingCopy, ...rest } = report;
@@ -129,12 +151,20 @@ async function carry(
   const worker = new AgentWorker({
     api,
     runner: new RunnerDispatcher(gate, { claude_code: runner, codex: runner }),
+    gate,
     status: { runner: config.runner, providers: gate.snapshot() },
     workingCopies,
+    resources: { cleanUp: async () => undefined },
     deliveries,
     pollMs: 5,
     heartbeatMs: 60_000,
+    killGraceMs: 100,
     logger: silent,
+    processesFor: () => ({
+      register: () => undefined,
+      terminate: async () => [],
+      release: async () => undefined,
+    }),
   });
   void worker.run();
   const deadline = Date.now() + 5000;
@@ -196,10 +226,18 @@ describe('provider enablement gate (quality.md §10)', () => {
       expect(await carry({}, payload('codex'))).toEqual(disabled('codex'));
       // A code path that skipped the dispatcher still meets the gate at the boundary.
       for (const provider of ['claude_code', 'codex'] as const) {
-        expect(() => spawnProviderCli(cliOf(gate), { provider, args: [] })).toThrowError(
+        expect(() => spawnProviderCli(cliOf(gate), { provider, args: [] }, NO_GROUPS)).toThrowError(
           ProviderDisabledError,
         );
       }
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it('not even a fetch: the worker checks the gate before preparing the Working copy (note on #117)', async () => {
+      prepared.length = 0;
+
+      expect(await carry({}, payload('codex'))).toEqual(disabled('codex'));
+      expect(prepared).toEqual([]);
       expect(spawn).not.toHaveBeenCalled();
     });
 
@@ -222,6 +260,7 @@ describe('provider enablement gate (quality.md §10)', () => {
         workspace: WORKSPACE,
         answer: 'Option A',
         signal: new AbortController().signal,
+        processes: NO_GROUPS,
       });
 
       await expect(resume.next()).rejects.toBeInstanceOf(ProviderDisabledError);
@@ -233,6 +272,7 @@ describe('provider enablement gate (quality.md §10)', () => {
       expect(spawn).toHaveBeenCalledOnce();
       expect(spawn).toHaveBeenCalledWith('codex', ['--print', 'Fix the login bug'], {
         shell: false,
+        detached: true,
       });
     });
   });
@@ -294,7 +334,7 @@ describe('provider enablement gate (quality.md §10)', () => {
         }).toThrowError(TypeError);
         expect(gate.isEnabled('claude_code')).toBe(false);
         expect(() =>
-          spawnProviderCli(cliOf(gate), { provider: 'claude_code', args: [] }),
+          spawnProviderCli(cliOf(gate), { provider: 'claude_code', args: [] }, NO_GROUPS),
         ).toThrowError(ProviderDisabledError);
       } finally {
         delete process.env.CLAUDE_CODE_ENABLED;
@@ -346,8 +386,8 @@ describe("the spawn boundary starts only the provider's own binary (review of #1
   const enabled = new ProviderGate({ claude_code: true, codex: true });
 
   it('resolves claude and codex from the provider by default', () => {
-    spawnProviderCli(cliOf(enabled), { provider: 'claude_code', args: ['-p'] });
-    spawnProviderCli(cliOf(enabled), { provider: 'codex', args: ['exec'] });
+    spawnProviderCli(cliOf(enabled), { provider: 'claude_code', args: ['-p'] }, NO_GROUPS);
+    spawnProviderCli(cliOf(enabled), { provider: 'codex', args: ['exec'] }, NO_GROUPS);
 
     expect(spawn.mock.calls.map(([command, args]) => [command, args])).toEqual([
       ['claude', ['-p']],
@@ -368,6 +408,7 @@ describe("the spawn boundary starts only the provider's own binary (review of #1
         provider: 'codex',
         args: [],
       },
+      NO_GROUPS,
     );
 
     expect(config.providerBinaries).toEqual({
@@ -380,9 +421,19 @@ describe("the spawn boundary starts only the provider's own binary (review of #1
   it('ignores a command smuggled into the request, and never runs a shell', () => {
     const request = { provider: 'codex', args: ['exec'], command: 'rm', options: { shell: true } };
 
-    spawnProviderCli(cliOf(enabled), request as never);
+    spawnProviderCli(cliOf(enabled), request as never, NO_GROUPS);
 
-    expect(spawn).toHaveBeenCalledWith('codex', ['exec'], { shell: false });
+    expect(spawn).toHaveBeenCalledWith('codex', ['exec'], { shell: false, detached: true });
+  });
+
+  it('starts the CLI in its own process group and registers it with the Run step (Issue #100)', () => {
+    const groups = new RecordingGroups();
+    spawn.mockImplementation(() => Object.assign(new EventEmitter(), { pid: 4242 }));
+
+    spawnProviderCli(cliOf(enabled), { provider: 'codex', args: [] }, groups);
+
+    expect(spawn.mock.calls[0]?.[2]).toMatchObject({ detached: true, shell: false });
+    expect(groups.groups).toEqual([4242]);
   });
 
   it('keeps the binaries fixed for the life of the process', () => {

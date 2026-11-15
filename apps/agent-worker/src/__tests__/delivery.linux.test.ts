@@ -106,6 +106,8 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       integrationBranch: 'main',
       kind: 'start',
       studioPaths: [],
+      limits: { stepMinutes: 60, maxSteps: 10 },
+      completedSteps: 0,
       ...overrides,
     };
   }

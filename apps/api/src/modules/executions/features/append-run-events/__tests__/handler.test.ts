@@ -57,6 +57,7 @@ describe('AppendRunEventsHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
@@ -134,6 +135,7 @@ describe('AppendRunEventsHandler', () => {
       from: 'preparing',
       to: 'failed',
       failure: { code: 'unknown', detail: 'x' },
+      cancelRequested: false,
       now: T0,
     });
     await expect(append([event(1)])).rejects.toBeInstanceOf(RunNotHeldError);

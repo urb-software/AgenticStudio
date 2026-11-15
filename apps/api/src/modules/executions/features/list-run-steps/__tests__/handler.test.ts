@@ -17,6 +17,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     const run = (await runs.claimNext(WORKER, T0))!;
@@ -26,6 +27,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
       from: 'preparing',
       to: 'running',
       failure: null,
+      cancelRequested: false,
       now: T0,
     });
     await runs.appendStep(
@@ -45,6 +47,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
       },
       { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
       ['lint'],
+      T0,
     );
     const handler = new ListRunStepsHandler(runs, {
       forRun: () => Promise.resolve(['test-secret-value']),

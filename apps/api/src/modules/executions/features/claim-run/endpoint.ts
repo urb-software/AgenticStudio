@@ -43,6 +43,11 @@ export class ClaimRunEndpoint {
       ...(run.state === 'failed'
         ? { kind: 'deliver', runBranch: run.workingCopy?.runBranch }
         : { kind: 'start' }),
+      // The worker enforces these (Issue #100); the waiting period is Studio's own.
+      limits: { stepMinutes: run.limits.stepMinutes, maxSteps: run.limits.maxSteps },
+      // A start claim hands out a queued Run, which has taken no Run step yet (resumed Runs:
+      // #103); a delivery retry starts none.
+      completedSteps: run.state === 'failed' ? 1 : 0,
     });
   }
 }

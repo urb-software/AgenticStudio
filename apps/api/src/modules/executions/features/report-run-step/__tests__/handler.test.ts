@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Run } from '../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { RunNotFoundError, RunNotHeldError } from '../../../domain/repositories/run-repository.js';
+import {
+  RunNotFoundError,
+  RunNotHeldError,
+  StepLimitReachedError,
+  StepOutOfOrderError,
+} from '../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../domain/services/log-redaction.js';
 import { ReportRunStepHandler } from '../handler.js';
 
@@ -9,6 +14,7 @@ const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
+const T1 = new Date('2026-11-15T12:30:00.000Z');
 const RESULT = { outcome: 'done', summary: 'Done.' };
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',
@@ -26,15 +32,18 @@ describe('ReportRunStepHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new ReportRunStepHandler(runs, {
-      forRun: () => Promise.resolve(['known-secret-value']),
-    });
+    handler = new ReportRunStepHandler(
+      runs,
+      { now: () => T1 },
+      { forRun: () => Promise.resolve(['known-secret-value']) },
+    );
     await runs.add({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
@@ -47,6 +56,7 @@ describe('ReportRunStepHandler', () => {
       from: 'preparing',
       to: 'running',
       failure: null,
+      cancelRequested: false,
       now: T0,
     });
   }
@@ -77,10 +87,14 @@ describe('ReportRunStepHandler', () => {
   });
 
   it('never redacts the enum fields, even when a known value equals one (#104, #119 review)', async () => {
-    handler = new ReportRunStepHandler(runs, {
-      // Environment file values may be any word, e.g. `done` or `passed`.
-      forRun: () => Promise.resolve(['done', 'passed', 'needs_input']),
-    });
+    handler = new ReportRunStepHandler(
+      runs,
+      { now: () => T1 },
+      {
+        // Environment file values may be any word, e.g. `done` or `passed`.
+        forRun: () => Promise.resolve(['done', 'passed', 'needs_input']),
+      },
+    );
     await running();
     const result = {
       outcome: 'needs_input',
@@ -180,5 +194,56 @@ describe('ReportRunStepHandler', () => {
         workingCopy: WORKING_COPY,
       }),
     ).rejects.toBeInstanceOf(RunNotFoundError);
+  });
+
+  // Issue #100: the API enforces the step limit too.
+  it('refuses a step beyond the maximum and fails the Run with step_limit', async () => {
+    await running();
+    await report();
+    await report();
+
+    await expect(report()).rejects.toBeInstanceOf(StepLimitReachedError);
+
+    expect(runs.steps).toHaveLength(2);
+    expect(await runs.findById(run.id)).toMatchObject({
+      state: 'failed',
+      failure: {
+        code: 'step_limit',
+        detail: 'The run reached its limit of 2 run steps; no further step was started.',
+      },
+      claimedBy: null,
+      finishedAt: T1,
+    });
+  });
+
+  // Review of #121: the worker numbers its steps; a re-sent number is not stored twice.
+  describe('step numbers', () => {
+    const numbered = (index: number) =>
+      handler.execute({
+        runId: run.id,
+        workerId: WORKER,
+        index,
+        kind: 'start',
+        result: RESULT,
+        workingCopy: WORKING_COPY,
+      });
+
+    it('acknowledges a re-sent step without storing it again', async () => {
+      await running();
+
+      expect(await numbered(1)).toBe(1);
+      expect(await numbered(1)).toBe(1);
+      expect(runs.steps).toHaveLength(1);
+    });
+
+    it('refuses a step number that skips ahead', async () => {
+      await running();
+
+      const error = await numbered(2).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(StepOutOfOrderError);
+      expect((error as StepOutOfOrderError).expected).toBe(1);
+      expect(runs.steps).toEqual([]);
+    });
   });
 });

@@ -45,6 +45,7 @@ export const FAILURE_MESSAGE: Record<FailureCode, string> = {
   usage_limit: "The provider's usage limit was reached.",
   worker_lost: 'The agent worker stopped responding.',
   delivery_failed: "The run's result could not be delivered.",
+  step_limit: 'The run reached its maximum number of run steps.',
   unknown: 'The run failed for an unknown reason.',
 };
 

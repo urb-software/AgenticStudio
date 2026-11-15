@@ -33,6 +33,7 @@ describe('Environment file snapshots', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       integrationBranch: 'dev',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     });
     const run = (await runs.claimNext(WORKER, T0))!;
     const snapshot = await secrets.put(content, OWNER);
@@ -94,6 +95,7 @@ describe('Environment file snapshots', () => {
         from,
         to,
         failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+        cancelRequested: false,
         now: T0,
       });
     }
@@ -121,6 +123,7 @@ describe('Environment file snapshots', () => {
         from,
         to,
         failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+        cancelRequested: false,
         now: T0,
       });
     }

@@ -220,6 +220,12 @@ const environmentSchema = z.object({
   STUDIO_WORKER_TOKEN: workerTokenSchema,
   // How long a claimed Run may go without a heartbeat before it fails as worker_lost.
   STUDIO_WORKER_LEASE_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
+  // Run limits (Issue #100), copied onto every new Run: the longest a Run step may work, the
+  // most Run steps a Run may take, the longest a Run may wait for the operator. The upper
+  // bounds are the worker protocol's (`RUN_STEP_MINUTES_MAX`, `RUN_MAX_STEPS_MAX`).
+  STUDIO_RUN_STEP_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
+  STUDIO_RUN_MAX_STEPS: z.coerce.number().int().min(1).max(100).default(10),
+  STUDIO_RUN_WAITING_DAYS: z.coerce.number().int().min(1).max(365).default(14),
   // Per-Run log cap in bytes of event text (Issue #99): 64 KiB to 1 GiB, default 8 MiB.
   STUDIO_RUN_LOG_MAX_BYTES: z.coerce
     .number()
@@ -271,6 +277,8 @@ export interface AppConfig {
   workerToken: KeyObject | null;
   /** Seconds a claimed Run may go without a heartbeat before it fails with `worker_lost`. */
   workerLeaseSeconds: number;
+  /** The limits copied onto every new Run (Issue #100). */
+  runLimits: { stepMinutes: number; maxSteps: number; waitingDays: number };
   /** Per-Run log cap in UTF-8 bytes of event text (`STUDIO_RUN_LOG_MAX_BYTES`, default 8 MiB). */
   runLogMaxBytes: number;
   /**
@@ -324,6 +332,11 @@ export function loadConfig(
     sshKnownHosts: result.data.STUDIO_SSH_KNOWN_HOSTS,
     workerToken: result.data.STUDIO_WORKER_TOKEN,
     workerLeaseSeconds: result.data.STUDIO_WORKER_LEASE_SECONDS,
+    runLimits: {
+      stepMinutes: result.data.STUDIO_RUN_STEP_MINUTES,
+      maxSteps: result.data.STUDIO_RUN_MAX_STEPS,
+      waitingDays: result.data.STUDIO_RUN_WAITING_DAYS,
+    },
     runLogMaxBytes: result.data.STUDIO_RUN_LOG_MAX_BYTES,
     runSnapshotRetentionDays: result.data.STUDIO_RUN_SNAPSHOT_RETENTION_DAYS,
   };
