@@ -10,7 +10,13 @@ import {
 
 // A throwaway token generated per run; no token is committed.
 const TOKEN = randomBytes(32).toString('base64');
-const env = { STUDIO_API_URL: 'http://127.0.0.1:3001/', STUDIO_WORKER_TOKEN: TOKEN };
+const env = {
+  STUDIO_API_URL: 'http://127.0.0.1:3001/',
+  STUDIO_WORKER_TOKEN: TOKEN,
+  STUDIO_WORKER_DATA_DIR: '/var/lib/studio-agent/',
+  STUDIO_AGENT_GIT_NAME: 'Studio Agent',
+  STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
+};
 
 function captureError(fn: () => unknown): Error {
   try {
@@ -29,7 +35,22 @@ describe('loadWorkerConfig', () => {
       pollMs: 5000,
       heartbeatMs: 10_000,
       requestTimeoutMs: 30_000,
+      dataDir: '/var/lib/studio-agent',
+      agentGitName: 'Studio Agent',
+      agentGitEmail: 'agent@example.test',
+      retentionDays: 7,
+      retentionMaxPerProject: 10,
     });
+  });
+
+  it('reads the retention settings (Issue #98)', () => {
+    expect(
+      loadWorkerConfig({
+        ...env,
+        STUDIO_WORKER_RETENTION_DAYS: '3',
+        STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: '25',
+      }),
+    ).toMatchObject({ retentionDays: 3, retentionMaxPerProject: 25 });
   });
 
   it('reads the intervals', () => {
@@ -51,6 +72,39 @@ describe('loadWorkerConfig', () => {
       'a too short request timeout',
       { ...env, STUDIO_WORKER_REQUEST_TIMEOUT_MS: '10' },
       /STUDIO_WORKER_REQUEST_TIMEOUT_MS/,
+    ],
+    ['no data directory', { ...env, STUDIO_WORKER_DATA_DIR: undefined }, /STUDIO_WORKER_DATA_DIR/],
+    [
+      'a relative data directory',
+      { ...env, STUDIO_WORKER_DATA_DIR: 'data/worker' },
+      /STUDIO_WORKER_DATA_DIR: must be an absolute path/,
+    ],
+    [
+      'the root as data directory',
+      { ...env, STUDIO_WORKER_DATA_DIR: '/' },
+      /STUDIO_WORKER_DATA_DIR/,
+    ],
+    ['no agent Git name', { ...env, STUDIO_AGENT_GIT_NAME: undefined }, /STUDIO_AGENT_GIT_NAME/],
+    [
+      'an agent Git name with a line break',
+      { ...env, STUDIO_AGENT_GIT_NAME: 'Agent\nEvil' },
+      /STUDIO_AGENT_GIT_NAME/,
+    ],
+    ['no agent Git email', { ...env, STUDIO_AGENT_GIT_EMAIL: undefined }, /STUDIO_AGENT_GIT_EMAIL/],
+    [
+      'an invalid agent Git email',
+      { ...env, STUDIO_AGENT_GIT_EMAIL: 'agent <x@y>' },
+      /STUDIO_AGENT_GIT_EMAIL/,
+    ],
+    [
+      'negative retention days',
+      { ...env, STUDIO_WORKER_RETENTION_DAYS: '-1' },
+      /STUDIO_WORKER_RETENTION_DAYS/,
+    ],
+    [
+      'a non-numeric retention count',
+      { ...env, STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: 'many' },
+      /STUDIO_WORKER_RETENTION_MAX_PER_PROJECT/,
     ],
   ])('refuses to start with %s', (_case, values, message) => {
     const error = captureError(() => loadWorkerConfig(values));

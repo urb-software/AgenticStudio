@@ -1,11 +1,21 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { createRemote, isolatedGitEnv } from './fixtures/git-fixture.js';
 
 // Issue #96 (review of #112, finding 4): the worker process as it runs, its built main.js,
 // against a stub of the worker routes: SIGTERM → stop() → the Run reported failed → exit 0,
@@ -19,7 +29,9 @@ const RUN = {
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
   provider: 'codex',
   task: '[fake:slow] Take your time',
-  startCommit: 'a'.repeat(40),
+  // Issue #98: set to a fixture remote (file://) and its commit in beforeAll.
+  startCommit: '',
+  repository: { remoteUrl: '' },
 };
 
 type Report = { path: string; body: Record<string, unknown> };
@@ -31,9 +43,11 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 }
 
 /** The worker routes: one claimable Run, every report recorded; 401 without the token. */
-async function stubStudio(): Promise<{ server: Server; url: string; reports: Report[] }> {
+async function stubStudio(
+  offerRun = true,
+): Promise<{ server: Server; url: string; reports: Report[] }> {
   const reports: Report[] = [];
-  let claimed = false;
+  let claimed = !offerRun;
   const server = createServer((request, response) => {
     void readJson(request).then((body) => {
       if (request.headers.authorization !== `Bearer ${TOKEN}`) {
@@ -41,6 +55,12 @@ async function stubStudio(): Promise<{ server: Server; url: string; reports: Rep
         return;
       }
       const path = request.url ?? '';
+      if (path === '/api/worker/runs/states') {
+        // Studio knows none of the Runs asked about (Issue #98).
+        reports.push({ path, body });
+        response.writeHead(200, { 'Content-Type': 'application/json' }).end('[]');
+        return;
+      }
       if (path === '/api/worker/runs/claim') {
         if (claimed) {
           response.writeHead(204).end();
@@ -59,10 +79,18 @@ async function stubStudio(): Promise<{ server: Server; url: string; reports: Rep
   return { server, url: `http://127.0.0.1:${port}`, reports };
 }
 
+let fixtures: string;
+let home: string;
+
 function startWorker(env: Record<string, string>) {
   // A clean environment: nothing of the test runner's leaks in.
   const child = spawn(process.execPath, [MAIN], {
-    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env },
+    // A fake `docker` comes first on the PATH: the test never reaches a Docker daemon.
+    env: {
+      PATH: `${join(fixtures, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`,
+      HOME: home,
+      ...env,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
@@ -81,6 +109,34 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
         'Build the worker first (pnpm test:agent-worker does): dist/main.js is missing.',
       );
     }
+    fixtures = mkdtempSync(join(tmpdir(), 'studio-worker-main-'));
+    home = join(fixtures, 'home');
+    mkdirSync(home);
+    const remote = createRemote(fixtures, 'shop', isolatedGitEnv(home));
+    RUN.startCommit = remote.commit('Initial commit', { 'README.md': 'shop' });
+    RUN.repository.remoteUrl = remote.url;
+    mkdirSync(join(fixtures, 'bin'));
+    writeFileSync(
+      join(fixtures, 'bin', 'docker'),
+      `#!/bin/sh\necho "$*" >> ${join(fixtures, 'docker.log')}\n`,
+      { mode: 0o755 },
+    );
+  });
+
+  afterAll(() => {
+    if (fixtures) rmSync(fixtures, { recursive: true, force: true });
+  });
+
+  /** The worker's own settings (Issue #98 adds the data directory and the Agent identity). */
+  const workerEnv = (
+    url: string,
+    dataDir = join(fixtures, `data-${randomBytes(4).toString('hex')}`),
+  ) => ({
+    STUDIO_API_URL: url,
+    STUDIO_WORKER_TOKEN: TOKEN,
+    STUDIO_WORKER_DATA_DIR: dataDir,
+    STUDIO_AGENT_GIT_NAME: 'Studio Agent',
+    STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
   });
 
   afterEach(async () => {
@@ -92,8 +148,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
   it('on SIGTERM reports the Run it carries as failed with worker_lost and exits 0', async () => {
     stub = await stubStudio();
     const worker = startWorker({
-      STUDIO_API_URL: stub.url,
-      STUDIO_WORKER_TOKEN: TOKEN,
+      ...workerEnv(stub.url),
       STUDIO_WORKER_POLL_MS: '100',
       STUDIO_WORKER_HEARTBEAT_MS: '200',
     });
@@ -117,12 +172,36 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
     });
   });
 
+  it('removes leftover directories without a known Run at start (Issue #98)', async () => {
+    stub = await stubStudio(false);
+    const dataDir = join(fixtures, 'data-leftovers');
+    const leftover = '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a';
+    mkdirSync(join(dataDir, 'runs', leftover, 'repo'), { recursive: true });
+    mkdirSync(join(dataDir, 'runs', 'not-a-run'));
+    const worker = startWorker({ ...workerEnv(stub.url, dataDir), STUDIO_WORKER_POLL_MS: '100' });
+    child = worker.child;
+
+    const deadline = Date.now() + 15_000;
+    while (readdirSync(join(dataDir, 'runs')).length > 0) {
+      if (Date.now() > deadline) throw new Error(`leftovers kept; stderr: ${worker.stderr()}`);
+      await delay(50);
+    }
+
+    expect(stub.reports.find((report) => report.path === '/api/worker/runs/states')?.body).toEqual({
+      workerId: expect.any(String),
+      runIds: [leftover],
+    });
+    // Its containers, networks and volumes were removed first (through the fake docker).
+    expect(readFileSync(join(fixtures, 'docker.log'), 'utf8')).toContain(
+      'compose -p studio-run-9d8c7b6a5f4e down --volumes --remove-orphans',
+    );
+  });
+
   it('refuses to start with a Studio-side setting, naming it but not its value', async () => {
     stub = await stubStudio();
     const secret = `secret-${randomBytes(8).toString('hex')}`;
     const worker = startWorker({
-      STUDIO_API_URL: stub.url,
-      STUDIO_WORKER_TOKEN: TOKEN,
+      ...workerEnv(stub.url),
       DATABASE_URL: `postgresql://studio:${secret}@localhost:5432/studio`,
     });
     child = worker.child;

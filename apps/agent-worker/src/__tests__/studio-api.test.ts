@@ -31,6 +31,22 @@ const hanging = ({ init }: Call) =>
   });
 
 describe('StudioApi', () => {
+  it('asks for the states of Runs and validates the answer (Issue #98)', async () => {
+    const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
+    const answer = [{ runId, state: 'succeeded', finishedAt: '2026-11-15T10:00:00.000Z' }];
+    const { api, calls } = client(async () => Response.json(answer));
+
+    expect(await api.runStates([runId])).toEqual(answer);
+
+    expect(calls[0]?.url).toBe('http://studio.test/api/worker/runs/states');
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      workerId: WORKER_ID,
+      runIds: [runId],
+    });
+    const { api: invalid } = client(async () => Response.json([{ runId, state: 'gone' }]));
+    await expect(invalid.runStates([runId])).rejects.toThrow();
+  });
+
   it('sends the token as a Bearer credential and the worker id in the JSON body', async () => {
     const { api, calls } = client(async () => new Response(null, { status: 204 }));
 

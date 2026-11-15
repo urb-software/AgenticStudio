@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId } from '../../domain/entities/run.js';
+import { isRunId, type RunWorkingCopy } from '../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -11,11 +11,14 @@ import {
 export interface ReportRunStepInput extends RunStepRecord {
   runId: string;
   workerId: string;
+  /** The Working copy's state after the step (Issue #98). */
+  workingCopy: RunWorkingCopy;
 }
 
 /**
  * Command (Issue #96): the agent worker holding a `running` Run reports the structured result
- * of a Run step; it is stored (internal for now). Returns the step's number. Throws
+ * of a Run step; it is stored (internal for now), and the Working copy's state it reports
+ * becomes the Run's latest (Issue #98). Returns the step's number. Throws
  * {@link RunNotFoundError} or {@link RunNotHeldError} (not running, or not held by it).
  */
 @Injectable()
@@ -26,10 +29,12 @@ export class ReportRunStepHandler {
     if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
       throw new RunNotFoundError();
     }
-    const index = await this.runs.appendStep(input.runId, input.workerId, {
-      kind: input.kind,
-      result: input.result,
-    });
+    const index = await this.runs.appendStep(
+      input.runId,
+      input.workerId,
+      { kind: input.kind, result: input.result },
+      input.workingCopy,
+    );
     if (index === null) throw new RunNotHeldError();
     return index;
   }

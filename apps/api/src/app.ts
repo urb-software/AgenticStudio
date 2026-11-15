@@ -26,9 +26,10 @@ export async function buildApp(
     bodyParser: false,
     ...options,
   });
-  // 100 KiB, Express's default, made explicit: the worker protocol caps a Run step's result
-  // (RUN_STEP_RESULT_MAX_BYTES) so a step report always fits (Issue #96).
-  app.useBodyParser('json', { limit: '100kb' });
+  // 192 KiB (WORKER_REQUEST_MAX_BYTES of the worker protocol): the protocol caps a Run step's
+  // result (RUN_STEP_RESULT_MAX_BYTES, Issue #96) and its Working copy report
+  // (WORKING_COPY_REPORT_MAX_BYTES, Issue #98) so a step report always fits.
+  app.useBodyParser('json', { limit: '192kb' });
   app.disable('x-powered-by');
   // `request.ip` honours X-Forwarded-For only from the configured trusted proxies
   // (right-most untrusted hop); with none, it is the socket address.

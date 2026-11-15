@@ -1247,6 +1247,31 @@
               "detail"
             ],
             "additionalProperties": false
+          },
+          "runBranch": {
+            "type": "string"
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "subject"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "hasUncommittedChanges": {
+            "type": "boolean"
           }
         },
         "required": [

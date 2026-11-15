@@ -1,4 +1,8 @@
-import { jsonByteLength, RUN_STEP_RESULT_MAX_BYTES } from '@agentic-studio/contracts';
+import {
+  jsonByteLength,
+  RUN_STEP_RESULT_MAX_BYTES,
+  WORKING_COPY_REPORT_MAX_BYTES,
+} from '@agentic-studio/contracts';
 import { createHash, createSecretKey, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -64,7 +68,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       INSERT INTO repositories
         (project_id, url, url_normalized, integration_branch, state, head_sha, last_fetched_at)
       VALUES (${project!.id}::uuid, ${url}, ${url.slice(8, -4)}, 'dev', 'ready', ${head}, now())`;
-    return { id: project!.id, head };
+    return { id: project!.id, head, url };
   }
 
   const startRun = (projectId: string, body: unknown) =>
@@ -93,8 +97,15 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
   const claim = (workerId = W1) => worker('claim', { workerId });
   const report = (runId: string, body: object, workerId = W1) =>
     worker(`${runId}/state`, { workerId, ...body });
-  const reportStep = (runId: string, result: object, workerId = W1) =>
-    worker(`${runId}/steps`, { workerId, kind: 'start', result });
+  const WORKING_COPY = {
+    runBranch: 'agent/add-a-health-check-r0b8e5c2d',
+    commits: [{ id: 'c'.repeat(40), subject: 'Add GET /health' }],
+    hasUncommittedChanges: false,
+  };
+  const reportStep = (runId: string, result: object, workerId = W1, workingCopy = WORKING_COPY) =>
+    worker(`${runId}/steps`, { workerId, kind: 'start', result, workingCopy });
+  const runStates = (runIds: string[], token: string | null = WORKER_TOKEN) =>
+    worker('states', { workerId: W1, runIds }, token);
   const heartbeat = (runId: string, workerId = W1) => worker(`${runId}/heartbeat`, { workerId });
 
   beforeAll(async () => {
@@ -252,6 +263,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         provider: 'claude_code',
         task: 'Add a health check',
         startCommit: project.head,
+        // Issue #98: the remote as connected; nothing else about the Repository.
+        repository: { remoteUrl: project.url },
       });
       const preparing = (await getRun(run.id)).body;
       expect(preparing).toMatchObject({
@@ -277,11 +290,92 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         finishedAt: clock.current.toISOString(),
       });
       expect(finished).not.toHaveProperty('failure');
+      // Issue #98: the Working copy state of the latest step, on the operator's Run.
+      expect(finished).toMatchObject({
+        runBranch: WORKING_COPY.runBranch,
+        commits: WORKING_COPY.commits,
+        hasUncommittedChanges: false,
+      });
       expect((await claim()).status).toBe(204);
       // The step is internal (not in the operator contract yet): checked in the table.
       const steps = await db().$queryRaw<{ index: number; kind: string; result: unknown }[]>`
         SELECT index, kind, result FROM run_steps WHERE run_id = ${run.id}::uuid`;
       expect(steps).toEqual([{ index: 1, kind: 'start', result }]);
+    });
+
+    it('shows no Working copy state before the first step, then the latest one (Issue #98)', async () => {
+      const project = await readyProject('Shop');
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      const before = (await getRun(run.id)).body;
+      expect(before).not.toHaveProperty('runBranch');
+      expect(before).not.toHaveProperty('commits');
+      expect(before).not.toHaveProperty('hasUncommittedChanges');
+
+      await reportStep(run.id, { outcome: 'needs_input', summary: 'Stuck.', question: 'Q?' });
+      const later = {
+        runBranch: WORKING_COPY.runBranch,
+        commits: [...WORKING_COPY.commits, { id: 'd'.repeat(40), subject: 'Fix it' }],
+        hasUncommittedChanges: true,
+      };
+      expect(
+        (await reportStep(run.id, { outcome: 'done', summary: 'Done.' }, W1, later)).status,
+      ).toBe(204);
+
+      expect((await getRun(run.id)).body).toMatchObject(later);
+      expect((await http().get('/api/runs').set('Cookie', cookie)).body[0]).toMatchObject(later);
+    });
+
+    it('rejects a step report without a valid Working copy state with 400 (Issue #98)', async () => {
+      const project = await readyProject('Shop');
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      const result = { outcome: 'done', summary: 'Done.' };
+
+      expectProblem(await worker(`${run.id}/steps`, { workerId: W1, kind: 'start', result }), 400);
+      expectProblem(
+        await reportStep(run.id, result, W1, {
+          ...WORKING_COPY,
+          commits: [{ id: 'not-a-commit', subject: 'x' }],
+        }),
+        400,
+      );
+      expect((await getRun(run.id)).body).not.toHaveProperty('runBranch');
+    });
+
+    it('answers the states of known Runs for the retention, leaving out unknown ids (Issue #98)', async () => {
+      const project = await readyProject('Shop');
+      const finished = await queuedRun(project.id, 'first');
+      const queued = await queuedRun(project.id, 'second');
+      await claim();
+      await report(finished.id, {
+        state: 'failed',
+        failure: { code: 'preparation_failed', detail: 'x' },
+      });
+      const unknown = randomUUID();
+
+      const response = await runStates([finished.id, queued.id, unknown]);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(2);
+      expect(response.body).toEqual(
+        expect.arrayContaining([
+          { runId: finished.id, state: 'failed', finishedAt: clock.current.toISOString() },
+          { runId: queued.id, state: 'queued', finishedAt: null },
+        ]),
+      );
+      expectProblem(await runStates([finished.id], null), 401);
+      expectProblem(
+        await http()
+          .post('/api/worker/runs/states')
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+          .send({ workerId: W1, runIds: [finished.id] }),
+        401,
+      );
+      expectProblem(await runStates([]), 400);
+      expectProblem(await runStates(['../../etc']), 400);
     });
 
     it('records a failed Run with its failure code and detail', async () => {
@@ -322,8 +416,19 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         if (room <= 4000) break;
       }
       expect(jsonByteLength(result)).toBe(RUN_STEP_RESULT_MAX_BYTES);
+      // Issue #98: with a Working copy report near its own cap, the body is over Express's
+      // default 100 KiB and still accepted.
+      const workingCopy = {
+        runBranch: WORKING_COPY.runBranch,
+        commits: Array.from({ length: 200 }, () => ({
+          id: 'c'.repeat(64),
+          subject: 's'.repeat(200),
+        })),
+        hasUncommittedChanges: true,
+      };
+      expect(jsonByteLength(workingCopy)).toBeLessThanOrEqual(WORKING_COPY_REPORT_MAX_BYTES);
 
-      expect((await reportStep(run.id, result)).status).toBe(204);
+      expect((await reportStep(run.id, result, W1, workingCopy)).status).toBe(204);
       expectProblem(
         // One byte over the cap ('é' is two bytes, same length) is refused by the shared schema
         // (400), not by the body parser (413).

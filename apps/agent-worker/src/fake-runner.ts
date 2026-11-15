@@ -1,15 +1,27 @@
 import type { RunStepResult } from '@agentic-studio/contracts';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { GIT_TIMEOUTS, GitRunner } from './git.js';
 import {
   AgentFailedError,
   type ResumeRunStepInput,
   type Runner,
   type RunStep,
+  type RunWorkspace,
   type StartRunStepInput,
 } from './runner.js';
 
 /** The scripted outcomes, chosen by a marker in the Task text (`[fake:<scenario>]`). */
-export const FAKE_SCENARIOS = ['success', 'fail', 'question', 'slow', 'crash'] as const;
+export const FAKE_SCENARIOS = [
+  'success',
+  'fail',
+  'question',
+  'slow',
+  'crash',
+  'commit',
+  'dirty',
+] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
 const MARKER = /\[fake:([a-z]+)\]/;
@@ -25,11 +37,19 @@ export function fakeScenarioOf(task: string): FakeScenario {
 export interface FakeRunnerOptions {
   /** How long the `slow` scenario works before it succeeds (it stops early when aborted). */
   slowMs?: number;
+  /** Git for the `commit` scenario (default: the worker's hardened runner). */
+  git?: GitRunner;
 }
+
+/** The file the `commit` and `dirty` scenarios write in the Working copy. */
+export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
 
 /**
  * Runner with scripted outcomes (Issue #96): deterministic, no provider, no network.
- * - `success`: a done result with a pull request title and description and one check.
+ * - `success`: a done result with a pull request title and description and one check; it
+ *   changes nothing in the Working copy.
+ * - `commit` (Issue #98): like `success`, after committing one new file on the Run branch.
+ * - `dirty` (Issue #98): like `success`, leaving one new file uncommitted.
  * - `fail`: the agent fails ({@link AgentFailedError}).
  * - `question`: a `needs_input` result with a question.
  * - `slow`: keeps working for `slowMs`, then succeeds; stops when aborted.
@@ -38,12 +58,14 @@ export interface FakeRunnerOptions {
  */
 export class FakeRunner implements Runner {
   private readonly slowMs: number;
+  private readonly git: GitRunner;
 
   constructor(options: FakeRunnerOptions = {}) {
     this.slowMs = options.slowMs ?? 60_000;
+    this.git = options.git ?? new GitRunner();
   }
 
-  async *start({ run, signal }: StartRunStepInput): RunStep {
+  async *start({ run, workspace, signal }: StartRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
     yield { type: 'status', text: `fake runner: ${scenario}` };
     signal.throwIfAborted();
@@ -62,10 +84,27 @@ export class FakeRunner implements Runner {
         yield { type: 'output', text: 'working slowly' };
         await delay(this.slowMs, undefined, { signal });
         return done();
+      case 'commit':
+        await this.change(workspace, signal, true);
+        yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}` };
+        return done();
+      case 'dirty':
+        await this.change(workspace, signal, false);
+        yield { type: 'output', text: `left ${FAKE_CHANGE_FILE} uncommitted` };
+        return done();
       case 'success':
         yield { type: 'output', text: 'done' };
         return done();
     }
+  }
+
+  /** Writes the fake change into the Working copy and, if asked, commits it on the Run branch. */
+  private async change(workspace: RunWorkspace, signal: AbortSignal, commit: boolean) {
+    await writeFile(join(workspace.repoDir, FAKE_CHANGE_FILE), 'Made by the fake runner.\n');
+    if (!commit) return;
+    const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
+    await this.git.run(['add', '--', FAKE_CHANGE_FILE], options);
+    await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake change'], options);
   }
 
   async *resume({ signal }: ResumeRunStepInput): RunStep {

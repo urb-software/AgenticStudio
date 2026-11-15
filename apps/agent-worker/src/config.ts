@@ -6,6 +6,9 @@ export const WORKER_TOKEN_MIN_LENGTH = 32;
 const intervalMs = (fallback: number) =>
   z.coerce.number().int().min(100).max(600_000).default(fallback);
 
+// eslint-disable-next-line no-control-regex -- the point is to reject control characters
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+
 const environmentSchema = z.object({
   // Where the worker reaches the Studio API (it always calls Studio; nothing calls it).
   STUDIO_API_URL: z.url({ protocol: /^https?$/, error: 'is required: the Studio API URL' }),
@@ -19,6 +22,27 @@ const environmentSchema = z.object({
   STUDIO_WORKER_HEARTBEAT_MS: intervalMs(10_000),
   // Longest wait for one call to the Studio API before it is abandoned.
   STUDIO_WORKER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(30_000),
+  // Issue #98: where the worker keeps the per-project caches and the Runs' directories.
+  STUDIO_WORKER_DATA_DIR: z
+    .string({ error: 'is required: an absolute directory path' })
+    .refine((value) => value.startsWith('/'), { message: 'must be an absolute path' })
+    .transform((value) => value.replace(/\/+$/, ''))
+    .refine((value) => value !== '', { message: 'must not be the root directory' }),
+  // The Agent account's Git identity for commits in Working copies (never a credential).
+  STUDIO_AGENT_GIT_NAME: z
+    .string({ error: "is required: the Agent account's name for commits" })
+    .min(1)
+    .max(200)
+    .refine((value) => !CONTROL_CHARACTERS.test(value) && !/[<>]/.test(value), {
+      message: 'must be one line without < or >',
+    }),
+  STUDIO_AGENT_GIT_EMAIL: z
+    .string({ error: "is required: the Agent account's email for commits" })
+    .max(320)
+    .regex(/^[^\s<>@]+@[^\s<>@]+$/, { message: 'must be an email address' }),
+  // Retention of finished Working copies.
+  STUDIO_WORKER_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
+  STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
 });
 
 /**
@@ -45,6 +69,15 @@ export interface WorkerConfig {
   heartbeatMs: number;
   /** Timeout of one call to the Studio API. */
   requestTimeoutMs: number;
+  /** Absolute directory of the per-project caches and the Runs' directories (Issue #98). */
+  dataDir: string;
+  /** The Agent account's Git identity, set in each Working copy. */
+  agentGitName: string;
+  agentGitEmail: string;
+  /** A finished Working copy is removed after this many days... */
+  retentionDays: number;
+  /** ...and beyond the newest this many per Project. */
+  retentionMaxPerProject: number;
 }
 
 /** Thrown when the environment is invalid. Names variables, never their values. */
@@ -83,6 +116,11 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     pollMs: result.data.STUDIO_WORKER_POLL_MS,
     heartbeatMs: result.data.STUDIO_WORKER_HEARTBEAT_MS,
     requestTimeoutMs: result.data.STUDIO_WORKER_REQUEST_TIMEOUT_MS,
+    dataDir: result.data.STUDIO_WORKER_DATA_DIR,
+    agentGitName: result.data.STUDIO_AGENT_GIT_NAME,
+    agentGitEmail: result.data.STUDIO_AGENT_GIT_EMAIL,
+    retentionDays: result.data.STUDIO_WORKER_RETENTION_DAYS,
+    retentionMaxPerProject: result.data.STUDIO_WORKER_RETENTION_MAX_PER_PROJECT,
   };
 }
 

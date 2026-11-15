@@ -37,7 +37,11 @@ export class StartRunHandler {
       case 'repository_not_ready':
         throw new RepositoryNotReadyError('not_ready');
       case 'ready':
-        return this.runs.add({ ...input, startCommit: startPoint.startCommit });
+        return this.runs.add({
+          ...input,
+          startCommit: startPoint.startCommit,
+          remoteUrl: startPoint.remoteUrl,
+        });
     }
   }
 }

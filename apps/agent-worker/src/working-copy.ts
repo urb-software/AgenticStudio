@@ -1,0 +1,336 @@
+import {
+  COMMIT_SUBJECT_MAX_LENGTH,
+  jsonByteLength,
+  type RunPayload,
+  WORKING_COPY_COMMITS_MAX,
+  WORKING_COPY_REPORT_MAX_BYTES,
+  type WorkingCopyReport,
+} from '@agentic-studio/contracts';
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { posix } from 'node:path';
+import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from './git.js';
+import {
+  cacheDirectory,
+  cachesDirectory,
+  composeProjectName,
+  runBranchName,
+  runDirectories,
+  runsDirectory,
+} from './run-layout.js';
+
+/**
+ * A Run's prepared Working copy (Issue #98): where it is, its Run branch, and the environment
+ * its Run steps get.
+ */
+export interface PreparedRun {
+  runId: string;
+  /** The Run's own directory: the Working copy and, beside it, the Task and the Run file. */
+  runDir: string;
+  /** The Working copy, on the Run branch at the start commit. */
+  repoDir: string;
+  runBranch: string;
+  startCommit: string;
+  /** Variables every Run step of this Run gets, e.g. `COMPOSE_PROJECT_NAME`. */
+  env: Record<string, string>;
+}
+
+/** What the worker records in `run.json` beside the Working copy; retention reads it. */
+export interface RunFile {
+  runId: string;
+  projectId: string;
+  runBranch: string;
+  startCommit: string;
+  composeProjectName: string;
+}
+
+/** The Working copy port of the worker loop: {@link WorkingCopies} in production. */
+export interface WorkingCopyPort {
+  /** Prepares the Run's Working copy; throws {@link PreparationFailedError} with a clear detail. */
+  prepare(run: RunPayload, signal: AbortSignal): Promise<PreparedRun>;
+  /** The Working copy's state after a Run step, for the step report. */
+  report(prepared: PreparedRun, signal: AbortSignal): Promise<WorkingCopyReport>;
+}
+
+/** The Working copy could not be prepared; `detail` is safe to show (no credential, no path). */
+export class PreparationFailedError extends Error {
+  constructor(readonly detail: string) {
+    super(detail);
+    this.name = 'PreparationFailedError';
+  }
+}
+
+/** Where the worker writes what it does; never a token. */
+export interface WorkingCopyLogger {
+  error(message: string): void;
+}
+
+export interface WorkingCopiesOptions {
+  /** Absolute directory of the caches and the Runs' directories. */
+  dataDir: string;
+  git: GitRunner;
+  /** The Agent account's Git identity, set in each Working copy. */
+  agentGitName: string;
+  agentGitEmail: string;
+  logger: WorkingCopyLogger;
+}
+
+const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * The section Studio keeps in a Working copy's `.git/info/exclude`: files Studio places in the
+ * Working copy later (e.g. the Environment file) are listed under it, so they are never
+ * committed or pushed.
+ */
+export const STUDIO_EXCLUDE_SECTION =
+  '\n# AI Agent Studio: files Studio places in this Working copy; never committed.\n';
+
+/**
+ * Prepares and inspects Working copies (Issue #98, ADR 0002). Per Run:
+ * 1. the Project's cache (`<dataDir>/cache/<projectId>.git`, a bare repository with every
+ *    branch of the remote) is created on first use, or refreshed (`fetch --prune`); a cache
+ *    whose remote differs from the Run's is discarded and rebuilt;
+ * 2. the start commit must be in the cache (else `preparation_failed`);
+ * 3. the Working copy is a local clone of the cache (objects hardlinked: it shares the
+ *    cache's history on disk), checked out at exactly the start commit on the Run branch;
+ * 4. its Git identity is the Agent account's, its `origin` the Project's remote URL; no
+ *    credential is written. The Task and the Run file sit beside it, outside the repository.
+ */
+export class WorkingCopies implements WorkingCopyPort {
+  constructor(private readonly options: WorkingCopiesOptions) {}
+
+  async prepare(run: RunPayload, signal: AbortSignal): Promise<PreparedRun> {
+    const { dataDir, git } = this.options;
+    // Throws UnsafeIdentifierError before anything is touched: the payload is validated
+    // already, and this is the path-safety guard of its own.
+    const paths = runDirectories(dataDir, run.runId);
+    const cacheDir = cacheDirectory(dataDir, run.projectId);
+    const runBranch = runBranchName(run.task, run.runId);
+    const compose = composeProjectName(run.runId);
+    const startCommit = run.startCommit.toLowerCase();
+    if (!COMMIT_ID.test(startCommit)) {
+      throw new PreparationFailedError('The start commit is not a full commit id.');
+    }
+    const remoteUrl = run.repository.remoteUrl;
+    if (remoteUrl.startsWith('-')) {
+      throw new PreparationFailedError("The Project's remote URL is not valid.");
+    }
+
+    await mkdir(cachesDirectory(dataDir), { recursive: true, mode: 0o700 });
+    await mkdir(runsDirectory(dataDir), { recursive: true, mode: 0o700 });
+    // A Run is claimed once; anything left under its id is stale.
+    await rm(paths.runDir, { recursive: true, force: true });
+    await mkdir(paths.runDir, { mode: 0o700 });
+    const runFile: RunFile = {
+      runId: run.runId,
+      projectId: run.projectId,
+      runBranch,
+      startCommit,
+      composeProjectName: compose,
+    };
+    await writeFile(paths.runFile, `${JSON.stringify(runFile, null, 2)}\n`, {
+      flag: 'wx',
+      mode: 0o600,
+    });
+    await writeFile(paths.taskFile, `${run.task}\n`, { flag: 'wx', mode: 0o600 });
+
+    await this.refreshCache(cacheDir, remoteUrl, signal);
+    await this.ensureCommit(cacheDir, startCommit, signal);
+    await this.checkRefFormat(runBranch, paths.runDir, signal);
+
+    const local = { timeoutMs: GIT_TIMEOUTS.local, signal, ceiling: dataDir };
+    await this.step('making the Working copy', () =>
+      git.run(['clone', '--local', '--no-checkout', '--quiet', '--', cacheDir, paths.repoDir], {
+        ...local,
+        cwd: paths.runDir,
+      }),
+    );
+    const inRepo = { ...local, cwd: paths.repoDir };
+    await this.step('checking out the start commit', () =>
+      git.run(
+        [
+          'checkout',
+          '--quiet',
+          '--no-recurse-submodules',
+          '-b',
+          runBranch,
+          `${startCommit}^{commit}`,
+        ],
+        inRepo,
+      ),
+    );
+    const head = (await git.run(['rev-parse', 'HEAD'], inRepo)).trim();
+    if (head !== startCommit) {
+      throw new PreparationFailedError('The Working copy is not at the start commit.');
+    }
+    await git.run(['config', '--local', 'user.name', this.options.agentGitName], inRepo);
+    await git.run(['config', '--local', 'user.email', this.options.agentGitEmail], inRepo);
+    // A later push goes to the Project's Repository, with the agent side's own credentials.
+    await git.run(['remote', 'set-url', 'origin', remoteUrl], inRepo);
+    const exclude = posix.join(paths.repoDir, '.git', 'info', 'exclude');
+    await mkdir(posix.dirname(exclude), { recursive: true });
+    await appendFile(exclude, STUDIO_EXCLUDE_SECTION);
+
+    return {
+      runId: run.runId,
+      runDir: paths.runDir,
+      repoDir: paths.repoDir,
+      runBranch,
+      startCommit,
+      env: { COMPOSE_PROJECT_NAME: compose },
+    };
+  }
+
+  async report(prepared: PreparedRun, signal: AbortSignal): Promise<WorkingCopyReport> {
+    const git = this.options.git;
+    const options = {
+      cwd: prepared.repoDir,
+      timeoutMs: GIT_TIMEOUTS.local,
+      signal,
+      ceiling: this.options.dataDir,
+    };
+    const branchRef = `refs/heads/${prepared.runBranch}`;
+    let commits: WorkingCopyReport['commits'] = [];
+    const exists = await git
+      .run(['rev-parse', '--verify', '--quiet', `${branchRef}^{commit}`], options)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) {
+      const log = await git.run(
+        [
+          'log',
+          '--no-show-signature',
+          '--format=%H%x00%s%x00',
+          `--max-count=${WORKING_COPY_COMMITS_MAX}`,
+          `${prepared.startCommit}..${branchRef}`,
+          '--',
+        ],
+        options,
+      );
+      const fields = log.split('\0');
+      const newestFirst: WorkingCopyReport['commits'] = [];
+      for (let i = 0; i + 1 < fields.length; i += 2) {
+        newestFirst.push({ id: fields[i]!.trim(), subject: shorten(fields[i + 1]!) });
+      }
+      commits = newestFirst.reverse();
+    }
+    const status = await git.run(
+      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
+      options,
+    );
+    const report: WorkingCopyReport = {
+      runBranch: prepared.runBranch,
+      commits,
+      hasUncommittedChanges: status.length > 0,
+    };
+    // Within the protocol's byte budget: the oldest commits give way first.
+    while (jsonByteLength(report) > WORKING_COPY_REPORT_MAX_BYTES && report.commits.length > 0) {
+      report.commits.shift();
+    }
+    return report;
+  }
+
+  /** Creates the cache, or refreshes it; rebuilds it when its remote differs or it is broken. */
+  private async refreshCache(cacheDir: string, remoteUrl: string, signal: AbortSignal) {
+    const { git, dataDir } = this.options;
+    const network = {
+      cwd: posix.dirname(cacheDir),
+      timeoutMs: GIT_TIMEOUTS.network,
+      signal,
+      ceiling: dataDir,
+    };
+    const current = await git
+      .run(['config', '--get', 'remote.origin.url'], {
+        ...network,
+        cwd: cacheDir,
+        timeoutMs: GIT_TIMEOUTS.local,
+      })
+      .then((url) => url.trim())
+      .catch(() => null);
+    if (current === remoteUrl) {
+      try {
+        await git.run(['fetch', '--prune', '--quiet', 'origin'], { ...network, cwd: cacheDir });
+        return;
+      } catch (error) {
+        if (signal.aborted) throw error;
+        this.logGitError('Refreshing the cache failed; rebuilding it', error);
+      }
+    }
+    await rm(cacheDir, { recursive: true, force: true });
+    await this.step("fetching the Project's repository", async () => {
+      await git.run(['clone', '--bare', '--quiet', '--', remoteUrl, cacheDir], network);
+      // Every branch of the remote, kept as is, also on later fetches.
+      await git.run(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], {
+        ...network,
+        cwd: cacheDir,
+      });
+    });
+  }
+
+  /** The start commit must be in the cache; one direct fetch is tried for a commit no branch holds. */
+  private async ensureCommit(cacheDir: string, commit: string, signal: AbortSignal) {
+    const { git, dataDir } = this.options;
+    const options = { cwd: cacheDir, timeoutMs: GIT_TIMEOUTS.local, signal, ceiling: dataDir };
+    const present = () =>
+      git
+        .run(['cat-file', '-e', `${commit}^{commit}`], options)
+        .then(() => true)
+        .catch(() => false);
+    if (await present()) return;
+    await git
+      .run(['fetch', '--quiet', 'origin', commit], { ...options, timeoutMs: GIT_TIMEOUTS.network })
+      .catch(() => undefined);
+    signal.throwIfAborted();
+    if (await present()) return;
+    throw new PreparationFailedError(
+      `The start commit ${commit} is not in the Project's repository; ` +
+        'it may have been removed (e.g. by a force-push).',
+    );
+  }
+
+  private async checkRefFormat(branch: string, cwd: string, signal: AbortSignal) {
+    await this.options.git
+      .run(['check-ref-format', '--branch', branch], { cwd, timeoutMs: GIT_TIMEOUTS.local, signal })
+      .catch(() => {
+        throw new PreparationFailedError('The Run branch name is not valid.');
+      });
+  }
+
+  /** Runs a Git step; a Git failure becomes a clear {@link PreparationFailedError}. */
+  private async step<T>(what: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (!(error instanceof GitCommandError) || error.reason === 'aborted') throw error;
+      this.logGitError(`Preparation failed while ${what}`, error);
+      throw new PreparationFailedError(
+        `Preparing the Working copy failed while ${what} (${error.message}). ` +
+          'The agent worker log has the details.',
+      );
+    }
+  }
+
+  private logGitError(context: string, error: unknown) {
+    const detail =
+      error instanceof GitCommandError ? `${error.message}: ${error.stderr.trim()}` : String(error);
+    this.options.logger.error(`${context}: ${detail}`);
+  }
+}
+
+/** A subject within the protocol's limit, never ending in half a surrogate pair. */
+function shorten(subject: string): string {
+  if (subject.length <= COMMIT_SUBJECT_MAX_LENGTH) return subject;
+  const cut = subject.slice(0, COMMIT_SUBJECT_MAX_LENGTH);
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
+/** Reads a Run's `run.json`; `null` when it is missing or not what the worker writes. */
+export async function readRunFile(path: string): Promise<RunFile | null> {
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8')) as Partial<RunFile>;
+    return typeof value.projectId === 'string' && typeof value.composeProjectName === 'string'
+      ? (value as RunFile)
+      : null;
+  } catch {
+    return null;
+  }
+}

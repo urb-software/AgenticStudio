@@ -22,7 +22,13 @@ describe('ReportRunStateHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     handler = new ReportRunStateHandler(runs, { now: () => T1 });
-    await runs.add({ projectId: PROJECT, provider: 'codex', task: 'x', startCommit: 'a' });
+    await runs.add({
+      projectId: PROJECT,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+    });
     run = (await runs.claimNext(WORKER, T0))!;
   });
 

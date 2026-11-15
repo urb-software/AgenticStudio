@@ -3,15 +3,20 @@ import { deployMigrations } from '@agentic-studio/database/migrations';
 import { startPostgres, startRedis, type TestService } from '@agentic-studio/testing';
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FakeRunner } from '../fake-runner.js';
+import { GitRunner } from '../git.js';
+import { Retention } from '../retention.js';
+import { composeProjectName } from '../run-layout.js';
 import { StudioApi } from '../studio-api.js';
 import { AgentWorker } from '../worker.js';
+import { WorkingCopies } from '../working-copy.js';
+import { createRemote, isolatedGitEnv } from './fixtures/git-fixture.js';
 
 // Issue #96, the whole backbone: the real worker loop, in process, against the real Studio API
 // (its production build, as a separate process) on PostgreSQL and Redis from Testcontainers.
@@ -27,7 +32,14 @@ const STUDIO_ORIGIN = 'http://localhost:4300';
 const OPERATOR_PASSWORD = randomBytes(18).toString('base64');
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 
-type RunView = { id: string; state: string; failure?: { code: string; detail: string } };
+type RunView = {
+  id: string;
+  state: string;
+  failure?: { code: string; detail: string };
+  runBranch?: string;
+  commits?: { id: string; subject: string }[];
+  hasUncommittedChanges?: boolean;
+};
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -58,14 +70,28 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
   let apiUrl: string;
   let cookie: string;
   let dataDir: string;
+  // Issue #98: the agent side's data directory and a fixture remote (file://, no network).
+  let fixtures: string;
+  let workerDataDir: string;
+  let gitEnv: Record<string, string>;
+  let remoteUrl: string;
+  let remoteHead: string;
   const workers: AgentWorker[] = [];
 
   const logger = { info: () => undefined, error: () => undefined };
 
   function startWorker(token = WORKER_TOKEN): AgentWorker {
+    const git = new GitRunner({ env: { PATH: gitEnv.PATH!, HOME: gitEnv.HOME! } });
     const worker = new AgentWorker({
       api: new StudioApi({ apiUrl, token, workerId: randomUUID() }),
-      runner: new FakeRunner({ slowMs: 60_000 }),
+      runner: new FakeRunner({ slowMs: 60_000, git }),
+      workingCopies: new WorkingCopies({
+        dataDir: workerDataDir,
+        git,
+        agentGitName: 'Studio Agent',
+        agentGitEmail: 'agent@example.test',
+        logger,
+      }),
       pollMs: 50,
       heartbeatMs: 200,
       logger,
@@ -80,12 +106,12 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     const [project] = await db.$queryRaw<{ id: string }[]>`
       INSERT INTO projects (name, name_normalized) VALUES (${name}, ${name.toLowerCase()})
       RETURNING id`;
-    const path = `git.example.test/acme/${project!.id}`;
+    // The Repository is the fixture remote; Studio's own Clone is not needed here.
     await db.$executeRaw`
       INSERT INTO repositories
         (project_id, url, url_normalized, integration_branch, state, head_sha, last_fetched_at)
-      VALUES (${project!.id}::uuid, ${`https://${path}.git`}, ${path}, 'dev', 'ready',
-              ${randomBytes(20).toString('hex')}, now())`;
+      VALUES (${project!.id}::uuid, ${remoteUrl}, ${`fixture/${project!.id}`}, 'main', 'ready',
+              ${remoteHead}, now())`;
     return project!.id;
   }
 
@@ -130,6 +156,13 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     }
 
     dataDir = mkdtempSync(join(tmpdir(), 'studio-worker-it-'));
+    fixtures = mkdtempSync(join(tmpdir(), 'studio-worker-it-git-'));
+    mkdirSync(join(fixtures, 'home'));
+    gitEnv = isolatedGitEnv(join(fixtures, 'home'));
+    const remote = createRemote(fixtures, 'shop', gitEnv);
+    remoteHead = remote.commit('Initial commit', { 'README.md': '# Shop\n' });
+    remoteUrl = remote.url;
+    workerDataDir = join(fixtures, 'worker-data');
     const port = await freePort();
     apiUrl = `http://127.0.0.1:${port}`;
     api = spawn(process.execPath, [API_MAIN], {
@@ -193,6 +226,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     await db?.$disconnect();
     await Promise.all([postgres?.stop(), redis?.stop()]);
     if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+    if (fixtures) rmSync(fixtures, { recursive: true, force: true });
   });
 
   it('carries a Run from start to succeeded through the fake runner', async () => {
@@ -203,6 +237,85 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
     expect(run.state).toBe('succeeded');
     expect(run).not.toHaveProperty('failure');
+    // Issue #98: the Working copy's state reaches the operator's Run.
+    expect(run).toMatchObject({
+      runBranch: `agent/add-a-health-check-r${runId.slice(0, 8)}`,
+      commits: [],
+      hasUncommittedChanges: false,
+    });
+  });
+
+  it('records the commit the fake runner makes on the Run branch (Issue #98)', async () => {
+    const runId = await startRun('[fake:commit] Add a file');
+    startWorker();
+
+    const run = await runReaches(runId, ['succeeded', 'failed']);
+
+    expect(run).toMatchObject({
+      state: 'succeeded',
+      runBranch: `agent/fake-commit-add-a-file-r${runId.slice(0, 8)}`,
+      commits: [{ id: expect.stringMatching(/^[0-9a-f]{40}$/), subject: 'Fake change' }],
+      hasUncommittedChanges: false,
+    });
+  });
+
+  it('records uncommitted changes the fake runner leaves (Issue #98)', async () => {
+    const runId = await startRun('[fake:dirty] Leave a file');
+    startWorker();
+
+    expect(await runReaches(runId, ['succeeded', 'failed'])).toMatchObject({
+      state: 'succeeded',
+      commits: [],
+      hasUncommittedChanges: true,
+    });
+  });
+
+  it('fails a Run whose start commit the remote does not have as preparation_failed (Issue #98)', async () => {
+    const runId = await startRun('Add a health check');
+    await db.$executeRaw`UPDATE runs SET start_commit = ${'f'.repeat(40)} WHERE id = ${runId}::uuid`;
+    startWorker();
+
+    const run = await runReaches(runId, ['succeeded', 'failed']);
+
+    expect(run).toMatchObject({
+      state: 'failed',
+      failure: {
+        code: 'preparation_failed',
+        detail: expect.stringContaining("is not in the Project's repository"),
+      },
+    });
+  });
+
+  it("applies the retention rules with the Runs' states from Studio (Issue #98)", async () => {
+    const finished = await startRun('Add a health check');
+    startWorker();
+    await runReaches(finished, ['succeeded']);
+    const waiting = await startRun('[fake:question]');
+    await runReaches(waiting, ['waiting_for_operator']);
+    const leftover = randomUUID();
+    mkdirSync(join(workerDataDir, 'runs', leftover, 'repo'), { recursive: true });
+    const cleaned: string[] = [];
+    const api = new StudioApi({ apiUrl, token: WORKER_TOKEN, workerId: randomUUID() });
+
+    await new Retention({
+      dataDir: workerDataDir,
+      runStates: (runIds) => api.runStates(runIds),
+      resources: { cleanUp: async (name) => void cleaned.push(name) },
+      retentionDays: 0,
+      maxPerProject: 10,
+      now: () => new Date(Date.now() + 1000),
+      carrying: () => undefined,
+      logger,
+    }).sweep();
+
+    const left = readdirSync(join(workerDataDir, 'runs'));
+    expect(left).toContain(waiting);
+    expect(left).not.toContain(finished);
+    expect(left).not.toContain(leftover);
+    expect(cleaned).toEqual(
+      expect.arrayContaining([composeProjectName(finished), composeProjectName(leftover)]),
+    );
+    expect(cleaned).not.toContain(composeProjectName(waiting));
   });
 
   it('reports a failing agent as failed with agent_failed', async () => {

@@ -133,7 +133,13 @@ export const zRunOutput = z.object({
             'unknown'
         ]),
         detail: z.string()
-    }).optional()
+    }).optional(),
+    runBranch: z.string().optional(),
+    commits: z.array(z.object({
+        id: z.string(),
+        subject: z.string()
+    })).optional(),
+    hasUncommittedChanges: z.boolean().optional()
 });
 
 export const zRunListOutput = z.array(zRunOutput);

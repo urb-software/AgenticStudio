@@ -23,6 +23,7 @@ describe('ClaimRunHandler', () => {
       provider: 'claude_code',
       task: `Task of ${projectId}`,
       startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
     });
 
   beforeEach(() => {
