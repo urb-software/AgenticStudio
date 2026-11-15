@@ -470,7 +470,9 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // operator (`[fake:question]`), which the top-bar run indicator then shows. The Run page is
 // scanned with axe in both themes for the failed and the waiting (active) Run, and the
 // Executions page lists the Runs. Linux only; `pnpm e2e:smoke` fails on Linux if this test did
-// not run and pass. The waiting Run stays waiting (no cancel yet), so it runs last.
+// not run and pass. Story #100: a slow Run (`[fake:slow]`) is cancelled while it runs, and the
+// waiting Run is cancelled at the end, so the test holds no server slot afterwards and its
+// place in the file no longer matters.
 test('operator starts runs and follows them to their result', async ({ page }, testInfo) => {
   test.skip(
     process.env.E2E_API_PLATFORM !== 'linux',
@@ -528,6 +530,24 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(failure).toContainText('The fake agent failed.');
   await expectInBothThemes(page, pill);
 
+  // Story #100: a slow Run is cancelled while it runs. The confirm says what happens; the
+  // worker learns of it with its next heartbeat, stops the step and the Run ends cancelled.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Work for a long time [fake:slow]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Work for a long time [fake:slow]');
+  await expect(pill).toHaveText('Running', { timeout: 30_000 });
+  await expect(main.getByText(/minutes per run step/)).toBeVisible();
+  await main.getByRole('button', { name: 'Cancel run' }).click();
+  const confirmCancel = page.getByRole('alertdialog', { name: 'Cancel run' });
+  await expect(confirmCancel.getByText('Nothing is pushed.')).toBeVisible();
+  await expect(confirmCancel.getByText('The working copy is kept for inspection.')).toBeVisible();
+  await expectNoAxeViolations(page);
+  await confirmCancel.getByRole('button', { name: 'Cancel run' }).click();
+  await expect(confirmCancel).toHaveCount(0);
+  await expect(pill).toHaveText('Cancelled', { timeout: 45_000 });
+  await expect(main.getByText('Cancelled by the operator.')).toBeVisible();
+
   // A Run that waits for the operator: amber, active, and counted by the run indicator.
   await main.getByRole('button', { name: 'Run again' }).click();
   await dialog.getByLabel('Task').fill('Ask before changing anything [fake:question]');
@@ -545,10 +565,21 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(page).toHaveURL(/\/executions$/);
   const list = main.getByRole('list', { name: 'Runs' });
   const rows = list.getByRole('listitem').filter({ hasText: projectName });
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   await expect(rows.nth(0)).toContainText('Waiting for you');
-  await expect(rows.nth(1)).toContainText('Failed');
-  await expect(rows.nth(2)).toContainText('Succeeded');
+  await expect(rows.nth(1)).toContainText('Cancelled');
+  await expect(rows.nth(2)).toContainText('Failed');
+  await expect(rows.nth(3)).toContainText('Succeeded');
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
+
+  // Story #100: the waiting Run is cancelled at once (no worker holds it), freeing its slot.
+  await rows.nth(0).getByRole('link').first().click();
+  await expect(heading).toHaveText('Ask before changing anything [fake:question]');
+  await main.getByRole('button', { name: 'Cancel run' }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Cancel run' })
+    .getByRole('button', { name: 'Cancel run' })
+    .click();
+  await expect(pill).toHaveText('Cancelled', { timeout: 15_000 });
 });

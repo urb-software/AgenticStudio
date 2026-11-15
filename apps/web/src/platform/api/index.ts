@@ -189,4 +189,9 @@ export const api = {
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
   /** Each provider and whether a Run can be started with it now, with the reason when not. */
   listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
+  /**
+   * Cancels a Run (Issue #100; 202: the Run). A queued or waiting Run comes back `cancelled`; a
+   * preparing or running one carries `cancelRequestedAt` until the agent worker confirms.
+   */
+  cancelRun: (runId: string): Promise<RunOutput> => unwrap(sdk.cancelRun({ path: { runId } })),
 };

@@ -2,6 +2,7 @@
 
 import {
   ArrowLeftIcon,
+  BanIcon,
   RotateCcwIcon,
   ClockIcon,
   FolderIcon,
@@ -30,6 +31,7 @@ import {
 } from '../../components/run-presentation';
 import { failedRequest } from '../../components/failed-request';
 import { StaleBanner } from '../../components/stale-banner';
+import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
 
 /** States in which a Run is over, so it can be run again. */
@@ -112,6 +114,65 @@ function RunAgain({ run }: { run: RunOutput }) {
   );
 }
 
+/**
+ * "Cancel run" (Issue #100) for a Run that is not finished: a danger trigger and the destructive
+ * confirm. Once a running Run carries a cancel request it shows "Cancel requested…" instead,
+ * until the agent worker has stopped it.
+ */
+function CancelRun({ run }: { run: RunOutput }) {
+  const [open, setOpen] = useState(false);
+  if (run.cancelRequestedAt) {
+    return (
+      <Button variant="danger" icon={BanIcon} disabled>
+        Cancel requested…
+      </Button>
+    );
+  }
+  return (
+    <>
+      <Button variant="danger" icon={BanIcon} onClick={() => setOpen(true)}>
+        Cancel run
+      </Button>
+      <CancelRunDialog run={run} open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+/** The limits in force for the Run (Issue #100), in words. */
+function limitsText({ stepMinutes, maxSteps, waitingDays }: RunOutput['limits']): string {
+  return [
+    `${plural(stepMinutes, 'minute', 'minutes')} per run step`,
+    `at most ${plural(maxSteps, 'run step', 'run steps')}`,
+    `cancelled after ${plural(waitingDays, 'day', 'days')} waiting for you`,
+  ].join(' · ');
+}
+
+/** How a Run that was stopped ended (Issue #100): who cancelled it and why, or its time limit. */
+function Stopped({ run }: { run: RunOutput }) {
+  if (run.state === 'cancelled' && run.cancellation) {
+    return <Banner tone="info" icon={BanIcon} title={run.cancellation.reason} />;
+  }
+  if (run.state === 'timed_out') {
+    return (
+      <Banner
+        tone="danger"
+        icon={ClockIcon}
+        title={`The run step reached its time limit of ${plural(run.limits.stepMinutes, 'minute', 'minutes')} and was stopped.`}
+      />
+    );
+  }
+  if (run.cancelRequestedAt && !FINAL.includes(run.state)) {
+    return (
+      <Banner tone="info" icon={BanIcon} title="Cancel requested.">
+        The agent worker is stopping the run. It ends as cancelled; the working copy is kept.
+      </Banner>
+    );
+  }
+  return null;
+}
+
 function ProjectLink({ projectId }: { projectId: string }) {
   const { data } = useRunProject(projectId);
   return (
@@ -131,7 +192,8 @@ export function RunTitle({ runId }: { runId: string }) {
  * The Run page: the Task, the state as a status pill (polled while the Run is active), the
  * Provider, the project, the starting commit and the times. A queued Run says why it waits; a
  * failed Run shows the message for its reason code and the detail in mono; a finished one has
- * "Run again".
+ * "Run again". A Run that is not finished can be cancelled; the limits in force are shown, and
+ * a cancelled or timed-out Run says why it stopped (Issue #100).
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
@@ -197,7 +259,7 @@ export function RunDetail({ runId }: { runId: string }) {
             </span>
           </p>
         </div>
-        {FINAL.includes(run.state) ? <RunAgain run={run} /> : null}
+        {FINAL.includes(run.state) ? <RunAgain run={run} /> : <CancelRun run={run} />}
       </header>
 
       {isError ? (
@@ -205,6 +267,7 @@ export function RunDetail({ runId }: { runId: string }) {
       ) : null}
       {run.state === 'queued' ? <QueuedReason run={run} /> : null}
       {run.failure ? <Failure failure={run.failure} /> : null}
+      <Stopped run={run} />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         <Card aria-labelledby="run-task-title">
@@ -239,6 +302,7 @@ export function RunDetail({ runId }: { runId: string }) {
                   <span className="font-mono text-code tabular-nums">{duration}</span>
                 </Fact>
               ) : null}
+              <Fact term="Limits">{limitsText(run.limits)}</Fact>
             </dl>
           </CardContent>
         </Card>

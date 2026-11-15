@@ -6,7 +6,8 @@ import type {
   RunOutput,
 } from '../../../platform/api';
 
-type Route = 'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run' | 'providers';
+type Route =
+  'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run' | 'providers' | 'cancel';
 
 interface ScriptedResponse {
   status: number;
@@ -20,6 +21,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs$/, () => 'runs'],
   [/^\/api\/runs\/([^/]+)$/, () => 'run'],
   [/^\/api\/providers()$/, () => 'providers'],
+  [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
 ];
 
 export const PROJECT: ProjectOutput = {
@@ -75,6 +77,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     runs: [],
     run: [],
     providers: [],
+    cancel: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
 
@@ -110,6 +113,33 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
       case 'run': {
         const run = runs.find((candidate) => candidate.id === id);
         return run ? json(200, run) : json(404, problem(404, 'Run not found'));
+      }
+      case 'cancel': {
+        // Issue #100: the API's rules, in short.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        const run = runs[index];
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (['succeeded', 'failed', 'cancelled', 'timed_out'].includes(run.state)) {
+          return json(
+            409,
+            problem(
+              409,
+              'Run already finished',
+              'The run has already finished. There is nothing to cancel.',
+            ),
+          );
+        }
+        const cancelled: RunOutput =
+          run.state === 'queued' || run.state === 'waiting_for_operator'
+            ? {
+                ...run,
+                state: 'cancelled',
+                finishedAt: new Date().toISOString(),
+                cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+              }
+            : { ...run, cancelRequestedAt: run.cancelRequestedAt ?? new Date().toISOString() };
+        runs[index] = cancelled;
+        return json(202, cancelled);
       }
       case 'start': {
         const { task, provider } = body as Pick<RunOutput, 'task' | 'provider'>;
