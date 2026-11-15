@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { runProcess } from './process-runner.js';
 
 /**
  * The containers, networks and volumes that belong to a Run (Issue #98): everything its Run
@@ -29,30 +29,21 @@ const DOCKER_TIMEOUT_MS = 5 * 60_000;
 
 /** `docker` from the PATH, without a shell, with a time limit, in the worker's environment. */
 export function systemDocker(env: NodeJS.ProcessEnv = process.env): DockerExec {
-  return (args, signal) =>
-    new Promise((resolve, reject) => {
-      const child = spawn('docker', [...args], {
-        env,
-        shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        signal,
-        timeout: DOCKER_TIMEOUT_MS,
-        killSignal: 'SIGKILL',
-      });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
-      child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-        stderr = (stderr + chunk).slice(-4096);
-      });
-      child.once('error', (error: NodeJS.ErrnoException) =>
-        reject(error.code === 'ENOENT' ? new DockerMissingError() : error),
-      );
-      child.once('close', (code) => {
-        if (code === 0) resolve(stdout);
-        else reject(new Error(`docker ${args[0]} exited with code ${code}: ${stderr.trim()}`));
-      });
+  return async (args, signal) => {
+    const result = await runProcess({
+      binary: 'docker',
+      args,
+      env,
+      timeoutMs: DOCKER_TIMEOUT_MS,
+      signal,
     });
+    if (result.interrupted === 'missing') throw new DockerMissingError();
+    if (result.exitCode !== 0) {
+      const why = result.interrupted ?? `exited with code ${result.exitCode}`;
+      throw new Error(`docker ${args[0]} ${why}: ${result.stderr.trim()}`);
+    }
+    return result.stdout;
+  };
 }
 
 const lines = (output: string) =>

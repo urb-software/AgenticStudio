@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { runProcess } from './process-runner.js';
 
 /**
  * Git for the agent worker (Issue #98). Every call runs the system `git` from an argument
@@ -75,11 +75,6 @@ export interface GitRunnerOptions {
   binary?: string;
 }
 
-/** Kept of Git's error output; its useful messages are at the end. */
-const MAX_STDERR = 8 * 1024;
-/** Most standard output kept (a capped `git log` stays far below it). */
-const MAX_STDOUT = 4 * 1024 * 1024;
-
 /** `scheme://user:secret@host` → `scheme://***@host`, so a log never shows a credential. */
 export function maskCredentials(text: string): string {
   return text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, '$1***@');
@@ -107,71 +102,39 @@ export class GitRunner {
   }
 
   /** Runs `git <hardening> <args>`; resolves with its standard output, rejects with {@link GitCommandError}. */
-  run(args: readonly string[], options: GitOptions): Promise<string> {
+  async run(args: readonly string[], options: GitOptions): Promise<string> {
     const command = args[0] ?? '';
-    return new Promise((resolve, reject) => {
-      if (options.signal?.aborted) {
-        reject(new GitCommandError(command, null, '', 'aborted'));
-        return;
-      }
-      const child = spawn(this.binary, [...GIT_HARDENING, ...args], {
-        cwd: options.cwd,
-        env: {
-          ...this.baseEnv,
-          LC_ALL: 'C.UTF-8',
-          GIT_TERMINAL_PROMPT: '0',
-          GIT_CONFIG_NOSYSTEM: '1',
-          GIT_ALLOW_PROTOCOL: WORKER_GIT_TRANSPORTS.join(':'),
-          GIT_LFS_SKIP_SMUDGE: '1',
-          GIT_NO_REPLACE_OBJECTS: '1',
-          SSH_ASKPASS_REQUIRE: 'never',
-          ...(options.ceiling ? { GIT_CEILING_DIRECTORIES: options.ceiling } : {}),
-        },
-        shell: false,
-        // Its own process group (and session: no terminal to prompt on); killed as a whole.
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stdout = '';
-      let stderr = '';
-      let interrupted: 'timeout' | 'aborted' | null = null;
-      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-        if (stdout.length < MAX_STDOUT) stdout += chunk;
-      });
-      child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-        stderr = (stderr + chunk).slice(-MAX_STDERR);
-      });
-      const kill = (reason: 'timeout' | 'aborted') => {
-        if (interrupted) return;
-        interrupted = reason;
-        if (child.pid === undefined) return;
-        try {
-          process.kill(-child.pid, 'SIGKILL');
-        } catch {
-          // The group is already gone.
-        }
-      };
-      const timer = setTimeout(() => kill('timeout'), options.timeoutMs);
-      const onAbort = () => kill('aborted');
-      options.signal?.addEventListener('abort', onAbort, { once: true });
-      const settle = () => {
-        clearTimeout(timer);
-        options.signal?.removeEventListener('abort', onAbort);
-      };
-      child.once('error', () => {
-        settle();
-        reject(new GitCommandError(command, null, '', 'spawn'));
-      });
-      child.once('close', (code) => {
-        settle();
-        if (interrupted) {
-          reject(new GitCommandError(command, null, maskCredentials(stderr), interrupted));
-        } else if (code !== 0) {
-          reject(new GitCommandError(command, code, maskCredentials(stderr), 'exit'));
-        } else {
-          resolve(stdout);
-        }
-      });
+    const result = await runProcess({
+      binary: this.binary,
+      args: [...GIT_HARDENING, ...args],
+      cwd: options.cwd,
+      env: {
+        ...this.baseEnv,
+        LC_ALL: 'C.UTF-8',
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_ALLOW_PROTOCOL: WORKER_GIT_TRANSPORTS.join(':'),
+        GIT_LFS_SKIP_SMUDGE: '1',
+        GIT_NO_REPLACE_OBJECTS: '1',
+        SSH_ASKPASS_REQUIRE: 'never',
+        ...(options.ceiling ? { GIT_CEILING_DIRECTORIES: options.ceiling } : {}),
+      },
+      timeoutMs: options.timeoutMs,
+      signal: options.signal,
     });
+    const stderr = maskCredentials(result.stderr);
+    switch (result.interrupted) {
+      case 'timeout':
+      case 'aborted':
+        throw new GitCommandError(command, null, stderr, result.interrupted);
+      case 'missing':
+      case 'spawn':
+        throw new GitCommandError(command, null, '', 'spawn');
+      case null:
+        if (result.exitCode !== 0) {
+          throw new GitCommandError(command, result.exitCode, stderr, 'exit');
+        }
+        return result.stdout;
+    }
   }
 }

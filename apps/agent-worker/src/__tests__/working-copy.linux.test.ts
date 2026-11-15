@@ -205,6 +205,24 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     expect((failure as PreparationFailedError).detail).not.toContain(root);
   });
 
+  it('keeps the cache when a refresh fails, failing only this Run', async () => {
+    const copies = workingCopies();
+    await copies.prepare(payload(), signal());
+    const marker = join(cacheDir(), 'studio-test-marker');
+    writeFileSync(marker, 'kept');
+    const bare = remote.url.slice('file://'.length);
+    renameSync(bare, `${bare}.away`);
+
+    const failure = await copies.prepare(payload(), signal()).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(PreparationFailedError);
+    expect((failure as PreparationFailedError).detail).toMatch(
+      /while refreshing the Project's cache/,
+    );
+    expect(existsSync(marker)).toBe(true);
+    renameSync(`${bare}.away`, bare);
+  });
+
   it('discards and rebuilds a cache whose remote no longer matches the Project', async () => {
     const copies = workingCopies();
     await copies.prepare(payload(), signal());
