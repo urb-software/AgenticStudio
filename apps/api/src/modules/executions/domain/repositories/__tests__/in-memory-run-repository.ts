@@ -3,7 +3,6 @@ import {
   ACTIVE_RUN_STATES,
   CLAIMED_RUN_STATES,
   isFinal,
-  isResumable,
   MAX_ACTIVE_RUNS,
   type Run,
   type RunCancellation,
@@ -26,11 +25,15 @@ import type {
 
 const isActive = (state: RunState) => (ACTIVE_RUN_STATES as readonly RunState[]).includes(state);
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
+/** Queued with a session reference: the database adapter's test for a Run queued to resume. */
+const queuedToResume = (run: Run) => run.state === 'queued' && run.sessionRef !== null;
+
 /**
  * Active for the limits: an active state, a failed Run held for a delivery retry (#102), or a
  * resumable Run waiting for its worker (#103).
  */
-const holdsPlace = (run: Run) => isActive(run.state) || run.claimedBy !== null || isResumable(run);
+const holdsPlace = (run: Run) =>
+  isActive(run.state) || run.claimedBy !== null || queuedToResume(run);
 const deliveryFields = (delivery: RunDeliveryOutcome) => ({
   delivery: delivery.outcome,
   pullRequest: delivery.outcome === 'delivered' ? { ...delivery.pullRequest } : null,
@@ -107,7 +110,7 @@ export class InMemoryRunRepository implements RunRepository {
       this.runs.filter((run) => run.id !== candidate.id && holdsPlace(run));
     const next = this.runs.find(
       (run) =>
-        ((run.state === 'queued' && (!isResumable(run) || run.lastClaimedBy === workerId)) ||
+        ((run.state === 'queued' && (!queuedToResume(run) || run.lastClaimedBy === workerId)) ||
           (run.state === 'failed' &&
             run.deliveryRequested &&
             run.claimedBy === null &&
@@ -346,14 +349,14 @@ export class InMemoryRunRepository implements RunRepository {
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
     return Promise.resolve(
       this.runs
-        .filter((run) => isResumable(run))
+        .filter((run) => queuedToResume(run))
         .map((run) => ({ runId: run.id, startedBy: run.lastClaimedBy ?? null })),
     );
   }
 
   abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
     const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || !isResumable(run)) return Promise.resolve(false);
+    if (!run || !queuedToResume(run)) return Promise.resolve(false);
     Object.assign(run, { state: 'failed', failure: { ...failure }, finishedAt: now });
     return Promise.resolve(true);
   }

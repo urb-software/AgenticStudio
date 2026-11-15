@@ -255,8 +255,6 @@ model RunStep {
   @@map("run_steps")
 }
 
-/// One event of a Run's log (Issue #99): the durable record; the live stream is built on it.
-/// Text is redacted and capped before it is stored.
 /// One turn of a Run's conversation after its Task (Issue #103): the agent's question from a
 /// needs_input Run step, or the operator's answer to it, in order.
 model RunMessage {
@@ -279,6 +277,8 @@ model RunMessage {
   @@map("run_messages")
 }
 
+/// One event of a Run's log (Issue #99): the durable record; the live stream is built on it.
+/// Text is redacted and capped before it is stored.
 model RunEvent {
   runId     String   @map("run_id") @db.Uuid
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
