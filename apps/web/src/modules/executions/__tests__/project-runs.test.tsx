@@ -80,7 +80,7 @@ describe('Runs section: list states', () => {
     expect((await rows())[0]!.textContent).toContain('Add pagination');
   });
 
-  it('lists the Runs newest first with state, Provider, the start of the Task and relative time', async () => {
+  it("lists the Runs in the server's order (newest first) with state, Provider, the start of the Task and relative time", async () => {
     fakeRunsApi([
       aRun({
         task: 'Add pagination to products API\nUse cursor paging.',
@@ -126,6 +126,27 @@ describe('Runs section: list states', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(30_000));
     expect(api.calls('projectRuns').length).toBe(settled);
+  });
+
+  it('keeps the list when a background refresh fails, with a quiet note and Retry', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const run = aRun({ state: 'running', task: 'Add pagination' });
+    const api = fakeRunsApi([run]);
+    renderRuns();
+    await within(section()).findByText('Running');
+
+    api.respondNext('projectRuns', 503, problem(503, 'Service Unavailable'));
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    const note = await within(section()).findByText(/Couldn't refresh the runs\./);
+    expect(note.closest('[role="status"]')).toBeTruthy();
+    expect(within(section()).getByRole('link', { name: 'Add pagination' })).toBeTruthy();
+    expect(within(section()).queryByRole('alert')).toBeNull();
+
+    api.update(run.id, { state: 'succeeded' });
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    await within(section()).findByText('Succeeded');
+    expect(within(section()).queryByText("Couldn't refresh the runs.")).toBeNull();
   });
 
   it('does not poll while the tab is hidden', async () => {

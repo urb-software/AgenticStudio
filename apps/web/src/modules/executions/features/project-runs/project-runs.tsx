@@ -6,9 +6,10 @@ import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
-import { ApiError } from '../../../../platform/api';
 import { useProjectRuns } from '../../api/runs-queries';
+import { failedRequest } from '../../components/failed-request';
 import { RunRows } from '../../components/run-rows';
+import { StaleBanner } from '../../components/stale-banner';
 import { NewRunDialog } from '../new-run/new-run-dialog';
 
 /** The request the list makes (generated `listProjectRuns`), shown verbatim when it fails. */
@@ -28,12 +29,6 @@ const BLOCKED_REASON: Record<Exclude<RepositoryStatus, 'ready'>, string> = {
 const SKELETON_ROWS = 3;
 
 /** The failed request in mono: method, path and the problem+json status and title, never a body. */
-function failedRequest(error: unknown): string {
-  if (!(error instanceof ApiError) || error.status === 0) return LIST_REQUEST;
-  const status = [error.status, error.problem?.title].filter(Boolean).join(' ');
-  return `${LIST_REQUEST} · ${status}`;
-}
-
 function LoadingRuns() {
   return (
     <div role="status" aria-busy="true" aria-label="Loading runs" className="flex flex-col">
@@ -69,13 +64,15 @@ export function ProjectRuns({ projectId, repository }: ProjectRunsProps) {
   let body;
   if (isPending) {
     body = <LoadingRuns />;
-  } else if (isError) {
+  } else if (!data) {
     body = (
       <EmptyState
         tone="error"
         icon={TriangleAlertIcon}
         title="Couldn't load the runs"
-        description={<span className="font-mono text-small">{failedRequest(error)}</span>}
+        description={
+          <span className="font-mono text-small">{failedRequest(LIST_REQUEST, error)}</span>
+        }
         action={
           <Button icon={RefreshCwIcon} loading={isRefetching} onClick={() => void refetch()}>
             Retry
@@ -92,7 +89,14 @@ export function ProjectRuns({ projectId, repository }: ProjectRunsProps) {
       />
     );
   } else {
-    body = <RunRows runs={data} now={dataUpdatedAt} label="Runs" />;
+    body = (
+      <div className="flex flex-col gap-3">
+        {isError ? (
+          <StaleBanner what="the runs" retrying={isRefetching} onRetry={() => void refetch()} />
+        ) : null}
+        <RunRows runs={data} now={dataUpdatedAt} label="Runs" />
+      </div>
+    );
   }
 
   return (

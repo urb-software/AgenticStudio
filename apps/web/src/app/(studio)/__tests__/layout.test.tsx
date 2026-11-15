@@ -36,17 +36,23 @@ function setWidth(width: number) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
 }
 
-beforeEach(() => {
+/** The API behind `fetch`: the session, no Runs (the run indicator stays hidden) and `extra`. */
+function fakeApi(extra: (pathname: string) => unknown = () => undefined) {
   vi.stubGlobal(
     'fetch',
-    vi.fn(
-      async () =>
-        new Response(JSON.stringify({ authenticated: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-    ),
+    vi.fn(async (request: Request) => {
+      const { pathname } = new URL(request.url);
+      const body = extra(pathname) ?? (pathname === '/api/runs' ? [] : { authenticated: true });
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }),
   );
+}
+
+beforeEach(() => {
+  fakeApi();
 });
 
 afterEach(() => {
@@ -78,7 +84,7 @@ describe('Studio Shell', () => {
     await expect(document.body).toHaveNoAxeViolations();
   });
 
-  it('shows the logo and only the Projects route, marked as the current page', async () => {
+  it('shows the logo and the built routes, Projects marked as the current page', async () => {
     setWidth(1440);
     render(await shell());
 
@@ -86,6 +92,7 @@ describe('Studio Shell', () => {
     const links = within(nav).getAllByRole('link');
     expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
       ['Projects', '/projects'],
+      ['Executions', '/executions'],
     ]);
     expect(links[0]!.getAttribute('aria-current')).toBe('page');
     expect(screen.getByText('Agent Studio')).toBeTruthy();
@@ -101,17 +108,10 @@ describe('Studio Shell', () => {
   it('shows Projects › project name on a project screen (#60)', async () => {
     const id = '00000000-0000-4000-8000-0000000000a1';
     route.pathname = `/projects/${id}`;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (request: Request) => {
-        const body = new URL(request.url).pathname.startsWith('/api/projects/')
-          ? { id, name: 'Acme Shop', createdAt: '2026-11-12T09:00:00.000Z', repository: null }
-          : { authenticated: true };
-        return new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }),
+    fakeApi((pathname) =>
+      pathname.startsWith('/api/projects/')
+        ? { id, name: 'Acme Shop', createdAt: '2026-11-12T09:00:00.000Z', repository: null }
+        : undefined,
     );
     const { container } = render(await shell(<h1>Acme Shop</h1>));
 
@@ -121,6 +121,37 @@ describe('Studio Shell', () => {
     expect(projects.getAttribute('aria-current')).toBeNull();
     const current = await within(breadcrumb).findByText('Acme Shop');
     expect(current.closest('[aria-current]')?.getAttribute('aria-current')).toBe('page');
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('shows Executions › the start of the Task on a Run page (#97)', async () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    route.pathname = `/executions/${id}`;
+    fakeApi((pathname) =>
+      pathname === `/api/runs/${id}`
+        ? {
+            id,
+            projectId: '00000000-0000-4000-8000-0000000000a1',
+            provider: 'claude_code',
+            task: 'Add pagination\nWith cursors.',
+            state: 'succeeded',
+            startCommit: '0123456789abcdef0123456789abcdef01234567',
+            createdAt: '2026-11-15T10:00:00.000Z',
+          }
+        : undefined,
+    );
+    const { container } = render(await shell(<h1>Add pagination</h1>));
+
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(breadcrumb).getByRole('link', { name: 'Executions' }).getAttribute('href')).toBe(
+      '/executions',
+    );
+    const current = await within(breadcrumb).findByText('Add pagination');
+    expect(current.closest('[aria-current]')?.getAttribute('aria-current')).toBe('page');
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(within(nav).getByRole('link', { name: 'Executions' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
     await expect(container).toHaveNoAxeViolations();
   });
 

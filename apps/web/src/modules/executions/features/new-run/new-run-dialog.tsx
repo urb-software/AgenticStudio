@@ -57,7 +57,11 @@ type NewRunDialogProps = {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Prefill ("Run again": the same Task and Provider); the defaults are empty and Claude Code. */
+  initialValues?: StartRunRequest;
 };
+
+const EMPTY: StartRunRequest = { task: '', provider: 'claude_code' };
 
 /**
  * The New run dialog (a bottom sheet on phones): the Task as free text and the Provider, Claude
@@ -66,7 +70,12 @@ type NewRunDialogProps = {
  * server's title and detail. On success it opens the new Run's page. It cannot be closed while
  * the request is in flight.
  */
-export function NewRunDialog({ projectId, open, onOpenChange }: NewRunDialogProps) {
+export function NewRunDialog({
+  projectId,
+  open,
+  onOpenChange,
+  initialValues = EMPTY,
+}: NewRunDialogProps) {
   const router = useRouter();
   const id = useId();
   const PROVIDER_LABEL_ID = `${id}-provider-label`;
@@ -81,7 +90,7 @@ export function NewRunDialog({ projectId, open, onOpenChange }: NewRunDialogProp
     formState: { errors, isSubmitting },
   } = useForm<StartRunRequest>({
     resolver,
-    defaultValues: { task: '', provider: 'claude_code' },
+    defaultValues: initialValues,
   });
 
   const submitting = isSubmitting || startRun.isPending;

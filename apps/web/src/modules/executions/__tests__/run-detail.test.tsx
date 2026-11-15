@@ -9,6 +9,9 @@ import { aRun, fakeRunsApi, problem, PROJECT, SHA } from './fake-runs-api';
 // Run page seam (Story #97): the public RunDetail of the executions module, with the generated
 // client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
 
+const push = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+
 function renderRun(runId: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -178,6 +181,61 @@ describe('Run page', () => {
     await act(() => vi.advanceTimersByTimeAsync(10_000));
     expect(api.calls('run').length).toBe(hidden);
   });
+
+  it('keeps the last known Run when a background refresh fails, with a quiet note', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const run = aRun({ state: 'running' });
+    const api = fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    api.respondNext('run', 503, problem(503, 'Service Unavailable'));
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    expect(await screen.findByText(/Couldn't refresh the run\./)).toBeTruthy();
+    expect(pill().textContent).toBe('Running');
+    expect((await heading()).textContent).toBe(run.task);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each(['succeeded', 'failed', 'cancelled', 'timed_out'] as const)(
+    'offers Run again on a %s Run, prefilled with its Task and Provider',
+    async (state) => {
+      const run = aRun({ state, task: 'Add pagination\nUse cursors.', provider: 'codex' });
+      const api = fakeRunsApi([run]);
+      renderRun(run.id);
+      await heading();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
+      const dialog = screen.getByRole('dialog', { name: 'New run' });
+      expect(within(dialog).getByLabelText<HTMLTextAreaElement>('Task').value).toBe(
+        'Add pagination\nUse cursors.',
+      );
+      expect(
+        within(dialog).getByRole('button', { name: 'Codex' }).getAttribute('aria-pressed'),
+      ).toBe('true');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Start run' }));
+
+      await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+      expect(api.calls('start')[0]!.body).toEqual({
+        task: 'Add pagination\nUse cursors.',
+        provider: 'codex',
+      });
+      push.mockReset();
+    },
+  );
+
+  it.each(['queued', 'preparing', 'running', 'waiting_for_operator'] as const)(
+    'has no Run again while the Run is %s',
+    async (state) => {
+      const run = aRun({ state });
+      fakeRunsApi([run]);
+      renderRun(run.id);
+      await heading();
+
+      expect(screen.queryByRole('button', { name: 'Run again' })).toBeNull();
+    },
+  );
 
   it('shows a not-found state for an unknown Run', async () => {
     fakeRunsApi([]);
