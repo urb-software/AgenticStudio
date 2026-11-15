@@ -39,12 +39,18 @@ export interface RunLogOptions {
   onLost: () => void;
   /** Buffer bound (tests make it small). */
   bufferMax?: number;
+  /**
+   * The seq of the first event (default 1): a resumed Run continues after the seqs Studio
+   * stored, or Studio would drop its events as duplicates (Issue #103).
+   */
+  firstSeq?: number;
   /** Buffer bound in UTF-8 bytes of event text (tests make it small). */
   bufferMaxBytes?: number;
 }
 
 /**
- * Forwards one Run's events to Studio (Issue #99). Events are numbered per Run from 1, cut to
+ * Forwards one Run's events to Studio (Issue #99). Events are numbered per Run from 1 (a
+ * resumed Run: from where Studio's log ends, Issue #103), cut to
  * the per-event cap, buffered (bounded), and sent in order in batches every 500 ms or as soon
  * as 100 wait. A failed send is retried with backoff; Studio ignores seqs it already stored,
  * so a retry never duplicates. The buffer holds at most 10 000 events and 16 MiB of text;
@@ -65,6 +71,7 @@ export class RunLog {
   private readonly timer: NodeJS.Timeout;
 
   constructor(private readonly options: RunLogOptions) {
+    this.seq = (options.firstSeq ?? 1) - 1;
     this.bufferMax = options.bufferMax ?? BUFFER_MAX;
     this.bufferMaxBytes = options.bufferMaxBytes ?? BUFFER_MAX_BYTES;
     this.timer = setInterval(() => this.flush(), FLUSH_MS);

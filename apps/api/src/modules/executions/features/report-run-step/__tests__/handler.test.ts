@@ -183,6 +183,88 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
+  // Issue #103: a question becomes the Run's open question; the session stays internal.
+  describe('questions and sessions', () => {
+    const asking = {
+      outcome: 'needs_input',
+      summary: 'Stuck on known-secret-value.',
+      question: {
+        text: 'Use known-secret-value as the key?',
+        options: ['Yes', 'No, known-secret-value is wrong'],
+        recommendation: 'Yes',
+      },
+      sessionRef: 'session-known-secret-value',
+    };
+
+    it("stores the question, redacted, as the Run's next message and the session on the Run", async () => {
+      await running();
+
+      await handler.execute({
+        runId: run.id,
+        workerId: WORKER,
+        kind: 'start',
+        result: asking,
+        workingCopy: WORKING_COPY,
+      });
+
+      const stored = await runs.findById(run.id);
+      expect(stored?.messages).toEqual([
+        {
+          kind: 'question',
+          question: {
+            text: `Use ${REDACTED} as the key?`,
+            options: ['Yes', `No, ${REDACTED} is wrong`],
+            recommendation: 'Yes',
+          },
+          at: T1,
+        },
+      ]);
+      // An opaque reference the resume needs exactly: never redacted, never in the stored result.
+      expect(stored?.sessionRef).toBe('session-known-secret-value');
+      expect(runs.steps[0]!.step.result).toEqual({
+        outcome: 'needs_input',
+        summary: `Stuck on ${REDACTED}.`,
+        question: {
+          text: `Use ${REDACTED} as the key?`,
+          options: ['Yes', `No, ${REDACTED} is wrong`],
+          recommendation: 'Yes',
+        },
+      });
+    });
+
+    it('stores a re-sent step and its question only once', async () => {
+      await running();
+      const send = () =>
+        handler.execute({
+          runId: run.id,
+          workerId: WORKER,
+          index: 1,
+          kind: 'start',
+          result: asking,
+          workingCopy: WORKING_COPY,
+        });
+
+      await send();
+      await send();
+
+      expect((await runs.findById(run.id))?.messages).toHaveLength(1);
+    });
+
+    it('keeps the session a done step reports, and no message', async () => {
+      await running();
+
+      await handler.execute({
+        runId: run.id,
+        workerId: WORKER,
+        kind: 'start',
+        result: { ...RESULT, sessionRef: 'session-2' },
+        workingCopy: WORKING_COPY,
+      });
+
+      expect(await runs.findById(run.id)).toMatchObject({ sessionRef: 'session-2', messages: [] });
+    });
+  });
+
   // Review of #121: the worker numbers its steps; a re-sent number is not stored twice.
   describe('step numbers', () => {
     const numbered = (index: number) =>

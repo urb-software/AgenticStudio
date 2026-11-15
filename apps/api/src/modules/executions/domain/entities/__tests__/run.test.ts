@@ -4,7 +4,9 @@ import {
   canTransition,
   IllegalRunTransitionError,
   isFinal,
+  isResumable,
   longWaitCancellation,
+  resumeAnswer,
   RUN_STATES,
   type Run,
   type RunState,
@@ -19,7 +21,8 @@ const LEGAL: [RunState, RunState][] = [
   ['running', 'waiting_for_operator'],
   ['running', 'succeeded'],
   ['running', 'failed'],
-  ['waiting_for_operator', 'running'],
+  // Issue #103: the operator's answer queues the Run again; a worker claims it to resume.
+  ['waiting_for_operator', 'queued'],
   ['queued', 'cancelled'],
   ['preparing', 'cancelled'],
   ['running', 'cancelled'],
@@ -103,6 +106,8 @@ describe('long-wait rule', () => {
     waitingSince: since,
     stepStartedAt: null,
     releasedBy: null,
+    sessionRef: null,
+    messages: [],
     ...overrides,
   });
   const after = (days: number, extraMs = 0) =>
@@ -135,5 +140,62 @@ describe('step-limit failure', () => {
       code: 'step_limit',
       detail: 'The run reached its limit of 10 run steps; no further step was started.',
     });
+  });
+});
+
+// Issue #103: the agent's open question and the operator's answer that resumes the session.
+describe('questions and answers', () => {
+  const at = new Date('2026-11-15T12:00:00.000Z');
+  const base: Run = {
+    id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
+    projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
+    provider: 'codex',
+    task: 'x',
+    state: 'waiting_for_operator',
+    startCommit: 'a',
+    remoteUrl: 'https://git.example.test/a.git',
+    workingCopy: null,
+    integrationBranch: 'dev',
+    delivery: null,
+    pullRequest: null,
+    deliveryRequested: false,
+    failingChecks: [],
+    createdAt: at,
+    startedAt: at,
+    finishedAt: null,
+    failure: null,
+    claimedBy: null,
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+    cancelRequestedAt: null,
+    cancellation: null,
+    waitingSince: at,
+    stepStartedAt: null,
+    releasedBy: null,
+    sessionRef: 'session-1',
+    messages: [],
+  };
+  const question = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
+  const asked: Run = { ...base, messages: [{ kind: 'question', question, at }] };
+  const answered: Run = {
+    ...base,
+    state: 'queued',
+    waitingSince: null,
+    messages: [
+      { kind: 'question', question, at },
+      { kind: 'answer', text: 'PostgreSQL', at },
+    ],
+  };
+
+  it('a queued Run with a session and an answer is resumable, with that answer', () => {
+    expect(isResumable(answered)).toBe(true);
+    expect(resumeAnswer(answered)).toBe('PostgreSQL');
+    expect(isResumable({ ...answered, sessionRef: null })).toBe(false);
+    expect(resumeAnswer({ ...answered, sessionRef: null })).toBeNull();
+    expect(isResumable(asked)).toBe(false);
+    expect(resumeAnswer(asked)).toBeNull();
+    // Claimed to resume, it still carries the answer for the worker.
+    const claimed: Run = { ...answered, state: 'preparing' };
+    expect(resumeAnswer(claimed)).toBe('PostgreSQL');
+    expect(isResumable(claimed)).toBe(false);
   });
 });

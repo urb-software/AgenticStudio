@@ -6,7 +6,7 @@ import {
   type OnApplicationShutdown,
 } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
-import { goneWorkerRule } from '../../domain/entities/run.js';
+import { goneResumeWorkerRule, goneWorkerRule } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { timeOutOverdueSteps } from '../../domain/services/overdue-steps.js';
@@ -34,11 +34,36 @@ export class SweepLostWorkersHandler {
   /** When this handler started: a worker that never reported since counts from here. */
   private readonly since: Date;
 
-  /** Returns how many Runs failed (also requested delivery retries whose worker is gone). */
+  /**
+   * Returns how many Runs failed (also requested delivery retries and answered Runs whose
+   * worker is gone).
+   */
   async execute(): Promise<number> {
     const now = this.clock.now();
     const lost = await failLostWorkers(this.runs, now, this.lease.seconds);
-    return lost + (await this.abandonRetriesOfGoneWorkers(now));
+    return (
+      lost +
+      (await this.abandonRetriesOfGoneWorkers(now)) +
+      (await this.abandonResumesOfGoneWorkers(now))
+    );
+  }
+
+  /**
+   * An answered Run is resumed only by the worker that started it (#103): it alone has the
+   * Working copy and the agent's session. When that worker is gone for longer than the lease,
+   * the Run fails as "Working copy no longer exists (agent worker gone) — run again".
+   */
+  private async abandonResumesOfGoneWorkers(now: Date): Promise<number> {
+    const { seenBefore, failure } = goneResumeWorkerRule(now, this.lease.seconds);
+    let abandoned = 0;
+    for (const resume of await this.runs.listPendingResumes()) {
+      const seen =
+        (resume.startedBy ? this.statuses.lastSeen(resume.startedBy) : undefined) ?? this.since;
+      if (seen < seenBefore && (await this.runs.abandonResume(resume.runId, failure, now))) {
+        abandoned++;
+      }
+    }
+    return abandoned;
   }
 
   /**

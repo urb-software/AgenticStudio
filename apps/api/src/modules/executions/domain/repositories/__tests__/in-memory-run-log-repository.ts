@@ -40,6 +40,10 @@ export class InMemoryRunLogRepository implements RunLogRepository {
     return Promise.resolve(plan.store.length);
   }
 
+  lastSeq(runId: string): Promise<number> {
+    return Promise.resolve((this.events.get(runId) ?? []).at(-1)?.seq ?? 0);
+  }
+
   listAfter(runId: string, after: number, limit: number): Promise<RunEvent[]> {
     const events = (this.events.get(runId) ?? []).filter((event) => event.seq > after);
     return Promise.resolve(structuredClone(events.slice(0, limit)));

@@ -1,3 +1,4 @@
+import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import type { RunPayload } from '@agentic-studio/contracts';
 import { randomUUID } from 'node:crypto';
 import {
@@ -378,6 +379,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
           workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
           signal: signal(),
           processes: { register: () => undefined },
+          agentDefinition: AGENT_DEFINITION,
         }),
         () => undefined,
       );
@@ -440,6 +442,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
           workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
           signal: signal(),
           processes: { register: () => undefined },
+          agentDefinition: AGENT_DEFINITION,
         }),
         () => undefined,
       );

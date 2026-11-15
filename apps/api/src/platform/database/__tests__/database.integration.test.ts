@@ -50,6 +50,8 @@ describe('database DI against a fresh PostgreSQL', () => {
       /^CREATE UNIQUE INDEX .* ON public\.runs .*\(project_id\) WHERE/,
     );
     expect(index?.indexdef).toMatch(/preparing.*running.*waiting_for_operator/);
+    // Issue #103: an answered Run waiting in the queue for its worker keeps the place.
+    expect(index?.indexdef).toMatch(/queued.*session_ref IS NOT NULL/);
   });
 
   it('records what `prisma migrate dev` would propose for objects Prisma does not model', async () => {

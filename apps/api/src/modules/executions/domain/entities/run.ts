@@ -120,6 +120,27 @@ export interface RunPullRequest {
 export type RunDeliveryOutcome =
   { outcome: 'none' } | { outcome: 'delivered'; pullRequest: RunPullRequest };
 
+/** Longest operator answer to an agent's question, in characters (Issue #103). */
+export const ANSWER_MAX_LENGTH = 10_000;
+
+/**
+ * The agent's question to the operator (Issue #103), from a `needs_input` step result: its
+ * text, the options it offers and the one it recommends. The agent's text: never markup.
+ */
+export interface RunQuestion {
+  text: string;
+  options?: string[];
+  recommendation?: string;
+}
+
+/**
+ * One turn of the Run's conversation after its Task (Issue #103), in order: the agent's
+ * question, or the operator's answer to it.
+ */
+export type RunMessage =
+  | { kind: 'question'; question: RunQuestion; at: Date }
+  | { kind: 'answer'; text: string; at: Date };
+
 export interface Run {
   id: string;
   projectId: string;
@@ -175,13 +196,21 @@ export interface Run {
    * retried report of that same change is recognised (review of #121).
    */
   releasedBy: string | null;
+  /**
+   * The agent session the last Run step reported (Issue #103): an answer resumes it. Internal:
+   * it goes to the agent worker that holds the Working copy, never to the operator API.
+   */
+  sessionRef: string | null;
+  /** The agent's questions and the operator's answers, in order (Issue #103). */
+  messages: RunMessage[];
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {
   queued: ['preparing', 'cancelled', 'timed_out'],
   preparing: ['running', 'failed', 'cancelled', 'timed_out'],
   running: ['waiting_for_operator', 'succeeded', 'failed', 'cancelled', 'timed_out'],
-  waiting_for_operator: ['running', 'cancelled', 'timed_out'],
+  // Issue #103: the operator's answer queues the Run again; a worker claims it to resume.
+  waiting_for_operator: ['queued', 'cancelled', 'timed_out'],
   succeeded: [],
   failed: [],
   cancelled: [],
@@ -278,6 +307,52 @@ export function stepLimitFailure(maxSteps: number): RunFailure {
   return {
     code: 'step_limit',
     detail: `The run reached its limit of ${maxSteps} run ${maxSteps === 1 ? 'step' : 'steps'}; no further step was started.`,
+  };
+}
+
+/**
+ * The answer that resumes the Run's agent session (Issue #103): the operator's last answer,
+ * while it is the latest message and the Run has a session reference; otherwise `null`. A
+ * resumed step that asks again adds a question after it, so it is never handed out twice.
+ */
+export function resumeAnswer(run: Pick<Run, 'sessionRef' | 'messages'>): string | null {
+  const last = run.messages.at(-1);
+  return run.sessionRef !== null && last?.kind === 'answer' ? last.text : null;
+}
+
+/**
+ * Whether the Run waits in the queue to be resumed (Issue #103): the operator answered, and
+ * the agent worker that holds its Working copy has not claimed it yet.
+ */
+export function isResumable(run: Pick<Run, 'state' | 'sessionRef' | 'messages'>): boolean {
+  return run.state === 'queued' && resumeAnswer(run) !== null;
+}
+
+/** Answering a Run that is not waiting for the operator (Issue #103). */
+export class RunNotWaitingError extends Error {
+  constructor(readonly state: RunState) {
+    super('The run is not waiting for an answer.');
+    this.name = 'RunNotWaitingError';
+  }
+}
+
+/**
+ * The gone-worker rule for a resume (Issue #103): only the agent worker that started the Run
+ * has its Working copy and the agent's session; when it has not reported for longer than the
+ * lease (counted from when Studio started, if it never reported since), the answered Run fails.
+ */
+export function goneResumeWorkerRule(
+  now: Date,
+  leaseSeconds: number,
+): { seenBefore: Date; failure: RunFailure } {
+  return {
+    seenBefore: new Date(now.getTime() - leaseSeconds * 1000),
+    failure: {
+      code: 'preparation_failed',
+      detail:
+        `Working copy no longer exists (agent worker gone) — run again: the agent worker that ` +
+        `started this run has not reported for more than ${leaseSeconds} seconds.`,
+    },
   };
 }
 

@@ -4,6 +4,8 @@ import { AuthModule } from '../../platform/auth/auth.module.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
+import { AnswerRunEndpoint } from './features/answer-run/endpoint.js';
+import { AnswerRunHandler } from './features/answer-run/handler.js';
 import { CancelLongWaitingRunsHandler } from './features/cancel-long-waiting-runs/handler.js';
 import { CancelRunEndpoint } from './features/cancel-run/endpoint.js';
 import { CancelRunHandler } from './features/cancel-run/handler.js';
@@ -84,8 +86,8 @@ const LOG_STREAMS_TOTAL = 50;
 const NO_RUN_SECRET_VALUES: RunSecretValues = { forRun: () => Promise.resolve([]) };
 
 /**
- * `executions` business module (Issues #96, #99, #100): the operator starts, reads and
- * cancels Runs; the agent
+ * `executions` business module (Issues #96, #99, #100, #103): the operator starts, reads,
+ * cancels and answers Runs; the agent
  * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
  * only), including each Run's log, which the operator reads in pages or live. `projects` is
  * passed in by the composition root, which wires its public `RUN_START_POINTS` contract; this
@@ -105,6 +107,7 @@ export class ExecutionsModule {
         GetRunEndpoint,
         CancelRunEndpoint,
         RetryDeliveryEndpoint,
+        AnswerRunEndpoint,
         ClaimRunEndpoint,
         ReportRunStateEndpoint,
         ReportRunStepEndpoint,
@@ -152,6 +155,7 @@ export class ExecutionsModule {
         CancelRunHandler,
         CancelLongWaitingRunsHandler,
         RetryDeliveryHandler,
+        AnswerRunHandler,
         ClaimRunHandler,
         ReportRunStateHandler,
         ReportRunStepHandler,

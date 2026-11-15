@@ -10,6 +10,7 @@ import {
 } from '@agentic-studio/contracts';
 import { posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { AGENT_DEFINITION } from './agent-definition/index.js';
 import { DeliveryFailedError, type DeliveryPort } from './delivery.js';
 import { ProviderDisabledError } from './provider-gate.js';
 import { type Backoff, ReportOutbox } from './report-outbox.js';
@@ -92,9 +93,6 @@ const SHUTDOWN_LOG_DEADLINE_MS = 2000;
  */
 const LOG_OUTAGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
 
-/** The number of the Run step the worker carries out (resume steps come with #103). */
-const START_STEP = 1;
-
 const INVALID_RESULT_FAILURE: RunFailure = {
   code: 'agent_failed',
   detail: "The agent's structured result was not valid.",
@@ -150,6 +148,12 @@ export class StepLimitError extends Error {
  * Studio is unreachable the step keeps going and its reports wait, in order, in an outbox. A
  * delivery starts only while no stop is pending; a stop or a crash during it leaves a delivery
  * to retry (`delivery_failed`), except an operator's cancel, which ends the Run `cancelled`.
+ *
+ * Issue #103: a claim of kind `resume` (the operator answered the agent's question) is carried
+ * like a start, except that the kept Working copy is located instead of prepared and the runner
+ * resumes the agent session Studio names with the answer, as the Run's next step: numbered after
+ * the steps it took, its events after the seqs Studio stored. The provider gate and the step
+ * limit are checked first, as for every step.
  */
 export class AgentWorker {
   private stopping = false;
@@ -217,8 +221,17 @@ export class AgentWorker {
     let prepared: PreparedRun | undefined;
     let processes: StepProcessGroups | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
-    // The Run's events go to Studio as they happen (Issue #99).
-    const log = new RunLog({ api, runId: run.runId, logger, onLost: () => stop('lost') });
+    // The Run's events go to Studio as they happen (Issue #99); a resumed Run's continue after
+    // the seqs Studio stored (Issue #103).
+    const log = new RunLog({
+      api,
+      runId: run.runId,
+      logger,
+      onLost: () => stop('lost'),
+      firstSeq: run.nextSeq ?? 1,
+    });
+    // The Run step this claim carries out (a delivery retry starts none).
+    const stepIndex = run.completedSteps + 1;
     const heartbeats = setInterval(() => {
       // Keeps Studio's view of this worker fresh while it carries a long Run.
       void this.reportStatus();
@@ -250,7 +263,11 @@ export class AgentWorker {
       if (run.completedSteps + 1 > run.limits.maxSteps) {
         throw new StepLimitError(run.limits.maxSteps);
       }
-      prepared = await this.options.workingCopies.prepare(run, abort.signal);
+      // A resumed Run continues in the Working copy it kept (Issue #103).
+      prepared =
+        run.kind === 'resume'
+          ? await this.options.workingCopies.locate(run)
+          : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
       outbox.send('running', (signal) => api.reportState(run.runId, { state: 'running' }, signal));
       processes = this.processesFor(prepared);
@@ -264,7 +281,7 @@ export class AgentWorker {
       );
       let result: RunStepResult;
       try {
-        result = await this.executeStart(run, prepared, processes, abort.signal, log);
+        result = await this.executeStep(run, stepIndex, prepared, processes, abort.signal, log);
       } finally {
         clearTimeout(limit);
       }
@@ -288,7 +305,12 @@ export class AgentWorker {
         api.reportStep(
           run.runId,
           // Numbered, so a retry of a report Studio already stored is not stored twice.
-          { index: run.completedSteps + 1, kind: 'start', result, workingCopy },
+          {
+            index: stepIndex,
+            kind: run.kind === 'resume' ? 'resume' : 'start',
+            result,
+            workingCopy,
+          },
           signal,
         ),
       );
@@ -315,10 +337,10 @@ export class AgentWorker {
         abort.signal.aborted && abort.signal.reason instanceof StepStoppedError
           ? abort.signal.reason.reason
           : undefined;
-      if (reason === 'cancel') log.push(START_STEP, 'notice', 'Run step stopped: cancelled');
+      if (reason === 'cancel') log.push(stepIndex, 'notice', 'Run step stopped: cancelled');
       if (reason === 'timeout') {
         log.push(
-          START_STEP,
+          stepIndex,
           'notice',
           `Run step stopped: its time limit of ${run.limits.stepMinutes} minutes was reached`,
         );
@@ -393,25 +415,28 @@ export class AgentWorker {
   }
 
   /**
-   * Runs the first Run step, its events forwarded between a start and an end marker
-   * (Issue #99). However it ends, the step's process groups are terminated
-   * afterwards (SIGINT, the grace, SIGKILL): when the step is stopped this is what stops it,
-   * and otherwise nothing it started outlives it. A stopped step that does not end within the
-   * grace (a runner that ignores the abort) is abandoned.
+   * Runs one Run step, the first or a resumed one (Issue #103), its events forwarded between a
+   * start and an end marker (Issue #99). However it ends, the step's process groups are
+   * terminated afterwards (SIGINT, the grace, SIGKILL): when the step is stopped this is what
+   * stops it, and otherwise nothing it started outlives it. A stopped step that does not end
+   * within the grace (a runner that ignores the abort) is abandoned.
    */
-  private async executeStart(
+  private async executeStep(
     run: RunPayload,
+    stepIndex: number,
     prepared: PreparedRun,
     processes: StepProcessGroups,
     signal: AbortSignal,
     log: RunLog,
   ): Promise<RunStepResult> {
     const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
-    log.push(START_STEP, 'step_started', `Run step ${START_STEP} started`);
-    const step = drainRunStep(
-      this.options.runner.start({ run, workspace, signal, processes }),
-      (event) => log.push(START_STEP, event.type, event.text),
-    );
+    const input = { run, workspace, signal, processes, agentDefinition: AGENT_DEFINITION };
+    log.push(stepIndex, 'step_started', `Run step ${stepIndex} started`);
+    const runnerStep =
+      run.kind === 'resume' && run.sessionRef !== undefined && run.answer !== undefined
+        ? this.options.runner.resume({ ...input, sessionRef: run.sessionRef, answer: run.answer })
+        : this.options.runner.start(input);
+    const step = drainRunStep(runnerStep, (event) => log.push(stepIndex, event.type, event.text));
     const stopped = rejectOnAbort(signal);
     // An abandoned step's late end, or a stop after the step ended, must not surface as an
     // unhandled rejection.
@@ -421,7 +446,7 @@ export class AgentWorker {
     try {
       result = await Promise.race([step, stopped]);
     } catch (error) {
-      log.push(START_STEP, 'step_finished', `Run step ${START_STEP} ended without a result`);
+      log.push(stepIndex, 'step_finished', `Run step ${stepIndex} ended without a result`);
       throw error;
     } finally {
       const killed = await processes.terminate(this.options.killGraceMs, step);
@@ -433,14 +458,10 @@ export class AgentWorker {
     }
     const parsed = runStepResultSchema.safeParse(result);
     if (!parsed.success) {
-      log.push(START_STEP, 'step_finished', `Run step ${START_STEP} ended with an invalid result`);
+      log.push(stepIndex, 'step_finished', `Run step ${stepIndex} ended with an invalid result`);
       throw new InvalidResultError();
     }
-    log.push(
-      START_STEP,
-      'step_finished',
-      `Run step ${START_STEP} finished: ${parsed.data.outcome}`,
-    );
+    log.push(stepIndex, 'step_finished', `Run step ${stepIndex} finished: ${parsed.data.outcome}`);
     return parsed.data;
   }
 

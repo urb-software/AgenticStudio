@@ -22,6 +22,7 @@ import {
   type RunDeliveryState,
   type RunFailure,
   type RunFailureCode,
+  type RunMessage,
   type RunState,
   type RunWorkingCopy,
   stepLimitFailure,
@@ -69,6 +70,11 @@ const RUN_FIELDS = {
   limitWaitingDays: true,
   stepStartedAt: true,
   releasedBy: true,
+  sessionRef: true,
+  messages: {
+    select: { kind: true, text: true, options: true, recommendation: true, at: true },
+    orderBy: { seq: 'asc' },
+  },
 } as const;
 
 interface RunRow {
@@ -103,9 +109,37 @@ interface RunRow {
   limitWaitingDays: number;
   stepStartedAt: Date | null;
   releasedBy: string | null;
+  sessionRef: string | null;
+  messages: {
+    kind: string;
+    text: string;
+    options: Prisma.JsonValue;
+    recommendation: string | null;
+    at: Date;
+  }[];
 }
 
 const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
+
+/** A message row as a Run's message (Issue #103); the CHECK constraint fixes the kinds. */
+function toMessage(row: RunRow['messages'][number]): RunMessage {
+  if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
+  if (row.kind !== 'question') {
+    throw new Error(`Unexpected run message kind in the database: ${row.kind}`);
+  }
+  const options = Array.isArray(row.options)
+    ? row.options.filter((option): option is string => typeof option === 'string')
+    : [];
+  return {
+    kind: 'question',
+    question: {
+      text: row.text,
+      ...(options.length > 0 ? { options } : {}),
+      ...(row.recommendation === null ? {} : { recommendation: row.recommendation }),
+    },
+    at: row.at,
+  };
+}
 
 /** The columns of a delivery outcome (Issue #102). */
 function deliveryColumns(delivery: RunDeliveryOutcome) {
@@ -197,6 +231,8 @@ function toRun(row: RunRow): Run {
     waitingSince: row.waitingSince,
     stepStartedAt: row.stepStartedAt,
     releasedBy: row.releasedBy,
+    sessionRef: row.sessionRef,
+    messages: row.messages.map(toMessage),
   };
 }
 
@@ -205,7 +241,7 @@ function toRun(row: RunRow): Run {
  * under a transaction-scoped advisory lock, so concurrent claims are serialized and each sees
  * the others' committed result: together they cannot exceed one active Run per project or
  * `MAX_ACTIVE_RUNS` across the server; a `failed` Run a worker holds for a delivery retry
- * (Issue #102) counts as active. The partial unique index on active Runs per project backs the
+ * (Issue #102) and an answered Run queued for its worker to resume (Issue #103) count as active. The partial unique index on active Runs per project backs the
  * first limit in the schema itself.
  */
 @Injectable()
@@ -252,19 +288,27 @@ export class PrismaRunRepository implements RunRepository {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-        // Active: an active state, or a failed Run held for a delivery retry (Issue #102).
-        const [next] = await tx.$queryRaw<{ id: string; state: string }[]>`
-          SELECT r.id, r.state FROM runs r
-          WHERE (r.state = 'queued'
+        // Active (holds a place): an active state, a failed Run held for a delivery retry
+        // (Issue #102), or an answered Run queued for its worker to resume (Issue #103). A
+        // candidate's own place does not count against it. A resumable Run goes only to the
+        // worker that started it, like a delivery retry.
+        const [next] = await tx.$queryRaw<{ id: string; state: string; started_at: Date | null }[]>`
+          SELECT r.id, r.state, r.started_at FROM runs r
+          WHERE ((r.state = 'queued'
+                  AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
                  OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
                      AND r.last_claimed_by = ${workerId}::uuid))
             AND (SELECT count(*) FROM runs a
-                 WHERE a.state IN (${ACTIVE})
-                    OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)) < ${MAX_ACTIVE_RUNS}::int
+                 WHERE a.id <> r.id
+                   AND (a.state IN (${ACTIVE})
+                        OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
+                        OR (a.state = 'queued' AND a.session_ref IS NOT NULL))) < ${MAX_ACTIVE_RUNS}::int
             AND NOT EXISTS (SELECT 1 FROM runs a
-                            WHERE a.project_id = r.project_id
+                            WHERE a.id <> r.id
+                              AND a.project_id = r.project_id
                               AND (a.state IN (${ACTIVE})
-                                   OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)))
+                                   OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
+                                   OR (a.state = 'queued' AND a.session_ref IS NOT NULL)))
           ORDER BY r.created_at, r.id
           LIMIT 1`;
         if (!next) return null;
@@ -276,7 +320,8 @@ export class PrismaRunRepository implements RunRepository {
                   state: 'preparing',
                   claimedBy: workerId,
                   lastClaimedBy: workerId,
-                  startedAt: now,
+                  // A resumed Run keeps its first start (Issue #103).
+                  startedAt: next.started_at ?? now,
                   heartbeatAt: now,
                 },
                 select: RUN_FIELDS,
@@ -468,6 +513,53 @@ export class PrismaRunRepository implements RunRepository {
             < ${now}::timestamptz`;
   }
 
+  async answer(runId: string, text: string, now: Date): Promise<Run | null> {
+    return this.db.$transaction(async (tx) => {
+      // Locks the Run row: the state check, the open question and the answer hold together, so
+      // a second answer, a cancel or the long-wait sweep in between leaves this one refused.
+      const [run] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM runs WHERE id = ${runId}::uuid AND state = 'waiting_for_operator'
+        FOR UPDATE`;
+      if (!run) return null;
+      const last = await tx.runMessage.findFirst({
+        where: { runId },
+        orderBy: { seq: 'desc' },
+        select: { seq: true, kind: true },
+      });
+      if (last?.kind !== 'question') return null;
+      await tx.runMessage.create({
+        data: { runId, seq: last.seq + 1, kind: 'answer', text, at: now },
+      });
+      const row = await tx.run.update({
+        where: { id: runId },
+        data: { state: 'queued', waitingSince: null },
+        select: RUN_FIELDS,
+      });
+      return toRun(row);
+    });
+  }
+
+  async listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
+    const rows = await this.db.run.findMany({
+      where: { state: 'queued', sessionRef: { not: null } },
+      select: { id: true, lastClaimedBy: true },
+    });
+    return rows.map((row) => ({ runId: row.id, startedBy: row.lastClaimedBy }));
+  }
+
+  async abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
+    const { count } = await this.db.run.updateMany({
+      where: { id: runId, state: 'queued', sessionRef: { not: null } },
+      data: {
+        state: 'failed',
+        failureCode: failure.code,
+        failureDetail: failure.detail,
+        finishedAt: now,
+      },
+    });
+    return count === 1;
+  }
+
   async findStates(ids: readonly string[]): Promise<RunStateView[]> {
     const rows = await this.db.run.findMany({
       where: { id: { in: [...ids] } },
@@ -521,13 +613,32 @@ export class PrismaRunRepository implements RunRepository {
       await tx.runStep.create({
         data: { runId, index, kind: step.kind, result: step.result as Prisma.InputJsonValue },
       });
-      // The latest Working copy state (Issue #98) and failing checks (Issue #102), under the
-      // same row lock as the step.
+      // A question becomes the Run's next message (Issue #103), under the same row lock.
+      if (step.question) {
+        const lastMessage =
+          (await tx.runMessage.aggregate({ where: { runId }, _max: { seq: true } }))._max.seq ?? 0;
+        await tx.runMessage.create({
+          data: {
+            runId,
+            seq: lastMessage + 1,
+            kind: 'question',
+            text: step.question.text,
+            ...(step.question.options ? { options: [...step.question.options] } : {}),
+            ...(step.question.recommendation === undefined
+              ? {}
+              : { recommendation: step.question.recommendation }),
+            at: now,
+          },
+        });
+      }
+      // The latest Working copy state (Issue #98), failing checks (Issue #102) and session
+      // reference (Issue #103), under the same row lock as the step.
       await tx.run.update({
         where: { id: runId },
         data: {
           ...workingCopyColumns(workingCopy),
           failingChecks: [...failingChecks],
+          ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
         },
       });
       return { status: 'stored', index };

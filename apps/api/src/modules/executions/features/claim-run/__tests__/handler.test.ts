@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { InMemoryRunLogRepository } from '../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { ClaimRunHandler } from '../handler.js';
 
@@ -14,6 +15,7 @@ const T0 = new Date('2026-11-15T12:00:00.000Z');
 
 describe('ClaimRunHandler', () => {
   let runs: InMemoryRunRepository;
+  let logs: InMemoryRunLogRepository;
   let now: Date;
   let handler: ClaimRunHandler;
 
@@ -30,8 +32,9 @@ describe('ClaimRunHandler', () => {
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
+    logs = new InMemoryRunLogRepository(runs);
     now = T0;
-    handler = new ClaimRunHandler(runs, { now: () => now }, { seconds: 60 });
+    handler = new ClaimRunHandler(runs, logs, { now: () => now }, { seconds: 60 });
   });
 
   it('hands out nothing when no Run is queued', async () => {
@@ -193,6 +196,121 @@ describe('ClaimRunHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
+    });
+  });
+
+  // Issue #103: an answered Run goes back to the worker that has its Working copy and session.
+  describe('resumes (Issue #103)', () => {
+    const WORKING_COPY = {
+      runBranch: 'agent/x-r0b8e5c2d',
+      commits: [],
+      hasUncommittedChanges: false,
+    };
+    const QUESTION = { text: 'Which database?' };
+
+    /** WORKER carries a Run of `projectId` to a question (logging 3 events), then it is answered. */
+    async function answered(projectId: string, recorded = true) {
+      const run = await queue(projectId);
+      await runs.claimNext(WORKER, T0);
+      await runs.transitionClaimed({
+        runId: run.id,
+        workerId: WORKER,
+        from: 'preparing',
+        to: 'running',
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+      await logs.append(
+        run.id,
+        WORKER,
+        [1, 2, 3].map((seq) => ({
+          seq,
+          at: T0,
+          stepIndex: 1,
+          kind: 'message' as const,
+          text: 'x',
+          truncated: false,
+        })),
+        1_000_000,
+      );
+      await runs.appendStep(
+        run.id,
+        WORKER,
+        {
+          kind: 'start',
+          result: { outcome: 'needs_input', summary: '', question: QUESTION },
+          question: QUESTION,
+          sessionRef: 'session-1',
+        },
+        WORKING_COPY,
+        [],
+        T0,
+      );
+      if (!recorded) runs.runs.find((stored) => stored.id === run.id)!.workingCopy = null;
+      await runs.transitionClaimed({
+        runId: run.id,
+        workerId: WORKER,
+        from: 'running',
+        to: 'waiting_for_operator',
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+      await runs.answer(run.id, 'PostgreSQL', T0);
+      return run;
+    }
+
+    it('hands an answered Run to resume, with the steps taken and the next seq, keeping its start', async () => {
+      const run = await answered(A);
+      now = new Date(T0.getTime() + 30_000);
+
+      expect(await handler.execute(WORKER)).toMatchObject({
+        id: run.id,
+        state: 'preparing',
+        claimedBy: WORKER,
+        startedAt: T0,
+        sessionRef: 'session-1',
+        completedSteps: 1,
+        nextSeq: 4,
+      });
+    });
+
+    it('hands it only to the worker that started it, which has its Working copy', async () => {
+      const run = await answered(A);
+
+      expect(await handler.execute(OTHER_WORKER)).toBeNull();
+      expect((await handler.execute(WORKER))?.id).toBe(run.id);
+    });
+
+    it('keeps its place while it waits for its worker', async () => {
+      await answered(A);
+      const a2 = await queue(A);
+      const b1 = await queue(B);
+      const c1 = await queue(C);
+
+      expect((await handler.execute(OTHER_WORKER))?.id).toBe(b1.id);
+      expect(await handler.execute(OTHER_WORKER)).toBeNull();
+      expect((await runs.findById(a2.id))?.state).toBe('queued');
+      expect((await runs.findById(c1.id))?.state).toBe('queued');
+    });
+
+    it('fails at once a resume with no recorded Working copy, and hands out the next', async () => {
+      const run = await answered(A, false);
+      const next = await queue(B);
+
+      expect((await handler.execute(WORKER))?.id).toBe(next.id);
+      expect(await runs.findById(run.id)).toMatchObject({
+        state: 'failed',
+        failure: { code: 'preparation_failed', detail: expect.stringContaining('run again') },
+        claimedBy: null,
+      });
+    });
+
+    it('starts a new Run with no steps taken and its events from seq 1', async () => {
+      await queue(A);
+
+      expect(await handler.execute(WORKER)).toMatchObject({ completedSteps: 0, nextSeq: 1 });
     });
   });
 

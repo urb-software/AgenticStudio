@@ -21,6 +21,9 @@ export interface RunLogRepository {
     maxBytes: number,
   ): Promise<number | null>;
 
+  /** The highest seq stored for the Run, 0 when none (Issue #103: a resume continues after it). */
+  lastSeq(runId: string): Promise<number>;
+
   /** Up to `limit` of the Run's events with a seq above `after`, in seq order. */
   listAfter(runId: string, after: number, limit: number): Promise<RunEvent[]>;
 }

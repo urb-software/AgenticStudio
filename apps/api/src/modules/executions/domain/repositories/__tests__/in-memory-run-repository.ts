@@ -3,6 +3,7 @@ import {
   ACTIVE_RUN_STATES,
   CLAIMED_RUN_STATES,
   isFinal,
+  isResumable,
   MAX_ACTIVE_RUNS,
   type Run,
   type RunCancellation,
@@ -25,8 +26,11 @@ import type {
 
 const isActive = (state: RunState) => (ACTIVE_RUN_STATES as readonly RunState[]).includes(state);
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
-/** Active for the limits: an active state, or a failed Run held for a delivery retry (#102). */
-const holdsPlace = (run: Run) => isActive(run.state) || run.claimedBy !== null;
+/**
+ * Active for the limits: an active state, a failed Run held for a delivery retry (#102), or a
+ * resumable Run waiting for its worker (#103).
+ */
+const holdsPlace = (run: Run) => isActive(run.state) || run.claimedBy !== null || isResumable(run);
 const deliveryFields = (delivery: RunDeliveryOutcome) => ({
   delivery: delivery.outcome,
   pullRequest: delivery.outcome === 'delivered' ? { ...delivery.pullRequest } : null,
@@ -65,6 +69,8 @@ export class InMemoryRunRepository implements RunRepository {
       pullRequest: null,
       deliveryRequested: false,
       failingChecks: [],
+      sessionRef: null,
+      messages: [],
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -89,17 +95,18 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   claimNext(workerId: string, now: Date): Promise<Run | null> {
-    const active = this.runs.filter(holdsPlace);
-    if (active.length >= MAX_ACTIVE_RUNS) return Promise.resolve(null);
-    const busy = new Set(active.map((run) => run.projectId));
+    // A candidate's own place does not count against it (a resumable Run keeps one, #103).
+    const others = (candidate: Run) =>
+      this.runs.filter((run) => run.id !== candidate.id && holdsPlace(run));
     const next = this.runs.find(
       (run) =>
-        (run.state === 'queued' ||
+        ((run.state === 'queued' && (!isResumable(run) || run.lastClaimedBy === workerId)) ||
           (run.state === 'failed' &&
             run.deliveryRequested &&
             run.claimedBy === null &&
             run.lastClaimedBy === workerId)) &&
-        !busy.has(run.projectId),
+        others(run).length < MAX_ACTIVE_RUNS &&
+        !others(run).some((other) => other.projectId === run.projectId),
     );
     if (!next) return Promise.resolve(null);
     if (next.state === 'queued') {
@@ -107,7 +114,8 @@ export class InMemoryRunRepository implements RunRepository {
         state: 'preparing',
         claimedBy: workerId,
         lastClaimedBy: workerId,
-        startedAt: now,
+        // A resumed Run keeps its first start (#103).
+        startedAt: next.startedAt ?? now,
         heartbeatAt: now,
       });
     } else {
@@ -311,7 +319,36 @@ export class InMemoryRunRepository implements RunRepository {
     this.steps.push({ runId, index, step: structuredClone({ kind, result }) });
     run.workingCopy = structuredClone(workingCopy);
     run.failingChecks = [...failingChecks];
+    if (step.sessionRef !== undefined) run.sessionRef = step.sessionRef;
+    if (step.question) {
+      run.messages.push({ kind: 'question', question: structuredClone(step.question), at: now });
+    }
     return Promise.resolve({ status: 'stored', index });
+  }
+
+  answer(runId: string, text: string, now: Date): Promise<Run | null> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || run.state !== 'waiting_for_operator' || run.messages.at(-1)?.kind !== 'question') {
+      return Promise.resolve(null);
+    }
+    run.messages.push({ kind: 'answer', text, at: now });
+    Object.assign(run, { state: 'queued', waitingSince: null });
+    return Promise.resolve(this.view(run));
+  }
+
+  listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
+    return Promise.resolve(
+      this.runs
+        .filter((run) => isResumable(run))
+        .map((run) => ({ runId: run.id, startedBy: run.lastClaimedBy ?? null })),
+    );
+  }
+
+  abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || !isResumable(run)) return Promise.resolve(false);
+    Object.assign(run, { state: 'failed', failure: { ...failure }, finishedAt: now });
+    return Promise.resolve(true);
   }
 
   listSteps(runId: string): Promise<StoredRunStep[]> {

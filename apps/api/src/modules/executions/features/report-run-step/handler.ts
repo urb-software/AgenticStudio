@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type RunWorkingCopy } from '../../domain/entities/run.js';
+import { isRunId, type RunQuestion, type RunWorkingCopy } from '../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -30,6 +30,8 @@ export interface ReportRunStepInput extends RunStepRecord {
  * {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not held by it),
  * {@link StepLimitReachedError} or {@link StepOutOfOrderError}. A retried report of a step
  * already stored (same number) is acknowledged without storing it again (review of #121).
+ * Issue #103: a `needs_input` step's question becomes the Run's next message, and the session
+ * reference a step reports is kept on the Run (not redacted, not in the stored result).
  */
 @Injectable()
 export class ReportRunStepHandler {
@@ -44,7 +46,11 @@ export class ReportRunStepHandler {
       throw new RunNotFoundError();
     }
     const known = await this.secrets.forRun(input.runId);
-    const result = redactJsonStrings(input.result, known);
+    // Issue #103: the session reference is an opaque id the resume needs exactly, so it is
+    // neither redacted nor kept in the stored result; it is stored on the Run (internal).
+    const { sessionRef, ...shown } = (input.result ?? {}) as { sessionRef?: unknown };
+    const result = redactJsonStrings(shown, known);
+    const question = questionOf(result);
     const outcome = await this.runs.appendStep(
       input.runId,
       input.workerId,
@@ -52,6 +58,8 @@ export class ReportRunStepHandler {
         kind: input.kind,
         result,
         ...(input.index === undefined ? {} : { index: input.index }),
+        ...(question ? { question } : {}),
+        ...(typeof sessionRef === 'string' ? { sessionRef } : {}),
       },
       input.workingCopy,
       // From the redacted result: the names are shown on the Run page.
@@ -63,6 +71,17 @@ export class ReportRunStepHandler {
     if (outcome.status === 'out_of_order') throw new StepOutOfOrderError(outcome.expected);
     return outcome.index;
   }
+}
+
+/** A `needs_input` result's question (validated by the contract), from the redacted result. */
+function questionOf(result: unknown): RunQuestion | undefined {
+  const { outcome, question } = (result ?? {}) as { outcome?: unknown; question?: RunQuestion };
+  if (outcome !== 'needs_input' || !question) return undefined;
+  return {
+    text: question.text,
+    ...(question.options ? { options: [...question.options] } : {}),
+    ...(question.recommendation === undefined ? {} : { recommendation: question.recommendation }),
+  };
 }
 
 /** The names of the checks a structured result reports `failed` (validated by the contract). */

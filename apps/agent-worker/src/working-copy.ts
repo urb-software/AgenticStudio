@@ -62,7 +62,17 @@ export interface WorkingCopyPort {
   prepare(run: RunPayload, signal: AbortSignal): Promise<PreparedRun>;
   /** The Working copy's state after a Run step, for the step report. */
   report(prepared: PreparedRun, signal: AbortSignal): Promise<WorkingCopyReport>;
+  /**
+   * For a resume (Issue #103): the Run's kept Working copy, unchanged since its question, on
+   * the Run branch Studio recorded. Throws {@link PreparationFailedError} ("Working copy no
+   * longer exists — run again") when it is gone.
+   */
+  locate(run: RunPayload): Promise<PreparedRun>;
 }
+
+/** Why a resume cannot go on (Issue #103): its Working copy was removed. */
+export const RESUME_NO_WORKING_COPY =
+  'Working copy no longer exists — run again: retention or a clean-up removed it.';
 
 /** The Working copy could not be prepared; `detail` is safe to show (no credential, no path). */
 export class PreparationFailedError extends Error {
@@ -204,6 +214,31 @@ export class WorkingCopies implements WorkingCopyPort {
       runBranch,
       startCommit,
       env: { COMPOSE_PROJECT_NAME: compose },
+    };
+  }
+
+  async locate(run: RunPayload): Promise<PreparedRun> {
+    // The Run branch and start commit come from Studio, never from `run.json`, which the agent
+    // could rewrite (as for a delivery retry, review R1 of #122).
+    if (run.kind !== 'resume' || run.runBranch === undefined) {
+      throw new PreparationFailedError('Studio sent no recorded Run branch for this resume.');
+    }
+    const paths = runDirectories(this.options.dataDir, run.runId);
+    const runFile = await readRunFile(paths.runFile);
+    const repo = await stat(paths.repoDir).then(
+      (stats) => stats.isDirectory(),
+      () => false,
+    );
+    if (!runFile || runFile.runId !== run.runId || runFile.projectId !== run.projectId || !repo) {
+      throw new PreparationFailedError(RESUME_NO_WORKING_COPY);
+    }
+    return {
+      runId: run.runId,
+      runDir: paths.runDir,
+      repoDir: paths.repoDir,
+      runBranch: run.runBranch,
+      startCommit: run.startCommit.toLowerCase(),
+      env: { COMPOSE_PROJECT_NAME: composeProjectName(run.runId) },
     };
   }
 
