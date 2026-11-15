@@ -25,7 +25,8 @@
 //    environment also lets it fetch the file:// fixture remotes); it refuses
 //    to start if a Studio-side setting such as DATABASE_URL reaches it. It delivers Runs (#102)
 //    to the file:// fixture remotes and opens pull requests on a local stub of GitHub's pull
-//    request API (STUDIO_AGENT_GITHUB_API_URL), with a throwaway token; nothing reaches GitHub.
+//    request API (tests/e2e/stub-github.mjs, its own process on 127.0.0.1:$E2E_GITHUB_STUB_PORT,
+//    default 4502; STUDIO_AGENT_GITHUB_API_URL), with a throwaway token; nothing reaches GitHub.
 //    Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
@@ -35,7 +36,6 @@
 //    directories.
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,6 +45,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 4500);
 const API_PORT = Number(process.env.E2E_API_PORT ?? 4501);
+/** The stub of GitHub's pull request API the agent worker delivers to (#102). */
+const GITHUB_STUB_PORT = Number(process.env.E2E_GITHUB_STUB_PORT ?? 4502);
 const STUDIO_ORIGIN = `http://localhost:${WEB_PORT}`;
 const API_ORIGIN = `http://127.0.0.1:${API_PORT}`;
 const READY_TIMEOUT_MS = 90_000;
@@ -229,53 +231,6 @@ function assertTestRan(report, title) {
   console.log(`[e2e] guard: "${title}" passed in ${outcomes.length} projects`);
 }
 
-/**
- * A local stub of the two GitHub REST routes the agent worker uses for a delivery (#102): the
- * open pull requests of a branch, and creating one. Never real GitHub.
- */
-async function startStubGitHub() {
-  const pulls = [];
-  const server = createServer((request, response) => {
-    const url = new URL(request.url ?? '/', 'http://stub');
-    const match = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(url.pathname);
-    const send = (status, body) => {
-      response.writeHead(status, { 'Content-Type': 'application/json' });
-      response.end(JSON.stringify(body));
-    };
-    if (!match) return send(404, { message: 'Not Found' });
-    const [, owner, repo] = match;
-    const view = (pr) => ({
-      number: pr.number,
-      html_url: `https://github.com/${owner}/${repo}/pull/${pr.number}`,
-    });
-    if (request.method === 'GET') {
-      const head = url.searchParams.get('head');
-      return send(
-        200,
-        pulls.filter((pr) => pr.repo === `${owner}/${repo}` && pr.head === head).map(view),
-      );
-    }
-    let text = '';
-    request.on('data', (chunk) => (text += chunk));
-    request.on('end', () => {
-      const body = JSON.parse(text || '{}');
-      const number = pulls.filter((pr) => pr.repo === `${owner}/${repo}`).length + 1;
-      const pr = { repo: `${owner}/${repo}`, head: `${owner}:${body.head}`, number };
-      pulls.push(pr);
-      send(201, view(pr));
-    });
-  });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  cleanups.push(
-    () =>
-      new Promise((resolve) => {
-        server.closeAllConnections();
-        server.close(() => resolve());
-      }),
-  );
-  return `http://127.0.0.1:${server.address().port}`;
-}
-
 async function cleanup() {
   interrupted = true;
   for (const step of cleanups.reverse()) {
@@ -353,7 +308,12 @@ async function main() {
     // own, so Git reads no Git configuration of the machine running the smoke.
     const workerHome = join(scratch, 'agent-home');
     await mkdir(workerHome, { recursive: true });
-    const githubApi = await startStubGitHub();
+    // Its own process: this script's event loop is blocked while Playwright runs.
+    startServer('stub-github', process.execPath, ['tests/e2e/stub-github.mjs'], {
+      STUB_GITHUB_PORT: String(GITHUB_STUB_PORT),
+    });
+    const githubApi = `http://127.0.0.1:${GITHUB_STUB_PORT}`;
+    await waitUntilReady(`${githubApi}/health`);
     // A clean environment on purpose: the worker must not see DATABASE_URL or any other
     // Studio-side setting (it refuses to start if it does). PATH only lets Node resolve tools.
     startServer(
