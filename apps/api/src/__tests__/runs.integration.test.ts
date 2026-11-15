@@ -667,7 +667,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           studioPaths: [],
         });
         expect((await claim(W2)).status).toBe(204);
-        expect((await heartbeat(run.id, W1)).status).toBe(204);
+        expect((await heartbeat(run.id, W1)).body).toEqual({ cancelRequested: false });
         advance(5);
 
         const reported = await report(
