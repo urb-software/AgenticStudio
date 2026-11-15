@@ -41,14 +41,31 @@ _Avoid_: SSH key, access key, credential
 ### `executions`
 
 **Run**:
-One execution of an agent on an operator's task in a Project, from the operator's start to its result.
+One execution of an agent on an operator's Task in a Project, from the operator's start to its result.
 _Avoid_: Job, session, task run
 
+**Task**:
+The operator's instruction that starts a Run.
+
+**Run step**:
+One non-interactive execution of the agent CLI within a Run. A Run consists of one or more Run steps.
+_Avoid_: Turn, step (unqualified), iteration
+
 **Working copy**:
-A Run's own clone of the Repository, on a branch named for the Run. It is not the Project's Clone.
+A Run's own clone of the Repository, on its Run branch. It is not the Project's Clone.
 _Avoid_: Worktree, workspace, checkout
 
+**Run branch**:
+The branch in a Working copy that holds a Run's commits.
+
 ### Cross-cutting
+
+**Provider**:
+The agent CLI product that carries out a Run (Claude Code or Codex).
+_Avoid_: Agent, model, vendor
+
+**Environment file**:
+A per-project file of test settings that Studio places in a Working copy.
 
 **Agent worker**:
 The process that carries out Runs by driving the agent CLIs, on the agents' side of the isolation boundary.
