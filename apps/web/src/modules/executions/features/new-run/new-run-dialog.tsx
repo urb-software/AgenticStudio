@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { PlayIcon, TriangleAlertIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useEffect, useId, useMemo, useRef } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Controller, type Resolver, useForm } from 'react-hook-form';
 import { Banner } from '@/shared/components/banner';
 import { SegmentedControl, type SegmentedOption } from '@/shared/components/segmented-control';
@@ -66,12 +66,16 @@ const EMPTY: StartRunRequest = { task: '', provider: 'claude_code' };
 type Provider = StartRunRequest['provider'];
 
 /**
- * The New run dialog (a bottom sheet on phones): the Task as free text and the Provider. It reads
- * which providers are available when it opens (Issue #101): an unavailable one is disabled with
- * the server's reason, and the first available one is preselected (Claude Code when available),
- * unless the prefilled one is available. When none is, it cannot start a Run. If availability
- * cannot be read, both are offered and the server decides. The generated Zod schema gives quick feedback; the API is authoritative,
- * and its field errors land on the field, any other rejection (no ready Repository) shows the
+ * The New run dialog (a bottom sheet on phones): the Task as free text and the Provider.
+ *
+ * Each time it opens it reads which providers are available (Issue #101) and offers no provider
+ * and no start until that answer arrives. An unavailable provider stays focusable but cannot be
+ * selected, and its reason is shown and announced. The first available provider is preselected
+ * (Claude Code when available) unless the prefilled one is available; when none is, it cannot
+ * start a Run. If availability cannot be read, both are offered and the server decides.
+ *
+ * The generated Zod schema gives quick feedback; the API is authoritative, and its field errors
+ * land on the field, any other rejection (no ready Repository, provider unavailable) shows the
  * server's title and detail. On success it opens the new Run's page. It cannot be closed while
  * the request is in flight.
  */
@@ -85,8 +89,18 @@ export function NewRunDialog({
   const id = useId();
   const PROVIDER_LABEL_ID = `${id}-provider-label`;
   const PROVIDER_ERROR_ID = `${id}-provider-error`;
+  const PROVIDER_CHECKING_ID = `${id}-provider-checking`;
   const startRun = useStartRun(projectId);
-  const availability = useProviderAvailability(open);
+  // Counts openings, updated while rendering so the first render of an opening already uses a
+  // fresh availability entry (and never an earlier opening's answer).
+  const [wasOpen, setWasOpen] = useState(open);
+  const [opening, setOpening] = useState(open ? 1 : 0);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setOpening((count) => count + 1);
+  }
+  const availability = useProviderAvailability(opening, open);
+  const checking = availability.isPending && !availability.isError;
   const {
     control,
     register,
@@ -113,17 +127,20 @@ export function NewRunDialog({
   );
   const noneAvailable = unavailable.size === PROVIDER_OPTIONS.length;
   const providerOptions: SegmentedOption<Provider>[] = PROVIDER_OPTIONS.map((option) =>
-    unavailable.has(option.value)
-      ? { ...option, disabled: true, describedBy: `${id}-unavailable-${option.value}` }
-      : option,
+    checking
+      ? { ...option, disabled: true, describedBy: PROVIDER_CHECKING_ID }
+      : unavailable.has(option.value)
+        ? { ...option, disabled: true, describedBy: `${id}-unavailable-${option.value}` }
+        : option,
   );
 
-  // Once availability arrives, move off an unavailable provider to the first available one.
+  // On every opening, once its availability answer is in, move off an unavailable provider
+  // (the default or a Run again prefill) to the first available one.
   useEffect(() => {
-    if (!availability.data || !unavailable.has(getValues('provider'))) return;
+    if (!open || !availability.data || !unavailable.has(getValues('provider'))) return;
     const first = PROVIDER_OPTIONS.find((option) => !unavailable.has(option.value));
     if (first) setValue('provider', first.value);
-  }, [availability.data, unavailable, getValues, setValue]);
+  }, [open, opening, availability.data, unavailable, getValues, setValue]);
 
   const submitting = isSubmitting || startRun.isPending;
   // The disabled button stops clicks; this stops a second submit by other means (Enter, script).
@@ -217,8 +234,17 @@ export function NewRunDialog({
                   />
                 )}
               />
+              {checking ? (
+                <p
+                  id={PROVIDER_CHECKING_ID}
+                  role="status"
+                  className="mt-1.5 mb-0 text-code text-text-muted"
+                >
+                  Checking which providers are available…
+                </p>
+              ) : null}
               {providerOptions.flatMap((option) =>
-                option.describedBy ? (
+                option.describedBy && !checking ? (
                   <p
                     key={option.value}
                     id={option.describedBy}
@@ -258,7 +284,7 @@ export function NewRunDialog({
               variant="primary"
               icon={PlayIcon}
               loading={submitting}
-              disabled={noneAvailable}
+              disabled={checking || noneAvailable}
             >
               {submitting ? 'Starting…' : 'Start run'}
             </Button>

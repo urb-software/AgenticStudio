@@ -35,8 +35,21 @@ export const HIDDEN_LOADING_RULES = {
       message: 'process loader properties are not allowed in the agent worker.',
     },
     {
+      selector: `MemberExpression[property.type="TemplateLiteral"][property.quasis.0.value.raw=${LOADER_PROPERTIES}]`,
+      message: 'process loader properties are not allowed in the agent worker.',
+    },
+    {
       selector: `Property[key.name=${LOADER_PROPERTIES}]`,
       message: 'process loader properties are not allowed in the agent worker (destructuring).',
+    },
+    {
+      selector: `Property[key.value=${LOADER_PROPERTIES}]`,
+      message: 'process loader properties are not allowed in the agent worker (destructuring).',
+    },
+    // Reflect reaches any property by a computed name; the worker has no use for it.
+    {
+      selector: 'Identifier[name="Reflect"]',
+      message: 'Reflect is not allowed in the agent worker (it hides property access from lint).',
     },
   ],
   'no-restricted-imports': [

@@ -70,6 +70,10 @@ describeGate('monorepo', monorepoGate, '.', [
     fixture: 'agent-worker-imports-vm',
     expected: ['mono-agent-worker-no-loader-core-modules'],
   },
+  {
+    fixture: 'agent-worker-dynamic-imports-vm',
+    expected: ['mono-agent-worker-no-loader-core-modules'],
+  },
 ]);
 
 describe('architecture:monorepo web package classification', () => {

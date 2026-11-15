@@ -38,8 +38,12 @@ async function rows() {
   return within(list).getAllByRole('listitem');
 }
 
+/** Opens New run and waits until this opening's provider availability has arrived. */
 async function openDialog() {
   await userEvent.click(newRunButton());
+  await vi.waitFor(() =>
+    expect(within(dialog()).queryByText('Checking which providers are available…')).toBeNull(),
+  );
   return dialog();
 }
 
@@ -308,10 +312,10 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     await openDialog();
 
     const reason = await within(dialog()).findByText(`Codex: ${SWITCHED_OFF}`);
-    expect(providerButton('Codex')).toHaveProperty('disabled', true);
+    expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
     expect(providerButton('Codex').getAttribute('aria-describedby')).toBe(reason.id);
     expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('true');
-    expect(providerButton('Claude Code')).toHaveProperty('disabled', false);
+    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBeNull();
     await expect(document.body).toHaveNoAxeViolations();
   });
 
@@ -327,7 +331,7 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     await vi.waitFor(() =>
       expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
     );
-    expect(providerButton('Claude Code')).toHaveProperty('disabled', true);
+    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
     await userEvent.type(taskInput(), 'Add pagination');
     await userEvent.click(startButton());
 
@@ -346,8 +350,8 @@ describe('New run dialog: provider availability (Issue #101)', () => {
 
     expect(await within(dialog()).findByText(`Claude Code: ${NO_WORKER}`)).toBeTruthy();
     expect(within(dialog()).getByText(`Codex: ${NO_WORKER}`)).toBeTruthy();
-    expect(providerButton('Claude Code')).toHaveProperty('disabled', true);
-    expect(providerButton('Codex')).toHaveProperty('disabled', true);
+    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
+    expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
     expect(startButton()).toHaveProperty('disabled', true);
     await expect(document.body).toHaveNoAxeViolations();
     expect(api.calls('start')).toHaveLength(0);
@@ -379,8 +383,8 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     expect(
       await within(dialog()).findByText("Couldn't check which providers are available."),
     ).toBeTruthy();
-    expect(providerButton('Claude Code')).toHaveProperty('disabled', false);
-    expect(providerButton('Codex')).toHaveProperty('disabled', false);
+    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBeNull();
+    expect(providerButton('Codex').getAttribute('aria-disabled')).toBeNull();
   });
 
   it("shows the server's message when it refuses an unavailable provider", async () => {
@@ -396,5 +400,90 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     expect(alert.textContent).toContain('Provider unavailable');
     expect(alert.textContent).toContain(SWITCHED_OFF);
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('re-applies the selection on every opening, also with the same answer (review r1 of #120)', async () => {
+    const api = fakeRunsApi([]);
+    const claudeOff = [
+      { id: 'claude_code', name: 'Claude Code', available: false, reason: SWITCHED_OFF },
+      { id: 'codex', name: 'Codex', available: true },
+    ];
+    api.respondNext('providers', 200, claudeOff);
+    api.respondNext('providers', 200, claudeOff);
+    renderRuns();
+
+    await openDialog();
+    expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+    await openDialog();
+
+    expect(api.calls('providers')).toHaveLength(2);
+    expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true');
+    expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('false');
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+    expect(api.calls('start')[0]!.body).toEqual({ task: 'Add pagination', provider: 'codex' });
+  });
+
+  it("never shows an earlier opening's answer: no provider and no start until the new one", async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
+    ]);
+    renderRuns();
+    await openDialog();
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+    let answer: (response: Response) => void = () => undefined;
+    vi.mocked(fetch).mockImplementationOnce(
+      () => new Promise<Response>((resolve) => (answer = resolve)),
+    );
+
+    await userEvent.click(newRunButton());
+
+    expect(within(dialog()).getByRole('status').textContent).toBe(
+      'Checking which providers are available…',
+    );
+    expect(within(dialog()).queryByText(`Codex: ${SWITCHED_OFF}`)).toBeNull();
+    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
+    expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
+    expect(startButton()).toHaveProperty('disabled', true);
+    answer(
+      new Response(
+        JSON.stringify([
+          { id: 'claude_code', name: 'Claude Code', available: true },
+          { id: 'codex', name: 'Codex', available: true },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(providerButton('Codex').getAttribute('aria-disabled')).toBeNull(),
+    );
+    expect(startButton()).toHaveProperty('disabled', false);
+  });
+
+  it('keeps an unavailable provider reachable by keyboard, announces why, and never selects it', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
+    ]);
+    renderRuns();
+    await openDialog();
+    const codex = providerButton('Codex');
+
+    codex.focus();
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard(' ');
+
+    expect(document.activeElement).toBe(codex);
+    expect(codex.getAttribute('aria-pressed')).toBe('false');
+    expect(document.getElementById(codex.getAttribute('aria-describedby')!)?.textContent).toBe(
+      `Codex: ${SWITCHED_OFF}`,
+    );
+    expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('true');
+    await expect(document.body).toHaveNoAxeViolations();
   });
 });

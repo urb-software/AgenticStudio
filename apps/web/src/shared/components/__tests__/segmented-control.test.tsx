@@ -75,7 +75,7 @@ describe('SegmentedControl', () => {
     expect(screen.getByRole('group', { name: 'Provider' })).toBeTruthy();
   });
 
-  it('disables a single option, described by its reason, and never selects it', async () => {
+  it('marks a single option unavailable: focusable, described by its reason, never selected', async () => {
     const onChange = vi.fn();
     const { container } = render(
       <>
@@ -93,11 +93,17 @@ describe('SegmentedControl', () => {
     );
     const beta = screen.getByRole('button', { name: 'Beta' });
 
+    await userEvent.tab();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(beta);
     await userEvent.click(beta);
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard(' ');
 
-    expect(beta).toHaveProperty('disabled', true);
+    expect(beta.getAttribute('aria-disabled')).toBe('true');
     expect(beta.getAttribute('aria-describedby')).toBe('beta-reason');
-    expect(screen.getByRole('button', { name: 'Alpha' })).toHaveProperty('disabled', false);
+    expect(beta.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Alpha' }).getAttribute('aria-disabled')).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
     await expect(container).toHaveNoAxeViolations();
   });

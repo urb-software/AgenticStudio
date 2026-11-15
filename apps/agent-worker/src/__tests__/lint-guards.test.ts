@@ -34,6 +34,11 @@ describe('agent worker lint guards against hidden module loading', () => {
         `const p = process;\nexport const b = p.${property};\n`,
         `export const b = process['${property}'];\n`,
         `const { ${property}: b } = process;\nexport { b };\n`,
+        `const { '${property}': b } = process;\nexport { b };\n`,
+        `export const b = process[\`${property}\`];\n`,
+        `export const b = Reflect.get(process, '${property}');\n`,
+        `export const b = Reflect.apply(Reflect.get(process, '${property}'), process, []);\n`,
+        `export const b = globalThis.Reflect.get(process, '${property}');\n`,
       ]) {
         expect(await ruleIds(code), code).toContain('no-restricted-syntax');
       }
