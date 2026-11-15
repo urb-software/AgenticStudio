@@ -1,7 +1,12 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type RunOutput, type StartRunRequest } from '../../../platform/api';
+import {
+  api,
+  type RunOutput,
+  type RunStepListOutput,
+  type StartRunRequest,
+} from '../../../platform/api';
 
 /** States in which a Run is polled often: it moves on without the operator. */
 const MOVING: readonly RunOutput['state'][] = ['queued', 'preparing', 'running'];
@@ -135,4 +140,25 @@ export function useStartRun(projectId: string) {
       await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
     },
   });
+}
+
+/** The structured results of a Run's steps, shown at each step's end in its log (Issue #99). */
+const runStepsKey = (runId: string) => ['runs', 'steps', runId] as const;
+
+/** Step results by step number; stable per response, so derived rows are not rebuilt. */
+const stepsByIndex = (list: RunStepListOutput) =>
+  new Map(list.steps.map((step) => [step.index, step]));
+
+export function useRunSteps(runId: string) {
+  return useQuery({
+    queryKey: runStepsKey(runId),
+    queryFn: () => api.listRunSteps(runId),
+    select: stepsByIndex,
+  });
+}
+
+/** Reads the step results again, e.g. when the live log shows a step has finished. */
+export function useRefreshRunSteps(runId: string) {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: runStepsKey(runId) });
 }

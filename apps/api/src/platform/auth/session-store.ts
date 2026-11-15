@@ -84,6 +84,19 @@ export class SessionStore {
     return true;
   }
 
+  /**
+   * True when the session exists and is within its absolute lifetime, without extending it:
+   * for a long-lived response (a live log stream) that must end when the session does, but
+   * must not keep it alive by itself.
+   */
+  async isActive(sessionId: string): Promise<boolean> {
+    if (!SESSION_ID_FORMAT.test(sessionId)) {
+      return false;
+    }
+    const record = await this.redis.get(keyOf(sessionId));
+    return record !== null && isWithinLifetime(record, Date.now());
+  }
+
   async delete(sessionId: string): Promise<void> {
     if (SESSION_ID_FORMAT.test(sessionId)) {
       await this.redis.del(keyOf(sessionId));

@@ -3,10 +3,22 @@ import type {
   ProblemDetails,
   ProjectOutput,
   ProviderAvailabilityOutput,
+  RunEventOutput,
   RunOutput,
+  RunStepOutput,
 } from '../../../platform/api';
 
-type Route = 'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run' | 'providers';
+type Route =
+  | 'projects'
+  | 'project'
+  | 'projectRuns'
+  | 'start'
+  | 'runs'
+  | 'run'
+  | 'providers'
+  | 'events'
+  | 'steps'
+  | 'stream';
 
 interface ScriptedResponse {
   status: number;
@@ -20,7 +32,24 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs$/, () => 'runs'],
   [/^\/api\/runs\/([^/]+)$/, () => 'run'],
   [/^\/api\/providers()$/, () => 'providers'],
+  [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
+  [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
+  [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
 ];
+
+/** One open live log connection of the fake: the test pushes events, ends or drops it. */
+export interface FakeStream {
+  runId: string;
+  /** The `after` the client asked for. */
+  after: number;
+  push(...events: RunEventOutput[]): void;
+  /** The Run is final and everything was sent (`event: end`). */
+  end(): void;
+  /** The connection breaks without `end`. */
+  drop(): void;
+  /** Whether the client aborted the request (e.g. the page went away). */
+  aborted(): boolean;
+}
 
 export const PROJECT: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000a1',
@@ -75,11 +104,63 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     runs: [],
     run: [],
     providers: [],
+    events: [],
+    steps: [],
+    stream: [],
   };
-  const calls: { route: Route; body?: unknown }[] = [];
+  const calls: { route: Route; body?: unknown; query?: URLSearchParams }[] = [];
+  /** Each Run's stored log and step results, as the API would hold them. */
+  const logs = new Map<string, RunEventOutput[]>();
+  const stepResults = new Map<string, RunStepOutput[]>();
+  const streams: FakeStream[] = [];
+
+  function openStream(runId: string, after: number, signal: AbortSignal): Response {
+    const encoder = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      controller.close();
+    };
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        c.enqueue(encoder.encode(': connected\n\n'));
+      },
+      cancel() {
+        closed = true;
+      },
+    });
+    let aborted = false;
+    signal.addEventListener('abort', () => {
+      aborted = true;
+      close();
+    });
+    streams.push({
+      runId,
+      after,
+      push(...events) {
+        if (closed) return;
+        for (const event of events) {
+          controller.enqueue(
+            encoder.encode(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`),
+          );
+        }
+      },
+      end() {
+        if (closed) return;
+        controller.enqueue(encoder.encode('event: end\ndata: {}\n\n'));
+        close();
+      },
+      drop: close,
+      aborted: () => aborted,
+    });
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  }
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
-    const { pathname } = new URL(request.url);
+    const { pathname, searchParams } = new URL(request.url);
     const matched = ROUTES.map(([pattern, route]) => [pattern.exec(pathname), route] as const).find(
       ([match]) => match,
     );
@@ -88,7 +169,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const route = routeOf(request.method);
     const id = match![1];
     const body: unknown = route === 'start' ? await request.json() : undefined;
-    calls.push({ route, body });
+    calls.push({ route, body, query: searchParams });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
     switch (route) {
@@ -111,6 +192,17 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         const run = runs.find((candidate) => candidate.id === id);
         return run ? json(200, run) : json(404, problem(404, 'Run not found'));
       }
+      case 'events': {
+        const after = Number(searchParams.get('after') ?? 0);
+        const limit = Number(searchParams.get('limit') ?? 500);
+        const rest = (logs.get(id!) ?? []).filter((event) => event.seq > after);
+        const events = rest.slice(0, limit);
+        return json(200, rest.length > limit ? { events, next: events.at(-1)!.seq } : { events });
+      }
+      case 'steps':
+        return json(200, { steps: stepResults.get(id!) ?? [] });
+      case 'stream':
+        return openStream(id!, Number(searchParams.get('after') ?? 0), request.signal);
       case 'start': {
         const { task, provider } = body as Pick<RunOutput, 'task' | 'provider'>;
         const run = aRun({
@@ -140,6 +232,16 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     },
     /** The server's Runs, newest first. */
     runs: () => [...runs],
+    /** Stores events in a Run's log (what the paged read returns). */
+    storeEvents(runId: string, ...events: RunEventOutput[]) {
+      logs.set(runId, [...(logs.get(runId) ?? []), ...events]);
+    },
+    /** Sets a Run's step results. */
+    setSteps(runId: string, steps: RunStepOutput[]) {
+      stepResults.set(runId, steps);
+    },
+    /** The live log connections opened so far, in order. */
+    streams: () => [...streams],
   };
 }
 
@@ -164,4 +266,16 @@ function json(status: number, body: unknown): Response {
     status,
     headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json' },
   });
+}
+
+/** A Run event with defaults (an output line of step 1). */
+export function anEvent(seq: number, overrides: Partial<RunEventOutput> = {}): RunEventOutput {
+  return {
+    seq,
+    at: '2026-11-15T10:00:10.000Z',
+    stepIndex: 1,
+    kind: 'output',
+    text: `line ${seq}`,
+    ...overrides,
+  };
 }

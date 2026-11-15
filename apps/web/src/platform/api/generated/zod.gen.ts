@@ -170,7 +170,8 @@ export const zRunEventOutput = z.object({
         'notice'
     ]),
     text: z.string(),
-    truncated: z.literal(true).optional()
+    truncated: z.literal(true).optional(),
+    redacted: z.literal(true).optional()
 });
 
 export const zRunEventPageOutput = z.object({
@@ -334,7 +335,7 @@ export const zStreamRunEventsQuery = z.object({
 });
 
 /**
- * Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments.
+ * Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments; `event: end` once the Run is final.
  */
 export const zStreamRunEventsResponse = z.string();
 

@@ -29,7 +29,8 @@ export interface RunStepView {
 /**
  * Query (Issue #99): the structured result of each reported Run step, shown at the step's end
  * in the log: the summary and the agent's account of its checks. The agent wrote them, so
- * they get the log's redaction. Throws {@link RunNotFoundError}.
+ * they get the log's redaction: on store (report-run-step) and again here, for rows stored
+ * before that. Throws {@link RunNotFoundError}.
  */
 @Injectable()
 export class ListRunStepsHandler {
