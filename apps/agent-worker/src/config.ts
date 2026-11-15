@@ -43,6 +43,9 @@ const binary = (fallback: string) =>
 const intervalMs = (fallback: number) =>
   z.coerce.number().int().min(100).max(600_000).default(fallback);
 
+// eslint-disable-next-line no-control-regex -- the point is to reject control characters
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+
 const environmentSchema = z.object({
   // Where the worker reaches the Studio API (it always calls Studio; nothing calls it).
   STUDIO_API_URL: z.url({ protocol: /^https?$/, error: 'is required: the Studio API URL' }),
@@ -58,10 +61,32 @@ const environmentSchema = z.object({
   STUDIO_WORKER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(30_000),
   // How Runs are carried out (Issue #101): the provider CLI, or the scripted fake runner.
   STUDIO_WORKER_RUNNER: z.enum(WORKER_RUNNER_MODES).default('cli'),
-  // Production unless said otherwise; only development and test allow the fake runner.
+  // Production unless said otherwise; only development and test allow the fake runner and a
+  // local (file) remote for a Run (Issue #98).
   STUDIO_WORKER_ENVIRONMENT: z.enum(WORKER_ENVIRONMENTS).default('production'),
   CLAUDE_CODE_BIN: binary(DEFAULT_PROVIDER_BINARIES.claude_code),
   CODEX_CLI_BIN: binary(DEFAULT_PROVIDER_BINARIES.codex),
+  // Issue #98: where the worker keeps the per-project caches and the Runs' directories.
+  STUDIO_WORKER_DATA_DIR: z
+    .string({ error: 'is required: an absolute directory path' })
+    .refine((value) => value.startsWith('/'), { message: 'must be an absolute path' })
+    .transform((value) => value.replace(/\/+$/, ''))
+    .refine((value) => value !== '', { message: 'must not be the root directory' }),
+  // The Agent account's Git identity for commits in Working copies (never a credential).
+  STUDIO_AGENT_GIT_NAME: z
+    .string({ error: "is required: the Agent account's name for commits" })
+    .min(1)
+    .max(200)
+    .refine((value) => !CONTROL_CHARACTERS.test(value) && !/[<>]/.test(value), {
+      message: 'must be one line without < or >',
+    }),
+  STUDIO_AGENT_GIT_EMAIL: z
+    .string({ error: "is required: the Agent account's email for commits" })
+    .max(320)
+    .regex(/^[^\s<>@]+@[^\s<>@]+$/, { message: 'must be an email address' }),
+  // Retention of finished Working copies.
+  STUDIO_WORKER_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
+  STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
 });
 
 /**
@@ -90,11 +115,21 @@ export interface WorkerConfig {
   requestTimeoutMs: number;
   /** `cli` (default) or `fake`; `fake` only in a development or test environment. */
   runner: WorkerRunnerMode;
+  /** Also decides whether a Run's remote may be a local path (development and test only). */
   environment: WorkerEnvironment;
   /** The operator's provider switches, read once (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`). */
   providers: ProviderSwitches;
   /** The CLI binary per provider (`CLAUDE_CODE_BIN`, `CODEX_CLI_BIN`), for the spawn boundary. */
   providerBinaries: ProviderBinaries;
+  /** Absolute directory of the per-project caches and the Runs' directories (Issue #98). */
+  dataDir: string;
+  /** The Agent account's Git identity, set in each Working copy. */
+  agentGitName: string;
+  agentGitEmail: string;
+  /** A finished Working copy is removed after this many days... */
+  retentionDays: number;
+  /** ...and beyond the newest this many per Project. */
+  retentionMaxPerProject: number;
 }
 
 /** Thrown when the environment is invalid. Names variables, never their values. */
@@ -150,6 +185,11 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
       claude_code: result.data.CLAUDE_CODE_BIN,
       codex: result.data.CODEX_CLI_BIN,
     }),
+    dataDir: result.data.STUDIO_WORKER_DATA_DIR,
+    agentGitName: result.data.STUDIO_AGENT_GIT_NAME,
+    agentGitEmail: result.data.STUDIO_AGENT_GIT_EMAIL,
+    retentionDays: result.data.STUDIO_WORKER_RETENTION_DAYS,
+    retentionMaxPerProject: result.data.STUDIO_WORKER_RETENTION_MAX_PER_PROJECT,
   };
 }
 

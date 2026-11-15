@@ -5,6 +5,7 @@ import {
   type Run,
   type RunFailure,
   type RunState,
+  type RunWorkingCopy,
 } from '../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
@@ -22,6 +23,8 @@ export interface ReportRunStateInput {
   state: RunState;
   /** Exactly when `state` is `failed`. */
   failure: RunFailure | null;
+  /** A failed Run's Working copy state, when the worker could read it (Issue #98). */
+  workingCopy?: RunWorkingCopy | null;
 }
 
 /**
@@ -49,6 +52,7 @@ export class ReportRunStateHandler {
       from: run.state,
       to: input.state,
       failure: input.state === 'failed' ? input.failure : null,
+      workingCopy: input.state === 'failed' ? (input.workingCopy ?? null) : null,
       now: this.clock.now(),
     });
     // The Run changed between the read and the write (e.g. the sweep failed it).

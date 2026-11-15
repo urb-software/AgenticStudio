@@ -22,6 +22,7 @@ export class ReportRunStepEndpoint {
         workerId: body.workerId,
         kind: body.kind,
         result: body.result,
+        workingCopy: body.workingCopy,
       });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

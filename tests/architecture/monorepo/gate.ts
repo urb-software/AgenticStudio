@@ -31,7 +31,12 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
  * only the spawn boundary, which checks the provider gate before it creates a process. Adding
  * a file here is a reviewed architecture change.
  */
-export const AGENT_WORKER_PROCESS_FILES = ['apps/agent-worker/src/spawn-boundary.ts'];
+export const AGENT_WORKER_PROCESS_FILES = [
+  'apps/agent-worker/src/spawn-boundary.ts',
+  // Issue #98 (coordinator-approved): the worker's own helper processes, `git` and `docker`;
+  // never a provider CLI.
+  'apps/agent-worker/src/process-runner.ts',
+];
 
 /** The agent worker's production code: its src/ outside tests. */
 const AGENT_WORKER_PRODUCTION = { path: '^apps/agent-worker/src/', pathNot: '(^|/)__tests__/' };

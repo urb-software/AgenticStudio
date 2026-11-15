@@ -2,6 +2,7 @@ import {
   RUN_EVENT_KINDS as WORKER_EVENT_KINDS,
   PROVIDERS as WORKER_PROVIDERS,
   RUN_FAILURE_CODES as WORKER_FAILURE_CODES,
+  RUN_STATES as WORKER_RUN_STATES,
   TASK_MAX_LENGTH as WORKER_TASK_MAX_LENGTH,
   WORKER_REPORTED_STATES,
 } from '@agentic-studio/contracts';
@@ -29,7 +30,8 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(runFailureCodeSchema.options).toEqual([...RUN_FAILURE_CODES]);
   });
 
-  it('worker protocol: the same providers, failure codes and Task limit', () => {
+  it('worker protocol: the same states, providers, failure codes and Task limit', () => {
+    expect([...WORKER_RUN_STATES]).toEqual([...RUN_STATES]);
     expect([...WORKER_PROVIDERS]).toEqual([...PROVIDERS]);
     expect([...WORKER_FAILURE_CODES]).toEqual([...RUN_FAILURE_CODES]);
     expect(WORKER_TASK_MAX_LENGTH).toBe(TASK_MAX_LENGTH);

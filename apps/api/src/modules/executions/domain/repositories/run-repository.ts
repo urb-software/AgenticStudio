@@ -1,4 +1,4 @@
-import type { Provider, Run, RunFailure, RunState } from '../entities/run.js';
+import type { Provider, Run, RunFailure, RunState, RunWorkingCopy } from '../entities/run.js';
 
 /** DI token for the {@link RunRepository} adapter. */
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');
@@ -8,6 +8,7 @@ export interface NewRun {
   provider: Provider;
   task: string;
   startCommit: string;
+  remoteUrl: string;
 }
 
 /** A change of state reported by the agent worker holding the Run. */
@@ -18,6 +19,8 @@ export interface ClaimedRunChange {
   to: RunState;
   /** Exactly when `to` is `failed`. */
   failure: RunFailure | null;
+  /** When set, becomes the Run's latest Working copy state (a failed Run, Issue #98). */
+  workingCopy?: RunWorkingCopy | null;
   now: Date;
 }
 
@@ -31,6 +34,14 @@ export interface RunStepRecord {
 export interface StoredRunStep extends RunStepRecord {
   index: number;
   reportedAt: Date;
+}
+
+/** A Run's state for the agent worker's retention (Issue #98). */
+export interface RunStateView {
+  runId: string;
+  state: RunState;
+  /** Set exactly in a final state. */
+  finishedAt: Date | null;
 }
 
 /**
@@ -69,11 +80,20 @@ export interface RunRepository {
   /** Records a heartbeat of the worker holding the Run; false if it does not hold it. */
   heartbeat(runId: string, workerId: string, now: Date): Promise<boolean>;
 
+  /** The states of the Runs with these ids (valid UUIDs); ids that name no Run are left out. */
+  findStates(ids: readonly string[]): Promise<RunStateView[]>;
+
   /**
    * Stores a Run step of a `running` Run held by `workerId`, numbered 1, 2, … in report
-   * order; returns its number, or `null` if the Run is not `running` or not held by it.
+   * order, and makes `workingCopy` the Run's latest Working copy state, in one transaction;
+   * returns its number, or `null` (nothing changed) if the Run is not `running` or not held by it.
    */
-  appendStep(runId: string, workerId: string, step: RunStepRecord): Promise<number | null>;
+  appendStep(
+    runId: string,
+    workerId: string,
+    step: RunStepRecord,
+    workingCopy: RunWorkingCopy,
+  ): Promise<number | null>;
 
   /** The Run's stored steps, by number (Issue #99). */
   listSteps(runId: string): Promise<StoredRunStep[]>;

@@ -18,9 +18,11 @@
 //    Playwright project: one for the repository test, one for the Run test, since a remote
 //    belongs to one project) in a temp directory, and starts the agent worker (#96; Linux only)
 //    with the fake runner. The worker gets a clean environment: only STUDIO_API_URL, a worker
-//    token generated for this run (the API gets the same STUDIO_WORKER_TOKEN), and the fake
+//    token generated for this run (the API gets the same STUDIO_WORKER_TOKEN), the fake
 //    runner mode in a test environment with both provider switches on (#101; no CLI is ever
-//    spawned, and Studio refuses to start Runs until a worker reports them available); it refuses
+//    spawned, and Studio refuses to start Runs until a worker reports them available), and its
+//    own HOME, data directory and Agent Git identity (#98: each Run's Working copy; the test
+//    environment also lets it fetch the file:// fixture remotes); it refuses
 //    to start if a Studio-side setting such as DATABASE_URL reaches it. Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
@@ -296,6 +298,10 @@ async function main() {
   startServer('api', process.execPath, ['apps/api/dist/main.js'], serverEnv);
   await waitUntilReady(`${API_ORIGIN}/api/health`);
   if (LINUX) {
+    // Issue #98: the worker's own data directory (caches and Working copies) and a HOME of its
+    // own, so Git reads no Git configuration of the machine running the smoke.
+    const workerHome = join(scratch, 'agent-home');
+    await mkdir(workerHome, { recursive: true });
     // A clean environment on purpose: the worker must not see DATABASE_URL or any other
     // Studio-side setting (it refuses to start if it does). PATH only lets Node resolve tools.
     startServer(
@@ -308,11 +314,16 @@ async function main() {
         STUDIO_WORKER_TOKEN: workerToken,
         STUDIO_WORKER_POLL_MS: '500',
         STUDIO_WORKER_HEARTBEAT_MS: '2000',
-        // Fake runner, allowed only outside production; both providers on (Issue #101).
+        // Fake runner, allowed only outside production; both providers on (Issue #101). The
+        // test environment also accepts the file:// fixture remotes (#98).
         STUDIO_WORKER_RUNNER: 'fake',
         STUDIO_WORKER_ENVIRONMENT: 'test',
         CLAUDE_CODE_ENABLED: 'true',
         CODEX_CLI_ENABLED: 'true',
+        HOME: workerHome,
+        STUDIO_WORKER_DATA_DIR: join(scratch, 'agent-worker-data'),
+        STUDIO_AGENT_GIT_NAME: 'Smoke Agent',
+        STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
       },
       { clean: true },
     );

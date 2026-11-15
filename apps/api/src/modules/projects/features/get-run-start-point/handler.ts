@@ -7,8 +7,8 @@ import {
 } from '../../domain/repositories/project-repository.js';
 
 /**
- * Query (Issue #96): the commit a Run of a project starts from, for `executions` through the
- * public {@link RunStartPoints} contract. Only a `ready` Repository qualifies: while it is
+ * Query (Issue #96): the commit a Run of a project starts from and the remote it is fetched
+ * from (Issue #98), for `executions` through the public {@link RunStartPoints} contract. Only a `ready` Repository qualifies: while it is
  * being fetched, its commit is about to change.
  */
 @Injectable()
@@ -24,6 +24,6 @@ export class GetRunStartPointHandler implements RunStartPoints {
     if (repository.state !== 'ready' || repository.headSha === null) {
       return { status: 'repository_not_ready' };
     }
-    return { status: 'ready', startCommit: repository.headSha };
+    return { status: 'ready', startCommit: repository.headSha, remoteUrl: repository.url };
   }
 }
