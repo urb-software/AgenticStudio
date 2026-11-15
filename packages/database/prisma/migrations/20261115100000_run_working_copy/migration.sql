@@ -9,8 +9,8 @@ ADD COLUMN     "remote_url" VARCHAR(2048),
 ADD COLUMN     "run_branch" VARCHAR(255);
 
 -- Existing Runs take their project's current remote URL. A Run whose project has no Repository
--- any more gets an empty URL: it can still be read, and if it is ever claimed its preparation
--- fails (the worker protocol refuses an empty remote URL).
+-- any more gets an empty URL: it can still be read, and if it is ever claimed, the claim fails
+-- it with preparation_failed instead of handing it to a worker.
 UPDATE "runs" SET "remote_url" = r."url"
     FROM "repositories" r WHERE r."project_id" = "runs"."project_id";
 UPDATE "runs" SET "remote_url" = '' WHERE "remote_url" IS NULL;

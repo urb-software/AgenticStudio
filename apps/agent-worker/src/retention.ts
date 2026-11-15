@@ -1,7 +1,13 @@
 import { RUN_STATES_REQUEST_MAX, type RunStatesResponse } from '@agentic-studio/contracts';
 import { readdir, rm } from 'node:fs/promises';
 import { posix } from 'node:path';
-import { composeProjectName, isUuid, runDirectories, runsDirectory } from './run-layout.js';
+import {
+  assertRealDirectory,
+  composeProjectName,
+  isUuid,
+  runDirectories,
+  runsDirectory,
+} from './run-layout.js';
 import type { RunResources } from './run-resources.js';
 import { readRunFile } from './working-copy.js';
 
@@ -9,8 +15,8 @@ import { readRunFile } from './working-copy.js';
 export const RETENTION_INTERVAL_MS = 60 * 60_000;
 
 const DAY_MS = 24 * 60 * 60_000;
+
 /** Final Run states: only these Runs' Working copies fall under the retention rules. */
-/** The Run states that keep a Working copy whatever its age: the Run is not over. */
 const FINAL_STATES = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 
 export interface RetentionOptions {
@@ -64,6 +70,8 @@ export class Retention {
     let entries: { name: string; isDirectory(): boolean }[];
     try {
       runsDir = runsDirectory(this.options.dataDir);
+      // Never through a symlink: an orphan sweep there would delete outside the data directory.
+      await assertRealDirectory(runsDir, false);
       entries = await readdir(runsDir, { withFileTypes: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return outcome;

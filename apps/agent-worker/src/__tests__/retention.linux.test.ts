@@ -1,6 +1,14 @@
 import type { RunStatesResponse } from '@agentic-studio/contracts';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -190,6 +198,32 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
 
     expect(left()).toEqual([expired]);
     expect(existsSync(join(runsDir, expired, 'repo', 'file.txt'))).toBe(true);
+  });
+
+  it('refuses to sweep a runs directory that is a symlink, deleting nothing (review of #117)', async () => {
+    const elsewhere = join(dataDir, 'elsewhere');
+    mkdirSync(join(elsewhere, 'precious'), { recursive: true });
+    writeFileSync(join(elsewhere, 'notes.txt'), 'keep');
+    rmSync(runsDir, { recursive: true });
+    symlinkSync(elsewhere, runsDir);
+
+    await expect(retention().sweep()).rejects.toThrow(/not a real directory/);
+
+    expect(readdirSync(elsewhere).sort()).toEqual(['notes.txt', 'precious']);
+  });
+
+  it('removes a Run-named symlink itself, never what it points at', async () => {
+    const target = join(dataDir, 'target');
+    mkdirSync(target);
+    writeFileSync(join(target, 'file.txt'), 'keep');
+    const linked = randomUUID();
+    symlinkSync(target, join(runsDir, linked));
+    states.set(linked, { state: 'succeeded', finishedAt: NOW.toISOString() });
+
+    await retention({ retentionDays: 0, maxPerProject: 0 }).sweep();
+
+    expect(left()).toEqual([]);
+    expect(readdirSync(target)).toEqual(['file.txt']);
   });
 
   it('does nothing before the first Run', async () => {

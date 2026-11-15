@@ -13,6 +13,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -285,6 +286,18 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     ).rejects.toThrow(/fetching the Project's repository/);
   });
 
+  it('refuses a runs directory that is a symlink (review of #117)', async () => {
+    const elsewhere = join(root, 'elsewhere');
+    mkdirSync(elsewhere);
+    mkdirSync(dataDir);
+    symlinkSync(elsewhere, join(dataDir, 'runs'));
+
+    await expect(workingCopies().prepare(payload(), signal())).rejects.toThrow(
+      /not a real directory/,
+    );
+    expect(readdirSync(elsewhere)).toEqual([]);
+  });
+
   it('refuses a crafted identifier before touching anything', async () => {
     const outside = join(root, 'outside');
 
@@ -391,6 +404,27 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       const { report } = await runFake('[fake:dirty] Add a feature');
 
       expect(report).toMatchObject({ commits: [], hasUncommittedChanges: true });
+    });
+
+    it('never writes through a symlink the repository puts at the fake change (review of #117)', async () => {
+      const outside = join(root, 'outside.txt');
+      writeFileSync(outside, 'untouched');
+      const hostile = remote.commit('Link', {}, { [FAKE_CHANGE_FILE]: outside });
+      const copies = workingCopies();
+      const run = payload({ task: '[fake:dirty]', startCommit: hostile });
+      const prepared = await copies.prepare(run, signal());
+
+      await drainRunStep(
+        new FakeRunner({ git: new GitRunner({ env: { PATH: env.PATH!, HOME: home } }) }).start({
+          run,
+          workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
+          signal: signal(),
+        }),
+        () => undefined,
+      );
+
+      expect(readFileSync(outside, 'utf8')).toBe('untouched');
+      expect(lstatSync(join(prepared.repoDir, FAKE_CHANGE_FILE)).isFile()).toBe(true);
     });
 
     it('lists commits oldest first and shortens long subjects', async () => {

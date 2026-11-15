@@ -1,3 +1,4 @@
+import { lstat, mkdir } from 'node:fs/promises';
 import { posix } from 'node:path';
 
 /**
@@ -38,6 +39,21 @@ function inside(base: string, ...names: string[]): string {
   const path = posix.resolve(root, ...names);
   if (!path.startsWith(`${root}/`)) throw new UnsafeIdentifierError('path');
   return path;
+}
+
+/**
+ * Makes sure `path` (the worker's `runs` or `cache` directory) is a real directory, creating
+ * it if asked: never a symlink, so no path built under it can lead out of the data directory
+ * and nothing removed under it lies elsewhere (review of #117, S1).
+ */
+export async function assertRealDirectory(path: string, create: boolean): Promise<void> {
+  if (create) await mkdir(path, { recursive: true, mode: 0o700 });
+  const stats = await lstat(path);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new UnsafeIdentifierError(
+      `data directory (${posix.basename(path)} is not a real directory)`,
+    );
+  }
 }
 
 /** The directory of the Runs' directories. */

@@ -1,5 +1,5 @@
 import type { RunStepResult } from '@agentic-studio/contracts';
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { GIT_TIMEOUTS, GitRunner } from './git.js';
@@ -100,7 +100,12 @@ export class FakeRunner implements Runner {
 
   /** Writes the fake change into the Working copy and, if asked, commits it on the Run branch. */
   private async change(workspace: RunWorkspace, signal: AbortSignal, commit: boolean) {
-    await writeFile(join(workspace.repoDir, FAKE_CHANGE_FILE), 'Made by the fake runner.\n');
+    const file = join(workspace.repoDir, FAKE_CHANGE_FILE);
+    // Repository content is untrusted: whatever is at that path (e.g. a symlink to a file
+    // outside the Working copy) is removed, never written through, and a new file is created
+    // exclusively (review of #117, S2).
+    await rm(file, { force: true });
+    await writeFile(file, 'Made by the fake runner.\n', { flag: 'wx', mode: 0o644 });
     if (!commit) return;
     const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
     await this.git.run(['add', '--', FAKE_CHANGE_FILE], options);

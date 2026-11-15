@@ -43,6 +43,10 @@ export const GIT_HARDENING: readonly string[] = [
   'gc.auto=0',
   'maintenance.auto=false',
   'i18n.logOutputEncoding=UTF-8',
+  // A redirect could lead an https fetch to another host, and packfile URIs (protocol v2)
+  // let a server point Git elsewhere (security.md §4; review of #117, P1).
+  'http.followRedirects=false',
+  'fetch.uriProtocols=',
 ].flatMap((setting) => ['-c', setting]);
 
 /** A Git command failed: it exited non-zero, timed out, was aborted, or could not start. */
@@ -85,7 +89,8 @@ export interface GitRunnerOptions {
 
 /** `scheme://user:secret@host` → `scheme://***@host`, so a log never shows a credential. */
 export function maskCredentials(text: string): string {
-  return text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, '$1***@');
+  // Up to the last `@` before the host: a password may itself contain `@`.
+  return text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s]*@/gi, '$1***@');
 }
 
 /**

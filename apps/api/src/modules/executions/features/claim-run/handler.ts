@@ -1,9 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Run } from '../../domain/entities/run.js';
+import type { Run, RunFailure } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
+
+const NO_REMOTE: RunFailure = {
+  code: 'preparation_failed',
+  detail:
+    "The run has no repository remote to prepare from (the project's repository was removed).",
+};
 
 /**
  * Command (Issue #96): an agent worker asks for work. Lost workers are swept first (their
@@ -21,6 +27,19 @@ export class ClaimRunHandler {
   async execute(workerId: string): Promise<Run | null> {
     const now = this.clock.now();
     await failLostWorkers(this.runs, now, this.lease.seconds);
-    return this.runs.claimNext(workerId, now);
+    for (;;) {
+      const run = await this.runs.claimNext(workerId, now);
+      // A Run from before Issue #98 whose project had no Repository has no remote to prepare
+      // from: it fails with preparation_failed here instead of reaching a worker (review S6).
+      if (!run || run.remoteUrl !== '') return run;
+      await this.runs.transitionClaimed({
+        runId: run.id,
+        workerId,
+        from: 'preparing',
+        to: 'failed',
+        failure: NO_REMOTE,
+        now,
+      });
+    }
   }
 }

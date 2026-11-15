@@ -6,7 +6,7 @@ import {
   WORKING_COPY_REPORT_MAX_BYTES,
   type WorkingCopyReport,
 } from '@agentic-studio/contracts';
-import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import {
   GIT_TIMEOUTS,
@@ -17,6 +17,7 @@ import {
   WORKER_GIT_TRANSPORTS,
 } from './git.js';
 import {
+  assertRealDirectory,
   cacheDirectory,
   cachesDirectory,
   composeProjectName,
@@ -135,8 +136,8 @@ export class WorkingCopies implements WorkingCopyPort {
       );
     }
 
-    await mkdir(cachesDirectory(dataDir), { recursive: true, mode: 0o700 });
-    await mkdir(runsDirectory(dataDir), { recursive: true, mode: 0o700 });
+    await assertRealDirectory(cachesDirectory(dataDir), true);
+    await assertRealDirectory(runsDirectory(dataDir), true);
     // A Run is claimed once; anything left under its id is stale.
     await rm(paths.runDir, { recursive: true, force: true });
     await mkdir(paths.runDir, { mode: 0o700 });
@@ -268,14 +269,21 @@ export class WorkingCopies implements WorkingCopyPort {
       ceiling: dataDir,
       transports: this.remoteTransports,
     };
-    const current = await git
-      .run(['config', '--get', 'remote.origin.url'], {
-        ...network,
-        cwd: cacheDir,
-        timeoutMs: GIT_TIMEOUTS.local,
-      })
-      .then((url) => url.trim())
-      .catch(() => null);
+    // A cache that does not exist yet has no remote (and Git is not run in a missing directory).
+    const exists = await stat(cacheDir).then(
+      (stats) => stats.isDirectory(),
+      () => false,
+    );
+    const current = !exists
+      ? null
+      : await git
+          .run(['config', '--get', 'remote.origin.url'], {
+            ...network,
+            cwd: cacheDir,
+            timeoutMs: GIT_TIMEOUTS.local,
+          })
+          .then((url) => url.trim())
+          .catch(() => null);
     if (current === remoteUrl) {
       await this.step("refreshing the Project's cache", () =>
         git.run(['fetch', '--prune', '--quiet', 'origin'], { ...network, cwd: cacheDir }),
