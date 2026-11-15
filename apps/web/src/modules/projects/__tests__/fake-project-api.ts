@@ -15,6 +15,7 @@ export const FAKE_PUBLIC_KEY =
 /** A synthetic SHA256 fingerprint of the Git host's key. */
 export const FAKE_FINGERPRINT = 'SHA256:c3ludGhldGljLWZpbmdlcnByaW50LWZvci10ZXN0cw';
 
+const RUNS_ROUTE = /^\/api\/projects\/[^/]+\/runs$/;
 const ROUTE = /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?)?$/;
 
 /**
@@ -43,6 +44,10 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
   const held: Partial<Record<Route, Promise<void>>> = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
+    // The composed Runs section (executions, #97) lists the project's Runs: none here.
+    if (request.method === 'GET' && RUNS_ROUTE.test(new URL(request.url).pathname)) {
+      return json(200, []);
+    }
     const target = targetOf(request);
     const response = await answer(request, target);
     const hold = target && held[target.route];

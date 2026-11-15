@@ -13,11 +13,18 @@ import type {
   ProjectListOutput,
   ProjectOutput,
   RepositoryOutput,
+  RunListOutput,
+  RunOutput,
   SessionResponseOutput,
+  StartRunRequest,
   VerifyRepositoryRequest,
 } from './generated';
 import { client } from './generated/client.gen';
-import { zConnectRepositoryRequest, zCreateProjectRequest } from './generated/zod.gen';
+import {
+  zConnectRepositoryRequest,
+  zCreateProjectRequest,
+  zStartRunRequest,
+} from './generated/zod.gen';
 
 export type {
   ConnectRepositoryRequest,
@@ -31,7 +38,10 @@ export type {
   RepositoryOutput,
   RepositoryStateOutput,
   RepositorySummaryOutput,
+  RunListOutput,
+  RunOutput,
   SessionResponseOutput,
+  StartRunRequest,
   VerifyRepositoryRequest,
 } from './generated';
 
@@ -43,6 +53,9 @@ export const createProjectRequestHint = zCreateProjectRequest;
 
 /** Generated hint for the Connect repository form; the API's 422 field errors are final. */
 export const connectRepositoryRequestHint = zConnectRepositoryRequest;
+
+/** Generated hint for the New run form; the API trims the Task and its 422 field errors are final. */
+export const startRunRequestHint = zStartRunRequest;
 
 client.setConfig({ credentials: 'same-origin' });
 
@@ -162,4 +175,11 @@ export const api = {
     if (!isRepository(data)) throw new Error('The disconnect answer has no Repository.');
     return data;
   },
+  /** Starts a Run on the project (201: the Run, `queued`). */
+  startRun: (projectId: string, body: StartRunRequest): Promise<RunOutput> =>
+    unwrap(sdk.startRun({ path: { id: projectId }, body })),
+  /** The project's Runs, newest first. */
+  listProjectRuns: (projectId: string): Promise<RunListOutput> =>
+    unwrap(sdk.listProjectRuns({ path: { id: projectId } })),
+  getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
 };

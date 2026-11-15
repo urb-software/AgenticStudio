@@ -1,0 +1,58 @@
+'use client';
+
+import Link from 'next/link';
+import { StatusPill } from '@/shared/components/status-pill';
+import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
+import type { RunOutput } from '../../../platform/api';
+import { PROVIDER_LABEL, RUN_STATE_VIEW, taskSummary } from './run-presentation';
+
+type RunRowsProps = {
+  runs: readonly RunOutput[];
+  /** When the list was fetched: relative times count from here. */
+  now: number;
+  /** The list's accessible name. */
+  label: string;
+};
+
+/**
+ * Runs as rows: the state pill, the start of the Task (the link to the Run page), the Provider
+ * and how long ago it was created. One line per Run from tablet up; on phones each Run is a
+ * stacked block, so the page never scrolls sideways.
+ */
+export function RunRows({ runs, now, label }: RunRowsProps) {
+  return (
+    <ul role="list" aria-label={label} className="m-0 flex list-none flex-col p-0">
+      {runs.map((run) => {
+        const view = RUN_STATE_VIEW[run.state];
+        const createdAt = new Date(run.createdAt);
+        return (
+          <li
+            key={run.id}
+            className="relative grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1.5 border-b border-border py-3 last:border-b-0 has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring md:grid-cols-[auto_1fr_auto_auto]"
+          >
+            <span className="row-start-1 md:col-start-1">
+              <StatusPill status={view.pill}>{view.label}</StatusPill>
+            </span>
+            {/* The whole row opens the Run: the link's ::after covers it (one tab stop). */}
+            <Link
+              href={`/executions/${run.id}`}
+              className="col-span-2 row-start-2 min-w-0 truncate font-medium text-text no-underline outline-none after:absolute after:inset-0 after:content-[''] hover:underline md:col-span-1 md:col-start-2 md:row-start-1"
+            >
+              {taskSummary(run.task)}
+            </Link>
+            <span className="col-span-2 row-start-3 text-small text-text-muted md:col-span-1 md:col-start-3 md:row-start-1">
+              {PROVIDER_LABEL[run.provider]}
+            </span>
+            <time
+              dateTime={run.createdAt}
+              title={formatExactTime(createdAt)}
+              className="row-start-1 justify-self-end text-small text-text-dim tabular-nums md:col-start-4"
+            >
+              {formatTimeAgo(createdAt, now)}
+            </time>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
