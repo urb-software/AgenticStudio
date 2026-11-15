@@ -229,7 +229,11 @@ export class WorkingCopies implements WorkingCopyPort {
     return report;
   }
 
-  /** Creates the cache, or refreshes it; rebuilds it when its remote differs or it is broken. */
+  /**
+   * Creates the cache, or refreshes it. It is discarded and rebuilt only when its remote
+   * differs (or it has none, i.e. it is not a usable cache); a failed refresh keeps it, so a
+   * passing network problem never throws a good cache away.
+   */
   private async refreshCache(cacheDir: string, remoteUrl: string, signal: AbortSignal) {
     const { git, dataDir } = this.options;
     const network = {
@@ -247,13 +251,10 @@ export class WorkingCopies implements WorkingCopyPort {
       .then((url) => url.trim())
       .catch(() => null);
     if (current === remoteUrl) {
-      try {
-        await git.run(['fetch', '--prune', '--quiet', 'origin'], { ...network, cwd: cacheDir });
-        return;
-      } catch (error) {
-        if (signal.aborted) throw error;
-        this.logGitError('Refreshing the cache failed; rebuilding it', error);
-      }
+      await this.step("refreshing the Project's cache", () =>
+        git.run(['fetch', '--prune', '--quiet', 'origin'], { ...network, cwd: cacheDir }),
+      );
+      return;
     }
     await rm(cacheDir, { recursive: true, force: true });
     await this.step("fetching the Project's repository", async () => {

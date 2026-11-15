@@ -9,7 +9,7 @@ import { readRunFile } from './working-copy.js';
 export const RETENTION_INTERVAL_MS = 60 * 60_000;
 
 const DAY_MS = 24 * 60 * 60_000;
-
+/** Final Run states: only these Runs' Working copies fall under the retention rules. */
 /** The Run states that keep a Working copy whatever its age: the Run is not over. */
 const FINAL_STATES = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 
@@ -115,7 +115,9 @@ export class Retention {
     }
     const byProject = new Map<string, Finished[]>();
     for (const run of kept) {
-      const key = run.projectId ?? '';
+      // Without a readable run.json the Project is unknown: such a Run counts on its own, so
+      // it never pushes out another Project's Working copies (the age limit still applies).
+      const key = run.projectId ?? `unknown:${run.runId}`;
       byProject.set(key, [...(byProject.get(key) ?? []), run]);
     }
     for (const runs of byProject.values()) {
