@@ -26,6 +26,16 @@ describeGate('monorepo', monorepoGate, '.', [
     fixture: 'app-imports-package-by-relative-path',
     expected: ['mono-no-relative-imports-into-packages'],
   },
+  // The agent worker reaches Studio over the worker routes only (ADR 0002, Issue #96).
+  { fixture: 'agent-worker-uses-contracts', expected: [] },
+  {
+    fixture: 'agent-worker-imports-database-package',
+    expected: ['mono-agent-worker-no-studio-infrastructure'],
+  },
+  {
+    fixture: 'agent-worker-imports-redis-client',
+    expected: ['mono-agent-worker-no-studio-infrastructure'],
+  },
 ]);
 
 describe('architecture:monorepo web package classification', () => {

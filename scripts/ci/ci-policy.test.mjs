@@ -116,6 +116,8 @@ describe('evaluateRequired', () => {
       'test-contracts',
       'e2e-smoke',
       'security',
+      'quality-agent-worker',
+      'test-agent-worker',
     ]);
   });
 

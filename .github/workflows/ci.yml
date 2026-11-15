@@ -236,6 +236,39 @@ jobs:
       # auditConfig.ignoreGhsas, each with a reason and a review date (Epic #8 decision 5).
       - run: pnpm audit --audit-level high
 
+  quality-agent-worker:
+    name: quality:agent-worker
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Format + ESLint + typecheck + build of apps/agent-worker and the packages it uses (#96).
+      - run: pnpm check:agent-worker
+
+  test-agent-worker:
+    name: test:agent-worker
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Unit tests, then the worker loop in process against the built API on throwaway PostgreSQL
+      # and Redis (Testcontainers on the runner's Docker). Linux-only suites run here. No secrets.
+      - run: pnpm test:agent-worker
+
   ci-required:
     name: ci:required
     if: always()
@@ -251,6 +284,8 @@ jobs:
       - test-contracts
       - e2e-smoke
       - security
+      - quality-agent-worker
+      - test-agent-worker
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -1,5 +1,6 @@
 import {
   npmPackages,
+  ORM_PACKAGES,
   SERVER_PACKAGES,
   stronglyConnectedComponents,
   workspacePackages,
@@ -11,8 +12,8 @@ import {
  * `architecture:monorepo`: the workspace rules of docs/engineering/quality.md §4 and
  * docs/architecture/system.md §5, for apps/api, apps/web, apps/agent-worker,
  * apps/environment-controller and packages/*. Rules are written per app directory, so
- * they already cover the agent-worker and environment-controller apps, which do not
- * exist yet. Paths are relative to the workspace root.
+ * they already cover the environment-controller app, which does not exist yet; the
+ * agent worker (Issue #96) also has its own rule. Paths are relative to the workspace root.
  */
 /**
  * Every packages/* workspace package must be listed here as allowed or forbidden for
@@ -68,6 +69,32 @@ export const monorepoGate: Gate = {
       severity: 'error',
       from: { path: '^apps/web/' },
       to: { path: ['^packages/(contracts|database|testing)/', npmPackages(...SERVER_PACKAGES)] },
+    },
+    {
+      name: 'mono-agent-worker-no-studio-infrastructure',
+      comment:
+        "The agent worker is on the agents' side of the boundary (ADR 0002, Issue #96): outside " +
+        'its tests it never imports the database package, the ORM, Redis, the queue, Docker or ' +
+        'NestJS, nor the test helpers; it reaches Studio over the worker routes only.',
+      severity: 'error',
+      from: { path: '^apps/agent-worker/', pathNot: '(^|/)__tests__/' },
+      to: {
+        path: [
+          '^packages/(database|testing)/',
+          npmPackages(
+            ...ORM_PACKAGES,
+            '@agentic-studio/testing',
+            'bullmq',
+            'bull',
+            'ioredis',
+            'redis',
+            'pg',
+            'postgres',
+            'dockerode',
+            '@nestjs',
+          ),
+        ],
+      },
     },
     {
       name: 'mono-workspace-imports-resolve',
