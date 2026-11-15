@@ -352,6 +352,15 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect((await providers()).body.every((p: { available: boolean }) => p.available)).toBe(true);
     });
 
+    it('rejects a status report with an unknown runner mode (400)', async () => {
+      const response = await http()
+        .post('/api/worker/status')
+        .set('Authorization', `Bearer ${WORKER_TOKEN}`)
+        .send({ workerId: W2, runner: 'api', providers: BOTH_ENABLED });
+
+      expectProblem(response, 400);
+    });
+
     it.each([
       ['a switch sent as text', { claude_code: 'true', codex: true }],
       ['a missing provider', { claude_code: true }],

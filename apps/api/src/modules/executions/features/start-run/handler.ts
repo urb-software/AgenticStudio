@@ -8,6 +8,7 @@ import {
 } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import {
+  PROVIDER_UNAVAILABLE_REASONS,
   providerAvailability,
   ProviderUnavailableError,
 } from '../../domain/services/provider-availability.js';
@@ -63,7 +64,7 @@ export class StartRunHandler {
     if (!availability || availability.reason) {
       throw new ProviderUnavailableError(
         provider,
-        availability?.reason ?? 'Switched off on the agent worker',
+        availability?.reason ?? PROVIDER_UNAVAILABLE_REASONS.switchedOff,
       );
     }
   }
