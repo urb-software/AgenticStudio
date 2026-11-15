@@ -128,6 +128,8 @@ architecture:web      # Dependency graph + structural rules
 architecture:monorepo # Cross-app and package boundaries
  test:contracts       # REST and Integration Events
  e2e:smoke            # Critical affected user journeys
+quality:agent-worker  # Format + ESLint + typecheck + build of apps/agent-worker
+ test:agent-worker    # Unit + worker loop against the real API (Linux)
 security              # Secrets, dependency audit, SAST and critical checks
 ci:required           # Final policy aggregation
 ```
@@ -147,6 +149,8 @@ pnpm check:api
 pnpm test:api
 pnpm check:web
 pnpm test:web
+pnpm check:agent-worker
+pnpm test:agent-worker
 pnpm architecture:api
 pnpm architecture:web
 pnpm architecture:monorepo
@@ -154,7 +158,7 @@ pnpm contracts:check     # CI job test:contracts
 pnpm check:affected
 ```
 
-Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
+Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `check:agent-worker` and `test:agent-worker` run as the CI jobs `quality:agent-worker` and `test:agent-worker` (Issue #96). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
 
 For every substantive task, the implementer runs all relevant existing checks and reports exact commands, exit status, commit SHA, skips, and blockers.
 

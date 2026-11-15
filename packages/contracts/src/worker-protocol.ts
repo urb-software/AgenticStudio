@@ -95,8 +95,21 @@ export const runCheckSchema = z.strictObject({
 export type RunCheck = z.infer<typeof runCheckSchema>;
 
 /**
+ * Largest structured result, in bytes of its UTF-8 JSON (96 KiB). The API accepts JSON
+ * bodies up to Express's default 100 KiB; the step report adds under 100 bytes around the
+ * result, so every valid result can be reported (review finding 4 on #111).
+ */
+export const RUN_STEP_RESULT_MAX_BYTES = 96 * 1024;
+
+/** Size of a value as UTF-8 JSON, as it travels in a request body. */
+export function jsonByteLength(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+/**
  * The structured result a Run step ends with: `done`, or `needs_input` with the agent's
- * question (it pauses the Run until the operator answers).
+ * question (it pauses the Run until the operator answers). Each field has its own limit, and
+ * the whole result at most {@link RUN_STEP_RESULT_MAX_BYTES}.
  */
 export const runStepResultSchema = z
   .strictObject({
@@ -111,6 +124,9 @@ export const runStepResultSchema = z
   .refine((result) => result.outcome !== 'needs_input' || result.question !== undefined, {
     path: ['question'],
     message: 'A needs_input result carries the question.',
+  })
+  .refine((result) => jsonByteLength(result) <= RUN_STEP_RESULT_MAX_BYTES, {
+    message: `The result is larger than ${RUN_STEP_RESULT_MAX_BYTES} bytes as JSON.`,
   });
 export type RunStepResult = z.infer<typeof runStepResultSchema>;
 

@@ -1,3 +1,4 @@
+import { jsonByteLength, RUN_STEP_RESULT_MAX_BYTES } from '@agentic-studio/contracts';
 import { createHash, createSecretKey, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -300,6 +301,35 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         failure: { code: 'agent_failed', detail: 'The agent exited with code 1.' },
         finishedAt: expect.stringMatching(ISO_8601),
       });
+    });
+
+    it('accepts a step result of the maximum size within the JSON body limit (review finding 4)', async () => {
+      const project = await readyProject('Shop');
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      const result = {
+        outcome: 'done',
+        summary: 's'.repeat(20_000),
+        pullRequest: { title: 't'.repeat(256), body: 'b'.repeat(65_536) },
+        checks: [] as { name: string; result: string; detail: string }[],
+      };
+      for (;;) {
+        const check = { name: 'check', result: 'passed', detail: '' };
+        result.checks.push(check);
+        const room = RUN_STEP_RESULT_MAX_BYTES - jsonByteLength(result);
+        check.detail = 'd'.repeat(Math.min(room, 4000));
+        if (room <= 4000) break;
+      }
+      expect(jsonByteLength(result)).toBe(RUN_STEP_RESULT_MAX_BYTES);
+
+      expect((await reportStep(run.id, result)).status).toBe(204);
+      expectProblem(
+        // One byte over the cap ('é' is two bytes, same length) is refused by the shared schema
+        // (400), not by the body parser (413).
+        await reportStep(run.id, { ...result, summary: `é${result.summary.slice(1)}` }),
+        400,
+      );
     });
 
     it('fails a Run during preparation', async () => {

@@ -104,8 +104,15 @@ model Secret {
 /// A Run (`executions` module, Issue #96): one Task carried out by a Provider on one Project,
 /// starting from a recorded commit of the integration branch. The migration adds CHECK
 /// constraints (known states, providers and failure codes; fields that go with a state) and a
-/// partial unique index (one active Run per project), which Prisma does not model. `state`,
-/// `provider` and `failure_code` are text, so later stories add values by changing a CHECK.
+/// partial unique index, which Prisma does not model. `state`, `provider` and `failure_code` are
+/// text, so later stories add values by changing a CHECK.
+///
+/// Never drop `runs_one_active_per_project_key` (UNIQUE (project_id) WHERE state IN ('preparing',
+/// 'running', 'waiting_for_operator')): it is the schema-level backstop of the concurrency limit
+/// (one active Run per project), and like the CHECKs it lives only in
+/// migrations/20261115000000_create_runs/migration.sql. Prisma 7.10 proposes no drop of it or of the
+/// CHECKs (the database integration test checks this). If a later version does, delete that
+/// statement from the generated migration before committing it.
 model Run {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// The owning project. Restrict: a project with Runs cannot be deleted silently.

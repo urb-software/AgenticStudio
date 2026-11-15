@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   claimRunRequestSchema,
+  jsonByteLength,
+  RUN_STEP_RESULT_MAX_BYTES,
   heartbeatRequestSchema,
   reportRunStateRequestSchema,
   reportRunStepRequestSchema,
@@ -140,5 +142,50 @@ describe('runner event', () => {
       text: 'compiling',
     });
     expect(runnerEventSchema.safeParse({ type: 'secret', text: '' }).success).toBe(false);
+  });
+});
+
+describe('size of a structured result (review finding 4 on #111)', () => {
+  /** A valid result of exactly `bytes` bytes of JSON, every field near its own limit. */
+  function resultOf(bytes: number) {
+    const result = {
+      outcome: 'done' as const,
+      summary: 's'.repeat(20_000),
+      pullRequest: { title: 't'.repeat(256), body: 'b'.repeat(65_536) },
+      checks: [] as { name: string; result: 'passed'; detail: string }[],
+    };
+    for (;;) {
+      const check = { name: 'check', result: 'passed' as const, detail: '' };
+      result.checks.push(check);
+      const room = bytes - jsonByteLength(result);
+      check.detail = 'd'.repeat(Math.min(room, 4000));
+      if (room <= 4000) return result;
+    }
+  }
+
+  it('accepts a result of exactly the maximum size', () => {
+    const result = resultOf(RUN_STEP_RESULT_MAX_BYTES);
+    expect(jsonByteLength(result)).toBe(RUN_STEP_RESULT_MAX_BYTES);
+    expect(runStepResultSchema.safeParse(result).success).toBe(true);
+  });
+
+  it('refuses one byte more, though every field is within its own limit', () => {
+    expect(runStepResultSchema.safeParse(resultOf(RUN_STEP_RESULT_MAX_BYTES + 1)).success).toBe(
+      false,
+    );
+  });
+
+  it('counts bytes, not characters: multi-byte text fills the budget sooner', () => {
+    const result = { outcome: 'done', summary: 'é'.repeat(20_000) };
+    expect(jsonByteLength(result)).toBeGreaterThan(40_000);
+  });
+
+  it('leaves room for the step report around a maximal result under the 100 KiB body limit', () => {
+    const body = {
+      workerId: WORKER_ID,
+      kind: 'resume',
+      result: resultOf(RUN_STEP_RESULT_MAX_BYTES),
+    };
+    expect(jsonByteLength(body)).toBeLessThan(100 * 1024);
   });
 });

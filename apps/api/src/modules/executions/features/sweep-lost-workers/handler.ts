@@ -6,8 +6,8 @@ import {
   type OnApplicationShutdown,
 } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
-import { lostWorkerRule } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
+import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
@@ -26,9 +26,7 @@ export class SweepLostWorkersHandler {
 
   /** Returns how many Runs failed. */
   async execute(): Promise<number> {
-    const now = this.clock.now();
-    const { staleBefore, failure } = lostWorkerRule(now, this.lease.seconds);
-    return this.runs.failStaleClaims(staleBefore, failure, now);
+    return failLostWorkers(this.runs, this.clock.now(), this.lease.seconds);
   }
 }
 
