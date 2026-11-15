@@ -475,8 +475,10 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // lines appear live through the web /api proxy (so it does not buffer the stream) and are all
 // there after a reload, and a printed token-shaped string arrives redacted. Linux only;
 // `pnpm e2e:smoke` fails on Linux if this test did not run and pass. Story #100: a long Run
-// (`[fake:long]`) is cancelled while it runs, and the waiting Run is cancelled at the end, so
-// the test holds no server slot afterwards and its place in the file no longer matters.
+// (`[fake:long]`) is cancelled while it runs. Story #103: at the end the operator answers the
+// waiting Run's question on its page (an option of the fake agent), the same worker resumes the
+// session and the Run succeeds, so the test holds no server slot afterwards (the clean-up below
+// cancels whatever a failed run of it left unfinished, an answered Run queued to resume too).
 const RUN_TEST = 'operator starts runs and follows them to their result';
 
 /**
@@ -683,13 +685,25 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
 
-  // Story #100: the waiting Run is cancelled at once (no worker holds it), freeing its slot.
+  // Story #103: the operator answers the agent's question with one of its options; the same
+  // agent worker resumes the session and the Run succeeds. The conversation and the log show
+  // the question and the answer.
   await rows.nth(0).getByRole('link').first().click();
   await expect(heading).toHaveText('Ask before changing anything [fake:question]');
-  await main.getByRole('button', { name: 'Cancel run' }).click();
-  await page
-    .getByRole('alertdialog', { name: 'Cancel run' })
-    .getByRole('button', { name: 'Cancel run' })
-    .click();
-  await expect(pill).toHaveText('Cancelled', { timeout: 15_000 });
+  const decision = main.getByRole('region', { name: 'The agent needs your decision' });
+  await expect(decision).toContainText('Which option should the fake agent take?');
+  await expect(decision.getByRole('button', { name: /Option A/ })).toContainText('Recommended');
+  await decision.getByRole('button', { name: 'Option B' }).click();
+  await expect(decision.getByLabel('Your answer')).toHaveValue('Option B');
+  await expectNoHorizontalScroll(page);
+  await decision.getByRole('button', { name: 'Send answer' }).click();
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(decision).toHaveCount(0);
+  const conversation = main.getByRole('list', { name: 'Conversation' });
+  await expect(conversation).toContainText('Which option should the fake agent take?');
+  await expect(conversation).toContainText('You · Answer');
+  await expect(runLog).toContainText('Answer: Option B', { timeout: 15_000 });
+  await expect(runLog).toContainText('answer received: Option B');
+  await expect(runLog).toContainText('Run step 2 finished: done');
+  await expectInBothThemes(page, pill);
 });

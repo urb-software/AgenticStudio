@@ -121,6 +121,8 @@ export type RunMessageOutput = {
     role: 'operator' | 'agent';
     kind: 'task' | 'question' | 'answer';
     text: string;
+    options?: Array<string>;
+    recommendation?: string;
     at: string;
 };
 
