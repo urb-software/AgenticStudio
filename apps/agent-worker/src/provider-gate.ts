@@ -1,4 +1,9 @@
-import { PROVIDERS, type Provider } from '@agentic-studio/contracts';
+import {
+  PROVIDER_NAMES,
+  PROVIDERS,
+  type Provider,
+  type ProviderSwitches,
+} from '@agentic-studio/contracts';
 
 /**
  * The operator's per-provider switches (docs/engineering/security.md §2, Issue #101). They
@@ -9,14 +14,6 @@ export const PROVIDER_SWITCH_VARIABLES = {
   claude_code: 'CLAUDE_CODE_ENABLED',
   codex: 'CODEX_CLI_ENABLED',
 } as const satisfies Record<Provider, string>;
-
-/** Display names, for messages. */
-export const PROVIDER_NAMES = {
-  claude_code: 'Claude Code',
-  codex: 'Codex',
-} as const satisfies Record<Provider, string>;
-
-export type ProviderSwitches = Readonly<Record<Provider, boolean>>;
 
 /**
  * Reads the switches once (the worker reads them at start; a change needs a restart).
@@ -55,7 +52,9 @@ export class ProviderGate {
   private readonly switches: ProviderSwitches;
 
   constructor(switches: ProviderSwitches) {
-    this.switches = Object.freeze({ claude_code: switches.claude_code, codex: switches.codex });
+    const copy = {} as Record<Provider, boolean>;
+    for (const provider of PROVIDERS) copy[provider] = switches[provider] === true;
+    this.switches = Object.freeze(copy);
   }
 
   isEnabled(provider: Provider): boolean {

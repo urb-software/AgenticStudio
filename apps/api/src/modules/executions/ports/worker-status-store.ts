@@ -1,4 +1,4 @@
-import type { WorkerStatus } from '../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../domain/services/provider-availability.js';
 
 /** DI token of the {@link WorkerStatusStore}. */
 export const WORKER_STATUS_STORE = Symbol('WORKER_STATUS_STORE');
@@ -9,6 +9,6 @@ export const WORKER_STATUS_STORE = Symbol('WORKER_STATUS_STORE');
  */
 export interface WorkerStatusStore {
   /** Replaces the latest status (the most recent report wins, from whichever worker). */
-  record(status: WorkerStatus): void;
-  latest(): WorkerStatus | undefined;
+  record(status: RecordedWorkerStatus): void;
+  latest(): RecordedWorkerStatus | undefined;
 }

@@ -4,7 +4,7 @@ import { RepositoryNotReadyError, RunProjectNotFoundError } from '../../../domai
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   ProviderUnavailableError,
-  type WorkerStatus,
+  type RecordedWorkerStatus,
 } from '../../../domain/services/provider-availability.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { StartRunHandler } from '../handler.js';
@@ -15,8 +15,8 @@ const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
-  private current: WorkerStatus | undefined;
-  record(status: WorkerStatus) {
+  private current: RecordedWorkerStatus | undefined;
+  record(status: RecordedWorkerStatus) {
     this.current = status;
   }
   latest() {

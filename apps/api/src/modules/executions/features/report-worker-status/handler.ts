@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { WorkerStatus } from '../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../domain/services/provider-availability.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
@@ -15,11 +15,11 @@ export class ReportWorkerStatusHandler {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  execute(report: Omit<WorkerStatus, 'reportedAt'>): void {
+  execute(report: Omit<RecordedWorkerStatus, 'reportedAt'>): void {
     this.statuses.record({
       workerId: report.workerId,
       runner: report.runner,
-      providers: { claude_code: report.providers.claude_code, codex: report.providers.codex },
+      providers: { ...report.providers },
       reportedAt: this.clock.now(),
     });
   }

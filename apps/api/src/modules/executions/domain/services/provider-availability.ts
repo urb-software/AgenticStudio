@@ -1,24 +1,16 @@
+import { PROVIDER_NAMES, type WorkerStatusReport } from '@agentic-studio/contracts';
 import { PROVIDERS, type Provider } from '../entities/run.js';
-
-/** How the reporting agent worker carries out Runs (Issue #101). */
-export type WorkerRunnerMode = 'fake' | 'cli';
 
 /**
  * The latest status an agent worker reported (Issue #101): its runner mode and which providers
- * its own configuration enables. Studio keeps it in memory only; the switches themselves never
- * leave the worker's configuration, and the worker's own check stays authoritative.
+ * its own configuration enables (the shared protocol's report), with who sent it and when.
+ * Studio keeps it in memory only; the switches themselves never leave the worker's
+ * configuration, and the worker's own check stays authoritative.
  */
-export interface WorkerStatus {
+export interface RecordedWorkerStatus extends WorkerStatusReport {
   workerId: string;
-  runner: WorkerRunnerMode;
-  providers: Readonly<Record<Provider, boolean>>;
   reportedAt: Date;
 }
-
-export const PROVIDER_NAMES: Readonly<Record<Provider, string>> = {
-  claude_code: 'Claude Code',
-  codex: 'Codex',
-};
 
 /** Why a provider is unavailable; shown to the operator as is. */
 export const PROVIDER_UNAVAILABLE_REASONS = {
@@ -41,7 +33,7 @@ export interface ProviderAvailability {
  * worker lease (`STUDIO_WORKER_LEASE_SECONDS`) counts as no worker connected.
  */
 export function providerAvailability(
-  latest: WorkerStatus | undefined,
+  latest: RecordedWorkerStatus | undefined,
   now: Date,
   leaseSeconds: number,
 ): ProviderAvailability[] {

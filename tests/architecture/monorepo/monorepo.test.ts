@@ -30,11 +30,17 @@ describeGate('monorepo', monorepoGate, '.', [
   { fixture: 'agent-worker-uses-contracts', expected: [] },
   {
     fixture: 'agent-worker-imports-database-package',
-    expected: ['mono-agent-worker-no-studio-infrastructure'],
+    expected: [
+      'mono-agent-worker-no-studio-infrastructure',
+      'mono-agent-worker-allowed-imports-only',
+    ],
   },
   {
     fixture: 'agent-worker-imports-redis-client',
-    expected: ['mono-agent-worker-no-studio-infrastructure'],
+    expected: [
+      'mono-agent-worker-no-studio-infrastructure',
+      'mono-agent-worker-allowed-imports-only',
+    ],
   },
   // Production code reaching the database through a test file (review of #112).
   {
@@ -46,6 +52,19 @@ describeGate('monorepo', monorepoGate, '.', [
   {
     fixture: 'agent-worker-imports-child-process',
     expected: ['mono-agent-worker-spawn-boundary-only'],
+  },
+  // Deny by default: nothing past the boundary through other packages or loaders (review of #116).
+  {
+    fixture: 'agent-worker-imports-process-wrapper',
+    expected: ['mono-agent-worker-allowed-imports-only'],
+  },
+  {
+    fixture: 'agent-worker-imports-workspace-package',
+    expected: ['mono-agent-worker-allowed-imports-only'],
+  },
+  {
+    fixture: 'agent-worker-uses-create-require',
+    expected: ['mono-agent-worker-no-loader-core-modules'],
   },
 ]);
 

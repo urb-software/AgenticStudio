@@ -3,12 +3,12 @@ import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadWorkerConfig } from '../config.js';
+import { DEFAULT_PROVIDER_BINARIES, loadWorkerConfig } from '../config.js';
 import { FakeRunner } from '../fake-runner.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
 import { RunnerDispatcher } from '../runner-dispatcher.js';
-import { spawnProviderCli } from '../spawn-boundary.js';
+import { type ProviderCli, spawnProviderCli } from '../spawn-boundary.js';
 import { AgentWorker, type WorkerApi } from '../worker.js';
 
 // Issue #101: the eight required negative tests of the provider enablement gate
@@ -34,16 +34,15 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
 
 const DONE: RunStepResult = { outcome: 'done', summary: 'done' };
 
+/** The spawn boundary's inputs with the default binaries (`claude`, `codex`). */
+const cliOf = (gate: ProviderGate): ProviderCli => ({ gate, binaries: DEFAULT_PROVIDER_BINARIES });
+
 /** Stands in for a real provider runner (#105, #106): it starts its CLI through the boundary. */
 class CliRunner implements Runner {
-  constructor(private readonly gate: ProviderGate) {}
+  constructor(private readonly cli: ProviderCli) {}
 
   async *start({ run }: StartRunStepInput): RunStep {
-    spawnProviderCli(this.gate, {
-      provider: run.provider,
-      command: `${run.provider}-cli`,
-      args: ['--print', run.task],
-    });
+    spawnProviderCli(this.cli, { provider: run.provider, args: ['--print', run.task] });
     yield { type: 'status', text: 'cli started' };
     return DONE;
   }
@@ -82,11 +81,11 @@ const silent = { info: () => undefined, error: () => undefined };
 async function carry(
   env: Record<string, string | undefined>,
   run: RunPayload,
-  runnerFor: (gate: ProviderGate) => Runner = (gate) => new CliRunner(gate),
+  runnerFor: (cli: ProviderCli) => Runner = (cli) => new CliRunner(cli),
 ) {
   const config = loadWorkerConfig({ ...BASE_ENV, ...env });
   const gate = new ProviderGate(config.providers);
-  const runner = runnerFor(gate);
+  const runner = runnerFor({ gate, binaries: config.providerBinaries });
   const api = new OneRunApi(run);
   const worker = new AgentWorker({
     api,
@@ -156,9 +155,9 @@ describe('provider enablement gate (quality.md §10)', () => {
       expect(await carry({}, payload('codex'))).toEqual(disabled('codex'));
       // A code path that skipped the dispatcher still meets the gate at the boundary.
       for (const provider of ['claude_code', 'codex'] as const) {
-        expect(() =>
-          spawnProviderCli(gate, { provider, command: 'any-cli', args: [] }),
-        ).toThrowError(ProviderDisabledError);
+        expect(() => spawnProviderCli(cliOf(gate), { provider, args: [] })).toThrowError(
+          ProviderDisabledError,
+        );
       }
       expect(spawn).not.toHaveBeenCalled();
     });
@@ -175,7 +174,7 @@ describe('provider enablement gate (quality.md §10)', () => {
 
     it('not when a Run step resumes', async () => {
       const gate = new ProviderGate(loadWorkerConfig(BASE_ENV).providers);
-      const runner = new CliRunner(gate);
+      const runner = new CliRunner(cliOf(gate));
       const dispatcher = new RunnerDispatcher(gate, { claude_code: runner, codex: runner });
       const resume = dispatcher.resume({
         run: payload('claude_code'),
@@ -190,7 +189,7 @@ describe('provider enablement gate (quality.md §10)', () => {
     it('while an enabled provider does reach the boundary (the control case)', async () => {
       expect(await carry({ CODEX_CLI_ENABLED: 'true' }, payload('codex'))).toEqual(SUCCEEDED);
       expect(spawn).toHaveBeenCalledOnce();
-      expect(spawn).toHaveBeenCalledWith('codex-cli', ['--print', 'Fix the login bug'], {
+      expect(spawn).toHaveBeenCalledWith('codex', ['--print', 'Fix the login bug'], {
         shell: false,
       });
     });
@@ -202,7 +201,7 @@ describe('provider enablement gate (quality.md §10)', () => {
     expect(spawn).not.toHaveBeenCalled();
     expect(await carry(claudeOnly, payload('claude_code'))).toEqual(SUCCEEDED);
     expect(spawn).toHaveBeenCalledOnce();
-    expect(spawn.mock.calls[0]?.[0]).toBe('claude_code-cli');
+    expect(spawn.mock.calls[0]?.[0]).toBe('claude');
 
     spawn.mockClear();
     const codexOnly = { CODEX_CLI_ENABLED: 'true', CLAUDE_CODE_ENABLED: 'false' };
@@ -210,7 +209,7 @@ describe('provider enablement gate (quality.md §10)', () => {
     expect(spawn).not.toHaveBeenCalled();
     expect(await carry(codexOnly, payload('codex'))).toEqual(SUCCEEDED);
     expect(spawn).toHaveBeenCalledOnce();
-    expect(spawn.mock.calls[0]?.[0]).toBe('codex-cli');
+    expect(spawn.mock.calls[0]?.[0]).toBe('codex');
   });
 
   describe('6. an execution request cannot override provider enablement', () => {
@@ -253,7 +252,7 @@ describe('provider enablement gate (quality.md §10)', () => {
         }).toThrowError(TypeError);
         expect(gate.isEnabled('claude_code')).toBe(false);
         expect(() =>
-          spawnProviderCli(gate, { provider: 'claude_code', command: 'claude', args: [] }),
+          spawnProviderCli(cliOf(gate), { provider: 'claude_code', args: [] }),
         ).toThrowError(ProviderDisabledError);
       } finally {
         delete process.env.CLAUDE_CODE_ENABLED;
@@ -298,5 +297,56 @@ describe('provider enablement gate (quality.md §10)', () => {
     expect(await carry({ CLAUDE_CODE_ENABLED: 'false' }, request)).toEqual(disabled('claude_code'));
     expect(await carry({}, request)).toEqual(disabled('claude_code'));
     expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe("the spawn boundary starts only the provider's own binary (review of #116)", () => {
+  const enabled = new ProviderGate({ claude_code: true, codex: true });
+
+  it('resolves claude and codex from the provider by default', () => {
+    spawnProviderCli(cliOf(enabled), { provider: 'claude_code', args: ['-p'] });
+    spawnProviderCli(cliOf(enabled), { provider: 'codex', args: ['exec'] });
+
+    expect(spawn.mock.calls.map(([command, args]) => [command, args])).toEqual([
+      ['claude', ['-p']],
+      ['codex', ['exec']],
+    ]);
+  });
+
+  it('uses the configured paths (CLAUDE_CODE_BIN, CODEX_CLI_BIN)', () => {
+    const config = loadWorkerConfig({
+      ...BASE_ENV,
+      CLAUDE_CODE_BIN: '/opt/claude/bin/claude',
+      CODEX_CLI_BIN: '/usr/local/bin/codex',
+    });
+
+    spawnProviderCli(
+      { gate: enabled, binaries: config.providerBinaries },
+      {
+        provider: 'codex',
+        args: [],
+      },
+    );
+
+    expect(config.providerBinaries).toEqual({
+      claude_code: '/opt/claude/bin/claude',
+      codex: '/usr/local/bin/codex',
+    });
+    expect(spawn.mock.calls[0]?.[0]).toBe('/usr/local/bin/codex');
+  });
+
+  it('ignores a command smuggled into the request, and never runs a shell', () => {
+    const request = { provider: 'codex', args: ['exec'], command: 'rm', options: { shell: true } };
+
+    spawnProviderCli(cliOf(enabled), request as never);
+
+    expect(spawn).toHaveBeenCalledWith('codex', ['exec'], { shell: false });
+  });
+
+  it('keeps the binaries fixed for the life of the process', () => {
+    const config = loadWorkerConfig(BASE_ENV);
+    expect(() => {
+      (config.providerBinaries as Record<string, string>).codex = '/tmp/evil';
+    }).toThrowError(TypeError);
   });
 });

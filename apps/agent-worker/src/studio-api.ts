@@ -3,7 +3,7 @@ import {
   type ReportRunStepRequest,
   type RunPayload,
   runPayloadSchema,
-  type WorkerStatusRequest,
+  type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 
 /** Default timeout of one call to the Studio API. */
@@ -70,10 +70,7 @@ export class StudioApi {
   }
 
   /** Tells Studio this worker's runner mode and which providers it enables (Issue #101). */
-  async reportStatus(
-    status: WithoutWorker<WorkerStatusRequest>,
-    signal?: AbortSignal,
-  ): Promise<void> {
+  async reportStatus(status: WorkerStatusReport, signal?: AbortSignal): Promise<void> {
     await this.post('status', status, signal);
   }
 

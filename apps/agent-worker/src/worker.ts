@@ -3,7 +3,7 @@ import {
   type RunPayload,
   type RunStepResult,
   runStepResultSchema,
-  type WorkerStatusRequest,
+  type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ProviderDisabledError } from './provider-gate.js';
@@ -22,9 +22,6 @@ export type WorkerApi = Pick<
   'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'reportStatus'
 >;
 
-/** The worker's status report without its id (the API client adds it). */
-export type WorkerStatus = Omit<WorkerStatusRequest, 'workerId'>;
-
 export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
@@ -32,7 +29,7 @@ export interface AgentWorkerOptions {
    * Reported to Studio before every claim and with every heartbeat (Issue #101), so Studio
    * knows which providers this worker enables. Fixed for the life of the process.
    */
-  status: WorkerStatus;
+  status: WorkerStatusReport;
   /** Pause between two claims when there is no work, or after the API was unreachable. */
   pollMs: number;
   /** Interval of heartbeats while carrying a Run. */

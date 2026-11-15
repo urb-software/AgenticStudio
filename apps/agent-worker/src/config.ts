@@ -1,6 +1,12 @@
-import { WORKER_RUNNER_MODES, type WorkerRunnerMode } from '@agentic-studio/contracts';
+import {
+  type Provider,
+  type ProviderSwitches,
+  WORKER_RUNNER_MODES,
+  type WorkerRunnerMode,
+} from '@agentic-studio/contracts';
 import { z } from 'zod';
-import { type ProviderSwitches, readProviderSwitches } from './provider-gate.js';
+import { readProviderSwitches } from './provider-gate.js';
+import type { ProviderBinaries } from './spawn-boundary.js';
 
 /** Shortest accepted worker token; the API applies the same rule (Issue #96). */
 export const WORKER_TOKEN_MIN_LENGTH = 32;
@@ -8,6 +14,31 @@ export const WORKER_TOKEN_MIN_LENGTH = 32;
 /** Where the worker is deployed; it decides whether the fake runner is allowed (Issue #101). */
 export const WORKER_ENVIRONMENTS = ['production', 'development', 'test'] as const;
 export type WorkerEnvironment = (typeof WORKER_ENVIRONMENTS)[number];
+
+/**
+ * The provider CLI binaries the spawn boundary starts (review of #116): a command name looked up
+ * on PATH, or an absolute path. Never a relative path (it would depend on the working directory)
+ * and never arguments or shell syntax.
+ */
+export const PROVIDER_BINARY_VARIABLES = {
+  claude_code: 'CLAUDE_CODE_BIN',
+  codex: 'CODEX_CLI_BIN',
+} as const satisfies Record<Provider, string>;
+export const DEFAULT_PROVIDER_BINARIES = {
+  claude_code: 'claude',
+  codex: 'codex',
+} as const satisfies Record<Provider, string>;
+
+const binary = (fallback: string) =>
+  z
+    .string()
+    .regex(/^(?:[A-Za-z0-9._-]+|\/[^\0\r\n]+)$/, {
+      message: 'must be a command name or an absolute path',
+    })
+    .refine((value) => value !== '.' && value !== '..', {
+      message: 'must be a command name or an absolute path',
+    })
+    .default(fallback);
 
 const intervalMs = (fallback: number) =>
   z.coerce.number().int().min(100).max(600_000).default(fallback);
@@ -29,6 +60,8 @@ const environmentSchema = z.object({
   STUDIO_WORKER_RUNNER: z.enum(WORKER_RUNNER_MODES).default('cli'),
   // Production unless said otherwise; only development and test allow the fake runner.
   STUDIO_WORKER_ENVIRONMENT: z.enum(WORKER_ENVIRONMENTS).default('production'),
+  CLAUDE_CODE_BIN: binary(DEFAULT_PROVIDER_BINARIES.claude_code),
+  CODEX_CLI_BIN: binary(DEFAULT_PROVIDER_BINARIES.codex),
 });
 
 /**
@@ -60,6 +93,8 @@ export interface WorkerConfig {
   environment: WorkerEnvironment;
   /** The operator's provider switches, read once (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`). */
   providers: ProviderSwitches;
+  /** The CLI binary per provider (`CLAUDE_CODE_BIN`, `CODEX_CLI_BIN`), for the spawn boundary. */
+  providerBinaries: ProviderBinaries;
 }
 
 /** Thrown when the environment is invalid. Names variables, never their values. */
@@ -111,6 +146,10 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     environment: result.data.STUDIO_WORKER_ENVIRONMENT,
     // Not validated like the rest: a malformed switch is not an error, it is off.
     providers: readProviderSwitches(env),
+    providerBinaries: Object.freeze({
+      claude_code: result.data.CLAUDE_CODE_BIN,
+      codex: result.data.CODEX_CLI_BIN,
+    }),
   };
 }
 

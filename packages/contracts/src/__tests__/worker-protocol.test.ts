@@ -9,6 +9,9 @@ import {
   runnerEventSchema,
   runPayloadSchema,
   runStepResultSchema,
+  PROVIDER_NAMES,
+  PROVIDERS,
+  providerSwitchesSchema,
   TASK_MAX_LENGTH,
   workerStatusRequestSchema,
 } from '../index.js';
@@ -197,6 +200,11 @@ describe('worker status report (Issue #101)', () => {
     runner: 'cli',
     providers: { claude_code: true, codex: false },
   };
+
+  it('has one switch and one display name for every provider, and nothing else', () => {
+    expect(Object.keys(providerSwitchesSchema.shape)).toEqual([...PROVIDERS]);
+    expect(PROVIDER_NAMES).toEqual({ claude_code: 'Claude Code', codex: 'Codex' });
+  });
 
   it('carries the runner mode and one switch per provider', () => {
     expect(workerStatusRequestSchema.parse(report)).toEqual(report);

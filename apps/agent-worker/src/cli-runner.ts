@@ -1,5 +1,4 @@
-import type { Provider } from '@agentic-studio/contracts';
-import { PROVIDER_NAMES } from './provider-gate.js';
+import { PROVIDER_NAMES, type Provider } from '@agentic-studio/contracts';
 import { AgentFailedError, type Runner, type RunStep } from './runner.js';
 
 /**

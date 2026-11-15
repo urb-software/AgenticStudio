@@ -33,6 +33,21 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
  */
 export const AGENT_WORKER_PROCESS_FILES = ['apps/agent-worker/src/spawn-boundary.ts'];
 
+/** The agent worker's production code: its src/ outside tests. */
+const AGENT_WORKER_PRODUCTION = { path: '^apps/agent-worker/src/', pathNot: '(^|/)__tests__/' };
+
+/**
+ * What the agent worker's production code may import besides Node core modules (review of
+ * #116): its own files, the worker protocol and zod. Everything else (any other npm or
+ * workspace package, e.g. a process wrapper) is denied by default; allowing one is a reviewed
+ * change to this list.
+ */
+export const AGENT_WORKER_ALLOWED_IMPORTS = [
+  '^apps/agent-worker/src/',
+  '^packages/contracts/',
+  npmPackages('zod'),
+];
+
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',
@@ -121,10 +136,32 @@ export const monorepoGate: Gate = {
         'node:child_process.',
       severity: 'error',
       from: {
-        path: '^apps/agent-worker/',
-        pathNot: ['(^|/)__tests__/', ...AGENT_WORKER_PROCESS_FILES.map((file) => `^${file}$`)],
+        path: AGENT_WORKER_PRODUCTION.path,
+        pathNot: [
+          AGENT_WORKER_PRODUCTION.pathNot,
+          ...AGENT_WORKER_PROCESS_FILES.map((file) => `^${file}$`),
+        ],
       },
       to: { path: coreModules('child_process') },
+    },
+    {
+      name: 'mono-agent-worker-allowed-imports-only',
+      comment:
+        "Deny by default (review of #116): the agent worker's production code imports only its " +
+        'own files, @agentic-studio/contracts, zod and Node core modules, so no npm or workspace ' +
+        'package (a process wrapper, a package that spawns) can reach past the spawn boundary.',
+      severity: 'error',
+      from: AGENT_WORKER_PRODUCTION,
+      to: { pathNot: AGENT_WORKER_ALLOWED_IMPORTS, dependencyTypesNot: ['core'] },
+    },
+    {
+      name: 'mono-agent-worker-no-loader-core-modules',
+      comment:
+        "The agent worker's production code never imports node:module (createRequire would load " +
+        'child_process unseen), node:cluster or node:worker_threads (review of #116).',
+      severity: 'error',
+      from: AGENT_WORKER_PRODUCTION,
+      to: { path: coreModules('module', 'cluster', 'worker_threads') },
     },
     {
       name: 'mono-workspace-imports-resolve',

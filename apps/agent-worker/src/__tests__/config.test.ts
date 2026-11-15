@@ -32,6 +32,7 @@ describe('loadWorkerConfig', () => {
       runner: 'cli',
       environment: 'production',
       providers: { claude_code: false, codex: false },
+      providerBinaries: { claude_code: 'claude', codex: 'codex' },
     });
   });
 
@@ -96,6 +97,10 @@ describe('loadWorkerConfig', () => {
       /STUDIO_WORKER_REQUEST_TIMEOUT_MS/,
     ],
     ['an unknown runner mode', { ...env, STUDIO_WORKER_RUNNER: 'api' }, /STUDIO_WORKER_RUNNER/],
+    ['a relative CLI path', { ...env, CLAUDE_CODE_BIN: './claude' }, /CLAUDE_CODE_BIN/],
+    ['a CLI with arguments', { ...env, CODEX_CLI_BIN: 'codex --yolo' }, /CODEX_CLI_BIN/],
+    ['an empty CLI path', { ...env, CODEX_CLI_BIN: '' }, /CODEX_CLI_BIN/],
+    ['a CLI path with shell syntax', { ...env, CLAUDE_CODE_BIN: 'claude;id' }, /CLAUDE_CODE_BIN/],
     [
       'an unknown environment (not silently production or test)',
       { ...env, STUDIO_WORKER_ENVIRONMENT: 'prod', STUDIO_WORKER_RUNNER: 'fake' },
