@@ -2,26 +2,54 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { RunStartPoint, RunStartPoints } from '../../../../projects/contracts/index.js';
 import { RepositoryNotReadyError, RunProjectNotFoundError } from '../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import {
+  ProviderUnavailableError,
+  type WorkerStatus,
+} from '../../../domain/services/provider-availability.js';
+import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { StartRunHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HEAD = 'd'.repeat(40);
+const NOW = new Date('2026-11-15T12:00:00.000Z');
+const LEASE = { seconds: 60 };
+
+class InMemoryWorkerStatusStore implements WorkerStatusStore {
+  private current: WorkerStatus | undefined;
+  record(status: WorkerStatus) {
+    this.current = status;
+  }
+  latest() {
+    return this.current;
+  }
+}
 
 describe('StartRunHandler', () => {
   let runs: InMemoryRunRepository;
   let startPoint: RunStartPoint;
+  let statuses: InMemoryWorkerStatusStore;
+  const clock = { now: () => NOW };
 
   const startPoints: RunStartPoints = { forProject: () => Promise.resolve(startPoint) };
   const start = () =>
-    new StartRunHandler(runs, startPoints).execute({
+    new StartRunHandler(runs, startPoints, statuses, clock, LEASE).execute({
       projectId: PROJECT,
       provider: 'codex',
       task: 'Fix the login bug',
+    });
+  const workerReports = (codex: boolean, ageSeconds = 0) =>
+    statuses.record({
+      workerId: '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d',
+      runner: 'cli',
+      providers: { claude_code: true, codex },
+      reportedAt: new Date(NOW.getTime() - ageSeconds * 1000),
     });
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     startPoint = { status: 'ready', startCommit: HEAD };
+    statuses = new InMemoryWorkerStatusStore();
+    workerReports(true);
   });
 
   it('queues a Run that starts from the current integration branch commit', async () => {
@@ -55,5 +83,37 @@ describe('StartRunHandler', () => {
 
     await expect(start()).rejects.toEqual(new RepositoryNotReadyError(reason));
     expect(runs.runs).toEqual([]);
+  });
+
+  describe('provider availability (Issue #101)', () => {
+    it.each([
+      [
+        'the worker reports it switched off',
+        () => workerReports(false),
+        'Switched off on the agent worker',
+      ],
+      [
+        'no worker has reported',
+        () => (statuses = new InMemoryWorkerStatusStore()),
+        'No agent worker is connected',
+      ],
+      [
+        'the last report is older than the lease',
+        () => workerReports(true, 61),
+        'No agent worker is connected',
+      ],
+    ])('refuses the provider when %s, starting nothing', async (_case, arrange, reason) => {
+      arrange();
+
+      await expect(start()).rejects.toEqual(new ProviderUnavailableError('codex', reason as never));
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('checks the project and its Repository first', async () => {
+      statuses = new InMemoryWorkerStatusStore();
+      startPoint = { status: 'project_not_found' };
+
+      await expect(start()).rejects.toBeInstanceOf(RunProjectNotFoundError);
+    });
   });
 });

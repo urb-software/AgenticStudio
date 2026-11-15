@@ -9,10 +9,12 @@ import {
 import {
   EXECUTIONS_PROBLEM_TYPES,
   projectNotFound,
+  providerUnavailable,
   repositoryNotReady,
 } from '../../contracts/http/problems.js';
 import { RunResponseDto, toRunResponse } from '../../contracts/http/run-response.js';
 import { RepositoryNotReadyError, RunProjectNotFoundError } from '../../domain/entities/run.js';
+import { ProviderUnavailableError } from '../../domain/services/provider-availability.js';
 import { StartRunHandler } from './handler.js';
 import { startRunRequestSchema, StartRunRequestDto } from './schema.js';
 
@@ -33,7 +35,10 @@ export class StartRunEndpoint {
   @ZodResponse({ status: 201, type: RunResponseDto })
   @ApiProblemResponses({
     404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})`,
-    409: `The project's repository is missing or not ready (${EXECUTIONS_PROBLEM_TYPES.repositoryNotReady})`,
+    409:
+      `The project's repository is missing or not ready (${EXECUTIONS_PROBLEM_TYPES.repositoryNotReady}), ` +
+      'or the provider is switched off on the agent worker or no agent worker is connected ' +
+      `(${EXECUTIONS_PROBLEM_TYPES.providerUnavailable})`,
     422: 'Invalid request body (field errors)',
   })
   async start(@Param('id') projectId: string, @Body() body: unknown) {
@@ -50,6 +55,7 @@ export class StartRunEndpoint {
     } catch (error) {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
       if (error instanceof RepositoryNotReadyError) throw repositoryNotReady(error.message);
+      if (error instanceof ProviderUnavailableError) throw providerUnavailable(error.reason);
       throw error;
     }
   }

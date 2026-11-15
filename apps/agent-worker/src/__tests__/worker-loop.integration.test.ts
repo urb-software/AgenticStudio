@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FakeRunner } from '../fake-runner.js';
+import { ProviderGate, type ProviderSwitches } from '../provider-gate.js';
+import { RunnerDispatcher } from '../runner-dispatcher.js';
 import { StudioApi } from '../studio-api.js';
 import { AgentWorker } from '../worker.js';
 
@@ -28,6 +30,8 @@ const OPERATOR_PASSWORD = randomBytes(18).toString('base64');
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 
 type RunView = { id: string; state: string; failure?: { code: string; detail: string } };
+
+const BOTH_ENABLED: ProviderSwitches = { claude_code: true, codex: true };
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -62,10 +66,14 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
   const logger = { info: () => undefined, error: () => undefined };
 
-  function startWorker(token = WORKER_TOKEN): AgentWorker {
+  /** The worker as main.ts composes it in fake mode (Issue #101): the gate before the runner. */
+  function startWorker(token = WORKER_TOKEN, providers = BOTH_ENABLED): AgentWorker {
+    const gate = new ProviderGate(providers);
+    const fake = new FakeRunner({ slowMs: 60_000 });
     const worker = new AgentWorker({
       api: new StudioApi({ apiUrl, token, workerId: randomUUID() }),
-      runner: new FakeRunner({ slowMs: 60_000 }),
+      runner: new RunnerDispatcher(gate, { claude_code: fake, codex: fake }),
+      status: { runner: 'fake', providers: gate.snapshot() },
       pollMs: 50,
       heartbeatMs: 200,
       logger,
@@ -89,12 +97,25 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     return project!.id;
   }
 
-  async function startRun(task: string): Promise<string> {
-    const response = await fetch(`${apiUrl}/api/projects/${await readyProject()}/runs`, {
+  /** A connected worker's status report, so Studio accepts new Runs (Issue #101). */
+  async function announceWorker(providers = BOTH_ENABLED): Promise<void> {
+    await new StudioApi({ apiUrl, token: WORKER_TOKEN, workerId: randomUUID() }).reportStatus({
+      runner: 'fake',
+      providers,
+    });
+  }
+
+  function requestRun(task: string, projectId: string) {
+    return fetch(`${apiUrl}/api/projects/${projectId}/runs`, {
       method: 'POST',
       headers: { Origin: STUDIO_ORIGIN, Cookie: cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ task, provider: 'claude_code' }),
     });
+  }
+
+  async function startRun(task: string): Promise<string> {
+    await announceWorker();
+    const response = await requestRun(task, await readyProject());
     expect(response.status).toBe(201);
     return ((await response.json()) as RunView).id;
   }
@@ -253,5 +274,54 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     await delay(500);
 
     expect((await getRun(runId)).state).toBe('queued');
+  });
+
+  describe('provider switches (Issue #101)', () => {
+    it('fails a Run for a provider switched off on the worker with provider_disabled', async () => {
+      // Studio accepted the Run while a worker enabled Claude Code; the worker that claims it
+      // has it switched off. The worker's own check is authoritative.
+      const runId = await startRun('CLAUDE_CODE_ENABLED=true [fake:success]');
+      startWorker(WORKER_TOKEN, { claude_code: false, codex: true });
+
+      const run = await runReaches(runId, ['succeeded', 'failed']);
+
+      expect(run).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'provider_disabled',
+          detail: expect.stringContaining('Claude Code is switched off on the agent worker.'),
+        },
+      });
+    });
+
+    it('refuses to start a Run for a provider the worker reports switched off, and lists why', async () => {
+      startWorker(WORKER_TOKEN, { claude_code: false, codex: true });
+      const projectId = await readyProject();
+      const providers = () =>
+        fetch(`${apiUrl}/api/providers`, { headers: { Cookie: cookie } }).then(
+          (response) => response.json() as Promise<{ id: string; reason?: string }[]>,
+        );
+
+      const listed = await until(
+        providers,
+        (list) => list[0]?.reason !== undefined && list[1]?.reason === undefined,
+      );
+      const refused = await requestRun('Add a health check', projectId);
+
+      expect(listed).toEqual([
+        {
+          id: 'claude_code',
+          name: 'Claude Code',
+          available: false,
+          reason: 'Switched off on the agent worker',
+        },
+        { id: 'codex', name: 'Codex', available: true },
+      ]);
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({
+        type: 'urn:agentic-studio:problem:provider-unavailable',
+        detail: 'Switched off on the agent worker',
+      });
+    });
   });
 });

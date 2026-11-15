@@ -1,4 +1,5 @@
 import {
+  coreModules,
   npmPackages,
   ORM_PACKAGES,
   SERVER_PACKAGES,
@@ -24,6 +25,13 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
   allowed: [],
   forbidden: ['@agentic-studio/contracts', '@agentic-studio/database', '@agentic-studio/testing'],
 };
+
+/**
+ * The agent worker's production files allowed to import `node:child_process` (Issue #101):
+ * only the spawn boundary, which checks the provider gate before it creates a process. Adding
+ * a file here is a reviewed architecture change.
+ */
+export const AGENT_WORKER_PROCESS_FILES = ['apps/agent-worker/src/spawn-boundary.ts'];
 
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
@@ -104,6 +112,19 @@ export const monorepoGate: Gate = {
       severity: 'error',
       from: { path: '^apps/agent-worker/', pathNot: '(^|/)__tests__/' },
       to: { path: '^apps/agent-worker/.*__tests__/' },
+    },
+    {
+      name: 'mono-agent-worker-spawn-boundary-only',
+      comment:
+        "Provider CLIs start only through the agent worker's spawn boundary, which checks the " +
+        'provider switch (security.md §2, Issue #101): no other production file imports ' +
+        'node:child_process.',
+      severity: 'error',
+      from: {
+        path: '^apps/agent-worker/',
+        pathNot: ['(^|/)__tests__/', ...AGENT_WORKER_PROCESS_FILES.map((file) => `^${file}$`)],
+      },
+      to: { path: coreModules('child_process') },
     },
     {
       name: 'mono-workspace-imports-resolve',

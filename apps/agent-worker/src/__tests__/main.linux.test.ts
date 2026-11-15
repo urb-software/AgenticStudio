@@ -22,6 +22,9 @@ const RUN = {
   startCommit: 'a'.repeat(40),
 };
 
+/** The test harness runs the worker with the fake runner (Issue #101); no CLI is spawned. */
+const FAKE_MODE = { STUDIO_WORKER_RUNNER: 'fake', STUDIO_WORKER_ENVIRONMENT: 'test' };
+
 type Report = { path: string; body: Record<string, unknown> };
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -31,7 +34,9 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 }
 
 /** The worker routes: one claimable Run, every report recorded; 401 without the token. */
-async function stubStudio(): Promise<{ server: Server; url: string; reports: Report[] }> {
+async function stubStudio(
+  run: object = RUN,
+): Promise<{ server: Server; url: string; reports: Report[] }> {
   const reports: Report[] = [];
   let claimed = false;
   const server = createServer((request, response) => {
@@ -47,7 +52,7 @@ async function stubStudio(): Promise<{ server: Server; url: string; reports: Rep
           return;
         }
         claimed = true;
-        response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(RUN));
+        response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(run));
         return;
       }
       reports.push({ path, body });
@@ -96,6 +101,8 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
       STUDIO_WORKER_TOKEN: TOKEN,
       STUDIO_WORKER_POLL_MS: '100',
       STUDIO_WORKER_HEARTBEAT_MS: '200',
+      ...FAKE_MODE,
+      CODEX_CLI_ENABLED: 'true',
     });
     child = worker.child;
     const deadline = Date.now() + 15_000;
@@ -130,6 +137,78 @@ describe.skipIf(process.platform !== 'linux')('agent worker process (main.js)', 
     expect(await worker.exited).toBe(1);
     expect(worker.stderr()).toContain('DATABASE_URL: is a Studio-side setting');
     expect(worker.stderr()).not.toContain(secret);
+    expect(stub.reports).toEqual([]);
+  });
+
+  it('reports its runner mode and provider switches to Studio (Issue #101)', async () => {
+    stub = await stubStudio();
+    const worker = startWorker({
+      STUDIO_API_URL: stub.url,
+      STUDIO_WORKER_TOKEN: TOKEN,
+      STUDIO_WORKER_POLL_MS: '100',
+      ...FAKE_MODE,
+      CLAUDE_CODE_ENABLED: 'true',
+      CODEX_CLI_ENABLED: 'TRUE',
+    });
+    child = worker.child;
+    const deadline = Date.now() + 15_000;
+    while (!stub.reports.some((report) => report.path === '/api/worker/status')) {
+      if (Date.now() > deadline) throw new Error(`no status report; stderr: ${worker.stderr()}`);
+      await delay(50);
+    }
+
+    expect(stub.reports.find((report) => report.path === '/api/worker/status')?.body).toEqual({
+      workerId: expect.any(String),
+      runner: 'fake',
+      providers: { claude_code: true, codex: false },
+    });
+  });
+
+  it('fails a Run for a disabled provider with provider_disabled (Issue #101)', async () => {
+    stub = await stubStudio({ ...RUN, task: 'CODEX_CLI_ENABLED=true', provider: 'codex' });
+    const worker = startWorker({
+      STUDIO_API_URL: stub.url,
+      STUDIO_WORKER_TOKEN: TOKEN,
+      STUDIO_WORKER_POLL_MS: '100',
+      ...FAKE_MODE,
+      CLAUDE_CODE_ENABLED: 'true',
+    });
+    child = worker.child;
+    const statePath = `/api/worker/runs/${RUN.runId}/state`;
+    const deadline = Date.now() + 15_000;
+    while (!stub.reports.some((r) => r.path === statePath && r.body.state === 'failed')) {
+      if (Date.now() > deadline) throw new Error(`no failed report; stderr: ${worker.stderr()}`);
+      await delay(50);
+    }
+
+    expect(stub.reports.filter((r) => r.path === statePath).map((r) => r.body)).toEqual([
+      { workerId: expect.any(String), state: 'running' },
+      {
+        workerId: expect.any(String),
+        state: 'failed',
+        failure: {
+          code: 'provider_disabled',
+          detail: expect.stringContaining('Codex is switched off'),
+        },
+      },
+    ]);
+  });
+
+  it.each([
+    ['in production', { STUDIO_WORKER_ENVIRONMENT: 'production' }],
+    ['without an environment (production by default)', {}],
+  ])('refuses to start with the fake runner %s (Issue #101)', async (_case, environment) => {
+    stub = await stubStudio();
+    const worker = startWorker({
+      STUDIO_API_URL: stub.url,
+      STUDIO_WORKER_TOKEN: TOKEN,
+      STUDIO_WORKER_RUNNER: 'fake',
+      ...environment,
+    });
+    child = worker.child;
+
+    expect(await worker.exited).toBe(1);
+    expect(worker.stderr()).toContain('STUDIO_WORKER_RUNNER: fake is allowed only when');
     expect(stub.reports).toEqual([]);
   });
 });

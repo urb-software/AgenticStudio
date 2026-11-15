@@ -10,6 +10,7 @@ import {
   runPayloadSchema,
   runStepResultSchema,
   TASK_MAX_LENGTH,
+  workerStatusRequestSchema,
 } from '../index.js';
 
 // Issue #96: the worker protocol is defined once here and shared by the API and the agent
@@ -187,5 +188,32 @@ describe('size of a structured result (review finding 4 on #111)', () => {
       result: resultOf(RUN_STEP_RESULT_MAX_BYTES),
     };
     expect(jsonByteLength(body)).toBeLessThan(100 * 1024);
+  });
+});
+
+describe('worker status report (Issue #101)', () => {
+  const report = {
+    workerId: WORKER_ID,
+    runner: 'cli',
+    providers: { claude_code: true, codex: false },
+  };
+
+  it('carries the runner mode and one switch per provider', () => {
+    expect(workerStatusRequestSchema.parse(report)).toEqual(report);
+    expect(workerStatusRequestSchema.safeParse({ ...report, runner: 'fake' }).success).toBe(true);
+  });
+
+  it.each([
+    ['an unknown runner mode', { ...report, runner: 'api' }],
+    ['a missing provider', { ...report, providers: { claude_code: true } }],
+    ['an unknown provider', { ...report, providers: { ...report.providers, gpt: true } }],
+    [
+      'a switch that is not a boolean',
+      { ...report, providers: { claude_code: 'true', codex: false } },
+    ],
+    ['an extra field', { ...report, environment: 'production' }],
+    ['no worker id', { runner: 'cli', providers: report.providers }],
+  ])('refuses %s', (_case, body) => {
+    expect(workerStatusRequestSchema.safeParse(body).success).toBe(false);
   });
 });

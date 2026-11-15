@@ -12,6 +12,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runNotFound: 'urn:agentic-studio:problem:run-not-found',
   /** 409: the project has no Repository, or it is not ready. */
   repositoryNotReady: 'urn:agentic-studio:problem:repository-not-ready',
+  /** 409: the provider is switched off on the agent worker, or no agent worker is connected. */
+  providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
   /** 409 (worker routes): the reporting agent worker does not hold the Run. */
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   /** 409 (worker routes): the reported state does not follow from the Run's state. */
@@ -41,6 +43,15 @@ export function repositoryNotReady(detail: string): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.repositoryNotReady,
     title: 'Repository not ready',
+    detail,
+  });
+}
+
+/** 409 when Studio knows the Run's provider is unavailable; `detail` says why. */
+export function providerUnavailable(detail: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.providerUnavailable,
+    title: 'Provider unavailable',
     detail,
   });
 }

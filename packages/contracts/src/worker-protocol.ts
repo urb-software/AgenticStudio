@@ -147,3 +147,23 @@ export const runnerEventSchema = z.strictObject({
   text: z.string().max(20_000),
 });
 export type RunnerEvent = z.infer<typeof runnerEventSchema>;
+
+/**
+ * How the agent worker carries out Runs (Issue #101): `cli` starts the provider's official CLI
+ * (production); `fake` uses the scripted fake runner and is allowed only in development and
+ * test configurations of the worker.
+ */
+export const WORKER_RUNNER_MODES = ['fake', 'cli'] as const;
+export type WorkerRunnerMode = (typeof WORKER_RUNNER_MODES)[number];
+
+/**
+ * `POST /api/worker/status` body (Issue #101): the worker's runner mode and which providers its
+ * own configuration enables, sent when it starts and with every poll. It is a report for
+ * display and for refusing hopeless starts; the worker's own check stays authoritative.
+ */
+export const workerStatusRequestSchema = z.strictObject({
+  workerId: workerIdSchema,
+  runner: z.enum(WORKER_RUNNER_MODES),
+  providers: z.strictObject({ claude_code: z.boolean(), codex: z.boolean() }),
+});
+export type WorkerStatusRequest = z.infer<typeof workerStatusRequestSchema>;

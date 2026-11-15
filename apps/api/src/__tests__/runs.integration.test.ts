@@ -40,7 +40,10 @@ const PROBLEM = {
   repositoryNotReady: 'urn:agentic-studio:problem:repository-not-ready',
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
+  providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
 };
+
+const BOTH_ENABLED = { claude_code: true, codex: true };
 
 describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)', () => {
   let services: StudioServices;
@@ -97,6 +100,18 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
     worker(`${runId}/steps`, { workerId, kind: 'start', result });
   const heartbeat = (runId: string, workerId = W1) => worker(`${runId}/heartbeat`, { workerId });
 
+  /** `POST /api/worker/status` as the agent worker sends it (Issue #101). */
+  const workerStatus = (
+    providers: object = BOTH_ENABLED,
+    workerId = W1,
+    token: string | null = WORKER_TOKEN,
+  ) => {
+    const call = http().post('/api/worker/status');
+    if (token !== null) call.set('Authorization', `Bearer ${token}`);
+    return call.send({ workerId, runner: 'cli', providers });
+  };
+  const providers = () => http().get('/api/providers').set('Cookie', cookie);
+
   beforeAll(async () => {
     services = await startStudioServices();
     app = await startStudioApp(
@@ -115,6 +130,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
     // Test isolation only; CASCADE also empties runs and run_steps.
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
     clock.current = new Date();
+    // A connected agent worker with both providers switched on (Issue #101).
+    expect((await workerStatus()).status).toBe(204);
   });
 
   describe('operator endpoints', () => {
@@ -236,6 +253,115 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           .send({ task: 'x', provider: 'codex' }),
         401,
       );
+    });
+  });
+
+  describe('provider availability (Issue #101)', () => {
+    const NO_WORKER = 'No agent worker is connected';
+    const SWITCHED_OFF = 'Switched off on the agent worker';
+
+    it('lists the providers the connected worker enables', async () => {
+      const response = await providers();
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual([
+        { id: 'claude_code', name: 'Claude Code', available: true },
+        { id: 'codex', name: 'Codex', available: true },
+      ]);
+    });
+
+    it('shows a provider switched off on the worker as unavailable and refuses to start it', async () => {
+      const project = await readyProject('Shop');
+      expect((await workerStatus({ claude_code: true, codex: false })).status).toBe(204);
+
+      expect((await providers()).body).toEqual([
+        { id: 'claude_code', name: 'Claude Code', available: true },
+        { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
+      ]);
+      const refused = await startRun(project.id, { task: 'x', provider: 'codex' });
+      expectProblem(refused, 409, PROBLEM.providerUnavailable);
+      expect(refused.body.detail).toBe(SWITCHED_OFF);
+      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([]);
+      expect((await startRun(project.id, { task: 'x', provider: 'claude_code' })).status).toBe(201);
+    });
+
+    it('takes the latest report: a worker restarted with a provider switched off', async () => {
+      const project = await readyProject('Shop');
+      expect((await workerStatus({ claude_code: false, codex: true }, W2)).status).toBe(204);
+
+      const refused = await startRun(project.id, { task: 'x', provider: 'claude_code' });
+
+      expectProblem(refused, 409, PROBLEM.providerUnavailable);
+      expect(refused.body.detail).toBe(SWITCHED_OFF);
+    });
+
+    it('counts a worker silent for longer than the lease as not connected', async () => {
+      const project = await readyProject('Shop');
+      advance(LEASE_SECONDS);
+      expect((await providers()).body.every((p: { available: boolean }) => p.available)).toBe(true);
+
+      advance(1);
+
+      expect((await providers()).body).toEqual([
+        { id: 'claude_code', name: 'Claude Code', available: false, reason: NO_WORKER },
+        { id: 'codex', name: 'Codex', available: false, reason: NO_WORKER },
+      ]);
+      const refused = await startRun(project.id, { task: 'x', provider: 'claude_code' });
+      expectProblem(refused, 409, PROBLEM.providerUnavailable);
+      expect(refused.body.detail).toBe(NO_WORKER);
+    });
+
+    it('offers no provider before any worker has reported', async () => {
+      const fresh = await startStudioApp(
+        { ...services.config, workerToken: WORKER_TOKEN_DIGEST },
+        WITHOUT_QUEUE_WORKERS,
+      );
+      try {
+        const response = await request(fresh.getHttpServer())
+          .get('/api/providers')
+          .set('Cookie', await signIn(fresh));
+        expect(response.body).toEqual([
+          { id: 'claude_code', name: 'Claude Code', available: false, reason: NO_WORKER },
+          { id: 'codex', name: 'Codex', available: false, reason: NO_WORKER },
+        ]);
+      } finally {
+        await fresh.close();
+      }
+    });
+
+    it('requires the operator session to list providers; the worker token grants nothing', async () => {
+      expectProblem(await http().get('/api/providers'), 401);
+      expectProblem(
+        await http().get('/api/providers').set('Authorization', `Bearer ${WORKER_TOKEN}`),
+        401,
+      );
+    });
+
+    it('accepts status reports with the worker token only', async () => {
+      const off = { claude_code: false, codex: false };
+      expectProblem(await workerStatus(off, W1, null), 401);
+      expectProblem(await workerStatus(off, W1, randomBytes(32).toString('base64')), 401);
+      expectProblem(
+        await http()
+          .post('/api/worker/status')
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+          .send({ workerId: W1, runner: 'cli', providers: off }),
+        401,
+      );
+
+      expect((await providers()).body.every((p: { available: boolean }) => p.available)).toBe(true);
+    });
+
+    it.each([
+      ['a switch sent as text', { claude_code: 'true', codex: true }],
+      ['a missing provider', { claude_code: true }],
+      ['an unknown provider', { ...BOTH_ENABLED, gpt: true }],
+    ])('rejects a status report with %s (400) and keeps the last one', async (_case, body) => {
+      await workerStatus({ claude_code: false, codex: false });
+
+      expectProblem(await workerStatus(body), 400);
+
+      expect((await providers()).body.some((p: { available: boolean }) => p.available)).toBe(false);
     });
   });
 

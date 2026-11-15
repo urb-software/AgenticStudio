@@ -41,6 +41,12 @@ describeGate('monorepo', monorepoGate, '.', [
     fixture: 'agent-worker-imports-test-code',
     expected: ['mono-agent-worker-production-no-test-code'],
   },
+  // Provider CLIs start only through the spawn boundary (Issue #101).
+  { fixture: 'agent-worker-spawns-through-boundary', expected: [] },
+  {
+    fixture: 'agent-worker-imports-child-process',
+    expected: ['mono-agent-worker-spawn-boundary-only'],
+  },
 ]);
 
 describe('architecture:monorepo web package classification', () => {

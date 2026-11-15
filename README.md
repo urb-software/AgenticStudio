@@ -96,12 +96,29 @@ cp .env.example .env
 | `STUDIO_GIT_ALLOW_PRIVATE_REMOTES` | API | Default `false`. `true` lets Studio connect to Git remotes on loopback and private addresses (`127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`, `fec0::/10`), e.g. a self-hosted Git server on your LAN. Link-local and cloud metadata addresses are refused regardless. See [Remote address policy](#remote-address-policy). |
 | `STUDIO_GIT_ALLOW_FILE_REMOTES` | API | Test-only. `true` lets the Git adapter use local `file://` fixture remotes. Accepted only with `NODE_ENV=test`; any other environment refuses to start. |
 | `STUDIO_WORKER_TOKEN` | API | Optional. The token the agent worker sends on the worker routes (`/api/worker/`): at least 32 characters, e.g. `openssl rand -base64 32`; copy the same value into the agent worker's own `apps/agent-worker/.env`. Unset or empty: every worker route rejects. Never logged; only its SHA-256 digest is kept in memory. |
-| Agent worker settings | agent worker | Not in this file. The worker has its own `apps/agent-worker/.env` (from `apps/agent-worker/.env.example`): `STUDIO_API_URL`, `STUDIO_WORKER_TOKEN` (the same value as the API's), `STUDIO_WORKER_POLL_MS`, `STUDIO_WORKER_HEARTBEAT_MS`, optional `STUDIO_WORKER_REQUEST_TIMEOUT_MS` (default 30000). It never reads the root `.env`, runs on Linux only, and refuses to start if `DATABASE_URL`, `REDIS_URL`, `STUDIO_SECRETS_KEY`, `STUDIO_OPERATOR_PASSWORD_HASH` or `POSTGRES_PASSWORD` is in its environment. Until provider adapters exist it carries every Run with the fake runner. |
+| Agent worker settings | agent worker | Not in this file. The worker has its own `apps/agent-worker/.env` (from `apps/agent-worker/.env.example`): `STUDIO_API_URL`, `STUDIO_WORKER_TOKEN` (the same value as the API's), `STUDIO_WORKER_POLL_MS`, `STUDIO_WORKER_HEARTBEAT_MS`, optional `STUDIO_WORKER_REQUEST_TIMEOUT_MS` (default 30000). Also `CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`, `STUDIO_WORKER_RUNNER` and `STUDIO_WORKER_ENVIRONMENT`: see [Provider switches (agent worker)](#provider-switches-agent-worker). It never reads the root `.env`, runs on Linux only, and refuses to start if `DATABASE_URL`, `REDIS_URL`, `STUDIO_SECRETS_KEY`, `STUDIO_OPERATOR_PASSWORD_HASH` or `POSTGRES_PASSWORD` is in its environment. |
 | `STUDIO_WORKER_LEASE_SECONDS` | API | Default `60` (10–3600). A Run claimed by an agent worker that sends no heartbeat for this long fails with `worker_lost`. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
 | `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
 
 The API validates its environment with Zod at start-up (`apps/api/src/platform/config`) and exits with a list of the invalid variable names (never their values) instead of starting half-configured.
+
+### Provider switches (agent worker)
+
+The agent worker starts a provider's CLI only when that provider's switch in its own `apps/agent-worker/.env` is on ([Security](docs/engineering/security.md) §2):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CLAUDE_CODE_ENABLED` | off | Claude Code. Only the exact value `true` turns it on; missing, empty, `false`, `1`, `yes`, `TRUE` or anything else is off. |
+| `CODEX_CLI_ENABLED` | off | Codex CLI, by the same rule. Each provider has its own switch: one never turns on the other. |
+| `STUDIO_WORKER_RUNNER` | `cli` | `cli` starts the provider's official CLI; `fake` uses the scripted fake runner (no CLI, no network). |
+| `STUDIO_WORKER_ENVIRONMENT` | `production` | `production`, `development` or `test`. The worker refuses to start with `STUDIO_WORKER_RUNNER=fake` in `production`. |
+
+- **Both switches default to off.** Turning one on is a separate operator action, taken only after the provider's compliance record under `docs/engineering/provider-compliance/` is `Approved` and still applicable; setting the switch is not itself a compliance or terms approval. When an approval no longer applies, the operator turns the switch off before any further Run.
+- The switches live only in the worker's configuration: not in the database, not settable through the API, and nothing in a Run (Task, agent definition, repository content, tool or MCP output, model output) changes them. The worker reads them once at start; restart it after a change.
+- A Run for a switched-off provider fails with `provider_disabled`. The worker checks the switch before every Run step, in both runner modes, and again at the single place that starts a CLI process.
+- The worker reports its runner mode and switches to Studio before every claim and with every heartbeat. `GET /api/providers` shows a switched-off provider, or every provider when no worker has reported within `STUDIO_WORKER_LEASE_SECONDS`, as unavailable with the reason, and Studio refuses to start such a Run (409). The worker's own check stays authoritative.
+- The provider CLI runners do not exist yet (Claude Code: #105, Codex: #106): in `cli` mode a Run for a switched-on provider fails with `agent_failed` and a clear message, and no CLI is started. Development and tests use `STUDIO_WORKER_RUNNER=fake` with `STUDIO_WORKER_ENVIRONMENT=development` or `test`.
 
 ### Repository features (Linux only)
 

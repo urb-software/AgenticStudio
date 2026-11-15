@@ -1,7 +1,13 @@
+import { WORKER_RUNNER_MODES, type WorkerRunnerMode } from '@agentic-studio/contracts';
 import { z } from 'zod';
+import { type ProviderSwitches, readProviderSwitches } from './provider-gate.js';
 
 /** Shortest accepted worker token; the API applies the same rule (Issue #96). */
 export const WORKER_TOKEN_MIN_LENGTH = 32;
+
+/** Where the worker is deployed; it decides whether the fake runner is allowed (Issue #101). */
+export const WORKER_ENVIRONMENTS = ['production', 'development', 'test'] as const;
+export type WorkerEnvironment = (typeof WORKER_ENVIRONMENTS)[number];
 
 const intervalMs = (fallback: number) =>
   z.coerce.number().int().min(100).max(600_000).default(fallback);
@@ -19,6 +25,10 @@ const environmentSchema = z.object({
   STUDIO_WORKER_HEARTBEAT_MS: intervalMs(10_000),
   // Longest wait for one call to the Studio API before it is abandoned.
   STUDIO_WORKER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(30_000),
+  // How Runs are carried out (Issue #101): the provider CLI, or the scripted fake runner.
+  STUDIO_WORKER_RUNNER: z.enum(WORKER_RUNNER_MODES).default('cli'),
+  // Production unless said otherwise; only development and test allow the fake runner.
+  STUDIO_WORKER_ENVIRONMENT: z.enum(WORKER_ENVIRONMENTS).default('production'),
 });
 
 /**
@@ -45,6 +55,11 @@ export interface WorkerConfig {
   heartbeatMs: number;
   /** Timeout of one call to the Studio API. */
   requestTimeoutMs: number;
+  /** `cli` (default) or `fake`; `fake` only in a development or test environment. */
+  runner: WorkerRunnerMode;
+  environment: WorkerEnvironment;
+  /** The operator's provider switches, read once (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`). */
+  providers: ProviderSwitches;
 }
 
 /** Thrown when the environment is invalid. Names variables, never their values. */
@@ -77,12 +92,25 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
       result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
     );
   }
+  if (
+    result.data.STUDIO_WORKER_RUNNER === 'fake' &&
+    result.data.STUDIO_WORKER_ENVIRONMENT === 'production'
+  ) {
+    throw new WorkerConfigError([
+      'STUDIO_WORKER_RUNNER: fake is allowed only when STUDIO_WORKER_ENVIRONMENT is ' +
+        'development or test (the default environment is production)',
+    ]);
+  }
   return {
     apiUrl: result.data.STUDIO_API_URL.replace(/\/+$/, ''),
     token: result.data.STUDIO_WORKER_TOKEN,
     pollMs: result.data.STUDIO_WORKER_POLL_MS,
     heartbeatMs: result.data.STUDIO_WORKER_HEARTBEAT_MS,
     requestTimeoutMs: result.data.STUDIO_WORKER_REQUEST_TIMEOUT_MS,
+    runner: result.data.STUDIO_WORKER_RUNNER,
+    environment: result.data.STUDIO_WORKER_ENVIRONMENT,
+    // Not validated like the rest: a malformed switch is not an error, it is off.
+    providers: readProviderSwitches(env),
   };
 }
 
