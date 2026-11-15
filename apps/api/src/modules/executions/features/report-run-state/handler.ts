@@ -6,6 +6,7 @@ import {
   isFinal,
   isRunId,
   OPERATOR_CANCELLATION,
+  OPERATOR_CANCELLATION_BRANCH_PUSHED,
   type Run,
   type RunDeliveryOutcome,
   type RunFailure,
@@ -94,8 +95,14 @@ export class ReportRunStateHandler {
         to,
         failure: to === 'failed' ? input.failure : null,
         workingCopy: keepsWorkingCopy ? (input.workingCopy ?? null) : null,
-        delivery: to === 'succeeded' ? (input.delivery ?? null) : null,
-        cancellation: to === 'cancelled' ? OPERATOR_CANCELLATION : null,
+        // A cancel that arrived during the delivery keeps what was delivered (review of #121).
+        delivery: to === 'succeeded' || to === 'cancelled' ? (input.delivery ?? null) : null,
+        cancellation:
+          to !== 'cancelled'
+            ? null
+            : input.delivery?.outcome === 'none' && input.delivery.branchPushed
+              ? OPERATOR_CANCELLATION_BRANCH_PUSHED
+              : OPERATOR_CANCELLATION,
         cancelRequested,
         now: this.clock.now(),
       });

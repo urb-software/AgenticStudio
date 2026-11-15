@@ -49,6 +49,7 @@ describe('fakeScenarioOf', () => {
     ['[fake:commit] Add a file', 'commit'],
     ['[fake:dirty]', 'dirty'],
     ['[fake:stubborn]', 'stubborn'],
+    ['[fake:long]', 'long'],
     ['[fake:checks-failed] Add a file', 'checks-failed'],
     ['[fake:secret]', 'secret'],
     ['Print it [fake:print-env]', 'print-env'],
@@ -113,6 +114,13 @@ describe('FakeRunner', () => {
     const abort = new AbortController();
     const pending = start('[fake:slow]', abort.signal, 60_000);
     abort.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('works on a long step until it is aborted (Issue #100: a Run to cancel)', async () => {
+    const abort = new AbortController();
+    const pending = start('[fake:long]', abort.signal, 10);
+    setTimeout(() => abort.abort(), 30);
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 

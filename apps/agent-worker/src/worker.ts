@@ -207,7 +207,14 @@ export class AgentWorker {
   private async carry(run: RunPayload): Promise<void> {
     const { api, logger, heartbeatMs } = this.options;
     const abort = new AbortController();
+    // A delivery is not interrupted by the operator's cancel (review of #121): it finishes, and
+    // the cancelled Run records what it pushed. Losing the Run or stopping the worker still
+    // interrupts it.
+    const deliveryAbort = new AbortController();
     const stop = (reason: StopReason) => {
+      if (reason !== 'cancel' && !deliveryAbort.signal.aborted) {
+        deliveryAbort.abort(new StepStoppedError(reason));
+      }
       if (!abort.signal.aborted) abort.abort(new StepStoppedError(reason));
     };
     this.stopCurrent = stop;
@@ -326,10 +333,26 @@ export class AgentWorker {
         abort.signal.throwIfAborted();
         // From here a stop or a crash leaves a delivery to retry, not a lost Run (review of #122).
         this.delivering = true;
-        const delivery = await this.options.deliveries.deliver(prepared, run, result, abort.signal);
-        outbox.send('succeeded', (signal) =>
-          api.reportState(run.runId, { state: 'succeeded', delivery }, signal),
+        const delivery = await this.options.deliveries.deliver(
+          prepared,
+          run,
+          result,
+          deliveryAbort.signal,
         );
+        deliveryAbort.signal.throwIfAborted();
+        if (abort.signal.aborted) {
+          // Cancelled while the delivery ran: the Run ends cancelled with what was delivered,
+          // so a pushed branch or an opened pull request is never left without a trace.
+          logger.info(`Run ${run.runId}: cancelled during its delivery (${delivery.outcome}).`);
+          await this.removeContainers(run);
+          outbox.send('cancelled', (signal) =>
+            api.reportState(run.runId, { state: 'cancelled', delivery }, signal),
+          );
+        } else {
+          outbox.send('succeeded', (signal) =>
+            api.reportState(run.runId, { state: 'succeeded', delivery }, signal),
+          );
+        }
       }
       await outbox.drain();
       if (outbox.lost) logger.error(`Run ${run.runId} is no longer held by this worker.`);
@@ -539,8 +562,14 @@ export class AgentWorker {
     }
     if (reason === 'cancel' || reason === 'timeout') {
       const state = reason === 'cancel' ? 'cancelled' : 'timed_out';
+      // Cancelled while delivering, after the push but before a pull request (review of #124):
+      // the pushed Run branch is recorded.
+      const pushed =
+        reason === 'cancel' && error instanceof DeliveryFailedError && error.branchPushed
+          ? { delivery: { outcome: 'none' as const, branchPushed: true as const } }
+          : {};
       outbox.send(state, (signal) =>
-        api.reportState(run.runId, { state, ...withWorkingCopy }, signal),
+        api.reportState(run.runId, { state, ...withWorkingCopy, ...pushed }, signal),
       );
       await outbox.drain();
       logger.info(`Run ${run.runId} reported: ${state}.`);

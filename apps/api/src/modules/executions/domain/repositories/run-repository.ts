@@ -186,7 +186,7 @@ export interface RunRepository {
 
   /**
    * Studio's backstop for the step time limit (review of #121): every `running` Run whose
-   * current step started more than its `stepMinutes` plus `graceMinutes` before `now` →
+   * current step (not yet reported) started more than its `stepMinutes` plus `graceMinutes` before `now` →
    * `timed_out`, released and finished at `now`. Returns how many.
    */
   timeOutOverdueSteps(now: Date, graceMinutes: number): Promise<number>;

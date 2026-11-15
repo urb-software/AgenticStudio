@@ -430,7 +430,14 @@ export type PullRequestRef = z.infer<typeof pullRequestRefSchema>;
  * request. A failed delivery is the failure `delivery_failed`.
  */
 export const runDeliverySchema = z.discriminatedUnion('outcome', [
-  z.strictObject({ outcome: z.literal('none') }),
+  z.strictObject({
+    outcome: z.literal('none'),
+    /**
+     * Only with `cancelled` (review of #124): the cancel arrived during the delivery, the Run
+     * branch was pushed, but no pull request was opened.
+     */
+    branchPushed: z.literal(true).optional(),
+  }),
   z.strictObject({ outcome: z.literal('delivered'), pullRequest: pullRequestRefSchema }),
 ]);
 export type RunDelivery = z.infer<typeof runDeliverySchema>;
@@ -455,10 +462,28 @@ export const reportRunStateRequestSchema = z
     path: ['failure'],
     message: 'A failure is reported exactly with the state failed.',
   })
-  .refine((report) => (report.delivery !== undefined) === (report.state === 'succeeded'), {
-    path: ['delivery'],
-    message: 'A delivery outcome is reported exactly with the state succeeded.',
-  })
+  .refine(
+    (report) =>
+      report.delivery?.outcome !== 'none' ||
+      report.delivery.branchPushed === undefined ||
+      report.state === 'cancelled',
+    {
+      path: ['delivery', 'branchPushed'],
+      message: 'A pushed branch without a pull request is reported only with cancelled.',
+    },
+  )
+  .refine(
+    (report) =>
+      report.state === 'succeeded'
+        ? report.delivery !== undefined
+        : report.delivery === undefined || report.state === 'cancelled',
+    {
+      path: ['delivery'],
+      message:
+        'A delivery outcome is reported with the state succeeded, or with cancelled when the ' +
+        'cancel arrived during the delivery (review of #121).',
+    },
+  )
   .refine(
     (report) =>
       report.workingCopy === undefined ||

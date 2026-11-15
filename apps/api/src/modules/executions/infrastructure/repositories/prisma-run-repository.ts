@@ -375,7 +375,9 @@ export class PrismaRunRepository implements RunRepository {
         ...(change.to === 'running' ? { stepStartedAt: change.now } : {}),
         ...(isFinal(change.to) ? { finishedAt: change.now } : {}),
         ...workingCopyColumns(change.workingCopy),
-        ...(change.to === 'succeeded' && change.delivery ? deliveryColumns(change.delivery) : {}),
+        ...((change.to === 'succeeded' || change.to === 'cancelled') && change.delivery
+          ? deliveryColumns(change.delivery)
+          : {}),
         ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
       },
     });
@@ -652,6 +654,9 @@ export class PrismaRunRepository implements RunRepository {
         data: {
           ...workingCopyColumns(workingCopy),
           failingChecks: [...failingChecks],
+          // The step is over: Studio's time-limit backstop no longer runs for it (review of
+          // #121), so a slow delivery after it is never timed out.
+          stepStartedAt: null,
           ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
         },
       });
