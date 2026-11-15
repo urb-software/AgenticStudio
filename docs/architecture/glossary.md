@@ -51,6 +51,14 @@ The operator's instruction that starts a Run.
 One non-interactive execution of the agent CLI within a Run. A Run consists of one or more Run steps.
 _Avoid_: Turn, step (unqualified), iteration
 
+**Run log**:
+A Run's stored sequence of Run events, numbered per Run: its durable record of what the agent did. The live view streams it; it is redacted and capped before storage.
+_Avoid_: Transcript, console, output (for the whole log)
+
+**Run event**:
+One entry of a Run log: an agent message, a command, its output, the start or end of a Run step, or a notice about the log itself (e.g. "log truncated").
+_Avoid_: Line, log line (an event can span lines)
+
 **Working copy**:
 A Run's own clone of the Repository, on its Run branch. It is not the Project's Clone.
 _Avoid_: Worktree, workspace, checkout

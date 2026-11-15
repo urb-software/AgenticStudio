@@ -98,6 +98,7 @@ cp .env.example .env
 | `STUDIO_WORKER_TOKEN` | API | Optional. The token the agent worker sends on the worker routes (`/api/worker/`): at least 32 characters, e.g. `openssl rand -base64 32`; copy the same value into the agent worker's own `apps/agent-worker/.env`. Unset or empty: every worker route rejects. Never logged; only its SHA-256 digest is kept in memory. |
 | Agent worker settings | agent worker | Not in this file. The worker has its own `apps/agent-worker/.env` (from `apps/agent-worker/.env.example`): `STUDIO_API_URL`, `STUDIO_WORKER_TOKEN` (the same value as the API's), `STUDIO_WORKER_POLL_MS`, `STUDIO_WORKER_HEARTBEAT_MS`, optional `STUDIO_WORKER_REQUEST_TIMEOUT_MS` (default 30000). It never reads the root `.env`, runs on Linux only, and refuses to start if `DATABASE_URL`, `REDIS_URL`, `STUDIO_SECRETS_KEY`, `STUDIO_OPERATOR_PASSWORD_HASH` or `POSTGRES_PASSWORD` is in its environment. Until provider adapters exist it carries every Run with the fake runner. |
 | `STUDIO_WORKER_LEASE_SECONDS` | API | Default `60` (10–3600). A Run claimed by an agent worker that sends no heartbeat for this long fails with `worker_lost`. |
+| `STUDIO_RUN_LOG_MAX_BYTES` | API | Default `8388608` (8 MiB; 65536–1073741824). Cap on a Run's stored log, in bytes of event text. When it is reached, one "log truncated" entry is stored, later output is dropped and the Run continues. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
 | `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
 
@@ -231,6 +232,7 @@ The canonical rules for the web app's same-origin `/api/*` rewrite to the API (I
 - The rewrite is baked into the build: set both variables at build time, and the same values at start (the config is evaluated again). `pnpm e2e:smoke` does this.
 - Any other flag value, `true` without `API_ORIGIN`, or an `API_ORIGIN` that is not a bare http(s) origin fails the build or start. The error names the variable, never its value.
 - Behind this rewrite or any other proxy, list the proxy in the API's `API_TRUSTED_PROXIES`, or all clients share one login rate-limit bucket ([Security](docs/engineering/security.md) §8).
+- **Live Run logs are server-sent events** (`GET /api/runs/:runId/events/stream`, Issue #99). No proxy in front of the API may buffer or compress them, or new log lines arrive late or only at the end. The API sends `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` (which nginx honours) and a `: keep-alive` comment every 15 seconds, so an idle stream is not timed out by a proxy with a read timeout above that. For any other reverse proxy, turn response buffering off for this path. `pnpm e2e:smoke` proves that the web `/api` rewrite streams the log live.
 
 ### Checks
 
