@@ -104,7 +104,11 @@ export class ReportRunStateHandler {
         this.signal.notify(run.id);
         // A final Run needs no more redaction, unless its failed delivery can be retried:
         // its Environment file snapshot goes now, or when the retry ends it (Issue #104).
-        if (isFinal(changed.state) && !keepsSnapshotForRetry(changed)) {
+        if (
+          changed.environmentFileSupplied &&
+          isFinal(changed.state) &&
+          !keepsSnapshotForRetry(changed)
+        ) {
           await this.snapshots.releaseFor(run.id);
         }
         return changed;
@@ -147,7 +151,9 @@ export class ReportRunStateHandler {
     this.signal.notify(run.id);
     // Delivered at last: nothing more to redact (Issue #104). A retry that failed again keeps
     // the snapshot, since the delivery can be retried once more.
-    if (!keepsSnapshotForRetry(changed)) await this.snapshots.releaseFor(run.id);
+    if (changed.environmentFileSupplied && !keepsSnapshotForRetry(changed)) {
+      await this.snapshots.releaseFor(run.id);
+    }
     return changed;
   }
 }

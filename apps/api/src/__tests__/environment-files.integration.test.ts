@@ -312,6 +312,7 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
         }),
         await worker(`${runId}/steps`, {
           workerId: W1,
+          index: 1,
           kind: 'start',
           result: { outcome: 'done', summary: 'Done.' },
           workingCopy: {
@@ -491,6 +492,7 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect(appended.status).toBe(204);
       const step = await worker(`${runId}/steps`, {
         workerId: W1,
+        index: 1,
         kind: 'start',
         result: {
           outcome: 'done',

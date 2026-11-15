@@ -46,6 +46,8 @@ describe('ReportRunStateHandler', () => {
       integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
+    // Supplied an Environment file, so its snapshot is released once the Run is done (#104).
+    await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot' });
   });
 
   it('moves a preparing Run to running, still held', async () => {

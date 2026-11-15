@@ -618,7 +618,11 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     const run = await runReaches(runId, ['succeeded', 'failed']);
 
     expect(run.state).toBe('succeeded');
-    expect(lost.size).toBe(0);
+    // The last lost answer is dropped just after Studio stored the change the test just read.
+    await until(
+      () => Promise.resolve(lost.size),
+      (size) => size === 0,
+    );
     const [steps] = await db.$queryRaw<{ count: number }[]>`
       SELECT count(*)::int AS count FROM run_steps WHERE run_id = ${runId}::uuid`;
     expect(steps?.count).toBe(1);
