@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { StudioApi, StudioApiError } from '../studio-api.js';
+import { isTransient, StudioApi, StudioApiError } from '../studio-api.js';
 
 // Issue #96: the worker's client of the worker routes, against a stubbed fetch.
 const TOKEN = randomBytes(32).toString('base64');
@@ -107,5 +107,38 @@ describe('StudioApi', () => {
     stop.abort();
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  // Issue #100: the heartbeat answer carries the operator's cancel request.
+  it('reads whether the operator asked to cancel from the heartbeat answer', async () => {
+    const { api, calls } = client(async () => Response.json({ cancelRequested: true }));
+
+    expect(await api.heartbeat('0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b')).toEqual({
+      cancelRequested: true,
+    });
+    expect(calls[0]?.url).toBe(
+      'http://studio.test/api/worker/runs/0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b/heartbeat',
+    );
+    const { api: invalid } = client(async () => Response.json({ cancel: 'yes' }));
+    await expect(invalid.heartbeat('run-1')).rejects.toThrow();
+  });
+
+  it('tells a transient failure (Studio unreachable or failing) from a definitive answer', async () => {
+    const { api: down } = client(async () => {
+      throw new TypeError('fetch failed');
+    });
+    expect(isTransient(await down.heartbeat('run-1').catch((caught: unknown) => caught))).toBe(
+      true,
+    );
+    const { api: slow } = client(hanging, 20);
+    expect(isTransient(await slow.heartbeat('run-1').catch((caught: unknown) => caught))).toBe(
+      true,
+    );
+    expect(isTransient(new StudioApiError(503, '/api/worker/runs/x/state'))).toBe(true);
+    expect(isTransient(new StudioApiError(502, '/api/worker/runs/x/state'))).toBe(true);
+    expect(isTransient(new StudioApiError(409, '/api/worker/runs/x/state'))).toBe(false);
+    expect(isTransient(new StudioApiError(404, '/api/worker/runs/x/state'))).toBe(false);
+    expect(isTransient(new StudioApiError(422, '/api/worker/runs/x/state'))).toBe(false);
+    expect(isTransient(new StudioApiError(401, '/api/worker/runs/x/state'))).toBe(false);
   });
 });

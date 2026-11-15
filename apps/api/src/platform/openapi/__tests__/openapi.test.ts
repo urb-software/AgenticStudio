@@ -305,8 +305,34 @@ describe('OpenAPI document', () => {
     expect(document.paths['/api/runs']?.get?.operationId).toBe('listRuns');
     expect(document.paths['/api/runs/{runId}']?.get?.operationId).toBe('getRun');
     expect(document.components?.schemas?.Run_Output).toMatchObject({
-      required: ['id', 'projectId', 'provider', 'task', 'state', 'startCommit', 'createdAt'],
+      required: [
+        'id',
+        'projectId',
+        'provider',
+        'task',
+        'state',
+        'startCommit',
+        'createdAt',
+        // Issue #100: the limits in force are always shown.
+        'limits',
+      ],
     });
+  });
+
+  it('documents POST /api/runs/{runId}/cancel: 202 with the Run, 404, 409 (Issue #100)', () => {
+    const document = createOpenApiDocument(app);
+
+    const cancel = document.paths['/api/runs/{runId}/cancel']?.post;
+    expect(cancel?.operationId).toBe('cancelRun');
+    expect(Object.keys(cancel?.responses ?? {})).toEqual(
+      expect.arrayContaining(['202', '404', '409']),
+    );
+    const run = document.components?.schemas?.Run_Output as {
+      properties: Record<string, unknown>;
+    };
+    expect(Object.keys(run.properties)).toEqual(
+      expect.arrayContaining(['limits', 'cancelRequestedAt', 'cancellation']),
+    );
   });
 
   it('documents GET /api/providers with each provider and its availability (Issue #101)', () => {

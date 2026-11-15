@@ -87,6 +87,9 @@ const environmentSchema = z.object({
   // Retention of finished Working copies.
   STUDIO_WORKER_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
   STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
+  // Issue #100: how long a stopped Run step's processes get after the interrupt (SIGINT)
+  // before the worker kills their whole process group (SIGKILL).
+  STUDIO_WORKER_KILL_GRACE_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
 });
 
 /**
@@ -130,6 +133,8 @@ export interface WorkerConfig {
   retentionDays: number;
   /** ...and beyond the newest this many per Project. */
   retentionMaxPerProject: number;
+  /** Grace between the interrupt and the kill of a stopped Run step's processes (Issue #100). */
+  killGraceMs: number;
 }
 
 /** Thrown when the environment is invalid. Names variables, never their values. */
@@ -190,6 +195,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     agentGitEmail: result.data.STUDIO_AGENT_GIT_EMAIL,
     retentionDays: result.data.STUDIO_WORKER_RETENTION_DAYS,
     retentionMaxPerProject: result.data.STUDIO_WORKER_RETENTION_MAX_PER_PROJECT,
+    killGraceMs: result.data.STUDIO_WORKER_KILL_GRACE_SECONDS * 1000,
   };
 }
 

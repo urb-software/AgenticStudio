@@ -1,4 +1,12 @@
-import type { Provider, Run, RunFailure, RunState, RunWorkingCopy } from '../entities/run.js';
+import type {
+  Provider,
+  Run,
+  RunCancellation,
+  RunFailure,
+  RunLimits,
+  RunState,
+  RunWorkingCopy,
+} from '../entities/run.js';
 
 /** DI token for the {@link RunRepository} adapter. */
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');
@@ -9,6 +17,8 @@ export interface NewRun {
   task: string;
   startCommit: string;
   remoteUrl: string;
+  /** The limits in force when the Run is started (Issue #100). */
+  limits: RunLimits;
 }
 
 /** A change of state reported by the agent worker holding the Run. */
@@ -21,8 +31,23 @@ export interface ClaimedRunChange {
   failure: RunFailure | null;
   /** When set, becomes the Run's latest Working copy state (a failed Run, Issue #98). */
   workingCopy?: RunWorkingCopy | null;
+  /** Exactly when `to` is `cancelled` (Issue #100). */
+  cancellation?: RunCancellation | null;
+  /**
+   * Whether the caller saw a cancel request on the Run (Issue #100); the change applies only
+   * if that is still so, so a cancel that arrives in between is never lost.
+   */
+  cancelRequested: boolean;
   now: Date;
 }
+
+/** What storing a Run step did (Issue #100: the API also enforces the step limit). */
+export type AppendStepOutcome =
+  | { status: 'stored'; index: number }
+  /** The Run is not `running` or not held by this worker; nothing changed. */
+  | { status: 'not_held' }
+  /** The step would exceed the Run's `maxSteps`: it was not stored, and the Run is `failed`. */
+  | { status: 'step_limit' };
 
 /** One reported Run step: its kind and the structured result, as validated JSON. */
 export interface RunStepRecord {
@@ -66,28 +91,65 @@ export interface RunRepository {
 
   /**
    * Applies `change` if the Run is still in `change.from` and held by `change.workerId`. To
-   * `running` it stays held (heartbeat at `now`); to `waiting_for_operator` it is released;
-   * to a final state it is released and finished at `now`. `null` if the condition failed.
+   * `running` it stays held (heartbeat at `now`); to `waiting_for_operator` it is released
+   * (waiting since `now`); to a final state it is released and finished at `now`. Applies
+   * only if the Run's cancel request is still as `change.cancelRequested` says (Issue #100).
+   * `null` if a condition failed.
    */
   transitionClaimed(change: ClaimedRunChange): Promise<Run | null>;
 
-  /** Records a heartbeat of the worker holding the Run; false if it does not hold it. */
-  heartbeat(runId: string, workerId: string, now: Date): Promise<boolean>;
+  /**
+   * Records a heartbeat of the worker holding the Run and tells it whether the operator asked
+   * to cancel (Issue #100); `null` if it does not hold the Run.
+   */
+  heartbeat(
+    runId: string,
+    workerId: string,
+    now: Date,
+  ): Promise<{ cancelRequested: boolean } | null>;
+
+  /**
+   * Cancels a Run that no worker holds (`queued` or `waiting_for_operator`) if it is still in
+   * `from`: → `cancelled` with `cancellation`, finished at `now` (Issue #100). `null` if not.
+   */
+  cancelUnheld(
+    runId: string,
+    from: 'queued' | 'waiting_for_operator',
+    cancellation: RunCancellation,
+    now: Date,
+  ): Promise<Run | null>;
+
+  /**
+   * Records the operator's cancel request on a held Run (`preparing` or `running`), keeping
+   * the first request's time (Issue #100). `null` if the Run is not held any more.
+   */
+  requestCancel(runId: string, now: Date): Promise<Run | null>;
+
+  /** Every Run waiting for the operator (Issue #100: the long-wait sweep). */
+  listWaiting(): Promise<Run[]>;
+
+  /**
+   * Renews the lease of every held Run to `now` (Issue #100): run when the API starts, so a
+   * short Studio outage does not fail the Runs their workers kept carrying. Returns how many.
+   */
+  renewClaims(now: Date): Promise<number>;
 
   /** The states of the Runs with these ids (valid UUIDs); ids that name no Run are left out. */
   findStates(ids: readonly string[]): Promise<RunStateView[]>;
 
   /**
    * Stores a Run step of a `running` Run held by `workerId`, numbered 1, 2, … in report
-   * order, and makes `workingCopy` the Run's latest Working copy state, in one transaction;
-   * returns its number, or `null` (nothing changed) if the Run is not `running` or not held by it.
+   * order, and makes `workingCopy` the Run's latest Working copy state, in one transaction.
+   * A step beyond the Run's `maxSteps` is not stored: the Run fails with `stepLimitFailure`,
+   * released and finished at `now` (Issue #100).
    */
   appendStep(
     runId: string,
     workerId: string,
     step: RunStepRecord,
     workingCopy: RunWorkingCopy,
-  ): Promise<number | null>;
+    now: Date,
+  ): Promise<AppendStepOutcome>;
 
   /**
    * Every held Run (`preparing` or `running`) whose last heartbeat is before `staleBefore` →
@@ -112,5 +174,13 @@ export class RunNotHeldError extends Error {
   constructor() {
     super('This agent worker does not hold the run.');
     this.name = 'RunNotHeldError';
+  }
+}
+
+/** A Run step beyond the Run's maximum was reported; the Run is now `failed` (Issue #100). */
+export class StepLimitReachedError extends Error {
+  constructor() {
+    super('The run reached its maximum number of run steps.');
+    this.name = 'StepLimitReachedError';
   }
 }

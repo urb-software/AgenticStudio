@@ -5,11 +5,14 @@ import {
   isFinal,
   MAX_ACTIVE_RUNS,
   type Run,
+  type RunCancellation,
   type RunFailure,
   type RunState,
   type RunWorkingCopy,
+  stepLimitFailure,
 } from '../../entities/run.js';
 import type {
+  AppendStepOutcome,
   ClaimedRunChange,
   NewRun,
   RunRepository,
@@ -43,6 +46,10 @@ export class InMemoryRunRepository implements RunRepository {
       claimedBy: null,
       heartbeatAt: null,
       workingCopy: null,
+      limits: { ...run.limits },
+      cancelRequestedAt: null,
+      cancellation: null,
+      waitingSince: null,
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -83,7 +90,12 @@ export class InMemoryRunRepository implements RunRepository {
 
   transitionClaimed(change: ClaimedRunChange): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === change.runId);
-    if (!run || run.state !== change.from || run.claimedBy !== change.workerId) {
+    if (
+      !run ||
+      run.state !== change.from ||
+      run.claimedBy !== change.workerId ||
+      (run.cancelRequestedAt !== null) !== change.cancelRequested
+    ) {
       return Promise.resolve(null);
     }
     const held = isClaimed(change.to);
@@ -93,16 +105,58 @@ export class InMemoryRunRepository implements RunRepository {
       claimedBy: held ? change.workerId : null,
       heartbeatAt: held ? change.now : null,
       finishedAt: isFinal(change.to) ? change.now : null,
+      cancellation: change.to === 'cancelled' ? (change.cancellation ?? null) : null,
+      waitingSince: change.to === 'waiting_for_operator' ? change.now : null,
       ...(change.workingCopy ? { workingCopy: structuredClone(change.workingCopy) } : {}),
     });
     return Promise.resolve(this.view(run));
   }
 
-  heartbeat(runId: string, workerId: string, now: Date): Promise<boolean> {
+  heartbeat(
+    runId: string,
+    workerId: string,
+    now: Date,
+  ): Promise<{ cancelRequested: boolean } | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.claimedBy !== workerId) return Promise.resolve(false);
+    if (!run || run.claimedBy !== workerId || !isClaimed(run.state)) return Promise.resolve(null);
     run.heartbeatAt = now;
-    return Promise.resolve(true);
+    return Promise.resolve({ cancelRequested: run.cancelRequestedAt !== null });
+  }
+
+  cancelUnheld(
+    runId: string,
+    from: 'queued' | 'waiting_for_operator',
+    cancellation: RunCancellation,
+    now: Date,
+  ): Promise<Run | null> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || run.state !== from) return Promise.resolve(null);
+    Object.assign(run, {
+      state: 'cancelled',
+      cancellation: { ...cancellation },
+      finishedAt: now,
+      waitingSince: null,
+    });
+    return Promise.resolve(this.view(run));
+  }
+
+  requestCancel(runId: string, now: Date): Promise<Run | null> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || !isClaimed(run.state)) return Promise.resolve(null);
+    run.cancelRequestedAt ??= now;
+    return Promise.resolve(this.view(run));
+  }
+
+  listWaiting(): Promise<Run[]> {
+    return Promise.resolve(
+      this.runs.filter((run) => run.state === 'waiting_for_operator').map((run) => this.view(run)),
+    );
+  }
+
+  renewClaims(now: Date): Promise<number> {
+    const held = this.runs.filter((run) => isClaimed(run.state));
+    for (const run of held) run.heartbeatAt = now;
+    return Promise.resolve(held.length);
   }
 
   findStates(ids: readonly string[]): Promise<RunStateView[]> {
@@ -118,15 +172,26 @@ export class InMemoryRunRepository implements RunRepository {
     workerId: string,
     step: RunStepRecord,
     workingCopy: RunWorkingCopy,
-  ): Promise<number | null> {
+    now: Date,
+  ): Promise<AppendStepOutcome> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (!run || run.state !== 'running' || run.claimedBy !== workerId) {
-      return Promise.resolve(null);
+      return Promise.resolve({ status: 'not_held' });
     }
     const index = this.steps.filter((stored) => stored.runId === runId).length + 1;
+    if (index > run.limits.maxSteps) {
+      Object.assign(run, {
+        state: 'failed',
+        failure: stepLimitFailure(run.limits.maxSteps),
+        claimedBy: null,
+        heartbeatAt: null,
+        finishedAt: now,
+      });
+      return Promise.resolve({ status: 'step_limit' });
+    }
     this.steps.push({ runId, index, step: structuredClone(step) });
     run.workingCopy = structuredClone(workingCopy);
-    return Promise.resolve(index);
+    return Promise.resolve({ status: 'stored', index });
   }
 
   failStaleClaims(staleBefore: Date, failure: RunFailure, now: Date): Promise<number> {

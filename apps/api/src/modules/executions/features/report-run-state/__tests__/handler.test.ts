@@ -28,6 +28,7 @@ describe('ReportRunStateHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     });
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -71,7 +72,7 @@ describe('ReportRunStateHandler', () => {
   it('keeps the last Working copy state when a failure brings none', async () => {
     await report({ state: 'running' });
     const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
-    await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, workingCopy);
+    await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, workingCopy, T0);
 
     await report({ state: 'failed', failure: { code: 'unknown', detail: 'x' } });
 
@@ -119,5 +120,82 @@ describe('ReportRunStateHandler', () => {
   it('rejects an unknown Run, also an id that is not a UUID', async () => {
     await expect(report({ runId: UNKNOWN_RUN })).rejects.toBeInstanceOf(RunNotFoundError);
     await expect(report({ runId: 'nope' })).rejects.toBeInstanceOf(RunNotFoundError);
+  });
+
+  // Issue #100: cancel confirmation, time limit, and a cancel that overtakes a step's end.
+  describe('cancel and time limit', () => {
+    it('ends a running Run as cancelled when the worker confirms a requested cancel', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+      const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: true };
+
+      expect(await report({ state: 'cancelled', workingCopy })).toMatchObject({
+        state: 'cancelled',
+        cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+        claimedBy: null,
+        finishedAt: T1,
+        workingCopy,
+      });
+    });
+
+    it('confirms a cancel requested while the Run was still preparing', async () => {
+      await runs.requestCancel(run.id, T0);
+
+      expect(await report({ state: 'cancelled' })).toMatchObject({ state: 'cancelled' });
+    });
+
+    it('refuses a cancelled report nobody asked for', async () => {
+      await report({ state: 'running' });
+
+      await expect(report({ state: 'cancelled' })).rejects.toBeInstanceOf(
+        IllegalRunTransitionError,
+      );
+      expect((await runs.findById(run.id))?.state).toBe('running');
+    });
+
+    it.each(['waiting_for_operator', 'succeeded'] as const)(
+      'ends the Run as cancelled when a step ends with %s after a cancel request',
+      async (state) => {
+        await report({ state: 'running' });
+        await runs.requestCancel(run.id, T0);
+
+        expect(await report({ state })).toMatchObject({
+          state: 'cancelled',
+          cancellation: { by: 'operator' },
+          waitingSince: null,
+        });
+      },
+    );
+
+    it('keeps a failure a failure after a cancel request', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+      const failure = { code: 'agent_failed', detail: 'exit 1' } as const;
+
+      expect(await report({ state: 'failed', failure })).toMatchObject({
+        state: 'failed',
+        failure,
+      });
+    });
+
+    it('ends a Run step stopped at its time limit as timed_out, keeping the Working copy state', async () => {
+      await report({ state: 'running' });
+      const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
+
+      expect(await report({ state: 'timed_out', workingCopy })).toMatchObject({
+        state: 'timed_out',
+        failure: null,
+        cancellation: null,
+        claimedBy: null,
+        finishedAt: T1,
+        workingCopy,
+      });
+    });
+
+    it('records when a Run began waiting for the operator', async () => {
+      await report({ state: 'running' });
+
+      expect(await report({ state: 'waiting_for_operator' })).toMatchObject({ waitingSince: T1 });
+    });
   });
 });

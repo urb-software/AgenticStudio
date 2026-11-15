@@ -22,6 +22,7 @@ describe('GetRunStatesHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     });
 
   beforeEach(() => {
@@ -40,6 +41,7 @@ describe('GetRunStatesHandler', () => {
       from: 'preparing',
       to: 'failed',
       failure: { code: 'preparation_failed', detail: 'x' },
+      cancelRequested: false,
       now: T1,
     });
     await runs.claimNext(WORKER, T1);

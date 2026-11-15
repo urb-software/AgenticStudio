@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Run } from '../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { RunNotFoundError, RunNotHeldError } from '../../../domain/repositories/run-repository.js';
+import {
+  RunNotFoundError,
+  RunNotHeldError,
+  StepLimitReachedError,
+} from '../../../domain/repositories/run-repository.js';
 import { ReportRunStepHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
+const T1 = new Date('2026-11-15T12:30:00.000Z');
 const RESULT = { outcome: 'done', summary: 'Done.' };
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',
@@ -25,13 +30,14 @@ describe('ReportRunStepHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new ReportRunStepHandler(runs);
+    handler = new ReportRunStepHandler(runs, { now: () => T1 });
     await runs.add({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14 },
     });
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -43,6 +49,7 @@ describe('ReportRunStepHandler', () => {
       from: 'preparing',
       to: 'running',
       failure: null,
+      cancelRequested: false,
       now: T0,
     });
   }
@@ -101,5 +108,25 @@ describe('ReportRunStepHandler', () => {
         workingCopy: WORKING_COPY,
       }),
     ).rejects.toBeInstanceOf(RunNotFoundError);
+  });
+
+  // Issue #100: the API enforces the step limit too.
+  it('refuses a step beyond the maximum and fails the Run with step_limit', async () => {
+    await running();
+    await report();
+    await report();
+
+    await expect(report()).rejects.toBeInstanceOf(StepLimitReachedError);
+
+    expect(runs.steps).toHaveLength(2);
+    expect(await runs.findById(run.id)).toMatchObject({
+      state: 'failed',
+      failure: {
+        code: 'step_limit',
+        detail: 'The run reached its limit of 2 run steps; no further step was started.',
+      },
+      claimedBy: null,
+      finishedAt: T1,
+    });
   });
 });

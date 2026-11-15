@@ -27,6 +27,7 @@ import { WITHOUT_QUEUE_WORKERS } from './test-config.js';
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
 const LEASE_SECONDS = 60;
+const LIMITS = { stepMinutes: 60, maxSteps: 2, waitingDays: 14 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -44,6 +45,8 @@ const PROBLEM = {
   repositoryNotReady: 'urn:agentic-studio:problem:repository-not-ready',
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
+  runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
+  stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
 };
 
@@ -126,7 +129,12 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
   beforeAll(async () => {
     services = await startStudioServices();
     app = await startStudioApp(
-      { ...services.config, workerToken: WORKER_TOKEN_DIGEST, workerLeaseSeconds: LEASE_SECONDS },
+      {
+        ...services.config,
+        workerToken: WORKER_TOKEN_DIGEST,
+        workerLeaseSeconds: LEASE_SECONDS,
+        runLimits: LIMITS,
+      },
       { executions: { clock } },
     );
     cookie = await signIn(app);
@@ -160,6 +168,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         state: 'queued',
         startCommit: project.head,
         createdAt: expect.stringMatching(ISO_8601),
+        // Issue #100: the limits in force, copied onto the Run when it is started.
+        limits: LIMITS,
       });
       expect((await getRun(created.body.id)).body).toEqual(created.body);
       const projectRuns = await http()
@@ -400,6 +410,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         startCommit: project.head,
         // Issue #98: the remote as connected; nothing else about the Repository.
         repository: { remoteUrl: project.url },
+        // Issue #100: the limits the worker enforces, and no Run step taken yet.
+        limits: { stepMinutes: LIMITS.stepMinutes, maxSteps: LIMITS.maxSteps },
+        completedSteps: 0,
       });
       const preparing = (await getRun(run.id)).body;
       expect(preparing).toMatchObject({
@@ -415,7 +428,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         checks: [{ name: 'unit tests', result: 'passed' }],
       };
       expect((await reportStep(run.id, result)).status).toBe(204);
-      expect((await heartbeat(run.id)).status).toBe(204);
+      const beat = await heartbeat(run.id);
+      expect(beat.status).toBe(200);
+      expect(beat.body).toEqual({ cancelRequested: false });
       advance(5);
       expect((await report(run.id, { state: 'succeeded' })).status).toBe(204);
 
@@ -733,7 +748,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await claim(W1);
 
         advance(LEASE_SECONDS - 10);
-        expect((await heartbeat(run.id, W1)).status).toBe(204);
+        expect((await heartbeat(run.id, W1)).status).toBe(200);
         advance(LEASE_SECONDS - 10);
         await claim(W2);
 
@@ -751,6 +766,224 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await claim(W2);
 
         expect((await getRun(run.id)).body.state).toBe('waiting_for_operator');
+      });
+    });
+
+    // Issue #100: cancel in each state, the step limit, long waits, and a Studio restart.
+    describe('cancel and limits (Issue #100)', () => {
+      const cancel = (runId: string, origin: string | null = STUDIO_ORIGIN) => {
+        const call = http().post(`/api/runs/${runId}/cancel`).set('Cookie', cookie);
+        if (origin !== null) call.set('Origin', origin);
+        return call.send();
+      };
+
+      it('cancels a queued Run at once', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        advance(3);
+
+        const cancelled = await cancel(run.id);
+
+        expect(cancelled.status).toBe(202);
+        expect(cancelled.body).toMatchObject({
+          id: run.id,
+          state: 'cancelled',
+          finishedAt: clock.current.toISOString(),
+          cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+        });
+        expect((await getRun(run.id)).body).toEqual(cancelled.body);
+        expect((await claim()).status).toBe(204);
+      });
+
+      it('cancels a Run waiting for the operator at once, freeing its project', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        await report(run.id, { state: 'waiting_for_operator' });
+
+        expect((await cancel(run.id)).body).toMatchObject({ state: 'cancelled' });
+        const next = await queuedRun(project.id, 'Next task');
+        expect((await claim()).body.runId).toBe(next.id);
+      });
+
+      it('delivers a cancel of a running Run with the next heartbeat; the worker confirms it', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        const requestedAt = clock.current.toISOString();
+
+        const requested = await cancel(run.id);
+        expect(requested.status).toBe(202);
+        expect(requested.body).toMatchObject({ state: 'running', cancelRequestedAt: requestedAt });
+        expect(requested.body).not.toHaveProperty('cancellation');
+
+        advance(5);
+        const repeated = await cancel(run.id);
+        expect(repeated.status).toBe(202);
+        expect(repeated.body.cancelRequestedAt).toBe(requestedAt);
+
+        const beat = await heartbeat(run.id);
+        expect(beat.status).toBe(200);
+        expect(beat.body).toEqual({ cancelRequested: true });
+
+        expect(
+          (await report(run.id, { state: 'cancelled', workingCopy: WORKING_COPY })).status,
+        ).toBe(204);
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'cancelled',
+          cancellation: { by: 'operator' },
+          runBranch: WORKING_COPY.runBranch,
+          finishedAt: clock.current.toISOString(),
+        });
+      });
+
+      it('ends a Run as cancelled when its step ends normally after a cancel request', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await cancel(run.id);
+        await report(run.id, { state: 'running' });
+
+        await report(run.id, { state: 'waiting_for_operator' });
+
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'cancelled',
+          cancellation: { by: 'operator' },
+        });
+      });
+
+      it('reports a cancel of a finished Run clearly, and an unknown Run as not found', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await cancel(run.id);
+
+        const again = await cancel(run.id);
+        expectProblem(again, 409, PROBLEM.runAlreadyFinished);
+        expect(again.body.title).toBe('Run already finished');
+        expectProblem(await cancel(randomUUID()), 404, PROBLEM.runNotFound);
+        expectProblem(await cancel('nope'), 404, PROBLEM.runNotFound);
+      });
+
+      it('refuses a cancel without a session or from another origin', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+
+        expect((await http().post(`/api/runs/${run.id}/cancel`).send()).status).toBe(401);
+        expect((await cancel(run.id, 'https://evil.example.test')).status).toBe(403);
+        expect((await getRun(run.id)).body.state).toBe('queued');
+      });
+
+      it('refuses a cancelled report nobody asked for', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+
+        expectProblem(
+          await report(run.id, { state: 'cancelled' }),
+          409,
+          PROBLEM.illegalRunTransition,
+        );
+      });
+
+      it('ends a Run step stopped at its time limit as timed_out', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+
+        expect(
+          (await report(run.id, { state: 'timed_out', workingCopy: WORKING_COPY })).status,
+        ).toBe(204);
+        const timedOut = (await getRun(run.id)).body;
+        expect(timedOut).toMatchObject({ state: 'timed_out', limits: LIMITS });
+        expect(timedOut).not.toHaveProperty('failure');
+      });
+
+      it('refuses a Run step beyond the maximum and fails the Run with step_limit', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        const result = { outcome: 'done', summary: 'Done.' };
+        expect((await reportStep(run.id, result)).status).toBe(204);
+        expect((await reportStep(run.id, result)).status).toBe(204);
+
+        expectProblem(await reportStep(run.id, result), 409, PROBLEM.stepLimitReached);
+
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'failed',
+          failure: {
+            code: 'step_limit',
+            detail: 'The run reached its limit of 2 run steps; no further step was started.',
+          },
+        });
+        const rows = await db().$queryRaw<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM run_steps WHERE run_id = ${run.id}::uuid`;
+        expect(rows[0]?.count).toBe(2);
+      });
+
+      it('cancels a Run waiting longer than its waiting period, by the system', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        await report(run.id, { state: 'waiting_for_operator' });
+
+        // The sweep also runs before every claim: a waiting Run holds a slot.
+        advance(LIMITS.waitingDays * 24 * 3600);
+        expect((await claim(W2)).status).toBe(204);
+        expect((await getRun(run.id)).body.state).toBe('waiting_for_operator');
+
+        advance(1);
+        expect((await claim(W2)).status).toBe(204);
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'cancelled',
+          cancellation: {
+            by: 'system',
+            reason: 'Cancelled automatically: the run waited for the operator longer than 14 days.',
+          },
+        });
+      });
+
+      it('renews the leases of held Runs when Studio starts, so a short outage fails none', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+
+        // Studio was down longer than the lease; an instance starts again on the same database.
+        advance(LEASE_SECONDS * 3);
+        const restarted = await startStudioApp(
+          {
+            ...services.config,
+            workerToken: WORKER_TOKEN_DIGEST,
+            workerLeaseSeconds: LEASE_SECONDS,
+            runLimits: LIMITS,
+          },
+          { executions: { clock } },
+        );
+        try {
+          advance(LEASE_SECONDS - 5);
+          expect((await claim(W2)).status).toBe(204);
+          expect((await getRun(run.id)).body.state).toBe('running');
+          // The worker, back in touch, delivers its buffered reports.
+          expect((await heartbeat(run.id)).body).toEqual({ cancelRequested: false });
+          expect((await reportStep(run.id, { outcome: 'done', summary: 'Done.' })).status).toBe(
+            204,
+          );
+          expect((await report(run.id, { state: 'succeeded' })).status).toBe(204);
+        } finally {
+          await restarted.close();
+        }
+        // A worker that is really gone is still noticed one lease later.
+        const other = await queuedRun(project.id, 'Another');
+        await claim();
+        advance(LEASE_SECONDS + 1);
+        await claim(W2);
+        expect((await getRun(other.id)).body.failure?.code).toBe('worker_lost');
       });
     });
 

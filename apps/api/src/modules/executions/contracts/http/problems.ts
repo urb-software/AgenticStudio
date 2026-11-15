@@ -18,6 +18,10 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   /** 409 (worker routes): the reported state does not follow from the Run's state. */
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
+  /** 409: the Run has already reached a final state (Issue #100: cancel). */
+  runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
+  /** 409 (worker routes): a Run step beyond the Run's maximum; the Run is now failed (Issue #100). */
+  stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
 } as const;
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
@@ -71,5 +75,30 @@ export function illegalRunTransition(detail: string): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.illegalRunTransition,
     title: 'Illegal run transition',
     detail,
+  });
+}
+
+const FINAL_STATE_NAMES: Record<string, string> = {
+  succeeded: 'succeeded',
+  failed: 'failed',
+  cancelled: 'was cancelled',
+  timed_out: 'timed out',
+};
+
+/** 409 when cancelling a Run that has already finished; `detail` says how it ended. */
+export function runAlreadyFinished(state: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.runAlreadyFinished,
+    title: 'Run already finished',
+    detail: `The run has already finished: it ${FINAL_STATE_NAMES[state] ?? state}. There is nothing to cancel.`,
+  });
+}
+
+/** 409 on a worker route: the reported Run step is beyond the Run's maximum; the Run failed. */
+export function stepLimitReached(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.stepLimitReached,
+    title: 'Step limit reached',
+    detail: 'The run reached its maximum number of run steps and has failed. Stop working on it.',
   });
 }

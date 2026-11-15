@@ -56,6 +56,7 @@ export const RUN_FAILURE_CODES = [
   'usage_limit',
   'worker_lost',
   'delivery_failed',
+  'step_limit',
   'unknown',
 ] as const;
 export const runFailureCodeSchema = z.enum(RUN_FAILURE_CODES);
@@ -73,6 +74,21 @@ const workerIdSchema = z.uuid();
 /** Longest Repository remote URL, in characters (the Repository's own limit). */
 export const REMOTE_URL_MAX_LENGTH = 2048;
 
+/** Bounds of the Run limits (Issue #100), for the API's configuration and the claim payload. */
+export const RUN_STEP_MINUTES_MAX = 1440;
+export const RUN_MAX_STEPS_MAX = 100;
+
+/**
+ * The limits a worker enforces on a Run (Issue #100), copied onto the Run when it is started:
+ * the longest a Run step may work, in minutes, and the most Run steps a Run may take. Time
+ * spent waiting for the operator is not a Run step and does not count.
+ */
+export const runLimitsSchema = z.strictObject({
+  stepMinutes: z.int().min(1).max(RUN_STEP_MINUTES_MAX),
+  maxSteps: z.int().min(1).max(RUN_MAX_STEPS_MAX),
+});
+export type RunLimits = z.infer<typeof runLimitsSchema>;
+
 /**
  * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
  * Clone path, secret references or keys). Closed, so an extra field is an error on both sides.
@@ -89,6 +105,13 @@ export const runPayloadSchema = z.strictObject({
    * a credential. The agent worker fetches it with the agent user's own Git credentials.
    */
   repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
+  /** The limits in force for this Run (Issue #100). */
+  limits: runLimitsSchema,
+  /**
+   * How many Run steps the Run has already taken (Issue #100): the next one is
+   * `completedSteps + 1`, and the worker refuses to start it beyond `limits.maxSteps`.
+   */
+  completedSteps: z.int().min(0),
 });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
@@ -100,13 +123,29 @@ export type ClaimRunRequest = z.infer<typeof claimRunRequestSchema>;
 export const heartbeatRequestSchema = z.strictObject({ workerId: workerIdSchema });
 export type HeartbeatRequest = z.infer<typeof heartbeatRequestSchema>;
 
-/** The states a worker reports; every other transition belongs to the API or the operator. */
+/**
+ * `POST /api/worker/runs/:runId/heartbeat` answer (Issue #100): whether the operator asked to
+ * cancel the Run. The worker then stops the Run step and reports `cancelled`.
+ */
+export const heartbeatResponseSchema = z.strictObject({ cancelRequested: z.boolean() });
+export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
+
+/**
+ * The states a worker reports; every other transition belongs to the API or the operator.
+ * `cancelled` confirms an operator's cancel after the Run step was stopped, `timed_out` a Run
+ * step stopped at its time limit (Issue #100).
+ */
 export const WORKER_REPORTED_STATES = [
   'running',
   'waiting_for_operator',
   'succeeded',
   'failed',
+  'cancelled',
+  'timed_out',
 ] as const;
+
+/** The reported end states that may carry the Working copy's state (it is kept for inspection). */
+const STOPPED_STATES: readonly string[] = ['failed', 'cancelled', 'timed_out'];
 
 /** The agent's account of one check it ran. */
 export const runCheckSchema = z.strictObject({
@@ -197,7 +236,8 @@ export type WorkingCopyReport = z.infer<typeof workingCopyReportSchema>;
 /**
  * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
  * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
- * commits of a step that failed or crashed are recorded too.
+ * commits of a step that failed or crashed are recorded too; so may a cancelled or timed-out
+ * Run (Issue #100).
  */
 export const reportRunStateRequestSchema = z
   .strictObject({
@@ -210,9 +250,10 @@ export const reportRunStateRequestSchema = z
     path: ['failure'],
     message: 'A failure is reported exactly with the state failed.',
   })
-  .refine((report) => report.workingCopy === undefined || report.state === 'failed', {
+  .refine((report) => report.workingCopy === undefined || STOPPED_STATES.includes(report.state), {
     path: ['workingCopy'],
-    message: 'A Working copy state comes with a step report, or with the state failed.',
+    message:
+      'A Working copy state comes with a step report, or with the state failed, cancelled or timed_out.',
   });
 export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 

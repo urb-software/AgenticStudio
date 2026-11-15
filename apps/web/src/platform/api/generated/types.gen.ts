@@ -88,6 +88,12 @@ export type StartRunRequest = {
     provider: 'claude_code' | 'codex';
 };
 
+export type RunLimitsOutput = {
+    stepMinutes: number;
+    maxSteps: number;
+    waitingDays: number;
+};
+
 export type RunOutput = {
     id: string;
     projectId: string;
@@ -99,7 +105,7 @@ export type RunOutput = {
     startedAt?: string;
     finishedAt?: string;
     failure?: {
-        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'unknown';
+        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'unknown';
         detail: string;
     };
     runBranch?: string;
@@ -108,6 +114,12 @@ export type RunOutput = {
         subject: string;
     }>;
     hasUncommittedChanges?: boolean;
+    limits: RunLimitsOutput;
+    cancelRequestedAt?: string;
+    cancellation?: {
+        by: 'operator' | 'system';
+        reason: string;
+    };
 };
 
 export type RunListOutput = Array<RunOutput>;
@@ -604,6 +616,38 @@ export type GetRunResponses = {
 };
 
 export type GetRunResponse = GetRunResponses[keyof GetRunResponses];
+
+export type CancelRunData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/cancel';
+};
+
+export type CancelRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run has already finished (urn:agentic-studio:problem:run-already-finished)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type CancelRunError = CancelRunErrors[keyof CancelRunErrors];
+
+export type CancelRunResponses = {
+    202: RunOutput;
+};
+
+export type CancelRunResponse = CancelRunResponses[keyof CancelRunResponses];
 
 export type ListProvidersData = {
     body?: never;

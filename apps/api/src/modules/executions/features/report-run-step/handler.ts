@@ -6,7 +6,9 @@ import {
   RunNotHeldError,
   type RunRepository,
   type RunStepRecord,
+  StepLimitReachedError,
 } from '../../domain/repositories/run-repository.js';
+import { CLOCK, type Clock } from '../../ports/clock.js';
 
 export interface ReportRunStepInput extends RunStepRecord {
   runId: string;
@@ -18,24 +20,31 @@ export interface ReportRunStepInput extends RunStepRecord {
 /**
  * Command (Issue #96): the agent worker holding a `running` Run reports the structured result
  * of a Run step; it is stored (internal for now), and the Working copy's state it reports
- * becomes the Run's latest (Issue #98). Returns the step's number. Throws
- * {@link RunNotFoundError} or {@link RunNotHeldError} (not running, or not held by it).
+ * becomes the Run's latest (Issue #98). A step beyond the Run's maximum is refused and the
+ * Run fails with `step_limit` (Issue #100). Returns the step's number. Throws
+ * {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not held by it) or
+ * {@link StepLimitReachedError}.
  */
 @Injectable()
 export class ReportRunStepHandler {
-  constructor(@Inject(RUN_REPOSITORY) private readonly runs: RunRepository) {}
+  constructor(
+    @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   async execute(input: ReportRunStepInput): Promise<number> {
     if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
       throw new RunNotFoundError();
     }
-    const index = await this.runs.appendStep(
+    const outcome = await this.runs.appendStep(
       input.runId,
       input.workerId,
       { kind: input.kind, result: input.result },
       input.workingCopy,
+      this.clock.now(),
     );
-    if (index === null) throw new RunNotHeldError();
-    return index;
+    if (outcome.status === 'not_held') throw new RunNotHeldError();
+    if (outcome.status === 'step_limit') throw new StepLimitReachedError();
+    return outcome.index;
   }
 }

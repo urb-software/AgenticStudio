@@ -3,6 +3,7 @@ import { MissingCliRunner } from './cli-runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
 import { FakeRunner } from './fake-runner.js';
 import { GitRunner } from './git.js';
+import { terminateLeftovers } from './leftovers.js';
 import { RETENTION_INTERVAL_MS, Retention } from './retention.js';
 import { DockerRunResources } from './run-resources.js';
 import { ProviderGate } from './provider-gate.js';
@@ -54,9 +55,12 @@ const api = new StudioApi({
   workerId,
   timeoutMs: config.requestTimeoutMs,
 });
+const resources = new DockerRunResources(undefined, logger);
 const worker = new AgentWorker({
   api,
   runner,
+  gate,
+  resources,
   status: { runner: config.runner, providers: gate.snapshot() },
   workingCopies: new WorkingCopies({
     dataDir: config.dataDir,
@@ -69,15 +73,30 @@ const worker = new AgentWorker({
   }),
   pollMs: config.pollMs,
   heartbeatMs: config.heartbeatMs,
+  killGraceMs: config.killGraceMs,
   logger,
 });
+
+// Issue #100: a previous worker that crashed during a Run step may have left its processes
+// and containers behind. Stop them before anything else runs; the Run is not resumed (Studio
+// fails it as worker_lost). A failure is logged and the next start tries again.
+try {
+  await terminateLeftovers({
+    dataDir: config.dataDir,
+    resources,
+    logger,
+    graceMs: config.killGraceMs,
+  });
+} catch (error) {
+  logger.error(`Cleaning up after a previous worker failed: ${(error as Error).message}`);
+}
 
 // Working copy retention (Issue #98): at start (which also removes leftover directories
 // without a known Run) and hourly; a failed pass is logged and retried at the next one.
 const retention = new Retention({
   dataDir: config.dataDir,
   runStates: (runIds, signal) => api.runStates(runIds, signal),
-  resources: new DockerRunResources(undefined, logger),
+  resources,
   retentionDays: config.retentionDays,
   maxPerProject: config.retentionMaxPerProject,
   now: () => new Date(),

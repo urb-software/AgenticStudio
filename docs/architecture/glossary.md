@@ -58,6 +58,14 @@ _Avoid_: Worktree, workspace, checkout
 **Run branch**:
 The branch in a Working copy that holds a Run's commits.
 
+**Run limits**:
+The limits a Run gets from Studio's configuration when it starts: the longest a Run step may work, the most Run steps the Run may take, and the longest it may wait for the operator. A Run step over its time limit ends the Run as timed out; one more Run step than allowed ends it as failed; a Run waiting too long is cancelled by Studio.
+_Avoid_: Quota, timeout (unqualified)
+
+**Cancel**:
+The operator's stop of a Run. A queued or waiting Run is cancelled at once; a running Run gets a cancel request that the agent worker carries out by stopping the Run step, and the Run ends as cancelled. Nothing is pushed; the Working copy is kept.
+_Avoid_: Abort, kill
+
 ### Cross-cutting
 
 **Provider**:

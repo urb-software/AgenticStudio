@@ -2,6 +2,9 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
+import { CancelLongWaitingRunsHandler } from './features/cancel-long-waiting-runs/handler.js';
+import { CancelRunEndpoint } from './features/cancel-run/endpoint.js';
+import { CancelRunHandler } from './features/cancel-run/handler.js';
 import { ClaimRunEndpoint } from './features/claim-run/endpoint.js';
 import { ClaimRunHandler } from './features/claim-run/handler.js';
 import { GetRunEndpoint } from './features/get-run/endpoint.js';
@@ -31,6 +34,7 @@ import {
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
 import { CLOCK, type Clock } from './ports/clock.js';
+import { RUN_LIMITS, type RunLimitsSetting } from './ports/run-limits.js';
 import { WORKER_LEASE, type WorkerLease } from './ports/worker-lease.js';
 import { WORKER_STATUS_STORE } from './ports/worker-status-store.js';
 
@@ -45,7 +49,7 @@ export interface ExecutionsModuleOptions {
 const SYSTEM_CLOCK: Clock = { now: () => new Date() };
 
 /**
- * `executions` business module (Issue #96): the operator starts and reads Runs; the agent
+ * `executions` business module (Issue #96): the operator starts, reads and cancels (#100) Runs; the agent
  * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
  * only). `projects` is passed in by the composition root, which wires its public
  * `RUN_START_POINTS` contract; this module never imports it otherwise.
@@ -61,6 +65,7 @@ export class ExecutionsModule {
         ListProjectRunsEndpoint,
         ListRunsEndpoint,
         GetRunEndpoint,
+        CancelRunEndpoint,
         ClaimRunEndpoint,
         ReportRunStateEndpoint,
         ReportRunStepEndpoint,
@@ -78,10 +83,17 @@ export class ExecutionsModule {
           useFactory: (config: AppConfig): WorkerLease => ({ seconds: config.workerLeaseSeconds }),
           inject: [APP_CONFIG],
         },
+        {
+          provide: RUN_LIMITS,
+          useFactory: (config: AppConfig): RunLimitsSetting => ({ ...config.runLimits }),
+          inject: [APP_CONFIG],
+        },
         StartRunHandler,
         ListProjectRunsHandler,
         ListRunsHandler,
         GetRunHandler,
+        CancelRunHandler,
+        CancelLongWaitingRunsHandler,
         ClaimRunHandler,
         ReportRunStateHandler,
         ReportRunStepHandler,

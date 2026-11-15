@@ -151,6 +151,19 @@ model Run {
   claimedBy             String?   @map("claimed_by") @db.Uuid
   /// The holding worker's last heartbeat; set exactly when claimed_by is.
   heartbeatAt           DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+  /// Issue #100: when the operator asked to cancel a preparing or running Run; the worker
+  /// confirms the stop with the state cancelled.
+  cancelRequestedAt     DateTime? @map("cancel_requested_at") @db.Timestamptz(6)
+  /// operator | system; set exactly when cancelled, together with cancel_reason.
+  cancelledBy           String?   @map("cancelled_by") @db.VarChar(16)
+  /// Why the Run was cancelled, shown to the operator.
+  cancelReason          String?   @map("cancel_reason") @db.VarChar(500)
+  /// When the Run began waiting for the operator; set exactly when waiting_for_operator.
+  waitingSince          DateTime? @map("waiting_since") @db.Timestamptz(6)
+  /// The limits copied from the API's configuration when the Run was started (Issue #100).
+  limitStepMinutes      Int       @map("limit_step_minutes")
+  limitMaxSteps         Int       @map("limit_max_steps")
+  limitWaitingDays      Int       @map("limit_waiting_days")
   steps                 RunStep[]
 
   /// Serves the newest-first list of all Runs.

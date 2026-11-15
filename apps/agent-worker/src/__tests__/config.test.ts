@@ -44,6 +44,7 @@ describe('loadWorkerConfig', () => {
       agentGitEmail: 'agent@example.test',
       retentionDays: 7,
       retentionMaxPerProject: 10,
+      killGraceMs: 10_000,
     });
   });
 
@@ -95,6 +96,12 @@ describe('loadWorkerConfig', () => {
         STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: '25',
       }),
     ).toMatchObject({ retentionDays: 3, retentionMaxPerProject: 25 });
+  });
+
+  it('reads the kill grace of a stopped Run step in seconds (Issue #100)', () => {
+    expect(loadWorkerConfig({ ...env, STUDIO_WORKER_KILL_GRACE_SECONDS: '3' }).killGraceMs).toBe(
+      3000,
+    );
   });
 
   it('reads the intervals', () => {
@@ -149,6 +156,16 @@ describe('loadWorkerConfig', () => {
       'a non-numeric retention count',
       { ...env, STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: 'many' },
       /STUDIO_WORKER_RETENTION_MAX_PER_PROJECT/,
+    ],
+    [
+      'a kill grace of zero',
+      { ...env, STUDIO_WORKER_KILL_GRACE_SECONDS: '0' },
+      /STUDIO_WORKER_KILL_GRACE_SECONDS/,
+    ],
+    [
+      'a kill grace over five minutes',
+      { ...env, STUDIO_WORKER_KILL_GRACE_SECONDS: '301' },
+      /STUDIO_WORKER_KILL_GRACE_SECONDS/,
     ],
     ['an unknown runner mode', { ...env, STUDIO_WORKER_RUNNER: 'api' }, /STUDIO_WORKER_RUNNER/],
     ['a relative CLI path', { ...env, CLAUDE_CODE_BIN: './claude' }, /CLAUDE_CODE_BIN/],

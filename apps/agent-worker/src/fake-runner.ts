@@ -21,6 +21,7 @@ export const FAKE_SCENARIOS = [
   'crash',
   'commit',
   'dirty',
+  'stubborn',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
@@ -53,6 +54,8 @@ export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
  * - `fail`: the agent fails ({@link AgentFailedError}).
  * - `question`: a `needs_input` result with a question.
  * - `slow`: keeps working for `slowMs`, then succeeds; stops when aborted.
+ * - `stubborn` (Issue #100): like `slow`, but ignores the abort, so the worker must give up on
+ *   it after the grace period (the hard path).
  * - `crash`: the runner itself breaks (a plain error).
  * `resume` always succeeds.
  */
@@ -68,7 +71,7 @@ export class FakeRunner implements Runner {
   async *start({ run, workspace, signal }: StartRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
     yield { type: 'status', text: `fake runner: ${scenario}` };
-    signal.throwIfAborted();
+    if (scenario !== 'stubborn') signal.throwIfAborted();
     switch (scenario) {
       case 'fail':
         throw new AgentFailedError('The fake agent failed.');
@@ -83,6 +86,11 @@ export class FakeRunner implements Runner {
       case 'slow':
         yield { type: 'output', text: 'working slowly' };
         await delay(this.slowMs, undefined, { signal });
+        return done();
+      case 'stubborn':
+        yield { type: 'output', text: 'working, and ignoring every request to stop' };
+        // Deliberately no signal: the timer is unref'd so it never keeps the process alive.
+        await delay(this.slowMs, undefined, { ref: false });
         return done();
       case 'commit':
         await this.change(workspace, signal, true);

@@ -13,6 +13,7 @@ import {
   ProviderUnavailableError,
 } from '../../domain/services/provider-availability.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RUN_LIMITS, type RunLimitsSetting } from '../../ports/run-limits.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
@@ -25,7 +26,8 @@ export interface StartRunInput {
 
 /**
  * Command (Issue #96): queues a Run of a project from the current commit of its integration
- * branch, which `projects` provides through its public contract. It refuses a provider Studio
+ * branch, which `projects` provides through its public contract, with the limits in force
+ * (Issue #100). It refuses a provider Studio
  * knows to be unavailable from the latest agent worker status (Issue #101); the worker's own
  * check stays authoritative. Throws {@link RunProjectNotFoundError},
  * {@link RepositoryNotReadyError} or {@link ProviderUnavailableError}.
@@ -38,6 +40,7 @@ export class StartRunHandler {
     @Inject(WORKER_STATUS_STORE) private readonly statuses: WorkerStatusStore,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
+    @Inject(RUN_LIMITS) private readonly limits: RunLimitsSetting,
   ) {}
 
   async execute(input: StartRunInput): Promise<Run> {
@@ -55,6 +58,7 @@ export class StartRunHandler {
           ...input,
           startCommit: startPoint.startCommit,
           remoteUrl: startPoint.remoteUrl,
+          limits: { ...this.limits },
         });
     }
   }

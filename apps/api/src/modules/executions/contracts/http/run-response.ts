@@ -27,8 +27,12 @@ export const runFailureCodeSchema = z.enum([
   'usage_limit',
   'worker_lost',
   'delivery_failed',
+  'step_limit',
   'unknown',
 ]);
+
+/** Who cancelled a Run (Issue #100). */
+export const runCancelledBySchema = z.enum(['operator', 'system']);
 
 export const runResponseSchema = z
   .object({
@@ -52,6 +56,24 @@ export const runResponseSchema = z
     commits: z.array(z.object({ id: z.string(), subject: z.string() })).optional(),
     /** Whether the Working copy held uncommitted changes after the latest Run step. */
     hasUncommittedChanges: z.boolean().optional(),
+    /**
+     * The limits in force for this Run (Issue #100): the longest a Run step may work, the most
+     * Run steps it may take, and the days it may wait for the operator before it is cancelled.
+     */
+    limits: z
+      .object({
+        stepMinutes: z.int().min(1),
+        maxSteps: z.int().min(1),
+        waitingDays: z.int().min(1),
+      })
+      .meta({ id: 'RunLimits' }),
+    /**
+     * When the operator asked to cancel a preparing or running Run (Issue #100): the agent
+     * worker is stopping it, and the Run ends as `cancelled` once it confirms.
+     */
+    cancelRequestedAt: z.iso.datetime().optional(),
+    /** Present exactly when `cancelled`: who cancelled it and why. */
+    cancellation: z.object({ by: runCancelledBySchema, reason: z.string() }).optional(),
   })
   .meta({ id: 'Run' });
 
@@ -80,6 +102,9 @@ export function toRunResponse(run: {
     commits: { id: string; subject: string }[];
     hasUncommittedChanges: boolean;
   } | null;
+  limits: { stepMinutes: number; maxSteps: number; waitingDays: number };
+  cancelRequestedAt: Date | null;
+  cancellation: { by: z.infer<typeof runCancelledBySchema>; reason: string } | null;
 }): RunResponse {
   return {
     id: run.id,
@@ -98,6 +123,15 @@ export function toRunResponse(run: {
           commits: run.workingCopy.commits.map(({ id, subject }) => ({ id, subject })),
           hasUncommittedChanges: run.workingCopy.hasUncommittedChanges,
         }
+      : {}),
+    limits: {
+      stepMinutes: run.limits.stepMinutes,
+      maxSteps: run.limits.maxSteps,
+      waitingDays: run.limits.waitingDays,
+    },
+    ...(run.cancelRequestedAt ? { cancelRequestedAt: run.cancelRequestedAt.toISOString() } : {}),
+    ...(run.cancellation
+      ? { cancellation: { by: run.cancellation.by, reason: run.cancellation.reason } }
       : {}),
   };
 }

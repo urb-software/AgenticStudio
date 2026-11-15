@@ -30,6 +30,10 @@ export class ClaimRunEndpoint {
       task: run.task,
       startCommit: run.startCommit,
       repository: { remoteUrl: run.remoteUrl },
+      // The worker enforces these (Issue #100); the waiting period is Studio's own.
+      limits: { stepMinutes: run.limits.stepMinutes, maxSteps: run.limits.maxSteps },
+      // A claim hands out a queued Run, which has taken no Run step yet (resumed Runs: #103).
+      completedSteps: 0,
     });
   }
 }

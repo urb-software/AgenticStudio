@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FakeRunner } from '../fake-runner.js';
+import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
 import { GitRunner } from '../git.js';
 import { Retention } from '../retention.js';
 import { composeProjectName } from '../run-layout.js';
@@ -38,6 +39,7 @@ const WORKER_TOKEN = randomBytes(32).toString('base64');
 type RunView = {
   id: string;
   state: string;
+  cancellation?: { by: string; reason: string };
   failure?: { code: string; detail: string };
   runBranch?: string;
   commits?: { id: string; subject: string }[];
@@ -85,14 +87,25 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
   const logger = { info: () => undefined, error: () => undefined };
 
+  /** The Run's containers (Issue #100): recorded, never the CI host's Docker. */
+  const cleanedUp: string[] = [];
+
   /** The worker as main.ts composes it in fake mode (Issue #101): the gate before the runner. */
-  function startWorker(token = WORKER_TOKEN, providers = BOTH_ENABLED): AgentWorker {
+  function startWorker(
+    token = WORKER_TOKEN,
+    providers = BOTH_ENABLED,
+    extras: { runner?: Runner; minuteMs?: number } = {},
+  ): AgentWorker {
     const gate = new ProviderGate(providers);
     const git = new GitRunner({ env: { PATH: gitEnv.PATH!, HOME: gitEnv.HOME! } });
-    const fake = new FakeRunner({ slowMs: 60_000, git });
+    const fake = extras.runner ?? new FakeRunner({ slowMs: 60_000, git });
     const worker = new AgentWorker({
       api: new StudioApi({ apiUrl, token, workerId: randomUUID() }),
       runner: new RunnerDispatcher(gate, { claude_code: fake, codex: fake }),
+      gate,
+      resources: { cleanUp: async (project) => void cleanedUp.push(project) },
+      killGraceMs: 500,
+      minuteMs: extras.minuteMs,
       status: { runner: 'fake', providers: gate.snapshot() },
       workingCopies: new WorkingCopies({
         dataDir: workerDataDir,
@@ -384,6 +397,98 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(await getRun(runId)).toMatchObject({
       state: 'failed',
       failure: { code: 'worker_lost', detail: 'worker shut down' },
+    });
+  });
+
+  // Issue #100: cancel, the time limit and process-tree termination through the real API.
+  describe('cancel and time limit (Issue #100)', () => {
+    const cancel = (runId: string) =>
+      fetch(`${apiUrl}/api/runs/${runId}/cancel`, {
+        method: 'POST',
+        headers: { Origin: STUDIO_ORIGIN, Cookie: cookie },
+      });
+
+    /** A Run step that starts a real process tree in its own group and ignores every stop. */
+    class ProcessTreeRunner implements Runner {
+      group: number | undefined;
+
+      async *start({ processes }: StartRunStepInput): RunStep {
+        // The shell and both children ignore SIGINT: only the SIGKILL after the grace ends them.
+        const child = spawn('sh', ['-c', 'trap "" INT; sleep 600 & sleep 600 & wait'], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.unref();
+        this.group = child.pid!;
+        processes.register(this.group);
+        yield { type: 'status', text: 'process tree started' };
+        await delay(600_000, undefined, { ref: false });
+        return { outcome: 'done', summary: 'never' };
+      }
+
+      resume(): RunStep {
+        throw new Error('not used');
+      }
+    }
+
+    const groupAlive = (group: number) => {
+      try {
+        process.kill(-group, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    it('cancels a running Run: the step stops, its Run ends cancelled, the log so far is kept', async () => {
+      const runId = await startRun('[fake:slow] Work for a long time');
+      startWorker();
+      await runReaches(runId, ['running']);
+
+      expect((await cancel(runId)).status).toBe(202);
+
+      const run = await runReaches(runId, ['cancelled', 'failed', 'succeeded']);
+      expect(run).toMatchObject({ state: 'cancelled', cancellation: { by: 'operator' } });
+      // The Working copy is kept for inspection, and its state recorded.
+      expect(run.runBranch).toMatch(/^agent\//);
+      expect(cleanedUp).toContain(composeProjectName(runId));
+    });
+
+    it('terminates the whole process tree of a step that ignores the interrupt', async () => {
+      const runId = await startRun('Start a process tree');
+      const runner = new ProcessTreeRunner();
+      startWorker(WORKER_TOKEN, BOTH_ENABLED, { runner });
+      await runReaches(runId, ['running']);
+      await until(
+        async () => runner.group,
+        (group) => group !== undefined,
+      );
+      expect(groupAlive(runner.group!)).toBe(true);
+
+      await cancel(runId);
+
+      expect((await runReaches(runId, ['cancelled', 'failed'])).state).toBe('cancelled');
+      expect(groupAlive(runner.group!)).toBe(false);
+    });
+
+    it('stops a step at its time limit: the Run ends timed_out', async () => {
+      const runId = await startRun('[fake:slow] Take too long');
+      // One minute of the 60-minute default lasts 5 ms here: the limit is 300 ms.
+      startWorker(WORKER_TOKEN, BOTH_ENABLED, { minuteMs: 5 });
+
+      expect((await runReaches(runId, ['timed_out', 'failed', 'succeeded'])).state).toBe(
+        'timed_out',
+      );
+    });
+
+    it('cancels a queued Run before any worker claims it', async () => {
+      const runId = await startRun('Never started');
+
+      expect((await cancel(runId)).status).toBe(202);
+      startWorker();
+      await delay(300);
+
+      expect((await getRun(runId)).state).toBe('cancelled');
     });
   });
 

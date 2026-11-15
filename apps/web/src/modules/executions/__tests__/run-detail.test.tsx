@@ -86,6 +86,7 @@ describe('Run page', () => {
     ['usage_limit', "The provider's usage limit was reached."],
     ['worker_lost', 'The agent worker stopped responding.'],
     ['delivery_failed', "The run's result could not be delivered."],
+    ['step_limit', 'The run reached its maximum number of run steps.'],
     ['unknown', 'The run failed for an unknown reason.'],
   ] as const)('shows the message for %s and the detail in mono', async (code, message) => {
     const run = aRun({

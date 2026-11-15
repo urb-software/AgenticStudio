@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   assertTransition,
+  IllegalRunTransitionError,
   isRunId,
+  OPERATOR_CANCELLATION,
   type Run,
   type RunFailure,
   type RunState,
@@ -27,9 +29,13 @@ export interface ReportRunStateInput {
 }
 
 /**
- * Command (Issue #96): the agent worker holding a Run reports a change of state. Throws
- * {@link RunNotFoundError}, {@link RunNotHeldError} (another worker holds it, or nobody does)
- * or `IllegalRunTransitionError`.
+ * Command (Issue #96): the agent worker holding a Run reports a change of state. With a
+ * cancel request on the Run (Issue #100) the worker confirms the stop with `cancelled`; a
+ * Run step that ended before the worker learned of the request, with `waiting_for_operator`
+ * or `succeeded`, also ends the Run as `cancelled`, so the operator's cancel always holds. A
+ * `cancelled` report without a request is refused. Throws {@link RunNotFoundError},
+ * {@link RunNotHeldError} (another worker holds it, or nobody does) or
+ * `IllegalRunTransitionError`.
  */
 @Injectable()
 export class ReportRunStateHandler {
@@ -40,21 +46,40 @@ export class ReportRunStateHandler {
 
   async execute(input: ReportRunStateInput): Promise<Run> {
     if (!isRunId(input.runId)) throw new RunNotFoundError();
-    const run = await this.runs.findById(input.runId);
-    if (!run) throw new RunNotFoundError();
-    if (run.claimedBy !== input.workerId) throw new RunNotHeldError();
-    assertTransition(run.state, input.state);
-    const changed = await this.runs.transitionClaimed({
-      runId: run.id,
-      workerId: input.workerId,
-      from: run.state,
-      to: input.state,
-      failure: input.state === 'failed' ? input.failure : null,
-      workingCopy: input.state === 'failed' ? (input.workingCopy ?? null) : null,
-      now: this.clock.now(),
-    });
+    // A second pass only when a cancel request arrived between the read and the write.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const run = await this.runs.findById(input.runId);
+      if (!run) throw new RunNotFoundError();
+      if (run.claimedBy !== input.workerId) throw new RunNotHeldError();
+      const cancelRequested = run.cancelRequestedAt !== null;
+      const to = targetState(input.state, cancelRequested);
+      if (to === 'cancelled' && !cancelRequested) {
+        throw new IllegalRunTransitionError(run.state, to);
+      }
+      assertTransition(run.state, to);
+      const keepsWorkingCopy = to === 'failed' || to === 'cancelled' || to === 'timed_out';
+      const changed = await this.runs.transitionClaimed({
+        runId: run.id,
+        workerId: input.workerId,
+        from: run.state,
+        to,
+        failure: to === 'failed' ? input.failure : null,
+        workingCopy: keepsWorkingCopy ? (input.workingCopy ?? null) : null,
+        cancellation: to === 'cancelled' ? OPERATOR_CANCELLATION : null,
+        cancelRequested,
+        now: this.clock.now(),
+      });
+      if (changed) return changed;
+    }
     // The Run changed between the read and the write (e.g. the sweep failed it).
-    if (!changed) throw new RunNotHeldError();
-    return changed;
+    throw new RunNotHeldError();
   }
+}
+
+/** The state a report leads to: a cancel request turns a Run step's normal end into `cancelled`. */
+function targetState(reported: RunState, cancelRequested: boolean): RunState {
+  if (cancelRequested && (reported === 'waiting_for_operator' || reported === 'succeeded')) {
+    return 'cancelled';
+  }
+  return reported;
 }
