@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import type { ProblemDetails, ProjectOutput, RunOutput } from '../../../platform/api';
 
-type Route = 'project' | 'projectRuns' | 'start' | 'runs' | 'run';
+type Route = 'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run';
 
 interface ScriptedResponse {
   status: number;
@@ -9,6 +9,7 @@ interface ScriptedResponse {
 }
 
 const ROUTES: readonly [RegExp, (method: string) => Route][] = [
+  [/^\/api\/projects()$/, () => 'projects'],
   [/^\/api\/projects\/([^/]+)$/, () => 'project'],
   [/^\/api\/projects\/([^/]+)\/runs$/, (method) => (method === 'POST' ? 'start' : 'projectRuns')],
   [/^\/api\/runs$/, () => 'runs'],
@@ -40,9 +41,12 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
   };
 }
 
+/** A second project, which the fake does not list (its name is unknown to the UI). */
+export const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000b2';
+
 /**
  * A fake of the executions operator API behind `fetch` (`GET|POST /api/projects/:id/runs`,
- * `GET /api/runs`, `GET /api/runs/:runId`, and `GET /api/projects/:id` for the project's name),
+ * `GET /api/runs`, `GET /api/runs/:runId`, and `GET /api/projects(/:id)` for project names),
  * so the generated client, the wrapper and TanStack Query run for real. `runs` is the server's
  * state, newest first; tests change a Run's state (as the agent worker would) and script error
  * responses. It keeps the contract (201 with a `queued` Run) without the API's rules.
@@ -50,6 +54,7 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
 export function fakeRunsApi(initial: RunOutput[] = []) {
   const runs = [...initial];
   const scripted: Record<Route, ScriptedResponse[]> = {
+    projects: [],
     project: [],
     projectRuns: [],
     start: [],
@@ -72,6 +77,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
     switch (route) {
+      case 'projects':
+        return json(200, { items: [PROJECT] });
       case 'project':
         return id === PROJECT.id
           ? json(200, { ...PROJECT, repository: null })

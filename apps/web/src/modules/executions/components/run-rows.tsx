@@ -12,14 +12,16 @@ type RunRowsProps = {
   now: number;
   /** The list's accessible name. */
   label: string;
+  /** Project names by id: when given, each Run also shows its project (lists across projects). */
+  projectNames?: ReadonlyMap<string, string>;
 };
 
 /**
- * Runs as rows: the state pill, the start of the Task (the link to the Run page), the Provider
- * and how long ago it was created. One line per Run from tablet up; on phones each Run is a
+ * Runs as rows: the state pill, the start of the Task (the link to the Run page), the Provider,
+ * the project when the list spans projects, and how long ago it was created. One line per Run from tablet up; on phones each Run is a
  * stacked block, so the page never scrolls sideways.
  */
-export function RunRows({ runs, now, label }: RunRowsProps) {
+export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
   return (
     <ul role="list" aria-label={label} className="m-0 flex list-none flex-col p-0">
       {runs.map((run) => {
@@ -40,8 +42,13 @@ export function RunRows({ runs, now, label }: RunRowsProps) {
             >
               {taskSummary(run.task)}
             </Link>
-            <span className="col-span-2 row-start-3 text-small text-text-muted md:col-span-1 md:col-start-3 md:row-start-1">
-              {PROVIDER_LABEL[run.provider]}
+            <span className="col-span-2 row-start-3 flex min-w-0 flex-wrap gap-x-3 text-small text-text-muted md:col-span-1 md:col-start-3 md:row-start-1 md:flex-nowrap">
+              <span>{PROVIDER_LABEL[run.provider]}</span>
+              {projectNames ? (
+                <span className="min-w-0 truncate md:max-w-48">
+                  {projectNames.get(run.projectId) ?? 'Unknown project'}
+                </span>
+              ) : null}
             </span>
             <time
               dateTime={run.createdAt}

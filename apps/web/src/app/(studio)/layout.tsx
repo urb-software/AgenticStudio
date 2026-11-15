@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { RunIndicator } from '@/modules/executions';
 import { OperatorMenu } from '@/platform/auth';
 import { QueryProvider } from '@/platform/query/query-provider';
 import { SidebarInset, SidebarProvider } from '@/shared/ui/sidebar';
@@ -39,6 +40,7 @@ export default async function StudioLayout({ children }: LayoutProps<'/'>) {
           >
             <MobileNavButton />
             <StudioBreadcrumb />
+            <RunIndicator />
             <ThemeToggle />
             <OperatorMenu>
               <ThemeMenuItem />

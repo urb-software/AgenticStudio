@@ -463,3 +463,92 @@ test('connect says the platform is unsupported on an API host that is not Linux'
   await expect(dialog.getByRole('alert')).toContainText('Unsupported platform');
   await expectNoAxeViolations(page);
 });
+
+// Story #97: start Runs on a project with a ready Repository and follow them on the Run page
+// while the agent worker (fake runner, Linux only) carries them out: a Run that succeeds, a
+// "Run again" that fails (`[fake:fail]`) and shows its reason, and one that waits for the
+// operator (`[fake:question]`), which the top-bar run indicator then shows. The Run page is
+// scanned with axe in both themes for the failed and the waiting (active) Run, and the
+// Executions page lists the Runs. Linux only; `pnpm e2e:smoke` fails on Linux if this test did
+// not run and pass. The waiting Run stays waiting (no cancel yet), so it runs last.
+test('operator starts runs and follows them to their result', async ({ page }, testInfo) => {
+  test.skip(
+    process.env.E2E_API_PLATFORM !== 'linux',
+    'Repository features and the agent worker run on Linux only; CI runs this test on Linux.',
+  );
+  test.setTimeout(120_000);
+  const base = process.env.E2E_FIXTURE_REPO_BASE;
+  if (!base) throw new Error('E2E_FIXTURE_REPO_BASE is not set; run `pnpm e2e:smoke` on Linux');
+  const projectName = `Runs ${testInfo.project.name}`;
+
+  await signIn(page);
+  const main = await createAndOpenProject(page, projectName);
+
+  // No ready Repository yet: New run is disabled and says why.
+  const runs = main.getByRole('region', { name: 'Runs' });
+  await expect(runs.getByRole('button', { name: 'New run' })).toBeDisabled();
+  await expect(runs.getByText('Connect a repository to start a run.')).toBeVisible();
+
+  const card = main.getByRole('region', { name: 'Repository' });
+  await card.getByRole('button', { name: 'Connect repository' }).click();
+  const connect = page.getByRole('dialog', { name: 'Connect repository' });
+  await connect.getByLabel('Repository URL').fill(`${base}run-${testInfo.project.name}.git`);
+  await connect.getByRole('button', { name: 'Connect repository' }).click();
+  await expect(card.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  // Start a Run: the dialog opens with Claude Code chosen; submitting opens the Run page.
+  await runs.getByRole('button', { name: 'New run' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New run' });
+  await expect(dialog.getByRole('button', { name: 'Claude Code' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await dialog.getByLabel('Task').fill('Add a smoke note to the README');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(page).toHaveURL(/\/executions\/[0-9a-f-]{36}$/);
+  const heading = main.getByRole('heading', { level: 1 });
+  await expect(heading).toHaveText('Add a smoke note to the README');
+  const pill = main.locator('header [data-slot="status-pill"]');
+  // The worker claims it and the fake runner succeeds; the page polls until it is over.
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(main.getByText('Claude Code', { exact: true })).toBeVisible();
+  const breadcrumb = page
+    .getByRole('banner', { name: 'Top bar' })
+    .getByRole('navigation', { name: 'Breadcrumb' });
+  await expect(breadcrumb.getByRole('link', { name: 'Executions' })).toBeVisible();
+
+  // Run again, prefilled; this time the fake agent fails and the page shows the reason.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await expect(dialog.getByLabel('Task')).toHaveValue('Add a smoke note to the README');
+  await dialog.getByLabel('Task').fill('Break on purpose [fake:fail]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Break on purpose [fake:fail]');
+  await expect(pill).toHaveText('Failed', { timeout: 30_000 });
+  const failure = main.getByRole('alert').filter({ hasText: 'The agent stopped with an error.' });
+  await expect(failure).toContainText('The fake agent failed.');
+  await expectInBothThemes(page, pill);
+
+  // A Run that waits for the operator: amber, active, and counted by the run indicator.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Ask before changing anything [fake:question]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Ask before changing anything [fake:question]');
+  await expect(pill).toHaveText('Waiting for you', { timeout: 30_000 });
+  const indicator = page
+    .getByRole('banner', { name: 'Top bar' })
+    .getByRole('link', { name: /waiting for you/ });
+  await expect(indicator).toBeVisible({ timeout: 15_000 });
+  await expectInBothThemes(page, pill);
+
+  // The indicator leads to Executions, which lists this project's Runs, newest first.
+  await indicator.click();
+  await expect(page).toHaveURL(/\/executions$/);
+  const list = main.getByRole('list', { name: 'Runs' });
+  const rows = list.getByRole('listitem').filter({ hasText: projectName });
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText('Waiting for you');
+  await expect(rows.nth(1)).toContainText('Failed');
+  await expect(rows.nth(2)).toContainText('Succeeded');
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+});
