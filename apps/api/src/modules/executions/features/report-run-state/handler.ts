@@ -16,6 +16,7 @@ import {
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 
 export interface ReportRunStateInput {
   runId: string;
@@ -35,13 +36,14 @@ export interface ReportRunStateInput {
  * succeeded Run was delivered (Issue #102). For a `failed` Run it holds for a delivery retry
  * it reports the retry's outcome: `succeeded` with the delivery, or `failed` with
  * `delivery_failed` again. Throws {@link RunNotFoundError}, {@link RunNotHeldError} (another
- * worker holds it, or nobody does) or `IllegalRunTransitionError`.
+ * worker holds it, or nobody does) or `IllegalRunTransitionError`. Wakes the Run's live log streams.
  */
 @Injectable()
 export class ReportRunStateHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
   ) {}
 
   async execute(input: ReportRunStateInput): Promise<Run> {
@@ -63,6 +65,8 @@ export class ReportRunStateHandler {
     });
     // The Run changed between the read and the write (e.g. the sweep failed it).
     if (!changed) throw new RunNotHeldError();
+    // Live log streams re-read the state: a final Run ends them (Issue #99).
+    this.signal.notify(run.id);
     return changed;
   }
 
@@ -83,6 +87,7 @@ export class ReportRunStateHandler {
       now: this.clock.now(),
     });
     if (!changed) throw new RunNotHeldError();
+    this.signal.notify(run.id);
     return changed;
   }
 }

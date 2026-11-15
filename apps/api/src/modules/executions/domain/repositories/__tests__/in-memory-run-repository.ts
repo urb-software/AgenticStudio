@@ -17,6 +17,7 @@ import type {
   RunRepository,
   RunStateView,
   RunStepRecord,
+  StoredRunStep,
 } from '../run-repository.js';
 
 const isActive = (state: RunState) => (ACTIVE_RUN_STATES as readonly RunState[]).includes(state);
@@ -185,6 +186,18 @@ export class InMemoryRunRepository implements RunRepository {
     run.workingCopy = structuredClone(workingCopy);
     run.failingChecks = [...failingChecks];
     return Promise.resolve(index);
+  }
+
+  listSteps(runId: string): Promise<StoredRunStep[]> {
+    return Promise.resolve(
+      this.steps
+        .filter((stored) => stored.runId === runId)
+        .map((stored) => ({
+          index: stored.index,
+          ...structuredClone(stored.step),
+          reportedAt: new Date(Date.UTC(2026, 10, 15, 11, 0, stored.index)),
+        })),
+    );
   }
 
   failStaleClaims(

@@ -29,6 +29,7 @@ import type {
   RunRepository,
   RunStateView,
   RunStepRecord,
+  StoredRunStep,
 } from '../../domain/repositories/run-repository.js';
 
 const RUN_FIELDS = {
@@ -358,6 +359,20 @@ export class PrismaRunRepository implements RunRepository {
         },
       });
       return index;
+    });
+  }
+
+  async listSteps(runId: string): Promise<StoredRunStep[]> {
+    const rows = await this.db.runStep.findMany({
+      where: { runId },
+      orderBy: { index: 'asc' },
+      select: { index: true, kind: true, result: true, createdAt: true },
+    });
+    return rows.map((row) => {
+      if (row.kind !== 'start' && row.kind !== 'resume') {
+        throw new Error(`Unexpected run step kind in the database: ${row.kind}`);
+      }
+      return { index: row.index, kind: row.kind, result: row.result, reportedAt: row.createdAt };
     });
   }
 

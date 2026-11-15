@@ -77,7 +77,7 @@ class CliRunner implements Runner {
 
   async *start({ run }: StartRunStepInput): RunStep {
     spawnProviderCli(this.cli, { provider: run.provider, args: ['--print', run.task] });
-    yield { type: 'status', text: 'cli started' };
+    yield { type: 'message', text: 'cli started' };
     return DONE;
   }
 
@@ -98,6 +98,7 @@ class OneRunApi implements WorkerApi {
     return this.queue.shift() ?? null;
   }
   async reportStatus() {}
+  async appendEvents() {}
   async reportStep() {}
   async heartbeat() {}
   async reportState(_runId: string, report: { state: string; workingCopy?: unknown }) {

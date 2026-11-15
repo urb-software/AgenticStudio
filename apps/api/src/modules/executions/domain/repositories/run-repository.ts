@@ -58,6 +58,12 @@ export interface RunStepRecord {
   result: unknown;
 }
 
+/** A stored Run step: its number, kind, report time and the result as stored JSON. */
+export interface StoredRunStep extends RunStepRecord {
+  index: number;
+  reportedAt: Date;
+}
+
 /** A Run's state for the agent worker's retention (Issue #98). */
 export interface RunStateView {
   runId: string;
@@ -132,6 +138,9 @@ export interface RunRepository {
     workingCopy: RunWorkingCopy,
     failingChecks: readonly string[],
   ): Promise<number | null>;
+
+  /** The Run's stored steps, by number (Issue #99). */
+  listSteps(runId: string): Promise<StoredRunStep[]>;
 
   /**
    * Every held Run whose last heartbeat is before `staleBefore`: a `preparing` or `running` one
