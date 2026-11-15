@@ -108,6 +108,13 @@ export type RunOutput = {
         subject: string;
     }>;
     hasUncommittedChanges?: boolean;
+    delivery?: 'none' | 'delivered' | 'failed';
+    pullRequest?: {
+        url: string;
+        number: number;
+    };
+    deliveryRetryRequested?: true;
+    failingChecks?: Array<string>;
 };
 
 export type RunListOutput = Array<RunOutput>;
@@ -636,6 +643,38 @@ export type GetRunResponses = {
 };
 
 export type GetRunResponse = GetRunResponses[keyof GetRunResponses];
+
+export type RetryRunDeliveryData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/retry-delivery';
+};
+
+export type RetryRunDeliveryErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run's delivery did not fail (urn:agentic-studio:problem:delivery-not-retryable)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RetryRunDeliveryError = RetryRunDeliveryErrors[keyof RetryRunDeliveryErrors];
+
+export type RetryRunDeliveryResponses = {
+    202: RunOutput;
+};
+
+export type RetryRunDeliveryResponse = RetryRunDeliveryResponses[keyof RetryRunDeliveryResponses];
 
 export type ListRunEventsData = {
     body?: never;

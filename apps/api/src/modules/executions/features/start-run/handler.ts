@@ -55,6 +55,7 @@ export class StartRunHandler {
           ...input,
           startCommit: startPoint.startCommit,
           remoteUrl: startPoint.remoteUrl,
+          integrationBranch: startPoint.integrationBranch,
         });
     }
   }

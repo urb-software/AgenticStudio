@@ -57,6 +57,7 @@ describe('AppendRunEventsHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
     build();

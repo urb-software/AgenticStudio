@@ -9,12 +9,14 @@ import {
 import { describe, expect, it } from 'vitest';
 import { runEventKindSchema } from '../../../contracts/http/run-event-response.js';
 import {
+  runDeliverySchema,
   runFailureCodeSchema,
   runProviderSchema,
   runStateSchema,
 } from '../../../contracts/http/run-response.js';
 import {
   PROVIDERS,
+  RUN_DELIVERIES,
   RUN_FAILURE_CODES,
   RUN_STATES,
   TASK_MAX_LENGTH,
@@ -28,6 +30,8 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(runStateSchema.options).toEqual([...RUN_STATES]);
     expect(runProviderSchema.options).toEqual([...PROVIDERS]);
     expect(runFailureCodeSchema.options).toEqual([...RUN_FAILURE_CODES]);
+    // Issue #102.
+    expect(runDeliverySchema.options).toEqual([...RUN_DELIVERIES]);
   });
 
   it('worker protocol: the same states, providers, failure codes and Task limit', () => {

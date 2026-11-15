@@ -57,12 +57,13 @@ describe('composeProjectName', () => {
 });
 
 describe('Run directories', () => {
-  it('keeps the Working copy and, beside it, the Task and the Run file', () => {
+  it("keeps the Working copy and, beside it, the Task, the Run file and the agent's result", () => {
     expect(runDirectories(DATA_DIR, RUN_ID)).toEqual({
       runDir: `${DATA_DIR}/runs/${RUN_ID}`,
       repoDir: `${DATA_DIR}/runs/${RUN_ID}/repo`,
       taskFile: `${DATA_DIR}/runs/${RUN_ID}/task.md`,
       runFile: `${DATA_DIR}/runs/${RUN_ID}/run.json`,
+      resultFile: `${DATA_DIR}/runs/${RUN_ID}/result.json`,
     });
   });
 

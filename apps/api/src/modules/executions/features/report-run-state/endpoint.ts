@@ -8,7 +8,8 @@ import { ReportRunStateRequestDto } from './schema.js';
 
 /**
  * `POST /api/worker/runs/:runId/state` (Issue #96), worker token only: 204, 404 for an
- * unknown Run, 409 when this worker does not hold it or the transition is not allowed.
+ * unknown Run, 409 when this worker does not hold it or the transition is not allowed. Also
+ * carries how a Run was delivered and a delivery retry's outcome (Issue #102).
  */
 @WorkerController('runs')
 export class ReportRunStateEndpoint {
@@ -24,6 +25,7 @@ export class ReportRunStateEndpoint {
         state: body.state,
         failure: body.failure ?? null,
         workingCopy: body.workingCopy ?? null,
+        delivery: body.delivery ?? null,
       });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

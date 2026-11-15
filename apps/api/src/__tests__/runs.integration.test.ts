@@ -45,6 +45,7 @@ const PROBLEM = {
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
+  deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
 };
 
 const BOTH_ENABLED = { claude_code: true, codex: true };
@@ -400,6 +401,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         startCommit: project.head,
         // Issue #98: the remote as connected; nothing else about the Repository.
         repository: { remoteUrl: project.url },
+        // Issue #102: the pull request's base, a Run to start (not only to deliver), and no
+        // Studio-placed files yet (#104).
+        integrationBranch: 'dev',
+        kind: 'start',
+        studioPaths: [],
       });
       const preparing = (await getRun(run.id)).body;
       expect(preparing).toMatchObject({
@@ -417,7 +423,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect((await reportStep(run.id, result)).status).toBe(204);
       expect((await heartbeat(run.id)).status).toBe(204);
       advance(5);
-      expect((await report(run.id, { state: 'succeeded' })).status).toBe(204);
+      expect(
+        (await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } })).status,
+      ).toBe(204);
 
       const finished = (await getRun(run.id)).body;
       expect(finished).toMatchObject({
@@ -511,6 +519,229 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       );
       expectProblem(await runStates([]), 400);
       expectProblem(await runStates(['../../etc']), 400);
+    });
+
+    describe('delivery (Issue #102)', () => {
+      const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+      const DONE = { outcome: 'done', summary: 'Added GET /health.' };
+
+      /** A Run carried to the end of its step by W1. */
+      async function steppedRun(result: object = DONE) {
+        const project = await readyProject(`Shop ${randomUUID()}`);
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        expect((await reportStep(run.id, result)).status).toBe(204);
+        return run;
+      }
+
+      /** A Run whose delivery failed. */
+      async function failedDelivery() {
+        const run = await steppedRun();
+        const failed = await report(run.id, {
+          state: 'failed',
+          failure: { code: 'delivery_failed', detail: 'Pushing the Run branch was refused.' },
+        });
+        expect(failed.status).toBe(204);
+        return run;
+      }
+
+      const retryDelivery = (runId: string) =>
+        http()
+          .post(`/api/runs/${runId}/retry-delivery`)
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+
+      it('records the draft pull request of a delivered Run on the Run and in the lists', async () => {
+        const run = await steppedRun();
+
+        const reported = await report(run.id, {
+          state: 'succeeded',
+          delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+        });
+
+        expect(reported.status).toBe(204);
+        const delivered = (await getRun(run.id)).body;
+        expect(delivered).toMatchObject({
+          state: 'succeeded',
+          delivery: 'delivered',
+          pullRequest: PULL_REQUEST,
+        });
+        expect(delivered).not.toHaveProperty('deliveryRetryRequested');
+        const listed = (await http().get('/api/runs').set('Cookie', cookie)).body as object[];
+        expect(listed[0]).toMatchObject({ delivery: 'delivered', pullRequest: PULL_REQUEST });
+      });
+
+      it('records "No changes" as the delivery none, without a pull request', async () => {
+        const run = await steppedRun();
+
+        await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } });
+
+        const finished = (await getRun(run.id)).body;
+        expect(finished).toMatchObject({ state: 'succeeded', delivery: 'none' });
+        expect(finished).not.toHaveProperty('pullRequest');
+      });
+
+      it('shows the checks the agent reported failed', async () => {
+        const run = await steppedRun({
+          ...DONE,
+          checks: [
+            { name: 'lint', result: 'passed' },
+            { name: 'unit tests', result: 'failed' },
+          ],
+        });
+
+        expect((await getRun(run.id)).body).toMatchObject({ failingChecks: ['unit tests'] });
+      });
+
+      it('rejects a delivery outcome with any state but succeeded (400)', async () => {
+        const run = await steppedRun();
+
+        const response = await report(run.id, {
+          state: 'failed',
+          failure: { code: 'delivery_failed', detail: 'x' },
+          delivery: { outcome: 'none' },
+        });
+
+        expectProblem(response, 400);
+      });
+
+      it('retries a failed delivery: 202, a delivery claim, then succeeded with the pull request', async () => {
+        const run = await failedDelivery();
+        expect((await getRun(run.id)).body).toMatchObject({ state: 'failed', delivery: 'failed' });
+
+        const requested = await retryDelivery(run.id);
+        expect(requested.status).toBe(202);
+        expect(requested.body).toMatchObject({
+          id: run.id,
+          state: 'failed',
+          deliveryRetryRequested: true,
+        });
+        expect((await retryDelivery(run.id)).status).toBe(202);
+
+        const claimed = await claim(W1);
+        expect(claimed.status).toBe(200);
+        // Only the worker that started the Run gets it (it has the Working copy), with the Run
+        // branch Studio recorded (review R1 and R4 of #122).
+        expect(claimed.body).toMatchObject({
+          runId: run.id,
+          kind: 'deliver',
+          runBranch: WORKING_COPY.runBranch,
+          studioPaths: [],
+        });
+        expect((await claim(W2)).status).toBe(204);
+        expect((await heartbeat(run.id, W1)).status).toBe(204);
+        advance(5);
+
+        const reported = await report(
+          run.id,
+          {
+            state: 'succeeded',
+            delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+            workingCopy: WORKING_COPY,
+          },
+          W1,
+        );
+        expect(reported.status).toBe(204);
+        const delivered = (await getRun(run.id)).body;
+        expect(delivered).toMatchObject({
+          state: 'succeeded',
+          delivery: 'delivered',
+          pullRequest: PULL_REQUEST,
+          finishedAt: clock.current.toISOString(),
+        });
+        expect(delivered).not.toHaveProperty('failure');
+        expect(delivered).not.toHaveProperty('deliveryRetryRequested');
+      });
+
+      it('keeps a Run failed with the new reason when its delivery retry fails again', async () => {
+        const run = await failedDelivery();
+        await retryDelivery(run.id);
+        await claim(W1);
+
+        await report(
+          run.id,
+          { state: 'failed', failure: { code: 'delivery_failed', detail: 'GitHub answered 503.' } },
+          W1,
+        );
+
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'failed',
+          delivery: 'failed',
+          failure: { code: 'delivery_failed', detail: 'GitHub answered 503.' },
+        });
+        expect((await retryDelivery(run.id)).status).toBe(202);
+      });
+
+      it('keeps a delivery retry whose worker was lost a failed delivery', async () => {
+        const run = await failedDelivery();
+        await retryDelivery(run.id);
+        await claim(W1);
+        advance(LEASE_SECONDS + 1);
+
+        expect((await claim(W2)).status).toBe(204);
+
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'failed',
+          delivery: 'failed',
+          failure: { code: 'delivery_failed' },
+        });
+        expect((await getRun(run.id)).body).not.toHaveProperty('deliveryRetryRequested');
+      });
+
+      it('counts a held delivery retry toward the limits: its project and the server', async () => {
+        const run = await failedDelivery();
+        const [{ projectId }] = await db().$queryRaw<{ projectId: string }[]>`
+          SELECT project_id AS "projectId" FROM runs WHERE id = ${run.id}::uuid`;
+        await retryDelivery(run.id);
+        expect((await claim(W1)).body).toMatchObject({ runId: run.id, kind: 'deliver' });
+        const sameProject = await queuedRun(projectId!);
+        const other = await queuedRun((await readyProject('Other')).id);
+        const third = await queuedRun((await readyProject('Third')).id);
+
+        expect((await claim(W2)).body).toMatchObject({ runId: other.id });
+        expect((await claim(W2)).status).toBe(204);
+        expect((await getRun(sameProject.id)).body.state).toBe('queued');
+        expect((await getRun(third.id)).body.state).toBe('queued');
+      });
+
+      it('refuses a retry for a Run whose delivery did not fail (409) and an unknown Run (404)', async () => {
+        // Each Run is claimed before the next is queued, so every claim hands out that Run.
+        const succeeded = await steppedRun();
+        await report(succeeded.id, { state: 'succeeded', delivery: { outcome: 'none' } });
+        const agentFailed = await queuedRun((await readyProject('Other')).id);
+        await claim();
+        await report(agentFailed.id, { state: 'running' });
+        await report(agentFailed.id, {
+          state: 'failed',
+          failure: { code: 'agent_failed', detail: 'exit 1' },
+        });
+        const queued = await queuedRun((await readyProject('Shop')).id);
+
+        expectProblem(await retryDelivery(queued.id), 409, PROBLEM.deliveryNotRetryable);
+        expectProblem(await retryDelivery(succeeded.id), 409, PROBLEM.deliveryNotRetryable);
+        expectProblem(await retryDelivery(agentFailed.id), 409, PROBLEM.deliveryNotRetryable);
+        expect((await getRun(agentFailed.id)).body).not.toHaveProperty('deliveryRetryRequested');
+        expectProblem(await retryDelivery(randomUUID()), 404, PROBLEM.runNotFound);
+        expectProblem(await retryDelivery('nope'), 404, PROBLEM.runNotFound);
+      });
+
+      it('requires the operator session and the Studio origin to retry', async () => {
+        const run = await failedDelivery();
+
+        const anonymous = await http()
+          .post(`/api/runs/${run.id}/retry-delivery`)
+          .set('Origin', STUDIO_ORIGIN);
+        expect(anonymous.status).toBe(401);
+        const foreign = await http()
+          .post(`/api/runs/${run.id}/retry-delivery`)
+          .set({ Origin: 'https://evil.example.test', Cookie: cookie });
+        expect(foreign.status).toBe(403);
+        const withWorkerToken = await http()
+          .post(`/api/runs/${run.id}/retry-delivery`)
+          .set({ Origin: STUDIO_ORIGIN, Authorization: `Bearer ${WORKER_TOKEN}` });
+        expect(withWorkerToken.status).toBe(401);
+        expect((await getRun(run.id)).body).not.toHaveProperty('deliveryRetryRequested');
+      });
     });
 
     it('records a failed Run with its failure code and detail', async () => {
@@ -675,7 +906,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expect((await getRun(c1.id)).body.state).toBe('queued');
 
         await report(a1.id, { state: 'running' }, W1);
-        await report(a1.id, { state: 'succeeded' }, W1);
+        await report(a1.id, { state: 'succeeded', delivery: { outcome: 'none' } }, W1);
         expect((await claim(W1)).body.runId).toBe(a2.id);
         expect((await claim(W1)).status).toBe(204);
       });
@@ -724,7 +955,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           },
         });
         expectProblem(await heartbeat(run.id, W1), 409, PROBLEM.runNotHeld);
-        expectProblem(await report(run.id, { state: 'succeeded' }, W1), 409, PROBLEM.runNotHeld);
+        expectProblem(
+          await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } }, W1),
+          409,
+          PROBLEM.runNotHeld,
+        );
       });
 
       it('keeps a Run whose worker sends heartbeats', async () => {
@@ -823,7 +1058,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const run = await queuedRun(project.id);
         await claim(W1);
 
-        const response = await report(run.id, { state: 'succeeded' }, W1);
+        const response = await report(
+          run.id,
+          { state: 'succeeded', delivery: { outcome: 'none' } },
+          W1,
+        );
 
         expectProblem(response, 409, PROBLEM.illegalRunTransition);
         expect(response.body.detail).toBe('A Run cannot go from preparing to succeeded.');
