@@ -117,3 +117,20 @@ export function useStartRun(projectId: string) {
     },
   });
 }
+
+/** The structured results of a Run's steps, shown at each step's end in its log (Issue #99). */
+const runStepsKey = (runId: string) => ['runs', 'steps', runId] as const;
+
+export function useRunSteps(runId: string) {
+  return useQuery({
+    queryKey: runStepsKey(runId),
+    queryFn: () => api.listRunSteps(runId),
+    select: (list) => new Map(list.steps.map((step) => [step.index, step])),
+  });
+}
+
+/** Reads the step results again, e.g. when the live log shows a step has finished. */
+export function useRefreshRunSteps(runId: string) {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: runStepsKey(runId) });
+}

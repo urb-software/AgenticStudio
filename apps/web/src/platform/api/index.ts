@@ -13,8 +13,11 @@ import type {
   ProjectListOutput,
   ProjectOutput,
   RepositoryOutput,
+  RunEventOutput,
+  RunEventPageOutput,
   RunListOutput,
   RunOutput,
+  RunStepListOutput,
   SessionResponseOutput,
   StartRunRequest,
   VerifyRepositoryRequest,
@@ -38,8 +41,12 @@ export type {
   RepositoryOutput,
   RepositoryStateOutput,
   RepositorySummaryOutput,
+  RunEventOutput,
+  RunEventPageOutput,
   RunListOutput,
   RunOutput,
+  RunStepListOutput,
+  RunStepOutput,
   SessionResponseOutput,
   StartRunRequest,
   VerifyRepositoryRequest,
@@ -184,4 +191,56 @@ export const api = {
   /** Every Run across all projects, newest first. */
   listRuns: (): Promise<RunListOutput> => unwrap(sdk.listRuns()),
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
+  /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
+  listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
+    unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),
+  /** The structured result of each reported Run step. */
+  listRunSteps: (runId: string): Promise<RunStepListOutput> =>
+    unwrap(sdk.listRunSteps({ path: { runId } })),
 };
+
+/** How a Run's log stream connection ended. */
+export type RunEventStreamEnd = 'end' | 'dropped';
+
+function isRunEvent(value: unknown): value is RunEventOutput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as RunEventOutput).seq === 'number' &&
+    typeof (value as RunEventOutput).text === 'string'
+  );
+}
+
+/**
+ * One connection to a Run's live log (`GET /api/runs/:runId/events/stream`, generated client)
+ * from the event after `after`. `onOpen` fires once the stream is open, `onEvent` for each
+ * event. Resolves `end` when the server said the Run is final and everything was sent, or
+ * `dropped` when the connection failed or closed early (or `signal` aborted); reconnecting is
+ * the caller's (see `platform/sse`). The generated client does not retry here.
+ */
+export async function streamRunEvents(
+  runId: string,
+  after: number,
+  handlers: { onOpen: () => void; onEvent: (event: RunEventOutput) => void; signal: AbortSignal },
+): Promise<RunEventStreamEnd> {
+  let opened = false;
+  let ended = false;
+  const { stream } = await sdk.streamRunEvents({
+    path: { runId },
+    query: { after },
+    signal: handlers.signal,
+    sseMaxRetryAttempts: 1,
+    onSseEvent: (message) => {
+      if (!opened) {
+        opened = true;
+        handlers.onOpen();
+      }
+      if (message.event === 'end') ended = true;
+    },
+  });
+  for await (const data of stream) {
+    if (ended) break;
+    if (isRunEvent(data)) handlers.onEvent(data);
+  }
+  return ended ? 'end' : 'dropped';
+}
