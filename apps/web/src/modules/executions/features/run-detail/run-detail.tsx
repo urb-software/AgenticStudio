@@ -2,6 +2,7 @@
 
 import {
   ArrowLeftIcon,
+  RotateCcwIcon,
   ClockIcon,
   FolderIcon,
   RefreshCwIcon,
@@ -9,7 +10,7 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { StatusPill } from '@/shared/components/status-pill';
@@ -27,15 +28,15 @@ import {
   RUN_STATE_VIEW,
   taskSummary,
 } from '../../components/run-presentation';
+import { failedRequest } from '../../components/failed-request';
+import { StaleBanner } from '../../components/stale-banner';
+import { NewRunDialog } from '../new-run/new-run-dialog';
+
+/** States in which a Run is over, so it can be run again. */
+const FINAL: readonly RunOutput['state'][] = ['succeeded', 'failed', 'cancelled', 'timed_out'];
 
 /** The request the page makes (generated `getRun`), shown verbatim when it fails. */
 const RUN_REQUEST = 'GET /api/runs/{runId}';
-
-function failedRequest(error: unknown): string {
-  if (!(error instanceof ApiError) || error.status === 0) return RUN_REQUEST;
-  const status = [error.status, error.problem?.title].filter(Boolean).join(' ');
-  return `${RUN_REQUEST} · ${status}`;
-}
 
 function LoadingRun() {
   return (
@@ -83,20 +84,31 @@ function QueuedReason({ run }: { run: RunOutput }) {
 
 function Failure({ failure }: { failure: NonNullable<RunOutput['failure']> }) {
   return (
-    <div
-      role="alert"
-      className="flex flex-col gap-2.5 rounded-lg border border-run-failed/35 bg-run-failed-soft p-4"
-    >
-      <p className="m-0 flex items-center gap-2 font-semibold text-run-failed">
-        <TriangleAlertIcon aria-hidden="true" className="size-4 shrink-0" />
-        {FAILURE_MESSAGE[failure.code]}
-      </p>
+    <Banner tone="danger" title={FAILURE_MESSAGE[failure.code]}>
       {failure.detail ? (
-        <p className="m-0 font-mono text-code break-words whitespace-pre-wrap text-text">
+        <span className="mt-1 block font-mono text-code break-words whitespace-pre-wrap">
           {failure.detail}
-        </p>
+        </span>
       ) : null}
-    </div>
+    </Banner>
+  );
+}
+
+/** "Run again": the New run dialog, prefilled with the Run's Task and Provider. */
+function RunAgain({ run }: { run: RunOutput }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="primary" icon={RotateCcwIcon} onClick={() => setOpen(true)}>
+        Run again
+      </Button>
+      <NewRunDialog
+        projectId={run.projectId}
+        initialValues={{ task: run.task, provider: run.provider }}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </>
   );
 }
 
@@ -109,16 +121,25 @@ function ProjectLink({ projectId }: { projectId: string }) {
   );
 }
 
+/** The Run's title (the start of its Task) for the Studio Shell breadcrumb, from the cached Run. */
+export function RunTitle({ runId }: { runId: string }) {
+  const { data } = useRun(runId);
+  return <>{data ? taskSummary(data.task) : 'Run'}</>;
+}
+
 /**
  * The Run page: the Task, the state as a status pill (polled while the Run is active), the
  * Provider, the project, the starting commit and the times. A queued Run says why it waits; a
- * failed Run shows the message for its reason code and the detail in mono.
+ * failed Run shows the message for its reason code and the detail in mono; a finished one has
+ * "Run again".
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
 
   if (isPending) return <LoadingRun />;
-  if (isError) {
+  // A failed background poll keeps the last known Run on screen (below); only a first load
+  // that failed replaces the page.
+  if (!run) {
     if (error instanceof ApiError && error.status === 404) {
       return (
         <EmptyState
@@ -138,7 +159,9 @@ export function RunDetail({ runId }: { runId: string }) {
         tone="error"
         icon={TriangleAlertIcon}
         title="Couldn't load the run"
-        description={<span className="font-mono text-small">{failedRequest(error)}</span>}
+        description={
+          <span className="font-mono text-small">{failedRequest(RUN_REQUEST, error)}</span>
+        }
         action={
           <Button icon={RefreshCwIcon} loading={isRefetching} onClick={() => void refetch()}>
             Retry
@@ -156,24 +179,30 @@ export function RunDetail({ runId }: { runId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <header className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 className="m-0 min-w-0 text-page-title font-semibold tracking-[-0.015em] break-words">
-            {taskSummary(run.task)}
-          </h1>
-          <StatusPill status={view.pill}>{view.label}</StatusPill>
+      <header className="flex min-w-0 flex-col items-start gap-3 md:flex-row md:justify-between">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="m-0 min-w-0 text-page-title font-semibold tracking-[-0.015em] break-words">
+              {taskSummary(run.task)}
+            </h1>
+            <StatusPill status={view.pill}>{view.label}</StatusPill>
+          </div>
+          <p className="m-0 flex flex-wrap items-center gap-x-4 gap-y-1 text-small text-text-muted">
+            <span className="font-mono" title={run.id}>
+              {run.id.slice(0, 8)}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <FolderIcon aria-hidden="true" className="size-3.5" />
+              <ProjectLink projectId={run.projectId} />
+            </span>
+          </p>
         </div>
-        <p className="m-0 flex flex-wrap items-center gap-x-4 gap-y-1 text-small text-text-muted">
-          <span className="font-mono" title={run.id}>
-            {run.id.slice(0, 8)}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <FolderIcon aria-hidden="true" className="size-3.5" />
-            <ProjectLink projectId={run.projectId} />
-          </span>
-        </p>
+        {FINAL.includes(run.state) ? <RunAgain run={run} /> : null}
       </header>
 
+      {isError ? (
+        <StaleBanner what="the run" retrying={isRefetching} onRetry={() => void refetch()} />
+      ) : null}
       {run.state === 'queued' ? <QueuedReason run={run} /> : null}
       {run.failure ? <Failure failure={run.failure} /> : null}
 

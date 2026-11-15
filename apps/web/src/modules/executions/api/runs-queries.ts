@@ -28,6 +28,12 @@ const RUNS_KEY = ['runs'] as const;
 /** One project's Runs, newest first. */
 const projectRunsKey = (projectId: string) => ['runs', 'project', projectId] as const;
 
+/** Every Run across all projects, newest first. */
+const ALL_RUNS_KEY = ['runs', 'all'] as const;
+
+/** The project list, for the project names on the Executions page. */
+const PROJECTS_KEY = ['runs', 'projects'] as const;
+
 /** One Run. */
 const runKey = (runId: string) => ['runs', 'run', runId] as const;
 
@@ -46,6 +52,31 @@ export function useProjectRuns(projectId: string, enabled = true) {
     enabled,
     refetchInterval: (query) => pollIntervalFor(query.state.data),
     refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * Every Run across all projects, from the server only. Polled like a project's Runs: while any
+ * is active and the tab is visible. The Executions page and the top-bar run indicator share it.
+ */
+export function useAllRuns() {
+  return useQuery({
+    queryKey: ALL_RUNS_KEY,
+    queryFn: api.listRuns,
+    refetchInterval: (query) => pollIntervalFor(query.state.data),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * The projects, by id, for their names next to Runs. Its own cache entry for the same reason as
+ * {@link useRunProject}: the projects module's queries are private to it.
+ */
+export function useProjectNames() {
+  return useQuery({
+    queryKey: PROJECTS_KEY,
+    queryFn: api.listProjects,
+    select: (list) => new Map(list.items.map((project) => [project.id, project.name])),
   });
 }
 

@@ -14,13 +14,17 @@
 //    The API runs with NODE_ENV=test and STUDIO_GIT_ALLOW_FILE_REMOTES=true: the Git adapter's
 //    test-only fixture-remote setting, which the API accepts only under NODE_ENV=test (#59).
 //    Nothing else in the API reads NODE_ENV (Story #60, clarification 7).
-// 4. On Linux, creates throwaway bare fixture Repositories with a `dev` branch (one per
-//    Playwright project, so both can connect one) in a temp directory. Repository features
+// 4. On Linux, creates throwaway bare fixture Repositories with a `dev` branch (two per
+//    Playwright project: one for the repository test, one for the Run test, since a remote
+//    belongs to one project) in a temp directory, and starts the agent worker (#96; Linux only)
+//    with the fake runner. The worker gets a clean environment: only STUDIO_API_URL and a
+//    worker token generated for this run (the API gets the same STUDIO_WORKER_TOKEN); it refuses
+//    to start if a Studio-side setting such as DATABASE_URL reaches it. Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
 // 5. Runs Playwright (tests/e2e/playwright.config.ts). On Linux it then fails unless the
-//    repository test really ran and passed in every Playwright project (a guard against a
-//    silent skip in CI). Always stops the servers and containers and removes the temp
+//    repository test and the Run test really ran and passed in every Playwright project (a
+//    guard against a silent skip in CI). Always stops the servers and containers and removes the temp
 //    directories.
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -39,9 +43,13 @@ const READY_TIMEOUT_MS = 90_000;
 const LINUX = process.platform === 'linux';
 /** The Playwright projects (tests/e2e/playwright.config.ts); each connects its own fixture. */
 const PLAYWRIGHT_PROJECTS = ['desktop', 'phone'];
-/** Title of the smoke test that connects a fixture Repository (checked by the Linux guard). */
-const REPOSITORY_TEST =
-  'operator connects a repository, fetches it, disconnects it and connects it again';
+/** Titles of the smoke tests that need Linux (checked by the Linux guard). */
+const LINUX_TESTS = [
+  'operator connects a repository, fetches it, disconnects it and connects it again',
+  'operator starts runs and follows them to their result',
+];
+/** Fixture Repositories per Playwright project: the repository test's and the Run test's. */
+const FIXTURE_PREFIXES = ['', 'run-'];
 
 const cleanups = [];
 let interrupted = false;
@@ -60,13 +68,16 @@ function run(command, args, env = {}) {
   }
 }
 
-/** Starts a long-running server; it is stopped (with its child processes) on cleanup. */
-function startServer(name, command, args, env) {
+/**
+ * Starts a long-running server; it is stopped (with its child processes) on cleanup. With
+ * `clean`, it gets `env` alone instead of this process's environment plus `env`.
+ */
+function startServer(name, command, args, env, { clean = false } = {}) {
   console.log(`\n[e2e] starting ${name}: ${command} ${args.join(' ')}`);
   const child = spawn(command, args, {
     cwd: ROOT,
     stdio: ['ignore', 'inherit', 'inherit'],
-    env: { ...process.env, ...env },
+    env: clean ? env : { ...process.env, ...env },
     detached: process.platform !== 'win32',
   });
   let exited = false;
@@ -146,11 +157,15 @@ function fixtureGit(cwd, args) {
 }
 
 /**
- * Creates `<root>/<name>.git`, a bare Repository whose default branch is `main` and which has
+ * Creates `<root>/<name>.git` for each Playwright project (and `run-<name>.git` for the Run
+ * test), a bare Repository whose default branch is `main` and which has
  * a `dev` branch one commit ahead. Returns the directory URL the fixtures share.
  */
 async function createFixtureRepositories(root) {
-  for (const name of PLAYWRIGHT_PROJECTS) {
+  const names = FIXTURE_PREFIXES.flatMap((prefix) =>
+    PLAYWRIGHT_PROJECTS.map((project) => `${prefix}${project}`),
+  );
+  for (const name of names) {
     const work = join(root, `${name}-work`);
     await mkdir(work, { recursive: true });
     fixtureGit(work, ['init', '--quiet', '--template=', '--initial-branch=main']);
@@ -176,15 +191,19 @@ async function createFixtureRepositories(root) {
 }
 
 /**
- * Linux guard: the repository test must have run (not skipped) and passed in every
- * Playwright project, so CI cannot pass with the Git steps silently skipped.
+ * Linux guard: each Linux-only test must have run (not skipped) and passed in every
+ * Playwright project, so CI cannot pass with the Git or Run steps silently skipped.
  */
-async function assertRepositoryTestRan(reportPath) {
+async function assertLinuxTestsRan(reportPath) {
   const report = JSON.parse(await readFile(reportPath, 'utf8'));
+  for (const title of LINUX_TESTS) assertTestRan(report, title);
+}
+
+function assertTestRan(report, title) {
   const outcomes = [];
   const visit = (suite) => {
     for (const spec of suite.specs ?? []) {
-      if (spec.title !== REPOSITORY_TEST) continue;
+      if (spec.title !== title) continue;
       for (const test of spec.tests) {
         outcomes.push(`${test.projectName}:${test.results.at(-1)?.status ?? 'not run'}`);
       }
@@ -195,11 +214,11 @@ async function assertRepositoryTestRan(reportPath) {
   const expected = PLAYWRIGHT_PROJECTS.map((name) => `${name}:passed`).sort();
   if (JSON.stringify(outcomes.sort()) !== JSON.stringify(expected)) {
     throw new Error(
-      `the repository smoke test must pass in ${PLAYWRIGHT_PROJECTS.join(' and ')} on Linux; ` +
+      `the smoke test "${title}" must pass in ${PLAYWRIGHT_PROJECTS.join(' and ')} on Linux; ` +
         `got ${outcomes.length > 0 ? outcomes.join(', ') : 'no run'}`,
     );
   }
-  console.log(`[e2e] guard: "${REPOSITORY_TEST}" passed in ${outcomes.length} projects`);
+  console.log(`[e2e] guard: "${title}" passed in ${outcomes.length} projects`);
 }
 
 async function cleanup() {
@@ -217,6 +236,7 @@ async function main() {
   run('pnpm', ['exec', 'tsc', '-p', 'tests/e2e']);
   run('pnpm', ['run', 'build:packages']);
   run('pnpm', ['--filter', '@agentic-studio/api', 'run', 'build']);
+  if (LINUX) run('pnpm', ['--filter', '@agentic-studio/agent-worker', 'run', 'build']);
   const webProxyEnv = { STUDIO_WEB_API_PROXY: 'true', API_ORIGIN };
   run('pnpm', ['--filter', '@agentic-studio/web', 'run', 'build'], webProxyEnv);
 
@@ -252,6 +272,8 @@ async function main() {
   const reportPath = join(scratch, 'playwright-report.json');
 
   const operatorPassword = randomBytes(24).toString('base64url');
+  // The agent worker's token for this run only (at least 32 characters); never stored.
+  const workerToken = randomBytes(32).toString('base64url');
   const serverEnv = {
     // The fixture-remote setting below is accepted only under NODE_ENV=test (#59).
     NODE_ENV: 'test',
@@ -266,10 +288,28 @@ async function main() {
     STUDIO_OPERATOR_PASSWORD_HASH: hashOperatorPassword(operatorPassword),
     STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
     STUDIO_DATA_DIR: dataDir,
+    STUDIO_WORKER_TOKEN: workerToken,
   };
 
   startServer('api', process.execPath, ['apps/api/dist/main.js'], serverEnv);
   await waitUntilReady(`${API_ORIGIN}/api/health`);
+  if (LINUX) {
+    // A clean environment on purpose: the worker must not see DATABASE_URL or any other
+    // Studio-side setting (it refuses to start if it does). PATH only lets Node resolve tools.
+    startServer(
+      'agent-worker',
+      process.execPath,
+      ['apps/agent-worker/dist/main.js'],
+      {
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        STUDIO_API_URL: API_ORIGIN,
+        STUDIO_WORKER_TOKEN: workerToken,
+        STUDIO_WORKER_POLL_MS: '500',
+        STUDIO_WORKER_HEARTBEAT_MS: '2000',
+      },
+      { clean: true },
+    );
+  }
   startServer(
     'web',
     process.execPath,
@@ -298,7 +338,7 @@ async function main() {
       PLAYWRIGHT_JSON_OUTPUT_NAME: reportPath,
     },
   );
-  if (LINUX) await assertRepositoryTestRan(reportPath);
+  if (LINUX) await assertLinuxTestsRan(reportPath);
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
