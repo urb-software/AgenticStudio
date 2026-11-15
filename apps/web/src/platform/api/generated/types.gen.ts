@@ -106,6 +106,37 @@ export type RunOutput = {
 
 export type RunListOutput = Array<RunOutput>;
 
+export type RunEventOutput = {
+    seq: number;
+    at: string;
+    stepIndex: number;
+    kind: 'message' | 'command' | 'output' | 'step_started' | 'step_finished' | 'notice';
+    text: string;
+    truncated?: true;
+};
+
+export type RunEventPageOutput = {
+    events: Array<RunEventOutput>;
+    next?: number;
+};
+
+export type RunStepOutput = {
+    index: number;
+    kind: 'start' | 'resume';
+    outcome: 'done' | 'needs_input';
+    summary: string;
+    checks: Array<{
+        name: string;
+        result: 'passed' | 'failed' | 'not_run';
+        detail?: string;
+    }>;
+    reportedAt: string;
+};
+
+export type RunStepListOutput = {
+    steps: Array<RunStepOutput>;
+};
+
 export type ProblemDetails = {
     type: string;
     title: string;
@@ -589,3 +620,109 @@ export type GetRunResponses = {
 };
 
 export type GetRunResponse = GetRunResponses[keyof GetRunResponses];
+
+export type ListRunEventsData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/runs/{runId}/events';
+};
+
+export type ListRunEventsErrors = {
+    /**
+     * Invalid after or limit
+     */
+    400: ProblemDetails;
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListRunEventsError = ListRunEventsErrors[keyof ListRunEventsErrors];
+
+export type ListRunEventsResponses = {
+    200: RunEventPageOutput;
+};
+
+export type ListRunEventsResponse = ListRunEventsResponses[keyof ListRunEventsResponses];
+
+export type StreamRunEventsData = {
+    body?: never;
+    headers?: {
+        /**
+         * The last seq received; used when `after` is absent.
+         */
+        'Last-Event-ID'?: string;
+    };
+    path: {
+        runId: string;
+    };
+    query?: {
+        after?: number;
+    };
+    url: '/api/runs/{runId}/events/stream';
+};
+
+export type StreamRunEventsErrors = {
+    /**
+     * Invalid after
+     */
+    400: ProblemDetails;
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type StreamRunEventsError = StreamRunEventsErrors[keyof StreamRunEventsErrors];
+
+export type StreamRunEventsResponses = {
+    /**
+     * Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments.
+     */
+    200: string;
+};
+
+export type StreamRunEventsResponse = StreamRunEventsResponses[keyof StreamRunEventsResponses];
+
+export type ListRunStepsData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/steps';
+};
+
+export type ListRunStepsErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListRunStepsError = ListRunStepsErrors[keyof ListRunStepsErrors];
+
+export type ListRunStepsResponses = {
+    200: RunStepListOutput;
+};
+
+export type ListRunStepsResponse = ListRunStepsResponses[keyof ListRunStepsResponses];

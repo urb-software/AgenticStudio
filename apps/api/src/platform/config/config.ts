@@ -220,6 +220,13 @@ const environmentSchema = z.object({
   STUDIO_WORKER_TOKEN: workerTokenSchema,
   // How long a claimed Run may go without a heartbeat before it fails as worker_lost.
   STUDIO_WORKER_LEASE_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
+  // Per-Run log cap in bytes of event text (Issue #99): 64 KiB to 1 GiB, default 8 MiB.
+  STUDIO_RUN_LOG_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(64 * 1024)
+    .max(1024 * 1024 * 1024)
+    .default(8 * 1024 * 1024),
   NODE_ENV: z.string().optional(),
 });
 
@@ -261,6 +268,8 @@ export interface AppConfig {
   workerToken: KeyObject | null;
   /** Seconds a claimed Run may go without a heartbeat before it fails with `worker_lost`. */
   workerLeaseSeconds: number;
+  /** Per-Run log cap in UTF-8 bytes of event text (`STUDIO_RUN_LOG_MAX_BYTES`, default 8 MiB). */
+  runLogMaxBytes: number;
 }
 
 export interface LoadConfigOptions {
@@ -307,5 +316,6 @@ export function loadConfig(
     sshKnownHosts: result.data.STUDIO_SSH_KNOWN_HOSTS,
     workerToken: result.data.STUDIO_WORKER_TOKEN,
     workerLeaseSeconds: result.data.STUDIO_WORKER_LEASE_SECONDS,
+    runLogMaxBytes: result.data.STUDIO_RUN_LOG_MAX_BYTES,
   };
 }

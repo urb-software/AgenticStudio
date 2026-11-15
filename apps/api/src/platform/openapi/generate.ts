@@ -37,6 +37,7 @@ const app = await buildApp(
       // No worker token: the generator serves no requests.
       workerToken: null,
       workerLeaseSeconds: 60,
+      runLogMaxBytes: 8 * 1024 * 1024,
     },
     { queue: { startWorkers: false } },
   ),

@@ -1,0 +1,39 @@
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ZodResponse } from 'nestjs-zod';
+import { ApiProblemResponses } from '../../../../platform/http/problem-details.js';
+import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../contracts/http/problems.js';
+import { RunEventPageDto, toRunEventResponse } from '../../contracts/http/run-event-response.js';
+import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
+import { ListRunEventsHandler } from './handler.js';
+import { ListRunEventsQueryDto } from './schema.js';
+
+/**
+ * `GET /api/runs/:runId/events?after=&limit=` (Issue #99), behind the global session guard:
+ * one page of the stored log (default 500 events, at most 1000).
+ */
+@ApiTags('runs')
+@Controller('runs')
+export class ListRunEventsEndpoint {
+  constructor(private readonly handler: ListRunEventsHandler) {}
+
+  @Get(':runId/events')
+  @ApiOperation({ operationId: 'listRunEvents' })
+  @ZodResponse({ status: 200, type: RunEventPageDto })
+  @ApiProblemResponses({
+    400: 'Invalid after or limit',
+    404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})`,
+  })
+  async list(@Param('runId') runId: string, @Query() query: ListRunEventsQueryDto) {
+    try {
+      const page = await this.handler.execute(runId, query.after, query.limit);
+      return {
+        events: page.events.map(toRunEventResponse),
+        ...(page.next === undefined ? {} : { next: page.next }),
+      };
+    } catch (error) {
+      if (error instanceof RunNotFoundError) throw runNotFound();
+      throw error;
+    }
+  }
+}

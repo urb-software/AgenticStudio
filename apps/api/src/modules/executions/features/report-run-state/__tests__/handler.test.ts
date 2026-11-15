@@ -15,13 +15,19 @@ describe('ReportRunStateHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: ReportRunStateHandler;
   let run: Run;
+  let notified: string[];
 
   const report = (input: Partial<ReportRunStateInput>) =>
     handler.execute({ runId: run.id, workerId: WORKER, state: 'running', failure: null, ...input });
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new ReportRunStateHandler(runs, { now: () => T1 });
+    notified = [];
+    handler = new ReportRunStateHandler(
+      runs,
+      { now: () => T1 },
+      { notify: (runId) => notified.push(runId), subscribe: () => () => undefined },
+    );
     await runs.add({ projectId: PROJECT, provider: 'codex', task: 'x', startCommit: 'a' });
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -43,6 +49,13 @@ describe('ReportRunStateHandler', () => {
       finishedAt: T1,
       failure: null,
     });
+  });
+
+  it('wakes the live log streams of the Run on every change, so they can end (Issue #99)', async () => {
+    await report({ state: 'running' });
+    await report({ state: 'succeeded' });
+
+    expect(notified).toEqual([run.id, run.id]);
   });
 
   it('records the failure of a failed Run', async () => {

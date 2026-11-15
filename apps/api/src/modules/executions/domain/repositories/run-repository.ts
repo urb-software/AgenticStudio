@@ -27,6 +27,12 @@ export interface RunStepRecord {
   result: unknown;
 }
 
+/** A stored Run step: its number, kind, report time and the result as stored JSON. */
+export interface StoredRunStep extends RunStepRecord {
+  index: number;
+  reportedAt: Date;
+}
+
 /**
  * The Run aggregate's store (Issue #96). Every change a worker reports is conditional on the
  * stored state and holder still being what the caller read, so a late or repeated report
@@ -68,6 +74,9 @@ export interface RunRepository {
    * order; returns its number, or `null` if the Run is not `running` or not held by it.
    */
   appendStep(runId: string, workerId: string, step: RunStepRecord): Promise<number | null>;
+
+  /** The Run's stored steps, by number (Issue #99). */
+  listSteps(runId: string): Promise<StoredRunStep[]>;
 
   /**
    * Every held Run (`preparing` or `running`) whose last heartbeat is before `staleBefore` →
