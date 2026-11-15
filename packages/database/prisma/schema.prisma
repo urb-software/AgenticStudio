@@ -164,7 +164,12 @@ model Run {
   limitStepMinutes      Int       @map("limit_step_minutes")
   limitMaxSteps         Int       @map("limit_max_steps")
   limitWaitingDays      Int       @map("limit_waiting_days")
+  /// UTF-8 bytes of event text stored for the Run (Issue #99), counted against the log cap.
+  logBytes              Int       @default(0) @map("log_bytes")
+  /// Whether the log cap was reached: one "log truncated" notice is stored, later events are dropped.
+  logTruncated          Boolean   @default(false) @map("log_truncated")
   steps                 RunStep[]
+  events                RunEvent[]
 
   /// Serves the newest-first list of all Runs.
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "runs_created_at_id_idx")
@@ -190,4 +195,25 @@ model RunStep {
 
   @@unique([runId, index], map: "run_steps_run_id_index_key")
   @@map("run_steps")
+}
+
+/// One event of a Run's log (Issue #99): the durable record; the live stream is built on it.
+/// Text is redacted and capped before it is stored.
+model RunEvent {
+  runId     String   @map("run_id") @db.Uuid
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// The worker's sequence number, per Run, from 1; a re-sent event with a stored seq is ignored.
+  seq       Int
+  /// When the worker saw the event.
+  at        DateTime @db.Timestamptz(6)
+  /// The Run step the event belongs to: 1, 2, …
+  stepIndex Int      @map("step_index")
+  /// message | command | output | step_started | step_finished | notice.
+  kind      String   @db.VarChar(16)
+  text      String
+  /// The text was cut to the per-event cap.
+  truncated Boolean  @default(false)
+
+  @@id([runId, seq], map: "run_events_pkey")
+  @@map("run_events")
 }

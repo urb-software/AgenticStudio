@@ -101,6 +101,7 @@ cp .env.example .env
 | `STUDIO_RUN_STEP_MINUTES` | API | Default `60` (1–1440). The longest a Run step may work; the agent worker stops it there and the Run ends as `timed_out`. Copied onto each Run when it starts. |
 | `STUDIO_RUN_MAX_STEPS` | API | Default `10` (1–100). The most Run steps a Run may take; one more ends it as `failed` (`step_limit`). Time waiting for the operator does not count. |
 | `STUDIO_RUN_WAITING_DAYS` | API | Default `14` (1–365). A Run waiting for the operator longer than this is cancelled by Studio, with that as the reason. |
+| `STUDIO_RUN_LOG_MAX_BYTES` | API | Default `8388608` (8 MiB; 65536–1073741824). Cap on a Run's stored log, in bytes of event text. When it is reached, one "log truncated" entry is stored, later output is dropped and the Run continues. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
 | `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
 
@@ -121,7 +122,7 @@ The agent worker starts a provider's CLI only when that provider's switch in its
 - **Both switches default to off.** Turning one on is a separate operator action, taken only after the provider's compliance record under `docs/engineering/provider-compliance/` is `Approved` and still applicable; setting the switch is not itself a compliance or terms approval. When an approval no longer applies, the operator turns the switch off before any further Run.
 - The switches live only in the worker's configuration: not in the database, not settable through the API, and nothing in a Run (Task, agent definition, repository content, tool or MCP output, model output) changes them. The worker reads them once at start; restart it after a change.
 - A Run for a switched-off provider fails with `provider_disabled`. The worker checks the switch before every Run step, in both runner modes, and again at the single place that starts a CLI process.
-- The worker reports its runner mode and switches to Studio before every claim and with every heartbeat. `GET /api/providers` shows a switched-off provider, or every provider when no worker has reported within `STUDIO_WORKER_LEASE_SECONDS`, as unavailable with the reason, and Studio refuses to start such a Run (409). The worker's own check stays authoritative.
+- The worker reports its runner mode and switches to Studio before every claim and with every heartbeat. `GET /api/providers` and the New run dialog show a switched-off provider, or every provider when no worker has reported within `STUDIO_WORKER_LEASE_SECONDS`, as unavailable with the reason, and Studio refuses to start such a Run (409). The worker's own check stays authoritative.
 - The provider CLI runners do not exist yet (Claude Code: #105, Codex: #106): in `cli` mode a Run for a switched-on provider fails with `agent_failed` and a clear message, and no CLI is started. Development and tests use `STUDIO_WORKER_RUNNER=fake` with `STUDIO_WORKER_ENVIRONMENT=development` or `test`.
 
 ### Repository features (Linux only)
@@ -252,6 +253,7 @@ The canonical rules for the web app's same-origin `/api/*` rewrite to the API (I
 - The rewrite is baked into the build: set both variables at build time, and the same values at start (the config is evaluated again). `pnpm e2e:smoke` does this.
 - Any other flag value, `true` without `API_ORIGIN`, or an `API_ORIGIN` that is not a bare http(s) origin fails the build or start. The error names the variable, never its value.
 - Behind this rewrite or any other proxy, list the proxy in the API's `API_TRUSTED_PROXIES`, or all clients share one login rate-limit bucket ([Security](docs/engineering/security.md) §8).
+- **Live Run logs are server-sent events** (`GET /api/runs/:runId/events/stream`, Issue #99). No proxy in front of the API may buffer or compress them, or new log lines arrive late or only at the end. The API sends `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` (which nginx honours) and a `: keep-alive` comment every 15 seconds, so an idle stream is not timed out by a proxy with a read timeout above that. For any other reverse proxy, turn response buffering off for this path. `pnpm e2e:smoke` proves that the web `/api` rewrite streams the log live.
 
 ### Checks
 

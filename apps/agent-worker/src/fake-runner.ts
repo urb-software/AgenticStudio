@@ -22,6 +22,7 @@ export const FAKE_SCENARIOS = [
   'commit',
   'dirty',
   'stubborn',
+  'secret',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
@@ -38,12 +39,20 @@ export function fakeScenarioOf(task: string): FakeScenario {
 export interface FakeRunnerOptions {
   /** How long the `slow` scenario works before it succeeds (it stops early when aborted). */
   slowMs?: number;
+  /** How often the `slow` scenario prints a line while it works. */
+  slowLineMs?: number;
   /** Git for the `commit` scenario (default: the worker's hardened runner). */
   git?: GitRunner;
 }
 
 /** The file the `commit` and `dirty` scenarios write in the Working copy. */
 export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
+
+/**
+ * A token-shaped string for the `secret` scenario: GitHub's personal token shape, made of a
+ * fixed pattern so it is obviously not a real token. Studio must redact it before storing.
+ */
+const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
 
 /**
  * Runner with scripted outcomes (Issue #96): deterministic, no provider, no network.
@@ -53,7 +62,11 @@ export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
  * - `dirty` (Issue #98): like `success`, leaving one new file uncommitted.
  * - `fail`: the agent fails ({@link AgentFailedError}).
  * - `question`: a `needs_input` result with a question.
- * - `slow`: keeps working for `slowMs`, then succeeds; stops when aborted.
+ * - `slow`: prints a numbered line every `slowLineMs` for `slowMs`, then succeeds; stops when
+ *   aborted (the live-log smoke follows it, Issue #99).
+ * - `secret` (Issue #99): prints a token-shaped string (redaction is proven end to end), then
+ *   succeeds.
+ * Each step streams an agent message, a command and its output, like a real agent.
  * - `stubborn` (Issue #100): like `slow`, but ignores the abort, so the worker must give up on
  *   it after the grace period (the hard path).
  * - `crash`: the runner itself breaks (a plain error).
@@ -61,16 +74,18 @@ export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
  */
 export class FakeRunner implements Runner {
   private readonly slowMs: number;
+  private readonly slowLineMs: number;
   private readonly git: GitRunner;
 
   constructor(options: FakeRunnerOptions = {}) {
-    this.slowMs = options.slowMs ?? 60_000;
+    this.slowMs = options.slowMs ?? 5000;
+    this.slowLineMs = options.slowLineMs ?? 500;
     this.git = options.git ?? new GitRunner();
   }
 
   async *start({ run, workspace, signal }: StartRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
-    yield { type: 'status', text: `fake runner: ${scenario}` };
+    yield { type: 'message', text: `fake runner: ${scenario}` };
     if (scenario !== 'stubborn') signal.throwIfAborted();
     switch (scenario) {
       case 'fail':
@@ -83,9 +98,18 @@ export class FakeRunner implements Runner {
           summary: 'The fake agent needs a decision.',
           question: 'Which option should the fake agent take?',
         };
-      case 'slow':
-        yield { type: 'output', text: 'working slowly' };
-        await delay(this.slowMs, undefined, { signal });
+      case 'slow': {
+        yield { type: 'command', text: 'fake-work --slowly' };
+        const started = Date.now();
+        for (let line = 1; Date.now() - started < this.slowMs; line++) {
+          yield { type: 'output', text: `working slowly: line ${line}` };
+          await delay(this.slowLineMs, undefined, { signal });
+        }
+        return done();
+      }
+      case 'secret':
+        yield { type: 'command', text: 'printenv GITHUB_TOKEN' };
+        yield { type: 'output', text: FAKE_TOKEN };
         return done();
       case 'stubborn':
         yield { type: 'output', text: 'working, and ignoring every request to stop' };
@@ -101,6 +125,7 @@ export class FakeRunner implements Runner {
         yield { type: 'output', text: `left ${FAKE_CHANGE_FILE} uncommitted` };
         return done();
       case 'success':
+        yield { type: 'command', text: 'fake-test --all' };
         yield { type: 'output', text: 'done' };
         return done();
     }
@@ -121,7 +146,7 @@ export class FakeRunner implements Runner {
   }
 
   async *resume({ signal }: ResumeRunStepInput): RunStep {
-    yield { type: 'status', text: 'fake runner: resume' };
+    yield { type: 'message', text: 'fake runner: resume' };
     signal.throwIfAborted();
     return done();
   }

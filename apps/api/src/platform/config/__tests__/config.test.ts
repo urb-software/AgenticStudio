@@ -68,6 +68,7 @@ describe('loadConfig', () => {
       sshKnownHosts: [],
       workerLeaseSeconds: 60,
       runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      runLogMaxBytes: 8 * 1024 * 1024,
     });
   });
 
@@ -482,5 +483,24 @@ describe('loadConfig', () => {
       const error = captureError(() => loadConfig({ ...requiredEnv, [name]: value }));
       expect(error.message).toMatch(new RegExp(name));
     });
+  });
+
+  describe('STUDIO_RUN_LOG_MAX_BYTES (Issue #99)', () => {
+    it('caps a Run log at 8 MiB by default', () => {
+      expect(loadConfig(requiredEnv).runLogMaxBytes).toBe(8 * 1024 * 1024);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_RUN_LOG_MAX_BYTES: '1048576' }).runLogMaxBytes,
+      ).toBe(1_048_576);
+    });
+
+    it.each([['65535'], ['1073741825'], ['1.5'], ['abc']])(
+      'refuses a cap of %j (whole bytes, 64 KiB-1 GiB)',
+      (value) => {
+        const error = captureError(() =>
+          loadConfig({ ...requiredEnv, STUDIO_RUN_LOG_MAX_BYTES: value }),
+        );
+        expect(error.message).toMatch(/STUDIO_RUN_LOG_MAX_BYTES/);
+      },
+    );
   });
 });

@@ -7,6 +7,8 @@ import { baseConfig, prettierConfig } from '../../eslint.base.mjs';
  * the worker's production code so nothing reaches node:child_process past the spawn boundary
  * (Issue #101, review of #116).
  */
+const LOADER_PROPERTIES = '/^(binding|_linkedBinding|dlopen|getBuiltinModule)$/';
+
 export const HIDDEN_LOADING_RULES = {
   'no-restricted-syntax': [
     'error',
@@ -22,15 +24,46 @@ export const HIDDEN_LOADING_RULES = {
       selector: 'Identifier[name="createRequire"]',
       message: 'No createRequire in the agent worker: it loads modules the gate cannot see.',
     },
+    // The process loader properties, on any object (globalThis.process, an alias), dotted or
+    // as a string key (review round 2 of #116).
+    {
+      selector: `MemberExpression[property.name=${LOADER_PROPERTIES}]`,
+      message: 'process loader properties are not allowed in the agent worker.',
+    },
+    {
+      selector: `MemberExpression[property.value=${LOADER_PROPERTIES}]`,
+      message: 'process loader properties are not allowed in the agent worker.',
+    },
+    {
+      selector: `MemberExpression[property.type="TemplateLiteral"][property.quasis.0.value.raw=${LOADER_PROPERTIES}]`,
+      message: 'process loader properties are not allowed in the agent worker.',
+    },
+    {
+      selector: `Property[key.name=${LOADER_PROPERTIES}]`,
+      message: 'process loader properties are not allowed in the agent worker (destructuring).',
+    },
+    {
+      selector: `Property[key.value=${LOADER_PROPERTIES}]`,
+      message: 'process loader properties are not allowed in the agent worker (destructuring).',
+    },
+    // Reflect reaches any property by a computed name; the worker has no use for it.
+    {
+      selector: 'Identifier[name="Reflect"]',
+      message: 'Reflect is not allowed in the agent worker (it hides property access from lint).',
+    },
   ],
-  'no-restricted-properties': [
+  'no-restricted-imports': [
     'error',
-    ...['binding', '_linkedBinding', 'dlopen'].map((property) => ({
-      object: 'process',
-      property,
-      message: `process.${property} is not allowed in the agent worker.`,
-    })),
+    {
+      paths: ['vm', 'node:vm'].map((name) => ({
+        name,
+        message: 'node:vm runs code the gate cannot see; not allowed in the agent worker.',
+      })),
+    },
   ],
+  'no-eval': 'error',
+  'no-new-func': 'error',
+  'no-implied-eval': 'error',
 };
 
 export default defineConfig([

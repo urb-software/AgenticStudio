@@ -1,7 +1,12 @@
 import { vi } from 'vitest';
-import type { ProblemDetails, ProjectOutput, RunOutput } from '../../../platform/api';
+import type {
+  ProblemDetails,
+  ProjectOutput,
+  ProviderAvailabilityOutput,
+  RunOutput,
+} from '../../../platform/api';
 
-type Route = 'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run';
+type Route = 'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run' | 'providers';
 
 interface ScriptedResponse {
   status: number;
@@ -14,6 +19,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/projects\/([^/]+)\/runs$/, (method) => (method === 'POST' ? 'start' : 'projectRuns')],
   [/^\/api\/runs$/, () => 'runs'],
   [/^\/api\/runs\/([^/]+)$/, () => 'run'],
+  [/^\/api\/providers()$/, () => 'providers'],
 ];
 
 export const PROJECT: ProjectOutput = {
@@ -23,6 +29,12 @@ export const PROJECT: ProjectOutput = {
 };
 
 export const SHA = '0123456789abcdef0123456789abcdef01234567';
+
+/** Both providers available: what `GET /api/providers` answers unless a test scripts it. */
+export const BOTH_AVAILABLE: ProviderAvailabilityOutput[] = [
+  { id: 'claude_code', name: 'Claude Code', available: true },
+  { id: 'codex', name: 'Codex', available: true },
+];
 
 let nextRun = 1;
 
@@ -47,7 +59,8 @@ export const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000b2';
 
 /**
  * A fake of the executions operator API behind `fetch` (`GET|POST /api/projects/:id/runs`,
- * `GET /api/runs`, `GET /api/runs/:runId`, and `GET /api/projects(/:id)` for project names),
+ * `GET /api/runs`, `GET /api/runs/:runId`, `GET /api/providers`, and `GET /api/projects(/:id)`
+ * for project names),
  * so the generated client, the wrapper and TanStack Query run for real. `runs` is the server's
  * state, newest first; tests change a Run's state (as the agent worker would) and script error
  * responses. It keeps the contract (201 with a `queued` Run) without the API's rules.
@@ -61,6 +74,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     start: [],
     runs: [],
     run: [],
+    providers: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
 
@@ -91,6 +105,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         );
       case 'runs':
         return json(200, [...runs]);
+      case 'providers':
+        return json(200, BOTH_AVAILABLE);
       case 'run': {
         const run = runs.find((candidate) => candidate.id === id);
         return run ? json(200, run) : json(404, problem(404, 'Run not found'));

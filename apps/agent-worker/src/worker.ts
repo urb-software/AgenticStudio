@@ -11,6 +11,7 @@ import { posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ProviderDisabledError } from './provider-gate.js';
 import { type Backoff, ReportOutbox } from './report-outbox.js';
+import { RunLog } from './run-log.js';
 import { composeProjectName, STEP_PROCESSES_FILE } from './run-layout.js';
 import type { RunResources } from './run-resources.js';
 import { AgentFailedError, drainRunStep, type Runner } from './runner.js';
@@ -27,7 +28,7 @@ export interface WorkerLogger {
 /** The worker routes the loop uses ({@link StudioApi} in production). */
 export type WorkerApi = Pick<
   StudioApi,
-  'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'reportStatus'
+  'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'reportStatus' | 'appendEvents'
 >;
 
 /** The process groups of one Run step ({@link StepProcesses} in production). */
@@ -77,6 +78,12 @@ const UNEXPECTED_FAILURE: RunFailure = {
   detail: 'The runner stopped unexpectedly. The agent worker log has the details.',
 };
 
+/** How long a stopping worker still tries to deliver the Run's buffered log (Issue #99). */
+const SHUTDOWN_LOG_DEADLINE_MS = 2000;
+
+/** The number of the Run step the worker carries out (resume steps come with #103). */
+const START_STEP = 1;
+
 const INVALID_RESULT_FAILURE: RunFailure = {
   code: 'agent_failed',
   detail: "The agent's structured result was not valid.",
@@ -107,8 +114,8 @@ export class StepLimitError extends Error {
 /**
  * The agent worker's loop (Issue #96): claim a Run, prepare its Working copy while the Run is
  * `preparing` (Issue #98), carry it out through the runner while sending heartbeats, report
- * its Run step result with the Working copy's state and its final state, repeat. It carries
- * one Run at a time.
+ * its Run step result with the Working copy's state and its final state, repeat. The Run's
+ * events are forwarded to Studio as they happen (Issue #99). It carries one Run at a time.
  *
  * Issue #100: a Run step is stopped when the heartbeat answer carries the operator's cancel,
  * when it reaches its time limit, when Studio says the worker lost the Run, or when the worker
@@ -182,6 +189,8 @@ export class AgentWorker {
     let prepared: PreparedRun | undefined;
     let processes: StepProcessGroups | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
+    // The Run's events go to Studio as they happen (Issue #99).
+    const log = new RunLog({ api, runId: run.runId, logger, onLost: () => stop('lost') });
     const heartbeats = setInterval(() => {
       // Keeps Studio's view of this worker fresh while it carries a long Run.
       void this.reportStatus();
@@ -223,10 +232,13 @@ export class AgentWorker {
       );
       let result: RunStepResult;
       try {
-        result = await this.executeStart(run, prepared, processes, abort.signal);
+        result = await this.executeStart(run, prepared, processes, abort.signal, log);
       } finally {
         clearTimeout(limit);
       }
+      abort.signal.throwIfAborted();
+      // The log goes first: Studio accepts events only while the worker holds the Run.
+      await log.close();
       abort.signal.throwIfAborted();
       const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
       outbox.send('step', (signal) =>
@@ -242,12 +254,24 @@ export class AgentWorker {
         abort.signal.aborted && abort.signal.reason instanceof StepStoppedError
           ? abort.signal.reason.reason
           : undefined;
+      if (reason === 'cancel') log.push(START_STEP, 'notice', 'Run step stopped: cancelled');
+      if (reason === 'timeout') {
+        log.push(
+          START_STEP,
+          'notice',
+          `Run step stopped: its time limit of ${run.limits.stepMinutes} minutes was reached`,
+        );
+      }
+      if (reason !== 'lost') {
+        await log.close(this.stopping ? SHUTDOWN_LOG_DEADLINE_MS : undefined);
+      }
       await this.finish(run, error, reason, {
         prepared,
         stepStarted: processes !== undefined,
         outbox,
       });
     } finally {
+      log.dispose();
       clearInterval(heartbeats);
       await processes?.release().catch((error: unknown) => {
         logger.error(`Forgetting the processes of run ${run.runId} failed: ${describe(error)}`);
@@ -265,7 +289,8 @@ export class AgentWorker {
   }
 
   /**
-   * Runs the first Run step. However it ends, the step's process groups are terminated
+   * Runs the first Run step, its events forwarded between a start and an end marker
+   * (Issue #99). However it ends, the step's process groups are terminated
    * afterwards (SIGINT, the grace, SIGKILL): when the step is stopped this is what stops it,
    * and otherwise nothing it started outlives it. A stopped step that does not end within the
    * grace (a runner that ignores the abort) is abandoned.
@@ -275,11 +300,13 @@ export class AgentWorker {
     prepared: PreparedRun,
     processes: StepProcessGroups,
     signal: AbortSignal,
+    log: RunLog,
   ): Promise<RunStepResult> {
     const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
+    log.push(START_STEP, 'step_started', `Run step ${START_STEP} started`);
     const step = drainRunStep(
       this.options.runner.start({ run, workspace, signal, processes }),
-      (event) => this.options.logger.info(`Run ${run.runId} ${event.type}: ${event.text}`),
+      (event) => log.push(START_STEP, event.type, event.text),
     );
     const stopped = rejectOnAbort(signal);
     // An abandoned step's late end, or a stop after the step ended, must not surface as an
@@ -289,6 +316,9 @@ export class AgentWorker {
     let result: RunStepResult;
     try {
       result = await Promise.race([step, stopped]);
+    } catch (error) {
+      log.push(START_STEP, 'step_finished', `Run step ${START_STEP} ended without a result`);
+      throw error;
     } finally {
       const killed = await processes.terminate(this.options.killGraceMs, step);
       if (killed.length > 0) {
@@ -298,7 +328,15 @@ export class AgentWorker {
       }
     }
     const parsed = runStepResultSchema.safeParse(result);
-    if (!parsed.success) throw new InvalidResultError();
+    if (!parsed.success) {
+      log.push(START_STEP, 'step_finished', `Run step ${START_STEP} ended with an invalid result`);
+      throw new InvalidResultError();
+    }
+    log.push(
+      START_STEP,
+      'step_finished',
+      `Run step ${START_STEP} finished: ${parsed.data.outcome}`,
+    );
     return parsed.data;
   }
 

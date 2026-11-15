@@ -16,6 +16,7 @@ import {
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 
 export interface ReportRunStateInput {
   runId: string;
@@ -35,13 +36,14 @@ export interface ReportRunStateInput {
  * or `succeeded`, also ends the Run as `cancelled`, so the operator's cancel always holds. A
  * `cancelled` report without a request is refused. Throws {@link RunNotFoundError},
  * {@link RunNotHeldError} (another worker holds it, or nobody does) or
- * `IllegalRunTransitionError`.
+ * `IllegalRunTransitionError`. Wakes the Run's live log streams.
  */
 @Injectable()
 export class ReportRunStateHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
   ) {}
 
   async execute(input: ReportRunStateInput): Promise<Run> {
@@ -69,7 +71,11 @@ export class ReportRunStateHandler {
         cancelRequested,
         now: this.clock.now(),
       });
-      if (changed) return changed;
+      if (changed) {
+        // Live log streams re-read the state: a final Run ends them (Issue #99).
+        this.signal.notify(run.id);
+        return changed;
+      }
     }
     // The Run changed between the read and the write (e.g. the sweep failed it).
     throw new RunNotHeldError();

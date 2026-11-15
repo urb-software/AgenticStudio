@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appendRunEventsRequestSchema,
   claimRunRequestSchema,
+  cutToBytes,
   jsonByteLength,
   RUN_STEP_RESULT_MAX_BYTES,
   heartbeatRequestSchema,
@@ -9,6 +11,9 @@ import {
   runLimitsSchema,
   reportRunStateRequestSchema,
   reportRunStepRequestSchema,
+  RUN_EVENT_BATCH_MAX,
+  RUN_EVENT_KINDS,
+  RUN_EVENT_TEXT_MAX_BYTES,
   runnerEventSchema,
   runPayloadSchema,
   RUN_STATES,
@@ -329,12 +334,97 @@ describe('structured result of a Run step', () => {
 });
 
 describe('runner event', () => {
-  it('is a typed line of text', () => {
+  it('is an agent message, a command or output (Issue #99)', () => {
     expect(runnerEventSchema.parse({ type: 'output', text: 'compiling' })).toEqual({
       type: 'output',
       text: 'compiling',
     });
-    expect(runnerEventSchema.safeParse({ type: 'secret', text: '' }).success).toBe(false);
+    for (const type of ['message', 'command', 'output']) {
+      expect(runnerEventSchema.safeParse({ type, text: 'x' }).success).toBe(true);
+    }
+    expect(runnerEventSchema.safeParse({ type: 'status', text: '' }).success).toBe(false);
+    expect(runnerEventSchema.safeParse({ type: 'notice', text: '' }).success).toBe(false);
+  });
+});
+
+describe('appending Run events (Issue #99)', () => {
+  const event = (seq: number, overrides: object = {}) => ({
+    seq,
+    at: '2026-11-15T12:00:00.000Z',
+    stepIndex: 1,
+    kind: 'output',
+    text: `line ${seq}`,
+    ...overrides,
+  });
+
+  it('accepts a batch of events in sequence order, of every kind', () => {
+    const events = RUN_EVENT_KINDS.map((kind, index) => event(index + 1, { kind }));
+    expect(appendRunEventsRequestSchema.parse({ workerId: WORKER_ID, events })).toEqual({
+      workerId: WORKER_ID,
+      events,
+    });
+    expect(RUN_EVENT_KINDS).toEqual([
+      'message',
+      'command',
+      'output',
+      'step_started',
+      'step_finished',
+      'notice',
+    ]);
+  });
+
+  it('accepts a gap in the sequence and an event the worker already cut', () => {
+    const events = [event(1), event(5, { truncated: true })];
+    expect(appendRunEventsRequestSchema.safeParse({ workerId: WORKER_ID, events }).success).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ['no events', []],
+    [
+      'more events than a batch holds',
+      Array.from({ length: RUN_EVENT_BATCH_MAX + 1 }, (_, i) => event(i + 1)),
+    ],
+    ['a sequence that goes back', [event(2), event(1)]],
+    ['a repeated sequence number', [event(1), event(1)]],
+    ['a sequence number below 1', [event(0)]],
+    ['a sequence number above PostgreSQL INTEGER', [event(2_147_483_648)]],
+    ['a step index below 1', [event(1, { stepIndex: 0 })]],
+    ['an unknown kind', [event(1, { kind: 'status' })]],
+    ['a timestamp that is not ISO 8601', [event(1, { at: 'yesterday' })]],
+    [
+      'a text longer than the event cap',
+      [event(1, { text: 'x'.repeat(RUN_EVENT_TEXT_MAX_BYTES + 1) })],
+    ],
+    ['an extra field', [event(1, { secret: 'x' })]],
+  ])('rejects %s', (_case, events) => {
+    expect(appendRunEventsRequestSchema.safeParse({ workerId: WORKER_ID, events }).success).toBe(
+      false,
+    );
+  });
+
+  it('fits one event of the largest text in the API body limit, even as escaped JSON', () => {
+    // The worker splits batches by size; one event alone, its text at the cap and every
+    // character a control character (six bytes as JSON), still fits 100 KiB.
+    const body = {
+      workerId: WORKER_ID,
+      events: [event(1, { text: '\u0001'.repeat(RUN_EVENT_TEXT_MAX_BYTES), truncated: true })],
+    };
+    expect(jsonByteLength(body)).toBeLessThan(100 * 1024);
+  });
+});
+
+describe('cutting text to a number of UTF-8 bytes', () => {
+  it('keeps a text that fits', () => {
+    expect(cutToBytes('héllo', 6)).toEqual({ text: 'héllo', cut: false });
+  });
+
+  it('cuts at a character boundary, never inside a multi-byte character', () => {
+    expect(cutToBytes('héllo', 2)).toEqual({ text: 'h', cut: true });
+    expect(cutToBytes('héllo', 3)).toEqual({ text: 'hé', cut: true });
+    expect(cutToBytes('a😀b', 4)).toEqual({ text: 'a', cut: true });
+    expect(cutToBytes('a😀b', 5)).toEqual({ text: 'a😀', cut: true });
   });
 });
 

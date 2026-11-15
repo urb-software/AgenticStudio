@@ -28,9 +28,9 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
 };
 
 /**
- * The Providers the New run dialog offers, Claude Code first (preselected). Until the provider
- * switches (#101) both are offered; the agent worker runs every Run with the fake runner until
- * the provider stories (#97 DoR decision).
+ * The Providers the New run dialog offers, Claude Code first. Which of them is available comes
+ * from `GET /api/providers` (#101): the dialog disables an unavailable one with its reason and
+ * preselects the first available.
  */
 export const PROVIDER_OPTIONS: readonly { value: Provider; label: string }[] = [
   { value: 'claude_code', label: PROVIDER_LABEL.claude_code },
