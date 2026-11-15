@@ -5,6 +5,7 @@ import {
   runStepResultSchema,
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
+import { RunLog } from './run-log.js';
 import { AgentFailedError, drainRunStep, type Runner } from './runner.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
 
@@ -15,7 +16,10 @@ export interface WorkerLogger {
 }
 
 /** The worker routes the loop uses ({@link StudioApi} in production). */
-export type WorkerApi = Pick<StudioApi, 'claim' | 'reportState' | 'reportStep' | 'heartbeat'>;
+export type WorkerApi = Pick<
+  StudioApi,
+  'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'appendEvents'
+>;
 
 export interface AgentWorkerOptions {
   api: WorkerApi;
@@ -35,6 +39,12 @@ const UNEXPECTED_FAILURE: RunFailure = {
   detail: 'The runner stopped unexpectedly. The agent worker log has the details.',
 };
 
+/** How long a stopping worker still tries to deliver the Run's buffered log. */
+const SHUTDOWN_LOG_DEADLINE_MS = 2000;
+
+/** The number of the Run step the worker carries out (resume steps come with #103). */
+const START_STEP = 1;
+
 const INVALID_RESULT_FAILURE: RunFailure = {
   code: 'agent_failed',
   detail: "The agent's structured result was not valid.",
@@ -42,7 +52,8 @@ const INVALID_RESULT_FAILURE: RunFailure = {
 
 /**
  * The agent worker's loop (Issue #96): claim a Run, carry it out through the runner while
- * sending heartbeats, report its Run step result and final state, repeat. It carries one Run
+ * sending heartbeats and forwarding its events (Issue #99), report its Run step result and
+ * final state, repeat. It carries one Run
  * at a time. {@link stop} ends the loop: polling stops, the runner is aborted, and a Run
  * still being carried is reported `failed` with `worker_lost` ("worker shut down").
  */
@@ -91,13 +102,16 @@ export class AgentWorker {
     const abort = new AbortController();
     this.current = abort;
     let lost = false;
+    const markLost = () => {
+      lost = true;
+      abort.abort(new Error('run lost'));
+    };
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
+    // The Run's events go to Studio as they happen (Issue #99).
+    const log = new RunLog({ api, runId: run.runId, logger, onLost: markLost });
     const heartbeats = setInterval(() => {
       api.heartbeat(run.runId, this.shutdown.signal).catch((error: unknown) => {
-        if (isRunLost(error) || error instanceof RunLostError) {
-          lost = true;
-          abort.abort(new Error('run lost'));
-        }
+        if (isRunLost(error) || error instanceof RunLostError) markLost();
         logger.error(`Heartbeat for run ${run.runId} failed: ${describe(error)}`);
       });
     }, heartbeatMs);
@@ -108,7 +122,10 @@ export class AgentWorker {
       abort.signal.throwIfAborted();
       const signal = this.shutdown.signal;
       await api.reportState(run.runId, { state: 'running' }, signal);
-      const result = await this.executeStart(run, abort.signal);
+      const result = await this.executeStart(run, abort.signal, log);
+      abort.signal.throwIfAborted();
+      // The log goes first: Studio accepts events only while the worker holds the Run.
+      await log.close();
       abort.signal.throwIfAborted();
       await api.reportStep(run.runId, { kind: 'start', result }, signal);
       await api.reportState(
@@ -118,19 +135,41 @@ export class AgentWorker {
       );
       logger.info(`Run ${run.runId} reported: ${result.outcome}.`);
     } catch (error) {
+      if (!lost) await log.close(this.stopping ? SHUTDOWN_LOG_DEADLINE_MS : undefined);
       await this.reportFailure(run, lost ? new RunLostError() : error);
     } finally {
+      log.dispose();
       clearInterval(heartbeats);
       this.current = undefined;
     }
   }
 
-  private async executeStart(run: RunPayload, signal: AbortSignal): Promise<RunStepResult> {
-    const result = await drainRunStep(this.options.runner.start({ run, signal }), (event) =>
-      this.options.logger.info(`Run ${run.runId} ${event.type}: ${event.text}`),
-    );
+  /** The first Run step, its events forwarded between a start and an end marker. */
+  private async executeStart(
+    run: RunPayload,
+    signal: AbortSignal,
+    log: RunLog,
+  ): Promise<RunStepResult> {
+    log.push(START_STEP, 'step_started', `Run step ${START_STEP} started`);
+    let result: RunStepResult;
+    try {
+      result = await drainRunStep(this.options.runner.start({ run, signal }), (event) =>
+        log.push(START_STEP, event.type, event.text),
+      );
+    } catch (error) {
+      log.push(START_STEP, 'step_finished', `Run step ${START_STEP} ended without a result`);
+      throw error;
+    }
     const parsed = runStepResultSchema.safeParse(result);
-    if (!parsed.success) throw new InvalidResultError();
+    if (!parsed.success) {
+      log.push(START_STEP, 'step_finished', `Run step ${START_STEP} ended with an invalid result`);
+      throw new InvalidResultError();
+    }
+    log.push(
+      START_STEP,
+      'step_finished',
+      `Run step ${START_STEP} finished: ${parsed.data.outcome}`,
+    );
     return parsed.data;
   }
 

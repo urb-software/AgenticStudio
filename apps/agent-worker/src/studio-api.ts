@@ -1,4 +1,5 @@
 import {
+  type RunEventInput,
   type ReportRunStateRequest,
   type ReportRunStepRequest,
   type RunPayload,
@@ -66,6 +67,11 @@ export class StudioApi {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.post(`runs/${encodeURIComponent(runId)}/steps`, step, signal);
+  }
+
+  /** Appends a batch of the Run's log events (Issue #99); a re-sent seq is ignored by Studio. */
+  async appendEvents(runId: string, events: RunEventInput[], signal?: AbortSignal): Promise<void> {
+    await this.post(`runs/${encodeURIComponent(runId)}/events`, { events }, signal);
   }
 
   async heartbeat(runId: string, signal?: AbortSignal): Promise<void> {

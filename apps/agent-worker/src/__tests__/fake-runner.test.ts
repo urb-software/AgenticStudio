@@ -15,7 +15,7 @@ const run = (task: string): RunPayload => ({
 async function start(task: string, signal = new AbortController().signal, slowMs = 10) {
   const events: RunnerEvent[] = [];
   const result = await drainRunStep(
-    new FakeRunner({ slowMs }).start({ run: run(task), signal }),
+    new FakeRunner({ slowMs, slowLineMs: 2 }).start({ run: run(task), signal }),
     (event) => events.push(event),
   );
   return { events, result };
@@ -28,6 +28,7 @@ describe('fakeScenarioOf', () => {
     ['Please [fake:question]', 'question'],
     ['[fake:slow]', 'slow'],
     ['[fake:crash]', 'crash'],
+    ['[fake:secret]', 'secret'],
     ['[fake:unknown]', 'success'],
   ])('reads %j as %s', (task, scenario) => {
     expect(fakeScenarioOf(task)).toBe(scenario);
@@ -35,10 +36,10 @@ describe('fakeScenarioOf', () => {
 });
 
 describe('FakeRunner', () => {
-  it('succeeds with a valid done result after streaming events', async () => {
+  it('succeeds with a valid done result after streaming a message, a command and output', async () => {
     const { events, result } = await start('Add a feature');
 
-    expect(events.length).toBeGreaterThan(0);
+    expect(events.map((event) => event.type)).toEqual(['message', 'command', 'output']);
     expect(runStepResultSchema.parse(result)).toMatchObject({
       outcome: 'done',
       pullRequest: { title: 'Fake change' },
@@ -64,8 +65,19 @@ describe('FakeRunner', () => {
     expect(failure).not.toBeInstanceOf(AgentFailedError);
   });
 
-  it('works slowly, then succeeds', async () => {
-    const { result } = await start('[fake:slow]');
+  it('works slowly, printing numbered lines over time, then succeeds (Issue #99)', async () => {
+    const { events, result } = await start('[fake:slow]', undefined, 20);
+
+    const lines = events.filter((event) => event.type === 'output').map((event) => event.text);
+    expect(lines.length).toBeGreaterThan(2);
+    expect(lines.slice(0, 2)).toEqual(['working slowly: line 1', 'working slowly: line 2']);
+    expect(result.outcome).toBe('done');
+  });
+
+  it('prints a token-shaped string, to prove redaction end to end (Issue #99)', async () => {
+    const { events, result } = await start('[fake:secret]');
+
+    expect(events.some((event) => /\bghp_[A-Za-z0-9]{36}\b/.test(event.text))).toBe(true);
     expect(result.outcome).toBe('done');
   });
 

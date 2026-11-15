@@ -1,4 +1,4 @@
-import type { RunPayload, RunStepResult } from '@agentic-studio/contracts';
+import type { RunEventInput, RunPayload, RunStepResult } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FakeRunner } from '../fake-runner.js';
@@ -19,6 +19,7 @@ class RecordingApi implements WorkerApi {
   readonly calls: [string, string, unknown?][] = [];
   claims = 0;
   heartbeatError: Error | undefined;
+  eventsError: Error | undefined;
   claimError: Error | undefined;
   /** When set, claims hang until their signal aborts (an API that does not answer). */
   claimHangs = false;
@@ -49,8 +50,17 @@ class RecordingApi implements WorkerApi {
     this.calls.push(['heartbeat', runId]);
     if (this.heartbeatError) throw this.heartbeatError;
   }
+  async appendEvents(runId: string, events: RunEventInput[]) {
+    if (this.eventsError) throw this.eventsError;
+    this.calls.push(['events', runId, events]);
+  }
   reports() {
-    return this.calls.filter(([kind]) => kind !== 'heartbeat');
+    return this.calls.filter(([kind]) => kind !== 'heartbeat' && kind !== 'events');
+  }
+  events() {
+    return this.calls
+      .filter(([kind]) => kind === 'events')
+      .flatMap(([, , events]) => events as RunEventInput[]);
   }
 }
 
@@ -89,6 +99,51 @@ describe('AgentWorker', () => {
       ['step', run.runId, { kind: 'start', result: expect.objectContaining({ outcome: 'done' }) }],
       ['state', run.runId, { state: 'succeeded' }],
     ]);
+  });
+
+  it("forwards the step's events between markers, before it reports the step (Issue #99)", async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    startWorker(api);
+
+    await until(() => api.reports().length === 3);
+
+    expect(api.events().map(({ seq, stepIndex, kind }) => [seq, stepIndex, kind])).toEqual([
+      [1, 1, 'step_started'],
+      [2, 1, 'message'],
+      [3, 1, 'command'],
+      [4, 1, 'output'],
+      [5, 1, 'step_finished'],
+    ]);
+    expect(api.events().at(-1)?.text).toBe('Run step 1 finished: done');
+    const kinds = api.calls.map(([kind]) => kind).filter((kind) => kind !== 'heartbeat');
+    expect(kinds.lastIndexOf('events')).toBeLessThan(kinds.indexOf('step'));
+  });
+
+  it('forwards the log of a failed step before it reports the failure', async () => {
+    const run = payload('[fake:fail]');
+    const api = new RecordingApi([run]);
+    startWorker(api);
+
+    await until(() => api.reports().length === 2);
+
+    expect(api.events().at(-1)).toMatchObject({
+      kind: 'step_finished',
+      text: 'Run step 1 ended without a result',
+    });
+    const kinds = api.calls.map(([kind]) => kind).filter((kind) => kind !== 'heartbeat');
+    expect(kinds.lastIndexOf('events')).toBeLessThan(kinds.lastIndexOf('state'));
+  });
+
+  it('drops a Run when the events route says it no longer holds it', async () => {
+    const run = payload('[fake:slow]');
+    const api = new RecordingApi([run]);
+    api.eventsError = new StudioApiError(409, '/api/worker/runs/x/events');
+    startWorker(api);
+
+    await until(() => api.claims >= 2);
+
+    expect(api.reports()).toEqual([['state', run.runId, { state: 'running' }]]);
   });
 
   it('reports waiting_for_operator after a question', async () => {
