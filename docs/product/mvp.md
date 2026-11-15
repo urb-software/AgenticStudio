@@ -32,7 +32,7 @@ This is a **capability roadmap**; not all of it belongs in the first implemented
 | `projects` | Projects, repository connection, Git branches, diff, review, approval, merge |
 | `agents` | Agent and skill definitions, assignment, file/Git-first editing, validation, publication |
 | `workflows` | Definition, steps, sequencing, orchestration, human approvals |
-| `executions` | Runs, queueing, cancellation, status, logs, results |
+| `executions` | Runs and their working copies, queueing, cancellation, status, logs, results |
 | `environments` | Project Compose stack lifecycle and one shared Preview per project |
 | `mcp` | Reusable MCP server registry/configuration, project/agent bindings, basic connection management |
 

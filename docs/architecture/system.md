@@ -48,7 +48,7 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 | `projects` | Project lifecycle, repository connection, Git branches, diff, approval and merge | Agent definitions, raw Docker privilege |
 | `agents` | `AgentDefinition`, `SkillDefinition`, assignment, native-file definitions, validation and publishing | Task queue execution |
 | `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
-| `executions` | Runs, state transitions, queue scheduling, progress/log/result records | Direct Docker host control or unrelated project Git internals |
+| `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records | Direct Docker host control or unrelated project Git internals |
 | `environments` | Project environment lifecycle, Compose stack abstraction, health/logs, shared Preview | CLI agent definitions |
 | `mcp` | Reusable MCP server definitions, bindings, validation/connection checks, CLI tool configuration | Project repository internals or a full gateway in MVP |
 

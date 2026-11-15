@@ -212,7 +212,7 @@ Also verify: a canceled or retried execution causes no duplicate irreversible ef
 - The agent user cannot reach Studio's database or Redis ports.
 - Rootless Docker works for the agent user: a Compose stack starts and stops.
 
-All runs share the agent user, so user permissions alone do not separate runs or projects; how the cross-run and cross-project checks above are enforced is an open decision in ADR 0002.
+All runs share the agent user, so user permissions alone do not separate runs or projects. For the first version the operator accepted guardrails only for that separation (ADR 0002, 2026-11-15): the cross-run and cross-project checks above test the guardrails, and dedicated host users per project are the recorded upgrade path.
 
 ## 10. Security delivery gates
 
