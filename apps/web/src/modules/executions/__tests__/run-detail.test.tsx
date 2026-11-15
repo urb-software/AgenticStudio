@@ -214,6 +214,11 @@ describe('Run page', () => {
       expect(
         within(dialog).getByRole('button', { name: 'Codex' }).getAttribute('aria-pressed'),
       ).toBe('true');
+      await vi.waitFor(() =>
+        expect(
+          within(dialog).getByRole('button', { name: 'Start run' }).hasAttribute('disabled'),
+        ).toBe(false),
+      );
       await userEvent.click(within(dialog).getByRole('button', { name: 'Start run' }));
 
       await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
@@ -224,6 +229,55 @@ describe('Run page', () => {
       push.mockReset();
     },
   );
+
+  it('switches Run again to an available provider when its own is switched off (Issue #101)', async () => {
+    const run = aRun({ state: 'failed', provider: 'codex' });
+    const api = fakeRunsApi([run]);
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: 'Switched off on the agent worker' },
+    ]);
+    renderRun(run.id);
+    await heading();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
+    const dialog = screen.getByRole('dialog', { name: 'New run' });
+
+    await vi.waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Claude Code' }).getAttribute('aria-pressed'),
+      ).toBe('true'),
+    );
+    expect(
+      within(dialog).getByRole('button', { name: 'Codex' }).getAttribute('aria-disabled'),
+    ).toBe('true');
+  });
+
+  it('re-applies it on every Run again, also with the same answer (review r1 of #120)', async () => {
+    const run = aRun({ state: 'failed', provider: 'codex' });
+    const api = fakeRunsApi([run]);
+    const codexOff = [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: 'Switched off on the agent worker' },
+    ];
+    api.respondNext('providers', 200, codexOff);
+    api.respondNext('providers', 200, codexOff);
+    renderRun(run.id);
+    await heading();
+    const pressed = (name: string) =>
+      within(screen.getByRole('dialog', { name: 'New run' }))
+        .getByRole('button', { name })
+        .getAttribute('aria-pressed');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
+    await vi.waitFor(() => expect(pressed('Claude Code')).toBe('true'));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
+
+    await vi.waitFor(() => expect(api.calls('providers')).toHaveLength(2));
+    await vi.waitFor(() => expect(pressed('Claude Code')).toBe('true'));
+    expect(pressed('Codex')).toBe('false');
+  });
 
   it.each(['queued', 'preparing', 'running', 'waiting_for_operator'] as const)(
     'has no Run again while the Run is %s',
