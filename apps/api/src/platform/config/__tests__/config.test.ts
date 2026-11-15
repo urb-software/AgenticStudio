@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -49,7 +49,8 @@ function captureError(fn: () => unknown): Error {
 
 describe('loadConfig', () => {
   it('returns typed configuration from a valid environment', () => {
-    const { secretsKey, ...config } = loadConfig(validEnv);
+    const { secretsKey, workerToken, ...config } = loadConfig(validEnv);
+    expect(workerToken).toBeNull();
     expect(secretsKey.type).toBe('secret');
     expect(secretsKey.export().equals(SECRETS_KEY_BYTES)).toBe(true);
     expect(config).toEqual({
@@ -65,6 +66,7 @@ describe('loadConfig', () => {
       gitAllowFileRemotes: false,
       gitAllowPrivateRemotes: false,
       sshKnownHosts: [],
+      workerLeaseSeconds: 60,
     });
   });
 
@@ -394,5 +396,54 @@ describe('loadConfig', () => {
       expect(error.message).not.toContain(line);
       expect(error.message).not.toContain(keyA.split(' ')[1]);
     });
+  });
+
+  describe('agent worker settings (Issue #96)', () => {
+    // A throwaway token generated per run: no token is committed.
+    const TOKEN = randomBytes(32).toString('base64');
+
+    it('has no worker token when STUDIO_WORKER_TOKEN is unset or empty (worker routes then reject all)', () => {
+      expect(loadConfig(requiredEnv).workerToken).toBeNull();
+      expect(loadConfig({ ...requiredEnv, STUDIO_WORKER_TOKEN: '' }).workerToken).toBeNull();
+    });
+
+    it('keeps only the SHA-256 digest of the token, as a key object that never prints', () => {
+      const { workerToken } = loadConfig({ ...requiredEnv, STUDIO_WORKER_TOKEN: TOKEN });
+      expect(workerToken?.type).toBe('secret');
+      expect(workerToken?.export().equals(createHash('sha256').update(TOKEN).digest())).toBe(true);
+      expect(inspect(workerToken)).not.toContain(TOKEN);
+      expect(JSON.stringify(workerToken)).not.toContain(TOKEN);
+    });
+
+    it('refuses a token shorter than 32 characters without echoing it', () => {
+      const short = 'x'.repeat(31);
+      const error = captureError(() => loadConfig({ ...requiredEnv, STUDIO_WORKER_TOKEN: short }));
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toMatch(/STUDIO_WORKER_TOKEN: must be at least 32 characters/);
+      expect(error.message).not.toContain(short);
+    });
+
+    it('accepts exactly 32 characters', () => {
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_WORKER_TOKEN: 'y'.repeat(32) }).workerToken,
+      ).not.toBeNull();
+    });
+
+    it('leases a claimed Run for 60 seconds by default', () => {
+      expect(loadConfig(requiredEnv).workerLeaseSeconds).toBe(60);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_WORKER_LEASE_SECONDS: '120' }).workerLeaseSeconds,
+      ).toBe(120);
+    });
+
+    it.each([['0'], ['9'], ['3601'], ['1.5'], ['abc']])(
+      'refuses a lease of %j (whole seconds, 10-3600)',
+      (value) => {
+        const error = captureError(() =>
+          loadConfig({ ...requiredEnv, STUDIO_WORKER_LEASE_SECONDS: value }),
+        );
+        expect(error.message).toMatch(/STUDIO_WORKER_LEASE_SECONDS/);
+      },
+    );
   });
 });

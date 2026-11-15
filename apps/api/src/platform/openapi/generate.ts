@@ -34,6 +34,9 @@ const app = await buildApp(
       gitAllowFileRemotes: false,
       gitAllowPrivateRemotes: false,
       sshKnownHosts: [],
+      // No worker token: the generator serves no requests.
+      workerToken: null,
+      workerLeaseSeconds: 60,
     },
     { queue: { startWorkers: false } },
   ),

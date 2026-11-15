@@ -83,6 +83,29 @@ export type VerifyRepositoryRequest = {
     acceptHostKeyFingerprint?: string;
 };
 
+export type StartRunRequest = {
+    task: string;
+    provider: 'claude_code' | 'codex';
+};
+
+export type RunOutput = {
+    id: string;
+    projectId: string;
+    provider: 'claude_code' | 'codex';
+    task: string;
+    state: 'queued' | 'preparing' | 'running' | 'waiting_for_operator' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
+    startCommit: string;
+    createdAt: string;
+    startedAt?: string;
+    finishedAt?: string;
+    failure?: {
+        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'unknown';
+        detail: string;
+    };
+};
+
+export type RunListOutput = Array<RunOutput>;
+
 export type ProblemDetails = {
     type: string;
     title: string;
@@ -452,3 +475,117 @@ export type VerifyRepositoryResponses = {
 };
 
 export type VerifyRepositoryResponse = VerifyRepositoryResponses[keyof VerifyRepositoryResponses];
+
+export type ListProjectRunsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/runs';
+};
+
+export type ListProjectRunsErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListProjectRunsError = ListProjectRunsErrors[keyof ListProjectRunsErrors];
+
+export type ListProjectRunsResponses = {
+    200: RunListOutput;
+};
+
+export type ListProjectRunsResponse = ListProjectRunsResponses[keyof ListProjectRunsResponses];
+
+export type StartRunData = {
+    body: StartRunRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/runs';
+};
+
+export type StartRunErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type StartRunError = StartRunErrors[keyof StartRunErrors];
+
+export type StartRunResponses = {
+    201: RunOutput;
+};
+
+export type StartRunResponse = StartRunResponses[keyof StartRunResponses];
+
+export type ListRunsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/runs';
+};
+
+export type ListRunsErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListRunsError = ListRunsErrors[keyof ListRunsErrors];
+
+export type ListRunsResponses = {
+    200: RunListOutput;
+};
+
+export type ListRunsResponse = ListRunsResponses[keyof ListRunsResponses];
+
+export type GetRunData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}';
+};
+
+export type GetRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunError = GetRunErrors[keyof GetRunErrors];
+
+export type GetRunResponses = {
+    200: RunOutput;
+};
+
+export type GetRunResponse = GetRunResponses[keyof GetRunResponses];

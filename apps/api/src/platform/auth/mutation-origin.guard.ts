@@ -6,8 +6,10 @@ import {
   Injectable,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import type { HttpRequest } from './http-types.js';
+import { IS_WORKER_ROUTE } from './worker-route.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -17,17 +19,27 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * - `Origin` must equal the Studio origin; without `Origin`, only
  *   `Sec-Fetch-Site: same-origin` is accepted. A foreign `Origin` always loses.
  * - A request body must be `application/json`, which no HTML form can send.
+ *
+ * Worker routes (Issue #96) skip the Origin check only: no cookie authenticates them, so there
+ * is no cross-site request to forge, and the agent worker is not a browser.
  */
 @Injectable()
 export class MutationOriginGuard implements CanActivate {
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly reflector: Reflector,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<HttpRequest>();
     if (SAFE_METHODS.has(request.method ?? '')) {
       return true;
     }
-    if (!this.isSameOrigin(request)) {
+    const isWorkerRoute = this.reflector.getAllAndOverride<boolean | undefined>(IS_WORKER_ROUTE, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!isWorkerRoute && !this.isSameOrigin(request)) {
       throw new ForbiddenException('Cross-origin request rejected.');
     }
     if (hasBody(request) && !isJson(request.headers['content-type'])) {

@@ -1,4 +1,4 @@
-import { createSecretKey, type KeyObject } from 'node:crypto';
+import { createHash, createSecretKey, type KeyObject } from 'node:crypto';
 import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { dirname, isAbsolute, join, relative } from 'node:path';
@@ -71,6 +71,25 @@ const secretsKeySchema = z
     message: `must decode to exactly ${SECRETS_KEY_BYTES} bytes; ${SECRETS_KEY_HINT}`,
   })
   .transform((value) => createSecretKey(Buffer.from(value, 'base64')));
+
+/** Shortest accepted agent worker token (Issue #96). */
+export const WORKER_TOKEN_MIN_LENGTH = 32;
+
+/**
+ * `STUDIO_WORKER_TOKEN` (Issue #96): the token the agent worker sends on the worker routes.
+ * Unset or empty: no token, and every worker route rejects (fail closed). Only its SHA-256
+ * digest is kept, as a KeyObject that never prints; messages never echo the value.
+ */
+const workerTokenSchema = z
+  .string()
+  .optional()
+  .transform((value) => (value === '' ? undefined : value))
+  .refine((value) => value === undefined || value.length >= WORKER_TOKEN_MIN_LENGTH, {
+    message: `must be at least ${WORKER_TOKEN_MIN_LENGTH} characters; generate one with \`openssl rand -base64 32\``,
+  })
+  .transform((value) =>
+    value === undefined ? null : createSecretKey(createHash('sha256').update(value).digest()),
+  );
 
 const studioOriginSchema = z
   .url({ protocol: /^https?$/ })
@@ -197,6 +216,10 @@ const environmentSchema = z.object({
   STUDIO_GIT_ALLOW_PRIVATE_REMOTES: z.enum(['true', 'false']).default('false'),
   // Git hosts trusted without asking (Issue #62): known_hosts lines; may be empty.
   STUDIO_SSH_KNOWN_HOSTS: sshKnownHostsSchema,
+  // Agent worker token (Issue #96); unset rejects every worker route.
+  STUDIO_WORKER_TOKEN: workerTokenSchema,
+  // How long a claimed Run may go without a heartbeat before it fails as worker_lost.
+  STUDIO_WORKER_LEASE_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
   NODE_ENV: z.string().optional(),
 });
 
@@ -231,6 +254,13 @@ export interface AppConfig {
   gitAllowPrivateRemotes: boolean;
   /** Trusted Git host keys (`STUDIO_SSH_KNOWN_HOSTS`); empty trusts no host without asking. */
   sshKnownHosts: SshKnownHost[];
+  /**
+   * SHA-256 digest of `STUDIO_WORKER_TOKEN`, or `null` when unset (every worker route then
+   * rejects). Only `platform/auth` reads it; the token itself is never kept.
+   */
+  workerToken: KeyObject | null;
+  /** Seconds a claimed Run may go without a heartbeat before it fails with `worker_lost`. */
+  workerLeaseSeconds: number;
 }
 
 export interface LoadConfigOptions {
@@ -275,5 +305,7 @@ export function loadConfig(
     gitAllowFileRemotes: result.data.STUDIO_GIT_ALLOW_FILE_REMOTES === 'true',
     gitAllowPrivateRemotes: result.data.STUDIO_GIT_ALLOW_PRIVATE_REMOTES === 'true',
     sshKnownHosts: result.data.STUDIO_SSH_KNOWN_HOSTS,
+    workerToken: result.data.STUDIO_WORKER_TOKEN,
+    workerLeaseSeconds: result.data.STUDIO_WORKER_LEASE_SECONDS,
   };
 }

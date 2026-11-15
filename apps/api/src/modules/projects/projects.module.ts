@@ -2,6 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
+import { RUN_START_POINTS } from './contracts/index.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
 import { CleanUpRepositoryHandler } from './features/clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from './features/clone-repository/handler.js';
@@ -26,6 +27,7 @@ import { GetProjectEndpoint } from './features/get-project/endpoint.js';
 import { GetProjectHandler } from './features/get-project/handler.js';
 import { GetRepositoryEndpoint } from './features/get-repository/endpoint.js';
 import { GetRepositoryHandler } from './features/get-repository/handler.js';
+import { GetRunStartPointHandler } from './features/get-run-start-point/handler.js';
 import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
 import { ListProjectsHandler } from './features/list-projects/handler.js';
 import { FetchCloneHandler } from './features/fetch-clone/handler.js';
@@ -77,7 +79,8 @@ export interface ProjectsModuleOptions {
  * disconnecting it (Story #63), through the hardened Git adapter (#59). On Linux, start-up checks
  * the Git version and sweeps crash leftovers (`onModuleInit`) before the repository worker
  * starts (after bootstrap). Deploy keys no Repository references are deleted at start-up and
- * after a failed delete (Issue #76).
+ * after a failed delete (Issue #76). Other modules get a Run's start point through the public
+ * {@link RUN_START_POINTS} contract (Issue #96).
  */
 @Module({})
 export class ProjectsModule {
@@ -140,7 +143,10 @@ export class ProjectsModule {
         FetchRepositoryHandler,
         DisconnectRepositoryHandler,
         VerifyRepositoryHandler,
+        GetRunStartPointHandler,
+        { provide: RUN_START_POINTS, useExisting: GetRunStartPointHandler },
       ],
+      exports: [RUN_START_POINTS],
     };
   }
 }

@@ -51,6 +51,23 @@ export const apiGate: Gate = {
       to: { path: '^src/modules/[^/]+/contracts/events/', pathNot: '^src/modules/$1/' },
     },
     {
+      name: 'api-cross-module-contracts-index-only',
+      comment:
+        'Another module is reached only through its public contracts/index.ts: its contracts/http/ ' +
+        'schemas are shared within that module only (backend.md §2, Issue #96). Deep imports of ' +
+        'contracts/events/ are covered by api-events-imported-via-contracts-index.',
+      severity: 'error',
+      from: { path: '^src/modules/([^/]+)/' },
+      to: {
+        path: CONTRACTS,
+        pathNot: [
+          '^src/modules/$1/',
+          '^src/modules/[^/]+/contracts/index\\.ts$',
+          '^src/modules/[^/]+/contracts/events/',
+        ],
+      },
+    },
+    {
       name: 'api-outside-modules-imports-contracts-only',
       comment:
         'platform/ and shared/ must not reach into business modules except their public contracts/.',

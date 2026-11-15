@@ -1,3 +1,3 @@
-import { contract } from '@agentic-studio/contracts';
+import { contract } from '@agentic-studio/missing-package';
 
 export const api = contract;

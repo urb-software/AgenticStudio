@@ -299,6 +299,8 @@ export const SERVER_PACKAGES = [
   ...INFRASTRUCTURE_PACKAGES,
   '@agentic-studio/api',
   '@agentic-studio/testing',
+  // The worker protocol (Issue #96): only the API and the agent worker use it.
+  '@agentic-studio/contracts',
 ];
 
 /**

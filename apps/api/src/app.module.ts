@@ -1,4 +1,8 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import {
+  ExecutionsModule,
+  type ExecutionsModuleOptions,
+} from './modules/executions/executions.module.js';
 import { ProjectsModule, type ProjectsModuleOptions } from './modules/projects/projects.module.js';
 import { AuthModule } from './platform/auth/auth.module.js';
 import type { AppConfig } from './platform/config/config.js';
@@ -14,12 +18,19 @@ export class AppModule {
   /**
    * Test seams; production passes no options. `queue` tunes the job-queue workers (e.g.
    * `{ startWorkers: false }` builds the app without Redis, as OpenAPI generation does);
-   * `projects` shortens the Git limits or changes the platform for tests.
+   * `projects` shortens the Git limits or changes the platform for tests; `executions` passes
+   * a controlled clock.
    */
   static register(
     config: AppConfig,
-    options: { queue?: QueueWorkerTuning; projects?: ProjectsModuleOptions } = {},
+    options: {
+      queue?: QueueWorkerTuning;
+      projects?: ProjectsModuleOptions;
+      executions?: ExecutionsModuleOptions;
+    } = {},
   ): DynamicModule {
+    // One instance: `executions` imports this same module to reach its public contract.
+    const projects = ProjectsModule.register(options.projects);
     return {
       module: AppModule,
       imports: [
@@ -30,7 +41,8 @@ export class AppModule {
         HealthModule,
         SecretsModule,
         AuthModule,
-        ProjectsModule.register(options.projects),
+        projects,
+        ExecutionsModule.register(projects, options.executions),
       ],
     };
   }

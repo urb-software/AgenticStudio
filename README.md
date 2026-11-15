@@ -31,7 +31,7 @@ Backend: a NestJS modular monolith with six business modules: `projects` (includ
 
 No GPU required. Outside the initial MVP: advanced sandboxing (microVMs), external-tenant APIs, a full MCP gateway.
 
-## Repository layout (target; `apps/api`, `apps/web`, `packages/database`, `packages/testing` and `compose.yaml` exist so far)
+## Repository layout (target; `apps/api`, `apps/web`, `packages/contracts`, `packages/database`, `packages/testing` and `compose.yaml` exist so far)
 
 ```text
 apps/
@@ -95,6 +95,8 @@ cp .env.example .env
 | `STUDIO_SSH_KNOWN_HOSTS` | API | Optional, default empty. Git hosts trusted over SSH without asking, as known_hosts lines. See [Trusted SSH hosts](#trusted-ssh-hosts). |
 | `STUDIO_GIT_ALLOW_PRIVATE_REMOTES` | API | Default `false`. `true` lets Studio connect to Git remotes on loopback and private addresses (`127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`, `fec0::/10`), e.g. a self-hosted Git server on your LAN. Link-local and cloud metadata addresses are refused regardless. See [Remote address policy](#remote-address-policy). |
 | `STUDIO_GIT_ALLOW_FILE_REMOTES` | API | Test-only. `true` lets the Git adapter use local `file://` fixture remotes. Accepted only with `NODE_ENV=test`; any other environment refuses to start. |
+| `STUDIO_WORKER_TOKEN` | API | Optional. The token the agent worker sends on the worker routes (`/api/worker/`): at least 32 characters, e.g. `openssl rand -base64 32`; the agent worker gets the same value. Unset or empty: every worker route rejects. Never logged; only its SHA-256 digest is kept in memory. |
+| `STUDIO_WORKER_LEASE_SECONDS` | API | Default `60` (10–3600). A Run claimed by an agent worker that sends no heartbeat for this long fails with `worker_lost`. |
 | `API_ORIGIN` | web (`/api` rewrite), validated by the API | An http(s) origin; target of the rewrite. See [Web `/api` proxy](#web-api-proxy). |
 | `STUDIO_WEB_API_PROXY` | web (`next build`, `next start`) | Default unset (off). `true` opts a production build into the `/api` rewrite. See [Web `/api` proxy](#web-api-proxy). |
 
