@@ -466,6 +466,8 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 
 // Story #97: start Runs on a project with a ready Repository and follow them on the Run page
 // while the agent worker (fake runner, Linux only) carries them out: a Run that succeeds, a
+// one that commits a change with a failing check (`[fake:checks-failed]`) and arrives as a
+// draft pull request (#102: on the worker's stub of GitHub), a
 // "Run again" that fails (`[fake:fail]`) and shows its reason, and one that waits for the
 // operator (`[fake:question]`), which the top-bar run indicator then shows. The Run page is
 // scanned with axe in both themes for the failed and the waiting (active) Run, and the
@@ -512,14 +514,35 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   // The worker claims it and the fake runner succeeds; the page polls until it is over.
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
   await expect(main.getByText('Claude Code', { exact: true })).toBeVisible();
+  // Issue #102: the fake agent changed nothing, so nothing was pushed.
+  await expect(main.getByText('No changes.')).toBeVisible();
   const breadcrumb = page
     .getByRole('banner', { name: 'Top bar' })
     .getByRole('navigation', { name: 'Breadcrumb' });
   await expect(breadcrumb.getByRole('link', { name: 'Executions' })).toBeVisible();
 
-  // Run again, prefilled; this time the fake agent fails and the page shows the reason.
+  // Run again, prefilled; this time the fake agent commits a change and reports a failing
+  // check: the Run is delivered as a draft pull request, and the page says so (Issue #102).
   await main.getByRole('button', { name: 'Run again' }).click();
   await expect(dialog.getByLabel('Task')).toHaveValue('Add a smoke note to the README');
+  await dialog.getByLabel('Task').fill('Change a file [fake:checks-failed]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Change a file [fake:checks-failed]');
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(main.getByText('Draft pull request opened.')).toBeVisible();
+  await expect(main.getByRole('link', { name: /Pull request #1/ }).first()).toHaveAttribute(
+    'href',
+    /^https:\/\/github\.com\/fixtures\/run-[^/]+\/pull\/1$/,
+  );
+  await expect(main.getByText('Some checks failed.')).toBeVisible();
+  await expect(main.getByText('First delivery to this repository.')).toBeVisible();
+  await expect(
+    main.getByText(/^agent\/change-a-file-fake-checks-failed-r[0-9a-f]{8}$/).first(),
+  ).toBeVisible();
+  await expectInBothThemes(page, pill);
+
+  // Run again; this time the fake agent fails and the page shows the reason.
+  await main.getByRole('button', { name: 'Run again' }).click();
   await dialog.getByLabel('Task').fill('Break on purpose [fake:fail]');
   await dialog.getByRole('button', { name: 'Start run' }).click();
   await expect(heading).toHaveText('Break on purpose [fake:fail]');
@@ -545,10 +568,13 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(page).toHaveURL(/\/executions$/);
   const list = main.getByRole('list', { name: 'Runs' });
   const rows = list.getByRole('listitem').filter({ hasText: projectName });
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   await expect(rows.nth(0)).toContainText('Waiting for you');
   await expect(rows.nth(1)).toContainText('Failed');
   await expect(rows.nth(2)).toContainText('Succeeded');
+  // The delivered Run carries its pull request marker (Issue #102).
+  await expect(rows.nth(2)).toContainText('Pull request #1');
+  await expect(rows.nth(3)).toContainText('Succeeded');
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
 });

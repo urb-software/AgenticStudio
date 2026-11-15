@@ -187,6 +187,9 @@ export const api = {
   /** Every Run across all projects, newest first. */
   listRuns: (): Promise<RunListOutput> => unwrap(sdk.listRuns()),
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
+  /** Repeats only the delivery of a Run whose delivery failed (202: the Run, retry requested). */
+  retryRunDelivery: (runId: string): Promise<RunOutput> =>
+    unwrap(sdk.retryRunDelivery({ path: { runId } })),
   /** Each provider and whether a Run can be started with it now, with the reason when not. */
   listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
 };

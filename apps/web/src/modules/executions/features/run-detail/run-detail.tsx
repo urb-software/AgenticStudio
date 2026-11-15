@@ -31,6 +31,7 @@ import {
 import { failedRequest } from '../../components/failed-request';
 import { StaleBanner } from '../../components/stale-banner';
 import { NewRunDialog } from '../new-run/new-run-dialog';
+import { PullRequestLink, RunDelivery } from './run-delivery';
 
 /** States in which a Run is over, so it can be run again. */
 const FINAL: readonly RunOutput['state'][] = ['succeeded', 'failed', 'cancelled', 'timed_out'];
@@ -129,9 +130,10 @@ export function RunTitle({ runId }: { runId: string }) {
 
 /**
  * The Run page: the Task, the state as a status pill (polled while the Run is active), the
- * Provider, the project, the starting commit and the times. A queued Run says why it waits; a
- * failed Run shows the message for its reason code and the detail in mono; a finished one has
- * "Run again".
+ * Provider, the project, the starting commit, the Run branch and the times. A queued Run says
+ * why it waits; a failed Run shows the message for its reason code and the detail in mono; a
+ * finished one has "Run again". How the result reached GitHub (Issue #102) follows: the draft
+ * pull request, "No changes", failing checks, "Retry delivery" or where the Run branch stays.
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
@@ -205,6 +207,7 @@ export function RunDetail({ runId }: { runId: string }) {
       ) : null}
       {run.state === 'queued' ? <QueuedReason run={run} /> : null}
       {run.failure ? <Failure failure={run.failure} /> : null}
+      <RunDelivery run={run} />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         <Card aria-labelledby="run-task-title">
@@ -225,6 +228,16 @@ export function RunDetail({ runId }: { runId: string }) {
               <Fact term="Start commit">
                 <span className="font-mono text-code break-all">{run.startCommit}</span>
               </Fact>
+              {run.runBranch ? (
+                <Fact term="Run branch">
+                  <span className="font-mono text-code break-all">{run.runBranch}</span>
+                </Fact>
+              ) : null}
+              {run.pullRequest ? (
+                <Fact term="Pull request">
+                  <PullRequestLink pullRequest={run.pullRequest} />
+                </Fact>
+              ) : null}
               <Fact term="Created">
                 <When iso={run.createdAt} />
               </Fact>

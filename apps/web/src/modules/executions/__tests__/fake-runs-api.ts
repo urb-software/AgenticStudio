@@ -6,7 +6,8 @@ import type {
   RunOutput,
 } from '../../../platform/api';
 
-type Route = 'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run' | 'providers';
+type Route =
+  'projects' | 'project' | 'projectRuns' | 'start' | 'runs' | 'run' | 'retryDelivery' | 'providers';
 
 interface ScriptedResponse {
   status: number;
@@ -19,6 +20,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/projects\/([^/]+)\/runs$/, (method) => (method === 'POST' ? 'start' : 'projectRuns')],
   [/^\/api\/runs$/, () => 'runs'],
   [/^\/api\/runs\/([^/]+)$/, () => 'run'],
+  [/^\/api\/runs\/([^/]+)\/retry-delivery$/, () => 'retryDelivery'],
   [/^\/api\/providers()$/, () => 'providers'],
 ];
 
@@ -73,6 +75,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     start: [],
     runs: [],
     run: [],
+    retryDelivery: [],
     providers: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
@@ -109,6 +112,12 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
       case 'run': {
         const run = runs.find((candidate) => candidate.id === id);
         return run ? json(200, run) : json(404, problem(404, 'Run not found'));
+      }
+      case 'retryDelivery': {
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        if (index === -1) return json(404, problem(404, 'Run not found'));
+        runs[index] = { ...runs[index]!, deliveryRetryRequested: true };
+        return json(202, runs[index]);
       }
       case 'start': {
         const { task, provider } = body as Pick<RunOutput, 'task' | 'provider'>;

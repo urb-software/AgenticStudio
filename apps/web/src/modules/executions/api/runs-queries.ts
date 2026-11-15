@@ -13,11 +13,14 @@ const WAITING_POLL_MS = 10_000;
 
 /**
  * The poll interval for a set of Runs (#97 DoR): fast while any is queued, preparing or
- * running, slower while one only waits for the operator, and none once all are finished.
+ * running (or retrying its delivery), slower while one only waits for the operator, and none once all are finished.
  */
 function pollIntervalFor(runs: readonly RunOutput[] | undefined): number | false {
   if (!runs) return false;
-  if (runs.some((run) => MOVING.includes(run.state))) return ACTIVE_POLL_MS;
+  // A requested delivery retry (Issue #102) moves on without the operator too.
+  if (runs.some((run) => MOVING.includes(run.state) || run.deliveryRetryRequested)) {
+    return ACTIVE_POLL_MS;
+  }
   if (runs.some((run) => run.state === 'waiting_for_operator')) return WAITING_POLL_MS;
   return false;
 }
@@ -119,6 +122,22 @@ export function useProviderAvailability(opening: number, enabled: boolean) {
     enabled,
     staleTime: Infinity,
     gcTime: 0,
+  });
+}
+
+/**
+ * "Retry delivery" (Issue #102): asks the agent worker to repeat only the delivery of a Run
+ * whose delivery failed. The 202 answer (the Run, retry requested) replaces the cached Run, so
+ * the page polls it until the worker reports the outcome; every Run list is read again.
+ */
+export function useRetryDelivery(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.retryRunDelivery(runId),
+    onSuccess: async (run: RunOutput) => {
+      queryClient.setQueryData(runKey(run.id), run);
+      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
+    },
   });
 }
 
