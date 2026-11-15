@@ -15,6 +15,19 @@ export const PROVIDERS = ['claude_code', 'codex'] as const;
 export const providerSchema = z.enum(PROVIDERS);
 export type Provider = z.infer<typeof providerSchema>;
 
+/** Display names of the providers, the one list for the API and the agent worker (#101). */
+export const PROVIDER_NAMES = {
+  claude_code: 'Claude Code',
+  codex: 'Codex',
+} as const satisfies Record<Provider, string>;
+
+/** One on/off value per provider: the worker's switches as it reports them (#101). */
+export const providerSwitchesSchema = z.strictObject({
+  claude_code: z.boolean(),
+  codex: z.boolean(),
+} satisfies Record<Provider, z.ZodBoolean>);
+export type ProviderSwitches = Readonly<z.infer<typeof providerSwitchesSchema>>;
+
 /** Longest Task (the operator's instruction), in characters. */
 export const TASK_MAX_LENGTH = 20_000;
 
@@ -244,3 +257,25 @@ export const runStatesResponseSchema = z.array(
   }),
 );
 export type RunStatesResponse = z.infer<typeof runStatesResponseSchema>;
+/**
+ * How the agent worker carries out Runs (Issue #101): `cli` starts the provider's official CLI
+ * (production); `fake` uses the scripted fake runner and is allowed only in development and
+ * test configurations of the worker.
+ */
+export const WORKER_RUNNER_MODES = ['fake', 'cli'] as const;
+export type WorkerRunnerMode = (typeof WORKER_RUNNER_MODES)[number];
+
+/**
+ * `POST /api/worker/status` body (Issue #101): the worker's runner mode and which providers its
+ * own configuration enables, sent when it starts and with every poll. It is a report for
+ * display and for refusing hopeless starts; the worker's own check stays authoritative.
+ */
+export const workerStatusRequestSchema = z.strictObject({
+  workerId: workerIdSchema,
+  runner: z.enum(WORKER_RUNNER_MODES),
+  providers: providerSwitchesSchema,
+});
+export type WorkerStatusRequest = z.infer<typeof workerStatusRequestSchema>;
+
+/** What a worker reports about itself: the status request without the worker id. */
+export type WorkerStatusReport = Omit<WorkerStatusRequest, 'workerId'>;

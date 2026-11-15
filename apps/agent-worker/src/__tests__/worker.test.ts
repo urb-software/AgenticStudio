@@ -60,6 +60,7 @@ class RecordingApi implements WorkerApi {
   claims = 0;
   heartbeatError: Error | undefined;
   claimError: Error | undefined;
+  statusError: Error | undefined;
   /** When set, claims hang until their signal aborts (an API that does not answer). */
   claimHangs = false;
 
@@ -85,15 +86,20 @@ class RecordingApi implements WorkerApi {
   async reportStep(runId: string, step: unknown) {
     this.calls.push(['step', runId, step]);
   }
+  async reportStatus(status: unknown) {
+    this.calls.push(['status', '', status]);
+    if (this.statusError) throw this.statusError;
+  }
   async heartbeat(runId: string) {
     this.calls.push(['heartbeat', runId]);
     if (this.heartbeatError) throw this.heartbeatError;
   }
   reports() {
-    return this.calls.filter(([kind]) => kind !== 'heartbeat');
+    return this.calls.filter(([kind]) => kind !== 'heartbeat' && kind !== 'status');
   }
 }
 
+const STATUS = { runner: 'fake', providers: { claude_code: true, codex: true } } as const;
 const silent = { info: () => undefined, error: () => undefined };
 let worker: AgentWorker | undefined;
 
@@ -105,6 +111,7 @@ function startWorker(
   worker = new AgentWorker({
     api,
     runner,
+    status: STATUS,
     workingCopies,
     pollMs: 5,
     heartbeatMs: 10,
@@ -331,6 +338,39 @@ describe('AgentWorker', () => {
     startWorker(api);
 
     await until(() => api.calls.filter(([kind]) => kind === 'heartbeat').length >= 3);
+  });
+
+  it('reports its status before every claim (Issue #101)', async () => {
+    const api = new RecordingApi([]);
+    startWorker(api);
+
+    await until(() => api.claims >= 3);
+
+    const kinds = api.calls.map(([kind]) => kind).slice(0, 3);
+    expect(kinds).toEqual(['status', 'status', 'status']);
+    expect(api.calls[0]?.[2]).toEqual(STATUS);
+  });
+
+  it('keeps its status fresh with every heartbeat while it carries a long Run', async () => {
+    const api = new RecordingApi([payload('[fake:slow]')]);
+    startWorker(api);
+    await until(() => api.claims === 1);
+    const before = api.calls.filter(([kind]) => kind === 'status').length;
+
+    await until(() => api.calls.filter(([kind]) => kind === 'heartbeat').length >= 3);
+
+    expect(api.calls.filter(([kind]) => kind === 'status').length).toBeGreaterThan(before + 1);
+  });
+
+  it('keeps polling and carrying Runs when the status report fails', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    api.statusError = new TypeError('fetch failed');
+    startWorker(api);
+
+    await until(() => api.reports().length === 3);
+
+    expect(api.reports().at(-1)).toEqual(['state', run.runId, { state: 'succeeded' }]);
   });
 
   it('drops a Run the API says it no longer holds, without reporting it', async () => {

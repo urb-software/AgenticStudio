@@ -4,8 +4,10 @@ import {
   type RunStepResult,
   runStepResultSchema,
   type WorkingCopyReport,
+  type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
+import { ProviderDisabledError } from './provider-gate.js';
 import { AgentFailedError, drainRunStep, type Runner } from './runner.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from './working-copy.js';
@@ -17,13 +19,21 @@ export interface WorkerLogger {
 }
 
 /** The worker routes the loop uses ({@link StudioApi} in production). */
-export type WorkerApi = Pick<StudioApi, 'claim' | 'reportState' | 'reportStep' | 'heartbeat'>;
+export type WorkerApi = Pick<
+  StudioApi,
+  'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'reportStatus'
+>;
 
 export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
   /** Prepares and inspects each Run's Working copy (Issue #98). */
   workingCopies: WorkingCopyPort;
+  /**
+   * Reported to Studio before every claim and with every heartbeat (Issue #101), so Studio
+   * knows which providers this worker enables. Fixed for the life of the process.
+   */
+  status: WorkerStatusReport;
   /** Pause between two claims when there is no work, or after the API was unreachable. */
   pollMs: number;
   /** Interval of heartbeats while carrying a Run. */
@@ -87,6 +97,7 @@ export class AgentWorker {
     const { api, logger, pollMs } = this.options;
     while (!this.stopping) {
       let run: RunPayload | null = null;
+      await this.reportStatus();
       try {
         run = await api.claim(this.shutdown.signal);
       } catch (error) {
@@ -109,6 +120,8 @@ export class AgentWorker {
     let prepared: PreparedRun | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
     const heartbeats = setInterval(() => {
+      // Keeps Studio's view of this worker fresh while it carries a long Run.
+      void this.reportStatus();
       api.heartbeat(run.runId, this.shutdown.signal).catch((error: unknown) => {
         if (isRunLost(error) || error instanceof RunLostError) {
           lost = true;
@@ -174,11 +187,13 @@ export class AgentWorker {
       ? SHUTDOWN_FAILURE
       : error instanceof PreparationFailedError
         ? { code: 'preparation_failed' as const, detail: error.detail.slice(0, 2000) }
-        : error instanceof AgentFailedError
-          ? { code: 'agent_failed' as const, detail: error.message.slice(0, 2000) }
-          : error instanceof InvalidResultError
-            ? INVALID_RESULT_FAILURE
-            : UNEXPECTED_FAILURE;
+        : error instanceof ProviderDisabledError
+          ? { code: 'provider_disabled' as const, detail: error.message }
+          : error instanceof AgentFailedError
+            ? { code: 'agent_failed' as const, detail: error.message.slice(0, 2000) }
+            : error instanceof InvalidResultError
+              ? INVALID_RESULT_FAILURE
+              : UNEXPECTED_FAILURE;
     if (failure === UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
@@ -214,6 +229,16 @@ export class AgentWorker {
         `Reading the Working copy of run ${run.runId} failed: ${describe(error)}`,
       );
       return undefined;
+    }
+  }
+
+  /** Never throws: a failed status report is logged, and the loop goes on. */
+  private async reportStatus(): Promise<void> {
+    try {
+      await this.options.api.reportStatus(this.options.status, this.shutdown.signal);
+    } catch (error) {
+      if (!this.stopping)
+        this.options.logger.error(`Reporting the status failed: ${describe(error)}`);
     }
   }
 

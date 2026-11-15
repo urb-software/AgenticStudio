@@ -60,6 +60,19 @@ describe('StudioApi', () => {
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ workerId: WORKER_ID });
   });
 
+  it('reports the status to /api/worker/status with the worker id (Issue #101)', async () => {
+    const { api, calls } = client(async () => new Response(null, { status: 204 }));
+
+    await api.reportStatus({ runner: 'cli', providers: { claude_code: true, codex: false } });
+
+    expect(calls[0]?.url).toBe('http://studio.test/api/worker/status');
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      workerId: WORKER_ID,
+      runner: 'cli',
+      providers: { claude_code: true, codex: false },
+    });
+  });
+
   it('turns an error status into a StudioApiError with the problem type, without the token', async () => {
     const { api } = client(
       async () =>

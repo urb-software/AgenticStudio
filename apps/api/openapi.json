@@ -698,7 +698,7 @@
             }
           },
           "409": {
-            "description": "The project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready)",
+            "description": "The project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -845,6 +845,38 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/providers": {
+      "get": {
+        "operationId": "listProviders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderList_Output"
                 }
               }
             }
@@ -1289,6 +1321,39 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Run_Output"
+        }
+      },
+      "ProviderAvailability_Output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "claude_code",
+              "codex"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "available"
+        ],
+        "additionalProperties": false
+      },
+      "ProviderList_Output": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/ProviderAvailability_Output"
         }
       },
       "ProblemDetails": {

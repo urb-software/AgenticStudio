@@ -17,9 +17,12 @@
 // 4. On Linux, creates throwaway bare fixture Repositories with a `dev` branch (two per
 //    Playwright project: one for the repository test, one for the Run test, since a remote
 //    belongs to one project) in a temp directory, and starts the agent worker (#96; Linux only)
-//    with the fake runner. The worker gets a clean environment: STUDIO_API_URL, a worker token
-//    generated for this run (the API gets the same STUDIO_WORKER_TOKEN), and its own HOME, data
-//    directory and Agent Git identity (#98: each Run's Working copy); it refuses
+//    with the fake runner. The worker gets a clean environment: only STUDIO_API_URL, a worker
+//    token generated for this run (the API gets the same STUDIO_WORKER_TOKEN), the fake
+//    runner mode in a test environment with both provider switches on (#101; no CLI is ever
+//    spawned, and Studio refuses to start Runs until a worker reports them available), and its
+//    own HOME, data directory and Agent Git identity (#98: each Run's Working copy; the test
+//    environment also lets it fetch the file:// fixture remotes); it refuses
 //    to start if a Studio-side setting such as DATABASE_URL reaches it. Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
@@ -311,12 +314,16 @@ async function main() {
         STUDIO_WORKER_TOKEN: workerToken,
         STUDIO_WORKER_POLL_MS: '500',
         STUDIO_WORKER_HEARTBEAT_MS: '2000',
+        // Fake runner, allowed only outside production; both providers on (Issue #101). The
+        // test environment also accepts the file:// fixture remotes (#98).
+        STUDIO_WORKER_RUNNER: 'fake',
+        STUDIO_WORKER_ENVIRONMENT: 'test',
+        CLAUDE_CODE_ENABLED: 'true',
+        CODEX_CLI_ENABLED: 'true',
         HOME: workerHome,
         STUDIO_WORKER_DATA_DIR: join(scratch, 'agent-worker-data'),
         STUDIO_AGENT_GIT_NAME: 'Smoke Agent',
         STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
-        // The fixture Repositories are file:// remotes: a test worker accepts them (#98).
-        STUDIO_WORKER_ENVIRONMENT: 'test',
       },
       { clean: true },
     );
