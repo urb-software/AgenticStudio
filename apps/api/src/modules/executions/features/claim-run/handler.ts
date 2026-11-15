@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Run, RunFailure } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
+import { cancelLongWaitingRuns } from '../../domain/services/long-waiting-runs.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
+import { timeOutOverdueSteps } from '../../domain/services/overdue-steps.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
@@ -13,9 +15,10 @@ const NO_REMOTE: RunFailure = {
 
 /**
  * Command (Issue #96): an agent worker asks for work. Lost workers are swept first (their
- * Runs fail and free their places), then the oldest eligible queued Run is handed out under
- * the concurrency limits; `null` when there is none. A `failed` Run whose delivery retry was
- * requested is handed out too, for the delivery only (Issue #102).
+ * Runs fail and free their places), Runs waiting too long are cancelled and steps far past
+ * their time limit time out (Issue #100); then the oldest eligible queued Run is handed out
+ * under the concurrency limits; `null` when there is none. A `failed` Run whose delivery retry
+ * was requested is handed out too, for the delivery only (Issue #102).
  */
 const NOT_DELIVERABLE: RunFailure = {
   code: 'delivery_failed',
@@ -35,6 +38,10 @@ export class ClaimRunHandler {
   async execute(workerId: string): Promise<Run | null> {
     const now = this.clock.now();
     await failLostWorkers(this.runs, now, this.lease.seconds);
+    // A Run left waiting too long holds a slot; it is cancelled first (Issue #100).
+    await cancelLongWaitingRuns(this.runs, now);
+    // A step far past its time limit holds a slot too (review of #121: Studio's backstop).
+    await timeOutOverdueSteps(this.runs, now);
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       // A Run from before Issue #98 whose project had no Repository has no remote to prepare
@@ -62,6 +69,7 @@ export class ClaimRunHandler {
         from: 'preparing',
         to: 'failed',
         failure: NO_REMOTE,
+        cancelRequested: false,
         now,
       });
     }

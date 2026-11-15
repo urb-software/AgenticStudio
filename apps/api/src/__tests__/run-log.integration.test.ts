@@ -423,6 +423,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       const runId = await runningRun();
       await worker(`${runId}/steps`, {
         workerId: W1,
+        index: 1,
         kind: 'start',
         result: {
           outcome: 'done',

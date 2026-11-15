@@ -103,6 +103,12 @@ export const zStartRunRequest = z.object({
     provider: z.enum(['claude_code', 'codex'])
 });
 
+export const zRunLimitsOutput = z.object({
+    stepMinutes: z.int().gte(1).lte(9007199254740991),
+    maxSteps: z.int().gte(1).lte(9007199254740991),
+    waitingDays: z.int().gte(1).lte(9007199254740991)
+});
+
 export const zRunOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
@@ -130,6 +136,7 @@ export const zRunOutput = z.object({
             'usage_limit',
             'worker_lost',
             'delivery_failed',
+            'step_limit',
             'unknown'
         ]),
         detail: z.string()
@@ -140,6 +147,12 @@ export const zRunOutput = z.object({
         subject: z.string()
     })).optional(),
     hasUncommittedChanges: z.boolean().optional(),
+    limits: zRunLimitsOutput,
+    cancelRequestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    cancellation: z.object({
+        by: z.enum(['operator', 'system']),
+        reason: z.string()
+    }).optional(),
     delivery: z.enum([
         'none',
         'delivered',
@@ -302,6 +315,12 @@ export const zGetRunPath = z.object({
 });
 
 export const zGetRunResponse = zRunOutput;
+
+export const zCancelRunPath = z.object({
+    runId: z.string()
+});
+
+export const zCancelRunResponse = zRunOutput;
 
 export const zRetryRunDeliveryPath = z.object({
     runId: z.string()

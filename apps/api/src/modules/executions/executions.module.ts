@@ -4,6 +4,9 @@ import { AuthModule } from '../../platform/auth/auth.module.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
+import { CancelLongWaitingRunsHandler } from './features/cancel-long-waiting-runs/handler.js';
+import { CancelRunEndpoint } from './features/cancel-run/endpoint.js';
+import { CancelRunHandler } from './features/cancel-run/handler.js';
 import { AppendRunEventsEndpoint } from './features/append-run-events/endpoint.js';
 import { AppendRunEventsHandler } from './features/append-run-events/handler.js';
 import { ClaimRunEndpoint } from './features/claim-run/endpoint.js';
@@ -47,6 +50,7 @@ import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
 import { CLOCK, type Clock } from './ports/clock.js';
+import { RUN_LIMITS, type RunLimitsSetting } from './ports/run-limits.js';
 import { OPERATOR_SESSIONS } from './ports/operator-sessions.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL } from './ports/run-log-signal.js';
@@ -80,7 +84,8 @@ const LOG_STREAMS_TOTAL = 50;
 const NO_RUN_SECRET_VALUES: RunSecretValues = { forRun: () => Promise.resolve([]) };
 
 /**
- * `executions` business module (Issues #96, #99): the operator starts and reads Runs; the agent
+ * `executions` business module (Issues #96, #99, #100): the operator starts, reads and
+ * cancels Runs; the agent
  * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
  * only), including each Run's log, which the operator reads in pages or live. `projects` is
  * passed in by the composition root, which wires its public `RUN_START_POINTS` contract; this
@@ -98,6 +103,7 @@ export class ExecutionsModule {
         ListProjectRunsEndpoint,
         ListRunsEndpoint,
         GetRunEndpoint,
+        CancelRunEndpoint,
         RetryDeliveryEndpoint,
         ClaimRunEndpoint,
         ReportRunStateEndpoint,
@@ -134,10 +140,17 @@ export class ExecutionsModule {
           useFactory: (config: AppConfig): WorkerLease => ({ seconds: config.workerLeaseSeconds }),
           inject: [APP_CONFIG],
         },
+        {
+          provide: RUN_LIMITS,
+          useFactory: (config: AppConfig): RunLimitsSetting => ({ ...config.runLimits }),
+          inject: [APP_CONFIG],
+        },
         StartRunHandler,
         ListProjectRunsHandler,
         ListRunsHandler,
         GetRunHandler,
+        CancelRunHandler,
+        CancelLongWaitingRunsHandler,
         RetryDeliveryHandler,
         ClaimRunHandler,
         ReportRunStateHandler,

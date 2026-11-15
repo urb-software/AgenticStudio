@@ -4,8 +4,11 @@ import {
   canTransition,
   IllegalRunTransitionError,
   isFinal,
+  longWaitCancellation,
   RUN_STATES,
+  type Run,
   type RunState,
+  stepLimitFailure,
 } from '../run.js';
 
 // Issue #96: the Run state machine, enforced in the domain.
@@ -69,5 +72,68 @@ describe('Run transitions', () => {
     expect(() => assertTransition('succeeded', 'running')).toThrow(
       'A Run cannot go from succeeded to running.',
     );
+  });
+});
+
+// Issue #100: the long-wait rule and the step-limit failure.
+describe('long-wait rule', () => {
+  const since = new Date('2026-11-01T12:00:00.000Z');
+  const waiting = (waitingDays: number, overrides: Partial<Run> = {}): Run => ({
+    id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
+    projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
+    provider: 'codex',
+    task: 'x',
+    state: 'waiting_for_operator',
+    startCommit: 'a',
+    remoteUrl: 'https://git.example.test/a.git',
+    workingCopy: null,
+    integrationBranch: 'dev',
+    delivery: null,
+    pullRequest: null,
+    deliveryRequested: false,
+    failingChecks: [],
+    createdAt: since,
+    startedAt: since,
+    finishedAt: null,
+    failure: null,
+    claimedBy: null,
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays },
+    cancelRequestedAt: null,
+    cancellation: null,
+    waitingSince: since,
+    stepStartedAt: null,
+    releasedBy: null,
+    ...overrides,
+  });
+  const after = (days: number, extraMs = 0) =>
+    new Date(since.getTime() + days * 24 * 60 * 60 * 1000 + extraMs);
+
+  it('leaves a Run waiting exactly its limit alone', () => {
+    expect(longWaitCancellation(waiting(14), after(14))).toBeNull();
+  });
+
+  it('cancels a Run waiting longer than its limit, by the system, saying why', () => {
+    expect(longWaitCancellation(waiting(14), after(14, 1))).toEqual({
+      by: 'system',
+      reason: 'Cancelled automatically: the run waited for the operator longer than 14 days.',
+    });
+    expect(longWaitCancellation(waiting(1), after(2))?.reason).toBe(
+      'Cancelled automatically: the run waited for the operator longer than 1 day.',
+    );
+  });
+
+  it('applies only to a Run waiting for the operator', () => {
+    expect(
+      longWaitCancellation(waiting(1, { state: 'running', waitingSince: null }), after(30)),
+    ).toBeNull();
+  });
+});
+
+describe('step-limit failure', () => {
+  it('says which limit was reached and that no further step was started', () => {
+    expect(stepLimitFailure(10)).toEqual({
+      code: 'step_limit',
+      detail: 'The run reached its limit of 10 run steps; no further step was started.',
+    });
   });
 });

@@ -6,7 +6,10 @@ import {
   RunNotHeldError,
   type RunRepository,
   type RunStepRecord,
+  StepLimitReachedError,
+  StepOutOfOrderError,
 } from '../../domain/repositories/run-repository.js';
+import { CLOCK, type Clock } from '../../ports/clock.js';
 import { redactJsonStrings } from '../../domain/services/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
@@ -21,15 +24,18 @@ export interface ReportRunStepInput extends RunStepRecord {
  * Command (Issue #96): the agent worker holding a `running` Run reports the structured result
  * of a Run step; it is stored (internal for now), and the Working copy's state it reports
  * becomes the Run's latest (Issue #98), with the checks the agent reported failed (Issue
- * #102). Every string of the result is redacted before it is
- * stored, like the log (Issue #99); reads redact again for rows stored before. Returns the
- * step's number. Throws
- * {@link RunNotFoundError} or {@link RunNotHeldError} (not running, or not held by it).
+ * #102). Every string of the result is redacted before it is stored, like the log (Issue #99);
+ * reads redact again for rows stored before. A step beyond the Run's maximum is refused and the
+ * Run fails with `step_limit` (Issue #100). Returns the step's number. Throws
+ * {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not held by it),
+ * {@link StepLimitReachedError} or {@link StepOutOfOrderError}. A retried report of a step
+ * already stored (same number) is acknowledged without storing it again (review of #121).
  */
 @Injectable()
 export class ReportRunStepHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
   ) {}
 
@@ -39,16 +45,23 @@ export class ReportRunStepHandler {
     }
     const known = await this.secrets.forRun(input.runId);
     const result = redactJsonStrings(input.result, known);
-    const index = await this.runs.appendStep(
+    const outcome = await this.runs.appendStep(
       input.runId,
       input.workerId,
-      { kind: input.kind, result },
+      {
+        kind: input.kind,
+        result,
+        ...(input.index === undefined ? {} : { index: input.index }),
+      },
       input.workingCopy,
       // From the redacted result: the names are shown on the Run page.
       failingChecks(result),
+      this.clock.now(),
     );
-    if (index === null) throw new RunNotHeldError();
-    return index;
+    if (outcome.status === 'not_held') throw new RunNotHeldError();
+    if (outcome.status === 'step_limit') throw new StepLimitReachedError();
+    if (outcome.status === 'out_of_order') throw new StepOutOfOrderError(outcome.expected);
+    return outcome.index;
   }
 }
 

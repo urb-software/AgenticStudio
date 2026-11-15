@@ -866,6 +866,67 @@
         ]
       }
     },
+    "/api/runs/{runId}/cancel": {
+      "post": {
+        "operationId": "cancelRun",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run has already finished (urn:agentic-studio:problem:run-already-finished)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/runs/{runId}/retry-delivery": {
       "post": {
         "operationId": "retryRunDelivery",
@@ -1486,6 +1547,32 @@
         ],
         "additionalProperties": false
       },
+      "RunLimits_Output": {
+        "type": "object",
+        "properties": {
+          "stepMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "maxSteps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "waitingDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "stepMinutes",
+          "maxSteps",
+          "waitingDays"
+        ],
+        "additionalProperties": false
+      },
       "Run_Output": {
         "type": "object",
         "properties": {
@@ -1552,6 +1639,7 @@
                   "usage_limit",
                   "worker_lost",
                   "delivery_failed",
+                  "step_limit",
                   "unknown"
                 ]
               },
@@ -1589,6 +1677,34 @@
           },
           "hasUncommittedChanges": {
             "type": "boolean"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/RunLimits_Output"
+          },
+          "cancelRequestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "cancellation": {
+            "type": "object",
+            "properties": {
+              "by": {
+                "type": "string",
+                "enum": [
+                  "operator",
+                  "system"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "by",
+              "reason"
+            ],
+            "additionalProperties": false
           },
           "delivery": {
             "type": "string",
@@ -1635,7 +1751,8 @@
           "task",
           "state",
           "startCommit",
-          "createdAt"
+          "createdAt",
+          "limits"
         ],
         "additionalProperties": false
       },

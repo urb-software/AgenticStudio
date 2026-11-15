@@ -80,6 +80,7 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
     state: 'queued',
     startCommit: SHA,
     createdAt: '2026-11-15T10:00:00.000Z',
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     ...overrides,
   };
 }

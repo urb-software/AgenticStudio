@@ -41,6 +41,7 @@ describe('SweepLostWorkersHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     return (await runs.claimNext(WORKER, T0))!;
@@ -78,6 +79,7 @@ describe('SweepLostWorkersHandler', () => {
       from: 'preparing',
       to: 'running',
       failure: null,
+      cancelRequested: false,
       now: later(30),
     });
     now = later(91);
@@ -103,6 +105,7 @@ describe('SweepLostWorkersHandler', () => {
       from: 'preparing',
       to: 'running',
       failure: null,
+      cancelRequested: false,
       now: T0,
     });
     await runs.transitionClaimed({
@@ -111,6 +114,7 @@ describe('SweepLostWorkersHandler', () => {
       from: 'running',
       to: 'waiting_for_operator',
       failure: null,
+      cancelRequested: false,
       now: T0,
     });
     now = later(3600);
@@ -126,6 +130,7 @@ describe('SweepLostWorkersHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     now = later(3600);
@@ -148,6 +153,7 @@ describe('SweepLostWorkersHandler', () => {
           from,
           to,
           failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+          cancelRequested: false,
           now: T0,
         });
       }

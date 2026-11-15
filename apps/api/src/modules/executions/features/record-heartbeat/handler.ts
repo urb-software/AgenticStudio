@@ -10,7 +10,8 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 
 /**
  * Command (Issue #96): the agent worker holding a Run says it is still alive, which renews
- * its lease. Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
+ * its lease. The answer tells it whether the operator asked to cancel the Run (Issue #100).
+ * Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
  */
 @Injectable()
 export class RecordHeartbeatHandler {
@@ -19,12 +20,12 @@ export class RecordHeartbeatHandler {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async execute(input: { runId: string; workerId: string }): Promise<void> {
+  async execute(input: { runId: string; workerId: string }): Promise<{ cancelRequested: boolean }> {
     if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
       throw new RunNotFoundError();
     }
-    if (!(await this.runs.heartbeat(input.runId, input.workerId, this.clock.now()))) {
-      throw new RunNotHeldError();
-    }
+    const answer = await this.runs.heartbeat(input.runId, input.workerId, this.clock.now());
+    if (!answer) throw new RunNotHeldError();
+    return answer;
   }
 }

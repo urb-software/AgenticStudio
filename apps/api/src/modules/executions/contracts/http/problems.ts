@@ -20,6 +20,12 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   tooManyLogStreams: 'urn:agentic-studio:problem:too-many-log-streams',
   /** 409 (worker routes): the reported state does not follow from the Run's state. */
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
+  /** 409: the Run has already reached a final state (Issue #100: cancel). */
+  runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
+  /** 409 (worker routes): a Run step beyond the Run's maximum; the Run is now failed (Issue #100). */
+  stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
+  /** 409 (worker routes): a Run step's number is not the next one (review of #121). */
+  stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
   /** 409: the Run's delivery cannot be retried (it is not failed with delivery_failed). */
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
 } as const;
@@ -93,5 +99,39 @@ export function illegalRunTransition(detail: string): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.illegalRunTransition,
     title: 'Illegal run transition',
     detail,
+  });
+}
+
+const FINAL_STATE_NAMES: Record<string, string> = {
+  succeeded: 'succeeded',
+  failed: 'failed',
+  cancelled: 'was cancelled',
+  timed_out: 'timed out',
+};
+
+/** 409 when cancelling a Run that has already finished; `detail` says how it ended. */
+export function runAlreadyFinished(state: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.runAlreadyFinished,
+    title: 'Run already finished',
+    detail: `The run has already finished: it ${FINAL_STATE_NAMES[state] ?? state}. There is nothing to cancel.`,
+  });
+}
+
+/** 409 on a worker route: the reported Run step is beyond the Run's maximum; the Run failed. */
+export function stepLimitReached(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.stepLimitReached,
+    title: 'Step limit reached',
+    detail: 'The run reached its maximum number of run steps and has failed. Stop working on it.',
+  });
+}
+
+/** 409 on a worker route: the reported Run step is not the next one; nothing was stored. */
+export function stepOutOfOrder(expected: number): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.stepOutOfOrder,
+    title: 'Step out of order',
+    detail: `The next run step of this run is number ${expected}.`,
   });
 }

@@ -71,6 +71,8 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       task: 'Add pagination',
       startCommit: first,
       repository: { remoteUrl: remote.url },
+      limits: { stepMinutes: 60, maxSteps: 10 },
+      completedSteps: 0,
       integrationBranch: 'main',
       kind: 'start',
       studioPaths: [],
@@ -375,6 +377,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
           run: payload({ task }),
           workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
           signal: signal(),
+          processes: { register: () => undefined },
         }),
         () => undefined,
       );
@@ -436,6 +439,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
           run,
           workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
           signal: signal(),
+          processes: { register: () => undefined },
         }),
         () => undefined,
       );

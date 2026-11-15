@@ -63,6 +63,7 @@ describe('Run directories', () => {
       repoDir: `${DATA_DIR}/runs/${RUN_ID}/repo`,
       taskFile: `${DATA_DIR}/runs/${RUN_ID}/task.md`,
       runFile: `${DATA_DIR}/runs/${RUN_ID}/run.json`,
+      processesFile: `${DATA_DIR}/runs/${RUN_ID}/step-processes`,
       resultFile: `${DATA_DIR}/runs/${RUN_ID}/result.json`,
     });
   });

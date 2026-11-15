@@ -24,6 +24,7 @@ describe('ClaimRunHandler', () => {
       task: `Task of ${projectId}`,
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
 
@@ -72,6 +73,7 @@ describe('ClaimRunHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: '',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: '',
     });
     const next = await queue(B);
@@ -108,6 +110,7 @@ describe('ClaimRunHandler', () => {
           to,
           failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
           workingCopy: to === 'failed' && recorded ? WORKING_COPY : null,
+          cancelRequested: false,
           now: T0,
         });
       }
@@ -206,5 +209,61 @@ describe('ClaimRunHandler', () => {
     expect(claimed?.id).toBe(c1.id);
     expect((await runs.findById(a1.id))?.failure?.code).toBe('worker_lost');
     expect((await runs.findById(b1.id))?.failure?.code).toBe('worker_lost');
+  });
+
+  it('cancels a Run left waiting too long before it hands out work (Issue #100)', async () => {
+    const waiting = await queue(A);
+    await handler.execute(WORKER);
+    for (const [from, to] of [
+      ['preparing', 'running'],
+      ['running', 'waiting_for_operator'],
+    ] as const) {
+      await runs.transitionClaimed({
+        runId: waiting.id,
+        workerId: WORKER,
+        from,
+        to,
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+    }
+    const next = await queue(A);
+    now = new Date(T0.getTime() + 15 * 24 * 60 * 60 * 1000);
+
+    expect((await handler.execute(WORKER))?.id).toBe(next.id);
+    expect(await runs.findById(waiting.id)).toMatchObject({
+      state: 'cancelled',
+      cancellation: { by: 'system' },
+    });
+  });
+
+  it("times out a Run whose step ran past its limit plus Studio's grace (review of #121)", async () => {
+    const stuck = await queue(A);
+    await handler.execute(WORKER);
+    await runs.transitionClaimed({
+      runId: stuck.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T0,
+    });
+    // The worker keeps sending heartbeats, but its step never stops.
+    now = new Date(T0.getTime() + (60 + 5) * 60_000);
+    await runs.heartbeat(stuck.id, WORKER, now);
+    await handler.execute(OTHER_WORKER);
+    expect((await runs.findById(stuck.id))?.state).toBe('running');
+
+    now = new Date(now.getTime() + 1000);
+    await runs.heartbeat(stuck.id, WORKER, now);
+    await handler.execute(OTHER_WORKER);
+
+    expect(await runs.findById(stuck.id)).toMatchObject({
+      state: 'timed_out',
+      claimedBy: null,
+      finishedAt: now,
+    });
   });
 });

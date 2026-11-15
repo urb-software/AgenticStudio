@@ -21,6 +21,7 @@ export const FAKE_SCENARIOS = [
   'crash',
   'commit',
   'dirty',
+  'stubborn',
   'checks-failed',
   'secret',
 ] as const;
@@ -68,6 +69,8 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  * - `secret` (Issue #99): prints a token-shaped string (redaction is proven end to end), then
  *   succeeds.
  * Each step streams an agent message, a command and its output, like a real agent.
+ * - `stubborn` (Issue #100): like `slow`, but ignores the abort, so the worker must give up on
+ *   it after the grace period (the hard path).
  * - `crash`: the runner itself breaks (a plain error).
  * `resume` always succeeds.
  */
@@ -85,7 +88,7 @@ export class FakeRunner implements Runner {
   async *start({ run, workspace, signal }: StartRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
     yield { type: 'message', text: `fake runner: ${scenario}` };
-    signal.throwIfAborted();
+    if (scenario !== 'stubborn') signal.throwIfAborted();
     switch (scenario) {
       case 'fail':
         throw new AgentFailedError('The fake agent failed.');
@@ -111,6 +114,11 @@ export class FakeRunner implements Runner {
       case 'secret':
         yield { type: 'command', text: 'printenv GITHUB_TOKEN' };
         yield { type: 'output', text: FAKE_TOKEN };
+        return done();
+      case 'stubborn':
+        yield { type: 'output', text: 'working, and ignoring every request to stop' };
+        // Deliberately no signal: the timer is unref'd so it never keeps the process alive.
+        await delay(this.slowMs, undefined, { ref: false });
         return done();
       case 'commit':
         await this.change(workspace, signal, true);
