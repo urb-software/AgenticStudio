@@ -29,7 +29,51 @@ describe('loadWorkerConfig', () => {
       pollMs: 5000,
       heartbeatMs: 10_000,
       requestTimeoutMs: 30_000,
+      runner: 'cli',
+      environment: 'production',
+      providers: { claude_code: false, codex: false },
+      providerBinaries: { claude_code: 'claude', codex: 'codex' },
     });
+  });
+
+  it('reads the provider switches, each on its own (Issue #101)', () => {
+    expect(
+      loadWorkerConfig({ ...env, CLAUDE_CODE_ENABLED: 'true', CODEX_CLI_ENABLED: 'false' })
+        .providers,
+    ).toEqual({ claude_code: true, codex: false });
+    expect(loadWorkerConfig({ ...env, CODEX_CLI_ENABLED: 'true' }).providers).toEqual({
+      claude_code: false,
+      codex: true,
+    });
+  });
+
+  it.each([
+    ['development', 'fake'],
+    ['test', 'fake'],
+    ['development', 'cli'],
+    ['test', 'cli'],
+    ['production', 'cli'],
+  ] as const)('accepts the %s environment with the %s runner', (environment, runner) => {
+    expect(
+      loadWorkerConfig({
+        ...env,
+        STUDIO_WORKER_ENVIRONMENT: environment,
+        STUDIO_WORKER_RUNNER: runner,
+      }),
+    ).toMatchObject({ environment, runner });
+  });
+
+  it.each([
+    ['explicitly', { STUDIO_WORKER_ENVIRONMENT: 'production' }],
+    ['by default', {}],
+  ])('refuses the fake runner in production, %s (Issue #101)', (_case, values) => {
+    const error = captureError(() =>
+      loadWorkerConfig({ ...env, ...values, STUDIO_WORKER_RUNNER: 'fake' }),
+    );
+    expect(error).toBeInstanceOf(WorkerConfigError);
+    expect(error.message).toContain(
+      'STUDIO_WORKER_RUNNER: fake is allowed only when STUDIO_WORKER_ENVIRONMENT is development or test',
+    );
   });
 
   it('reads the intervals', () => {
@@ -51,6 +95,21 @@ describe('loadWorkerConfig', () => {
       'a too short request timeout',
       { ...env, STUDIO_WORKER_REQUEST_TIMEOUT_MS: '10' },
       /STUDIO_WORKER_REQUEST_TIMEOUT_MS/,
+    ],
+    ['an unknown runner mode', { ...env, STUDIO_WORKER_RUNNER: 'api' }, /STUDIO_WORKER_RUNNER/],
+    ['a relative CLI path', { ...env, CLAUDE_CODE_BIN: './claude' }, /CLAUDE_CODE_BIN/],
+    ['a CLI with arguments', { ...env, CODEX_CLI_BIN: 'codex --yolo' }, /CODEX_CLI_BIN/],
+    ['an empty CLI path', { ...env, CODEX_CLI_BIN: '' }, /CODEX_CLI_BIN/],
+    ['a CLI path with shell syntax', { ...env, CLAUDE_CODE_BIN: 'claude;id' }, /CLAUDE_CODE_BIN/],
+    [
+      'an unknown environment (not silently production or test)',
+      { ...env, STUDIO_WORKER_ENVIRONMENT: 'prod', STUDIO_WORKER_RUNNER: 'fake' },
+      /STUDIO_WORKER_ENVIRONMENT/,
+    ],
+    [
+      'a runner mode in other casing',
+      { ...env, STUDIO_WORKER_RUNNER: 'FAKE', STUDIO_WORKER_ENVIRONMENT: 'test' },
+      /STUDIO_WORKER_RUNNER/,
     ],
   ])('refuses to start with %s', (_case, values, message) => {
     const error = captureError(() => loadWorkerConfig(values));

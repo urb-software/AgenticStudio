@@ -4,6 +4,7 @@ import {
   type ReportRunStepRequest,
   type RunPayload,
   runPayloadSchema,
+  type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 
 /** Default timeout of one call to the Studio API. */
@@ -72,6 +73,11 @@ export class StudioApi {
   /** Appends a batch of the Run's log events (Issue #99); a re-sent seq is ignored by Studio. */
   async appendEvents(runId: string, events: RunEventInput[], signal?: AbortSignal): Promise<void> {
     await this.post(`runs/${encodeURIComponent(runId)}/events`, { events }, signal);
+  }
+
+  /** Tells Studio this worker's runner mode and which providers it enables (Issue #101). */
+  async reportStatus(status: WorkerStatusReport, signal?: AbortSignal): Promise<void> {
+    await this.post('status', status, signal);
   }
 
   async heartbeat(runId: string, signal?: AbortSignal): Promise<void> {

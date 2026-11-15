@@ -180,6 +180,15 @@ export const zRunStepListOutput = z.object({
     steps: z.array(zRunStepOutput)
 });
 
+export const zProviderAvailabilityOutput = z.object({
+    id: z.enum(['claude_code', 'codex']),
+    name: z.string(),
+    available: z.boolean(),
+    reason: z.string().optional()
+});
+
+export const zProviderListOutput = z.array(zProviderAvailabilityOutput);
+
 export const zProblemDetails = z.object({
     type: z.string(),
     title: z.string(),
@@ -309,3 +318,5 @@ export const zListRunStepsPath = z.object({
 });
 
 export const zListRunStepsResponse = zRunStepListOutput;
+
+export const zListProvidersResponse = zProviderListOutput;
