@@ -138,7 +138,7 @@ export class Deliveries implements DeliveryPort {
     }
     await this.gitStep('committing what the agent left', async () => {
       await git.run(['add', '--all'], local);
-      const studioPaths = await this.studioPathspecs(prepared);
+      const studioPaths = await this.studioPathspecs(prepared, run);
       // Never staged, even if the agent forced them in (an empty list would reset everything).
       if (studioPaths.length > 0) {
         await git.run(['reset', '--quiet', 'HEAD', '--', ...studioPaths], local);
@@ -194,7 +194,7 @@ export class Deliveries implements DeliveryPort {
       });
     if (count === 0) return { outcome: 'none' };
 
-    const studioPaths = await this.studioPathspecs(prepared);
+    const studioPaths = await this.studioPathspecs(prepared, run);
     if (studioPaths.length > 0) {
       const touched = await git.run(
         ['log', '--no-renames', '--format=', '--name-only', range, '--', ...studioPaths],
@@ -224,7 +224,7 @@ export class Deliveries implements DeliveryPort {
       );
     }
 
-    await this.push(prepared, run.repository.remoteUrl, target.transport, token, signal);
+    await this.push(prepared, run, target.transport, token, signal);
 
     const client = (this.options.pullRequests ?? defaultPullRequests)({
       token,
@@ -252,6 +252,11 @@ export class Deliveries implements DeliveryPort {
   }
 
   async locate(run: RunPayload): Promise<{ prepared: PreparedRun; result: RunStepResult }> {
+    // The Run branch and start commit come from Studio, never from `run.json`, which the agent
+    // could rewrite (review R1 of #122).
+    if (run.kind !== 'deliver' || run.runBranch === undefined) {
+      throw new DeliveryFailedError('Studio sent no recorded Run branch for this delivery.');
+    }
     const paths = runDirectories(this.options.dataDir, run.runId);
     const runFile = await readRunFile(paths.runFile);
     const repo = await stat(paths.repoDir).then(
@@ -275,8 +280,8 @@ export class Deliveries implements DeliveryPort {
         runId: run.runId,
         runDir: paths.runDir,
         repoDir: paths.repoDir,
-        runBranch: runFile.runBranch,
-        startCommit: runFile.startCommit,
+        runBranch: run.runBranch,
+        startCommit: run.startCommit.toLowerCase(),
         env: { COMPOSE_PROJECT_NAME: composeProjectName(run.runId) },
       },
       result: saved.data,
@@ -289,28 +294,38 @@ export class Deliveries implements DeliveryPort {
    * only the Run branch fetched from it: the Working copy's own `.git/config`, which the agent
    * could write (a URL rewrite, a proxy, a credential helper), never applies to the push. An
    * HTTPS push also ignores the agent user's global Git configuration, and its header is scoped
-   * to `https://github.com/` (review of #122).
+   * to `https://github.com/` (review of #122). `push.git` is made without templates and without
+   * any user or system configuration, so nothing the agent wrote there reaches it (review R2).
+   * Only a Run branch of this Run is ever pushed, never the integration branch (review R1).
    */
   private async push(
     prepared: PreparedRun,
-    remoteUrl: string,
+    run: RunPayload,
     transport: 'https' | 'ssh' | 'file',
     token: string,
     signal: AbortSignal,
   ): Promise<void> {
     const { git, dataDir } = this.options;
+    if (!isRunBranchOf(prepared.runBranch, run)) {
+      throw new DeliveryFailedError(
+        `Refusing to push ${prepared.runBranch}: it is not a Run branch of this Run.`,
+      );
+    }
+    const remoteUrl = run.repository.remoteUrl;
     const ref = `refs/heads/${prepared.runBranch}`;
     const pushDir = posix.join(prepared.runDir, 'push.git');
     const local = { cwd: prepared.runDir, timeoutMs: GIT_TIMEOUTS.local, signal, ceiling: dataDir };
+    // No templates and no user config for making and filling push.git (review R2 of #122).
+    const isolated = { ...local, userConfig: false as const };
     await rm(pushDir, { recursive: true, force: true });
     try {
       await this.gitStep('handing the Run branch to the push', async () => {
         const tip = (
           await git.run(['rev-parse', '--verify', `${ref}^{commit}`], this.local(prepared, signal))
         ).trim();
-        await git.run(['init', '--quiet', '--bare', pushDir], local);
+        await git.run(['init', '--quiet', '--bare', '--template=', pushDir], isolated);
         await git.run(['fetch', '--quiet', '--no-tags', prepared.repoDir, `+${ref}:${ref}`], {
-          ...local,
+          ...isolated,
           cwd: pushDir,
           transports: ['file'],
         });
@@ -370,14 +385,19 @@ export class Deliveries implements DeliveryPort {
   }
 
   /**
-   * Pathspecs of a Run's Studio-placed files: the paths recorded in its Run file (exactly), and
-   * the patterns listed under Studio's section of the Working copy's `.git/info/exclude` (to
-   * the end of the file), matched as Git matches them there: a leading `/` anchors a pattern
-   * at the top, one without a `/` matches at any depth, and globs work (review of #122).
+   * Pathspecs of a Run's Studio-placed files. Studio's own list (the claim payload, review R3 of
+   * #122) always applies; what lies beside the Working copy, which the agent can write, can only
+   * add to it: the paths recorded in the Run file (exactly), and the patterns listed under
+   * Studio's section of the Working copy's `.git/info/exclude` (to the end of the file),
+   * matched as Git matches them there: a leading `/` anchors a pattern at the top, one without
+   * a `/` matches at any depth, and globs work.
    */
-  private async studioPathspecs(prepared: PreparedRun): Promise<string[]> {
+  private async studioPathspecs(prepared: PreparedRun, run: RunPayload): Promise<string[]> {
     const paths = runDirectories(this.options.dataDir, prepared.runId);
-    const recorded = ((await readRunFile(paths.runFile))?.studioPaths ?? [])
+    const recorded = [
+      ...run.studioPaths,
+      ...((await readRunFile(paths.runFile))?.studioPaths ?? []),
+    ]
       .map((path) => path.replace(/^\/+/, ''))
       .filter(isRelativePath)
       .map((path) => `:(literal)${path}`);
@@ -424,6 +444,15 @@ function defaultPullRequests(github: { token: string; apiUrl: string }): PullReq
 /** `x-access-token:<token>` for HTTP Basic: what GitHub accepts for Git over HTTPS. */
 function basicCredentials(token: string): string {
   return Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
+}
+
+/** `agent/<slug>-r<first 8 hex digits of the Run id>` of this Run, and not its integration branch. */
+function isRunBranchOf(branch: string, run: RunPayload): boolean {
+  const id8 = run.runId.toLowerCase().slice(0, 8);
+  return (
+    new RegExp(`^agent/[a-z0-9]+(?:-[a-z0-9]+)*-r${id8}$`).test(branch) &&
+    branch !== run.integrationBranch
+  );
 }
 
 /** A path inside the Working copy: relative, without `.` or `..` parts. */

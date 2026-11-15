@@ -33,9 +33,14 @@ const DONE: RunStepResult = {
 class RecordingGit extends GitRunner {
   readonly calls: { args: readonly string[]; options: GitOptions }[] = [];
   interceptPush = false;
+  /** The config file of the repository each push ran in, read just before it ran. */
+  readonly pushConfigs: string[] = [];
 
   override run(args: readonly string[], options: GitOptions): Promise<string> {
     this.calls.push({ args, options });
+    if (args[0] === 'push') {
+      this.pushConfigs.push(readFileSync(join(options.cwd, 'config'), 'utf8'));
+    }
     if (this.interceptPush && args[0] === 'push') return Promise.resolve('');
     return super.run(args, options);
   }
@@ -100,6 +105,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       repository: { remoteUrl: remote.url },
       integrationBranch: 'main',
       kind: 'start',
+      studioPaths: [],
       ...overrides,
     };
   }
@@ -324,7 +330,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect((attempt as DeliveryFailedError).detail).toMatch(/GitHub answered 503/);
 
     const retry = deliveries();
-    const located = await retry.locate({ ...run, kind: 'deliver' });
+    const located = await retry.locate({ ...run, kind: 'deliver', runBranch: prepared.runBranch });
     await retry.commit(located.prepared, run, located.result, signal());
     const delivery = await retry.deliver(located.prepared, run, located.result, signal());
 
@@ -538,10 +544,113 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     rmSync(join(prepared.runDir, 'result.json'));
 
     const error = await deliveries()
-      .locate({ ...run, kind: 'deliver' })
+      .locate({ ...run, kind: 'deliver', runBranch: prepared.runBranch })
       .catch((caught: unknown) => caught);
 
     expect((error as DeliveryFailedError).detail).toMatch(/result for this Run is no longer/);
+  });
+
+  describe('review round 1 of #122', () => {
+    it('retries the Run branch Studio recorded, never one named in a rewritten run.json (R1)', async () => {
+      const run = payload();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+      await deliveries().commit(prepared, run, DONE, signal());
+      // The agent points run.json at the integration branch and gives it a commit of its own.
+      const runFile = join(prepared.runDir, 'run.json');
+      const recorded = JSON.parse(readFileSync(runFile, 'utf8')) as Record<string, unknown>;
+      writeFileSync(
+        runFile,
+        JSON.stringify({ ...recorded, runBranch: 'main', startCommit: 'f'.repeat(40) }),
+      );
+      inRepo(prepared, ['branch', '--force', 'main', 'HEAD']);
+      const main = git(bare(), ['rev-parse', 'refs/heads/main'], env);
+
+      const retry = deliveries();
+      const located = await retry.locate({
+        ...run,
+        kind: 'deliver',
+        runBranch: prepared.runBranch,
+      });
+      const delivery = await retry.deliver(located.prepared, run, located.result, signal());
+
+      expect(located.prepared.runBranch).toBe(prepared.runBranch);
+      expect(located.prepared.startCommit).toBe(first);
+      expect(delivery.outcome).toBe('delivered');
+      expect(git(bare(), ['rev-parse', 'refs/heads/main'], env)).toBe(main);
+      const ref = `refs/heads/${prepared.runBranch}`;
+      expect(gitRunner.pushes().map((call) => call.args)).toEqual([
+        ['push', '--', remote.url, `${ref}:${ref}`],
+      ]);
+    });
+
+    it.each([
+      ['the integration branch', 'main'],
+      ["another Run's branch", 'agent/add-pagination-rdeadbeef'],
+      ['a branch outside agent/', 'feature/x'],
+    ])('refuses to push %s, pushing nothing (R1)', async (_what, branch) => {
+      const run = payload();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+      inRepo(prepared, ['branch', '--force', branch, 'HEAD']);
+      const main = git(bare(), ['rev-parse', 'refs/heads/main'], env);
+
+      const error = await deliveries()
+        .deliver({ ...prepared, runBranch: branch }, run, DONE, signal())
+        .catch((caught: unknown) => caught);
+
+      expect((error as DeliveryFailedError).detail).toMatch(/not a Run branch of this Run/);
+      expect(gitRunner.pushes()).toEqual([]);
+      expect(git(bare(), ['rev-parse', 'refs/heads/main'], env)).toBe(main);
+    });
+
+    it('makes push.git without templates or user config, so a hostile init.templateDir never reaches it (R2)', async () => {
+      const run = payload();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+      // The agent user's global config names a template whose config redirects pushes.
+      const decoy = createRemote(join(root, 'decoy'), 'shop', env);
+      decoy.commit('Decoy', { 'x.md': 'x\n' });
+      const template = join(root, 'template');
+      mkdirSync(template);
+      writeFileSync(
+        join(template, 'config'),
+        `[url "${decoy.url}"]\n\tpushInsteadOf = ${remote.url}\n` +
+          '[http]\n\tproxy = http://127.0.0.1:9\n\tsslVerify = false\n',
+      );
+      git(home, ['config', '--global', 'init.templateDir', template], env);
+
+      await finish(run, prepared);
+
+      const [config] = gitRunner.pushConfigs;
+      expect(config).not.toMatch(/insteadof|proxy|sslverify/i);
+      expect(git(bare(), ['rev-parse', `refs/heads/${prepared.runBranch}`], env)).toBe(
+        inRepo(prepared, ['rev-parse', 'HEAD']),
+      );
+      expect(
+        git(join(root, 'decoy', 'shop.git'), ['for-each-ref', '--format=%(refname)'], env),
+      ).toBe('refs/heads/main');
+      const init = gitRunner.calls.find((call) => call.args[0] === 'init');
+      expect(init?.args).toContain('--template=');
+      expect(init?.options.userConfig).toBe(false);
+    });
+
+    it("keeps Studio's own list out even when the agent emptied run.json and the exclude section (R3)", async () => {
+      const run = payload({ studioPaths: ['.env.studio'] });
+      const prepared = await prepare(run);
+      writeFileSync(join(prepared.repoDir, '.git', 'info', 'exclude'), '');
+      const runFile = join(prepared.runDir, 'run.json');
+      const recorded = JSON.parse(readFileSync(runFile, 'utf8')) as Record<string, unknown>;
+      expect(recorded.studioPaths).toEqual(['.env.studio']);
+      writeFileSync(runFile, JSON.stringify({ ...recorded, studioPaths: [] }));
+      agentWrites(prepared, { '.env.studio': 'API_KEY=placed-by-studio\n', 'pages.ts': 'x\n' });
+
+      await finish(run, prepared);
+
+      expect(
+        git(bare(), ['ls-tree', '-r', '--name-only', `refs/heads/${prepared.runBranch}`], env),
+      ).toBe('README.md\npages.ts');
+    });
   });
 
   it('finds the Working copy and the kept result for a retry, and says when it is gone', async () => {
@@ -549,13 +658,17 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     const prepared = await prepare(run);
     await deliveries().commit(prepared, run, DONE, signal());
 
-    const located = await deliveries().locate({ ...run, kind: 'deliver' });
+    const located = await deliveries().locate({
+      ...run,
+      kind: 'deliver',
+      runBranch: prepared.runBranch,
+    });
     expect(located.prepared).toEqual(prepared);
     expect(located.result).toEqual(DONE);
 
     rmSync(prepared.repoDir, { recursive: true, force: true });
     const error = await deliveries()
-      .locate({ ...run, kind: 'deliver' })
+      .locate({ ...run, kind: 'deliver', runBranch: prepared.runBranch })
       .catch((caught: unknown) => caught);
     expect((error as DeliveryFailedError).detail).toMatch(new RegExp(`^${NO_WORKING_COPY}`));
   });

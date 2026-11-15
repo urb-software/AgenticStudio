@@ -13,6 +13,7 @@ const run = (task: string): RunPayload => ({
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
   integrationBranch: 'dev',
   kind: 'start',
+  studioPaths: [],
 });
 // The scenarios here touch no Working copy (commit and dirty: fake-runner.linux.test.ts).
 const workspace = { repoDir: '/nonexistent/repo', runDir: '/nonexistent', env: {} };

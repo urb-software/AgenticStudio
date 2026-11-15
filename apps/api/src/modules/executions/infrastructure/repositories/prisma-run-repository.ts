@@ -212,7 +212,8 @@ export class PrismaRunRepository implements RunRepository {
         const [next] = await tx.$queryRaw<{ id: string; state: string }[]>`
           SELECT r.id, r.state FROM runs r
           WHERE (r.state = 'queued'
-                 OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL))
+                 OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
+                     AND r.last_claimed_by = ${workerId}::uuid))
             AND (SELECT count(*) FROM runs a
                  WHERE a.state IN (${ACTIVE})
                     OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)) < ${MAX_ACTIVE_RUNS}::int
@@ -230,6 +231,7 @@ export class PrismaRunRepository implements RunRepository {
                 data: {
                   state: 'preparing',
                   claimedBy: workerId,
+                  lastClaimedBy: workerId,
                   startedAt: now,
                   heartbeatAt: now,
                 },

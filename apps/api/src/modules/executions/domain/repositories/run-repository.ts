@@ -93,8 +93,9 @@ export interface RunRepository {
   /**
    * Hands the oldest eligible Run (by creation time, then id) to `workerId`: a `queued` one →
    * `preparing`, started and heartbeat at `now`; or a `failed` one whose delivery retry was
-   * requested and no worker holds (Issue #102) → held by `workerId` (heartbeat at `now`), still
-   * `failed`. Eligible: its project has no active or held Run and fewer than `MAX_ACTIVE_RUNS`
+   * requested, that no worker holds and that `workerId` itself started (it alone has the
+   * Working copy; Issue #102, review R4 of #122) → held by `workerId` (heartbeat at `now`),
+   * still `failed`. Eligible: its project has no active or held Run and fewer than `MAX_ACTIVE_RUNS`
    * are active or held across the server. Serialized against concurrent claims, so they cannot
    * exceed the limits. `null` when nothing is eligible.
    */

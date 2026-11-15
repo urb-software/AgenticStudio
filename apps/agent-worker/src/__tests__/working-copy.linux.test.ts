@@ -73,6 +73,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       repository: { remoteUrl: remote.url },
       integrationBranch: 'main',
       kind: 'start',
+      studioPaths: [],
       ...overrides,
     };
   }

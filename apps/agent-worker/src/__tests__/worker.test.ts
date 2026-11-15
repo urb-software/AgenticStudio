@@ -24,6 +24,7 @@ const payload = (task: string, n = 1): RunPayload => ({
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
   integrationBranch: 'dev',
   kind: 'start',
+  studioPaths: [],
 });
 
 const REPORT: WorkingCopyReport = {
@@ -335,7 +336,11 @@ describe('AgentWorker', () => {
   });
 
   it('on a delivery claim only delivers from the kept Working copy: no preparation, no step (Issue #102)', async () => {
-    const run = { ...payload('Add a feature'), kind: 'deliver' as const };
+    const run = {
+      ...payload('Add a feature'),
+      kind: 'deliver' as const,
+      runBranch: REPORT.runBranch,
+    };
     const api = new RecordingApi([run]);
     const workingCopies = new FakeWorkingCopies();
     const deliveries = new FakeDeliveries();
@@ -367,7 +372,11 @@ describe('AgentWorker', () => {
   });
 
   it('reports a delivery retry whose Working copy is gone as delivery_failed (Issue #102)', async () => {
-    const run = { ...payload('Add a feature'), kind: 'deliver' as const };
+    const run = {
+      ...payload('Add a feature'),
+      kind: 'deliver' as const,
+      runBranch: REPORT.runBranch,
+    };
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
     deliveries.locateFailure = new DeliveryFailedError('Working copy no longer exists.');
@@ -388,7 +397,11 @@ describe('AgentWorker', () => {
   });
 
   it('keeps every failure of a delivery retry a delivery_failed, without the error text (Issue #102)', async () => {
-    const run = { ...payload('Add a feature'), kind: 'deliver' as const };
+    const run = {
+      ...payload('Add a feature'),
+      kind: 'deliver' as const,
+      runBranch: REPORT.runBranch,
+    };
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
     deliveries.deliverFailure = new Error('EACCES: /secret/path');

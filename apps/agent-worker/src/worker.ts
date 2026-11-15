@@ -1,4 +1,5 @@
 import {
+  FAILURE_DETAIL_MAX_LENGTH,
   type RunFailure,
   type RunPayload,
   type RunStepResult,
@@ -304,26 +305,18 @@ export class AgentWorker {
 
   /** The failure of a Run being started. */
   private runFailure(error: unknown): RunFailure {
-    return this.stopping
-      ? SHUTDOWN_FAILURE
-      : error instanceof PreparationFailedError
-        ? { code: 'preparation_failed' as const, detail: error.detail.slice(0, 2000) }
-        : error instanceof ProviderDisabledError
-          ? { code: 'provider_disabled' as const, detail: error.message }
-          : error instanceof AgentFailedError
-            ? { code: 'agent_failed' as const, detail: error.message.slice(0, 2000) }
-            : error instanceof InvalidResultError
-              ? INVALID_RESULT_FAILURE
-              : error instanceof DeliveryFailedError
-                ? { code: 'delivery_failed' as const, detail: error.detail.slice(0, 2000) }
-                : UNEXPECTED_FAILURE;
+    if (this.stopping) return SHUTDOWN_FAILURE;
+    if (error instanceof PreparationFailedError) return failure('preparation_failed', error.detail);
+    if (error instanceof ProviderDisabledError) return failure('provider_disabled', error.message);
+    if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
+    if (error instanceof InvalidResultError) return INVALID_RESULT_FAILURE;
+    if (error instanceof DeliveryFailedError) return failure('delivery_failed', error.detail);
+    return UNEXPECTED_FAILURE;
   }
 
   /** A delivery retry fails only as `delivery_failed`, so it can be retried again. */
   private deliveryFailure(error: unknown): RunFailure {
-    if (error instanceof DeliveryFailedError) {
-      return { code: 'delivery_failed', detail: error.detail.slice(0, 2000) };
-    }
+    if (error instanceof DeliveryFailedError) return failure('delivery_failed', error.detail);
     return this.stopping ? DELIVERY_SHUTDOWN_FAILURE : DELIVERY_UNEXPECTED_FAILURE;
   }
 
@@ -377,6 +370,11 @@ class InvalidResultError extends Error {
     super('invalid structured result');
     this.name = 'InvalidResultError';
   }
+}
+
+/** A failure with its detail cut to the protocol's limit. */
+function failure(code: RunFailure['code'], detail: string): RunFailure {
+  return { code, detail: detail.slice(0, FAILURE_DETAIL_MAX_LENGTH) };
 }
 
 function describe(error: unknown): string {

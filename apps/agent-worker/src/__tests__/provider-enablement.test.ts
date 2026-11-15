@@ -41,6 +41,7 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
   integrationBranch: 'dev',
   kind: 'start',
+  studioPaths: [],
 });
 
 /** Issue #98: where a Run step works; these tests never touch it. */

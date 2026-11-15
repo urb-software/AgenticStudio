@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { MissingCliRunner } from './cli-runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
 import { Deliveries } from './delivery.js';
@@ -10,6 +9,7 @@ import { ProviderGate } from './provider-gate.js';
 import { RunnerDispatcher } from './runner-dispatcher.js';
 import { StudioApi } from './studio-api.js';
 import { AgentWorker, type WorkerLogger } from './worker.js';
+import { loadWorkerId } from './worker-identity.js';
 import { WorkingCopies } from './working-copy.js';
 
 // The agent worker process (Issue #96). It runs on the host as the agent user and only calls
@@ -44,7 +44,9 @@ const runner = new RunnerDispatcher(
     : { claude_code: new MissingCliRunner('claude_code'), codex: new MissingCliRunner('codex') },
 );
 
-const workerId = randomUUID();
+// Kept in the data directory across restarts: a delivery retry goes to the worker that started
+// the Run, which holds its Working copy (Issue #102, review R4 of #122).
+const workerId = await loadWorkerId(config.dataDir);
 const logger: WorkerLogger = {
   info: (message) => console.log(`[agent-worker ${workerId}] ${message}`),
   error: (message) => console.error(`[agent-worker ${workerId}] ${message}`),

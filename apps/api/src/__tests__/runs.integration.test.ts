@@ -401,9 +401,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         startCommit: project.head,
         // Issue #98: the remote as connected; nothing else about the Repository.
         repository: { remoteUrl: project.url },
-        // Issue #102: the pull request's base, and a Run to start (not only to deliver).
+        // Issue #102: the pull request's base, a Run to start (not only to deliver), and no
+        // Studio-placed files yet (#104).
         integrationBranch: 'dev',
         kind: 'start',
+        studioPaths: [],
       });
       const preparing = (await getRun(run.id)).body;
       expect(preparing).toMatchObject({
@@ -616,11 +618,18 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         });
         expect((await retryDelivery(run.id)).status).toBe(202);
 
-        const claimed = await claim(W2);
+        const claimed = await claim(W1);
         expect(claimed.status).toBe(200);
-        expect(claimed.body).toMatchObject({ runId: run.id, kind: 'deliver' });
-        expect((await claim()).status).toBe(204);
-        expect((await heartbeat(run.id, W2)).status).toBe(204);
+        // Only the worker that started the Run gets it (it has the Working copy), with the Run
+        // branch Studio recorded (review R1 and R4 of #122).
+        expect(claimed.body).toMatchObject({
+          runId: run.id,
+          kind: 'deliver',
+          runBranch: WORKING_COPY.runBranch,
+          studioPaths: [],
+        });
+        expect((await claim(W2)).status).toBe(204);
+        expect((await heartbeat(run.id, W1)).status).toBe(204);
         advance(5);
 
         const reported = await report(
@@ -630,7 +639,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
             delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
             workingCopy: WORKING_COPY,
           },
-          W2,
+          W1,
         );
         expect(reported.status).toBe(204);
         const delivered = (await getRun(run.id)).body;
@@ -647,12 +656,12 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       it('keeps a Run failed with the new reason when its delivery retry fails again', async () => {
         const run = await failedDelivery();
         await retryDelivery(run.id);
-        await claim(W2);
+        await claim(W1);
 
         await report(
           run.id,
           { state: 'failed', failure: { code: 'delivery_failed', detail: 'GitHub answered 503.' } },
-          W2,
+          W1,
         );
 
         expect((await getRun(run.id)).body).toMatchObject({
@@ -666,10 +675,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       it('keeps a delivery retry whose worker was lost a failed delivery', async () => {
         const run = await failedDelivery();
         await retryDelivery(run.id);
-        await claim(W2);
+        await claim(W1);
         advance(LEASE_SECONDS + 1);
 
-        expect((await claim()).status).toBe(204);
+        expect((await claim(W2)).status).toBe(204);
 
         expect((await getRun(run.id)).body).toMatchObject({
           state: 'failed',
@@ -684,13 +693,13 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const [{ projectId }] = await db().$queryRaw<{ projectId: string }[]>`
           SELECT project_id AS "projectId" FROM runs WHERE id = ${run.id}::uuid`;
         await retryDelivery(run.id);
-        expect((await claim(W2)).body).toMatchObject({ runId: run.id, kind: 'deliver' });
+        expect((await claim(W1)).body).toMatchObject({ runId: run.id, kind: 'deliver' });
         const sameProject = await queuedRun(projectId!);
         const other = await queuedRun((await readyProject('Other')).id);
         const third = await queuedRun((await readyProject('Third')).id);
 
-        expect((await claim()).body).toMatchObject({ runId: other.id });
-        expect((await claim()).status).toBe(204);
+        expect((await claim(W2)).body).toMatchObject({ runId: other.id });
+        expect((await claim(W2)).status).toBe(204);
         expect((await getRun(sameProject.id)).body.state).toBe('queued');
         expect((await getRun(third.id)).body.state).toBe('queued');
       });

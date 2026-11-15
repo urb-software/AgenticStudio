@@ -87,20 +87,27 @@ describe('ClaimRunHandler', () => {
   });
 
   describe('delivery retries (Issue #102)', () => {
-    /** A Run of `projectId` whose delivery failed, released by its worker. */
-    async function failedDelivery(projectId: string) {
+    const WORKING_COPY = {
+      runBranch: 'agent/x-r0b8e5c2d',
+      commits: [],
+      hasUncommittedChanges: false,
+    };
+
+    /** A Run of `projectId` that WORKER started and whose delivery failed, released. */
+    async function failedDelivery(projectId: string, recorded = true) {
       const run = await queue(projectId);
-      await runs.claimNext(OTHER_WORKER, T0);
+      await runs.claimNext(WORKER, T0);
       for (const [from, to] of [
         ['preparing', 'running'],
         ['running', 'failed'],
       ] as const) {
         await runs.transitionClaimed({
           runId: run.id,
-          workerId: OTHER_WORKER,
+          workerId: WORKER,
           from,
           to,
           failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+          workingCopy: to === 'failed' && recorded ? WORKING_COPY : null,
           now: T0,
         });
       }
@@ -118,13 +125,37 @@ describe('ClaimRunHandler', () => {
         claimedBy: WORKER,
       });
       // Held: handed out once.
+      expect(await handler.execute(WORKER)).toBeNull();
+    });
+
+    it('hands a retry only to the worker that started the Run, which has its Working copy (review R4)', async () => {
+      const run = await failedDelivery(A);
+      await runs.requestDeliveryRetry(run.id);
+
       expect(await handler.execute(OTHER_WORKER)).toBeNull();
+      expect((await handler.execute(WORKER))?.id).toBe(run.id);
     });
 
     it('hands out no failed delivery whose retry was not requested', async () => {
       await failedDelivery(A);
 
       expect(await handler.execute(WORKER)).toBeNull();
+    });
+
+    it('fails and releases at once a retry with no recorded Run branch (review R5)', async () => {
+      const run = await failedDelivery(A, false);
+      await runs.requestDeliveryRetry(run.id);
+
+      expect(await handler.execute(WORKER)).toBeNull();
+      expect(await runs.findById(run.id)).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'delivery_failed',
+          detail: expect.stringContaining('cannot be delivered'),
+        },
+        deliveryRequested: false,
+        claimedBy: null,
+      });
     });
 
     it('counts a held delivery retry toward the limits', async () => {
@@ -135,8 +166,8 @@ describe('ClaimRunHandler', () => {
       const b1 = await queue(B);
       const c1 = await queue(C);
 
-      expect((await handler.execute(WORKER))?.id).toBe(b1.id);
-      expect(await handler.execute(WORKER)).toBeNull();
+      expect((await handler.execute(OTHER_WORKER))?.id).toBe(b1.id);
+      expect(await handler.execute(OTHER_WORKER)).toBeNull();
       expect((await runs.findById(a2.id))?.state).toBe('queued');
       expect((await runs.findById(c1.id))?.state).toBe('queued');
     });

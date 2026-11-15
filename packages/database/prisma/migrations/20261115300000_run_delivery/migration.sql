@@ -2,13 +2,14 @@
 -- branch it targets, how it was delivered, its pull request, a requested delivery retry and the
 -- checks the agent reported failed. Additive, except that the claim CHECK constraint is
 -- replaced so an agent worker can hold a failed Run while it retries the delivery.
--- Rollback: drop the six columns and the new CHECK constraints, restore runs_claim_check.
+-- Rollback: drop the seven columns and the new CHECK constraints, restore runs_claim_check.
 
 -- AlterTable
 ALTER TABLE "runs" ADD COLUMN     "delivery" VARCHAR(16),
 ADD COLUMN     "delivery_requested" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "failing_checks" JSONB,
 ADD COLUMN     "integration_branch" VARCHAR(255),
+ADD COLUMN     "last_claimed_by" UUID,
 ADD COLUMN     "pull_request_number" INTEGER,
 ADD COLUMN     "pull_request_url" VARCHAR(2048);
 
