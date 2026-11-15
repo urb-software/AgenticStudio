@@ -29,6 +29,7 @@ export class ClaimRunEndpoint {
       provider: run.provider,
       task: run.task,
       startCommit: run.startCommit,
+      repository: { remoteUrl: run.remoteUrl },
     });
   }
 }

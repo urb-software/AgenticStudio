@@ -10,6 +10,7 @@ import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
 import { RunnerDispatcher } from '../runner-dispatcher.js';
 import { type ProviderCli, spawnProviderCli } from '../spawn-boundary.js';
 import { AgentWorker, type WorkerApi } from '../worker.js';
+import type { WorkingCopyPort } from '../working-copy.js';
 
 // Issue #101: the eight required negative tests of the provider enablement gate
 // (docs/engineering/quality.md §10). The process-spawn boundary itself is mocked: every test
@@ -22,7 +23,13 @@ vi.mock('node:child_process', () => ({ spawn }));
 // A throwaway token generated per run; none is committed.
 const TOKEN = randomBytes(32).toString('base64');
 const API_URL = 'http://studio.internal.test:3001';
-const BASE_ENV = { STUDIO_API_URL: API_URL, STUDIO_WORKER_TOKEN: TOKEN };
+const BASE_ENV = {
+  STUDIO_API_URL: API_URL,
+  STUDIO_WORKER_TOKEN: TOKEN,
+  STUDIO_WORKER_DATA_DIR: '/var/lib/studio-agent',
+  STUDIO_AGENT_GIT_NAME: 'Studio Agent',
+  STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
+};
 
 const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): RunPayload => ({
   runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
@@ -30,7 +37,22 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
   provider,
   task,
   startCommit: 'a'.repeat(40),
+  repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
 });
+
+/** Issue #98: where a Run step works; these tests never touch it. */
+const WORKSPACE = { repoDir: '/nonexistent/repo', runDir: '/nonexistent', env: {} };
+
+/** The Working copies as a stub (Issue #98): preparation and its report need no Git. */
+const workingCopies: WorkingCopyPort = {
+  prepare: async (run) => ({
+    runId: run.runId,
+    ...WORKSPACE,
+    runBranch: 'agent/x',
+    startCommit: run.startCommit,
+  }),
+  report: async () => ({ runBranch: 'agent/x', commits: [], hasUncommittedChanges: false }),
+};
 
 const DONE: RunStepResult = { outcome: 'done', summary: 'done' };
 
@@ -48,7 +70,7 @@ class CliRunner implements Runner {
   }
 
   async *resume({ run }: StartRunStepInput): RunStep {
-    return yield* this.start({ run, signal: new AbortController().signal });
+    return yield* this.start({ run, workspace: WORKSPACE, signal: new AbortController().signal });
   }
 }
 
@@ -67,8 +89,11 @@ class OneRunApi implements WorkerApi {
   async appendEvents() {}
   async reportStep() {}
   async heartbeat() {}
-  async reportState(_runId: string, report: { state: string }) {
-    if (report.state !== 'running') this.final = report;
+  async reportState(_runId: string, report: { state: string; workingCopy?: unknown }) {
+    // The Working copy state that goes with a failure (Issue #98) is tested in worker.test.ts.
+    const { workingCopy, ...rest } = report;
+    void workingCopy;
+    if (report.state !== 'running') this.final = rest;
   }
 }
 
@@ -92,6 +117,7 @@ async function carry(
     api,
     runner: new RunnerDispatcher(gate, { claude_code: runner, codex: runner }),
     status: { runner: config.runner, providers: gate.snapshot() },
+    workingCopies,
     pollMs: 5,
     heartbeatMs: 60_000,
     logger: silent,
@@ -179,6 +205,7 @@ describe('provider enablement gate (quality.md §10)', () => {
       const dispatcher = new RunnerDispatcher(gate, { claude_code: runner, codex: runner });
       const resume = dispatcher.resume({
         run: payload('claude_code'),
+        workspace: WORKSPACE,
         answer: 'Option A',
         signal: new AbortController().signal,
       });

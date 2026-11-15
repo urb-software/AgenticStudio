@@ -76,7 +76,13 @@ describe('a Run log, paged and live (Issue #99)', () => {
     runs = new InMemoryRunRepository();
     log = new InMemoryRunLogRepository(runs);
     signal = new TestSignal();
-    await runs.add({ projectId: PROJECT, provider: 'codex', task: 'x', startCommit: 'a' });
+    await runs.add({
+      projectId: PROJECT,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+    });
     run = (await runs.claimNext(WORKER, T0))!;
   });
 

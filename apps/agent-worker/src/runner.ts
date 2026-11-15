@@ -6,8 +6,19 @@ import type { RunnerEvent, RunPayload, RunStepResult } from '@agentic-studio/con
  */
 export type RunStep = AsyncGenerator<RunnerEvent, RunStepResult, void>;
 
+/** Where a Run step works (Issue #98): the Run's prepared Working copy. */
+export interface RunWorkspace {
+  /** The Working copy, on the Run branch; the agent works here. */
+  repoDir: string;
+  /** The Run's directory: the Working copy and, beside it, the Task and the Run file. */
+  runDir: string;
+  /** Variables the Run step's processes get, e.g. `COMPOSE_PROJECT_NAME`. */
+  env: Record<string, string>;
+}
+
 export interface StartRunStepInput {
   run: RunPayload;
+  workspace: RunWorkspace;
   /** Aborted when the worker shuts down or loses the Run; the step must stop promptly. */
   signal: AbortSignal;
 }

@@ -26,11 +26,16 @@ describe('GetRunStartPointHandler', () => {
     });
   }
 
-  it('starts from the integration branch commit of a ready Repository', async () => {
+  it('starts from the integration branch commit of a ready Repository, at its remote', async () => {
     await connect();
     await projects.markReady(PROJECT, { headSha: HEAD, fetchedAt: new Date() });
 
-    expect(await handler.forProject(PROJECT)).toEqual({ status: 'ready', startCommit: HEAD });
+    // Issue #98: the remote URL as the operator connected it, so the agent worker can fetch it.
+    expect(await handler.forProject(PROJECT)).toEqual({
+      status: 'ready',
+      startCommit: HEAD,
+      remoteUrl: 'https://github.com/acme/shop.git',
+    });
   });
 
   it('names an unknown project, also for an id that is not a UUID', async () => {

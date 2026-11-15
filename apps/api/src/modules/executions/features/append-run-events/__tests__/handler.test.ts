@@ -51,7 +51,13 @@ describe('AppendRunEventsHandler', () => {
     log = new InMemoryRunLogRepository(runs);
     notified = [];
     secrets = [];
-    await runs.add({ projectId: PROJECT, provider: 'codex', task: 'x', startCommit: 'a' });
+    await runs.add({
+      projectId: PROJECT,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+    });
     run = (await runs.claimNext(WORKER, T0))!;
     build();
   });

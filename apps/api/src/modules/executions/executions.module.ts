@@ -13,6 +13,8 @@ import { ListRunEventsEndpoint } from './features/list-run-events/endpoint.js';
 import { ListRunEventsHandler } from './features/list-run-events/handler.js';
 import { ListRunStepsEndpoint } from './features/list-run-steps/endpoint.js';
 import { ListRunStepsHandler } from './features/list-run-steps/handler.js';
+import { GetRunStatesEndpoint } from './features/get-run-states/endpoint.js';
+import { GetRunStatesHandler } from './features/get-run-states/handler.js';
 import { ListProvidersEndpoint } from './features/list-providers/endpoint.js';
 import { ListProvidersHandler } from './features/list-providers/handler.js';
 import { ListProjectRunsEndpoint } from './features/list-project-runs/endpoint.js';
@@ -91,6 +93,7 @@ export class ExecutionsModule {
         ListRunEventsEndpoint,
         StreamRunEventsEndpoint,
         ListRunStepsEndpoint,
+        GetRunStatesEndpoint,
         ReportWorkerStatusEndpoint,
         ListProvidersEndpoint,
       ],
@@ -126,6 +129,7 @@ export class ExecutionsModule {
         ListRunEventsHandler,
         StreamRunEventsHandler,
         ListRunStepsHandler,
+        GetRunStatesHandler,
         ReportWorkerStatusHandler,
         ListProvidersHandler,
         SweepLostWorkersHandler,

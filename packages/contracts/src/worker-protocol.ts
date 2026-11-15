@@ -34,6 +34,20 @@ export const TASK_MAX_LENGTH = 20_000;
 /** Longest failure detail, in characters. */
 export const FAILURE_DETAIL_MAX_LENGTH = 2000;
 
+/** Every state of a Run; the API's domain owns the list (pinned by a test in the API). */
+export const RUN_STATES = [
+  'queued',
+  'preparing',
+  'running',
+  'waiting_for_operator',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'timed_out',
+] as const;
+export const runStateSchema = z.enum(RUN_STATES);
+export type RunState = z.infer<typeof runStateSchema>;
+
 /** Why a Run failed: fixed codes. */
 export const RUN_FAILURE_CODES = [
   'provider_disabled',
@@ -56,9 +70,12 @@ export type RunFailure = z.infer<typeof runFailureSchema>;
 /** Identifies one agent worker process; it generates a random UUID when it starts. */
 const workerIdSchema = z.uuid();
 
+/** Longest Repository remote URL, in characters (the Repository's own limit). */
+export const REMOTE_URL_MAX_LENGTH = 2048;
+
 /**
- * The Run payload: the claim response, exactly what a Run needs and nothing else (no clone
- * URL, secret references or keys). Closed, so an extra field is an error on both sides.
+ * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
+ * Clone path, secret references or keys). Closed, so an extra field is an error on both sides.
  */
 export const runPayloadSchema = z.strictObject({
   runId: z.uuid(),
@@ -67,6 +84,11 @@ export const runPayloadSchema = z.strictObject({
   task: z.string().min(1).max(TASK_MAX_LENGTH),
   /** The commit of the integration branch the Run starts from. */
   startCommit: z.string().min(1).max(64),
+  /**
+   * The Project's Repository (Issue #98): its remote URL as the operator connected it, never
+   * a credential. The agent worker fetches it with the agent user's own Git credentials.
+   */
+  repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
 });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
@@ -85,19 +107,6 @@ export const WORKER_REPORTED_STATES = [
   'succeeded',
   'failed',
 ] as const;
-
-/** `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. */
-export const reportRunStateRequestSchema = z
-  .strictObject({
-    workerId: workerIdSchema,
-    state: z.enum(WORKER_REPORTED_STATES),
-    failure: runFailureSchema.optional(),
-  })
-  .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
-    path: ['failure'],
-    message: 'A failure is reported exactly with the state failed.',
-  });
-export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 
 /** The agent's account of one check it ran. */
 export const runCheckSchema = z.strictObject({
@@ -146,11 +155,73 @@ export type RunStepResult = z.infer<typeof runStepResultSchema>;
 /** The two kinds of Run step: the first execution, or one resumed after an answer. */
 export const RUN_STEP_KINDS = ['start', 'resume'] as const;
 
-/** `POST /api/worker/runs/:runId/steps` body. */
+/** Most commits a Working copy report lists. */
+export const WORKING_COPY_COMMITS_MAX = 200;
+
+/** Longest commit subject in a Working copy report, in characters (the worker shortens longer ones). */
+export const COMMIT_SUBJECT_MAX_LENGTH = 200;
+
+/** Largest Working copy report, in bytes of its UTF-8 JSON (64 KiB). */
+export const WORKING_COPY_REPORT_MAX_BYTES = 64 * 1024;
+
+/**
+ * Largest JSON body of the worker's step and state reports (192 KiB); every other API route
+ * keeps 100 KiB. A maximal report (a result of {@link RUN_STEP_RESULT_MAX_BYTES}, a Working
+ * copy report of {@link WORKING_COPY_REPORT_MAX_BYTES} and the envelope) stays under it.
+ */
+export const WORKER_REQUEST_MAX_BYTES = 192 * 1024;
+
+/**
+ * What a Run's Working copy holds after a Run step (Issue #98): the Run branch, the commits on
+ * it since the start commit (oldest first, at most {@link WORKING_COPY_COMMITS_MAX}; when
+ * there are more, the newest), and whether uncommitted changes remain.
+ */
+export const workingCopyReportSchema = z
+  .strictObject({
+    runBranch: z.string().min(1).max(255),
+    commits: z
+      .array(
+        z.strictObject({
+          id: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+          subject: z.string().max(COMMIT_SUBJECT_MAX_LENGTH),
+        }),
+      )
+      .max(WORKING_COPY_COMMITS_MAX),
+    hasUncommittedChanges: z.boolean(),
+  })
+  .refine((report) => jsonByteLength(report) <= WORKING_COPY_REPORT_MAX_BYTES, {
+    message: `The Working copy report is larger than ${WORKING_COPY_REPORT_MAX_BYTES} bytes as JSON.`,
+  });
+export type WorkingCopyReport = z.infer<typeof workingCopyReportSchema>;
+
+/**
+ * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
+ * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
+ * commits of a step that failed or crashed are recorded too.
+ */
+export const reportRunStateRequestSchema = z
+  .strictObject({
+    workerId: workerIdSchema,
+    state: z.enum(WORKER_REPORTED_STATES),
+    failure: runFailureSchema.optional(),
+    workingCopy: workingCopyReportSchema.optional(),
+  })
+  .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
+    path: ['failure'],
+    message: 'A failure is reported exactly with the state failed.',
+  })
+  .refine((report) => report.workingCopy === undefined || report.state === 'failed', {
+    path: ['workingCopy'],
+    message: 'A Working copy state comes with a step report, or with the state failed.',
+  });
+export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
+
+/** `POST /api/worker/runs/:runId/steps` body: the step's result and the Working copy's state. */
 export const reportRunStepRequestSchema = z.strictObject({
   workerId: workerIdSchema,
   kind: z.enum(RUN_STEP_KINDS),
   result: runStepResultSchema,
+  workingCopy: workingCopyReportSchema,
 });
 export type ReportRunStepRequest = z.infer<typeof reportRunStepRequestSchema>;
 
@@ -164,6 +235,31 @@ export const runnerEventSchema = z.strictObject({
 });
 export type RunnerEvent = z.infer<typeof runnerEventSchema>;
 
+/** Most Run ids one states request asks about. */
+export const RUN_STATES_REQUEST_MAX = 500;
+
+/**
+ * `POST /api/worker/runs/states` body (Issue #98): the agent worker asks for the states of the
+ * Runs it has Working copies for, to apply the retention rules.
+ */
+export const runStatesRequestSchema = z.strictObject({
+  workerId: workerIdSchema,
+  runIds: z.array(z.uuid()).min(1).max(RUN_STATES_REQUEST_MAX),
+});
+export type RunStatesRequest = z.infer<typeof runStatesRequestSchema>;
+
+/**
+ * The answer: one entry per asked Run that exists (an unknown id is left out), with its state
+ * and, in a final state, when it finished.
+ */
+export const runStatesResponseSchema = z.array(
+  z.strictObject({
+    runId: z.uuid(),
+    state: runStateSchema,
+    finishedAt: z.iso.datetime().nullable(),
+  }),
+);
+export type RunStatesResponse = z.infer<typeof runStatesResponseSchema>;
 /**
  * The kinds of Run event (Issue #99): the runner's three, the markers the worker adds at the
  * start and end of each Run step, and `notice` for what Studio or the worker says about the

@@ -11,7 +11,13 @@ const T0 = new Date('2026-11-15T12:00:00.000Z');
 describe('ListRunStepsHandler (Issue #99)', () => {
   it('shows each step result: outcome, summary and checks, redacted like the log', async () => {
     const runs = new InMemoryRunRepository();
-    await runs.add({ projectId: PROJECT, provider: 'codex', task: 'x', startCommit: 'a' });
+    await runs.add({
+      projectId: PROJECT,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+    });
     const run = (await runs.claimNext(WORKER, T0))!;
     await runs.transitionClaimed({
       runId: run.id,
@@ -21,18 +27,23 @@ describe('ListRunStepsHandler (Issue #99)', () => {
       failure: null,
       now: T0,
     });
-    await runs.appendStep(run.id, WORKER, {
-      kind: 'start',
-      result: {
-        outcome: 'done',
-        summary: 'Used test-secret-value to log in.',
-        pullRequest: { title: 'T', body: 'B' },
-        checks: [
-          { name: 'unit tests', result: 'passed' },
-          { name: 'lint', result: 'failed', detail: 'see test-secret-value' },
-        ],
+    await runs.appendStep(
+      run.id,
+      WORKER,
+      {
+        kind: 'start',
+        result: {
+          outcome: 'done',
+          summary: 'Used test-secret-value to log in.',
+          pullRequest: { title: 'T', body: 'B' },
+          checks: [
+            { name: 'unit tests', result: 'passed' },
+            { name: 'lint', result: 'failed', detail: 'see test-secret-value' },
+          ],
+        },
       },
-    });
+      { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+    );
     const handler = new ListRunStepsHandler(runs, {
       forRun: () => Promise.resolve(['test-secret-value']),
     });

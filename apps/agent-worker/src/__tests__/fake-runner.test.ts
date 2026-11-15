@@ -10,12 +10,15 @@ const run = (task: string): RunPayload => ({
   provider: 'claude_code',
   task,
   startCommit: 'a'.repeat(40),
+  repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
 });
+// The scenarios here touch no Working copy (commit and dirty: fake-runner.linux.test.ts).
+const workspace = { repoDir: '/nonexistent/repo', runDir: '/nonexistent', env: {} };
 
 async function start(task: string, signal = new AbortController().signal, slowMs = 10) {
   const events: RunnerEvent[] = [];
   const result = await drainRunStep(
-    new FakeRunner({ slowMs, slowLineMs: 2 }).start({ run: run(task), signal }),
+    new FakeRunner({ slowMs, slowLineMs: 2 }).start({ run: run(task), workspace, signal }),
     (event) => events.push(event),
   );
   return { events, result };
@@ -28,6 +31,8 @@ describe('fakeScenarioOf', () => {
     ['Please [fake:question]', 'question'],
     ['[fake:slow]', 'slow'],
     ['[fake:crash]', 'crash'],
+    ['[fake:commit] Add a file', 'commit'],
+    ['[fake:dirty]', 'dirty'],
     ['[fake:secret]', 'secret'],
     ['[fake:unknown]', 'success'],
   ])('reads %j as %s', (task, scenario) => {
@@ -92,6 +97,7 @@ describe('FakeRunner', () => {
     const result = await drainRunStep(
       new FakeRunner().resume({
         run: run('x'),
+        workspace,
         answer: 'Option A',
         signal: new AbortController().signal,
       }),

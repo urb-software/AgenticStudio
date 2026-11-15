@@ -28,7 +28,13 @@ describe('ReportRunStateHandler', () => {
       { now: () => T1 },
       { notify: (runId) => notified.push(runId), subscribe: () => () => undefined },
     );
-    await runs.add({ projectId: PROJECT, provider: 'codex', task: 'x', startCommit: 'a' });
+    await runs.add({
+      projectId: PROJECT,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+    });
     run = (await runs.claimNext(WORKER, T0))!;
   });
 
@@ -56,6 +62,33 @@ describe('ReportRunStateHandler', () => {
     await report({ state: 'succeeded' });
 
     expect(notified).toEqual([run.id, run.id]);
+  });
+
+  it("records a failed Run's Working copy state with its failure (Issue #98)", async () => {
+    await report({ state: 'running' });
+    const workingCopy = {
+      runBranch: 'agent/x-r0b8e5c2d',
+      commits: [{ id: 'c'.repeat(40), subject: 'Half done' }],
+      hasUncommittedChanges: true,
+    };
+
+    await report({
+      state: 'failed',
+      failure: { code: 'agent_failed', detail: 'exit 1' },
+      workingCopy,
+    });
+
+    expect((await runs.findById(run.id))?.workingCopy).toEqual(workingCopy);
+  });
+
+  it('keeps the last Working copy state when a failure brings none', async () => {
+    await report({ state: 'running' });
+    const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
+    await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, workingCopy);
+
+    await report({ state: 'failed', failure: { code: 'unknown', detail: 'x' } });
+
+    expect((await runs.findById(run.id))?.workingCopy).toEqual(workingCopy);
   });
 
   it('records the failure of a failed Run', async () => {
