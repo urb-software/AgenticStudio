@@ -148,6 +148,7 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       const projectId = await readyProject();
       const read = await get(projectId);
       expect(read.status).toBe(200);
+      expect(read.text).toBe('null');
       expect(read.body).toBeNull();
     });
 
@@ -405,7 +406,7 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       const stream = await http().get(`/api/runs/${runId}/events/stream`).set('Cookie', cookie);
       for (const response of [events, steps, stream]) expectNoContent(response);
       expect(events.body.events[1].text).toContain(`DB_PASSWORD=${REDACTED}`);
-      expect(steps.body[0]).toMatchObject({ outcome: 'done', summary: `Used ${REDACTED}` });
+      expect(steps.body.steps[0]).toMatchObject({ outcome: 'done', summary: `Used ${REDACTED}` });
       // Nothing of the file reached storage either.
       const stored = await db().$queryRaw<{ text: string }[]>`
         SELECT text FROM run_events WHERE run_id = ${runId}::uuid
