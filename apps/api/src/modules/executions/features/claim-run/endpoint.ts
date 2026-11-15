@@ -54,7 +54,11 @@ export class ClaimRunEndpoint {
 /** The kind of a claim and the fields that go with it. */
 function kindOf(run: ClaimedRun) {
   if (run.state === 'failed') {
-    return { kind: 'deliver' as const, runBranch: run.workingCopy?.runBranch };
+    return {
+      kind: 'deliver' as const,
+      runBranch: run.workingCopy?.runBranch,
+      nextSeq: run.nextSeq,
+    };
   }
   const answer = resumeAnswer(run);
   if (answer !== null && run.sessionRef !== null) {

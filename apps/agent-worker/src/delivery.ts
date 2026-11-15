@@ -23,7 +23,7 @@ import {
   PullRequestFailedError,
 } from './github.js';
 import { composeProjectName, runDirectories } from './run-layout.js';
-import { type PreparedRun, readRunFile, STUDIO_EXCLUDE_SECTION } from './working-copy.js';
+import { onBranch, type PreparedRun, readRunFile, STUDIO_EXCLUDE_SECTION } from './working-copy.js';
 
 /**
  * Delivery of a Run's result (Issue #102, ADR 0002): after a `done` Run step the worker commits
@@ -265,6 +265,13 @@ export class Deliveries implements DeliveryPort {
     );
     if (!runFile || runFile.runId !== run.runId || runFile.projectId !== run.projectId || !repo) {
       throw new DeliveryFailedError(`${NO_WORKING_COPY}: retention or a clean-up removed it.`);
+    }
+    // Only the recorded Run branch is delivered, from a Working copy that has it checked out.
+    if (!(await onBranch(this.options.git, paths.repoDir, run.runBranch, this.options.dataDir))) {
+      throw new DeliveryFailedError(
+        `The Working copy is not on its Run branch ${run.runBranch}. Look at the Working copy ` +
+          'on the agent side, then retry the delivery.',
+      );
     }
     const saved = await readFile(paths.resultFile, 'utf8')
       .then((text) => runStepResultSchema.safeParse(JSON.parse(text)))

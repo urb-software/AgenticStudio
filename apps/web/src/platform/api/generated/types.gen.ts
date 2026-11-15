@@ -159,7 +159,7 @@ export type RunOutput = {
     deliveryRetryRequested?: true;
     failingChecks?: Array<string>;
     question?: RunQuestionOutput;
-    messages: Array<RunMessageOutput>;
+    messages?: Array<RunMessageOutput>;
 };
 
 export type RunListOutput = Array<RunOutput>;

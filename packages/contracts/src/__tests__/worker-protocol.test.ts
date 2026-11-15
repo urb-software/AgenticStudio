@@ -70,8 +70,12 @@ describe('run payload (claim response)', () => {
     expect(withKind('start')).toBe(true);
     expect(withKind('deliver')).toBe(false);
     expect(
-      runPayloadSchema.safeParse({ ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d' })
-        .success,
+      runPayloadSchema.safeParse({
+        ...payload,
+        kind: 'deliver',
+        runBranch: 'agent/x-r0b8e5c2d',
+        nextSeq: 1,
+      }).success,
     ).toBe(true);
     expect(withKind('resume')).toBe(false);
     expect(withKind(undefined)).toBe(false);
@@ -92,7 +96,7 @@ describe('run payload (claim response)', () => {
       expect(runPayloadSchema.parse(resume)).toEqual(resume);
     });
 
-    it('needs all four, and only a resume claim carries the session, answer and seq', () => {
+    it('needs all four, and only a resume claim carries the session and answer', () => {
       for (const field of ['runBranch', 'sessionRef', 'answer', 'nextSeq'] as const) {
         const { [field]: _left, ...without } = resume;
         void _left;
@@ -103,6 +107,15 @@ describe('run payload (claim response)', () => {
           false,
         );
       }
+    });
+
+    it('a delivery claim carries the next seq too, never a session or an answer', () => {
+      const deliver = { ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d', nextSeq: 9 };
+      expect(runPayloadSchema.safeParse(deliver).success).toBe(true);
+      const { nextSeq: _seq, ...withoutSeq } = deliver;
+      void _seq;
+      expect(runPayloadSchema.safeParse(withoutSeq).success).toBe(false);
+      expect(runPayloadSchema.safeParse({ ...deliver, answer: 'x' }).success).toBe(false);
     });
 
     it('bounds the session reference, the answer and the seq', () => {
@@ -215,6 +228,7 @@ describe('Environment file (Issue #104)', () => {
         ...payload,
         kind: 'deliver',
         runBranch: 'agent/x-r0b8e5c2d',
+        nextSeq: 1,
         environmentFile,
       }).success,
     ).toBe(false);

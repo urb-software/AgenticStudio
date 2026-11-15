@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runResponseSchema, toRunResponse } from '../run-response.js';
+import { runResponseSchema, toRunListItem, toRunResponse } from '../run-response.js';
 
 // Issue #103: the conversation and the open question in the operator API.
 const T0 = new Date('2026-11-15T12:00:00.000Z');
@@ -53,11 +53,19 @@ describe('Run response: conversation (Issue #103)', () => {
     });
 
     expect(response.question).toBeUndefined();
-    expect(response.messages.map(({ role, kind, text }) => [role, kind, text])).toEqual([
+    expect(response.messages?.map(({ role, kind, text }) => [role, kind, text])).toEqual([
       ['operator', 'task', 'Add a store'],
       ['agent', 'question', 'Which database?'],
       ['operator', 'answer', 'PostgreSQL'],
     ]);
+  });
+
+  it('leaves the conversation and the open question out of list items (coordinator decision)', () => {
+    const item = toRunListItem(run);
+
+    expect(item).not.toHaveProperty('messages');
+    expect(item).not.toHaveProperty('question');
+    expect(item).toMatchObject({ id: run.id, state: 'waiting_for_operator' });
   });
 
   it('has no open question outside waiting, and the Task alone before any question', () => {

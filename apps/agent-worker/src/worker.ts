@@ -221,8 +221,8 @@ export class AgentWorker {
     let prepared: PreparedRun | undefined;
     let processes: StepProcessGroups | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
-    // The Run's events go to Studio as they happen (Issue #99); a resumed Run's continue after
-    // the seqs Studio stored (Issue #103).
+    // The Run's events go to Studio as they happen (Issue #99); a resumed Run's and a delivery
+    // retry's continue after the seqs Studio stored (Issue #103).
     const log = new RunLog({
       api,
       runId: run.runId,
@@ -230,8 +230,10 @@ export class AgentWorker {
       onLost: () => stop('lost'),
       firstSeq: run.nextSeq ?? 1,
     });
-    // The Run step this claim carries out (a delivery retry starts none).
-    const stepIndex = run.completedSteps + 1;
+    // The Run step this claim carries out; a delivery retry starts none, and what it logs
+    // belongs to the Run's last step.
+    const stepIndex =
+      run.kind === 'deliver' ? Math.max(run.completedSteps, 1) : run.completedSteps + 1;
     const heartbeats = setInterval(() => {
       // Keeps Studio's view of this worker fresh while it carries a long Run.
       void this.reportStatus();

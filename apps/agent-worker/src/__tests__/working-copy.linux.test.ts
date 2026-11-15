@@ -370,6 +370,51 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     expect(existsSync(join(prepared.repoDir, 'evil', '.git'))).toBe(false);
   });
 
+  // Issue #103: a resume continues in the kept Working copy, on the Run branch Studio recorded.
+  describe('locating the Working copy for a resume', () => {
+    it('finds it unchanged on its Run branch', async () => {
+      const copies = workingCopies();
+      const run = payload();
+      const prepared = await copies.prepare(run, signal());
+
+      const located = await copies.locate({
+        ...run,
+        kind: 'resume',
+        runBranch: prepared.runBranch,
+        sessionRef: 's-1',
+        answer: 'yes',
+        nextSeq: 4,
+      });
+
+      expect(located).toMatchObject({ repoDir: prepared.repoDir, runBranch: prepared.runBranch });
+    });
+
+    it('fails as preparation_failed when it is gone or not on the recorded Run branch', async () => {
+      const copies = workingCopies();
+      const run = payload();
+      const prepared = await copies.prepare(run, signal());
+      const resume = {
+        ...run,
+        kind: 'resume' as const,
+        runBranch: prepared.runBranch,
+        sessionRef: 's-1',
+        answer: 'yes',
+        nextSeq: 4,
+      };
+      inRepo(prepared.repoDir, ['checkout', '--quiet', '-b', 'elsewhere']);
+
+      const offBranch = await copies.locate(resume).catch((error: unknown) => error);
+      expect(offBranch).toBeInstanceOf(PreparationFailedError);
+      expect((offBranch as PreparationFailedError).detail).toMatch(/not on its Run branch/);
+
+      rmSync(prepared.repoDir, { recursive: true, force: true });
+      const gone = await copies.locate(resume).catch((error: unknown) => error);
+      expect((gone as PreparationFailedError).detail).toMatch(
+        /^Working copy no longer exists — run again/,
+      );
+    });
+  });
+
   describe('result report', () => {
     async function runFake(task: string) {
       const copies = workingCopies();

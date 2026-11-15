@@ -92,7 +92,7 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   listNewestFirst(): Promise<Run[]> {
-    return Promise.resolve([...this.runs].reverse().map((run) => this.view(run)));
+    return Promise.resolve([...this.runs].reverse().map((run) => this.listed(run)));
   }
 
   listByProjectNewestFirst(projectId: string): Promise<Run[]> {
@@ -100,7 +100,7 @@ export class InMemoryRunRepository implements RunRepository {
       [...this.runs]
         .reverse()
         .filter((run) => run.projectId === projectId)
-        .map((run) => this.view(run)),
+        .map((run) => this.listed(run)),
     );
   }
 
@@ -255,7 +255,9 @@ export class InMemoryRunRepository implements RunRepository {
 
   listWaiting(): Promise<Run[]> {
     return Promise.resolve(
-      this.runs.filter((run) => run.state === 'waiting_for_operator').map((run) => this.view(run)),
+      this.runs
+        .filter((run) => run.state === 'waiting_for_operator')
+        .map((run) => this.listed(run)),
     );
   }
 
@@ -444,6 +446,11 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(
       this.runs.flatMap((run) => (run.environmentFileSecret ? [run.environmentFileSecret] : [])),
     );
+  }
+
+  /** A Run as lists read it: without its conversation (Issue #103), like the database adapter. */
+  private listed(run: Parameters<InMemoryRunRepository['view']>[0]): Run {
+    return { ...this.view(run), messages: [] };
   }
 
   private view(

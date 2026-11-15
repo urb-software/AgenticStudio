@@ -194,7 +194,7 @@ export const zRunOutput = z.object({
     deliveryRetryRequested: z.literal(true).optional(),
     failingChecks: z.array(z.string()).optional(),
     question: zRunQuestionOutput.optional(),
-    messages: z.array(zRunMessageOutput)
+    messages: z.array(zRunMessageOutput).optional()
 });
 
 export const zRunListOutput = z.array(zRunOutput);

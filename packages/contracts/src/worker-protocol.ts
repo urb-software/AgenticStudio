@@ -217,8 +217,9 @@ export const runPayloadSchema = z
     /** With `resume` only: the operator's answer to the agent's question. */
     answer: z.string().min(1).max(ANSWER_MAX_LENGTH).optional(),
     /**
-     * With `resume` only: the seq of the Run's next event, one past the last Studio stored, so
-     * the resumed step's events are not dropped as duplicates (Issue #99 note on #103).
+     * With `resume` and `deliver`: the seq of the Run's next event, one past the last Studio
+     * stored, so the worker's events are not dropped as duplicates (Issue #99 note on #103). A
+     * start claim has none: its log starts at 1.
      */
     nextSeq: z.int().min(1).max(2_147_483_647).optional(),
     /**
@@ -241,13 +242,13 @@ export const runPayloadSchema = z
   })
   .refine(
     (payload) =>
-      [payload.sessionRef, payload.answer, payload.nextSeq].every(
+      [payload.sessionRef, payload.answer].every(
         (field) => (field !== undefined) === (payload.kind === 'resume'),
-      ),
+      ) && (payload.nextSeq !== undefined) === (payload.kind !== 'start'),
     {
       path: ['kind'],
       message:
-        'A resume claim carries the session reference, the answer and the next seq; others none.',
+        'A resume claim carries the session reference and the answer, a resume or delivery claim the next seq; a start claim none of them.',
     },
   )
   .refine(

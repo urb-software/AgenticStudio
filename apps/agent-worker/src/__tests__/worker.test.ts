@@ -428,6 +428,7 @@ describe('AgentWorker', () => {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
       runBranch: REPORT.runBranch,
+      nextSeq: 7,
     };
     const api = new RecordingApi([run]);
     const workingCopies = new FakeWorkingCopies();
@@ -464,6 +465,7 @@ describe('AgentWorker', () => {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
       runBranch: REPORT.runBranch,
+      nextSeq: 7,
     };
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -489,6 +491,7 @@ describe('AgentWorker', () => {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
       runBranch: REPORT.runBranch,
+      nextSeq: 7,
     };
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -1193,6 +1196,26 @@ describe('AgentWorker', () => {
         ],
         ['state', run.runId, { state: 'succeeded', delivery: DELIVERED }],
       ]);
+    });
+
+    it("continues a delivery retry's log after the stored events (coordinator decision)", async () => {
+      const run = {
+        ...payload('Add a feature'),
+        kind: 'deliver' as const,
+        runBranch: REPORT.runBranch,
+        nextSeq: 7,
+        completedSteps: 2,
+      };
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      deliveries.deliverHangs = true;
+      startWorker(api, undefined, undefined, deliveries);
+      await until(() => deliveries.calls.some(([step]) => step === 'deliver'));
+
+      api.cancelRequested = true;
+      await until(() => api.reports().length === 1 && api.events().length > 0);
+
+      expect(api.events()[0]).toMatchObject({ seq: 7, stepIndex: 2, kind: 'notice' });
     });
 
     it("numbers the resumed step's events after the stored log (note from #99)", async () => {

@@ -193,6 +193,52 @@ describe('ClaimRunHandler', () => {
       expect(secrets.values.size).toBe(0);
     });
 
+    it('continues the log of a retry after the stored events, with the steps taken (#103)', async () => {
+      const run = await queue(A);
+      await runs.claimNext(WORKER, T0);
+      await runs.transitionClaimed({
+        runId: run.id,
+        workerId: WORKER,
+        from: 'preparing',
+        to: 'running',
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+      await logs.append(
+        run.id,
+        WORKER,
+        [1, 2, 3, 4, 5].map((seq) => ({
+          seq,
+          at: T0,
+          stepIndex: 1,
+          kind: 'message' as const,
+          text: 'x',
+          truncated: false,
+        })),
+        1_000_000,
+      );
+      await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, WORKING_COPY, [], T0);
+      await runs.transitionClaimed({
+        runId: run.id,
+        workerId: WORKER,
+        from: 'running',
+        to: 'failed',
+        failure: { code: 'delivery_failed', detail: 'refused' },
+        workingCopy: WORKING_COPY,
+        cancelRequested: false,
+        now: T0,
+      });
+      await runs.requestDeliveryRetry(run.id);
+
+      expect(await handler.execute(WORKER)).toMatchObject({
+        id: run.id,
+        state: 'failed',
+        completedSteps: 1,
+        nextSeq: 6,
+      });
+    });
+
     it('hands a retry only to the worker that started the Run, which has its Working copy (review R4)', async () => {
       const run = await failedDelivery(A);
       await runs.requestDeliveryRetry(run.id);

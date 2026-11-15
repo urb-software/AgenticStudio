@@ -115,9 +115,10 @@ export const runResponseSchema = z
     question: runQuestionResponseSchema.optional(),
     /**
      * The conversation, in order (Issue #103): the Task, then each question of the agent and
-     * each answer of the operator. Everything the agent wrote is plain text.
+     * each answer of the operator. Everything the agent wrote is plain text. In single-Run
+     * answers only (`GET /api/runs/:runId` and the commands); lists leave it and `question` out.
      */
-    messages: z.array(runMessageResponseSchema),
+    messages: z.array(runMessageResponseSchema).optional(),
   })
   .meta({ id: 'Run' });
 
@@ -229,4 +230,15 @@ export function toRunResponse(run: {
       ),
     ],
   };
+}
+
+/**
+ * A Run in a list (Issue #103, coordinator decision): the Run without its conversation
+ * (`messages`) and open question, which only the single-Run answers carry.
+ */
+export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResponse {
+  const { messages: _messages, question: _question, ...item } = toRunResponse(run);
+  void _messages;
+  void _question;
+  return item;
 }

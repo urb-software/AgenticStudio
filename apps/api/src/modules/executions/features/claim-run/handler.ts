@@ -116,7 +116,8 @@ export class ClaimRunHandler {
         // Run branch there is nothing to deliver; it fails again at once and is released
         // (review R5 of #122).
         if (run.remoteUrl !== '' && run.integrationBranch !== '' && run.workingCopy) {
-          return { ...run, environmentFile: null, completedSteps: 1, nextSeq: 1 };
+          // Its events continue after the stored log (coordinator decision on #103).
+          return { ...run, environmentFile: null, ...(await this.progress(run.id)) };
         }
         await this.runs.finishDeliveryRetry({
           runId: run.id,
@@ -136,16 +137,7 @@ export class ClaimRunHandler {
       if (resumeAnswer(run) !== null) {
         // Issue #103: the resumed step continues the Run's step numbers and its log's seqs.
         if (reachable && run.workingCopy) {
-          const [steps, lastSeq] = await Promise.all([
-            this.runs.listSteps(run.id),
-            this.logs.lastSeq(run.id),
-          ]);
-          return {
-            ...run,
-            environmentFile: null,
-            completedSteps: steps.length,
-            nextSeq: lastSeq + 1,
-          };
+          return { ...run, environmentFile: null, ...(await this.progress(run.id)) };
         }
         await this.fail(run, workerId, NOT_RESUMABLE, now);
         continue;
@@ -196,6 +188,15 @@ export class ClaimRunHandler {
     if (secretRef !== undefined) await this.secrets.delete(secretRef).catch(() => undefined);
     await this.fail(run, workerId, ENVIRONMENT_FILE_UNAVAILABLE, now);
     return SNAPSHOT_FAILED;
+  }
+
+  /** How many Run steps the Run has taken and the seq after its stored log (Issue #103). */
+  private async progress(runId: string): Promise<{ completedSteps: number; nextSeq: number }> {
+    const [steps, lastSeq] = await Promise.all([
+      this.runs.listSteps(runId),
+      this.logs.lastSeq(runId),
+    ]);
+    return { completedSteps: steps.length, nextSeq: lastSeq + 1 };
   }
 
   private async fail(run: Run, workerId: string, failure: RunFailure, now: Date): Promise<void> {

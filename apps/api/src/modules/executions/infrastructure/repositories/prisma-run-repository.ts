@@ -39,7 +39,8 @@ import type {
   StoredRunStep,
 } from '../../domain/repositories/run-repository.js';
 
-const RUN_FIELDS = {
+/** A Run's fields as lists read them: everything but its conversation (Issue #103). */
+const LIST_FIELDS = {
   id: true,
   projectId: true,
   provider: true,
@@ -74,6 +75,11 @@ const RUN_FIELDS = {
   stepStartedAt: true,
   releasedBy: true,
   sessionRef: true,
+} as const;
+
+/** A single Run's fields with its conversation (Issue #103); lists read {@link LIST_FIELDS}. */
+const RUN_FIELDS = {
+  ...LIST_FIELDS,
   messages: {
     select: { kind: true, text: true, options: true, recommendation: true, at: true },
     orderBy: { seq: 'asc' },
@@ -115,7 +121,8 @@ interface RunRow {
   stepStartedAt: Date | null;
   releasedBy: string | null;
   sessionRef: string | null;
-  messages: {
+  /** Absent when a list read the Run (Issue #103). */
+  messages?: {
     kind: string;
     text: string;
     options: Prisma.JsonValue;
@@ -127,7 +134,7 @@ interface RunRow {
 const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
 
 /** A message row as a Run's message (Issue #103); the CHECK constraint fixes the kinds. */
-function toMessage(row: RunRow['messages'][number]): RunMessage {
+function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
   if (row.kind !== 'question') {
     throw new Error(`Unexpected run message kind in the database: ${row.kind}`);
@@ -239,7 +246,7 @@ function toRun(row: RunRow): Run {
     stepStartedAt: row.stepStartedAt,
     releasedBy: row.releasedBy,
     sessionRef: row.sessionRef,
-    messages: row.messages.map(toMessage),
+    messages: (row.messages ?? []).map(toMessage),
   };
 }
 
@@ -276,7 +283,7 @@ export class PrismaRunRepository implements RunRepository {
   }
 
   async listNewestFirst(): Promise<Run[]> {
-    const rows = await this.db.run.findMany({ orderBy: [...NEWEST_FIRST], select: RUN_FIELDS });
+    const rows = await this.db.run.findMany({ orderBy: [...NEWEST_FIRST], select: LIST_FIELDS });
     return rows.map(toRun);
   }
 
@@ -284,7 +291,7 @@ export class PrismaRunRepository implements RunRepository {
     const rows = await this.db.run.findMany({
       where: { projectId },
       orderBy: [...NEWEST_FIRST],
-      select: RUN_FIELDS,
+      select: LIST_FIELDS,
     });
     return rows.map(toRun);
   }
@@ -488,7 +495,7 @@ export class PrismaRunRepository implements RunRepository {
     const rows = await this.db.run.findMany({
       where: { state: 'waiting_for_operator' },
       orderBy: [{ waitingSince: 'asc' }, { id: 'asc' }],
-      select: RUN_FIELDS,
+      select: LIST_FIELDS,
     });
     return rows.map(toRun);
   }

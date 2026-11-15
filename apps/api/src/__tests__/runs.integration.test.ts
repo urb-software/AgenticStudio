@@ -209,8 +209,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         .get(`/api/projects/${project.id}/runs`)
         .set('Cookie', cookie);
       expect(projectRuns.status).toBe(200);
-      expect(projectRuns.body).toEqual([created.body]);
-      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([created.body]);
+      // Lists leave the conversation out (Issue #103, coordinator decision).
+      const { messages: _messages, ...listed } = created.body;
+      void _messages;
+      expect(projectRuns.body).toEqual([listed]);
+      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listed]);
     });
 
     it('lists Runs newest first, all projects or one', async () => {
@@ -1432,6 +1435,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         ]);
         // Internal: the session reference never reaches the operator API.
         expect(JSON.stringify(waiting)).not.toContain('session-1');
+        // Lists leave the conversation out (coordinator decision); the state shows it waits.
+        const [listed] = (await http().get('/api/runs').set('Cookie', cookie)).body;
+        expect(listed).toMatchObject({ id: run.id, state: 'waiting_for_operator' });
+        expect(listed).not.toHaveProperty('messages');
+        expect(listed).not.toHaveProperty('question');
 
         advance(60);
         const answered = await answer(run.id, { text: '  PostgreSQL  ' });

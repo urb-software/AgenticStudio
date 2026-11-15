@@ -113,10 +113,13 @@ export interface RunRepository {
   /** The Run with this id, or `null`. */
   findById(id: string): Promise<Run | null>;
 
-  /** Every Run, newest first: by creation time, then by id. */
+  /**
+   * Every Run, newest first: by creation time, then by id. Lists leave the conversation out
+   * (`messages` is empty; Issue #103): `findById` reads it.
+   */
   listNewestFirst(): Promise<Run[]>;
 
-  /** A project's Runs, newest first: by creation time, then by id. */
+  /** A project's Runs, newest first: by creation time, then by id; without their messages. */
   listByProjectNewestFirst(projectId: string): Promise<Run[]>;
 
   /**
@@ -169,7 +172,7 @@ export interface RunRepository {
    */
   requestCancel(runId: string, now: Date): Promise<Run | null>;
 
-  /** Every Run waiting for the operator (Issue #100: the long-wait sweep). */
+  /** Every Run waiting for the operator (Issue #100: the long-wait sweep); without messages. */
   listWaiting(): Promise<Run[]>;
 
   /**

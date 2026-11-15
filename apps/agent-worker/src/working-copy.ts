@@ -246,6 +246,13 @@ export class WorkingCopies implements WorkingCopyPort {
     if (!runFile || runFile.runId !== run.runId || runFile.projectId !== run.projectId || !repo) {
       throw new PreparationFailedError(RESUME_NO_WORKING_COPY);
     }
+    // The agent continues exactly where it stopped: on the Run branch Studio recorded.
+    if (!(await onBranch(this.options.git, paths.repoDir, run.runBranch, this.options.dataDir))) {
+      throw new PreparationFailedError(
+        `The Working copy is not on its Run branch ${run.runBranch}, so the run cannot resume ` +
+          'there — run again.',
+      );
+    }
     return {
       runId: run.runId,
       runDir: paths.runDir,
@@ -493,6 +500,28 @@ function shorten(subject: string): string {
   if (subject.length <= COMMIT_SUBJECT_MAX_LENGTH) return subject;
   const cut = subject.slice(0, COMMIT_SUBJECT_MAX_LENGTH);
   return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
+/**
+ * Whether the Working copy at `repoDir` has the Run branch checked out (`HEAD` is
+ * `refs/heads/<runBranch>`); false when it cannot be read (Issue #103 decision: resume and
+ * delivery retries check it before they go on).
+ */
+export async function onBranch(
+  git: GitRunner,
+  repoDir: string,
+  runBranch: string,
+  ceiling: string,
+): Promise<boolean> {
+  const head = await git
+    .run(['symbolic-ref', '--quiet', 'HEAD'], {
+      cwd: repoDir,
+      timeoutMs: GIT_TIMEOUTS.local,
+      ceiling,
+    })
+    .then((ref) => ref.trim())
+    .catch(() => '');
+  return head === `refs/heads/${runBranch}`;
 }
 
 /** Reads a Run's `run.json`; `null` when it is missing or not what the worker writes. */

@@ -316,8 +316,6 @@ describe('OpenAPI document', () => {
         'environmentFileSupplied',
         // Issue #100: the limits in force are always shown.
         'limits',
-        // Issue #103: the conversation, from the Task on.
-        'messages',
       ],
     });
   });
