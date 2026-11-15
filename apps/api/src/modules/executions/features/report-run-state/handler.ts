@@ -1,7 +1,9 @@
+import { FAILURE_DETAIL_MAX_LENGTH } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   assertTransition,
   IllegalRunTransitionError,
+  isFinal,
   isRunId,
   OPERATOR_CANCELLATION,
   OPERATOR_CANCELLATION_BRANCH_PUSHED,
@@ -11,6 +13,8 @@ import {
   type RunState,
   type RunWorkingCopy,
 } from '../../domain/entities/run.js';
+import { keepsSnapshotForRetry } from '../../domain/entities/run-environment-file.js';
+import { redactFailure, redactWorkingCopy } from '../../domain/services/log-redaction.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -18,7 +22,12 @@ import {
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import {
+  ENVIRONMENT_FILE_SNAPSHOTS,
+  type EnvironmentFileSnapshots,
+} from '../../ports/environment-file-snapshots.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
+import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
 export interface ReportRunStateInput {
   runId: string;
@@ -45,6 +54,9 @@ export interface ReportRunStateInput {
  * already applied (the worker retried a report whose answer it never got) is a no-op success
  * (review of #121). Throws {@link RunNotFoundError}, {@link RunNotHeldError} (another worker
  * holds it, or nobody does) or `IllegalRunTransitionError`. Wakes the Run's live log streams.
+ * Issue #104: the failure detail and the commit subjects are redacted with the Run's known
+ * values before they are stored (a retry's too: a retryable failed delivery keeps its
+ * snapshot), and the snapshot is deleted once the Run needs no more redaction.
  */
 @Injectable()
 export class ReportRunStateHandler {
@@ -52,10 +64,13 @@ export class ReportRunStateHandler {
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
+    @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
+    @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
   ) {}
 
   async execute(input: ReportRunStateInput): Promise<Run> {
     if (!isRunId(input.runId)) throw new RunNotFoundError();
+    input = await this.redacted(input);
     // A second pass only when a cancel request arrived between the read and the write.
     for (let attempt = 1; attempt <= 2; attempt++) {
       const run = await this.runs.findById(input.runId);
@@ -94,11 +109,33 @@ export class ReportRunStateHandler {
       if (changed) {
         // Live log streams re-read the state: a final Run ends them (Issue #99).
         this.signal.notify(run.id);
+        // A final Run needs no more redaction, unless its failed delivery can be retried:
+        // its Environment file snapshot goes now, or when the retry ends it (Issue #104).
+        if (
+          changed.environmentFileSupplied &&
+          isFinal(changed.state) &&
+          !keepsSnapshotForRetry(changed)
+        ) {
+          await this.snapshots.releaseFor(run.id);
+        }
         return changed;
       }
     }
     // The Run changed between the read and the write (e.g. the sweep failed it).
     throw new RunNotHeldError();
+  }
+
+  /** The worker's free text (failure detail, commit subjects) redacted like the log (#104). */
+  private async redacted(input: ReportRunStateInput): Promise<ReportRunStateInput> {
+    if (!input.failure && !input.workingCopy) return input;
+    const known = await this.secrets.forRun(input.runId);
+    return {
+      ...input,
+      failure: input.failure && cutDetail(redactFailure(input.failure, known)),
+      workingCopy: input.workingCopy
+        ? redactWorkingCopy(input.workingCopy, known)
+        : input.workingCopy,
+    };
   }
 
   /** The outcome of a delivery retry: the one way out of `failed` (Issue #102). */
@@ -119,8 +156,18 @@ export class ReportRunStateHandler {
     });
     if (!changed) throw new RunNotHeldError();
     this.signal.notify(run.id);
+    // Delivered at last: nothing more to redact (Issue #104). A retry that failed again keeps
+    // the snapshot, since the delivery can be retried once more.
+    if (changed.environmentFileSupplied && !keepsSnapshotForRetry(changed)) {
+      await this.snapshots.releaseFor(run.id);
+    }
     return changed;
   }
+}
+
+/** Redaction can lengthen the detail; it is stored within the contract's limit. */
+function cutDetail(failure: RunFailure): RunFailure {
+  return { ...failure, detail: failure.detail.slice(0, FAILURE_DETAIL_MAX_LENGTH) };
 }
 
 /**

@@ -131,6 +131,27 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       await expect(git.readBranchCommit(PROJECT_ID, 'dev')).resolves.toEqual({ commit: next });
     });
 
+    it('tells whether a path is tracked at a commit of the Clone (Issue #104)', async () => {
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');
+
+      await expect(git.isPathTracked(PROJECT_ID, commit, 'README.md')).resolves.toBe(true);
+      await expect(git.isPathTracked(PROJECT_ID, commit, 'dev.txt')).resolves.toBe(true);
+      await expect(git.isPathTracked(PROJECT_ID, commit, '.env')).resolves.toBe(false);
+      await expect(git.isPathTracked(PROJECT_ID, commit, 'config/.env')).resolves.toBe(false);
+      // Literal, not a pattern: a glob that would match a tracked file is not tracked itself.
+      await expect(git.isPathTracked(PROJECT_ID, commit, '*.md')).resolves.toBe(false);
+      await expect(git.isPathTracked(PROJECT_ID, commit, '../x')).rejects.toThrow(
+        GitRequestRejectedError,
+      );
+      await expect(git.isPathTracked(PROJECT_ID, 'HEAD', '.env')).rejects.toThrow(
+        GitRequestRejectedError,
+      );
+      await expect(git.isPathTracked(OTHER_PROJECT_ID, commit, '.env')).rejects.toThrow(
+        GitCloneMissingError,
+      );
+    });
+
     it('removes a Clone, and treats a missing Clone as removed', async () => {
       const git = adapter();
       await git.clone(PROJECT_ID, fixture.url, 'dev');

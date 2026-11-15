@@ -6,8 +6,13 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
 
-/** The worker routes whose bodies may exceed 100 KiB: a Run's step and state reports. */
-const WORKER_REPORT_ROUTE = /^\/api\/worker\/runs\/[^/]+\/(?:steps|state)$/;
+/**
+ * The routes whose bodies may exceed 100 KiB: a Run's step and state reports (worker), and
+ * setting a project's Environment file (operator, Issue #104: 64 KiB of content can grow in
+ * JSON, e.g. every quote and line break escaped).
+ */
+const LARGE_BODY_ROUTE =
+  /^\/api\/(?:worker\/runs\/[^/]+\/(?:steps|state)|projects\/[^/]+\/environment-file)$/;
 /** What the JSON body parser treats as JSON (`application/json` and `+json` types). */
 const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i;
 
@@ -35,12 +40,13 @@ export async function buildApp(
   });
   // The worker's step and state reports (Issue #98): up to 192 KiB (WORKER_REQUEST_MAX_BYTES),
   // since the protocol caps a Run step's result (RUN_STEP_RESULT_MAX_BYTES) and a Working copy
-  // report (WORKING_COPY_REPORT_MAX_BYTES) so such a report always fits. Parsed first; the
-  // general parser then skips a body that is already parsed.
+  // report (WORKING_COPY_REPORT_MAX_BYTES) so such a report always fits; an Environment file
+  // (Issue #104) the same. Parsed first; the general parser then skips a body that is already
+  // parsed.
   app.useBodyParser('json', {
     limit: WORKER_REQUEST_MAX_BYTES,
     type: (request: IncomingMessage) =>
-      WORKER_REPORT_ROUTE.test(request.url?.split('?')[0] ?? '') &&
+      LARGE_BODY_ROUTE.test(request.url?.split('?')[0] ?? '') &&
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? ''),
   });
   // Every other route: 100 KiB, Express's default, made explicit.

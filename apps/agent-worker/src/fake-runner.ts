@@ -1,5 +1,5 @@
 import type { RunStepResult } from '@agentic-studio/contracts';
-import { rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { GIT_TIMEOUTS, GitRunner } from './git.js';
@@ -25,6 +25,7 @@ export const FAKE_SCENARIOS = [
   'long',
   'checks-failed',
   'secret',
+  'print-env',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
@@ -71,6 +72,9 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  *   then succeeds; stops when aborted (the live-log smoke follows it, Issue #99).
  * - `secret` (Issue #99): prints a token-shaped string (redaction is proven end to end), then
  *   succeeds.
+ * - `print-env` (Issue #104): prints every file Studio placed in the Working copy (the
+ *   Environment file; its paths from the claim), as an agent could, then succeeds; the leak
+ *   test proves Studio redacts it.
  * - `stubborn` (Issue #100): works for `slowMs` but ignores the abort, so the worker must give
  *   up on it after the grace period (the hard path).
  * - `long` (Issue #100): like `slow`, but for `longMs` (ten minutes): a Run to cancel.
@@ -129,6 +133,12 @@ export class FakeRunner implements Runner {
       case 'secret':
         yield { type: 'command', text: 'printenv GITHUB_TOKEN' };
         yield { type: 'output', text: FAKE_TOKEN };
+        return done();
+      case 'print-env':
+        for (const path of run.studioPaths) {
+          yield { type: 'command', text: `cat ${path}` };
+          yield { type: 'output', text: await readFile(join(workspace.repoDir, path), 'utf8') };
+        }
         return done();
       case 'stubborn':
         yield { type: 'output', text: 'working, and ignoring every request to stop' };

@@ -3,7 +3,15 @@ import { deployMigrations } from '@agentic-studio/database/migrations';
 import { startPostgres, startRedis, type TestService } from '@agentic-studio/testing';
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -80,6 +88,9 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
   let redis: TestService;
   let db: DatabaseClient;
   let api: ChildProcess;
+  // Everything the API process writes (Issue #104: the leak test reads it); stderr is also
+  // passed on, as before.
+  let apiOutput = '';
   let apiUrl: string;
   let cookie: string;
   let dataDir: string;
@@ -94,7 +105,12 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
   let github: StubGitHub;
   const workers: AgentWorker[] = [];
 
-  const logger = { info: () => undefined, error: () => undefined };
+  // What the workers log (the leak test reads it).
+  const workerLogs: string[] = [];
+  const logger = {
+    info: (message: string) => void workerLogs.push(message),
+    error: (message: string) => void workerLogs.push(message),
+  };
 
   /** The Run's containers (Issue #100): recorded, never the CI host's Docker. */
   const cleanedUp: string[] = [];
@@ -225,7 +241,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     apiUrl = `http://127.0.0.1:${port}`;
     api = spawn(process.execPath, [API_MAIN], {
       cwd: join(ROOT, 'apps', 'api'),
-      stdio: ['ignore', 'ignore', 'inherit'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
         DATABASE_URL: postgres.url,
@@ -238,6 +254,11 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
         STUDIO_DATA_DIR: dataDir,
         STUDIO_WORKER_TOKEN: WORKER_TOKEN,
       },
+    });
+    api.stdout!.setEncoding('utf8').on('data', (chunk: string) => (apiOutput += chunk));
+    api.stderr!.setEncoding('utf8').on('data', (chunk: string) => {
+      apiOutput += chunk;
+      process.stderr.write(chunk);
     });
     await until(
       () =>
@@ -348,6 +369,32 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     });
   });
 
+  it('never commits or pushes the Environment file: the delivered Run branch does not contain it (Issue #104)', async () => {
+    await announceWorker();
+    const projectId = await readyProject();
+    const set = await fetch(`${apiUrl}/api/projects/${projectId}/environment-file`, {
+      method: 'PUT',
+      headers: { Origin: STUDIO_ORIGIN, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'config/test.env', content: 'A=test-only-value\n' }),
+    });
+    expect(set.status).toBe(200);
+    const started = await requestRun('[fake:dirty] Env file', projectId);
+    const runId = ((await started.json()) as RunView).id;
+    startWorker();
+
+    const run = await runReaches(runId, ['succeeded', 'failed']);
+
+    expect(run).toMatchObject({ state: 'succeeded', delivery: 'delivered' });
+    const runBranch = `agent/fake-dirty-env-file-r${runId.slice(0, 8)}`;
+    const pushed = git(
+      remoteDir,
+      ['ls-tree', '-r', '--name-only', `refs/heads/${runBranch}`],
+      gitEnv,
+    ).split('\n');
+    expect(pushed).toContain('FAKE_CHANGE.md');
+    expect(pushed).not.toContain('config/test.env');
+  });
+
   it('fails a delivery GitHub refuses as delivery_failed, and delivers on "Retry delivery" (Issue #102)', async () => {
     const runId = await startRun('[fake:commit] Retry me');
     github.failCreate = 502;
@@ -447,6 +494,64 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(events[3]!.text).toBe('••••••[redacted]');
   });
 
+  it('writes the Environment file for the Run, and its content leaks into no response, log or stored event when the agent prints it (Issue #104)', async () => {
+    // Throwaway test values generated per run.
+    const password = `test-only-pw-${randomBytes(8).toString('hex')}`;
+    const apiKey = `test-only-key-${randomBytes(8).toString('hex')}`;
+    const content = `DB_PASSWORD=${password}\nexport API_KEY="${apiKey}"\n`;
+    const leaked = (text: string) => text.includes(password) || text.includes(apiKey);
+    await announceWorker();
+    const projectId = await readyProject();
+    const set = await fetch(`${apiUrl}/api/projects/${projectId}/environment-file`, {
+      method: 'PUT',
+      headers: { Origin: STUDIO_ORIGIN, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '.env', content }),
+    });
+    expect(set.status).toBe(200);
+    const started = await requestRun('Print the settings [fake:print-env]', projectId);
+    const runId = ((await started.json()) as RunView).id;
+    startWorker();
+
+    const run = await runReaches(runId, ['succeeded', 'failed']);
+
+    expect(run.state).toBe('succeeded');
+    expect((run as RunView & { environmentFileSupplied: boolean }).environmentFileSupplied).toBe(
+      true,
+    );
+    // The agent side: the file in the Working copy, owner-only, never committed.
+    const file = join(workerDataDir, 'runs', runId, 'repo', '.env');
+    expect(readFileSync(file, 'utf8')).toBe(content);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(run.hasUncommittedChanges).toBe(false);
+    // The agent printed it: the log shows the command and the redacted output.
+    const read = (path: string) =>
+      fetch(`${apiUrl}${path}`, { headers: { Cookie: cookie } }).then((response) =>
+        response.text(),
+      );
+    const eventsText = await read(`/api/runs/${runId}/events`);
+    expect(eventsText).toContain('cat .env');
+    expect(eventsText).toContain('DB_PASSWORD=••••••[redacted]');
+    for (const path of [
+      `/api/runs/${runId}`,
+      `/api/runs/${runId}/events`,
+      `/api/runs/${runId}/events/stream`,
+      `/api/runs/${runId}/steps`,
+      '/api/runs',
+      `/api/projects/${projectId}`,
+      `/api/projects/${projectId}/runs`,
+      `/api/projects/${projectId}/environment-file`,
+    ]) {
+      expect(leaked(await read(path)), path).toBe(false);
+    }
+    const stored = await db.$queryRaw<{ text: string }[]>`
+      SELECT text FROM run_events WHERE run_id = ${runId}::uuid
+      UNION ALL SELECT result::text FROM run_steps WHERE run_id = ${runId}::uuid`;
+    expect(stored.length).toBeGreaterThan(0);
+    expect(leaked(stored.map((row) => row.text).join('\n'))).toBe(false);
+    expect(leaked(apiOutput)).toBe(false);
+    expect(leaked(workerLogs.join('\n'))).toBe(false);
+  });
+
   it('reports a failing agent as failed with agent_failed', async () => {
     const runId = await startRun('[fake:fail] Break it');
     startWorker();
@@ -513,7 +618,11 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     const run = await runReaches(runId, ['succeeded', 'failed']);
 
     expect(run.state).toBe('succeeded');
-    expect(lost.size).toBe(0);
+    // The last lost answer is dropped just after Studio stored the change the test just read.
+    await until(
+      () => Promise.resolve(lost.size),
+      (size) => size === 0,
+    );
     const [steps] = await db.$queryRaw<{ count: number }[]>`
       SELECT count(*)::int AS count FROM run_steps WHERE run_id = ${runId}::uuid`;
     expect(steps?.count).toBe(1);

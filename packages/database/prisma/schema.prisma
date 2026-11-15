@@ -14,18 +14,20 @@ datasource db {
 
 /// A project the operator manages (`projects` business module, Story #16).
 model Project {
-  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Display name: trimmed, internal whitespace collapsed, case preserved (1–100 characters).
-  name           String      @db.VarChar(100)
+  name            String           @db.VarChar(100)
   /// `name` lower-cased; unique, so names clash case-insensitively (Epic #8 decision 2).
   /// Unbounded: lower-casing can lengthen a string (e.g. "İ" becomes two code points).
-  nameNormalized String      @unique(map: "projects_name_normalized_key") @map("name_normalized")
+  nameNormalized  String           @unique(map: "projects_name_normalized_key") @map("name_normalized")
   /// Set by PostgreSQL (microsecond precision), not by the client, so ordering uses one clock.
-  createdAt      DateTime    @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  createdAt       DateTime         @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// The connected Repository (Story #60): at most one per project.
-  repository     Repository?
+  repository      Repository?
   /// The project's Runs (`executions` module, Issue #96).
-  runs           Run[]
+  runs            Run[]
+  /// The project's Environment file setting (Issue #104), independent of the Repository.
+  environmentFile EnvironmentFile?
 
   /// Serves the newest-first list (created_at DESC, id DESC as the tie-breaker).
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "projects_created_at_id_idx")
@@ -74,6 +76,27 @@ model Repository {
   @@map("repositories")
 }
 
+/// A project's Environment file (`projects` module, Issue #104): a file of test settings Studio
+/// places in each Run's Working copy. The content lives in the secret store; this row holds its
+/// reference and what the operator may see (path, size, last change). It survives
+/// disconnecting the Repository. The migration adds CHECK constraints (size 0-65536, non-empty
+/// path), which Prisma does not model.
+model EnvironmentFile {
+  /// The owning project; also the primary key, so a project has at most one.
+  projectId String   @id @map("project_id") @db.Uuid
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Relative POSIX path in the repository, validated by the API.
+  path      String   @db.VarChar(255)
+  /// UTF-8 bytes of the content.
+  sizeBytes Int      @map("size_bytes")
+  /// The secret store's reference to the content (an opaque `secrets.id`, no foreign key:
+  /// secrets belong to platform/secrets). Never the content.
+  secretId  String   @map("secret_id") @db.Uuid
+  updatedAt DateTime @default(dbgenerated("now()")) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("environment_files")
+}
+
 /// One value sealed by the API's SecretStore (`platform/secrets`, Issue #57, ADR 0001):
 /// AES-256-GCM under the master key `STUDIO_SECRETS_KEY`, which never enters the database.
 /// Business tables hold only the `id` as an opaque reference, never a secret value.
@@ -114,85 +137,93 @@ model Secret {
 /// CHECKs (the database integration test checks this). If a later version does, delete that
 /// statement from the generated migration before committing it.
 model Run {
-  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                      String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// The owning project. Restrict: a project with Runs cannot be deleted silently.
-  projectId             String    @map("project_id") @db.Uuid
-  project               Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId               String     @map("project_id") @db.Uuid
+  project                 Project    @relation(fields: [projectId], references: [id], onDelete: Restrict)
   /// claude_code | codex.
-  provider              String    @db.VarChar(32)
+  provider                String     @db.VarChar(32)
   /// The operator's instruction (1–20 000 characters).
-  task                  String    @db.VarChar(20000)
+  task                    String     @db.VarChar(20000)
   /// queued | preparing | running | waiting_for_operator | succeeded | failed | cancelled | timed_out.
-  state                 String    @db.VarChar(32)
+  state                   String     @db.VarChar(32)
   /// The integration branch's commit when the Run was started.
-  startCommit           String    @map("start_commit") @db.VarChar(64)
+  startCommit             String     @map("start_commit") @db.VarChar(64)
   /// The Repository's remote URL when the Run was started (Issue #98); the agent worker fetches
   /// the start commit from it with the agent user's own credentials. Never a credential.
-  remoteUrl             String    @map("remote_url") @db.VarChar(2048)
+  remoteUrl               String     @map("remote_url") @db.VarChar(2048)
   /// The Run branch in the Working copy, from the latest reported Run step (Issue #98); set
   /// together with commits and has_uncommitted_changes.
-  runBranch             String?   @map("run_branch") @db.VarChar(255)
+  runBranch               String?    @map("run_branch") @db.VarChar(255)
   /// The commits on the Run branch since the start commit, `[{ id, subject }]`, oldest first,
   /// as the worker protocol validated them.
-  commits               Json?
+  commits                 Json?
   /// Whether uncommitted changes remained in the Working copy after the latest Run step.
-  hasUncommittedChanges Boolean?  @map("has_uncommitted_changes")
+  hasUncommittedChanges   Boolean?   @map("has_uncommitted_changes")
   /// The Repository's integration branch when the Run was started (Issue #102): the base of
   /// the Run's draft pull request.
-  integrationBranch     String    @map("integration_branch") @db.VarChar(255)
+  integrationBranch       String     @map("integration_branch") @db.VarChar(255)
   /// none | delivered (with succeeded) | failed (with failed and delivery_failed); null until
   /// the Run is delivered or its delivery fails (Issue #102).
-  delivery              String?   @db.VarChar(16)
+  delivery                String?    @db.VarChar(16)
   /// The draft pull request the delivery opened or reused; set exactly when delivered.
-  pullRequestUrl        String?   @map("pull_request_url") @db.VarChar(2048)
-  pullRequestNumber     Int?      @map("pull_request_number")
+  pullRequestUrl          String?    @map("pull_request_url") @db.VarChar(2048)
+  pullRequestNumber       Int?       @map("pull_request_number")
   /// The operator asked to retry a failed delivery; the next claim hands the Run to an agent
   /// worker as a delivery, and the worker holds it (claimed_by) until it reports the outcome.
-  deliveryRequested     Boolean   @default(false) @map("delivery_requested")
+  deliveryRequested       Boolean    @default(false) @map("delivery_requested")
   /// Names of the checks the agent reported failed in the latest Run step, `["..."]`.
-  failingChecks         Json?     @map("failing_checks")
+  failingChecks           Json?      @map("failing_checks")
   /// The agent worker that claimed the Run to start it: only it holds the Working copy, so a
   /// delivery retry is handed to it alone (review R4 of #122).
-  lastClaimedBy         String?   @map("last_claimed_by") @db.Uuid
+  lastClaimedBy           String?    @map("last_claimed_by") @db.Uuid
   /// Set by PostgreSQL, so the queue order (created_at, id) uses one clock.
-  createdAt             DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  createdAt               DateTime   @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// When an agent worker claimed the Run.
-  startedAt             DateTime? @map("started_at") @db.Timestamptz(6)
+  startedAt               DateTime?  @map("started_at") @db.Timestamptz(6)
   /// When the Run reached a final state.
-  finishedAt            DateTime? @map("finished_at") @db.Timestamptz(6)
+  finishedAt              DateTime?  @map("finished_at") @db.Timestamptz(6)
   /// One of the fixed failure codes; set exactly when failed.
-  failureCode           String?   @map("failure_code") @db.VarChar(32)
+  failureCode             String?    @map("failure_code") @db.VarChar(32)
   /// A short explanation; set exactly when failed. Never a secret.
-  failureDetail         String?   @map("failure_detail") @db.VarChar(2000)
+  failureDetail           String?    @map("failure_detail") @db.VarChar(2000)
   /// The agent worker holding the Run (its random id); set exactly when preparing or running.
-  claimedBy             String?   @map("claimed_by") @db.Uuid
+  claimedBy               String?    @map("claimed_by") @db.Uuid
   /// The holding worker's last heartbeat; set exactly when claimed_by is.
-  heartbeatAt           DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+  heartbeatAt             DateTime?  @map("heartbeat_at") @db.Timestamptz(6)
   /// Issue #100: when the operator asked to cancel a preparing or running Run; the worker
   /// confirms the stop with the state cancelled.
-  cancelRequestedAt     DateTime? @map("cancel_requested_at") @db.Timestamptz(6)
+  cancelRequestedAt       DateTime?  @map("cancel_requested_at") @db.Timestamptz(6)
   /// operator | system; set exactly when cancelled, together with cancel_reason.
-  cancelledBy           String?   @map("cancelled_by") @db.VarChar(16)
+  cancelledBy             String?    @map("cancelled_by") @db.VarChar(16)
   /// Why the Run was cancelled, shown to the operator.
-  cancelReason          String?   @map("cancel_reason") @db.VarChar(500)
+  cancelReason            String?    @map("cancel_reason") @db.VarChar(500)
   /// When the Run began waiting for the operator; set exactly when waiting_for_operator.
-  waitingSince          DateTime? @map("waiting_since") @db.Timestamptz(6)
+  waitingSince            DateTime?  @map("waiting_since") @db.Timestamptz(6)
   /// The limits copied from the API's configuration when the Run was started (Issue #100).
-  limitStepMinutes      Int       @map("limit_step_minutes")
-  limitMaxSteps         Int       @map("limit_max_steps")
-  limitWaitingDays      Int       @map("limit_waiting_days")
+  limitStepMinutes        Int        @map("limit_step_minutes")
+  limitMaxSteps           Int        @map("limit_max_steps")
+  limitWaitingDays        Int        @map("limit_waiting_days")
   /// When the current Run step started; set whenever the Run goes to running and cleared when
   /// its result is reported (review of #121: Studio's backstop for the step time limit).
-  stepStartedAt         DateTime? @map("step_started_at") @db.Timestamptz(6)
+  stepStartedAt           DateTime?  @map("step_started_at") @db.Timestamptz(6)
   /// The agent worker that released the Run (to waiting_for_operator or a final state), so a
   /// retried report of that change is recognised (review of #121).
-  releasedBy            String?   @map("released_by") @db.Uuid
+  releasedBy              String?    @map("released_by") @db.Uuid
   /// UTF-8 bytes of event text stored for the Run (Issue #99), counted against the log cap.
-  logBytes              Int       @default(0) @map("log_bytes")
+  logBytes                Int        @default(0) @map("log_bytes")
   /// Whether the log cap was reached: one "log truncated" notice is stored, later events are dropped.
-  logTruncated          Boolean   @default(false) @map("log_truncated")
-  steps                 RunStep[]
-  events                RunEvent[]
+  logTruncated            Boolean    @default(false) @map("log_truncated")
+  /// Whether the Run was given its Project's Environment file when it was claimed (Issue #104).
+  environmentFileSupplied Boolean    @default(false) @map("environment_file_supplied")
+  /// That file's path in the Working copy, set exactly when supplied: a delivery (also a retry)
+  /// never commits or pushes it (Issue #102's `studioPaths`). Not secret.
+  environmentFilePath     String?    @map("environment_file_path") @db.VarChar(255)
+  /// The secret store's reference to the Run's snapshot of that file, kept for log redaction
+  /// until the Run is final (then deleted and cleared). Never the content.
+  environmentFileSecretId String?    @map("environment_file_secret_id") @db.Uuid
+  steps                   RunStep[]
+  events                  RunEvent[]
 
   /// Serves the newest-first list of all Runs.
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "runs_created_at_id_idx")

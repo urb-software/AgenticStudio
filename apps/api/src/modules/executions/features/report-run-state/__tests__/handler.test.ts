@@ -16,6 +16,8 @@ describe('ReportRunStateHandler', () => {
   let handler: ReportRunStateHandler;
   let run: Run;
   let notified: string[];
+  /** The Runs whose Environment file snapshot the handler released (Issue #104). */
+  let released: string[];
 
   const report = (input: Partial<ReportRunStateInput>) =>
     handler.execute({ runId: run.id, workerId: WORKER, state: 'running', failure: null, ...input });
@@ -23,10 +25,16 @@ describe('ReportRunStateHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     notified = [];
+    released = [];
     handler = new ReportRunStateHandler(
       runs,
       { now: () => T1 },
       { notify: (runId) => notified.push(runId), subscribe: () => () => undefined },
+      {
+        releaseFor: (runId) => Promise.resolve(void released.push(runId)),
+        releaseFinal: () => Promise.resolve(),
+      },
+      { forRun: () => Promise.resolve(['test-only-known']) },
     );
     await runs.add({
       projectId: PROJECT,
@@ -38,6 +46,8 @@ describe('ReportRunStateHandler', () => {
       integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
+    // Supplied an Environment file, so its snapshot is released once the Run is done (#104).
+    await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot' });
   });
 
   it('moves a preparing Run to running, still held', async () => {
@@ -57,6 +67,39 @@ describe('ReportRunStateHandler', () => {
       finishedAt: T1,
       failure: null,
     });
+  });
+
+  it("releases the Run's Environment file snapshot once it is final, not before (Issue #104)", async () => {
+    await report({ state: 'running' });
+    expect(released).toEqual([]);
+
+    await report({ state: 'succeeded', delivery: { outcome: 'none' } });
+
+    expect(released).toEqual([run.id]);
+  });
+
+  it('redacts known values from the failure detail and commit subjects before storing them (#104)', async () => {
+    await report({ state: 'running' });
+
+    const failed = await report({
+      state: 'failed',
+      failure: { code: 'agent_failed', detail: 'login with test-only-known failed' },
+      workingCopy: {
+        runBranch: 'agent/x-r0b8e5c2d',
+        commits: [{ id: 'c'.repeat(40), subject: 'Use test-only-known' }],
+        hasUncommittedChanges: false,
+      },
+    });
+
+    expect(failed.failure?.detail).toBe('login with ••••••[redacted] failed');
+    expect(failed.workingCopy?.commits[0]?.subject).toBe('Use ••••••[redacted]');
+  });
+
+  it('keeps the snapshot of a Run waiting for the operator (not final)', async () => {
+    await report({ state: 'running' });
+    await report({ state: 'waiting_for_operator' });
+
+    expect(released).toEqual([]);
   });
 
   it('wakes the live log streams of the Run on every change, so they can end (Issue #99)', async () => {
@@ -210,6 +253,34 @@ describe('ReportRunStateHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
+    });
+
+    it('keeps the snapshot of a failed delivery, redacts what its retry reports, and releases it once delivered (#104)', async () => {
+      await heldRetry();
+      // The failed delivery can be retried: its Environment file snapshot stays.
+      expect(released).toEqual([]);
+
+      const failedAgain = await report({
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'push of test-only-known refused' },
+        workingCopy: {
+          runBranch: 'agent/x',
+          commits: [{ id: 'c'.repeat(40), subject: 'agent: used test-only-known' }],
+          hasUncommittedChanges: false,
+        },
+      });
+      expect(failedAgain.failure?.detail).toBe('push of ••••••[redacted] refused');
+      expect(failedAgain.workingCopy?.commits[0]?.subject).toBe('agent: used ••••••[redacted]');
+      expect(released).toEqual([]);
+
+      await runs.requestDeliveryRetry(run.id);
+      expect((await runs.claimNext(WORKER, T1))?.id).toBe(run.id);
+      await report({
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+        workingCopy: { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+      });
+      expect(released).toEqual([run.id]);
     });
 
     it('accepts no other outcome of a delivery retry', async () => {

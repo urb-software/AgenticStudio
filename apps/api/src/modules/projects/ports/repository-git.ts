@@ -112,6 +112,19 @@ export interface RepositoryGit {
     options?: GitOperationOptions,
   ): Promise<{ commit: string }>;
 
+  /**
+   * Whether `path` (a relative POSIX path, already validated as an Environment file path)
+   * names a file or directory tracked at `commit` in the Project's Clone (Issue #104). Throws
+   * {@link GitCloneMissingError} when there is no Clone, and {@link GitRequestRejectedError}
+   * for a malformed commit id or path.
+   */
+  isPathTracked(
+    projectId: string,
+    commit: string,
+    path: string,
+    options?: GitOperationOptions,
+  ): Promise<boolean>;
+
   /** Removes the Project's Clone (and any partial one); a missing Clone is not an error. */
   removeClone(projectId: string, options?: GitOperationOptions): Promise<void>;
 }

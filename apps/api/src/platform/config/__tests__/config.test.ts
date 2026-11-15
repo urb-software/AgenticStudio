@@ -69,6 +69,7 @@ describe('loadConfig', () => {
       workerLeaseSeconds: 60,
       runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       runLogMaxBytes: 8 * 1024 * 1024,
+      runSnapshotRetentionDays: 7,
     });
   });
 
@@ -502,5 +503,22 @@ describe('loadConfig', () => {
         expect(error.message).toMatch(/STUDIO_RUN_LOG_MAX_BYTES/);
       },
     );
+  });
+
+  describe('STUDIO_RUN_SNAPSHOT_RETENTION_DAYS (Issue #104)', () => {
+    it('keeps a retryable Run snapshot 7 days by default', () => {
+      expect(loadConfig(requiredEnv).runSnapshotRetentionDays).toBe(7);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: '30' })
+          .runSnapshotRetentionDays,
+      ).toBe(30);
+    });
+
+    it.each([['0'], ['91'], ['1.5'], ['abc']])('refuses %j (whole days, 1-90)', (value) => {
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: value }),
+      );
+      expect(error.message).toMatch(/STUDIO_RUN_SNAPSHOT_RETENTION_DAYS/);
+    });
   });
 });

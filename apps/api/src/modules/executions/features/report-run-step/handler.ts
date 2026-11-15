@@ -1,3 +1,4 @@
+import { runStepResultSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId, type RunWorkingCopy } from '../../domain/entities/run.js';
 import {
@@ -10,7 +11,7 @@ import {
   StepOutOfOrderError,
 } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
-import { redactJsonStrings } from '../../domain/services/log-redaction.js';
+import { redactRunStepResult, redactWorkingCopy } from '../../domain/services/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
 export interface ReportRunStepInput extends RunStepRecord {
@@ -24,8 +25,9 @@ export interface ReportRunStepInput extends RunStepRecord {
  * Command (Issue #96): the agent worker holding a `running` Run reports the structured result
  * of a Run step; it is stored (internal for now), and the Working copy's state it reports
  * becomes the Run's latest (Issue #98), with the checks the agent reported failed (Issue
- * #102). Every string of the result is redacted before it is stored, like the log (Issue #99);
- * reads redact again for rows stored before. A step beyond the Run's maximum is refused and the
+ * #102). Its free-text fields and the commit subjects are redacted before they are stored,
+ * like the log (Issue #99; never its enum fields, #104); reads redact again for rows stored
+ * before. A step beyond the Run's maximum is refused and the
  * Run fails with `step_limit` (Issue #100). Returns the step's number. Throws
  * {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not held by it),
  * {@link StepLimitReachedError} or {@link StepOutOfOrderError}. A retried report of a step
@@ -44,7 +46,7 @@ export class ReportRunStepHandler {
       throw new RunNotFoundError();
     }
     const known = await this.secrets.forRun(input.runId);
-    const result = redactJsonStrings(input.result, known);
+    const result = redactRunStepResult(runStepResultSchema.parse(input.result), known);
     const outcome = await this.runs.appendStep(
       input.runId,
       input.workerId,
@@ -53,7 +55,7 @@ export class ReportRunStepHandler {
         result,
         ...(input.index === undefined ? {} : { index: input.index }),
       },
-      input.workingCopy,
+      redactWorkingCopy(input.workingCopy, known),
       // From the redacted result: the names are shown on the Run page.
       failingChecks(result),
       this.clock.now(),

@@ -11,6 +11,10 @@ import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/ru
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { timeOutOverdueSteps } from '../../domain/services/overdue-steps.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import {
+  ENVIRONMENT_FILE_SNAPSHOTS,
+  type EnvironmentFileSnapshots,
+} from '../../ports/environment-file-snapshots.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import { CancelLongWaitingRunsHandler } from '../cancel-long-waiting-runs/handler.js';
@@ -27,6 +31,7 @@ export class SweepLostWorkersHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(WORKER_STATUS_STORE) private readonly statuses: WorkerStatusStore,
+    @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
   ) {
     this.since = clock.now();
   }
@@ -54,6 +59,8 @@ export class SweepLostWorkersHandler {
         (retry.startedBy ? this.statuses.lastSeen(retry.startedBy) : undefined) ?? this.since;
       if (seen < seenBefore && (await this.runs.abandonDeliveryRetry(retry.runId, failure, now))) {
         abandoned++;
+        // The Working copy is gone with its worker: nothing more to redact (Issue #104).
+        await this.snapshots.releaseFor(retry.runId);
       }
     }
     return abandoned;
@@ -66,7 +73,8 @@ const MAX_SWEEP_INTERVAL_MS = 30_000;
 /**
  * Runs the sweeps on an interval once the app has started (Issue #96, #100): the lost-worker
  * sweep, so a lost worker is noticed even when no other worker claims, and the long-wait
- * sweep. When the API starts it first renews the lease of every held Run (Issue #100): the
+ * sweep, and it releases the Environment file snapshots Runs no longer need (Issue #104).
+ * When the API starts it first renews the lease of every held Run (Issue #100): the
  * agent workers kept their Run steps going while Studio was down, so a short outage does not
  * fail them as `worker_lost`; a worker that is really gone is noticed one lease later. The
  * timer is `unref`'d (it never keeps the process alive) and cleared on shutdown; a failed
@@ -84,6 +92,7 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
+    @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -131,6 +140,8 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
       if (cancelled > 0) {
         this.logger.warn(`${cancelled} run(s) cancelled: they waited too long for the operator.`);
       }
+      // Environment file snapshots of Runs that ended any way (Issue #104); never throws.
+      await this.snapshots.releaseFinal();
     } catch (error) {
       this.logger.error(
         'A run sweep failed; it runs again at the next interval.',

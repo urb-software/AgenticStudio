@@ -534,6 +534,38 @@ describe('AgentWorker', () => {
     });
   });
 
+  it('gives the Environment file to the Working copy only, never to the runner (Issue #104)', async () => {
+    const inputs: StartRunStepInput[] = [];
+    const prepared: RunPayload[] = [];
+    const recording: Runner = {
+      // eslint-disable-next-line require-yield
+      async *start(input): RunStep {
+        inputs.push(input);
+        return { outcome: 'done', summary: 'Done.' };
+      },
+      resume: () => {
+        throw new Error('not used');
+      },
+    };
+    const workingCopies = new FakeWorkingCopies();
+    const prepare = workingCopies.prepare.bind(workingCopies);
+    workingCopies.prepare = (run) => {
+      prepared.push(run);
+      return prepare(run);
+    };
+    const environmentFile = { path: '.env', content: 'DB_PASSWORD=test-only-pw\n' };
+    const run = { ...payload('Add a feature'), environmentFile };
+    const api = new RecordingApi([run]);
+    startWorker(api, recording, workingCopies);
+
+    await until(() => api.reports().length === 3);
+
+    expect(prepared[0]?.environmentFile).toEqual(environmentFile);
+    expect(inputs[0]?.run).not.toHaveProperty('environmentFile');
+    expect(JSON.stringify(inputs[0])).not.toContain('test-only-pw');
+    expect(JSON.stringify(api.calls)).not.toContain('test-only-pw');
+  });
+
   it('fails the Run with preparation_failed and its detail, starting no Run step (Issue #98)', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);

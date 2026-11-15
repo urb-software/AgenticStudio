@@ -158,6 +158,16 @@ export interface Run {
    * the delivery of a `failed` Run (Issue #102).
    */
   claimedBy: string | null;
+  /**
+   * Whether the Run was given its Project's Environment file when it was claimed (Issue #104):
+   * a snapshot taken then; later changes to the file affect only later Runs. Never the content.
+   */
+  environmentFileSupplied: boolean;
+  /**
+   * That file's path in the Working copy, set exactly when supplied: never committed or pushed
+   * by a delivery, a retry too (Issue #102's `studioPaths`). Not secret, not in the operator API.
+   */
+  environmentFilePath: string | null;
   /** The limits in force for this Run (Issue #100). */
   limits: RunLimits;
   /**

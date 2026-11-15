@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CancelRunData, CancelRunErrors, CancelRunResponses, ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetRunData, GetRunErrors, GetRunResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectRunsData, ListProjectRunsErrors, ListProjectRunsResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListRunEventsData, ListRunEventsErrors, ListRunEventsResponses, ListRunsData, ListRunsErrors, ListRunsResponses, ListRunStepsData, ListRunStepsErrors, ListRunStepsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, RetryRunDeliveryData, RetryRunDeliveryErrors, RetryRunDeliveryResponses, StartRunData, StartRunErrors, StartRunResponses, StreamRunEventsData, StreamRunEventsErrors, StreamRunEventsResponse, StreamRunEventsResponses, VerifyRepositoryData, VerifyRepositoryErrors, VerifyRepositoryResponses } from './types.gen';
+import type { CancelRunData, CancelRunErrors, CancelRunResponses, ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetEnvironmentFileData, GetEnvironmentFileErrors, GetEnvironmentFileResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetRunData, GetRunErrors, GetRunResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectRunsData, ListProjectRunsErrors, ListProjectRunsResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListRunEventsData, ListRunEventsErrors, ListRunEventsResponses, ListRunsData, ListRunsErrors, ListRunsResponses, ListRunStepsData, ListRunStepsErrors, ListRunStepsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, RemoveEnvironmentFileData, RemoveEnvironmentFileErrors, RemoveEnvironmentFileResponses, RetryRunDeliveryData, RetryRunDeliveryErrors, RetryRunDeliveryResponses, SetEnvironmentFileData, SetEnvironmentFileErrors, SetEnvironmentFileResponses, StartRunData, StartRunErrors, StartRunResponses, StreamRunEventsData, StreamRunEventsErrors, StreamRunEventsResponse, StreamRunEventsResponses, VerifyRepositoryData, VerifyRepositoryErrors, VerifyRepositoryResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -75,6 +75,25 @@ export const fetchRepository = <ThrowOnError extends boolean = false>(options: O
  */
 export const verifyRepository = <ThrowOnError extends boolean = false>(options: Options<VerifyRepositoryData, ThrowOnError>): RequestResult<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError> => (options.client ?? client).post<VerifyRepositoryResponses, VerifyRepositoryErrors, ThrowOnError>({
     url: '/api/projects/{id}/repository/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Removes the project's Environment file and deletes its content from the secret store. Runs prepared afterwards get none; Runs already claimed keep theirs. Removing a file that is not set changes nothing.
+ */
+export const removeEnvironmentFile = <ThrowOnError extends boolean = false>(options: Options<RemoveEnvironmentFileData, ThrowOnError>): RequestResult<RemoveEnvironmentFileResponses, RemoveEnvironmentFileErrors, ThrowOnError> => (options.client ?? client).delete<RemoveEnvironmentFileResponses, RemoveEnvironmentFileErrors, ThrowOnError>({ url: '/api/projects/{id}/environment-file', ...options });
+
+export const getEnvironmentFile = <ThrowOnError extends boolean = false>(options: Options<GetEnvironmentFileData, ThrowOnError>): RequestResult<GetEnvironmentFileResponses, GetEnvironmentFileErrors, ThrowOnError> => (options.client ?? client).get<GetEnvironmentFileResponses, GetEnvironmentFileErrors, ThrowOnError>({ url: '/api/projects/{id}/environment-file', ...options });
+
+/**
+ * Sets the project's Environment file, or replaces it: a file of test settings Studio writes into each Run's Working copy (owner-only, never committed). The content is stored in the secret store and never returned. Runs prepared afterwards get the new file; Runs already claimed keep theirs.
+ */
+export const setEnvironmentFile = <ThrowOnError extends boolean = false>(options: Options<SetEnvironmentFileData, ThrowOnError>): RequestResult<SetEnvironmentFileResponses, SetEnvironmentFileErrors, ThrowOnError> => (options.client ?? client).put<SetEnvironmentFileResponses, SetEnvironmentFileErrors, ThrowOnError>({
+    url: '/api/projects/{id}/environment-file',
     ...options,
     headers: {
         'Content-Type': 'application/json',

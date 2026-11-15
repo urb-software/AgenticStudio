@@ -23,6 +23,11 @@ import {
   SweepOrphanedDeployKeysHandler,
 } from '../../../../features/sweep-orphaned-deploy-keys/handler.js';
 import { RepositoryJobsHandler } from '../../../../features/repository-jobs/handler.js';
+import { SweepOrphanedEnvironmentFilesHandler } from '../../../../features/sweep-orphaned-environment-files/handler.js';
+import { ENVIRONMENT_FILE_REPOSITORY } from '../../../../domain/repositories/environment-file-repository.js';
+import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
+import { ENVIRONMENT_FILE_CONTENTS } from '../../../../ports/environment-file-contents.js';
+import { InMemoryEnvironmentFileContents } from '../../../../ports/__tests__/in-memory-environment-file-contents.js';
 
 // Issue #60 clarification 11: the Git adapter's start-up sweep (its `onModuleInit`) removes
 // leftovers of any age, so no clone or fetch may reconcile or run before it has finished. The
@@ -94,6 +99,10 @@ function startupContext(
       { provide: DEPLOY_KEY_SWEEP_SETTINGS, useValue: { gracePeriodMs: 0 } },
       DeployKeyHandler,
       SweepOrphanedDeployKeysHandler,
+      // Issue #104: the Environment file orphan sweep runs in the same reconciliation.
+      { provide: ENVIRONMENT_FILE_REPOSITORY, useClass: InMemoryEnvironmentFileRepository },
+      { provide: ENVIRONMENT_FILE_CONTENTS, useClass: InMemoryEnvironmentFileContents },
+      SweepOrphanedEnvironmentFilesHandler,
       CloneRepositoryHandler,
       FetchCloneHandler,
       CleanUpRepositoryHandler,
