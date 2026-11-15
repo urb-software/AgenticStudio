@@ -70,7 +70,12 @@ describe('a Run log, paged and live (Issue #99)', () => {
     signal.notify(run.id);
   };
   const streams = (keepAliveMs = 60_000) =>
-    new StreamRunEventsHandler(runs, log, signal, { maxBytes: 1_000_000, keepAliveMs });
+    new StreamRunEventsHandler(runs, log, signal, {
+      maxBytes: 1_000_000,
+      keepAliveMs,
+      streamsPerSession: 5,
+      streamsTotal: 50,
+    });
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();

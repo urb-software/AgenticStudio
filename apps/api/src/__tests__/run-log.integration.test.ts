@@ -135,6 +135,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       {
         executions: {
           logKeepAliveMs: 200,
+          logStreamLimits: { perSession: 2, total: 3 },
           secretValues: { forRun: () => Promise.resolve([KNOWN_SECRET]) },
         },
       },
@@ -258,7 +259,12 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
         event(2, { text: `PASSWORD=${KNOWN_SECRET}` }),
       ]);
 
-      const texts = (await page(runId)).body.events.map((stored: SentEvent) => stored.text);
+      const { events } = (await page(runId)).body as {
+        events: (SentEvent & { redacted?: true })[];
+      };
+      // Each event says it was redacted, so the viewer can mark it.
+      expect(events.map((stored) => stored.redacted)).toEqual([true, true]);
+      const texts = events.map((stored) => stored.text);
       expect(texts).toEqual([
         `curl -H "Authorization: ${REDACTED}" https://${REDACTED}@git.example.test/acme/shop.git`,
         `PASSWORD=${REDACTED}`,
@@ -335,15 +341,80 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(parseStream(afterQuery.body as string).messages.map((m) => m.id)).toEqual([3]);
       const afterHeader = await streamBody(runId, '', { 'Last-Event-ID': '1' });
       expect(parseStream(afterHeader.body as string).messages.map((m) => m.id)).toEqual([2, 3]);
-      // `after` wins over the header; a header the stream never sent counts as none.
+      // The larger of `after` and the header wins (a browser reconnect sends the URL's old
+      // `after` with a newer header); a header the stream never sent counts as none.
       const both = await streamBody(runId, '?after=2', { 'Last-Event-ID': '1' });
       expect(parseStream(both.body as string).messages.map((m) => m.id)).toEqual([3]);
+      const newerHeader = await streamBody(runId, '?after=1', { 'Last-Event-ID': '2' });
+      expect(parseStream(newerHeader.body as string).messages.map((m) => m.id)).toEqual([3]);
       for (const header of ['abc', '-1', '99999999999', '9999999999']) {
         const malformed = await streamBody(runId, '', { 'Last-Event-ID': header });
         expect(parseStream(malformed.body as string).messages.map((m) => m.id)).toEqual([1, 2, 3]);
       }
       // A completed stream ends with the `end` event, so the client does not reconnect.
       expect(parseStream(all.body as string).ended).toBe(true);
+    });
+
+    /** Opens a live stream with `session`'s cookie; resolves once it is open. */
+    async function openStream(runId: string, session: string) {
+      const abort = new AbortController();
+      const response = await fetch(`${baseUrl}/api/runs/${runId}/events/stream`, {
+        headers: { Cookie: session },
+        signal: abort.signal,
+      });
+      return { response, close: () => abort.abort() };
+    }
+
+    it('closes a live stream without `end` once its session is logged out', async () => {
+      const runId = await runningRun();
+      const session = await signIn(app);
+      const { response } = await openStream(runId, session);
+      expect(response.status).toBe(200);
+
+      const logout = await http()
+        .post('/api/auth/logout')
+        .set({ Cookie: session, Origin: STUDIO_ORIGIN });
+      expect(logout.status).toBe(204);
+      // The next keep-alive tick (200 ms here) finds the session gone and closes the stream.
+      const body = await response.text();
+
+      expect(body.startsWith(': connected')).toBe(true);
+      expect(parseStream(body).ended).toBe(false);
+      expectProblem(
+        await http().get(`/api/runs/${runId}/events/stream`).set('Cookie', session),
+        401,
+      );
+    });
+
+    it('limits open live streams per session and in total with 429', async () => {
+      const runId = await runningRun();
+      const other = await signIn(app);
+      const first = await openStream(runId, cookie);
+      const second = await openStream(runId, cookie);
+      expect([first.response.status, second.response.status]).toEqual([200, 200]);
+
+      // Per session: 2 here.
+      expectProblem(
+        await http().get(`/api/runs/${runId}/events/stream`).set('Cookie', cookie),
+        429,
+        'urn:agentic-studio:problem:too-many-log-streams',
+      );
+      // In total: 3 here.
+      const third = await openStream(runId, other);
+      expect(third.response.status).toBe(200);
+      expectProblem(await http().get(`/api/runs/${runId}/events/stream`).set('Cookie', other), 429);
+
+      // A closed stream frees its slot.
+      first.close();
+      await expect
+        .poll(async () => {
+          const again = await openStream(runId, cookie);
+          again.close();
+          return again.response.status;
+        })
+        .toBe(200);
+      second.close();
+      third.close();
     });
   });
 
@@ -355,7 +426,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
         kind: 'start',
         result: {
           outcome: 'done',
-          summary: 'Added GET /health.',
+          summary: `Added GET /health using ${KNOWN_SECRET}.`,
           checks: [{ name: 'unit tests', result: 'passed' }],
         },
         workingCopy: { runBranch: 'agent/x-r1', commits: [], hasUncommittedChanges: false },
@@ -370,12 +441,16 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
             index: 1,
             kind: 'start',
             outcome: 'done',
-            summary: 'Added GET /health.',
+            summary: `Added GET /health using ${REDACTED}.`,
             checks: [{ name: 'unit tests', result: 'passed' }],
             reportedAt: expect.any(String),
           },
         ],
       });
+      // Redacted before it was stored, not only when read.
+      const [stored] = await db().$queryRaw<{ result: unknown }[]>`
+        SELECT result FROM run_steps WHERE run_id = ${runId}::uuid`;
+      expect(JSON.stringify(stored!.result)).not.toContain(KNOWN_SECRET);
     });
   });
 

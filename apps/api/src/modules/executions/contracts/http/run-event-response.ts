@@ -28,6 +28,8 @@ export const runEventSchema = z
     text: z.string(),
     /** Present when the text was cut to the per-event cap. */
     truncated: z.literal(true).optional(),
+    /** Present when redaction replaced part of the text (Studio's marker is in it). */
+    redacted: z.literal(true).optional(),
   })
   .meta({ id: 'RunEvent' });
 
@@ -51,6 +53,8 @@ export function toRunEventResponse(event: {
   kind: z.infer<typeof runEventKindSchema>;
   text: string;
   truncated: boolean;
+  /** Whether the stored text holds the redaction marker (decided by the caller). */
+  redacted: boolean;
 }): RunEventResponse {
   return {
     seq: event.seq,
@@ -59,5 +63,6 @@ export function toRunEventResponse(event: {
     kind: event.kind,
     text: event.text,
     ...(event.truncated ? { truncated: true as const } : {}),
+    ...(event.redacted ? { redacted: true as const } : {}),
   };
 }

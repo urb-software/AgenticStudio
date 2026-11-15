@@ -14,8 +14,11 @@ import type {
   ProjectOutput,
   ProviderListOutput,
   RepositoryOutput,
+  RunEventOutput,
+  RunEventPageOutput,
   RunListOutput,
   RunOutput,
+  RunStepListOutput,
   SessionResponseOutput,
   StartRunRequest,
   VerifyRepositoryRequest,
@@ -23,6 +26,7 @@ import type {
 import { client } from './generated/client.gen';
 import {
   zConnectRepositoryRequest,
+  zRunEventOutput,
   zCreateProjectRequest,
   zStartRunRequest,
 } from './generated/zod.gen';
@@ -41,8 +45,12 @@ export type {
   RepositoryOutput,
   RepositoryStateOutput,
   RepositorySummaryOutput,
+  RunEventOutput,
+  RunEventPageOutput,
   RunListOutput,
   RunOutput,
+  RunStepListOutput,
+  RunStepOutput,
   SessionResponseOutput,
   StartRunRequest,
   VerifyRepositoryRequest,
@@ -189,4 +197,66 @@ export const api = {
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
   /** Each provider and whether a Run can be started with it now, with the reason when not. */
   listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
+  /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
+  listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
+    unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),
+  /** The structured result of each reported Run step. */
+  listRunSteps: (runId: string): Promise<RunStepListOutput> =>
+    unwrap(sdk.listRunSteps({ path: { runId } })),
 };
+
+/**
+ * How a Run's log stream connection ended: `end` (the Run is final, all sent), `dropped`
+ * (reconnect), or `refused` (4xx: the session expired, sending the browser to the login page
+ * on 401, or the Run is gone; reconnecting cannot help).
+ */
+export type RunEventStreamEnd = 'end' | 'dropped' | 'refused';
+
+/** One stream message checked against the generated schema (the one list of event kinds). */
+function isRunEvent(value: unknown): value is RunEventOutput {
+  return zRunEventOutput.safeParse(value).success;
+}
+
+/**
+ * One connection to a Run's live log (`GET /api/runs/:runId/events/stream`, generated client)
+ * from the event after `after`. `onOpen` fires once the stream is open, `onEvent` for each
+ * event. Resolves `end` when the server said the Run is final and everything was sent, or
+ * `dropped` when the connection failed or closed early (or `signal` aborted), or `refused` on
+ * a 4xx answer; reconnecting is the caller's (see `platform/realtime`). The generated client
+ * does not retry here.
+ */
+export async function streamRunEvents(
+  runId: string,
+  after: number,
+  handlers: { onOpen: () => void; onEvent: (event: RunEventOutput) => void; signal: AbortSignal },
+): Promise<RunEventStreamEnd> {
+  let opened = false;
+  let ended = false;
+  let status = 0;
+  const { stream } = await sdk.streamRunEvents({
+    path: { runId },
+    query: { after },
+    signal: handlers.signal,
+    sseMaxRetryAttempts: 1,
+    // Records the answer's status code, so a 4xx is told apart from a dropped connection.
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fetch(input, init);
+      status = response.status;
+      return response;
+    },
+    onSseEvent: (message) => {
+      if (!opened) {
+        opened = true;
+        handlers.onOpen();
+      }
+      if (message.event === 'end') ended = true;
+    },
+  });
+  for await (const data of stream) {
+    if (ended) break;
+    if (isRunEvent(data)) handlers.onEvent(data);
+  }
+  if (status === 401) redirectToLogin();
+  if (status >= 400 && status < 500) return 'refused';
+  return ended ? 'end' : 'dropped';
+}

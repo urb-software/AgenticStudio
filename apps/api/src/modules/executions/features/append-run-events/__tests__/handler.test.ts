@@ -41,7 +41,7 @@ describe('AppendRunEventsHandler', () => {
       runs,
       log,
       { forRun: (runId) => Promise.resolve(runId === run.id ? secrets : []) },
-      { maxBytes, keepAliveMs: 15_000 },
+      { maxBytes, keepAliveMs: 15_000, streamsPerSession: 5, streamsTotal: 50 },
       { notify: (runId) => notified.push(runId), subscribe: () => () => undefined },
     );
   }

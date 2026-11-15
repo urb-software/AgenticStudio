@@ -86,3 +86,18 @@ export function redactLogText(text: string, knownSecrets: readonly string[]): st
     .replace(BEARER_VALUE, `$1${REDACTED}`);
   return TOKEN_SHAPES.reduce((current, shape) => current.replace(shape, REDACTED), redacted);
 }
+
+/**
+ * `value` (JSON data, e.g. a Run step's structured result) with every string in it redacted
+ * by {@link redactLogText}; keys, numbers and the shape stay as they are.
+ */
+export function redactJsonStrings(value: unknown, knownSecrets: readonly string[]): unknown {
+  if (typeof value === 'string') return redactLogText(value, knownSecrets);
+  if (Array.isArray(value)) return value.map((item) => redactJsonStrings(item, knownSecrets));
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, redactJsonStrings(item, knownSecrets)]),
+    );
+  }
+  return value;
+}
