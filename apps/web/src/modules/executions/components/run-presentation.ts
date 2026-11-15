@@ -48,36 +48,14 @@ export const FAILURE_MESSAGE: Record<FailureCode, string> = {
   unknown: 'The run failed for an unknown reason.',
 };
 
-/** States in which the Run is polled often: it is moving on without the operator. */
-const MOVING: readonly RunState[] = ['queued', 'preparing', 'running'];
-
 /** States that hold a project (and a server slot): an agent worker or the operator has the Run. */
 const HOLDING: readonly RunState[] = ['preparing', 'running', 'waiting_for_operator'];
 
-/** How often a moving Run is read again while the page is visible. */
-export const ACTIVE_POLL_MS = 2_000;
-/** How often a Run waiting for the operator is read again: it only moves when they act. */
-export const WAITING_POLL_MS = 10_000;
-
 /**
- * The poll interval for a set of Runs (#97 DoR): fast while any is queued, preparing or
- * running, slower while one only waits for the operator, and none once all are finished.
- */
-export function pollIntervalFor(runs: readonly RunOutput[] | undefined): number | false {
-  if (!runs) return false;
-  if (runs.some((run) => MOVING.includes(run.state))) return ACTIVE_POLL_MS;
-  if (runs.some((run) => run.state === 'waiting_for_operator')) return WAITING_POLL_MS;
-  return false;
-}
-
-/** Whether the Run is still under way (not in a final state). */
-export function isUnfinished(state: RunState): boolean {
-  return MOVING.includes(state) || state === 'waiting_for_operator';
-}
-
-/**
- * Why a queued Run waits, derived from its project's Runs (#97 DoR): another Run holds the
- * project, or else the server's limit of active Runs is reached.
+ * Why a queued Run waits, derived from its project's Runs (#97 DoR: no contract change): another
+ * Run holds the project, or else the server's limit of active Runs is reached. The held states
+ * and the limit of two mirror the API's concurrency rule (ADR 0002) for this message only; the
+ * API alone decides when a Run starts.
  */
 export function queuedReason(run: RunOutput, projectRuns: readonly RunOutput[]): string {
   const projectBusy = projectRuns.some(

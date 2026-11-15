@@ -90,7 +90,7 @@ describe('Run page', () => {
       failure: { code, detail: 'fake runner: scripted failure (exit 1)' },
     });
     fakeRunsApi([run]);
-    renderRun(run.id);
+    const { container } = renderRun(run.id);
     await heading();
 
     const alert = screen.getByRole('alert');
@@ -98,18 +98,20 @@ describe('Run page', () => {
     expect(within(alert).getByText('fake runner: scripted failure (exit 1)').className).toContain(
       'font-mono',
     );
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('says why a queued Run waits when another Run holds the project', async () => {
     const queued = aRun({ state: 'queued' });
     fakeRunsApi([queued, aRun({ state: 'waiting_for_operator' })]);
-    renderRun(queued.id);
+    const { container } = renderRun(queued.id);
 
     expect(
       await screen.findByText(
         'Another run is active on this project. This one starts when it finishes.',
       ),
     ).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it("says a queued Run waits for the server's limit when its project is free", async () => {

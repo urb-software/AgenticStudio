@@ -2,7 +2,25 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type RunOutput, type StartRunRequest } from '../../../platform/api';
-import { pollIntervalFor } from '../components/run-presentation';
+
+/** States in which a Run is polled often: it moves on without the operator. */
+const MOVING: readonly RunOutput['state'][] = ['queued', 'preparing', 'running'];
+
+/** How often a moving Run is read again while the page is visible. */
+const ACTIVE_POLL_MS = 2_000;
+/** How often a Run waiting for the operator is read again: it only moves when they act. */
+const WAITING_POLL_MS = 10_000;
+
+/**
+ * The poll interval for a set of Runs (#97 DoR): fast while any is queued, preparing or
+ * running, slower while one only waits for the operator, and none once all are finished.
+ */
+function pollIntervalFor(runs: readonly RunOutput[] | undefined): number | false {
+  if (!runs) return false;
+  if (runs.some((run) => MOVING.includes(run.state))) return ACTIVE_POLL_MS;
+  if (runs.some((run) => run.state === 'waiting_for_operator')) return WAITING_POLL_MS;
+  return false;
+}
 
 /** Every cache entry of this module starts with this key, so a start can refresh them all. */
 const RUNS_KEY = ['runs'] as const;
@@ -41,7 +59,11 @@ export function useRun(runId: string) {
   });
 }
 
-/** The Run's project (its name and link on the Run page). */
+/**
+ * The Run's project (its name and link on the Run page). A cache entry of its own on purpose:
+ * the projects module's query is private to it, and importing that module from here would make
+ * a cycle (projects composes this module's Runs section).
+ */
 export function useRunProject(projectId: string | undefined) {
   return useQuery({
     queryKey: runProjectKey(projectId ?? ''),

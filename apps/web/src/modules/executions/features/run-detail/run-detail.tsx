@@ -73,10 +73,10 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
 /** Why a queued Run waits; it needs the project's Runs, read (and polled) only while queued. */
 function QueuedReason({ run }: { run: RunOutput }) {
   const { data } = useProjectRuns(run.projectId);
-  if (!data) return null;
+  // Until the project's Runs are known (or if they cannot be read), it still says it waits.
   return (
     <Banner tone="info" icon={ClockIcon} title="Waiting to start.">
-      {queuedReason(run, data)}
+      {data ? queuedReason(run, data) : null}
     </Banner>
   );
 }

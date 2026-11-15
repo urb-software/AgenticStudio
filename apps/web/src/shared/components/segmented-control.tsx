@@ -11,6 +11,8 @@ type SegmentedControlProps<T extends string> = {
   onChange: (value: T) => void;
   /** The group's accessible name, when no visible label names it (`aria-labelledby`). */
   label?: string;
+  /** Locks every option (e.g. while the form is submitting). */
+  disabled?: boolean;
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
   className?: string;
@@ -27,6 +29,7 @@ function SegmentedControl<T extends string>({
   value,
   onChange,
   label,
+  disabled = false,
   className,
   ...aria
 }: SegmentedControlProps<T>) {
@@ -49,11 +52,12 @@ function SegmentedControl<T extends string>({
             key={option.value}
             type="button"
             aria-pressed={selected}
+            disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cn(
               'inline-flex h-7 min-w-[30px] cursor-pointer items-center justify-center gap-1.5 rounded-sm border px-2.5 text-code font-medium',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-              'pointer-coarse:min-h-11',
+              'disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11',
               selected
                 ? 'border-border bg-surface text-text shadow-xs'
                 : 'border-transparent bg-transparent text-text-muted hover:text-text',

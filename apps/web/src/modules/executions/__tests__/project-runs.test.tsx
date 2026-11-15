@@ -190,6 +190,19 @@ describe('New run dialog', () => {
     expect(api.calls('start')).toHaveLength(0);
   });
 
+  it('hints at a Task over 20000 characters at the field, without calling the API', async () => {
+    const api = fakeRunsApi([]);
+    renderRuns();
+    await openDialog();
+
+    await userEvent.click(taskInput());
+    await userEvent.paste('x'.repeat(20_001));
+    await userEvent.click(startButton());
+
+    expect(await within(dialog()).findByText('Use at most 20000 characters.')).toBeTruthy();
+    expect(api.calls('start')).toHaveLength(0);
+  });
+
   it('starts the Run with the chosen Provider and opens its page', async () => {
     const api = fakeRunsApi([]);
     renderRuns();
@@ -225,6 +238,20 @@ describe('New run dialog', () => {
 
     expect(await within(dialog()).findByText('Use at most 20000 characters.')).toBeTruthy();
     expect(taskInput().getAttribute('aria-invalid')).toBe('true');
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('says the start failed when no answer arrives, and keeps the dialog open', async () => {
+    fakeRunsApi([]);
+    renderRuns();
+    await openDialog();
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    const alert = await within(dialog()).findByRole('alert');
+    expect(alert.textContent).toContain('Could not start the run. Try again.');
     expect(push).not.toHaveBeenCalled();
   });
 

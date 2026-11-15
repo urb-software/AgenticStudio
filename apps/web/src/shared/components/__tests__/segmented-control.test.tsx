@@ -47,6 +47,18 @@ describe('SegmentedControl', () => {
     expect(screen.getByRole('button', { name: 'Grid' }).getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('locks every option when disabled', async () => {
+    const onChange = vi.fn();
+    render(
+      <SegmentedControl label="View" options={OPTIONS} value="grid" onChange={onChange} disabled />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Table' }));
+
+    expect(screen.getByRole('button', { name: 'Table' })).toHaveProperty('disabled', true);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('can be named by a visible label instead', () => {
     render(
       <>

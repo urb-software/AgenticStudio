@@ -181,7 +181,5 @@ export const api = {
   /** The project's Runs, newest first. */
   listProjectRuns: (projectId: string): Promise<RunListOutput> =>
     unwrap(sdk.listProjectRuns({ path: { id: projectId } })),
-  /** Every Run across all projects, newest first. */
-  listRuns: (): Promise<RunListOutput> => unwrap(sdk.listRuns()),
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
 };

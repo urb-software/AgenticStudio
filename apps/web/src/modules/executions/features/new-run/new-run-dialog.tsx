@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { PlayIcon, TriangleAlertIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useRef } from 'react';
+import { type FormEvent, useId, useRef } from 'react';
 import { Controller, type Resolver, useForm } from 'react-hook-form';
 import { Banner } from '@/shared/components/banner';
 import { SegmentedControl } from '@/shared/components/segmented-control';
@@ -53,9 +53,6 @@ function fieldErrorsOf(error: unknown): [Field, string][] {
   );
 }
 
-const PROVIDER_LABEL_ID = 'new-run-provider-label';
-const PROVIDER_ERROR_ID = 'new-run-provider-error';
-
 type NewRunDialogProps = {
   projectId: string;
   open: boolean;
@@ -71,6 +68,9 @@ type NewRunDialogProps = {
  */
 export function NewRunDialog({ projectId, open, onOpenChange }: NewRunDialogProps) {
   const router = useRouter();
+  const id = useId();
+  const PROVIDER_LABEL_ID = `${id}-provider-label`;
+  const PROVIDER_ERROR_ID = `${id}-provider-error`;
   const startRun = useStartRun(projectId);
   const {
     control,
@@ -150,7 +150,6 @@ export function NewRunDialog({ projectId, open, onOpenChange }: NewRunDialogProp
               </Banner>
             ) : null}
             <TextField
-              id="new-run-task"
               label="Task"
               multiline
               rows={5}
@@ -172,9 +171,8 @@ export function NewRunDialog({ projectId, open, onOpenChange }: NewRunDialogProp
                     aria-describedby={errors.provider ? PROVIDER_ERROR_ID : undefined}
                     options={PROVIDER_OPTIONS}
                     value={field.value}
-                    onChange={(value) => {
-                      if (!submitting) field.onChange(value);
-                    }}
+                    disabled={submitting}
+                    onChange={field.onChange}
                   />
                 )}
               />
