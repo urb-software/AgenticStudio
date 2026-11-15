@@ -645,7 +645,8 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(page).toHaveURL(/\/executions$/);
   const list = main.getByRole('list', { name: 'Runs' });
   const rows = list.getByRole('listitem').filter({ hasText: projectName });
-  await expect(rows).toHaveCount(6);
+  // Seven Runs: the six above and the Environment file print (Issue #104).
+  await expect(rows).toHaveCount(7);
   await expect(rows.nth(0)).toContainText('Waiting for you');
   await expect(rows.nth(1)).toContainText('Failed');
   await expect(rows.nth(2)).toContainText('Succeeded');
@@ -654,6 +655,7 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await expect(rows.nth(3)).toContainText('Succeeded');
   await expect(rows.nth(4)).toContainText('Succeeded');
   await expect(rows.nth(5)).toContainText('Succeeded');
+  await expect(rows.nth(6)).toContainText('Succeeded');
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
 });
