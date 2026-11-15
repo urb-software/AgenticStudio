@@ -6,10 +6,13 @@ import {
   type OnApplicationShutdown,
 } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
+import { goneWorkerRule } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
+import { timeOutOverdueSteps } from '../../domain/services/overdue-steps.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
+import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import { CancelLongWaitingRunsHandler } from '../cancel-long-waiting-runs/handler.js';
 
 /**
@@ -23,11 +26,37 @@ export class SweepLostWorkersHandler {
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
-  ) {}
+    @Inject(WORKER_STATUS_STORE) private readonly statuses: WorkerStatusStore,
+  ) {
+    this.since = clock.now();
+  }
 
-  /** Returns how many Runs failed. */
+  /** When this handler started: a worker that never reported since counts from here. */
+  private readonly since: Date;
+
+  /** Returns how many Runs failed (also requested delivery retries whose worker is gone). */
   async execute(): Promise<number> {
-    return failLostWorkers(this.runs, this.clock.now(), this.lease.seconds);
+    const now = this.clock.now();
+    const lost = await failLostWorkers(this.runs, now, this.lease.seconds);
+    return lost + (await this.abandonRetriesOfGoneWorkers(now));
+  }
+
+  /**
+   * A requested delivery retry is handed only to the worker that started the Run (#102); when
+   * that worker is gone for longer than the lease, the retry fails as "Working copy no longer
+   * exists (agent worker gone)" and is released (review N2 of #122).
+   */
+  private async abandonRetriesOfGoneWorkers(now: Date): Promise<number> {
+    const { seenBefore, failure } = goneWorkerRule(now, this.lease.seconds);
+    let abandoned = 0;
+    for (const retry of await this.runs.listPendingDeliveryRetries()) {
+      const seen =
+        (retry.startedBy ? this.statuses.lastSeen(retry.startedBy) : undefined) ?? this.since;
+      if (seen < seenBefore && (await this.runs.abandonDeliveryRetry(retry.runId, failure, now))) {
+        abandoned++;
+      }
+    }
+    return abandoned;
   }
 }
 
@@ -59,8 +88,15 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
 
   async onApplicationBootstrap(): Promise<void> {
     try {
-      const renewed = await this.runs.renewClaims(this.clock.now());
-      if (renewed > 0) this.logger.log(`Renewed the lease of ${renewed} held run(s) at start.`);
+      const renewed = await this.runs.renewClaimsOncePerLease(this.clock.now(), this.lease.seconds);
+      if (renewed === null) {
+        this.logger.warn(
+          'Not renewing the leases of held runs: they were renewed less than a lease ago ' +
+            '(is the API restarting repeatedly?).',
+        );
+      } else if (renewed > 0) {
+        this.logger.log(`Renewed the lease of ${renewed} held run(s) at start.`);
+      }
     } catch (error) {
       // Not fatal: the sweep still runs; at worst a Run whose worker kept going fails as
       // worker_lost.
@@ -87,6 +123,10 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
     try {
       const failed = await this.sweep.execute();
       if (failed > 0) this.logger.warn(`${failed} run(s) failed: their agent worker was lost.`);
+      const timedOut = await timeOutOverdueSteps(this.runs, this.clock.now());
+      if (timedOut > 0) {
+        this.logger.warn(`${timedOut} run(s) timed out: their run step ran far past its limit.`);
+      }
       const cancelled = await this.longWaits.execute();
       if (cancelled > 0) {
         this.logger.warn(`${cancelled} run(s) cancelled: they waited too long for the operator.`);

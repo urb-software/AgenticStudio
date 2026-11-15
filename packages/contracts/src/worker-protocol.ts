@@ -88,32 +88,78 @@ export const runLimitsSchema = z.strictObject({
   maxSteps: z.int().min(1).max(RUN_MAX_STEPS_MAX),
 });
 export type RunLimits = z.infer<typeof runLimitsSchema>;
+/** Longest branch name, in characters (the Repository's integration branch, a Run branch). */
+export const BRANCH_NAME_MAX_LENGTH = 255;
+
+/** Longest Studio-placed path and most of them in one payload (#102). */
+export const STUDIO_PATH_MAX_LENGTH = 1024;
+export const STUDIO_PATHS_MAX = 50;
+
+/**
+ * What a claim hands out (Issue #102): a Run to `start` (prepare, run its first step, deliver),
+ * or a `failed` Run with `delivery_failed` whose delivery the operator asked to retry: the
+ * worker then only `deliver`s it from the Working copy it still has.
+ */
+export const RUN_PAYLOAD_KINDS = ['start', 'deliver'] as const;
+export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
 
 /**
  * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
  * Clone path, secret references or keys). Closed, so an extra field is an error on both sides.
  */
-export const runPayloadSchema = z.strictObject({
-  runId: z.uuid(),
-  projectId: z.uuid(),
-  provider: providerSchema,
-  task: z.string().min(1).max(TASK_MAX_LENGTH),
-  /** The commit of the integration branch the Run starts from. */
-  startCommit: z.string().min(1).max(64),
-  /**
-   * The Project's Repository (Issue #98): its remote URL as the operator connected it, never
-   * a credential. The agent worker fetches it with the agent user's own Git credentials.
-   */
-  repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
-  /** The limits in force for this Run (Issue #100). */
-  limits: runLimitsSchema,
-  /**
-   * How many Run steps the Run has already taken (Issue #100): the next one is
-   * `completedSteps + 1`, and the worker refuses to start it beyond `limits.maxSteps`.
-   */
-  completedSteps: z.int().min(0),
-});
+export const runPayloadSchema = z
+  .strictObject({
+    runId: z.uuid(),
+    projectId: z.uuid(),
+    provider: providerSchema,
+    task: z.string().min(1).max(TASK_MAX_LENGTH),
+    /** The commit of the integration branch the Run starts from. */
+    startCommit: z.string().min(1).max(64),
+    /**
+     * The Project's Repository (Issue #98): its remote URL as the operator connected it, never
+     * a credential. The agent worker fetches it with the agent user's own Git credentials.
+     */
+    repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
+    /** The Repository's integration branch when the Run started: the pull request's base (#102). */
+    integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
+    kind: z.enum(RUN_PAYLOAD_KINDS),
+    /**
+     * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment file
+     * (#104; none yet): never committed or pushed (#102). Studio's list is authoritative; what the
+     * agent can write beside the Working copy can only add to it (review R3 of #122).
+     */
+    studioPaths: z.array(z.string().min(1).max(STUDIO_PATH_MAX_LENGTH)).max(STUDIO_PATHS_MAX),
+    /**
+     * With `deliver` only: the Run branch Studio recorded from the worker's step report. A
+     * delivery retry pushes exactly this branch, never one named beside the Working copy (review
+     * R1 of #122).
+     */
+    runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH).optional(),
+    /** The limits in force for this Run (Issue #100). */
+    limits: runLimitsSchema,
+    /**
+     * How many Run steps the Run has already taken (Issue #100): the next one is
+     * `completedSteps + 1`, and the worker refuses to start it beyond `limits.maxSteps`.
+     */
+    completedSteps: z.int().min(0),
+  })
+  .refine((payload) => (payload.kind === 'deliver') === (payload.runBranch !== undefined), {
+    path: ['runBranch'],
+    message: 'A delivery claim carries the recorded Run branch, a start claim none.',
+  });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
+
+/**
+ * Problem `type`s of the worker routes the agent worker acts on (review of #121). Only these
+ * (and 404) mean the worker no longer holds the Run and must abandon it; any other refusal,
+ * e.g. `illegal-run-transition`, is logged and the Run goes on. Pinned to the API's list by a
+ * test in the API.
+ */
+export const WORKER_PROBLEM_TYPES = {
+  runNotHeld: 'urn:agentic-studio:problem:run-not-held',
+  runNotFound: 'urn:agentic-studio:problem:run-not-found',
+  stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
+} as const;
 
 /** `POST /api/worker/runs/claim` body. */
 export const claimRunRequestSchema = z.strictObject({ workerId: workerIdSchema });
@@ -233,33 +279,75 @@ export const workingCopyReportSchema = z
   });
 export type WorkingCopyReport = z.infer<typeof workingCopyReportSchema>;
 
+/** Longest pull request URL, in characters. */
+export const PULL_REQUEST_URL_MAX_LENGTH = 2048;
+
+/** The draft pull request a delivery opened or reused (Issue #102): its https URL and number. */
+export const pullRequestRefSchema = z.strictObject({
+  url: z.url({ protocol: /^https$/ }).max(PULL_REQUEST_URL_MAX_LENGTH),
+  number: z.number().int().positive(),
+});
+export type PullRequestRef = z.infer<typeof pullRequestRefSchema>;
+
+/**
+ * How a successful Run was delivered (Issue #102): `none` when the Run branch has no commits
+ * beyond the start commit (nothing pushed, "No changes"), or `delivered` with the draft pull
+ * request. A failed delivery is the failure `delivery_failed`.
+ */
+export const runDeliverySchema = z.discriminatedUnion('outcome', [
+  z.strictObject({ outcome: z.literal('none') }),
+  z.strictObject({ outcome: z.literal('delivered'), pullRequest: pullRequestRefSchema }),
+]);
+export type RunDelivery = z.infer<typeof runDeliverySchema>;
+
 /**
  * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
  * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
- * commits of a step that failed or crashed are recorded too; so may a cancelled or timed-out
- * Run (Issue #100).
+ * commits of a step that failed or crashed are recorded too. A delivery outcome comes exactly
+ * with `succeeded` (Issue #102), and with it the Working copy's state after the delivery
+ * (a delivery retry has no step report). A cancelled or timed-out Run may carry its Working
+ * copy's state too (Issue #100).
  */
 export const reportRunStateRequestSchema = z
   .strictObject({
     workerId: workerIdSchema,
     state: z.enum(WORKER_REPORTED_STATES),
     failure: runFailureSchema.optional(),
+    delivery: runDeliverySchema.optional(),
     workingCopy: workingCopyReportSchema.optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
     message: 'A failure is reported exactly with the state failed.',
   })
-  .refine((report) => report.workingCopy === undefined || STOPPED_STATES.includes(report.state), {
-    path: ['workingCopy'],
-    message:
-      'A Working copy state comes with a step report, or with the state failed, cancelled or timed_out.',
-  });
+  .refine((report) => (report.delivery !== undefined) === (report.state === 'succeeded'), {
+    path: ['delivery'],
+    message: 'A delivery outcome is reported exactly with the state succeeded.',
+  })
+  .refine(
+    (report) =>
+      report.workingCopy === undefined ||
+      STOPPED_STATES.includes(report.state) ||
+      report.delivery !== undefined,
+    {
+      path: ['workingCopy'],
+      message:
+        'A Working copy state comes with a step report, the state failed, cancelled or timed_out, or a delivery outcome.',
+    },
+  );
 export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 
-/** `POST /api/worker/runs/:runId/steps` body: the step's result and the Working copy's state. */
+/**
+ * `POST /api/worker/runs/:runId/steps` body: the step's number and kind, its result and the
+ * Working copy's state.
+ */
 export const reportRunStepRequestSchema = z.strictObject({
   workerId: workerIdSchema,
+  /**
+   * The Run step's number, 1, 2, … (review of #121): a retried report of a step Studio already
+   * stored is recognised by it and changes nothing.
+   */
+  index: z.int().min(1).max(2_147_483_647),
   kind: z.enum(RUN_STEP_KINDS),
   result: runStepResultSchema,
   workingCopy: workingCopyReportSchema,

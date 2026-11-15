@@ -11,4 +11,6 @@ export interface WorkerStatusStore {
   /** Replaces the latest status (the most recent report wins, from whichever worker). */
   record(status: RecordedWorkerStatus): void;
   latest(): RecordedWorkerStatus | undefined;
+  /** When this worker last reported its status, if it did since the API started (#102). */
+  lastSeen(workerId: string): Date | undefined;
 }

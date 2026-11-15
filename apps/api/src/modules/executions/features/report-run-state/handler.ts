@@ -5,6 +5,7 @@ import {
   isRunId,
   OPERATOR_CANCELLATION,
   type Run,
+  type RunDeliveryOutcome,
   type RunFailure,
   type RunState,
   type RunWorkingCopy,
@@ -27,16 +28,22 @@ export interface ReportRunStateInput {
   failure: RunFailure | null;
   /** A failed Run's Working copy state, when the worker could read it (Issue #98). */
   workingCopy?: RunWorkingCopy | null;
+  /** With `succeeded`: how the Run was delivered (Issue #102). */
+  delivery?: RunDeliveryOutcome | null;
 }
 
 /**
- * Command (Issue #96): the agent worker holding a Run reports a change of state. With a
- * cancel request on the Run (Issue #100) the worker confirms the stop with `cancelled`; a
- * Run step that ended before the worker learned of the request, with `waiting_for_operator`
- * or `succeeded`, also ends the Run as `cancelled`, so the operator's cancel always holds. A
- * `cancelled` report without a request is refused. Throws {@link RunNotFoundError},
- * {@link RunNotHeldError} (another worker holds it, or nobody does) or
- * `IllegalRunTransitionError`. Wakes the Run's live log streams.
+ * Command (Issue #96): the agent worker holding a Run reports a change of state, with how a
+ * succeeded Run was delivered (Issue #102). For a `failed` Run it holds for a delivery retry
+ * it reports the retry's outcome: `succeeded` with the delivery, or `failed` with
+ * `delivery_failed` again. With a cancel request on the Run (Issue #100) the worker confirms
+ * the stop with `cancelled`; a Run step that ended with `waiting_for_operator` before the
+ * worker learned of the request also ends the Run as `cancelled`, so the operator's cancel
+ * holds (a `succeeded` report keeps its delivery: the worker delivers only while no stop is
+ * pending). A `cancelled` report without a request is refused. A repeat of the change that
+ * already applied (the worker retried a report whose answer it never got) is a no-op success
+ * (review of #121). Throws {@link RunNotFoundError}, {@link RunNotHeldError} (another worker
+ * holds it, or nobody does) or `IllegalRunTransitionError`. Wakes the Run's live log streams.
  */
 @Injectable()
 export class ReportRunStateHandler {
@@ -52,9 +59,14 @@ export class ReportRunStateHandler {
     for (let attempt = 1; attempt <= 2; attempt++) {
       const run = await this.runs.findById(input.runId);
       if (!run) throw new RunNotFoundError();
-      if (run.claimedBy !== input.workerId) throw new RunNotHeldError();
+      if (run.state === 'failed' && run.deliveryRequested && run.claimedBy === input.workerId) {
+        return this.finishRetry(run, input);
+      }
       const cancelRequested = run.cancelRequestedAt !== null;
       const to = targetState(input.state, cancelRequested);
+      // Already applied by an earlier delivery from this worker: nothing to change.
+      if (run.state === to && (run.claimedBy ?? run.releasedBy) === input.workerId) return run;
+      if (run.claimedBy !== input.workerId) throw new RunNotHeldError();
       if (to === 'cancelled' && !cancelRequested) {
         throw new IllegalRunTransitionError(run.state, to);
       }
@@ -67,6 +79,7 @@ export class ReportRunStateHandler {
         to,
         failure: to === 'failed' ? input.failure : null,
         workingCopy: keepsWorkingCopy ? (input.workingCopy ?? null) : null,
+        delivery: to === 'succeeded' ? (input.delivery ?? null) : null,
         cancellation: to === 'cancelled' ? OPERATOR_CANCELLATION : null,
         cancelRequested,
         now: this.clock.now(),
@@ -80,11 +93,35 @@ export class ReportRunStateHandler {
     // The Run changed between the read and the write (e.g. the sweep failed it).
     throw new RunNotHeldError();
   }
+
+  /** The outcome of a delivery retry: the one way out of `failed` (Issue #102). */
+  private async finishRetry(run: Run, input: ReportRunStateInput): Promise<Run> {
+    const result =
+      input.state === 'succeeded' && input.delivery
+        ? { state: 'succeeded' as const, delivery: input.delivery }
+        : input.state === 'failed' && input.failure?.code === 'delivery_failed'
+          ? { state: 'failed' as const, failure: input.failure }
+          : null;
+    if (!result) throw new IllegalRunTransitionError(run.state, input.state);
+    const changed = await this.runs.finishDeliveryRetry({
+      runId: run.id,
+      workerId: input.workerId,
+      result,
+      workingCopy: input.workingCopy ?? null,
+      now: this.clock.now(),
+    });
+    if (!changed) throw new RunNotHeldError();
+    this.signal.notify(run.id);
+    return changed;
+  }
 }
 
-/** The state a report leads to: a cancel request turns a Run step's normal end into `cancelled`. */
+/**
+ * The state a report leads to: a cancel request turns a Run step that ended waiting for the
+ * operator into `cancelled`. A `succeeded` report stays: it carries its delivery (Issue #102).
+ */
 function targetState(reported: RunState, cancelRequested: boolean): RunState {
-  if (cancelRequested && (reported === 'waiting_for_operator' || reported === 'succeeded')) {
+  if (cancelRequested && reported === 'waiting_for_operator') {
     return 'cancelled';
   }
   return reported;

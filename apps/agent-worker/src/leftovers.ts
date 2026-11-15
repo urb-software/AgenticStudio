@@ -1,5 +1,12 @@
 import { readdir, readFile, rm, stat } from 'node:fs/promises';
 import { posix } from 'node:path';
+import {
+  parseRecords,
+  PROC_DIR,
+  type ProcessGroupRecord,
+  readBootId,
+  readProcessStat,
+} from './process-identity.js';
 import type { RunResources } from './run-resources.js';
 import {
   assertRealDirectory,
@@ -32,10 +39,14 @@ export interface LeftoversOptions {
 /**
  * Recovery after a crash (Issue #100): when the worker starts, it looks for Run directories
  * that still list the process groups of a Run step (the previous worker died while carrying
- * it). It terminates each group that still has a process of the agent user, removes the Run's
+ * it). It terminates each group that is provably the one the step started, removes the Run's
  * containers through its Compose project, and forgets the list. It does not resume the Run:
  * Studio has marked it `worker_lost`, or will once its lease runs out. The Working copy is kept
  * for retention to handle. Never throws for one Run; returns the Runs it cleaned up.
+ *
+ * Review of #121: pids are reused (above all after a reboot), so a recorded group is signalled
+ * only if it is from this boot, its leader still exists with the recorded start time and still
+ * leads that group, belongs to the agent user, and is not the worker's own group.
  */
 export async function terminateLeftovers(options: LeftoversOptions): Promise<string[]> {
   const runsDir = runsDirectory(options.dataDir);
@@ -47,12 +58,18 @@ export async function terminateLeftovers(options: LeftoversOptions): Promise<str
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
+  const procDir = options.procDir ?? PROC_DIR;
+  const identity = {
+    bootId: readBootId(procDir),
+    ownGroup: readProcessStat('self', procDir)?.processGroup,
+    uid: options.uid ?? process.getuid?.() ?? -1,
+  };
   const cleaned: string[] = [];
   for (const runId of names.filter(isUuid)) {
     const file = runDirectories(options.dataDir, runId).processesFile;
-    let listed: number[];
+    let records: ProcessGroupRecord[];
     try {
-      listed = parseGroups(await readFile(file, 'utf8'));
+      records = parseRecords(await readFile(file, 'utf8'));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         options.logger.error(`Reading the process list of run ${runId} failed: ${String(error)}`);
@@ -61,10 +78,8 @@ export async function terminateLeftovers(options: LeftoversOptions): Promise<str
     }
     try {
       const owned: number[] = [];
-      for (const group of listed) {
-        if (await hasProcessOf(group, options.uid ?? process.getuid?.() ?? -1, options.procDir)) {
-          owned.push(group);
-        }
+      for (const record of records) {
+        if (await isLeftoverOfStep(record, identity, procDir)) owned.push(record.processGroup);
       }
       if (owned.length > 0) {
         await terminateProcessGroups(owned, { graceMs: options.graceMs });
@@ -83,42 +98,27 @@ export async function terminateLeftovers(options: LeftoversOptions): Promise<str
   return cleaned;
 }
 
-function parseGroups(content: string): number[] {
-  return [
-    ...new Set(
-      content
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => /^\d{1,10}$/.test(line))
-        .map(Number)
-        .filter(isSignallableGroup),
-    ),
-  ];
-}
-
 /**
- * Whether the process group still has a process that belongs to the agent user: a group id
- * from before a restart may have been reused, and the worker only ever stops its own user's
- * processes. Reads the process table: each process's group (`/proc/<pid>/stat`, the field after
- * the command name) and owner (the owner of `/proc/<pid>`).
+ * Whether a recorded group is still the one the Run step started: same boot, the leader alive
+ * with the recorded start time and still leading the group, owned by the agent user, and never
+ * the worker's own group. Anything else (a reused pid, a gone leader) is left alone.
  */
-async function hasProcessOf(group: number, uid: number, procDir = '/proc'): Promise<boolean> {
-  let entries: string[];
+async function isLeftoverOfStep(
+  record: ProcessGroupRecord,
+  identity: { bootId: string | undefined; ownGroup: number | undefined; uid: number },
+  procDir: string,
+): Promise<boolean> {
+  const group = record.processGroup;
+  if (!isSignallableGroup(group) || group === process.pid) return false;
+  if (identity.ownGroup === undefined || group === identity.ownGroup) return false;
+  if (identity.bootId === undefined || record.bootId !== identity.bootId) return false;
+  const leader = readProcessStat(group, procDir);
+  if (!leader || leader.startTime !== record.startTime || leader.processGroup !== group) {
+    return false;
+  }
   try {
-    entries = await readdir(procDir);
+    return (await stat(posix.join(procDir, String(group)))).uid === identity.uid;
   } catch {
     return false;
   }
-  for (const pid of entries.filter((name) => /^\d+$/.test(name))) {
-    try {
-      const statLine = await readFile(posix.join(procDir, pid, 'stat'), 'utf8');
-      // "<pid> (<comm>) <state> <ppid> <pgrp> ..."; comm may hold spaces and parentheses.
-      const fields = statLine.slice(statLine.lastIndexOf(')') + 2).split(' ');
-      if (Number(fields[2]) !== group) continue;
-      if ((await stat(posix.join(procDir, pid))).uid === uid) return true;
-    } catch {
-      // The process ended while the table was read.
-    }
-  }
-  return false;
 }

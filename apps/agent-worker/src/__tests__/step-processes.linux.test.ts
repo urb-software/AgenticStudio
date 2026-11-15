@@ -2,8 +2,9 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { terminateLeftovers } from '../leftovers.js';
+import { readBootId, readProcessStat } from '../process-identity.js';
 import { composeProjectName, runDirectories } from '../run-layout.js';
 import { isSignallableGroup, terminateProcessGroups } from '../spawn-boundary.js';
 import { StepProcesses } from '../step-processes.js';
@@ -103,7 +104,7 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
     expect(groupAlive(group)).toBe(false);
   });
 
-  it('records each registered group in the Run directory and forgets them on release', async () => {
+  it('records each registered group with its boot and start time, and forgets them on release', async () => {
     const file = join(dir, 'step-processes');
     const processes = new StepProcesses(file);
     const group = await track(startGroup('sleep 600 & wait'));
@@ -112,49 +113,104 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
     processes.register(group);
     processes.register(1);
 
-    expect(readFileSync(file, 'utf8')).toBe(`${group}\n`);
+    const leader = readProcessStat(group)!;
+    expect(readFileSync(file, 'utf8')).toBe(`${group} ${readBootId()} ${leader.startTime}\n`);
     await processes.terminate(1000);
     expect(groupAlive(group)).toBe(false);
     await processes.release();
     expect(existsSync(file)).toBe(false);
   });
 
+  // Review of #121: a recorded group is signalled only if it is provably the step's own.
   describe('leftovers of a worker that crashed', () => {
-    it("stops the agent user's leftover groups, removes the Run's containers, forgets the list", async () => {
-      const { runDir, processesFile } = runDirectories(dir, RUN_ID);
-      mkdirSync(runDir, { recursive: true });
-      const group = await track(startGroup('trap "" INT; sleep 600 & wait'));
-      // A gone group and garbage lines are skipped; 1 is never signalled.
-      writeFileSync(processesFile, `${group}\n999999\n1\nnot-a-pid\n`);
-      const cleaned: string[] = [];
+    /** Writes the Run's record file; returns its path. */
+    function recordFile(lines: string[]): string {
+      const paths = runDirectories(dir, RUN_ID);
+      mkdirSync(paths.runDir, { recursive: true });
+      writeFileSync(paths.processesFile, lines.map((line) => `${line}\n`).join(''));
+      return paths.processesFile;
+    }
 
-      const runs = await terminateLeftovers({
+    const recover = (overrides: { uid?: number; cleaned?: string[] } = {}) =>
+      terminateLeftovers({
         dataDir: dir,
-        resources: { cleanUp: async (project) => void cleaned.push(project) },
+        resources: { cleanUp: async (project) => void overrides.cleaned?.push(project) },
         logger: silent,
         graceMs: 200,
+        ...(overrides.uid === undefined ? {} : { uid: overrides.uid }),
       });
+
+    const recordLine = (
+      group: number,
+      boot = readBootId()!,
+      start = readProcessStat(group)!.startTime,
+    ) => `${group} ${boot} ${start}`;
+
+    it("stops the step's leftover groups, removes the Run's containers, forgets the list", async () => {
+      const group = await track(startGroup('trap "" INT; sleep 600 & wait'));
+      // A gone leader, group 1 and garbage lines are skipped.
+      const file = recordFile([recordLine(group), `999999 ${readBootId()} 1`, '1', 'not-a-pid']);
+      const cleaned: string[] = [];
+
+      const runs = await recover({ cleaned });
 
       expect(runs).toEqual([RUN_ID]);
       expect(groupAlive(group)).toBe(false);
       expect(cleaned).toEqual([composeProjectName(RUN_ID)]);
-      expect(existsSync(processesFile)).toBe(false);
+      expect(existsSync(file)).toBe(false);
+    });
+
+    it('skips a record from another boot', async () => {
+      const group = await track(startGroup('sleep 600 & wait'));
+      recordFile([recordLine(group, '00000000-0000-4000-8000-000000000000')]);
+
+      await recover();
+
+      expect(groupAlive(group)).toBe(true);
+    });
+
+    it('skips a reused pid: the leader started at another time', async () => {
+      const group = await track(startGroup('sleep 600 & wait'));
+      const start = BigInt(readProcessStat(group)!.startTime) + 1n;
+      recordFile([recordLine(group, readBootId()!, String(start))]);
+
+      await recover();
+
+      expect(groupAlive(group)).toBe(true);
+    });
+
+    it('skips a group whose leader is gone', async () => {
+      const group = await track(startGroup('sleep 600 & wait'));
+      const line = recordLine(group);
+      process.kill(-group, 'SIGKILL');
+      await vi.waitFor(() => expect(groupAlive(group)).toBe(false));
+      const cleaned: string[] = [];
+      recordFile([line]);
+
+      expect(await recover({ cleaned })).toEqual([RUN_ID]);
+      // The containers are still removed; nothing is signalled.
+      expect(cleaned).toEqual([composeProjectName(RUN_ID)]);
+    });
+
+    it("never signals the worker's own process group", async () => {
+      const own = readProcessStat('self')!.processGroup;
+      recordFile([recordLine(own)]);
+      const kill = vi.spyOn(process, 'kill');
+      try {
+        await recover();
+
+        expect(kill.mock.calls.filter(([pid]) => pid === -own)).toEqual([]);
+      } finally {
+        kill.mockRestore();
+      }
     });
 
     it('leaves a group alone whose processes belong to another user', async () => {
-      const { runDir, processesFile } = runDirectories(dir, RUN_ID);
-      mkdirSync(runDir, { recursive: true });
       const group = await track(startGroup('sleep 600 & wait'));
-      writeFileSync(processesFile, `${group}\n`);
+      recordFile([recordLine(group)]);
 
       // The same table, read as if the agent user had another id.
-      await terminateLeftovers({
-        dataDir: dir,
-        resources: { cleanUp: async () => undefined },
-        logger: silent,
-        graceMs: 200,
-        uid: (process.getuid?.() ?? 0) + 1,
-      });
+      await recover({ uid: (process.getuid?.() ?? 0) + 1 });
 
       expect(groupAlive(group)).toBe(true);
     });

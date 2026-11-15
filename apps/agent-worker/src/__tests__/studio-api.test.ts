@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { isTransient, StudioApi, StudioApiError } from '../studio-api.js';
+import { isRunLost, isTransient, StudioApi, StudioApiError } from '../studio-api.js';
 
 // Issue #96: the worker's client of the worker routes, against a stubbed fetch.
 const TOKEN = randomBytes(32).toString('base64');
@@ -140,5 +140,22 @@ describe('StudioApi', () => {
     expect(isTransient(new StudioApiError(404, '/api/worker/runs/x/state'))).toBe(false);
     expect(isTransient(new StudioApiError(422, '/api/worker/runs/x/state'))).toBe(false);
     expect(isTransient(new StudioApiError(401, '/api/worker/runs/x/state'))).toBe(false);
+  });
+
+  // Review of #121: only "not held" (and a failed Run) means the Run is lost, by problem type.
+  it('tells a lost Run from a refused report by the problem type, not the status', () => {
+    const path = '/api/worker/runs/x/state';
+    expect(
+      isRunLost(new StudioApiError(409, path, 'urn:agentic-studio:problem:run-not-held')),
+    ).toBe(true);
+    expect(
+      isRunLost(new StudioApiError(409, path, 'urn:agentic-studio:problem:step-limit-reached')),
+    ).toBe(true);
+    expect(isRunLost(new StudioApiError(404, path))).toBe(true);
+    expect(
+      isRunLost(new StudioApiError(409, path, 'urn:agentic-studio:problem:illegal-run-transition')),
+    ).toBe(false);
+    expect(isRunLost(new StudioApiError(409, path))).toBe(false);
+    expect(isRunLost(new TypeError('fetch failed'))).toBe(false);
   });
 });

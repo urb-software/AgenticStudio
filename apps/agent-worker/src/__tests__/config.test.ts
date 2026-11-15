@@ -45,7 +45,55 @@ describe('loadWorkerConfig', () => {
       retentionDays: 7,
       retentionMaxPerProject: 10,
       killGraceMs: 10_000,
+      agentGitHub: { apiUrl: 'https://api.github.com' },
     });
+  });
+
+  it("reads the Agent account's GitHub token and API URL from the worker's own env (Issue #102)", () => {
+    const agentToken = `ghp_${randomBytes(18).toString('hex')}`;
+
+    const config = loadWorkerConfig({
+      ...env,
+      STUDIO_AGENT_GITHUB_TOKEN: agentToken,
+      STUDIO_AGENT_GITHUB_API_URL: 'https://github.example.test/api/v3/',
+    });
+
+    expect(config.agentGitHub).toEqual({
+      token: agentToken,
+      apiUrl: 'https://github.example.test/api/v3',
+    });
+    // An empty value in .env means "not configured".
+    expect(loadWorkerConfig({ ...env, STUDIO_AGENT_GITHUB_TOKEN: '' }).agentGitHub).toEqual({
+      apiUrl: 'https://api.github.com',
+    });
+  });
+
+  it('refuses an Agent account token that could inject a header, without echoing it', () => {
+    const secret = `ghp_${randomBytes(18).toString('hex')}`;
+
+    const error = captureError(() =>
+      loadWorkerConfig({
+        ...env,
+        STUDIO_AGENT_GITHUB_TOKEN: `${secret}
+
+X-Evil: 1`,
+      }),
+    );
+
+    expect(error).toBeInstanceOf(WorkerConfigError);
+    expect(error.message).toContain('STUDIO_AGENT_GITHUB_TOKEN');
+    expect(error.message).not.toContain(secret);
+  });
+
+  it('accepts a plain-http GitHub API URL (a test stub) only outside production', () => {
+    const stub = { ...env, STUDIO_AGENT_GITHUB_API_URL: 'http://127.0.0.1:4010' };
+
+    expect(captureError(() => loadWorkerConfig(stub)).message).toContain(
+      'STUDIO_AGENT_GITHUB_API_URL',
+    );
+    expect(
+      loadWorkerConfig({ ...stub, STUDIO_WORKER_ENVIRONMENT: 'test' }).agentGitHub.apiUrl,
+    ).toBe('http://127.0.0.1:4010');
   });
 
   it('reads the provider switches, each on its own (Issue #101)', () => {

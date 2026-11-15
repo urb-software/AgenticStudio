@@ -1,5 +1,6 @@
 import { appendFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { formatRecord, PROC_DIR, recordOf } from './process-identity.js';
 import {
   isSignallableGroup,
   type ProcessGroupRegistry,
@@ -8,21 +9,31 @@ import {
 
 /**
  * The process groups one Run step started (Issue #100). Each is recorded in memory and in the
- * Run's directory (one group id per line), so the worker can stop the whole tree of the step
- * when it is cancelled, over its time limit or the worker stops, and so a worker that crashed
- * can stop what is left when it starts again (`leftovers.ts`).
+ * Run's directory, one line per group with the boot id and the leader's start time (review of
+ * #121: pids are reused, so recovery trusts a record only from the same boot and leader), so
+ * the worker can stop the whole tree of the step when it is cancelled, over its time limit or
+ * the worker stops, and so a worker that crashed can stop what is left when it starts again
+ * (`leftovers.ts`).
  */
 export class StepProcesses implements ProcessGroupRegistry {
   private readonly groups = new Set<number>();
 
-  /** @param recordFile where the group ids are kept: the Run's `step-processes` file. */
-  constructor(private readonly recordFile: string) {}
+  /**
+   * @param recordFile where the groups are kept: the Run's `step-processes` file.
+   * @param procDir the process table (tests may point elsewhere).
+   */
+  constructor(
+    private readonly recordFile: string,
+    private readonly procDir = PROC_DIR,
+  ) {}
 
   register(processGroupId: number): void {
     if (!isSignallableGroup(processGroupId) || this.groups.has(processGroupId)) return;
     this.groups.add(processGroupId);
-    // Written at once, before the process can do anything worth recovering from.
-    appendFileSync(this.recordFile, `${processGroupId}\n`, { mode: 0o600 });
+    // Written at once, before the process can do anything worth recovering from. A group whose
+    // identity cannot be read is still stopped with the step, but never recorded for recovery.
+    const record = recordOf(processGroupId, this.procDir);
+    if (record) appendFileSync(this.recordFile, `${formatRecord(record)}\n`, { mode: 0o600 });
   }
 
   /** The groups registered so far. */

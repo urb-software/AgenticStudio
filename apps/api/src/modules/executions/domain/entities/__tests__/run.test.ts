@@ -87,6 +87,11 @@ describe('long-wait rule', () => {
     startCommit: 'a',
     remoteUrl: 'https://git.example.test/a.git',
     workingCopy: null,
+    integrationBranch: 'dev',
+    delivery: null,
+    pullRequest: null,
+    deliveryRequested: false,
+    failingChecks: [],
     createdAt: since,
     startedAt: since,
     finishedAt: null,
@@ -96,6 +101,8 @@ describe('long-wait rule', () => {
     cancelRequestedAt: null,
     cancellation: null,
     waitingSince: since,
+    stepStartedAt: null,
+    releasedBy: null,
     ...overrides,
   });
   const after = (days: number, extraMs = 0) =>

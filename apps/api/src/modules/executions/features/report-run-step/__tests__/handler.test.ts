@@ -5,6 +5,7 @@ import {
   RunNotFoundError,
   RunNotHeldError,
   StepLimitReachedError,
+  StepOutOfOrderError,
 } from '../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../domain/services/log-redaction.js';
 import { ReportRunStepHandler } from '../handler.js';
@@ -43,6 +44,7 @@ describe('ReportRunStepHandler', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14 },
+      integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -117,6 +119,27 @@ describe('ReportRunStepHandler', () => {
     expect((await runs.findById(run.id))?.workingCopy).toEqual(WORKING_COPY);
   });
 
+  it('records the checks the agent reported failed in the latest step (Issue #102)', async () => {
+    await running();
+    const checks = [
+      { name: 'lint', result: 'passed' },
+      { name: 'unit tests', result: 'failed' },
+      { name: 'e2e', result: 'not_run' },
+    ];
+
+    await handler.execute({
+      runId: run.id,
+      workerId: WORKER,
+      kind: 'start',
+      result: { ...RESULT, checks },
+      workingCopy: WORKING_COPY,
+    });
+    expect((await runs.findById(run.id))?.failingChecks).toEqual(['unit tests']);
+
+    await report();
+    expect((await runs.findById(run.id))?.failingChecks).toEqual([]);
+  });
+
   it('rejects a step before the Run is running', async () => {
     await expect(report()).rejects.toBeInstanceOf(RunNotHeldError);
   });
@@ -157,6 +180,37 @@ describe('ReportRunStepHandler', () => {
       },
       claimedBy: null,
       finishedAt: T1,
+    });
+  });
+
+  // Review of #121: the worker numbers its steps; a re-sent number is not stored twice.
+  describe('step numbers', () => {
+    const numbered = (index: number) =>
+      handler.execute({
+        runId: run.id,
+        workerId: WORKER,
+        index,
+        kind: 'start',
+        result: RESULT,
+        workingCopy: WORKING_COPY,
+      });
+
+    it('acknowledges a re-sent step without storing it again', async () => {
+      await running();
+
+      expect(await numbered(1)).toBe(1);
+      expect(await numbered(1)).toBe(1);
+      expect(runs.steps).toHaveLength(1);
+    });
+
+    it('refuses a step number that skips ahead', async () => {
+      await running();
+
+      const error = await numbered(2).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(StepOutOfOrderError);
+      expect((error as StepOutOfOrderError).expected).toBe(1);
+      expect(runs.steps).toEqual([]);
     });
   });
 });

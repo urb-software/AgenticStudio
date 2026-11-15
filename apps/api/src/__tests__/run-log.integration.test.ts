@@ -118,7 +118,15 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
     return started.body.id as string;
   }
   const finish = async (runId: string) =>
-    expect((await worker(`${runId}/state`, { workerId: W1, state: 'succeeded' })).status).toBe(204);
+    expect(
+      (
+        await worker(`${runId}/state`, {
+          workerId: W1,
+          state: 'succeeded',
+          delivery: { outcome: 'none' },
+        })
+      ).status,
+    ).toBe(204);
 
   beforeAll(async () => {
     services = await startStudioServices();
@@ -415,6 +423,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       const runId = await runningRun();
       await worker(`${runId}/steps`, {
         workerId: W1,
+        index: 1,
         kind: 'start',
         result: {
           outcome: 'done',

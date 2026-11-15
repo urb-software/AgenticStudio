@@ -33,6 +33,8 @@ export const runFailureCodeSchema = z.enum([
 
 /** Who cancelled a Run (Issue #100). */
 export const runCancelledBySchema = z.enum(['operator', 'system']);
+/** How a Run was delivered (Issue #102): `none` is "No changes". */
+export const runDeliverySchema = z.enum(['none', 'delivered', 'failed']);
 
 export const runResponseSchema = z
   .object({
@@ -74,6 +76,18 @@ export const runResponseSchema = z
     cancelRequestedAt: z.iso.datetime().optional(),
     /** Present exactly when `cancelled`: who cancelled it and why. */
     cancellation: z.object({ by: runCancelledBySchema, reason: z.string() }).optional(),
+    /**
+     * How the Run was delivered (Issue #102): `none` (succeeded with no changes: nothing pushed),
+     * `delivered` (succeeded with a draft pull request) or `failed` (failed with
+     * `delivery_failed`; the delivery can be retried). Absent until then.
+     */
+    delivery: runDeliverySchema.optional(),
+    /** The Run's draft pull request on GitHub; present exactly when `delivery` is `delivered`. */
+    pullRequest: z.object({ url: z.url(), number: z.int().positive() }).optional(),
+    /** Present (true) while a requested delivery retry is pending or in progress. */
+    deliveryRetryRequested: z.literal(true).optional(),
+    /** The checks the agent reported failed in the latest Run step, when there are any. */
+    failingChecks: z.array(z.string()).optional(),
   })
   .meta({ id: 'Run' });
 
@@ -105,6 +119,10 @@ export function toRunResponse(run: {
   limits: { stepMinutes: number; maxSteps: number; waitingDays: number };
   cancelRequestedAt: Date | null;
   cancellation: { by: z.infer<typeof runCancelledBySchema>; reason: string } | null;
+  delivery: z.infer<typeof runDeliverySchema> | null;
+  pullRequest: { url: string; number: number } | null;
+  deliveryRequested: boolean;
+  failingChecks: string[];
 }): RunResponse {
   return {
     id: run.id,
@@ -133,5 +151,11 @@ export function toRunResponse(run: {
     ...(run.cancellation
       ? { cancellation: { by: run.cancellation.by, reason: run.cancellation.reason } }
       : {}),
+    ...(run.delivery ? { delivery: run.delivery } : {}),
+    ...(run.pullRequest
+      ? { pullRequest: { url: run.pullRequest.url, number: run.pullRequest.number } }
+      : {}),
+    ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
+    ...(run.failingChecks.length > 0 ? { failingChecks: [...run.failingChecks] } : {}),
   };
 }

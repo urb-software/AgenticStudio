@@ -178,7 +178,13 @@ describe('RunLog', () => {
 
   it('stops forwarding when Studio says the worker no longer holds the Run', async () => {
     create();
-    api.failures = [new StudioApiError(409, '/api/worker/runs/x/events')];
+    api.failures = [
+      new StudioApiError(
+        409,
+        '/api/worker/runs/x/events',
+        'urn:agentic-studio:problem:run-not-held',
+      ),
+    ];
     log.push(1, 'output', 'a');
 
     await vi.advanceTimersByTimeAsync(500);

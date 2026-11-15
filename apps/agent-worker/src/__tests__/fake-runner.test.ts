@@ -13,6 +13,9 @@ const run = (task: string): RunPayload => ({
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
   limits: { stepMinutes: 60, maxSteps: 10 },
   completedSteps: 0,
+  integrationBranch: 'dev',
+  kind: 'start',
+  studioPaths: [],
 });
 const processes = { register: () => undefined };
 // The scenarios here touch no Working copy (commit and dirty: fake-runner.linux.test.ts).
@@ -43,6 +46,7 @@ describe('fakeScenarioOf', () => {
     ['[fake:dirty]', 'dirty'],
     ['[fake:stubborn]', 'stubborn'],
     ['[fake:long]', 'long'],
+    ['[fake:checks-failed] Add a file', 'checks-failed'],
     ['[fake:secret]', 'secret'],
     ['[fake:unknown]', 'success'],
   ])('reads %j as %s', (task, scenario) => {

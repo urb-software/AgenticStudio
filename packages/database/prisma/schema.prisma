@@ -137,6 +137,23 @@ model Run {
   commits               Json?
   /// Whether uncommitted changes remained in the Working copy after the latest Run step.
   hasUncommittedChanges Boolean?  @map("has_uncommitted_changes")
+  /// The Repository's integration branch when the Run was started (Issue #102): the base of
+  /// the Run's draft pull request.
+  integrationBranch     String    @map("integration_branch") @db.VarChar(255)
+  /// none | delivered (with succeeded) | failed (with failed and delivery_failed); null until
+  /// the Run is delivered or its delivery fails (Issue #102).
+  delivery              String?   @db.VarChar(16)
+  /// The draft pull request the delivery opened or reused; set exactly when delivered.
+  pullRequestUrl        String?   @map("pull_request_url") @db.VarChar(2048)
+  pullRequestNumber     Int?      @map("pull_request_number")
+  /// The operator asked to retry a failed delivery; the next claim hands the Run to an agent
+  /// worker as a delivery, and the worker holds it (claimed_by) until it reports the outcome.
+  deliveryRequested     Boolean   @default(false) @map("delivery_requested")
+  /// Names of the checks the agent reported failed in the latest Run step, `["..."]`.
+  failingChecks         Json?     @map("failing_checks")
+  /// The agent worker that claimed the Run to start it: only it holds the Working copy, so a
+  /// delivery retry is handed to it alone (review R4 of #122).
+  lastClaimedBy         String?   @map("last_claimed_by") @db.Uuid
   /// Set by PostgreSQL, so the queue order (created_at, id) uses one clock.
   createdAt             DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// When an agent worker claimed the Run.
@@ -164,6 +181,12 @@ model Run {
   limitStepMinutes      Int       @map("limit_step_minutes")
   limitMaxSteps         Int       @map("limit_max_steps")
   limitWaitingDays      Int       @map("limit_waiting_days")
+  /// When the current (or last) Run step started; set whenever the Run goes to running (review
+  /// of #121: Studio's backstop for the step time limit).
+  stepStartedAt         DateTime? @map("step_started_at") @db.Timestamptz(6)
+  /// The agent worker that released the Run (to waiting_for_operator or a final state), so a
+  /// retried report of that change is recognised (review of #121).
+  releasedBy            String?   @map("released_by") @db.Uuid
   /// UTF-8 bytes of event text stored for the Run (Issue #99), counted against the log cap.
   logBytes              Int       @default(0) @map("log_bytes")
   /// Whether the log cap was reached: one "log truncated" notice is stored, later events are dropped.
@@ -216,4 +239,13 @@ model RunEvent {
 
   @@id([runId, seq], map: "run_events_pkey")
   @@map("run_events")
+}
+
+/// When the API last renewed the leases of held Runs at start (review of #121): at most once per
+/// lease period, so an API crash loop cannot keep a dead worker's Run alive. One row.
+model RunLeaseRenewal {
+  id        Int      @id @db.SmallInt
+  renewedAt DateTime @map("renewed_at") @db.Timestamptz(6)
+
+  @@map("run_lease_renewals")
 }

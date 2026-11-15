@@ -8,6 +8,7 @@ import {
   runPayloadSchema,
   type RunStatesResponse,
   runStatesResponseSchema,
+  WORKER_PROBLEM_TYPES,
   type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 
@@ -26,9 +27,19 @@ export class StudioApiError extends Error {
   }
 }
 
-/** Whether the API says this worker no longer holds the Run (or the transition is gone). */
+/**
+ * Whether the API says this worker no longer holds the Run (review of #121): a 404, or a 409
+ * whose problem type says so (`run-not-held`, or `step-limit-reached`, which failed the Run).
+ * Any other 409, e.g. `illegal-run-transition`, is a refusal of that one report, not a loss.
+ */
 export function isRunLost(error: unknown): boolean {
-  return error instanceof StudioApiError && (error.status === 409 || error.status === 404);
+  if (!(error instanceof StudioApiError)) return false;
+  if (error.status === 404) return true;
+  return (
+    error.status === 409 &&
+    (error.problemType === WORKER_PROBLEM_TYPES.runNotHeld ||
+      error.problemType === WORKER_PROBLEM_TYPES.stepLimitReached)
+  );
 }
 
 /**

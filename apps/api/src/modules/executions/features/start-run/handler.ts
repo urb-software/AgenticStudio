@@ -59,6 +59,7 @@ export class StartRunHandler {
           startCommit: startPoint.startCommit,
           remoteUrl: startPoint.remoteUrl,
           limits: { ...this.limits },
+          integrationBranch: startPoint.integrationBranch,
         });
     }
   }
