@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import type { RecordedWorkerStatus } from '../../../domain/services/provider-availability.js';
+import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { SweepLostWorkersHandler } from '../handler.js';
 
 // Issue #96: a claimed Run whose worker sends no heartbeat within the lease becomes failed
@@ -12,10 +14,25 @@ const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const later = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 
+/** The worker statuses Studio keeps (Issue #101), as the in-memory adapter keeps them. */
+class InMemoryWorkerStatusStore implements WorkerStatusStore {
+  private readonly seen = new Map<string, RecordedWorkerStatus>();
+  record(status: RecordedWorkerStatus) {
+    this.seen.set(status.workerId, status);
+  }
+  latest() {
+    return [...this.seen.values()].at(-1);
+  }
+  lastSeen(workerId: string) {
+    return this.seen.get(workerId)?.reportedAt;
+  }
+}
+
 describe('SweepLostWorkersHandler', () => {
   let runs: InMemoryRunRepository;
   let now: Date;
   let handler: SweepLostWorkersHandler;
+  let statuses: InMemoryWorkerStatusStore;
 
   async function claimed(projectId: string) {
     await runs.add({
@@ -32,7 +49,8 @@ describe('SweepLostWorkersHandler', () => {
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     now = T0;
-    handler = new SweepLostWorkersHandler(runs, { now: () => now }, { seconds: 60 });
+    statuses = new InMemoryWorkerStatusStore();
+    handler = new SweepLostWorkersHandler(runs, { now: () => now }, { seconds: 60 }, statuses);
   });
 
   it('fails a preparing Run whose last heartbeat is older than the lease', async () => {
@@ -114,5 +132,72 @@ describe('SweepLostWorkersHandler', () => {
 
     expect(await handler.execute()).toBe(0);
     expect(runs.runs[0]?.state).toBe('queued');
+  });
+
+  describe('a requested delivery retry whose worker is gone (review N2 of #122)', () => {
+    /** A Run WORKER started, whose delivery failed and whose retry the operator requested. */
+    async function pendingRetry() {
+      const run = await claimed(PROJECTS[0]);
+      for (const [from, to] of [
+        ['preparing', 'running'],
+        ['running', 'failed'],
+      ] as const) {
+        await runs.transitionClaimed({
+          runId: run.id,
+          workerId: WORKER,
+          from,
+          to,
+          failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+          now: T0,
+        });
+      }
+      await runs.requestDeliveryRetry(run.id);
+      return run;
+    }
+    const report = (at: Date) =>
+      statuses.record({
+        workerId: WORKER,
+        runner: 'fake',
+        providers: { claude_code: true, codex: true },
+        reportedAt: at,
+      });
+
+    it('fails it as "Working copy no longer exists (agent worker gone)" and releases it', async () => {
+      const run = await pendingRetry();
+      report(later(10));
+      now = later(71);
+
+      expect(await handler.execute()).toBe(1);
+
+      expect(await runs.findById(run.id)).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'delivery_failed',
+          detail: expect.stringMatching(/^Working copy no longer exists \(agent worker gone\)/),
+        },
+        delivery: 'failed',
+        deliveryRequested: false,
+        claimedBy: null,
+      });
+    });
+
+    it('keeps it while that worker reports within the lease', async () => {
+      const run = await pendingRetry();
+      report(later(50));
+      now = later(100);
+
+      expect(await handler.execute()).toBe(0);
+      expect((await runs.findById(run.id))?.deliveryRequested).toBe(true);
+    });
+
+    it('counts a worker never seen since Studio started from that start, not before', async () => {
+      const run = await pendingRetry();
+      now = later(59);
+      expect(await handler.execute()).toBe(0);
+
+      now = later(61);
+      expect(await handler.execute()).toBe(1);
+      expect((await runs.findById(run.id))?.deliveryRequested).toBe(false);
+    });
   });
 });
