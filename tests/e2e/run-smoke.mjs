@@ -23,7 +23,11 @@
 //    spawned, and Studio refuses to start Runs until a worker reports them available), and its
 //    own HOME, data directory and Agent Git identity (#98: each Run's Working copy; the test
 //    environment also lets it fetch the file:// fixture remotes); it refuses
-//    to start if a Studio-side setting such as DATABASE_URL reaches it. Repository features
+//    to start if a Studio-side setting such as DATABASE_URL reaches it. It delivers Runs (#102)
+//    to the file:// fixture remotes and opens pull requests on a local stub of GitHub's pull
+//    request API (tests/e2e/stub-github.mjs, its own process on 127.0.0.1:$E2E_GITHUB_STUB_PORT,
+//    default 4502; STUDIO_AGENT_GITHUB_API_URL), with a throwaway token; nothing reaches GitHub.
+//    Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
 // 5. Runs Playwright (tests/e2e/playwright.config.ts). On Linux it then fails unless the
@@ -41,6 +45,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 4500);
 const API_PORT = Number(process.env.E2E_API_PORT ?? 4501);
+/** The stub of GitHub's pull request API the agent worker delivers to (#102). */
+const GITHUB_STUB_PORT = Number(process.env.E2E_GITHUB_STUB_PORT ?? 4502);
 const STUDIO_ORIGIN = `http://localhost:${WEB_PORT}`;
 const API_ORIGIN = `http://127.0.0.1:${API_PORT}`;
 const READY_TIMEOUT_MS = 90_000;
@@ -302,6 +308,12 @@ async function main() {
     // own, so Git reads no Git configuration of the machine running the smoke.
     const workerHome = join(scratch, 'agent-home');
     await mkdir(workerHome, { recursive: true });
+    // Its own process: this script's event loop is blocked while Playwright runs.
+    startServer('stub-github', process.execPath, ['tests/e2e/stub-github.mjs'], {
+      STUB_GITHUB_PORT: String(GITHUB_STUB_PORT),
+    });
+    const githubApi = `http://127.0.0.1:${GITHUB_STUB_PORT}`;
+    await waitUntilReady(`${githubApi}/health`);
     // A clean environment on purpose: the worker must not see DATABASE_URL or any other
     // Studio-side setting (it refuses to start if it does). PATH only lets Node resolve tools.
     startServer(
@@ -324,6 +336,9 @@ async function main() {
         STUDIO_WORKER_DATA_DIR: join(scratch, 'agent-worker-data'),
         STUDIO_AGENT_GIT_NAME: 'Smoke Agent',
         STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
+        // Issue #102: a throwaway Agent account token, for the stub of GitHub only.
+        STUDIO_AGENT_GITHUB_TOKEN: `ghp_${randomBytes(18).toString('hex')}`,
+        STUDIO_AGENT_GITHUB_API_URL: githubApi,
       },
       { clean: true },
     );

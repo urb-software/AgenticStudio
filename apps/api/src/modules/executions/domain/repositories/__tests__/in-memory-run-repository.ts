@@ -135,6 +135,28 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(this.view(run));
   }
 
+  listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {
+    return Promise.resolve(
+      this.runs
+        .filter((run) => run.state === 'failed' && run.deliveryRequested && run.claimedBy === null)
+        .map((run) => ({ runId: run.id, startedBy: run.lastClaimedBy ?? null })),
+    );
+  }
+
+  abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || run.state !== 'failed' || !run.deliveryRequested || run.claimedBy !== null) {
+      return Promise.resolve(false);
+    }
+    Object.assign(run, {
+      failure: { ...failure },
+      delivery: 'failed',
+      deliveryRequested: false,
+      finishedAt: now,
+    });
+    return Promise.resolve(true);
+  }
+
   finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === outcome.runId);
     if (

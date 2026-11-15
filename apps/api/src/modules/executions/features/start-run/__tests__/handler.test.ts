@@ -23,6 +23,9 @@ class InMemoryWorkerStatusStore implements WorkerStatusStore {
   latest() {
     return this.current;
   }
+  lastSeen() {
+    return undefined;
+  }
 }
 
 describe('StartRunHandler', () => {
