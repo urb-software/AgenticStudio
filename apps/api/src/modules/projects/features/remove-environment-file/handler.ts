@@ -1,6 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { redactSecrets } from '../../../../platform/http/redact.js';
-import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/index.js';
+import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../domain/entities/project.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
@@ -11,6 +9,10 @@ import {
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../domain/repositories/project-repository.js';
+import {
+  ENVIRONMENT_FILE_CONTENTS,
+  type EnvironmentFileContents,
+} from '../../ports/environment-file-contents.js';
 
 /**
  * Command (Issue #104): removes the project's Environment file and deletes its content from
@@ -19,12 +21,10 @@ import {
  */
 @Injectable()
 export class RemoveEnvironmentFileHandler {
-  private readonly logger = new Logger('EnvironmentFile');
-
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(ENVIRONMENT_FILE_REPOSITORY) private readonly files: EnvironmentFileRepository,
-    @Inject(SECRET_STORE) private readonly secrets: SecretStore,
+    @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
   ) {}
 
   async execute(projectId: string): Promise<void> {
@@ -32,15 +32,6 @@ export class RemoveEnvironmentFileHandler {
       throw new ProjectNotFoundError();
     }
     const secretRef = await this.files.delete(projectId);
-    if (secretRef === null) return;
-    try {
-      await this.secrets.delete(secretRef);
-    } catch (error) {
-      // Nothing references it any more: the orphan sweep deletes it later.
-      this.logger.warn(
-        `Could not delete the Environment file secret ${secretRef}; the orphan sweep deletes ` +
-          `it later. ${redactSecrets(String(error))}`,
-      );
-    }
+    if (secretRef !== null) await this.contents.discard(secretRef);
   }
 }

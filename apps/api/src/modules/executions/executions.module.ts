@@ -31,7 +31,6 @@ import { ReportRunStepEndpoint } from './features/report-run-step/endpoint.js';
 import { ReportRunStepHandler } from './features/report-run-step/handler.js';
 import { ReportWorkerStatusEndpoint } from './features/report-worker-status/endpoint.js';
 import { ReportWorkerStatusHandler } from './features/report-worker-status/handler.js';
-import { ReleaseEnvironmentFileSnapshotsHandler } from './features/release-environment-file-snapshots/handler.js';
 import { RetryDeliveryEndpoint } from './features/retry-delivery/endpoint.js';
 import { RetryDeliveryHandler } from './features/retry-delivery/handler.js';
 import { StartRunEndpoint } from './features/start-run/endpoint.js';
@@ -44,6 +43,8 @@ import {
   SweepLostWorkersHandler,
 } from './features/sweep-lost-workers/handler.js';
 import { EnvironmentFileSecretValues } from './infrastructure/adapters/environment-file-secret-values.js';
+import { SecretStoreEnvironmentFileSnapshots } from './infrastructure/adapters/environment-file-snapshots.js';
+import { ENVIRONMENT_FILE_SNAPSHOTS } from './ports/environment-file-snapshots.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
@@ -156,7 +157,7 @@ export class ExecutionsModule {
         ReportWorkerStatusHandler,
         ListProvidersHandler,
         SweepLostWorkersHandler,
-        ReleaseEnvironmentFileSnapshotsHandler,
+        { provide: ENVIRONMENT_FILE_SNAPSHOTS, useClass: SecretStoreEnvironmentFileSnapshots },
         LostWorkerSweepSchedule,
       ],
     };

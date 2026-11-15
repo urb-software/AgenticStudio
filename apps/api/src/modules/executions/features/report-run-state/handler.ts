@@ -19,9 +19,12 @@ import {
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import {
+  ENVIRONMENT_FILE_SNAPSHOTS,
+  type EnvironmentFileSnapshots,
+} from '../../ports/environment-file-snapshots.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
-import { ReleaseEnvironmentFileSnapshotsHandler } from '../release-environment-file-snapshots/handler.js';
 
 export interface ReportRunStateInput {
   runId: string;
@@ -51,7 +54,7 @@ export class ReportRunStateHandler {
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
-    private readonly snapshots: ReleaseEnvironmentFileSnapshotsHandler,
+    @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
   ) {}
 

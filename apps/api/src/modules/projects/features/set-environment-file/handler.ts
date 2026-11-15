@@ -1,8 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { redactSecrets } from '../../../../platform/http/redact.js';
-import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/index.js';
+import { Inject, Injectable } from '@nestjs/common';
 import {
-  ENVIRONMENT_FILE_SECRET_OWNER,
   type EnvironmentFileInfo,
   EnvironmentFilePathTrackedError,
 } from '../../domain/entities/environment-file.js';
@@ -17,6 +14,10 @@ import {
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../domain/repositories/project-repository.js';
+import {
+  ENVIRONMENT_FILE_CONTENTS,
+  type EnvironmentFileContents,
+} from '../../ports/environment-file-contents.js';
 import {
   GitCloneMissingError,
   GitUnsupportedPlatformError,
@@ -33,7 +34,7 @@ export interface SetEnvironmentFileInput {
 
 /**
  * Command (Issue #104): sets the project's Environment file, new or replacing the one there.
- * The content is stored in the secret store under its own owner label; the project keeps the
+ * The content is stored in the secret store ({@link EnvironmentFileContents}); the project keeps the
  * reference with the path, size and time, and the replaced content is deleted. When the
  * project's Clone is ready, a path tracked at the integration branch's current commit is
  * refused (the agent worker re-checks against the Run's start commit). Returns what the
@@ -42,12 +43,10 @@ export interface SetEnvironmentFileInput {
  */
 @Injectable()
 export class SetEnvironmentFileHandler {
-  private readonly logger = new Logger('EnvironmentFile');
-
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(ENVIRONMENT_FILE_REPOSITORY) private readonly files: EnvironmentFileRepository,
-    @Inject(SECRET_STORE) private readonly secrets: SecretStore,
+    @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
   ) {}
 
@@ -58,17 +57,15 @@ export class SetEnvironmentFileHandler {
     const { sizeBytes } = checkEnvironmentFile(input.path, input.content);
     await this.refuseTrackedPath(input.projectId, input.path);
 
-    const secretRef = await this.secrets.put(input.content, {
-      owner: ENVIRONMENT_FILE_SECRET_OWNER,
-    });
+    const secretRef = await this.contents.store(input.content);
     let result: Awaited<ReturnType<EnvironmentFileRepository['save']>>;
     try {
       result = await this.files.save(input.projectId, { path: input.path, sizeBytes, secretRef });
     } catch (error) {
-      await this.deleteQuietly(secretRef);
+      await this.contents.discard(secretRef);
       throw error;
     }
-    if (result.replacedSecretRef !== null) await this.deleteQuietly(result.replacedSecretRef);
+    if (result.replacedSecretRef !== null) await this.contents.discard(result.replacedSecretRef);
     return result.saved;
   }
 
@@ -86,17 +83,5 @@ export class SetEnvironmentFileHandler {
       throw error;
     }
     if (tracked) throw new EnvironmentFilePathTrackedError();
-  }
-
-  /** A content no row references any more; a failed delete is left to the orphan sweep. */
-  private async deleteQuietly(secretRef: string): Promise<void> {
-    try {
-      await this.secrets.delete(secretRef);
-    } catch (error) {
-      this.logger.warn(
-        `Could not delete the Environment file secret ${secretRef}; the orphan sweep deletes ` +
-          `it later. ${redactSecrets(String(error))}`,
-      );
-    }
   }
 }

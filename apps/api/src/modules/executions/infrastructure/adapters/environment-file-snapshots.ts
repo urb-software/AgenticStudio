@@ -6,9 +6,10 @@ import {
   RUN_ENVIRONMENT_FILE_SECRET_OWNER,
 } from '../../domain/entities/run-environment-file.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
+import type { EnvironmentFileSnapshots } from '../../ports/environment-file-snapshots.js';
 
 /**
- * Command (Issue #104): deletes the Environment file snapshots of Runs that are final. A final
+ * {@link EnvironmentFileSnapshots} over the secret store (Issue #104): deletes the Environment file snapshots of Runs that are final. A final
  * Run stores no more events (a worker appends only while it holds the Run), so its redaction
  * no longer needs the values. Called when a worker reports a final state, and from the
  * lost-worker schedule for every other way a Run ends (lost worker, and later stories'
@@ -17,7 +18,7 @@ import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/ru
  * throws: a failure is logged by secret id (redacted) and retried at the next call.
  */
 @Injectable()
-export class ReleaseEnvironmentFileSnapshotsHandler {
+export class SecretStoreEnvironmentFileSnapshots implements EnvironmentFileSnapshots {
   private readonly logger = new Logger('EnvironmentFileSnapshots');
 
   constructor(

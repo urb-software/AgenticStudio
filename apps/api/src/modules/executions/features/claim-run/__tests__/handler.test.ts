@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunEnvironmentFile } from '../../../../projects/contracts/index.js';
+import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/entities/run-environment-file.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
@@ -21,7 +21,7 @@ describe('ClaimRunHandler', () => {
   let handler: ClaimRunHandler;
   let secrets: InMemorySecretStore;
   // Each project's current Environment file (Issue #104); test values only.
-  let files: Map<string, RunEnvironmentFile>;
+  let files: Map<string, EnvironmentFile>;
   let filesFail: Error | undefined;
 
   const queue = (projectId: string) =>
@@ -263,7 +263,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
   const FILE = { path: '.env', content: 'DB_PASSWORD=test-only-pw-1\n' };
   let runs: InMemoryRunRepository;
   let secrets: InMemorySecretStore;
-  let current: RunEnvironmentFile | null;
+  let current: EnvironmentFile | null;
   let failRead: Error | undefined;
   let handler: ClaimRunHandler;
 

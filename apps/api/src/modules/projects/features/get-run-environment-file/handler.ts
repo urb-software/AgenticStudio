@@ -1,15 +1,15 @@
+import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  SECRET_STORE,
-  SecretNotFoundError,
-  type SecretStore,
-} from '../../../../platform/secrets/index.js';
-import type { RunEnvironmentFile, RunEnvironmentFiles } from '../../contracts/index.js';
+import type { RunEnvironmentFiles } from '../../contracts/index.js';
 import { isProjectId } from '../../domain/entities/project.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
 } from '../../domain/repositories/environment-file-repository.js';
+import {
+  ENVIRONMENT_FILE_CONTENTS,
+  type EnvironmentFileContents,
+} from '../../ports/environment-file-contents.js';
 
 /**
  * Query (Issue #104): the project's Environment file with its content, for `executions` when a
@@ -21,19 +21,19 @@ import {
 export class GetRunEnvironmentFileHandler implements RunEnvironmentFiles {
   constructor(
     @Inject(ENVIRONMENT_FILE_REPOSITORY) private readonly files: EnvironmentFileRepository,
-    @Inject(SECRET_STORE) private readonly secrets: SecretStore,
+    @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
   ) {}
 
-  async forProject(projectId: string): Promise<RunEnvironmentFile | null> {
+  async forProject(projectId: string): Promise<EnvironmentFile | null> {
     if (!isProjectId(projectId)) return null;
-    for (let attempt = 0; ; attempt++) {
+    // Twice at most: a content replaced between reading the row and the content is read again
+    // from the new row.
+    for (let attempt = 0; attempt < 2; attempt++) {
       const file = await this.files.find(projectId);
       if (!file) return null;
-      try {
-        return { path: file.path, content: await this.secrets.get(file.secretRef) };
-      } catch (error) {
-        if (!(error instanceof SecretNotFoundError) || attempt > 0) throw error;
-      }
+      const content = await this.contents.read(file.secretRef);
+      if (content !== null) return { path: file.path, content };
     }
+    throw new Error("The project's Environment file content is missing.");
   }
 }

@@ -7,7 +7,7 @@ import {
 import { lostWorkerRule } from '../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
-import { ReleaseEnvironmentFileSnapshotsHandler } from '../handler.js';
+import { SecretStoreEnvironmentFileSnapshots } from '../environment-file-snapshots.js';
 
 // Issue #104: a Run's Environment file snapshot serves its log redaction while the Run goes
 // on, and is deleted once the Run is final, however it ended. Test values only.
@@ -21,7 +21,7 @@ const OWNER = { owner: RUN_ENVIRONMENT_FILE_SECRET_OWNER };
 describe('Environment file snapshots', () => {
   let runs: InMemoryRunRepository;
   let secrets: InMemorySecretStore;
-  let release: ReleaseEnvironmentFileSnapshotsHandler;
+  let release: SecretStoreEnvironmentFileSnapshots;
 
   async function claimedWithSnapshot(projectId: string, content: string) {
     await runs.add({
@@ -43,7 +43,7 @@ describe('Environment file snapshots', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     runs = new InMemoryRunRepository();
     secrets = new InMemorySecretStore();
-    release = new ReleaseEnvironmentFileSnapshotsHandler(runs, secrets);
+    release = new SecretStoreEnvironmentFileSnapshots(runs, secrets);
   });
 
   afterEach(() => vi.restoreAllMocks());
