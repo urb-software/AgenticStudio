@@ -439,10 +439,11 @@ export class WorkingCopies implements WorkingCopyPort {
 
 /**
  * The `.git/info/exclude` line that matches exactly `path` (relative, validated): anchored at
- * the top with `/`, glob characters escaped, and trailing spaces kept (escaped).
+ * the top with `/`, backslashes and glob characters escaped, and trailing spaces kept
+ * (escaped). A validated path holds no backslash; it is escaped all the same.
  */
 export function excludePattern(path: string): string {
-  const escaped = path.replace(/[*?[]/g, (character) => `\\${character}`);
+  const escaped = path.replace(/[\\*?[]/g, (character) => `\\${character}`);
   return `/${escaped.replace(/ +$/, (spaces) => spaces.replace(/ /g, '\\ '))}`;
 }
 
