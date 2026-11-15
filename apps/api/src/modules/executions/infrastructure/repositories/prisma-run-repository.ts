@@ -284,6 +284,28 @@ export class PrismaRunRepository implements RunRepository {
     return run?.deliveryRequested ? run : null;
   }
 
+  async listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {
+    const rows = await this.db.run.findMany({
+      where: { state: 'failed', deliveryRequested: true, claimedBy: null },
+      select: { id: true, lastClaimedBy: true },
+    });
+    return rows.map((row) => ({ runId: row.id, startedBy: row.lastClaimedBy }));
+  }
+
+  async abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
+    const { count } = await this.db.run.updateMany({
+      where: { id: runId, state: 'failed', deliveryRequested: true, claimedBy: null },
+      data: {
+        failureCode: failure.code,
+        failureDetail: failure.detail,
+        delivery: 'failed',
+        deliveryRequested: false,
+        finishedAt: now,
+      },
+    });
+    return count === 1;
+  }
+
   async finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null> {
     const { result } = outcome;
     const { count } = await this.db.run.updateMany({

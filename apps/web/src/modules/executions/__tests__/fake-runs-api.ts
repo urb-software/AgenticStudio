@@ -15,6 +15,7 @@ type Route =
   | 'start'
   | 'runs'
   | 'run'
+  | 'retryDelivery'
   | 'providers'
   | 'events'
   | 'steps'
@@ -31,6 +32,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/projects\/([^/]+)\/runs$/, (method) => (method === 'POST' ? 'start' : 'projectRuns')],
   [/^\/api\/runs$/, () => 'runs'],
   [/^\/api\/runs\/([^/]+)$/, () => 'run'],
+  [/^\/api\/runs\/([^/]+)\/retry-delivery$/, () => 'retryDelivery'],
   [/^\/api\/providers()$/, () => 'providers'],
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
   [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
@@ -103,6 +105,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     start: [],
     runs: [],
     run: [],
+    retryDelivery: [],
     providers: [],
     events: [],
     steps: [],
@@ -191,6 +194,12 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
       case 'run': {
         const run = runs.find((candidate) => candidate.id === id);
         return run ? json(200, run) : json(404, problem(404, 'Run not found'));
+      }
+      case 'retryDelivery': {
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        if (index === -1) return json(404, problem(404, 'Run not found'));
+        runs[index] = { ...runs[index]!, deliveryRetryRequested: true };
+        return json(202, runs[index]);
       }
       case 'events': {
         const after = Number(searchParams.get('after') ?? 0);
