@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PROVIDER_BINARIES, loadWorkerConfig } from '../config.js';
+import type { DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
@@ -40,6 +41,9 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
   limits: { stepMinutes: 60, maxSteps: 10 },
   completedSteps: 0,
+  integrationBranch: 'dev',
+  kind: 'start',
+  studioPaths: [],
 });
 
 /** Where the spawn boundary registers a CLI's process group (Issue #100); recorded here. */
@@ -67,6 +71,15 @@ const workingCopies: WorkingCopyPort = {
     }
   ),
   report: async () => ({ runBranch: 'agent/x', commits: [], hasUncommittedChanges: false }),
+};
+
+/** Issue #102: delivery is not what this suite is about (delivery.linux.test.ts). */
+const deliveries: DeliveryPort = {
+  commit: async () => undefined,
+  deliver: async () => ({ outcome: 'none' }),
+  locate: async () => {
+    throw new Error('not used');
+  },
 };
 
 const DONE: RunStepResult = { outcome: 'done', summary: 'done' };
@@ -142,6 +155,7 @@ async function carry(
     status: { runner: config.runner, providers: gate.snapshot() },
     workingCopies,
     resources: { cleanUp: async () => undefined },
+    deliveries,
     pollMs: 5,
     heartbeatMs: 60_000,
     killGraceMs: 100,
@@ -166,7 +180,7 @@ const disabled = (provider: 'claude_code' | 'codex') => ({
   state: 'failed',
   failure: { code: 'provider_disabled', detail: new ProviderDisabledError(provider).message },
 });
-const SUCCEEDED = { state: 'succeeded' };
+const SUCCEEDED = { state: 'succeeded', delivery: { outcome: 'none' } };
 
 beforeEach(() => {
   spawn.mockReset();

@@ -35,6 +35,8 @@ describe('GetRunStartPointHandler', () => {
       status: 'ready',
       startCommit: HEAD,
       remoteUrl: 'https://github.com/acme/shop.git',
+      // Issue #102: the base of the Run's draft pull request.
+      integrationBranch: 'dev',
     });
   });
 

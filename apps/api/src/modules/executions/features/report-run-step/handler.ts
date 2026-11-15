@@ -23,12 +23,13 @@ export interface ReportRunStepInput extends RunStepRecord {
 /**
  * Command (Issue #96): the agent worker holding a `running` Run reports the structured result
  * of a Run step; it is stored (internal for now), and the Working copy's state it reports
- * becomes the Run's latest (Issue #98). Every string of the result is redacted before it is
- * stored, like the log (Issue #99); reads redact again for rows stored before. A step beyond
- * the Run's maximum is refused and the Run fails with `step_limit` (Issue #100). Returns the
- * step's number. Throws {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not
- * held by it), {@link StepLimitReachedError} or {@link StepOutOfOrderError}. A retried report of a
- * step already stored (same number) is acknowledged without storing it again (review of #121).
+ * becomes the Run's latest (Issue #98), with the checks the agent reported failed (Issue
+ * #102). Every string of the result is redacted before it is stored, like the log (Issue #99);
+ * reads redact again for rows stored before. A step beyond the Run's maximum is refused and the
+ * Run fails with `step_limit` (Issue #100). Returns the step's number. Throws
+ * {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not held by it),
+ * {@link StepLimitReachedError} or {@link StepOutOfOrderError}. A retried report of a step
+ * already stored (same number) is acknowledged without storing it again (review of #121).
  */
 @Injectable()
 export class ReportRunStepHandler {
@@ -43,15 +44,18 @@ export class ReportRunStepHandler {
       throw new RunNotFoundError();
     }
     const known = await this.secrets.forRun(input.runId);
+    const result = redactJsonStrings(input.result, known);
     const outcome = await this.runs.appendStep(
       input.runId,
       input.workerId,
       {
         kind: input.kind,
-        result: redactJsonStrings(input.result, known),
+        result,
         ...(input.index === undefined ? {} : { index: input.index }),
       },
       input.workingCopy,
+      // From the redacted result: the names are shown on the Run page.
+      failingChecks(result),
       this.clock.now(),
     );
     if (outcome.status === 'not_held') throw new RunNotHeldError();
@@ -59,4 +63,13 @@ export class ReportRunStepHandler {
     if (outcome.status === 'out_of_order') throw new StepOutOfOrderError(outcome.expected);
     return outcome.index;
   }
+}
+
+/** The names of the checks a structured result reports `failed` (validated by the contract). */
+function failingChecks(result: unknown): string[] {
+  const checks = (result as { checks?: unknown } | null)?.checks;
+  if (!Array.isArray(checks)) return [];
+  return checks
+    .filter((check: { result?: unknown }) => check?.result === 'failed')
+    .map((check: { name?: unknown }) => String(check.name));
 }

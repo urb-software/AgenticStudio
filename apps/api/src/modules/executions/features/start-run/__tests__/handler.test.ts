@@ -49,7 +49,12 @@ describe('StartRunHandler', () => {
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
-    startPoint = { status: 'ready', startCommit: HEAD, remoteUrl: REMOTE };
+    startPoint = {
+      status: 'ready',
+      startCommit: HEAD,
+      remoteUrl: REMOTE,
+      integrationBranch: 'dev',
+    };
     statuses = new InMemoryWorkerStatusStore();
     workerReports(true);
   });
@@ -72,6 +77,11 @@ describe('StartRunHandler', () => {
       startCommit: HEAD,
       // Issue #98: recorded with the commit, so the Run fetches the remote the commit is from.
       remoteUrl: REMOTE,
+      // Issue #102: the pull request's base, recorded with the commit it starts from.
+      integrationBranch: 'dev',
+      delivery: null,
+      pullRequest: null,
+      deliveryRequested: false,
       workingCopy: null,
       startedAt: null,
       finishedAt: null,

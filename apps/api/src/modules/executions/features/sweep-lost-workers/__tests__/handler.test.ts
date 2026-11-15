@@ -25,6 +25,7 @@ describe('SweepLostWorkersHandler', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      integrationBranch: 'dev',
     });
     return (await runs.claimNext(WORKER, T0))!;
   }
@@ -112,6 +113,7 @@ describe('SweepLostWorkersHandler', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      integrationBranch: 'dev',
     });
     now = later(3600);
 

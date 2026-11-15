@@ -22,11 +22,12 @@ export const FAKE_SCENARIOS = [
   'commit',
   'dirty',
   'stubborn',
+  'checks-failed',
   'secret',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
-const MARKER = /\[fake:([a-z]+)\]/;
+const MARKER = /\[fake:([a-z-]+)\]/;
 
 /** The scenario a Task asks for; `success` without a (known) marker. */
 export function fakeScenarioOf(task: string): FakeScenario {
@@ -60,6 +61,7 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  *   changes nothing in the Working copy.
  * - `commit` (Issue #98): like `success`, after committing one new file on the Run branch.
  * - `dirty` (Issue #98): like `success`, leaving one new file uncommitted.
+ * - `checks-failed` (Issue #102): like `commit`, but the agent reports a failing check.
  * - `fail`: the agent fails ({@link AgentFailedError}).
  * - `question`: a `needs_input` result with a question.
  * - `slow`: prints a numbered line every `slowLineMs` for `slowMs` and one wide line,
@@ -126,6 +128,16 @@ export class FakeRunner implements Runner {
         await this.change(workspace, signal, false);
         yield { type: 'output', text: `left ${FAKE_CHANGE_FILE} uncommitted` };
         return done();
+      case 'checks-failed':
+        await this.change(workspace, signal, true);
+        yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}; a check failed` };
+        return {
+          ...done(),
+          checks: [
+            { name: 'fake check', result: 'passed' },
+            { name: 'fake unit tests', result: 'failed', detail: '1 of 12 tests failed.' },
+          ],
+        };
       case 'success':
         yield { type: 'command', text: 'fake-test --all' };
         yield { type: 'output', text: 'done' };

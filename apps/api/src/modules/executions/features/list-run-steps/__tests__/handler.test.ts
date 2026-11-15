@@ -18,6 +18,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      integrationBranch: 'dev',
     });
     const run = (await runs.claimNext(WORKER, T0))!;
     await runs.transitionClaimed({
@@ -45,6 +46,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
         },
       },
       { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+      ['lint'],
       T0,
     );
     const handler = new ListRunStepsHandler(runs, {

@@ -102,6 +102,24 @@ export interface RunCancellation {
   reason: string;
 }
 
+/**
+ * How a Run was delivered (Issue #102): `none` (succeeded, the Run branch had no new commits:
+ * "No changes"), `delivered` (succeeded, with its draft pull request) or `failed` (the Run failed
+ * with `delivery_failed`). `null` until then.
+ */
+export const RUN_DELIVERIES = ['none', 'delivered', 'failed'] as const;
+export type RunDeliveryState = (typeof RUN_DELIVERIES)[number];
+
+/** The draft pull request a delivery opened or reused. */
+export interface RunPullRequest {
+  url: string;
+  number: number;
+}
+
+/** What an agent worker reports about a successful delivery. */
+export type RunDeliveryOutcome =
+  { outcome: 'none' } | { outcome: 'delivered'; pullRequest: RunPullRequest };
+
 export interface Run {
   id: string;
   projectId: string;
@@ -114,6 +132,19 @@ export interface Run {
   remoteUrl: string;
   /** The latest reported Working copy state; `null` until the first Run step is reported. */
   workingCopy: RunWorkingCopy | null;
+  /** The Repository's integration branch when the Run was started: its pull request's base. */
+  integrationBranch: string;
+  /** How the Run was delivered (Issue #102); `null` until it is. */
+  delivery: RunDeliveryState | null;
+  /** Set exactly when `delivery` is `delivered`. */
+  pullRequest: RunPullRequest | null;
+  /**
+   * The operator asked to retry the failed delivery; it stays set while an agent worker holds
+   * the Run for the retry (`claimedBy`), until the worker reports the outcome.
+   */
+  deliveryRequested: boolean;
+  /** Names of the checks the agent reported failed in the latest Run step. */
+  failingChecks: string[];
   createdAt: Date;
   /** When an agent worker claimed it. */
   startedAt: Date | null;
@@ -121,7 +152,10 @@ export interface Run {
   finishedAt: Date | null;
   /** Set exactly when `failed`. */
   failure: RunFailure | null;
-  /** The agent worker holding it; set exactly when `preparing` or `running`. */
+  /**
+   * The agent worker holding it: set exactly when `preparing` or `running`, or while it retries
+   * the delivery of a `failed` Run (Issue #102).
+   */
   claimedBy: string | null;
   /** The limits in force for this Run (Issue #100). */
   limits: RunLimits;
@@ -153,6 +187,23 @@ const TRANSITIONS: Record<RunState, readonly RunState[]> = {
   cancelled: [],
   timed_out: [],
 };
+
+/**
+ * Whether the operator may retry the Run's delivery (Issue #102): only a `failed` Run whose
+ * failure is `delivery_failed`. Its outcome is the one exception to the final states: on
+ * success the Run becomes `succeeded`, otherwise it stays `failed` with the new reason.
+ */
+export function canRetryDelivery(run: Pick<Run, 'state' | 'failure'>): boolean {
+  return run.state === 'failed' && run.failure?.code === 'delivery_failed';
+}
+
+/** Retrying the delivery of a Run that is not `failed` with `delivery_failed`. */
+export class DeliveryNotRetryableError extends Error {
+  constructor() {
+    super('Only a run whose delivery failed can retry its delivery.');
+    this.name = 'DeliveryNotRetryableError';
+  }
+}
 
 export function canTransition(from: RunState, to: RunState): boolean {
   return TRANSITIONS[from].includes(to);
@@ -257,12 +308,19 @@ export class RepositoryNotReadyError extends Error {
 export function lostWorkerRule(
   now: Date,
   leaseSeconds: number,
-): { staleBefore: Date; failure: RunFailure } {
+): { staleBefore: Date; failure: RunFailure; deliveryFailure: RunFailure } {
   return {
     staleBefore: new Date(now.getTime() - leaseSeconds * 1000),
     failure: {
       code: 'worker_lost',
       detail: `The agent worker sent no heartbeat for ${leaseSeconds} seconds.`,
+    },
+    // A delivery retry whose worker was lost stays a failed delivery, so it can be retried.
+    deliveryFailure: {
+      code: 'delivery_failed',
+      detail:
+        `The agent worker sent no heartbeat for ${leaseSeconds} seconds while it retried the ` +
+        'delivery. Retry the delivery.',
     },
   };
 }

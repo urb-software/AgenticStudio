@@ -49,6 +49,11 @@ export interface RunFile {
   runBranch: string;
   startCommit: string;
   composeProjectName: string;
+  /**
+   * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment
+   * file (#104): never committed or pushed (Issue #102). Absent in a Run file from before #102.
+   */
+  studioPaths?: string[];
 }
 
 /** The Working copy port of the worker loop: {@link WorkingCopies} in production. */
@@ -147,6 +152,7 @@ export class WorkingCopies implements WorkingCopyPort {
       runBranch,
       startCommit,
       composeProjectName: compose,
+      studioPaths: [...run.studioPaths],
     };
     await writeFile(paths.runFile, `${JSON.stringify(runFile, null, 2)}\n`, {
       flag: 'wx',

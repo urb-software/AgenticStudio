@@ -34,6 +34,9 @@ const RUN = {
   repository: { remoteUrl: '' },
   limits: { stepMinutes: 60, maxSteps: 10 },
   completedSteps: 0,
+  integrationBranch: 'main',
+  kind: 'start',
+  studioPaths: [],
 };
 
 /** The test harness runs the worker with the fake runner (Issue #101); no CLI is spawned. */

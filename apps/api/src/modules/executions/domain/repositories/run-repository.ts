@@ -2,6 +2,7 @@ import type {
   Provider,
   Run,
   RunCancellation,
+  RunDeliveryOutcome,
   RunFailure,
   RunLimits,
   RunState,
@@ -19,6 +20,7 @@ export interface NewRun {
   remoteUrl: string;
   /** The limits in force when the Run is started (Issue #100). */
   limits: RunLimits;
+  integrationBranch: string;
 }
 
 /** A change of state reported by the agent worker holding the Run. */
@@ -38,6 +40,26 @@ export interface ClaimedRunChange {
    * if that is still so, so a cancel that arrives in between is never lost.
    */
   cancelRequested: boolean;
+  /**
+   * With `succeeded` (Issue #102): how the Run was delivered. A `failed` Run with
+   * `delivery_failed` records the delivery `failed` by itself.
+   */
+  delivery?: RunDeliveryOutcome | null;
+  now: Date;
+}
+
+/**
+ * The outcome of a delivery retry (Issue #102), reported by the agent worker holding the
+ * `failed` Run: `succeeded` with the delivery, or still `failed` with `delivery_failed` and the
+ * new reason. Either way the Run is released and finished again at `now`.
+ */
+export interface DeliveryRetryOutcome {
+  runId: string;
+  workerId: string;
+  result:
+    { state: 'succeeded'; delivery: RunDeliveryOutcome } | { state: 'failed'; failure: RunFailure };
+  /** When set, becomes the Run's latest Working copy state. */
+  workingCopy: RunWorkingCopy | null;
   now: Date;
 }
 
@@ -93,10 +115,13 @@ export interface RunRepository {
   listByProjectNewestFirst(projectId: string): Promise<Run[]>;
 
   /**
-   * Hands the oldest eligible `queued` Run (by creation time, then id) to `workerId`: →
-   * `preparing`, started and heartbeat at `now`. Eligible: its project has no active Run and
-   * fewer than `MAX_ACTIVE_RUNS` are active across the server. Serialized against concurrent
-   * claims, so they cannot exceed the limits. `null` when nothing is eligible.
+   * Hands the oldest eligible Run (by creation time, then id) to `workerId`: a `queued` one →
+   * `preparing`, started and heartbeat at `now`; or a `failed` one whose delivery retry was
+   * requested, that no worker holds and that `workerId` itself started (it alone has the
+   * Working copy; Issue #102, review R4 of #122) → held by `workerId` (heartbeat at `now`),
+   * still `failed`. Eligible: its project has no active or held Run and fewer than `MAX_ACTIVE_RUNS`
+   * are active or held across the server. Serialized against concurrent claims, so they cannot
+   * exceed the limits. `null` when nothing is eligible.
    */
   claimNext(workerId: string, now: Date): Promise<Run | null>;
 
@@ -155,20 +180,33 @@ export interface RunRepository {
    */
   timeOutOverdueSteps(now: Date, graceMinutes: number): Promise<number>;
 
+  /**
+   * Requests a retry of the Run's failed delivery (Issue #102) if it is still `failed` with
+   * `delivery_failed`; repeating it changes nothing. The Run, or `null` if the condition failed.
+   */
+  requestDeliveryRetry(runId: string): Promise<Run | null>;
+
+  /**
+   * Applies a delivery retry's outcome if the Run is still `failed`, its retry requested and
+   * held by `outcome.workerId`; the request is cleared. `null` if the condition failed.
+   */
+  finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null>;
+
   /** The states of the Runs with these ids (valid UUIDs); ids that name no Run are left out. */
   findStates(ids: readonly string[]): Promise<RunStateView[]>;
 
   /**
    * Stores a Run step of a `running` Run held by `workerId`, numbered 1, 2, … in report
-   * order, and makes `workingCopy` the Run's latest Working copy state, in one transaction.
-   * A step beyond the Run's `maxSteps` is not stored: the Run fails with `stepLimitFailure`,
-   * released and finished at `now` (Issue #100).
+   * order, and makes `workingCopy` the Run's latest Working copy state and `failingChecks` its
+   * failing checks (Issue #102), in one transaction. A step beyond the Run's `maxSteps` is not
+   * stored: the Run fails with `stepLimitFailure`, released and finished at `now` (Issue #100).
    */
   appendStep(
     runId: string,
     workerId: string,
     step: RunStepRecord,
     workingCopy: RunWorkingCopy,
+    failingChecks: readonly string[],
     now: Date,
   ): Promise<AppendStepOutcome>;
 
@@ -176,10 +214,17 @@ export interface RunRepository {
   listSteps(runId: string): Promise<StoredRunStep[]>;
 
   /**
-   * Every held Run (`preparing` or `running`) whose last heartbeat is before `staleBefore` →
-   * `failed` with `failure`, released and finished at `now`; returns how many.
+   * Every held Run whose last heartbeat is before `staleBefore`: a `preparing` or `running` one
+   * → `failed` with `failure`; a `failed` one held for a delivery retry (Issue #102) keeps
+   * `failed` with `deliveryFailure` and its retry request cleared. Each is released and finished
+   * at `now`; returns how many.
    */
-  failStaleClaims(staleBefore: Date, failure: RunFailure, now: Date): Promise<number>;
+  failStaleClaims(
+    staleBefore: Date,
+    failure: RunFailure,
+    deliveryFailure: RunFailure,
+    now: Date,
+  ): Promise<number>;
 }
 
 /** No Run has this id. */

@@ -20,6 +20,7 @@ describe('LostWorkerSweepSchedule at API start', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     });
     const run = (await runs.claimNext(WORKER, T0))!;

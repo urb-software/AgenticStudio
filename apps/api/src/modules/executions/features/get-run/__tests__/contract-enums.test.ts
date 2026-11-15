@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { runEventKindSchema } from '../../../contracts/http/run-event-response.js';
 import {
   runCancelledBySchema,
+  runDeliverySchema,
   runFailureCodeSchema,
   runProviderSchema,
   runStateSchema,
@@ -19,6 +20,7 @@ import {
 import {
   PROVIDERS,
   RUN_CANCELLED_BY,
+  RUN_DELIVERIES,
   RUN_FAILURE_CODES,
   RUN_STATES,
   TASK_MAX_LENGTH,
@@ -33,6 +35,8 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(runProviderSchema.options).toEqual([...PROVIDERS]);
     expect(runFailureCodeSchema.options).toEqual([...RUN_FAILURE_CODES]);
     expect(runCancelledBySchema.options).toEqual([...RUN_CANCELLED_BY]);
+    // Issue #102.
+    expect(runDeliverySchema.options).toEqual([...RUN_DELIVERIES]);
   });
 
   it('worker protocol: the same states, providers, failure codes and Task limit', () => {

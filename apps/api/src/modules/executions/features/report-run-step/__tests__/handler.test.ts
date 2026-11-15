@@ -44,6 +44,7 @@ describe('ReportRunStepHandler', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14 },
+      integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -116,6 +117,27 @@ describe('ReportRunStepHandler', () => {
       report(OTHER_WORKER, { ...WORKING_COPY, runBranch: 'agent/other' }),
     ).rejects.toBeInstanceOf(RunNotHeldError);
     expect((await runs.findById(run.id))?.workingCopy).toEqual(WORKING_COPY);
+  });
+
+  it('records the checks the agent reported failed in the latest step (Issue #102)', async () => {
+    await running();
+    const checks = [
+      { name: 'lint', result: 'passed' },
+      { name: 'unit tests', result: 'failed' },
+      { name: 'e2e', result: 'not_run' },
+    ];
+
+    await handler.execute({
+      runId: run.id,
+      workerId: WORKER,
+      kind: 'start',
+      result: { ...RESULT, checks },
+      workingCopy: WORKING_COPY,
+    });
+    expect((await runs.findById(run.id))?.failingChecks).toEqual(['unit tests']);
+
+    await report();
+    expect((await runs.findById(run.id))?.failingChecks).toEqual([]);
   });
 
   it('rejects a step before the Run is running', async () => {

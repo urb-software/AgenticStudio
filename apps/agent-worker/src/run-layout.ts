@@ -8,9 +8,9 @@ import { posix } from 'node:path';
  * only, so paths are POSIX paths.
  *
  * Layout: `<dataDir>/cache/<projectId>.git` (one cache per Project) and
- * `<dataDir>/runs/<runId>/{repo/, task.md, run.json, step-processes}` (the Working copy and,
- * beside it and outside the repository, the Task, the Run file and, while a Run step runs, its
- * process groups: Issue #100).
+ * `<dataDir>/runs/<runId>/{repo/, task.md, run.json, result.json, step-processes}` (the Working
+ * copy and, beside it and outside the repository, the Task, the Run file, the agent's result
+ * and, while a Run step runs, its process groups: Issue #100).
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,6 +81,8 @@ export interface RunDirectories {
   runFile: string;
   /** The process groups of the Run step in progress, one id per line (Issue #100). */
   processesFile: string;
+  /** The agent's structured result of a `done` step, kept for a delivery retry (Issue #102). */
+  resultFile: string;
 }
 
 export function runDirectories(dataDir: string, runId: string): RunDirectories {
@@ -91,6 +93,7 @@ export function runDirectories(dataDir: string, runId: string): RunDirectories {
     taskFile: posix.join(runDir, 'task.md'),
     runFile: posix.join(runDir, 'run.json'),
     processesFile: posix.join(runDir, STEP_PROCESSES_FILE),
+    resultFile: posix.join(runDir, 'result.json'),
   };
 }
 

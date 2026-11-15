@@ -152,7 +152,18 @@ export const zRunOutput = z.object({
     cancellation: z.object({
         by: z.enum(['operator', 'system']),
         reason: z.string()
-    }).optional()
+    }).optional(),
+    delivery: z.enum([
+        'none',
+        'delivered',
+        'failed'
+    ]).optional(),
+    pullRequest: z.object({
+        url: z.url(),
+        number: z.int().gt(0).lte(9007199254740991)
+    }).optional(),
+    deliveryRetryRequested: z.literal(true).optional(),
+    failingChecks: z.array(z.string()).optional()
 });
 
 export const zRunListOutput = z.array(zRunOutput);
@@ -310,6 +321,12 @@ export const zCancelRunPath = z.object({
 });
 
 export const zCancelRunResponse = zRunOutput;
+
+export const zRetryRunDeliveryPath = z.object({
+    runId: z.string()
+});
+
+export const zRetryRunDeliveryResponse = zRunOutput;
 
 export const zListRunEventsPath = z.object({
     runId: z.string()
