@@ -134,6 +134,13 @@ export interface Run {
   cancellation: RunCancellation | null;
   /** When it began waiting for the operator; set exactly when `waiting_for_operator`. */
   waitingSince: Date | null;
+  /** When the current (or last) Run step started: set whenever the Run goes to `running`. */
+  stepStartedAt: Date | null;
+  /**
+   * The agent worker that released the Run (to `waiting_for_operator` or a final state), so a
+   * retried report of that same change is recognised (review of #121).
+   */
+  releasedBy: string | null;
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {
@@ -207,6 +214,13 @@ export function longWaitCancellation(run: Run, now: Date): RunCancellation | nul
     reason: `Cancelled automatically: the run waited for the operator longer than ${days} ${days === 1 ? 'day' : 'days'}.`,
   };
 }
+
+/**
+ * Studio's backstop for the step time limit (review of #121): the agent worker stops a Run step
+ * at `stepMinutes`; if a `running` Run's step is still going this much later, Studio itself ends
+ * the Run as `timed_out`.
+ */
+export const STEP_TIME_LIMIT_GRACE_MINUTES = 5;
 
 /** The failure of a Run that would exceed its maximum number of Run steps (Issue #100). */
 export function stepLimitFailure(maxSteps: number): RunFailure {

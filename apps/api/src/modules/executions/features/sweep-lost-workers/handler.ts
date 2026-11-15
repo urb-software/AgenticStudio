@@ -8,6 +8,7 @@ import {
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
+import { timeOutOverdueSteps } from '../../domain/services/overdue-steps.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { CancelLongWaitingRunsHandler } from '../cancel-long-waiting-runs/handler.js';
@@ -59,8 +60,15 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
 
   async onApplicationBootstrap(): Promise<void> {
     try {
-      const renewed = await this.runs.renewClaims(this.clock.now());
-      if (renewed > 0) this.logger.log(`Renewed the lease of ${renewed} held run(s) at start.`);
+      const renewed = await this.runs.renewClaimsOncePerLease(this.clock.now(), this.lease.seconds);
+      if (renewed === null) {
+        this.logger.warn(
+          'Not renewing the leases of held runs: they were renewed less than a lease ago ' +
+            '(is the API restarting repeatedly?).',
+        );
+      } else if (renewed > 0) {
+        this.logger.log(`Renewed the lease of ${renewed} held run(s) at start.`);
+      }
     } catch (error) {
       // Not fatal: the sweep still runs; at worst a Run whose worker kept going fails as
       // worker_lost.
@@ -87,6 +95,10 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
     try {
       const failed = await this.sweep.execute();
       if (failed > 0) this.logger.warn(`${failed} run(s) failed: their agent worker was lost.`);
+      const timedOut = await timeOutOverdueSteps(this.runs, this.clock.now());
+      if (timedOut > 0) {
+        this.logger.warn(`${timedOut} run(s) timed out: their run step ran far past its limit.`);
+      }
       const cancelled = await this.longWaits.execute();
       if (cancelled > 0) {
         this.logger.warn(`${cancelled} run(s) cancelled: they waited too long for the operator.`);

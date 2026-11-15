@@ -5,6 +5,7 @@ import {
   RunNotFoundError,
   RunNotHeldError,
   StepLimitReachedError,
+  StepOutOfOrderError,
 } from '../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../domain/services/log-redaction.js';
 import { ReportRunStepHandler } from '../handler.js';
@@ -157,6 +158,37 @@ describe('ReportRunStepHandler', () => {
       },
       claimedBy: null,
       finishedAt: T1,
+    });
+  });
+
+  // Review of #121: the worker numbers its steps; a re-sent number is not stored twice.
+  describe('step numbers', () => {
+    const numbered = (index: number) =>
+      handler.execute({
+        runId: run.id,
+        workerId: WORKER,
+        index,
+        kind: 'start',
+        result: RESULT,
+        workingCopy: WORKING_COPY,
+      });
+
+    it('acknowledges a re-sent step without storing it again', async () => {
+      await running();
+
+      expect(await numbered(1)).toBe(1);
+      expect(await numbered(1)).toBe(1);
+      expect(runs.steps).toHaveLength(1);
+    });
+
+    it('refuses a step number that skips ahead', async () => {
+      await running();
+
+      const error = await numbered(2).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(StepOutOfOrderError);
+      expect((error as StepOutOfOrderError).expected).toBe(1);
+      expect(runs.steps).toEqual([]);
     });
   });
 });

@@ -149,9 +149,13 @@ describe('worker requests', () => {
       commits: [],
       hasUncommittedChanges: false,
     };
-    const body = { workerId: WORKER_ID, kind: 'start', result, workingCopy };
+    const body = { workerId: WORKER_ID, index: 1, kind: 'start', result, workingCopy };
     expect(reportRunStepRequestSchema.parse(body)).toEqual(body);
     expect(reportRunStepRequestSchema.safeParse({ ...body, kind: 'retry' }).success).toBe(false);
+    // Review of #121: every step report carries its number, 1, 2, …
+    expect(reportRunStepRequestSchema.safeParse({ ...body, index: undefined }).success).toBe(false);
+    expect(reportRunStepRequestSchema.safeParse({ ...body, index: 0 }).success).toBe(false);
+    expect(reportRunStepRequestSchema.safeParse({ ...body, index: 1.5 }).success).toBe(false);
   });
 
   it("carries the Working copy's state with every Run step report (Issue #98)", () => {
@@ -475,6 +479,7 @@ describe('size of a structured result (review finding 4 on #111)', () => {
     };
     const body = {
       workerId: WORKER_ID,
+      index: 2_147_483_647,
       kind: 'resume',
       result: resultOf(RUN_STEP_RESULT_MAX_BYTES),
       workingCopy,

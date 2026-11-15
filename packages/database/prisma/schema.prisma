@@ -164,6 +164,12 @@ model Run {
   limitStepMinutes      Int       @map("limit_step_minutes")
   limitMaxSteps         Int       @map("limit_max_steps")
   limitWaitingDays      Int       @map("limit_waiting_days")
+  /// When the current (or last) Run step started; set whenever the Run goes to running (review
+  /// of #121: Studio's backstop for the step time limit).
+  stepStartedAt         DateTime? @map("step_started_at") @db.Timestamptz(6)
+  /// The agent worker that released the Run (to waiting_for_operator or a final state), so a
+  /// retried report of that change is recognised (review of #121).
+  releasedBy            String?   @map("released_by") @db.Uuid
   /// UTF-8 bytes of event text stored for the Run (Issue #99), counted against the log cap.
   logBytes              Int       @default(0) @map("log_bytes")
   /// Whether the log cap was reached: one "log truncated" notice is stored, later events are dropped.
@@ -216,4 +222,13 @@ model RunEvent {
 
   @@id([runId, seq], map: "run_events_pkey")
   @@map("run_events")
+}
+
+/// When the API last renewed the leases of held Runs at start (review of #121): at most once per
+/// lease period, so an API crash loop cannot keep a dead worker's Run alive. One row.
+model RunLeaseRenewal {
+  id        Int      @id @db.SmallInt
+  renewedAt DateTime @map("renewed_at") @db.Timestamptz(6)
+
+  @@map("run_lease_renewals")
 }

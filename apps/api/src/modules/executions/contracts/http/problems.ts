@@ -24,6 +24,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
   /** 409 (worker routes): a Run step beyond the Run's maximum; the Run is now failed (Issue #100). */
   stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
+  /** 409 (worker routes): a Run step's number is not the next one (review of #121). */
+  stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
 } as const;
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
@@ -111,5 +113,14 @@ export function stepLimitReached(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.stepLimitReached,
     title: 'Step limit reached',
     detail: 'The run reached its maximum number of run steps and has failed. Stop working on it.',
+  });
+}
+
+/** 409 on a worker route: the reported Run step is not the next one; nothing was stored. */
+export function stepOutOfOrder(expected: number): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.stepOutOfOrder,
+    title: 'Step out of order',
+    detail: `The next run step of this run is number ${expected}.`,
   });
 }

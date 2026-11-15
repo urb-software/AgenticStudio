@@ -127,4 +127,33 @@ describe('ClaimRunHandler', () => {
       cancellation: { by: 'system' },
     });
   });
+
+  it("times out a Run whose step ran past its limit plus Studio's grace (review of #121)", async () => {
+    const stuck = await queue(A);
+    await handler.execute(WORKER);
+    await runs.transitionClaimed({
+      runId: stuck.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T0,
+    });
+    // The worker keeps sending heartbeats, but its step never stops.
+    now = new Date(T0.getTime() + (60 + 5) * 60_000);
+    await runs.heartbeat(stuck.id, WORKER, now);
+    await handler.execute(OTHER_WORKER);
+    expect((await runs.findById(stuck.id))?.state).toBe('running');
+
+    now = new Date(now.getTime() + 1000);
+    await runs.heartbeat(stuck.id, WORKER, now);
+    await handler.execute(OTHER_WORKER);
+
+    expect(await runs.findById(stuck.id)).toMatchObject({
+      state: 'timed_out',
+      claimedBy: null,
+      finishedAt: now,
+    });
+  });
 });

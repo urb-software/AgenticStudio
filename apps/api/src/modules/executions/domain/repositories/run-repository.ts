@@ -43,7 +43,10 @@ export interface ClaimedRunChange {
 
 /** What storing a Run step did (Issue #100: the API also enforces the step limit). */
 export type AppendStepOutcome =
-  | { status: 'stored'; index: number }
+  /** Stored now, or (`duplicate`) already stored by an earlier delivery of the same report. */
+  | { status: 'stored'; index: number; duplicate?: boolean }
+  /** The reported number is neither the stored last one nor the next one; nothing changed. */
+  | { status: 'out_of_order'; expected: number }
   /** The Run is not `running` or not held by this worker; nothing changed. */
   | { status: 'not_held' }
   /** The step would exceed the Run's `maxSteps`: it was not stored, and the Run is `failed`. */
@@ -53,6 +56,8 @@ export type AppendStepOutcome =
 export interface RunStepRecord {
   kind: 'start' | 'resume';
   result: unknown;
+  /** The step's number as the worker reports it (review of #121); the next one when absent. */
+  index?: number;
 }
 
 /** A stored Run step: its number, kind, report time and the result as stored JSON. */
@@ -135,10 +140,20 @@ export interface RunRepository {
   listWaiting(): Promise<Run[]>;
 
   /**
-   * Renews the lease of every held Run to `now` (Issue #100): run when the API starts, so a
-   * short Studio outage does not fail the Runs their workers kept carrying. Returns how many.
+   * Renews the lease of every held Run to `now` (Issue #100), run when the API starts so a short
+   * Studio outage does not fail the Runs their workers kept carrying, but at most once per lease
+   * period (review of #121): the time of the last renewal is stored, so an API that keeps
+   * crashing and restarting cannot keep a dead worker's Run alive. Returns how many Runs were
+   * renewed, or `null` when a renewal happened less than `leaseSeconds` ago.
    */
-  renewClaims(now: Date): Promise<number>;
+  renewClaimsOncePerLease(now: Date, leaseSeconds: number): Promise<number | null>;
+
+  /**
+   * Studio's backstop for the step time limit (review of #121): every `running` Run whose
+   * current step started more than its `stepMinutes` plus `graceMinutes` before `now` →
+   * `timed_out`, released and finished at `now`. Returns how many.
+   */
+  timeOutOverdueSteps(now: Date, graceMinutes: number): Promise<number>;
 
   /** The states of the Runs with these ids (valid UUIDs); ids that name no Run are left out. */
   findStates(ids: readonly string[]): Promise<RunStateView[]>;
@@ -183,6 +198,14 @@ export class RunNotHeldError extends Error {
   constructor() {
     super('This agent worker does not hold the run.');
     this.name = 'RunNotHeldError';
+  }
+}
+
+/** A Run step's number is neither the last stored one nor the next (review of #121). */
+export class StepOutOfOrderError extends Error {
+  constructor(readonly expected: number) {
+    super(`The next run step is number ${expected}.`);
+    this.name = 'StepOutOfOrderError';
   }
 }
 

@@ -51,6 +51,8 @@ export class InMemoryRunRepository implements RunRepository {
       cancelRequestedAt: null,
       cancellation: null,
       waitingSince: null,
+      stepStartedAt: null,
+      releasedBy: null,
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -108,6 +110,8 @@ export class InMemoryRunRepository implements RunRepository {
       finishedAt: isFinal(change.to) ? change.now : null,
       cancellation: change.to === 'cancelled' ? (change.cancellation ?? null) : null,
       waitingSince: change.to === 'waiting_for_operator' ? change.now : null,
+      stepStartedAt: change.to === 'running' ? change.now : run.stepStartedAt,
+      releasedBy: held ? null : change.workerId,
       ...(change.workingCopy ? { workingCopy: structuredClone(change.workingCopy) } : {}),
     });
     return Promise.resolve(this.view(run));
@@ -154,10 +158,36 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  renewClaims(now: Date): Promise<number> {
+  /** The last lease renewal at API start (the database adapter stores it in a table). */
+  lastRenewal: Date | null = null;
+
+  renewClaimsOncePerLease(now: Date, leaseSeconds: number): Promise<number | null> {
+    if (this.lastRenewal && now.getTime() - this.lastRenewal.getTime() < leaseSeconds * 1000) {
+      return Promise.resolve(null);
+    }
+    this.lastRenewal = now;
     const held = this.runs.filter((run) => isClaimed(run.state));
     for (const run of held) run.heartbeatAt = now;
     return Promise.resolve(held.length);
+  }
+
+  timeOutOverdueSteps(now: Date, graceMinutes: number): Promise<number> {
+    const overdue = this.runs.filter(
+      (run) =>
+        run.state === 'running' &&
+        run.stepStartedAt !== null &&
+        now.getTime() - run.stepStartedAt.getTime() >
+          (run.limits.stepMinutes + graceMinutes) * 60_000,
+    );
+    for (const run of overdue) {
+      Object.assign(run, {
+        state: 'timed_out',
+        claimedBy: null,
+        heartbeatAt: null,
+        finishedAt: now,
+      });
+    }
+    return Promise.resolve(overdue.length);
   }
 
   findStates(ids: readonly string[]): Promise<RunStateView[]> {
@@ -179,7 +209,10 @@ export class InMemoryRunRepository implements RunRepository {
     if (!run || run.state !== 'running' || run.claimedBy !== workerId) {
       return Promise.resolve({ status: 'not_held' });
     }
-    const index = this.steps.filter((stored) => stored.runId === runId).length + 1;
+    const last = this.steps.filter((stored) => stored.runId === runId).length;
+    const index = step.index ?? last + 1;
+    if (index <= last) return Promise.resolve({ status: 'stored', index, duplicate: true });
+    if (index !== last + 1) return Promise.resolve({ status: 'out_of_order', expected: last + 1 });
     if (index > run.limits.maxSteps) {
       Object.assign(run, {
         state: 'failed',
@@ -190,7 +223,8 @@ export class InMemoryRunRepository implements RunRepository {
       });
       return Promise.resolve({ status: 'step_limit' });
     }
-    this.steps.push({ runId, index, step: structuredClone(step) });
+    const { kind, result } = step;
+    this.steps.push({ runId, index, step: structuredClone({ kind, result }) });
     run.workingCopy = structuredClone(workingCopy);
     return Promise.resolve({ status: 'stored', index });
   }

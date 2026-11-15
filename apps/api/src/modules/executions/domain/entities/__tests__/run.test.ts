@@ -96,6 +96,8 @@ describe('long-wait rule', () => {
     cancelRequestedAt: null,
     cancellation: null,
     waitingSince: since,
+    stepStartedAt: null,
+    releasedBy: null,
     ...overrides,
   });
   const after = (days: number, extraMs = 0) =>

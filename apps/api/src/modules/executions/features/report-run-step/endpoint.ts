@@ -1,10 +1,16 @@
 import { Body, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { WorkerController } from '../../../../platform/auth/worker-route.js';
-import { runNotFound, runNotHeld, stepLimitReached } from '../../contracts/http/problems.js';
+import {
+  runNotFound,
+  runNotHeld,
+  stepLimitReached,
+  stepOutOfOrder,
+} from '../../contracts/http/problems.js';
 import {
   RunNotFoundError,
   RunNotHeldError,
   StepLimitReachedError,
+  StepOutOfOrderError,
 } from '../../domain/repositories/run-repository.js';
 import { ReportRunStepHandler } from './handler.js';
 import { ReportRunStepRequestDto } from './schema.js';
@@ -25,6 +31,7 @@ export class ReportRunStepEndpoint {
       await this.handler.execute({
         runId,
         workerId: body.workerId,
+        index: body.index,
         kind: body.kind,
         result: body.result,
         workingCopy: body.workingCopy,
@@ -33,6 +40,7 @@ export class ReportRunStepEndpoint {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof RunNotHeldError) throw runNotHeld();
       if (error instanceof StepLimitReachedError) throw stepLimitReached();
+      if (error instanceof StepOutOfOrderError) throw stepOutOfOrder(error.expected);
       throw error;
     }
   }

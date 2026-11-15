@@ -47,6 +47,7 @@ const PROBLEM = {
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
   runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
   stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
+  stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
 };
 
@@ -108,8 +109,25 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
     commits: [{ id: 'c'.repeat(40), subject: 'Add GET /health' }],
     hasUncommittedChanges: false,
   };
-  const reportStep = (runId: string, result: object, workerId = W1, workingCopy = WORKING_COPY) =>
-    worker(`${runId}/steps`, { workerId, kind: 'start', result, workingCopy });
+  /** The next step number per Run, as the worker numbers its steps (review of #121). */
+  const nextStep = new Map<string, number>();
+  const reportStep = async (
+    runId: string,
+    result: object,
+    workerId = W1,
+    workingCopy = WORKING_COPY,
+    index = nextStep.get(runId) ?? 1,
+  ) => {
+    const response = await worker(`${runId}/steps`, {
+      workerId,
+      index,
+      kind: 'start',
+      result,
+      workingCopy,
+    });
+    if (response.status === 204) nextStep.set(runId, index + 1);
+    return response;
+  };
   const runStates = (runIds: string[], token: string | null = WORKER_TOKEN) =>
     worker('states', { workerId: W1, runIds }, token);
   const heartbeat = (runId: string, workerId = W1) => worker(`${runId}/heartbeat`, { workerId });
@@ -148,6 +166,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
   beforeEach(async () => {
     // Test isolation only; CASCADE also empties runs and run_steps.
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
+    // The last lease renewal at API start (review of #121) is per test as well.
+    await db().$executeRaw`TRUNCATE TABLE run_lease_renewals`;
     clock.current = new Date();
     // A connected agent worker with both providers switched on (Issue #101).
     expect((await workerStatus()).status).toBe(204);
@@ -484,7 +504,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       await report(run.id, { state: 'running' });
       const result = { outcome: 'done', summary: 'Done.' };
 
-      expectProblem(await worker(`${run.id}/steps`, { workerId: W1, kind: 'start', result }), 400);
+      expectProblem(
+        await worker(`${run.id}/steps`, { workerId: W1, index: 1, kind: 'start', result }),
+        400,
+      );
       expectProblem(
         await reportStep(run.id, result, W1, {
           ...WORKING_COPY,
@@ -989,6 +1012,93 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         advance(LEASE_SECONDS + 1);
         await claim(W2);
         expect((await getRun(other.id)).body.failure?.code).toBe('worker_lost');
+      });
+    });
+
+    // Review of #121: a report Studio applied but whose answer the worker never got is sent
+    // again; the repeat changes nothing and succeeds, so the Run goes on.
+    describe('retried reports (review of #121)', () => {
+      it('accepts repeated running, step and end reports without changing or duplicating anything', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        expect((await report(run.id, { state: 'running' })).status).toBe(204);
+        expect((await report(run.id, { state: 'running' })).status).toBe(204);
+        const result = { outcome: 'done', summary: 'Done.' };
+        expect((await reportStep(run.id, result, W1, WORKING_COPY, 1)).status).toBe(204);
+        expect((await reportStep(run.id, result, W1, WORKING_COPY, 1)).status).toBe(204);
+        expect((await report(run.id, { state: 'succeeded' })).status).toBe(204);
+        advance(5);
+        expect((await report(run.id, { state: 'succeeded' })).status).toBe(204);
+
+        const finished = (await getRun(run.id)).body;
+        expect(finished.state).toBe('succeeded');
+        // The repeat did not move the finish time.
+        expect(finished.finishedAt).not.toBe(clock.current.toISOString());
+        const rows = await db().$queryRaw<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM run_steps WHERE run_id = ${run.id}::uuid`;
+        expect(rows[0]?.count).toBe(1);
+        // Another worker, or a different end, is still refused.
+        expectProblem(await report(run.id, { state: 'succeeded' }, W2), 409, PROBLEM.runNotHeld);
+      });
+
+      it('refuses a step number that skips ahead', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+
+        expectProblem(
+          await reportStep(run.id, { outcome: 'done', summary: 'x' }, W1, WORKING_COPY, 2),
+          409,
+          PROBLEM.stepOutOfOrder,
+        );
+      });
+
+      it("times out a Run whose step runs past its limit plus Studio's grace, despite heartbeats", async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+
+        for (let minute = 0; minute < LIMITS.stepMinutes + 5; minute += 1) {
+          advance(60);
+          expect((await heartbeat(run.id)).status).toBe(200);
+        }
+        expect((await claim(W2)).status).toBe(204);
+        expect((await getRun(run.id)).body.state).toBe('running');
+
+        advance(1);
+        await heartbeat(run.id);
+        expect((await claim(W2)).status).toBe(204);
+        expect((await getRun(run.id)).body.state).toBe('timed_out');
+        expectProblem(await heartbeat(run.id), 409, PROBLEM.runNotHeld);
+      });
+
+      it('renews leases at most once per lease period, so an API crash loop fails a dead worker', async () => {
+        const project = await readyProject('Shop');
+        const run = await queuedRun(project.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        const config = {
+          ...services.config,
+          workerToken: WORKER_TOKEN_DIGEST,
+          workerLeaseSeconds: LEASE_SECONDS,
+          runLimits: LIMITS,
+        };
+        // Studio restarts once after a long outage, renewing the lease ...
+        advance(LEASE_SECONDS * 10);
+        await (await startStudioApp(config, { executions: { clock } })).close();
+        // ... then keeps crashing and restarting; the worker is gone.
+        for (const seconds of [20, 20, 15]) {
+          advance(seconds);
+          await (await startStudioApp(config, { executions: { clock } })).close();
+        }
+        advance(10);
+        expect((await workerStatus()).status).toBe(204);
+        await claim(W2);
+
+        expect((await getRun(run.id)).body.failure?.code).toBe('worker_lost');
       });
     });
 

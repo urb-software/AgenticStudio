@@ -94,13 +94,13 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
   function startWorker(
     token = WORKER_TOKEN,
     providers = BOTH_ENABLED,
-    extras: { runner?: Runner; minuteMs?: number } = {},
+    extras: { runner?: Runner; minuteMs?: number; fetch?: typeof fetch } = {},
   ): AgentWorker {
     const gate = new ProviderGate(providers);
     const git = new GitRunner({ env: { PATH: gitEnv.PATH!, HOME: gitEnv.HOME! } });
     const fake = extras.runner ?? new FakeRunner({ slowMs: 60_000, git });
     const worker = new AgentWorker({
-      api: new StudioApi({ apiUrl, token, workerId: randomUUID() }),
+      api: new StudioApi({ apiUrl, token, workerId: randomUUID(), fetch: extras.fetch }),
       runner: new RunnerDispatcher(gate, { claude_code: fake, codex: fake }),
       gate,
       resources: { cleanUp: async (project) => void cleanedUp.push(project) },
@@ -424,6 +424,32 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
   });
 
   // Issue #100: cancel, the time limit and process-tree termination through the real API.
+  // Review of #121: Studio applies a report, but its answer never reaches the worker (the
+  // connection drops after the commit). The worker sends it again; the real API treats the repeat
+  // as a no-op, so the Run still ends succeeded with exactly one stored Run step.
+  it('carries a Run through reports whose answers are lost, without a duplicate step', async () => {
+    const lost = new Set(['running', 'steps', 'succeeded']);
+    const lossy: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      const url = String(input);
+      const body =
+        typeof init?.body === 'string' ? (JSON.parse(init.body) as { state?: string }) : {};
+      const label = url.endsWith('/steps') ? 'steps' : url.endsWith('/state') ? body.state : '';
+      if (label && lost.delete(label)) throw new TypeError('fetch failed: the answer was lost');
+      return response;
+    };
+    const runId = await startRun('Add a health check');
+    startWorker(WORKER_TOKEN, BOTH_ENABLED, { fetch: lossy });
+
+    const run = await runReaches(runId, ['succeeded', 'failed']);
+
+    expect(run.state).toBe('succeeded');
+    expect(lost.size).toBe(0);
+    const [steps] = await db.$queryRaw<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM run_steps WHERE run_id = ${runId}::uuid`;
+    expect(steps?.count).toBe(1);
+  });
+
   describe('cancel and time limit (Issue #100)', () => {
     const cancel = (runId: string) =>
       fetch(`${apiUrl}/api/runs/${runId}/cancel`, {

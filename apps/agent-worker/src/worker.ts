@@ -249,7 +249,12 @@ export class AgentWorker {
       abort.signal.throwIfAborted();
       const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
       outbox.send('step', (signal) =>
-        api.reportStep(run.runId, { kind: 'start', result, workingCopy }, signal),
+        api.reportStep(
+          run.runId,
+          // Numbered, so a retry of a report Studio already stored is not stored twice.
+          { index: run.completedSteps + 1, kind: 'start', result, workingCopy },
+          signal,
+        ),
       );
       const state = result.outcome === 'needs_input' ? 'waiting_for_operator' : 'succeeded';
       outbox.send(state, (signal) => api.reportState(run.runId, { state }, signal));

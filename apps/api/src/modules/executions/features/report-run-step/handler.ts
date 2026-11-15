@@ -7,6 +7,7 @@ import {
   type RunRepository,
   type RunStepRecord,
   StepLimitReachedError,
+  StepOutOfOrderError,
 } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { redactJsonStrings } from '../../domain/services/log-redaction.js';
@@ -26,7 +27,8 @@ export interface ReportRunStepInput extends RunStepRecord {
  * stored, like the log (Issue #99); reads redact again for rows stored before. A step beyond
  * the Run's maximum is refused and the Run fails with `step_limit` (Issue #100). Returns the
  * step's number. Throws {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not
- * held by it) or {@link StepLimitReachedError}.
+ * held by it), {@link StepLimitReachedError} or {@link StepOutOfOrderError}. A retried report of a
+ * step already stored (same number) is acknowledged without storing it again (review of #121).
  */
 @Injectable()
 export class ReportRunStepHandler {
@@ -44,12 +46,17 @@ export class ReportRunStepHandler {
     const outcome = await this.runs.appendStep(
       input.runId,
       input.workerId,
-      { kind: input.kind, result: redactJsonStrings(input.result, known) },
+      {
+        kind: input.kind,
+        result: redactJsonStrings(input.result, known),
+        ...(input.index === undefined ? {} : { index: input.index }),
+      },
       input.workingCopy,
       this.clock.now(),
     );
     if (outcome.status === 'not_held') throw new RunNotHeldError();
     if (outcome.status === 'step_limit') throw new StepLimitReachedError();
+    if (outcome.status === 'out_of_order') throw new StepOutOfOrderError(outcome.expected);
     return outcome.index;
   }
 }

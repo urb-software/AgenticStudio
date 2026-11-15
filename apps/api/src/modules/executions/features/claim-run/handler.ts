@@ -3,6 +3,7 @@ import type { Run, RunFailure } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { cancelLongWaitingRuns } from '../../domain/services/long-waiting-runs.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
+import { timeOutOverdueSteps } from '../../domain/services/overdue-steps.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
@@ -31,6 +32,8 @@ export class ClaimRunHandler {
     await failLostWorkers(this.runs, now, this.lease.seconds);
     // A Run left waiting too long holds a slot; it is cancelled first (Issue #100).
     await cancelLongWaitingRuns(this.runs, now);
+    // A step far past its time limit holds a slot too (review of #121: Studio's backstop).
+    await timeOutOverdueSteps(this.runs, now);
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       // A Run from before Issue #98 whose project had no Repository has no remote to prepare

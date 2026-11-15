@@ -115,6 +115,18 @@ export const runPayloadSchema = z.strictObject({
 });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
+/**
+ * Problem `type`s of the worker routes the agent worker acts on (review of #121). Only these
+ * (and 404) mean the worker no longer holds the Run and must abandon it; any other refusal,
+ * e.g. `illegal-run-transition`, is logged and the Run goes on. Pinned to the API's list by a
+ * test in the API.
+ */
+export const WORKER_PROBLEM_TYPES = {
+  runNotHeld: 'urn:agentic-studio:problem:run-not-held',
+  runNotFound: 'urn:agentic-studio:problem:run-not-found',
+  stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
+} as const;
+
 /** `POST /api/worker/runs/claim` body. */
 export const claimRunRequestSchema = z.strictObject({ workerId: workerIdSchema });
 export type ClaimRunRequest = z.infer<typeof claimRunRequestSchema>;
@@ -257,9 +269,17 @@ export const reportRunStateRequestSchema = z
   });
 export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 
-/** `POST /api/worker/runs/:runId/steps` body: the step's result and the Working copy's state. */
+/**
+ * `POST /api/worker/runs/:runId/steps` body: the step's number and kind, its result and the
+ * Working copy's state.
+ */
 export const reportRunStepRequestSchema = z.strictObject({
   workerId: workerIdSchema,
+  /**
+   * The Run step's number, 1, 2, … (review of #121): a retried report of a step Studio already
+   * stored is recognised by it and changes nothing.
+   */
+  index: z.int().min(1).max(2_147_483_647),
   kind: z.enum(RUN_STEP_KINDS),
   result: runStepResultSchema,
   workingCopy: workingCopyReportSchema,

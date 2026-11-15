@@ -211,4 +211,41 @@ describe('ReportRunStateHandler', () => {
       expect(await report({ state: 'waiting_for_operator' })).toMatchObject({ waitingSince: T1 });
     });
   });
+
+  // Review of #121: a retried report whose answer was lost changes nothing and succeeds.
+  describe('retried reports', () => {
+    it('accepts a repeated running report as a no-op', async () => {
+      const first = await report({ state: 'running' });
+
+      expect(await report({ state: 'running' })).toEqual(first);
+    });
+
+    it('accepts a repeated end report from the worker that ended the Run', async () => {
+      await report({ state: 'running' });
+      const done = await report({ state: 'succeeded' });
+
+      expect(await report({ state: 'succeeded' })).toEqual(done);
+      await expect(report({ state: 'succeeded', workerId: OTHER_WORKER })).rejects.toBeInstanceOf(
+        RunNotHeldError,
+      );
+    });
+
+    it('accepts a repeated waiting report, and a repeat that became cancelled', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+      const cancelled = await report({ state: 'waiting_for_operator' });
+
+      expect(cancelled.state).toBe('cancelled');
+      expect(await report({ state: 'waiting_for_operator' })).toEqual(cancelled);
+    });
+
+    it('still refuses a different end report after the Run ended', async () => {
+      await report({ state: 'running' });
+      await report({ state: 'succeeded' });
+
+      await expect(
+        report({ state: 'failed', failure: { code: 'unknown', detail: 'x' } }),
+      ).rejects.toBeInstanceOf(RunNotHeldError);
+    });
+  });
 });

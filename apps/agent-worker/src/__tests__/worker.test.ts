@@ -93,13 +93,31 @@ class RecordingApi implements WorkerApi {
     }
     return this.queue.shift() ?? null;
   }
-  async reportState(runId: string, report: unknown) {
+  /**
+   * Review of #121: reports Studio applies but whose answer is lost (a network error after the
+   * commit), by label: `running`, `step`, or the end state.
+   */
+  readonly loseAnswerOf = new Set<string>();
+  /** Review of #121: the next state report is refused with this error. */
+  stateRefusal: Error | undefined;
+  private answer(label: string) {
+    if (!this.loseAnswerOf.delete(label)) return;
+    throw new TypeError('fetch failed: the answer was lost');
+  }
+  async reportState(runId: string, report: { state: string }) {
     if (this.studioDown) throw this.studioDown;
+    if (this.stateRefusal) {
+      const refusal = this.stateRefusal;
+      this.stateRefusal = undefined;
+      throw refusal;
+    }
     this.calls.push(['state', runId, report]);
+    this.answer(report.state);
   }
   async reportStep(runId: string, step: unknown) {
     if (this.studioDown) throw this.studioDown;
     this.calls.push(['step', runId, step]);
+    this.answer('step');
   }
   async reportStatus(status: unknown) {
     this.calls.push(['status', '', status]);
@@ -213,6 +231,7 @@ describe('AgentWorker', () => {
         'step',
         run.runId,
         {
+          index: 1,
           kind: 'start',
           result: expect.objectContaining({ outcome: 'done' }),
           workingCopy: REPORT,
@@ -374,7 +393,11 @@ describe('AgentWorker', () => {
   it('drops a Run when the events route says it no longer holds it', async () => {
     const run = payload('[fake:slow]');
     const api = new RecordingApi([run]);
-    api.eventsError = new StudioApiError(409, '/api/worker/runs/x/events');
+    api.eventsError = new StudioApiError(
+      409,
+      '/api/worker/runs/x/events',
+      'urn:agentic-studio:problem:run-not-held',
+    );
     startWorker(api);
 
     await until(() => api.claims >= 2);
@@ -486,7 +509,11 @@ describe('AgentWorker', () => {
   it('drops a Run the API says it no longer holds, without reporting it', async () => {
     const run = payload('[fake:slow]');
     const api = new RecordingApi([run]);
-    api.heartbeatError = new StudioApiError(409, '/api/worker/runs/x/heartbeat');
+    api.heartbeatError = new StudioApiError(
+      409,
+      '/api/worker/runs/x/heartbeat',
+      'urn:agentic-studio:problem:run-not-held',
+    );
     startWorker(api);
 
     await until(() => api.claims >= 2);
@@ -721,10 +748,59 @@ describe('AgentWorker', () => {
       startWorker(api);
       await delay(40);
 
-      api.studioDown = new StudioApiError(409, '/api/worker/runs/x/state');
+      api.studioDown = new StudioApiError(
+        409,
+        '/api/worker/runs/x/state',
+        'urn:agentic-studio:problem:run-not-held',
+      );
       await until(() => api.claims >= 2);
 
       expect(api.reports()).toEqual([]);
+    });
+  });
+
+  // Review of #121: Studio applied a report but the answer was lost; the worker sends it again
+  // (Studio treats the repeat as a no-op) and the Run goes on, numbered so nothing is doubled.
+  describe('reports whose answer is lost (review of #121)', () => {
+    it.each(['running', 'step', 'succeeded'])(
+      'sends the %s report again and carries the Run to its end',
+      async (label) => {
+        const run = payload('Add a feature');
+        const api = new RecordingApi([run]);
+        api.loseAnswerOf.add(label);
+        startWorker(api);
+
+        await until(() => api.reports().length === 4);
+
+        const kinds = api
+          .reports()
+          .map(([kind, , body]) => (kind === 'state' ? (body as { state: string }).state : kind));
+        expect(kinds).toEqual(
+          ['running', 'step', 'succeeded'].flatMap((each) =>
+            each === label ? [each, each] : [each],
+          ),
+        );
+        const steps = api.reports().filter(([kind]) => kind === 'step');
+        expect(steps.every(([, , body]) => (body as { index: number }).index === 1)).toBe(true);
+        // Not abandoned: nothing reported failed, and the worker claims the next Run.
+        await until(() => api.claims >= 2);
+      },
+    );
+
+    it('logs a refused report (illegal-run-transition) and goes on; only not-held abandons', async () => {
+      const run = payload('Add a feature');
+      const api = new RecordingApi([run]);
+      api.stateRefusal = new StudioApiError(
+        409,
+        '/api/worker/runs/x/state',
+        'urn:agentic-studio:problem:illegal-run-transition',
+      );
+      startWorker(api);
+
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports().map(([kind]) => kind)).toEqual(['step', 'state']);
+      expect(api.reports()[1]?.[2]).toEqual({ state: 'succeeded' });
     });
   });
 });

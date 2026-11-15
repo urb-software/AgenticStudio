@@ -34,7 +34,9 @@ export interface ReportRunStateInput {
  * cancel request on the Run (Issue #100) the worker confirms the stop with `cancelled`; a
  * Run step that ended before the worker learned of the request, with `waiting_for_operator`
  * or `succeeded`, also ends the Run as `cancelled`, so the operator's cancel always holds. A
- * `cancelled` report without a request is refused. Throws {@link RunNotFoundError},
+ * `cancelled` report without a request is refused. A repeat of the change that already applied
+ * (the worker retried a report whose answer it never got) is a no-op success (review of #121).
+ * Throws {@link RunNotFoundError},
  * {@link RunNotHeldError} (another worker holds it, or nobody does) or
  * `IllegalRunTransitionError`. Wakes the Run's live log streams.
  */
@@ -52,9 +54,11 @@ export class ReportRunStateHandler {
     for (let attempt = 1; attempt <= 2; attempt++) {
       const run = await this.runs.findById(input.runId);
       if (!run) throw new RunNotFoundError();
-      if (run.claimedBy !== input.workerId) throw new RunNotHeldError();
       const cancelRequested = run.cancelRequestedAt !== null;
       const to = targetState(input.state, cancelRequested);
+      // Already applied by an earlier delivery from this worker: nothing to change.
+      if (run.state === to && (run.claimedBy ?? run.releasedBy) === input.workerId) return run;
+      if (run.claimedBy !== input.workerId) throw new RunNotHeldError();
       if (to === 'cancelled' && !cancelRequested) {
         throw new IllegalRunTransitionError(run.state, to);
       }

@@ -57,6 +57,8 @@ const RUN_FIELDS = {
   limitStepMinutes: true,
   limitMaxSteps: true,
   limitWaitingDays: true,
+  stepStartedAt: true,
+  releasedBy: true,
 } as const;
 
 interface RunRow {
@@ -83,6 +85,8 @@ interface RunRow {
   limitStepMinutes: number;
   limitMaxSteps: number;
   limitWaitingDays: number;
+  stepStartedAt: Date | null;
+  releasedBy: string | null;
 }
 
 const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
@@ -142,6 +146,8 @@ function toRun(row: RunRow): Run {
     cancelRequestedAt: row.cancelRequestedAt,
     cancellation: by === null ? null : { by: by as RunCancelledBy, reason: row.cancelReason ?? '' },
     waitingSince: row.waitingSince,
+    stepStartedAt: row.stepStartedAt,
+    releasedBy: row.releasedBy,
   };
 }
 
@@ -238,6 +244,8 @@ export class PrismaRunRepository implements RunRepository {
         cancelledBy: cancellation?.by ?? null,
         cancelReason: cancellation?.reason ?? null,
         waitingSince: change.to === 'waiting_for_operator' ? change.now : null,
+        releasedBy: held ? null : change.workerId,
+        ...(change.to === 'running' ? { stepStartedAt: change.now } : {}),
         ...(isFinal(change.to) ? { finishedAt: change.now } : {}),
         ...(change.workingCopy
           ? {
@@ -303,12 +311,31 @@ export class PrismaRunRepository implements RunRepository {
     return rows.map(toRun);
   }
 
-  async renewClaims(now: Date): Promise<number> {
-    const { count } = await this.db.run.updateMany({
-      where: { state: { in: [...CLAIMED_RUN_STATES] } },
-      data: { heartbeatAt: now },
+  async renewClaimsOncePerLease(now: Date, leaseSeconds: number): Promise<number | null> {
+    return this.db.$transaction(async (tx) => {
+      // Records this renewal only if the last one is at least a lease old (or there is none);
+      // the row lock serializes two APIs starting at once.
+      const renewed = await tx.$queryRaw<{ id: number }[]>`
+        INSERT INTO run_lease_renewals (id, renewed_at) VALUES (1, ${now})
+        ON CONFLICT (id) DO UPDATE SET renewed_at = EXCLUDED.renewed_at
+          WHERE run_lease_renewals.renewed_at <= ${now}::timestamptz - make_interval(secs => ${leaseSeconds})
+        RETURNING id`;
+      if (renewed.length === 0) return null;
+      const { count } = await tx.run.updateMany({
+        where: { state: { in: [...CLAIMED_RUN_STATES] } },
+        data: { heartbeatAt: now },
+      });
+      return count;
     });
-    return count;
+  }
+
+  async timeOutOverdueSteps(now: Date, graceMinutes: number): Promise<number> {
+    return this.db.$executeRaw`
+      UPDATE runs
+      SET state = 'timed_out', claimed_by = NULL, heartbeat_at = NULL, finished_at = ${now}
+      WHERE state = 'running'
+        AND step_started_at + make_interval(mins => limit_step_minutes + ${graceMinutes}::int)
+            < ${now}::timestamptz`;
   }
 
   async findStates(ids: readonly string[]): Promise<RunStateView[]> {
@@ -338,8 +365,12 @@ export class PrismaRunRepository implements RunRepository {
         WHERE id = ${runId}::uuid AND state = 'running' AND claimed_by = ${workerId}::uuid
         FOR UPDATE`;
       if (!run) return { status: 'not_held' };
-      const last = await tx.runStep.aggregate({ where: { runId }, _max: { index: true } });
-      const index = (last._max.index ?? 0) + 1;
+      const last =
+        (await tx.runStep.aggregate({ where: { runId }, _max: { index: true } }))._max.index ?? 0;
+      const index = step.index ?? last + 1;
+      // A retried report of a step already stored (review of #121): acknowledged, not stored.
+      if (index <= last) return { status: 'stored', index, duplicate: true };
+      if (index !== last + 1) return { status: 'out_of_order', expected: last + 1 };
       if (index > run.limit_max_steps) {
         // Issue #100: the step is not stored, and the Run fails under the same row lock.
         const failure = stepLimitFailure(run.limit_max_steps);
