@@ -9,11 +9,12 @@ export const RUN_START_POINTS = Symbol('RUN_START_POINTS');
 
 /**
  * Where a Run of a project would start (Issue #96): the current commit of the integration
- * branch when the project's Repository is `ready`, and the Repository's remote URL as the
- * operator connected it (Issue #98; never a credential), otherwise why there is none.
+ * branch when the project's Repository is `ready`, the Repository's remote URL as the operator
+ * connected it (Issue #98; never a credential) and its integration branch (Issue #102: the
+ * base of the Run's draft pull request), otherwise why there is none.
  */
 export type RunStartPoint =
-  | { status: 'ready'; startCommit: string; remoteUrl: string }
+  | { status: 'ready'; startCommit: string; remoteUrl: string; integrationBranch: string }
   | { status: 'project_not_found' }
   | { status: 'no_repository' }
   | { status: 'repository_not_ready' };

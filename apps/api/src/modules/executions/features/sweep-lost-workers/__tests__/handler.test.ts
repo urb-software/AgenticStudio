@@ -24,6 +24,7 @@ describe('SweepLostWorkersHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     return (await runs.claimNext(WORKER, T0))!;
   }
@@ -107,6 +108,7 @@ describe('SweepLostWorkersHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     now = later(3600);
 

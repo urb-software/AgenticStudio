@@ -73,6 +73,17 @@ const workerIdSchema = z.uuid();
 /** Longest Repository remote URL, in characters (the Repository's own limit). */
 export const REMOTE_URL_MAX_LENGTH = 2048;
 
+/** Longest branch name, in characters (the Repository's integration branch, a Run branch). */
+export const BRANCH_NAME_MAX_LENGTH = 255;
+
+/**
+ * What a claim hands out (Issue #102): a Run to `start` (prepare, run its first step, deliver),
+ * or a `failed` Run with `delivery_failed` whose delivery the operator asked to retry: the
+ * worker then only `deliver`s it from the Working copy it still has.
+ */
+export const RUN_PAYLOAD_KINDS = ['start', 'deliver'] as const;
+export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
+
 /**
  * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
  * Clone path, secret references or keys). Closed, so an extra field is an error on both sides.
@@ -89,6 +100,9 @@ export const runPayloadSchema = z.strictObject({
    * a credential. The agent worker fetches it with the agent user's own Git credentials.
    */
   repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
+  /** The Repository's integration branch when the Run started: the pull request's base (#102). */
+  integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
+  kind: z.enum(RUN_PAYLOAD_KINDS),
 });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
@@ -194,26 +208,61 @@ export const workingCopyReportSchema = z
   });
 export type WorkingCopyReport = z.infer<typeof workingCopyReportSchema>;
 
+/** Longest pull request URL, in characters. */
+export const PULL_REQUEST_URL_MAX_LENGTH = 2048;
+
+/** The draft pull request a delivery opened or reused (Issue #102): its https URL and number. */
+export const pullRequestRefSchema = z.strictObject({
+  url: z.url({ protocol: /^https$/ }).max(PULL_REQUEST_URL_MAX_LENGTH),
+  number: z.number().int().positive(),
+});
+export type PullRequestRef = z.infer<typeof pullRequestRefSchema>;
+
+/**
+ * How a successful Run was delivered (Issue #102): `none` when the Run branch has no commits
+ * beyond the start commit (nothing pushed, "No changes"), or `delivered` with the draft pull
+ * request. A failed delivery is the failure `delivery_failed`.
+ */
+export const runDeliverySchema = z.discriminatedUnion('outcome', [
+  z.strictObject({ outcome: z.literal('none') }),
+  z.strictObject({ outcome: z.literal('delivered'), pullRequest: pullRequestRefSchema }),
+]);
+export type RunDelivery = z.infer<typeof runDeliverySchema>;
+
 /**
  * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
  * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
- * commits of a step that failed or crashed are recorded too.
+ * commits of a step that failed or crashed are recorded too. A delivery outcome comes only
+ * with `succeeded` (Issue #102), and with it the Working copy's state after the delivery
+ * (a delivery retry has no step report).
  */
 export const reportRunStateRequestSchema = z
   .strictObject({
     workerId: workerIdSchema,
     state: z.enum(WORKER_REPORTED_STATES),
     failure: runFailureSchema.optional(),
+    delivery: runDeliverySchema.optional(),
     workingCopy: workingCopyReportSchema.optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
     message: 'A failure is reported exactly with the state failed.',
   })
-  .refine((report) => report.workingCopy === undefined || report.state === 'failed', {
-    path: ['workingCopy'],
-    message: 'A Working copy state comes with a step report, or with the state failed.',
-  });
+  .refine((report) => report.delivery === undefined || report.state === 'succeeded', {
+    path: ['delivery'],
+    message: 'A delivery outcome is reported only with the state succeeded.',
+  })
+  .refine(
+    (report) =>
+      report.workingCopy === undefined ||
+      report.state === 'failed' ||
+      report.delivery !== undefined,
+    {
+      path: ['workingCopy'],
+      message:
+        'A Working copy state comes with a step report, the state failed or a delivery outcome.',
+    },
+  );
 export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 
 /** `POST /api/worker/runs/:runId/steps` body: the step's result and the Working copy's state. */

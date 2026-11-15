@@ -18,6 +18,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   /** 409 (worker routes): the reported state does not follow from the Run's state. */
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
+  /** 409: the Run's delivery cannot be retried (it is not failed with delivery_failed). */
+  deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
 } as const;
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
@@ -62,6 +64,15 @@ export function runNotHeld(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.runNotHeld,
     title: 'Run not held',
     detail: 'This agent worker does not hold the run. Stop working on it.',
+  });
+}
+
+/** 409 when a Run's delivery cannot be retried (Issue #102). */
+export function deliveryNotRetryable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.deliveryNotRetryable,
+    title: 'Delivery not retryable',
+    detail: 'Only a run whose delivery failed can retry its delivery.',
   });
 }
 

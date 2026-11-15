@@ -8,6 +8,9 @@ import { z } from 'zod';
 import { readProviderSwitches } from './provider-gate.js';
 import type { ProviderBinaries } from './spawn-boundary.js';
 
+/** The GitHub REST API the worker opens pull requests through by default (Issue #102). */
+export const DEFAULT_GITHUB_API_URL = 'https://api.github.com';
+
 /** Shortest accepted worker token; the API applies the same rule (Issue #96). */
 export const WORKER_TOKEN_MIN_LENGTH = 32;
 
@@ -87,6 +90,20 @@ const environmentSchema = z.object({
   // Retention of finished Working copies.
   STUDIO_WORKER_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
   STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
+  // Issue #102: the Agent account's GitHub token, from the worker's own .env only (Studio stores
+  // none). Printable ASCII without spaces, so it can never inject a header. Empty means unset.
+  // Messages never echo it.
+  STUDIO_AGENT_GITHUB_TOKEN: z
+    .string()
+    .max(1000, { message: 'must be at most 1000 characters' })
+    .refine((value) => value === '' || /^[!-~]+$/.test(value), {
+      message: 'must be one token without spaces or control characters',
+    })
+    .optional(),
+  // Where the worker opens pull requests; tests point it at a stub.
+  STUDIO_AGENT_GITHUB_API_URL: z
+    .url({ protocol: /^https?$/, error: 'must be an http(s) URL' })
+    .default(DEFAULT_GITHUB_API_URL),
 });
 
 /**
@@ -130,6 +147,16 @@ export interface WorkerConfig {
   retentionDays: number;
   /** ...and beyond the newest this many per Project. */
   retentionMaxPerProject: number;
+  /** The Agent account on GitHub (Issue #102): its token (if configured) and the API base URL. */
+  agentGitHub: AgentGitHubConfig;
+}
+
+/** How the worker reaches GitHub as the Agent account (Issue #102). */
+export interface AgentGitHubConfig {
+  /** Never logged, never written to a Working copy; absent when not configured. */
+  token?: string;
+  /** Base URL of the GitHub REST API, without a trailing slash. */
+  apiUrl: string;
 }
 
 /** Thrown when the environment is invalid. Names variables, never their values. */
@@ -171,6 +198,17 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
         'development or test (the default environment is production)',
     ]);
   }
+  const githubApiUrl = result.data.STUDIO_AGENT_GITHUB_API_URL.replace(/\/+$/, '');
+  if (
+    result.data.STUDIO_WORKER_ENVIRONMENT === 'production' &&
+    !githubApiUrl.startsWith('https://')
+  ) {
+    throw new WorkerConfigError([
+      'STUDIO_AGENT_GITHUB_API_URL: must be an https URL (plain http only for a development or ' +
+        'test worker, e.g. a stub)',
+    ]);
+  }
+  const githubToken = result.data.STUDIO_AGENT_GITHUB_TOKEN;
   return {
     apiUrl: result.data.STUDIO_API_URL.replace(/\/+$/, ''),
     token: result.data.STUDIO_WORKER_TOKEN,
@@ -190,6 +228,10 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     agentGitEmail: result.data.STUDIO_AGENT_GIT_EMAIL,
     retentionDays: result.data.STUDIO_WORKER_RETENTION_DAYS,
     retentionMaxPerProject: result.data.STUDIO_WORKER_RETENTION_MAX_PER_PROJECT,
+    agentGitHub: {
+      ...(githubToken ? { token: githubToken } : {}),
+      apiUrl: githubApiUrl,
+    },
   };
 }
 

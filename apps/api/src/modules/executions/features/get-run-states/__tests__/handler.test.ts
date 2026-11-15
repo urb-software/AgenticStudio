@@ -22,6 +22,7 @@ describe('GetRunStatesHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
 
   beforeEach(() => {

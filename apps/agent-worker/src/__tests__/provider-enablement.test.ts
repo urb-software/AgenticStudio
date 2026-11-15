@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PROVIDER_BINARIES, loadWorkerConfig } from '../config.js';
+import type { DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
@@ -38,6 +39,8 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
+  integrationBranch: 'dev',
+  kind: 'start',
 });
 
 /** Issue #98: where a Run step works; these tests never touch it. */
@@ -52,6 +55,15 @@ const workingCopies: WorkingCopyPort = {
     startCommit: run.startCommit,
   }),
   report: async () => ({ runBranch: 'agent/x', commits: [], hasUncommittedChanges: false }),
+};
+
+/** Issue #102: delivery is not what this suite is about (delivery.linux.test.ts). */
+const deliveries: DeliveryPort = {
+  commit: async () => undefined,
+  deliver: async () => ({ outcome: 'none' }),
+  locate: async () => {
+    throw new Error('not used');
+  },
 };
 
 const DONE: RunStepResult = { outcome: 'done', summary: 'done' };
@@ -117,6 +129,7 @@ async function carry(
     runner: new RunnerDispatcher(gate, { claude_code: runner, codex: runner }),
     status: { runner: config.runner, providers: gate.snapshot() },
     workingCopies,
+    deliveries,
     pollMs: 5,
     heartbeatMs: 60_000,
     logger: silent,
@@ -135,7 +148,7 @@ const disabled = (provider: 'claude_code' | 'codex') => ({
   state: 'failed',
   failure: { code: 'provider_disabled', detail: new ProviderDisabledError(provider).message },
 });
-const SUCCEEDED = { state: 'succeeded' };
+const SUCCEEDED = { state: 'succeeded', delivery: { outcome: 'none' } };
 
 beforeEach(() => {
   spawn.mockReset();

@@ -8,8 +8,8 @@ import { posix } from 'node:path';
  * only, so paths are POSIX paths.
  *
  * Layout: `<dataDir>/cache/<projectId>.git` (one cache per Project) and
- * `<dataDir>/runs/<runId>/{repo/, task.md, run.json}` (the Working copy and, beside it and
- * outside the repository, the Task and the Run file).
+ * `<dataDir>/runs/<runId>/{repo/, task.md, run.json, result.json}` (the Working copy and,
+ * beside it and outside the repository, the Task, the Run file and the agent's result).
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -75,6 +75,8 @@ export interface RunDirectories {
   taskFile: string;
   /** What the worker records about the Run (its Project, Run branch, start commit). */
   runFile: string;
+  /** The agent's structured result of a `done` step, kept for a delivery retry (Issue #102). */
+  resultFile: string;
 }
 
 export function runDirectories(dataDir: string, runId: string): RunDirectories {
@@ -84,6 +86,7 @@ export function runDirectories(dataDir: string, runId: string): RunDirectories {
     repoDir: posix.join(runDir, 'repo'),
     taskFile: posix.join(runDir, 'task.md'),
     runFile: posix.join(runDir, 'run.json'),
+    resultFile: posix.join(runDir, 'result.json'),
   };
 }
 

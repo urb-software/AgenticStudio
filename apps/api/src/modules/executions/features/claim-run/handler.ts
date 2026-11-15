@@ -14,7 +14,8 @@ const NO_REMOTE: RunFailure = {
 /**
  * Command (Issue #96): an agent worker asks for work. Lost workers are swept first (their
  * Runs fail and free their places), then the oldest eligible queued Run is handed out under
- * the concurrency limits; `null` when there is none.
+ * the concurrency limits; `null` when there is none. A `failed` Run whose delivery retry was
+ * requested is handed out too, for the delivery only (Issue #102).
  */
 @Injectable()
 export class ClaimRunHandler {
@@ -30,8 +31,9 @@ export class ClaimRunHandler {
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       // A Run from before Issue #98 whose project had no Repository has no remote to prepare
-      // from: it fails with preparation_failed here instead of reaching a worker (review S6).
-      if (!run || run.remoteUrl !== '') return run;
+      // from (nor an integration branch, Issue #102): it fails with preparation_failed here
+      // instead of reaching a worker (review S6).
+      if (!run || (run.remoteUrl !== '' && run.integrationBranch !== '')) return run;
       await this.runs.transitionClaimed({
         runId: run.id,
         workerId,

@@ -139,7 +139,18 @@ export const zRunOutput = z.object({
         id: z.string(),
         subject: z.string()
     })).optional(),
-    hasUncommittedChanges: z.boolean().optional()
+    hasUncommittedChanges: z.boolean().optional(),
+    delivery: z.enum([
+        'none',
+        'delivered',
+        'failed'
+    ]).optional(),
+    pullRequest: z.object({
+        url: z.url(),
+        number: z.int().gt(0).lte(9007199254740991)
+    }).optional(),
+    deliveryRetryRequested: z.literal(true).optional(),
+    failingChecks: z.array(z.string()).optional()
 });
 
 export const zRunListOutput = z.array(zRunOutput);
@@ -248,5 +259,11 @@ export const zGetRunPath = z.object({
 });
 
 export const zGetRunResponse = zRunOutput;
+
+export const zRetryRunDeliveryPath = z.object({
+    runId: z.string()
+});
+
+export const zRetryRunDeliveryResponse = zRunOutput;
 
 export const zListProvidersResponse = zProviderListOutput;

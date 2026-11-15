@@ -1,0 +1,475 @@
+import type { RunPayload, RunStepResult } from '@agentic-studio/contracts';
+import { randomBytes, randomUUID } from 'node:crypto';
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Deliveries, DeliveryFailedError, NO_WORKING_COPY } from '../delivery.js';
+import { type GitOptions, GitRunner } from '../git.js';
+import { type PreparedRun, WorkingCopies } from '../working-copy.js';
+import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
+
+// Issue #102: delivering a Run's result from its real Working copy to a fixture remote
+// (file://, no network) and a local stub of GitHub's pull request API. Linux only, like the
+// worker; runs in CI on Linux.
+
+const AGENT = { agentGitName: 'Studio Agent', agentGitEmail: 'agent@example.test' };
+const DONE: RunStepResult = {
+  outcome: 'done',
+  summary: 'Add pagination to the product list\n\nPages of 20 products.',
+  pullRequest: { title: 'Add pagination', body: 'Pages of 20 products.' },
+  checks: [{ name: 'unit tests', result: 'passed' }],
+};
+
+/** Records every Git command; a push can be intercepted (never run) for an https remote. */
+class RecordingGit extends GitRunner {
+  readonly calls: { args: readonly string[]; options: GitOptions }[] = [];
+  interceptPush = false;
+
+  override run(args: readonly string[], options: GitOptions): Promise<string> {
+    this.calls.push({ args, options });
+    if (this.interceptPush && args[0] === 'push') return Promise.resolve('');
+    return super.run(args, options);
+  }
+
+  pushes() {
+    return this.calls.filter((call) => call.args[0] === 'push');
+  }
+}
+
+describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
+  let root: string;
+  let dataDir: string;
+  let home: string;
+  let env: Record<string, string>;
+  let remote: FixtureRemote;
+  let first: string;
+  let stub: StubGitHub;
+  let gitRunner: RecordingGit;
+  let logs: string[];
+  // A throwaway value generated per run; never a real token.
+  const token = `ghp_${randomBytes(18).toString('hex')}`;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), 'studio-delivery-'));
+    dataDir = join(root, 'data');
+    home = join(root, 'home');
+    mkdirSync(home);
+    env = isolatedGitEnv(home);
+    // Under acme/: a development or test worker names a file:// remote by its last two parts.
+    remote = createRemote(join(root, 'acme'), 'shop', env);
+    first = remote.commit('Initial commit', { 'README.md': '# Shop\n' });
+    stub = await startStubGitHub();
+    gitRunner = new RecordingGit({ env: { PATH: env.PATH!, HOME: home } });
+    logs = [];
+  });
+
+  afterEach(async () => {
+    await stub.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const logger = { error: (message: string) => logs.push(message) };
+
+  function deliveries(github: { token?: string; apiUrl?: string } = { token }) {
+    return new Deliveries({
+      dataDir,
+      git: gitRunner,
+      ...AGENT,
+      allowFileRemotes: true,
+      github: { apiUrl: stub.url, ...github },
+      logger,
+    });
+  }
+
+  function payload(overrides: Partial<RunPayload> = {}): RunPayload {
+    return {
+      runId: randomUUID(),
+      projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
+      provider: 'claude_code',
+      task: 'Add pagination',
+      startCommit: first,
+      repository: { remoteUrl: remote.url },
+      integrationBranch: 'main',
+      kind: 'start',
+      ...overrides,
+    };
+  }
+
+  async function prepare(run = payload()): Promise<PreparedRun> {
+    return new WorkingCopies({
+      dataDir,
+      git: new GitRunner({ env: { PATH: env.PATH!, HOME: home } }),
+      ...AGENT,
+      allowFileRemotes: true,
+      logger,
+    }).prepare(run, signal());
+  }
+
+  const signal = () => new AbortController().signal;
+  const bare = () => join(root, 'acme', 'shop.git');
+  const remoteBranches = () =>
+    git(bare(), ['for-each-ref', '--format=%(refname)', 'refs/'], env).split('\n').sort();
+  const inRepo = (prepared: PreparedRun, args: string[]) => git(prepared.repoDir, args, env);
+
+  /** What an agent does in its Working copy: writes files and, if asked, commits them. */
+  function agentWrites(prepared: PreparedRun, files: Record<string, string>, commit?: string) {
+    for (const [path, content] of Object.entries(files)) {
+      writeFileSync(join(prepared.repoDir, path), content);
+    }
+    if (commit) {
+      inRepo(prepared, ['add', '--all']);
+      inRepo(prepared, ['commit', '--quiet', '-m', commit]);
+    }
+  }
+
+  async function finish(run: RunPayload, prepared: PreparedRun, result = DONE) {
+    const subject = deliveries();
+    await subject.commit(prepared, run, result, signal());
+    return subject.deliver(prepared, run, result, signal());
+  }
+
+  it("pushes the agent's commits on the Run branch and opens a draft pull request", async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'export const PAGE = 20;\n' }, 'Add pagination');
+
+    const delivery = await finish(run, prepared);
+
+    expect(delivery).toEqual({
+      outcome: 'delivered',
+      pullRequest: { url: 'https://github.com/acme/shop/pull/1', number: 1 },
+    });
+    expect(git(bare(), ['rev-parse', `refs/heads/${prepared.runBranch}`], env)).toBe(
+      inRepo(prepared, ['rev-parse', 'HEAD']),
+    );
+    expect(stub.created).toEqual([
+      {
+        owner: 'acme',
+        repo: 'shop',
+        body: expect.objectContaining({
+          title: 'Add pagination',
+          head: prepared.runBranch,
+          base: 'main',
+          draft: true,
+        }),
+      },
+    ]);
+    const body = String(stub.created[0]?.body.body);
+    expect(body).toMatch(/^Pages of 20 products\./);
+    expect(body).toContain(`- Run: \`${run.runId}\``);
+    expect(body).toContain('- Provider: Claude Code');
+    expect(body).toContain(`- Start commit: \`${first}\``);
+    expect(body).toContain('  - passed: `unit tests`');
+  });
+
+  it('pushes exactly the Run branch, by its own refspec, without --force, and no other ref', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    // The agent also made a branch and a tag of its own: neither may leave the host.
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    inRepo(prepared, ['branch', 'agent-side-branch']);
+    inRepo(prepared, ['tag', 'v-agent']);
+
+    await finish(run, prepared);
+
+    const ref = `refs/heads/${prepared.runBranch}`;
+    expect(gitRunner.pushes().map((call) => call.args)).toEqual([
+      ['push', '--', remote.url, `${ref}:${ref}`],
+    ]);
+    expect(remoteBranches()).toEqual(['refs/heads/main', ref].sort());
+  });
+
+  it('commits what the agent left uncommitted as the Agent account, with a message from the summary', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n', 'notes.md': 'y\n' });
+
+    await finish(run, prepared);
+
+    expect(inRepo(prepared, ['status', '--porcelain'])).toBe('');
+    expect(inRepo(prepared, ['log', '-1', '--format=%an <%ae>|%cn <%ce>'])).toBe(
+      'Studio Agent <agent@example.test>|Studio Agent <agent@example.test>',
+    );
+    expect(inRepo(prepared, ['log', '-1', '--format=%B'])).toBe(
+      'agent: Add pagination to the product list\n\nAdd pagination to the product list\n\nPages of 20 products.',
+    );
+    expect(git(bare(), ['ls-tree', '--name-only', `refs/heads/${prepared.runBranch}`], env)).toBe(
+      'README.md\nnotes.md\npages.ts',
+    );
+  });
+
+  it('commits as the Agent account even when the agent changed the Working copy identity', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    inRepo(prepared, ['config', 'user.name', 'Someone Else']);
+    inRepo(prepared, ['config', 'user.email', 'else@example.test']);
+    agentWrites(prepared, { 'pages.ts': 'x\n' });
+
+    await deliveries().commit(prepared, run, DONE, signal());
+
+    expect(inRepo(prepared, ['log', '-1', '--format=%an <%ae>'])).toBe(
+      'Studio Agent <agent@example.test>',
+    );
+  });
+
+  it('cuts the first line of the commit message at 72 characters', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' });
+
+    await deliveries().commit(prepared, run, { ...DONE, summary: 's'.repeat(100) }, signal());
+
+    const subject = inRepo(prepared, ['log', '-1', '--format=%s']);
+    expect(subject).toBe(`agent: ${'s'.repeat(65)}`);
+    expect(subject).toHaveLength(72);
+  });
+
+  it('pushes nothing and opens no pull request when the Run branch has no new commits', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+
+    const delivery = await finish(run, prepared);
+
+    expect(delivery).toEqual({ outcome: 'none' });
+    expect(gitRunner.pushes()).toEqual([]);
+    expect(remoteBranches()).toEqual(['refs/heads/main']);
+    expect(stub.requests).toEqual([]);
+  });
+
+  it('never commits or pushes a file Studio placed, even one the agent forced into the index', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    // As #104 will: the Environment file in the Working copy, listed in Studio's exclude section
+    // and in the Run file.
+    appendFileSync(join(prepared.repoDir, '.git', 'info', 'exclude'), '/.env.studio\n');
+    const runFile = join(prepared.runDir, 'run.json');
+    const recorded = JSON.parse(readFileSync(runFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(runFile, JSON.stringify({ ...recorded, studioPaths: ['config/studio.env'] }));
+    mkdirSync(join(prepared.repoDir, 'config'));
+    agentWrites(prepared, {
+      '.env.studio': 'API_KEY=placed-by-studio\n',
+      'config/studio.env': 'DB_PASSWORD=placed-by-studio\n',
+      'pages.ts': 'x\n',
+    });
+    inRepo(prepared, ['add', '--force', '.env.studio', 'config/studio.env']);
+
+    await finish(run, prepared);
+
+    const pushed = git(
+      bare(),
+      ['ls-tree', '-r', '--name-only', `refs/heads/${prepared.runBranch}`],
+      env,
+    ).split('\n');
+    expect(pushed).toEqual(['README.md', 'pages.ts']);
+    expect(git(bare(), ['log', '--all', '--format=%H', '--', '.env.studio'], env)).toBe('');
+  });
+
+  it("refuses to push when one of the agent's commits contains a file Studio placed", async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    appendFileSync(join(prepared.repoDir, '.git', 'info', 'exclude'), '/.env.studio\n');
+    agentWrites(prepared, { '.env.studio': 'API_KEY=placed-by-studio\n' });
+    inRepo(prepared, ['add', '--force', '.env.studio']);
+    inRepo(prepared, ['commit', '--quiet', '-m', 'Oops']);
+    // Removing it in a later commit does not take it out of the history.
+    inRepo(prepared, ['rm', '--quiet', '--cached', '.env.studio']);
+    inRepo(prepared, ['commit', '--quiet', '-m', 'Remove it again']);
+
+    const error = await finish(run, prepared).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(DeliveryFailedError);
+    expect((error as DeliveryFailedError).detail).toMatch(
+      /contains \.env\.studio, a file Studio placed/,
+    );
+    expect(gitRunner.pushes()).toEqual([]);
+    expect(remoteBranches()).toEqual(['refs/heads/main']);
+  });
+
+  it('fails with what to check when the push is refused, and opens no pull request', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    // Someone else pushed a different commit to the Run branch's name on the remote.
+    const other = join(root, 'other');
+    git(root, ['clone', '--quiet', remote.url, other], env);
+    writeFileSync(join(other, 'elsewhere.md'), 'z\n');
+    git(other, ['add', '--all'], env);
+    git(other, ['commit', '--quiet', '-m', 'Not this Run'], env);
+    git(other, ['push', '--quiet', 'origin', `HEAD:refs/heads/${prepared.runBranch}`], env);
+
+    const error = await finish(run, prepared).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(DeliveryFailedError);
+    expect((error as DeliveryFailedError).detail).toMatch(/Pushing the Run branch was refused/);
+    expect(stub.created).toEqual([]);
+  });
+
+  it('opens the pull request on a retry after GitHub refused it, without a second push of new commits', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    stub.failCreate = 503;
+
+    const attempt = await finish(run, prepared).catch((caught: unknown) => caught);
+    expect(attempt).toBeInstanceOf(DeliveryFailedError);
+    expect((attempt as DeliveryFailedError).detail).toMatch(/GitHub answered 503/);
+
+    const retry = deliveries();
+    const located = await retry.locate({ ...run, kind: 'deliver' });
+    await retry.commit(located.prepared, run, located.result, signal());
+    const delivery = await retry.deliver(located.prepared, run, located.result, signal());
+
+    expect(delivery).toMatchObject({ outcome: 'delivered', pullRequest: { number: 1 } });
+    expect(stub.created).toHaveLength(1);
+  });
+
+  it('reuses the pull request on a repeated delivery instead of opening a second one', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+
+    const once = await finish(run, prepared);
+    const twice = await finish(run, prepared);
+
+    expect(twice).toEqual(once);
+    expect(stub.created).toHaveLength(1);
+  });
+
+  it('opens the pull request even when the agent reports failing checks, and says so first', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+
+    await finish(run, prepared, {
+      ...DONE,
+      checks: [
+        { name: 'lint', result: 'passed' },
+        { name: 'unit tests', result: 'failed' },
+        { name: 'e2e', result: 'not_run' },
+      ],
+    });
+
+    const body = String(stub.created[0]?.body.body);
+    expect(body).toMatch(
+      /^> \*\*Failing checks:\*\* the agent reported that this check failed: `unit tests`\./,
+    );
+    expect(body).toContain('  - passed: `lint`\n  - failed: `unit tests`\n  - not run: `e2e`');
+  });
+
+  it('takes the title from the Task and the description from the summary when the agent gave none', async () => {
+    const run = payload({ task: 'Add pagination to the list\nwith pages of 20' });
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+
+    await finish(run, prepared, { outcome: 'done', summary: 'Added pages of 20.' });
+
+    expect(stub.created[0]?.body).toMatchObject({ title: 'Add pagination to the list' });
+    expect(String(stub.created[0]?.body.body)).toMatch(/^Added pages of 20\.\n\n---/);
+    expect(String(stub.created[0]?.body.body)).toContain('- Checks: none reported');
+  });
+
+  it('passes the token to an HTTPS push only through its environment, never argv, config or log', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    gitRunner.interceptPush = true;
+    const https = { ...run, repository: { remoteUrl: 'https://github.com/acme/shop.git' } };
+
+    await finish(https, prepared);
+
+    const [push] = gitRunner.pushes();
+    expect(push?.args.join(' ')).not.toContain(token);
+    const header = push?.options.config?.find(([key]) => key === 'http.extraHeader');
+    expect(header?.[1]).toBe(
+      `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
+    );
+    const everywhere = [
+      readFileSync(join(prepared.repoDir, '.git', 'config'), 'utf8'),
+      JSON.stringify(gitRunner.calls.filter((call) => call.args[0] !== 'push')),
+      logs.join('\n'),
+    ].join('\n');
+    expect(everywhere).not.toContain(token);
+    expect(everywhere).not.toContain(Buffer.from(`x-access-token:${token}`).toString('base64'));
+  });
+
+  it("gives an SSH push no token: the agent user's own SSH setup is used", async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    gitRunner.interceptPush = true;
+
+    await finish({ ...run, repository: { remoteUrl: 'git@github.com:acme/shop.git' } }, prepared);
+
+    expect(JSON.stringify(gitRunner.pushes())).not.toContain('extraHeader');
+  });
+
+  it('fails as not configured, pushing nothing, when the worker has no Agent account token', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    const subject = deliveries({});
+    await subject.commit(prepared, run, DONE, signal());
+
+    const error = await subject
+      .deliver(prepared, run, DONE, signal())
+      .catch((caught: unknown) => caught);
+
+    expect((error as DeliveryFailedError).detail).toMatch(
+      /^Agent account not configured on the agent worker/,
+    );
+    expect(gitRunner.pushes()).toEqual([]);
+  });
+
+  it('fails as not supported, pushing nothing, for a remote that is not on GitHub', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    gitRunner.interceptPush = true;
+
+    const error = await finish(
+      { ...run, repository: { remoteUrl: 'https://gitlab.com/acme/shop.git' } },
+      prepared,
+    ).catch((caught: unknown) => caught);
+
+    expect((error as DeliveryFailedError).detail).toMatch(/^Git host not supported/);
+    expect(gitRunner.pushes()).toEqual([]);
+  });
+
+  it('refuses to commit leftovers when the agent left the Run branch', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    inRepo(prepared, ['checkout', '--quiet', '-b', 'elsewhere']);
+    agentWrites(prepared, { 'pages.ts': 'x\n' });
+
+    const error = await deliveries()
+      .commit(prepared, run, DONE, signal())
+      .catch((caught: unknown) => caught);
+
+    expect((error as DeliveryFailedError).detail).toMatch(/not on the Run branch/);
+  });
+
+  it('finds the Working copy and the kept result for a retry, and says when it is gone', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    await deliveries().commit(prepared, run, DONE, signal());
+
+    const located = await deliveries().locate({ ...run, kind: 'deliver' });
+    expect(located.prepared).toEqual(prepared);
+    expect(located.result).toEqual(DONE);
+
+    rmSync(prepared.repoDir, { recursive: true, force: true });
+    const error = await deliveries()
+      .locate({ ...run, kind: 'deliver' })
+      .catch((caught: unknown) => caught);
+    expect((error as DeliveryFailedError).detail).toMatch(new RegExp(`^${NO_WORKING_COPY}`));
+  });
+});

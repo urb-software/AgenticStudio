@@ -28,6 +28,7 @@ describe('ReportRunStateHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -71,7 +72,7 @@ describe('ReportRunStateHandler', () => {
   it('keeps the last Working copy state when a failure brings none', async () => {
     await report({ state: 'running' });
     const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
-    await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, workingCopy);
+    await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, workingCopy, []);
 
     await report({ state: 'failed', failure: { code: 'unknown', detail: 'x' } });
 
@@ -114,6 +115,109 @@ describe('ReportRunStateHandler', () => {
     await report({ state: 'succeeded' });
 
     await expect(report({ state: 'running' })).rejects.toBeInstanceOf(RunNotHeldError);
+  });
+
+  describe('delivery (Issue #102)', () => {
+    const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+    const DELIVERY_FAILED = {
+      code: 'delivery_failed',
+      detail: 'Pushing the Run branch was refused.',
+    } as const;
+
+    it('records the pull request of a delivered Run', async () => {
+      await report({ state: 'running' });
+
+      expect(
+        await report({
+          state: 'succeeded',
+          delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+        }),
+      ).toMatchObject({ state: 'succeeded', delivery: 'delivered', pullRequest: PULL_REQUEST });
+    });
+
+    it('records "No changes" as the delivery none, without a pull request', async () => {
+      await report({ state: 'running' });
+
+      expect(await report({ state: 'succeeded', delivery: { outcome: 'none' } })).toMatchObject({
+        state: 'succeeded',
+        delivery: 'none',
+        pullRequest: null,
+      });
+    });
+
+    it('records a failed delivery as the delivery failed', async () => {
+      await report({ state: 'running' });
+
+      expect(await report({ state: 'failed', failure: DELIVERY_FAILED })).toMatchObject({
+        state: 'failed',
+        failure: DELIVERY_FAILED,
+        delivery: 'failed',
+      });
+    });
+
+    /** A failed delivery whose retry the operator requested and `WORKER` claimed. */
+    async function heldRetry() {
+      await report({ state: 'running' });
+      await report({ state: 'failed', failure: DELIVERY_FAILED });
+      await runs.requestDeliveryRetry(run.id);
+      expect((await runs.claimNext(WORKER, T1))?.id).toBe(run.id);
+    }
+
+    it('turns a failed delivery into succeeded when its retry delivers', async () => {
+      await heldRetry();
+      const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
+
+      expect(
+        await report({
+          state: 'succeeded',
+          delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+          workingCopy,
+        }),
+      ).toMatchObject({
+        state: 'succeeded',
+        failure: null,
+        delivery: 'delivered',
+        pullRequest: PULL_REQUEST,
+        deliveryRequested: false,
+        claimedBy: null,
+        finishedAt: T1,
+        workingCopy,
+      });
+    });
+
+    it('keeps a Run failed with the new reason when its retry fails again', async () => {
+      await heldRetry();
+      const again = { code: 'delivery_failed', detail: 'GitHub answered 503.' } as const;
+
+      expect(await report({ state: 'failed', failure: again })).toMatchObject({
+        state: 'failed',
+        failure: again,
+        delivery: 'failed',
+        deliveryRequested: false,
+        claimedBy: null,
+      });
+    });
+
+    it('accepts no other outcome of a delivery retry', async () => {
+      await heldRetry();
+
+      await expect(report({ state: 'running' })).rejects.toBeInstanceOf(IllegalRunTransitionError);
+      await expect(report({ state: 'succeeded' })).rejects.toBeInstanceOf(
+        IllegalRunTransitionError,
+      );
+      await expect(
+        report({ state: 'failed', failure: { code: 'agent_failed', detail: 'x' } }),
+      ).rejects.toBeInstanceOf(IllegalRunTransitionError);
+      expect((await runs.findById(run.id))?.claimedBy).toBe(WORKER);
+    });
+
+    it('rejects a delivery outcome from a worker that does not hold the retry', async () => {
+      await heldRetry();
+
+      await expect(
+        report({ workerId: OTHER_WORKER, state: 'succeeded', delivery: { outcome: 'none' } }),
+      ).rejects.toBeInstanceOf(RunNotHeldError);
+    });
   });
 
   it('rejects an unknown Run, also an id that is not a UUID', async () => {

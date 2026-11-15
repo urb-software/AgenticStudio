@@ -38,10 +38,31 @@ describe('run payload (claim response)', () => {
     task: 'Add a health check',
     startCommit: 'a'.repeat(40),
     repository: { remoteUrl: 'git@github.com:acme/shop.git' },
+    integrationBranch: 'dev',
+    kind: 'start',
   };
 
   it('accepts exactly what a Run needs', () => {
     expect(runPayloadSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('hands out a Run to start or, after a retry request, only to deliver (Issue #102)', () => {
+    const withKind = (kind: unknown) => runPayloadSchema.safeParse({ ...payload, kind }).success;
+
+    expect(withKind('start')).toBe(true);
+    expect(withKind('deliver')).toBe(true);
+    expect(withKind('resume')).toBe(false);
+    expect(withKind(undefined)).toBe(false);
+  });
+
+  it('names the integration branch the pull request targets (Issue #102)', () => {
+    const withBranch = (integrationBranch: unknown) =>
+      runPayloadSchema.safeParse({ ...payload, integrationBranch }).success;
+
+    expect(withBranch('main')).toBe(true);
+    expect(withBranch('')).toBe(false);
+    expect(withBranch('b'.repeat(256))).toBe(false);
+    expect(withBranch(undefined)).toBe(false);
   });
 
   it("carries the Repository's remote URL and nothing else about it (Issue #98)", () => {
@@ -114,10 +135,40 @@ describe('worker requests', () => {
     expect(report({ state: 'failed', failure, workingCopy })).toBe(true);
     expect(report({ state: 'failed', failure })).toBe(true);
     expect(report({ state: 'succeeded', workingCopy })).toBe(false);
+    // A delivery retry reports the Working copy with its outcome (Issue #102).
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none' }, workingCopy })).toBe(true);
     expect(report({ state: 'running', workingCopy })).toBe(false);
     expect(
       report({ state: 'failed', failure, workingCopy: { ...workingCopy, commits: [{ id: 'x' }] } }),
     ).toBe(false);
+  });
+
+  it('reports a delivery outcome with succeeded only (Issue #102)', () => {
+    const report = (body: object) =>
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+    const pullRequest = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none' } })).toBe(true);
+    expect(report({ state: 'succeeded', delivery: { outcome: 'delivered', pullRequest } })).toBe(
+      true,
+    );
+
+    expect(report({ state: 'succeeded', delivery: { outcome: 'delivered' } })).toBe(false);
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none', pullRequest } })).toBe(false);
+    expect(report({ state: 'running', delivery: { outcome: 'none' } })).toBe(false);
+    expect(
+      report({
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'push refused' },
+        delivery: { outcome: 'none' },
+      }),
+    ).toBe(false);
+    const delivered = (pr: object) =>
+      report({ state: 'succeeded', delivery: { outcome: 'delivered', pullRequest: pr } });
+    expect(delivered({ ...pullRequest, url: 'http://github.com/acme/shop/pull/7' })).toBe(false);
+    expect(delivered({ ...pullRequest, url: 'javascript:alert(1)' })).toBe(false);
+    expect(delivered({ ...pullRequest, number: 0 })).toBe(false);
+    expect(delivered({ ...pullRequest, number: 1.5 })).toBe(false);
   });
 
   it('caps a failure detail at 2000 characters', () => {

@@ -71,6 +71,8 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       task: 'Add pagination',
       startCommit: first,
       repository: { remoteUrl: remote.url },
+      integrationBranch: 'main',
+      kind: 'start',
       ...overrides,
     };
   }
@@ -365,7 +367,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     async function runFake(task: string) {
       const copies = workingCopies();
       const prepared = await copies.prepare(payload({ task }), signal());
-      await drainRunStep(
+      const result = await drainRunStep(
         new FakeRunner({ git: new GitRunner({ env: { PATH: env.PATH!, HOME: home } }) }).start({
           run: payload({ task }),
           workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
@@ -373,7 +375,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
         }),
         () => undefined,
       );
-      return { prepared, report: await copies.report(prepared, signal()) };
+      return { prepared, result, report: await copies.report(prepared, signal()) };
     }
 
     it('reports a Run that changed nothing', async () => {
@@ -398,6 +400,16 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       expect(inRepo(prepared.repoDir, ['log', '-1', '--format=%an <%ae>'])).toBe(
         'Studio Agent <agent@example.test>',
       );
+    });
+
+    it('commits a change and reports a failing check with [fake:checks-failed] (Issue #102)', async () => {
+      const { result, report } = await runFake('[fake:checks-failed] Add a feature');
+
+      expect(report).toMatchObject({ commits: [{ subject: 'Fake change' }] });
+      expect(result).toMatchObject({
+        outcome: 'done',
+        checks: expect.arrayContaining([{ name: 'fake unit tests', result: 'failed' }]),
+      });
     });
 
     it('reports uncommitted changes left behind', async () => {

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { MissingCliRunner } from './cli-runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
+import { Deliveries } from './delivery.js';
 import { FakeRunner } from './fake-runner.js';
 import { GitRunner } from './git.js';
 import { RETENTION_INTERVAL_MS, Retention } from './retention.js';
@@ -65,6 +66,16 @@ const worker = new AgentWorker({
     agentGitEmail: config.agentGitEmail,
     // A local (file) remote only for a development or test worker (coordinator decision, #98).
     allowFileRemotes: config.environment !== 'production',
+    logger,
+  }),
+  // Issue #102: the Agent account's token stays on the agent side (the worker's own .env).
+  deliveries: new Deliveries({
+    dataDir: config.dataDir,
+    git,
+    agentGitName: config.agentGitName,
+    agentGitEmail: config.agentGitEmail,
+    allowFileRemotes: config.environment !== 'production',
+    github: config.agentGitHub,
     logger,
   }),
   pollMs: config.pollMs,

@@ -11,9 +11,12 @@ import {
   MAX_ACTIVE_RUNS,
   PROVIDERS,
   type Provider,
+  RUN_DELIVERIES,
   RUN_FAILURE_CODES,
   RUN_STATES,
   type Run,
+  type RunDeliveryOutcome,
+  type RunDeliveryState,
   type RunFailure,
   type RunFailureCode,
   type RunState,
@@ -21,6 +24,7 @@ import {
 } from '../../domain/entities/run.js';
 import type {
   ClaimedRunChange,
+  DeliveryRetryOutcome,
   NewRun,
   RunRepository,
   RunStateView,
@@ -38,6 +42,12 @@ const RUN_FIELDS = {
   runBranch: true,
   commits: true,
   hasUncommittedChanges: true,
+  integrationBranch: true,
+  delivery: true,
+  pullRequestUrl: true,
+  pullRequestNumber: true,
+  deliveryRequested: true,
+  failingChecks: true,
   createdAt: true,
   startedAt: true,
   finishedAt: true,
@@ -57,6 +67,12 @@ interface RunRow {
   runBranch: string | null;
   commits: Prisma.JsonValue;
   hasUncommittedChanges: boolean | null;
+  integrationBranch: string;
+  delivery: string | null;
+  pullRequestUrl: string | null;
+  pullRequestNumber: number | null;
+  deliveryRequested: boolean;
+  failingChecks: Prisma.JsonValue;
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -66,6 +82,25 @@ interface RunRow {
 }
 
 const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
+
+/** The columns of a delivery outcome (Issue #102). */
+function deliveryColumns(delivery: RunDeliveryOutcome) {
+  return {
+    delivery: delivery.outcome satisfies RunDeliveryState,
+    pullRequestUrl: delivery.outcome === 'delivered' ? delivery.pullRequest.url : null,
+    pullRequestNumber: delivery.outcome === 'delivered' ? delivery.pullRequest.number : null,
+  };
+}
+
+function workingCopyColumns(workingCopy: RunWorkingCopy | null | undefined) {
+  return workingCopy
+    ? {
+        runBranch: workingCopy.runBranch,
+        commits: workingCopy.commits as unknown as Prisma.InputJsonValue,
+        hasUncommittedChanges: workingCopy.hasUncommittedChanges,
+      }
+    : {};
+}
 
 /** Generous limits: concurrent claims wait for the claim lock inside their transactions. */
 const CLAIM_TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;
@@ -87,6 +122,9 @@ function toRun(row: RunRow): Run {
   if (code !== null && !includes(RUN_FAILURE_CODES, code)) {
     throw new Error(`Unexpected run failure code in the database: ${code}`);
   }
+  if (row.delivery !== null && !includes(RUN_DELIVERIES, row.delivery)) {
+    throw new Error(`Unexpected run delivery in the database: ${row.delivery}`);
+  }
   return {
     id: row.id,
     projectId: row.projectId,
@@ -104,6 +142,17 @@ function toRun(row: RunRow): Run {
             commits: row.commits as unknown as RunWorkingCopy['commits'],
             hasUncommittedChanges: row.hasUncommittedChanges ?? false,
           },
+    integrationBranch: row.integrationBranch,
+    delivery: row.delivery as RunDeliveryState | null,
+    // The CHECK constraint sets the URL and the number together.
+    pullRequest:
+      row.pullRequestUrl === null || row.pullRequestNumber === null
+        ? null
+        : { url: row.pullRequestUrl, number: row.pullRequestNumber },
+    deliveryRequested: row.deliveryRequested,
+    failingChecks: Array.isArray(row.failingChecks)
+      ? row.failingChecks.filter((name): name is string => typeof name === 'string')
+      : [],
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
@@ -117,8 +166,9 @@ function toRun(row: RunRow): Run {
  * PostgreSQL adapter of {@link RunRepository} (Issue #96). Claims run in one transaction
  * under a transaction-scoped advisory lock, so concurrent claims are serialized and each sees
  * the others' committed result: together they cannot exceed one active Run per project or
- * `MAX_ACTIVE_RUNS` across the server. The partial unique index on active Runs per project
- * backs the first limit in the schema itself.
+ * `MAX_ACTIVE_RUNS` across the server; a `failed` Run a worker holds for a delivery retry
+ * (Issue #102) counts as active. The partial unique index on active Runs per project backs the
+ * first limit in the schema itself.
  */
 @Injectable()
 export class PrismaRunRepository implements RunRepository {
@@ -157,22 +207,38 @@ export class PrismaRunRepository implements RunRepository {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-        const [next] = await tx.$queryRaw<{ id: string }[]>`
-          SELECT r.id FROM runs r
-          WHERE r.state = 'queued'
+        // Active: an active state, or a failed Run held for a delivery retry (Issue #102).
+        const [next] = await tx.$queryRaw<{ id: string; state: string }[]>`
+          SELECT r.id, r.state FROM runs r
+          WHERE (r.state = 'queued'
+                 OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL))
             AND (SELECT count(*) FROM runs a
-                 WHERE a.state IN (${ACTIVE})) < ${MAX_ACTIVE_RUNS}::int
+                 WHERE a.state IN (${ACTIVE})
+                    OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)) < ${MAX_ACTIVE_RUNS}::int
             AND NOT EXISTS (SELECT 1 FROM runs a
                             WHERE a.project_id = r.project_id
-                              AND a.state IN (${ACTIVE}))
+                              AND (a.state IN (${ACTIVE})
+                                   OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)))
           ORDER BY r.created_at, r.id
           LIMIT 1`;
         if (!next) return null;
-        const row = await tx.run.update({
-          where: { id: next.id, state: 'queued' },
-          data: { state: 'preparing', claimedBy: workerId, startedAt: now, heartbeatAt: now },
-          select: RUN_FIELDS,
-        });
+        const row =
+          next.state === 'queued'
+            ? await tx.run.update({
+                where: { id: next.id, state: 'queued' },
+                data: {
+                  state: 'preparing',
+                  claimedBy: workerId,
+                  startedAt: now,
+                  heartbeatAt: now,
+                },
+                select: RUN_FIELDS,
+              })
+            : await tx.run.update({
+                where: { id: next.id, state: 'failed', deliveryRequested: true, claimedBy: null },
+                data: { claimedBy: workerId, heartbeatAt: now },
+                select: RUN_FIELDS,
+              });
         return toRun(row);
       },
       // Claims queue on the lock inside their transactions; each holds it for milliseconds.
@@ -191,21 +257,60 @@ export class PrismaRunRepository implements RunRepository {
         claimedBy: held ? change.workerId : null,
         heartbeatAt: held ? change.now : null,
         ...(isFinal(change.to) ? { finishedAt: change.now } : {}),
-        ...(change.workingCopy
-          ? {
-              runBranch: change.workingCopy.runBranch,
-              commits: change.workingCopy.commits as unknown as Prisma.InputJsonValue,
-              hasUncommittedChanges: change.workingCopy.hasUncommittedChanges,
-            }
-          : {}),
+        ...workingCopyColumns(change.workingCopy),
+        ...(change.to === 'succeeded' && change.delivery ? deliveryColumns(change.delivery) : {}),
+        ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
       },
     });
     return count === 1 ? this.findById(change.runId) : null;
   }
 
-  async heartbeat(runId: string, workerId: string, now: Date): Promise<boolean> {
+  async requestDeliveryRetry(runId: string): Promise<Run | null> {
+    await this.db.run.updateMany({
+      where: { id: runId, state: 'failed', failureCode: 'delivery_failed' },
+      data: { deliveryRequested: true },
+    });
+    const run = await this.findById(runId);
+    return run?.deliveryRequested ? run : null;
+  }
+
+  async finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null> {
+    const { result } = outcome;
     const { count } = await this.db.run.updateMany({
-      where: { id: runId, claimedBy: workerId, state: { in: [...CLAIMED_RUN_STATES] } },
+      where: {
+        id: outcome.runId,
+        state: 'failed',
+        deliveryRequested: true,
+        claimedBy: outcome.workerId,
+      },
+      data: {
+        claimedBy: null,
+        heartbeatAt: null,
+        deliveryRequested: false,
+        finishedAt: outcome.now,
+        ...workingCopyColumns(outcome.workingCopy),
+        ...(result.state === 'succeeded'
+          ? {
+              state: 'succeeded',
+              failureCode: null,
+              failureDetail: null,
+              ...deliveryColumns(result.delivery),
+            }
+          : {
+              failureCode: result.failure.code,
+              failureDetail: result.failure.detail,
+              delivery: 'failed',
+            }),
+      },
+    });
+    return count === 1 ? this.findById(outcome.runId) : null;
+  }
+
+  async heartbeat(runId: string, workerId: string, now: Date): Promise<boolean> {
+    // Held: preparing or running, or failed during a delivery retry (the CHECK constraint
+    // allows a holder in no other state).
+    const { count } = await this.db.run.updateMany({
+      where: { id: runId, claimedBy: workerId },
       data: { heartbeatAt: now },
     });
     return count === 1;
@@ -229,6 +334,7 @@ export class PrismaRunRepository implements RunRepository {
     workerId: string,
     step: RunStepRecord,
     workingCopy: RunWorkingCopy,
+    failingChecks: readonly string[],
   ): Promise<number | null> {
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the check and the numbering hold until the step is stored.
@@ -242,31 +348,51 @@ export class PrismaRunRepository implements RunRepository {
       await tx.runStep.create({
         data: { runId, index, kind: step.kind, result: step.result as Prisma.InputJsonValue },
       });
-      // The latest Working copy state (Issue #98), under the same row lock as the step.
+      // The latest Working copy state (Issue #98) and failing checks (Issue #102), under the
+      // same row lock as the step.
       await tx.run.update({
         where: { id: runId },
         data: {
-          runBranch: workingCopy.runBranch,
-          commits: workingCopy.commits as unknown as Prisma.InputJsonValue,
-          hasUncommittedChanges: workingCopy.hasUncommittedChanges,
+          ...workingCopyColumns(workingCopy),
+          failingChecks: [...failingChecks],
         },
       });
       return index;
     });
   }
 
-  async failStaleClaims(staleBefore: Date, failure: RunFailure, now: Date): Promise<number> {
-    const { count } = await this.db.run.updateMany({
-      where: { state: { in: [...CLAIMED_RUN_STATES] }, heartbeatAt: { lt: staleBefore } },
-      data: {
-        state: 'failed',
-        failureCode: failure.code,
-        failureDetail: failure.detail,
-        claimedBy: null,
-        heartbeatAt: null,
-        finishedAt: now,
-      },
+  async failStaleClaims(
+    staleBefore: Date,
+    failure: RunFailure,
+    deliveryFailure: RunFailure,
+    now: Date,
+  ): Promise<number> {
+    return this.db.$transaction(async (tx) => {
+      const held = await tx.run.updateMany({
+        where: { state: { in: [...CLAIMED_RUN_STATES] }, heartbeatAt: { lt: staleBefore } },
+        data: {
+          state: 'failed',
+          failureCode: failure.code,
+          failureDetail: failure.detail,
+          claimedBy: null,
+          heartbeatAt: null,
+          finishedAt: now,
+        },
+      });
+      // A delivery retry whose worker was lost (Issue #102): still a failed delivery.
+      const retries = await tx.run.updateMany({
+        where: { state: 'failed', claimedBy: { not: null }, heartbeatAt: { lt: staleBefore } },
+        data: {
+          failureCode: deliveryFailure.code,
+          failureDetail: deliveryFailure.detail,
+          delivery: 'failed',
+          deliveryRequested: false,
+          claimedBy: null,
+          heartbeatAt: null,
+          finishedAt: now,
+        },
+      });
+      return held.count + retries.count;
     });
-    return count;
   }
 }

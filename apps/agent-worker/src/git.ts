@@ -78,6 +78,13 @@ export interface GitOptions {
   ceiling?: string;
   /** The transports this command may use (default: all of {@link WORKER_GIT_TRANSPORTS}). */
   transports?: readonly GitTransport[];
+  /**
+   * Settings for this one command, passed through the environment (`GIT_CONFIG_COUNT`,
+   * `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`): never on the command line, where other users
+   * of the host could read them, and never in a config file (Issue #102: the Agent account's
+   * push header).
+   */
+  config?: readonly (readonly [key: string, value: string])[];
 }
 
 export interface GitRunnerOptions {
@@ -85,6 +92,18 @@ export interface GitRunnerOptions {
   env?: Record<string, string | undefined>;
   /** The Git binary (default: `git` on the PATH). */
   binary?: string;
+}
+
+/** One command's settings as `GIT_CONFIG_*` environment variables (none: no variable at all). */
+function configEnvironment(config: readonly (readonly [string, string])[]): Record<string, string> {
+  if (config.length === 0) return {};
+  return Object.fromEntries([
+    ['GIT_CONFIG_COUNT', String(config.length)],
+    ...config.flatMap(([key, value], index) => [
+      [`GIT_CONFIG_KEY_${index}`, key],
+      [`GIT_CONFIG_VALUE_${index}`, value],
+    ]),
+  ]);
 }
 
 /** `scheme://user:secret@host` → `scheme://***@host`, so a log never shows a credential. */
@@ -136,6 +155,7 @@ export class GitRunner {
         GIT_NO_REPLACE_OBJECTS: '1',
         SSH_ASKPASS_REQUIRE: 'never',
         ...(options.ceiling ? { GIT_CEILING_DIRECTORIES: options.ceiling } : {}),
+        ...configEnvironment(options.config ?? []),
       },
       timeoutMs: options.timeoutMs,
       signal: options.signal,

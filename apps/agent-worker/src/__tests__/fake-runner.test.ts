@@ -11,6 +11,8 @@ const run = (task: string): RunPayload => ({
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
+  integrationBranch: 'dev',
+  kind: 'start',
 });
 // The scenarios here touch no Working copy (commit and dirty: fake-runner.linux.test.ts).
 const workspace = { repoDir: '/nonexistent/repo', runDir: '/nonexistent', env: {} };
@@ -33,6 +35,7 @@ describe('fakeScenarioOf', () => {
     ['[fake:crash]', 'crash'],
     ['[fake:commit] Add a file', 'commit'],
     ['[fake:dirty]', 'dirty'],
+    ['[fake:checks-failed] Add a file', 'checks-failed'],
     ['[fake:unknown]', 'success'],
   ])('reads %j as %s', (task, scenario) => {
     expect(fakeScenarioOf(task)).toBe(scenario);
