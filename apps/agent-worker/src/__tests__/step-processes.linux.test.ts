@@ -15,9 +15,23 @@ import { StepProcesses } from '../step-processes.js';
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const silent = { info: () => undefined, error: () => undefined };
 
-/** Starts `script` in its own process group, as the spawn boundary starts a CLI. */
-function startGroup(script: string): ChildProcess {
-  const child = spawn('sh', ['-c', script], { detached: true, stdio: 'ignore' });
+/**
+ * Starts `script` in its own process group, as the spawn boundary starts a CLI, and resolves
+ * once the script has set itself up (it prints `ready`): a signal sent earlier would reach the
+ * shell before its `trap`.
+ */
+async function startGroup(script: string): Promise<ChildProcess> {
+  const child = spawn('sh', ['-c', `${script.replace('wait', 'echo ready; wait')}`], {
+    detached: true,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.stdout!.setEncoding('utf8').on('data', (chunk: string) => {
+      if (chunk.includes('ready')) resolve();
+    });
+    child.once('error', reject);
+  });
+  child.stdout!.destroy();
   child.unref();
   return child;
 }
@@ -34,7 +48,11 @@ function groupAlive(group: number): boolean {
 describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)', () => {
   let dir: string;
   const started: ChildProcess[] = [];
-  const track = (child: ChildProcess) => (started.push(child), child.pid!);
+  const track = async (starting: Promise<ChildProcess>) => {
+    const child = await starting;
+    started.push(child);
+    return child.pid!;
+  };
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'studio-step-processes-'));
@@ -61,7 +79,7 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
   });
 
   it('stops a whole tree with the interrupt when it exits within the grace', async () => {
-    const group = track(startGroup('sleep 600 & sleep 600 & wait'));
+    const group = await track(startGroup('sleep 600 & sleep 600 & wait'));
 
     const killed = await terminateProcessGroups([group], { graceMs: 5000 });
 
@@ -70,7 +88,7 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
   });
 
   it('kills a tree that ignores the interrupt once the grace is over (the hard path)', async () => {
-    const group = track(startGroup('trap "" INT; sleep 600 & sleep 600 & wait'));
+    const group = await track(startGroup('trap "" INT; sleep 600 & sleep 600 & wait'));
     const started = Date.now();
 
     const killed = await terminateProcessGroups([group], { graceMs: 300 });
@@ -83,7 +101,7 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
   it('records each registered group in the Run directory and forgets them on release', async () => {
     const file = join(dir, 'step-processes');
     const processes = new StepProcesses(file);
-    const group = track(startGroup('sleep 600'));
+    const group = await track(startGroup('sleep 600 & wait'));
 
     processes.register(group);
     processes.register(group);
@@ -100,7 +118,7 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
     it("stops the agent user's leftover groups, removes the Run's containers, forgets the list", async () => {
       const { runDir, processesFile } = runDirectories(dir, RUN_ID);
       mkdirSync(runDir, { recursive: true });
-      const group = track(startGroup('trap "" INT; sleep 600 & wait'));
+      const group = await track(startGroup('trap "" INT; sleep 600 & wait'));
       // A gone group and garbage lines are skipped; 1 is never signalled.
       writeFileSync(processesFile, `${group}\n999999\n1\nnot-a-pid\n`);
       const cleaned: string[] = [];
@@ -121,7 +139,7 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
     it('leaves a group alone whose processes belong to another user', async () => {
       const { runDir, processesFile } = runDirectories(dir, RUN_ID);
       mkdirSync(runDir, { recursive: true });
-      const group = track(startGroup('sleep 600'));
+      const group = await track(startGroup('sleep 600 & wait'));
       writeFileSync(processesFile, `${group}\n`);
 
       // The same table, read as if the agent user had another id.

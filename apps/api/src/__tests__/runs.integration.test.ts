@@ -870,7 +870,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const project = await readyProject('Shop');
         const run = await queuedRun(project.id);
 
-        expect((await http().post(`/api/runs/${run.id}/cancel`).send()).status).toBe(401);
+        const withoutSession = await http()
+          .post(`/api/runs/${run.id}/cancel`)
+          .set('Origin', STUDIO_ORIGIN)
+          .send();
+        expect(withoutSession.status).toBe(401);
         expect((await cancel(run.id, 'https://evil.example.test')).status).toBe(403);
         expect((await getRun(run.id)).body.state).toBe('queued');
       });
@@ -979,6 +983,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           await restarted.close();
         }
         // A worker that is really gone is still noticed one lease later.
+        expect((await workerStatus()).status).toBe(204);
         const other = await queuedRun(project.id, 'Another');
         await claim();
         advance(LEASE_SECONDS + 1);

@@ -62,10 +62,12 @@ export class LostWorkerSweepSchedule implements OnApplicationBootstrap, OnApplic
       const renewed = await this.runs.renewClaims(this.clock.now());
       if (renewed > 0) this.logger.log(`Renewed the lease of ${renewed} held run(s) at start.`);
     } catch (error) {
-      // The sweep still runs; at worst a Run whose worker kept going fails as worker_lost.
-      this.logger.error(
-        'Renewing the leases of held runs at start failed.',
-        redactSecrets(error instanceof Error ? error.message : String(error)),
+      // Not fatal: the sweep still runs; at worst a Run whose worker kept going fails as
+      // worker_lost.
+      this.logger.warn(
+        `Renewing the leases of held runs at start failed: ${redactSecrets(
+          error instanceof Error ? error.message : String(error),
+        )}`,
       );
     }
     const intervalMs = Math.min(MAX_SWEEP_INTERVAL_MS, (this.lease.seconds * 1000) / 2);

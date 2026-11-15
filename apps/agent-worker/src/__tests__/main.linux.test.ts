@@ -32,6 +32,8 @@ const RUN = {
   // Issue #98: set to a fixture remote (file://) and its commit in beforeAll.
   startCommit: '',
   repository: { remoteUrl: '' },
+  limits: { stepMinutes: 60, maxSteps: 10 },
+  completedSteps: 0,
 };
 
 /** The test harness runs the worker with the fake runner (Issue #101); no CLI is spawned. */
@@ -74,6 +76,13 @@ async function stubStudio(
         return;
       }
       reports.push({ path, body });
+      if (path.endsWith('/heartbeat')) {
+        // Issue #100: the heartbeat answer says whether the operator asked to cancel.
+        response
+          .writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ cancelRequested: false }));
+        return;
+      }
       response.writeHead(204).end();
     });
   });
