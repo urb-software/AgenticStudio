@@ -69,7 +69,7 @@ CODEX_CLI_ENABLED=false
 - If approval is revoked or no longer applicable (e.g. the review date passes or a revalidation trigger occurs), the operator disables the flag before any further executions.
 - Required negative tests: [Quality](quality.md) §10.
 
-**Current status:** Claude Code CLI: record [2026-11-14-claude-code-cli.md](provider-compliance/2026-11-14-claude-code-cli.md) is `Approved` (subscription login), decided 2026-11-14; `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it. Codex CLI: record [2026-11-14-codex-cli.md](provider-compliance/2026-11-14-codex-cli.md) is `Needs Clarification` (operator decision and headless test pending); it stays disabled until B7 produces an `Approved` record.
+**Current status:** Claude Code CLI: record [2026-11-14-claude-code-cli.md](provider-compliance/2026-11-14-claude-code-cli.md) is `Approved` (subscription login), decided 2026-11-14; `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it. Codex CLI: record [2026-11-14-codex-cli.md](provider-compliance/2026-11-14-codex-cli.md) is `Approved` (ChatGPT plan login), decided 2026-11-15; `CODEX_CLI_ENABLED` stays `false` until the operator enables it.
 
 ## 3. Secrets and credentials
 
