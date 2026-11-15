@@ -1,23 +1,16 @@
 'use client';
 
 import { RefreshCwIcon } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { LogViewer } from '@/shared/components/log-viewer';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import type { RunEventOutput, RunOutput, RunStepOutput } from '../../../../platform/api';
 import { useRefreshRunSteps, useRunSteps } from '../../api/runs-queries';
+import { FINAL_STATES } from '../../components/run-presentation';
 import { toLogRows } from './log-rows';
 import { type RunLogStatus, useRunLog } from './use-run-log';
-
-/** States in which a Run's log can still grow. */
-const ACTIVE: readonly RunOutput['state'][] = [
-  'queued',
-  'preparing',
-  'running',
-  'waiting_for_operator',
-];
 
 const NO_STEPS: ReadonlyMap<number, RunStepOutput> = new Map();
 
@@ -42,10 +35,22 @@ function LogNote({ status, events }: { status: RunLogStatus; events: readonly Ru
 export function RunLog({ run }: { run: RunOutput }) {
   const refreshSteps = useRefreshRunSteps(run.id);
   const { data: steps } = useRunSteps(run.id);
-  const log = useRunLog(run.id, ACTIVE.includes(run.state), {
-    onStepFinished: () => void refreshSteps(),
+  const log = useRunLog(run.id, !FINAL_STATES.includes(run.state), {
+    onResultsMayChange: () => void refreshSteps(),
   });
-  const rows = useMemo(() => toLogRows(log.events, steps ?? NO_STEPS), [log, steps]);
+  // The worker sends a step's end marker before it reports the step's result, and then a
+  // new state (e.g. waiting for the operator, whose stream does not end): read the results
+  // again whenever the polled state changes.
+  useEffect(() => {
+    void refreshSteps();
+  }, [run.state]); // eslint-disable-line react-hooks/exhaustive-deps -- on state changes only
+  const { events, version } = log;
+  const rows = useMemo(
+    () => toLogRows(events, steps ?? NO_STEPS),
+    // `events` grows in place; `version` says it did.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [events, version, steps],
+  );
 
   return (
     <Card aria-labelledby="run-log-title" className="min-w-0">

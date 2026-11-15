@@ -24,7 +24,7 @@ function renderRun(runId: string) {
 const log = () => screen.findByRole('log', { name: 'Run log' });
 /** The text of every row in view, in order. */
 const shown = async () =>
-  [...(await log()).querySelectorAll('[data-tone]')].map((row) => row.lastChild?.textContent);
+  [...(await log()).querySelectorAll('[data-slot="log-text"]')].map((text) => text.textContent);
 const lineCount = () => screen.getByText(/^\d+ lines?$/).textContent;
 
 const STEP: RunStepOutput = {
@@ -172,6 +172,39 @@ describe('Run log', () => {
     expect(api.streams()).toHaveLength(1);
   });
 
+  it('shows a step result reported after its end marker once the Run state moves on', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
+    const api = fakeRunsApi([run]);
+    renderRun(run.id);
+    await waitFor(() => expect(api.streams()).toHaveLength(1));
+
+    // The worker sends the marker first, then reports the result and the waiting state; the
+    // stream of a waiting Run does not end.
+    act(() =>
+      api
+        .streams()[0]!
+        .push(anEvent(1, { kind: 'step_finished', text: 'Run step 1 finished: needs_input' })),
+    );
+    await waitFor(async () => expect(await shown()).toEqual(['Run step 1 finished: needs_input']));
+    api.setSteps(run.id, [{ ...STEP, outcome: 'needs_input', checks: [] }]);
+    api.update(run.id, { state: 'waiting_for_operator' });
+    await act(() => vi.advanceTimersByTimeAsync(2_500));
+
+    await waitFor(async () => expect(await shown()).toContain('Result: needs input'));
+    vi.useRealTimers();
+  });
+
+  it('stops and offers a retry when the stream is refused', async () => {
+    const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
+    const api = fakeRunsApi([run]);
+    api.respondNext('stream', 404, { status: 404, title: 'Run not found', detail: 'No run.' });
+    renderRun(run.id);
+
+    expect(await screen.findByText('Couldn’t load the log.')).toBeTruthy();
+    expect(screen.queryByText(/Reconnecting…/)).toBeNull();
+  });
+
   it('shows a cut entry and the "log truncated" notice', async () => {
     const run = aRun({ state: 'succeeded' });
     const api = fakeRunsApi([run]);
@@ -187,7 +220,7 @@ describe('Run log', () => {
 
     await waitFor(async () => expect(await shown()).toHaveLength(3));
     const rows = (await log()).querySelectorAll<HTMLElement>('[data-tone]');
-    expect(rows[1]!.textContent).toContain('(cut at 16 KiB)');
+    expect(rows[1]!.textContent).toContain('(cut: longer than an entry may be)');
     expect(rows[2]!.dataset.tone).toBe('warn');
     expect(rows[2]!.textContent).toContain('log truncated');
   });

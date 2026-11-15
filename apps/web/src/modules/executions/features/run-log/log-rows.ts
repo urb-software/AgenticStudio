@@ -68,7 +68,11 @@ export function toLogRows(
       rows.push({ key: `${event.seq}:${i}`, text, tone: toneOf(line, tone) });
     });
     if (event.truncated) {
-      rows.push({ key: `${event.seq}:cut`, text: '… (cut at 16 KiB)', tone: 'dim' });
+      rows.push({
+        key: `${event.seq}:cut`,
+        text: '… (cut: longer than an entry may be)',
+        tone: 'dim',
+      });
     }
     const step = event.kind === 'step_finished' ? steps.get(event.stepIndex) : undefined;
     if (step) rows.push(...resultRows(step));

@@ -23,6 +23,7 @@ import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useProjectRuns, useRun, useRunProject } from '../../api/runs-queries';
 import {
   FAILURE_MESSAGE,
+  FINAL_STATES,
   PROVIDER_LABEL,
   queuedReason,
   RUN_STATE_VIEW,
@@ -32,9 +33,6 @@ import { failedRequest } from '../../components/failed-request';
 import { StaleBanner } from '../../components/stale-banner';
 import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunLog } from '../run-log/run-log';
-
-/** States in which a Run is over, so it can be run again. */
-const FINAL: readonly RunOutput['state'][] = ['succeeded', 'failed', 'cancelled', 'timed_out'];
 
 /** The request the page makes (generated `getRun`), shown verbatim when it fails. */
 const RUN_REQUEST = 'GET /api/runs/{runId}';
@@ -198,7 +196,7 @@ export function RunDetail({ runId }: { runId: string }) {
             </span>
           </p>
         </div>
-        {FINAL.includes(run.state) ? <RunAgain run={run} /> : null}
+        {FINAL_STATES.includes(run.state) ? <RunAgain run={run} /> : null}
       </header>
 
       {isError ? (

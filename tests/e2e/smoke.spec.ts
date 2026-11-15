@@ -544,6 +544,11 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   for (const line of ['working slowly: line 1', 'working slowly: line 8', 'Result: done']) {
     await expect(runLog).toContainText(line);
   }
+  // Every line once, and the wide line scrolls inside the viewer, not the page.
+  await expect(runLog.getByText('working slowly: line 1', { exact: true })).toHaveCount(1);
+  await expect(runLog.getByText('working slowly: line 2', { exact: true })).toHaveCount(1);
+  await expect(runLog).toContainText('wide output: 0123456789');
+  await expectNoHorizontalScroll(page);
   await expect(main.getByText('Streaming', { exact: true })).toHaveCount(0);
 
   // A token the agent prints reaches the log redacted.
@@ -572,6 +577,8 @@ test('operator starts runs and follows them to their result', async ({ page }, t
   await dialog.getByRole('button', { name: 'Start run' }).click();
   await expect(heading).toHaveText('Ask before changing anything [fake:question]');
   await expect(pill).toHaveText('Waiting for you', { timeout: 30_000 });
+  // The step's result arrives after its end marker; the page shows it without a reload.
+  await expect(runLog).toContainText('Result: needs input', { timeout: 15_000 });
   const indicator = page
     .getByRole('banner', { name: 'Top bar' })
     .getByRole('link', { name: /waiting for you/ });

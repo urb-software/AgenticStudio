@@ -1,5 +1,5 @@
 /** The state of a followed server-sent events stream, as the UI shows it. */
-export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'ended';
+export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'ended' | 'refused';
 
 /** Waits between reconnect attempts: quick at first, then every 10 s, never giving up. */
 export const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10_000] as const;
@@ -7,10 +7,14 @@ export const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10_000] as const;
 export interface FollowStreamOptions {
   /**
    * Opens one connection; calls `onOpen` once it is open. Resolves `end` when the server
-   * finished the stream on purpose, `dropped` otherwise (a rejection counts as dropped). The
+   * finished the stream on purpose, `refused` when it will not serve it (stop, no retry),
+   * `dropped` otherwise (a rejection counts as dropped). The
    * caller resumes from what it already has (e.g. the last seq), so nothing repeats.
    */
-  connect: (handlers: { onOpen: () => void; signal: AbortSignal }) => Promise<'end' | 'dropped'>;
+  connect: (handlers: {
+    onOpen: () => void;
+    signal: AbortSignal;
+  }) => Promise<'end' | 'dropped' | 'refused'>;
   onStatus: (status: LiveStatus) => void;
   signal: AbortSignal;
   delaysMs?: readonly number[];
@@ -31,7 +35,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 /**
  * The server-sent events lifecycle (frontend.md §7, Issue #99): connect, report `live` once
  * open, and on a drop report `reconnecting` and connect again with backoff until the server
- * ends the stream (`ended`) or `signal` aborts. Authoritative state comes from the server on
+ * ends the stream (`ended`), refuses it (`refused`) or `signal` aborts. Authoritative state comes from the server on
  * every reconnect; this layer holds none.
  */
 export async function followStream({
@@ -44,7 +48,7 @@ export async function followStream({
   onStatus('connecting');
   while (!signal.aborted) {
     let opened = false;
-    let result: 'end' | 'dropped';
+    let result: 'end' | 'dropped' | 'refused';
     try {
       result = await connect({
         signal,
@@ -58,8 +62,8 @@ export async function followStream({
       result = 'dropped';
     }
     if (signal.aborted) return;
-    if (result === 'end') {
-      onStatus('ended');
+    if (result === 'end' || result === 'refused') {
+      onStatus(result === 'end' ? 'ended' : 'refused');
       return;
     }
     if (!opened) failures += 1;

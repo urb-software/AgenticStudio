@@ -199,15 +199,30 @@ export const api = {
     unwrap(sdk.listRunSteps({ path: { runId } })),
 };
 
-/** How a Run's log stream connection ended. */
-export type RunEventStreamEnd = 'end' | 'dropped';
+/**
+ * How a Run's log stream connection ended: `end` (the Run is final, all sent), `dropped`
+ * (reconnect), or `refused` (4xx: the session expired, sending the browser to the login page
+ * on 401, or the Run is gone; reconnecting cannot help).
+ */
+export type RunEventStreamEnd = 'end' | 'dropped' | 'refused';
+
+const EVENT_KINDS: readonly string[] = [
+  'message',
+  'command',
+  'output',
+  'step_started',
+  'step_finished',
+  'notice',
+] satisfies readonly RunEventOutput['kind'][];
 
 function isRunEvent(value: unknown): value is RunEventOutput {
   return (
     typeof value === 'object' &&
     value !== null &&
     typeof (value as RunEventOutput).seq === 'number' &&
-    typeof (value as RunEventOutput).text === 'string'
+    typeof (value as RunEventOutput).stepIndex === 'number' &&
+    typeof (value as RunEventOutput).text === 'string' &&
+    EVENT_KINDS.includes((value as RunEventOutput).kind)
   );
 }
 
@@ -215,8 +230,9 @@ function isRunEvent(value: unknown): value is RunEventOutput {
  * One connection to a Run's live log (`GET /api/runs/:runId/events/stream`, generated client)
  * from the event after `after`. `onOpen` fires once the stream is open, `onEvent` for each
  * event. Resolves `end` when the server said the Run is final and everything was sent, or
- * `dropped` when the connection failed or closed early (or `signal` aborted); reconnecting is
- * the caller's (see `platform/sse`). The generated client does not retry here.
+ * `dropped` when the connection failed or closed early (or `signal` aborted), or `refused` on
+ * a 4xx answer; reconnecting is the caller's (see `platform/realtime`). The generated client
+ * does not retry here.
  */
 export async function streamRunEvents(
   runId: string,
@@ -225,11 +241,17 @@ export async function streamRunEvents(
 ): Promise<RunEventStreamEnd> {
   let opened = false;
   let ended = false;
+  let refusedStatus = 0;
   const { stream } = await sdk.streamRunEvents({
     path: { runId },
     query: { after },
     signal: handlers.signal,
     sseMaxRetryAttempts: 1,
+    onSseError: (error) => {
+      // The generated client reports a non-2xx answer as `SSE failed: <status> …`.
+      const status = Number(/^SSE failed: (\d{3})/.exec(String((error as Error)?.message))?.[1]);
+      if (status >= 400 && status < 500) refusedStatus = status;
+    },
     onSseEvent: (message) => {
       if (!opened) {
         opened = true;
@@ -242,5 +264,7 @@ export async function streamRunEvents(
     if (ended) break;
     if (isRunEvent(data)) handlers.onEvent(data);
   }
+  if (refusedStatus === 401) redirectToLogin();
+  if (refusedStatus) return 'refused';
   return ended ? 'end' : 'dropped';
 }

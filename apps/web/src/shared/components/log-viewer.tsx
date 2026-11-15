@@ -1,17 +1,18 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDownIcon } from 'lucide-react';
+import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react';
 import * as React from 'react';
 import { cn } from '@/shared/lib/utils';
 
 /**
  * Tones of a log row (design-system/components/LogViewer): `system` for Studio's own words,
- * `command` for `$` lines, `ok`/`error`/`warn`, `tool` for tool output, `dim` for asides,
- * `section` for a lifecycle step's header, `plain` for everything else.
+ * `command` for `$` lines, `edit` for file writes, `ok`/`error`/`warn`, `tool` for tool
+ * output, `dim` for asides, `plain` (the spec's default) for everything else. `section` marks
+ * a lifecycle step's header: it starts a collapsible section of the rows below it.
  */
 export type LogTone =
-  'plain' | 'system' | 'command' | 'tool' | 'ok' | 'error' | 'warn' | 'dim' | 'section';
+  'plain' | 'system' | 'command' | 'edit' | 'tool' | 'ok' | 'error' | 'warn' | 'dim' | 'section';
 
 export interface LogRow {
   /** Stable across appends (e.g. `<seq>:<line>`). */
@@ -24,6 +25,7 @@ const TONE_CLASS: Record<LogTone, string> = {
   plain: 'text-text',
   system: 'text-brand',
   command: 'font-semibold text-text',
+  edit: 'text-run-running',
   tool: 'text-text-muted',
   ok: 'text-run-succeeded',
   error: 'text-run-failed',
@@ -56,9 +58,11 @@ type LogViewerProps = {
 /**
  * Live CLI output (design-system/components/LogViewer): mono, fixed 20px rows with line
  * numbers, windowed so long logs do not freeze the page, long lines scrolling inside the
- * viewer. It follows the newest row while the operator is at the end; scrolling up pauses
- * following and shows "Jump to latest", which resumes it. `reconnecting` shows the amber
- * stream-dropped bar without clearing rows.
+ * viewer. Each `section` row is a button that collapses the rows up to the next section. It
+ * follows the newest row while the operator is at the end; scrolling up pauses following and
+ * shows "Jump to latest", which resumes it. `reconnecting` shows the amber stream-dropped bar
+ * without clearing rows. The log is not a live region (`aria-live="off"`): windowing mounts
+ * old rows while scrolling, which a screen reader would announce as new.
  */
 function LogViewer({
   rows,
@@ -72,12 +76,38 @@ function LogViewer({
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const [following, setFollowing] = React.useState(true);
   const followingRef = React.useRef(true);
+  const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(new Set());
+
+  // The rows in view: every row keeps its line number; rows of a collapsed section are left out.
+  const visible = React.useMemo(() => {
+    const shown: { row: LogRow; number: number; size: number }[] = [];
+    let header: { size: number } | undefined;
+    let hiding = false;
+    rows.forEach((row, index) => {
+      if (row.tone === 'section') {
+        hiding = collapsed.has(row.key);
+        header = { size: 0 };
+        shown.push(Object.assign(header, { row, number: index + 1 }));
+        return;
+      }
+      if (header) header.size += 1;
+      if (!hiding) shown.push({ row, number: index + 1, size: 0 });
+    });
+    return shown;
+  }, [rows, collapsed]);
+
+  const toggle = (key: string) =>
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
 
   // TanStack Virtual returns functions the React Compiler cannot memoize; it skips this
   // component, which is what windowing needs.
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: visible.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => LOG_ROW_HEIGHT,
     overscan: 20,
@@ -91,7 +121,7 @@ function LogViewer({
 
   React.useLayoutEffect(() => {
     if (followingRef.current) scrollToEnd();
-  }, [rows.length, scrollToEnd]);
+  }, [visible.length, scrollToEnd]);
 
   const setFollow = (value: boolean) => {
     followingRef.current = value;
@@ -109,6 +139,8 @@ function LogViewer({
   const jumpToLatest = () => {
     setFollow(true);
     scrollToEnd();
+    // The button goes away: keep keyboard focus on the log, not the page body.
+    scrollRef.current?.focus();
   };
 
   const items = virtualizer.getVirtualItems();
@@ -145,6 +177,7 @@ function LogViewer({
       <div
         ref={scrollRef}
         role="log"
+        aria-live="off"
         aria-label={label}
         tabIndex={0}
         onScroll={onScroll}
@@ -155,7 +188,13 @@ function LogViewer({
         ) : null}
         <div style={{ paddingTop: before, paddingBottom: after }} className="w-max min-w-full">
           {items.map((item) => {
-            const row = rows[item.index]!;
+            const { row, number, size } = visible[item.index]!;
+            const text = (
+              <span data-slot="log-text" className={TONE_CLASS[row.tone]}>
+                {row.text}
+              </span>
+            );
+            const isOpen = !collapsed.has(row.key);
             return (
               <div
                 key={row.key}
@@ -167,9 +206,26 @@ function LogViewer({
                   className="sticky left-0 flex-none bg-code-bg pr-3.5 text-right text-text-dim select-none"
                   style={{ width: `${digits + 3}ch` }}
                 >
-                  {item.index + 1}
+                  {number}
                 </span>
-                <span className={TONE_CLASS[row.tone]}>{row.text}</span>
+                {row.tone === 'section' ? (
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => toggle(row.key)}
+                    className="inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 font-mono text-code hover:text-text"
+                  >
+                    {isOpen ? (
+                      <ChevronDownIcon aria-hidden="true" className="size-3.5 text-text-dim" />
+                    ) : (
+                      <ChevronRightIcon aria-hidden="true" className="size-3.5 text-text-dim" />
+                    )}
+                    {text}
+                    {size ? <span className="text-text-dim">· {size}</span> : null}
+                  </button>
+                ) : (
+                  text
+                )}
               </div>
             );
           })}

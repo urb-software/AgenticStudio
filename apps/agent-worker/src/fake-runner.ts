@@ -41,8 +41,8 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  * - `success`: a done result with a pull request title and description and one check.
  * - `fail`: the agent fails ({@link AgentFailedError}).
  * - `question`: a `needs_input` result with a question.
- * - `slow`: prints a numbered line every `slowLineMs` for `slowMs`, then succeeds; stops when
- *   aborted (the live-log smoke follows it).
+ * - `slow`: prints a numbered line every `slowLineMs` for `slowMs` and one wide line, then
+ *   succeeds; stops when aborted (the live-log smoke follows it).
  * - `crash`: the runner itself breaks (a plain error).
  * - `secret`: prints a token-shaped string (redaction is proven end to end), then succeeds.
  * `resume` always succeeds.
@@ -78,6 +78,8 @@ export class FakeRunner implements Runner {
           yield { type: 'output', text: `working slowly: line ${line}` };
           await delay(this.slowLineMs, undefined, { signal });
         }
+        // Wider than a phone: the log viewer scrolls it sideways, never the page.
+        yield { type: 'output', text: `wide output: ${'0123456789'.repeat(30)}` };
         return done();
       }
       case 'secret':

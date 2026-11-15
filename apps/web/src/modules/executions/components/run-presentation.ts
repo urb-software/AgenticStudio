@@ -51,6 +51,9 @@ export const FAILURE_MESSAGE: Record<FailureCode, string> = {
 /** States that hold a project (and a server slot): an agent worker or the operator has the Run. */
 const HOLDING: readonly RunState[] = ['preparing', 'running', 'waiting_for_operator'];
 
+/** States in which a Run is over: it can be run again, and its log is complete. */
+export const FINAL_STATES: readonly RunState[] = ['succeeded', 'failed', 'cancelled', 'timed_out'];
+
 /**
  * Why a queued Run waits, derived from its project's Runs (#97 DoR: no contract change): another
  * Run holds the project, or else the server's limit of active Runs is reached. The held states

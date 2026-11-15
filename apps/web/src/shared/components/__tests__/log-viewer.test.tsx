@@ -88,6 +88,51 @@ describe('LogViewer', () => {
     expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
   });
 
+  it('moves to the newest row as rows arrive while following', () => {
+    const { rerender } = render(<LogViewer label="Run log" rows={rows(30)} />);
+    Object.defineProperty(log(), 'scrollHeight', { configurable: true, value: 60 * 20 });
+
+    rerender(<LogViewer label="Run log" rows={rows(60)} />);
+
+    expect(log().scrollTop).toBe(60 * 20);
+  });
+
+  it('keeps keyboard focus on the log after Jump to latest', () => {
+    render(<LogViewer label="Run log" rows={rows(100)} />);
+    scrollTo(100, 100);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
+
+    expect(document.activeElement).toBe(log());
+  });
+
+  it('collapses and expands a section, keeping line numbers', async () => {
+    const { container } = render(
+      <LogViewer
+        label="Run log"
+        rows={[
+          { key: 's1', text: 'Run step 1 started', tone: 'section' },
+          { key: 'a', text: 'first', tone: 'plain' },
+          { key: 'b', text: 'second', tone: 'plain' },
+          { key: 's2', text: 'Result: done', tone: 'section' },
+          { key: 'c', text: 'summary', tone: 'plain' },
+        ]}
+      />,
+    );
+    const section = screen.getByRole('button', { name: /Run step 1 started/ });
+    expect(section.getAttribute('aria-expanded')).toBe('true');
+    expect(section.textContent).toContain('· 2');
+
+    fireEvent.click(section);
+
+    expect(section.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('first')).toBeNull();
+    expect(screen.getByText('summary').previousElementSibling?.textContent).toBe('5');
+    await expect(container).toHaveNoAxeViolations();
+    fireEvent.click(section);
+    expect(screen.getByText('first')).toBeTruthy();
+  });
+
   it('keeps following when the operator is at the end', () => {
     render(<LogViewer label="Run log" rows={rows(100)} />);
 
