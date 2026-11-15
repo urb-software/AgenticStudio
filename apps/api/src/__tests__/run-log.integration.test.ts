@@ -144,6 +144,12 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
   beforeEach(async () => {
     // Test isolation only; CASCADE also empties runs, run_steps and run_events.
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
+    // A connected agent worker with both providers switched on (Issue #101).
+    const status = await http()
+      .post('/api/worker/status')
+      .set('Authorization', `Bearer ${WORKER_TOKEN}`)
+      .send({ workerId: W1, runner: 'cli', providers: { claude_code: true, codex: true } });
+    expect(status.status).toBe(204);
   });
 
   describe('appending and paging', () => {
@@ -344,6 +350,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
           summary: 'Added GET /health.',
           checks: [{ name: 'unit tests', result: 'passed' }],
         },
+        workingCopy: { runBranch: 'agent/x-r1', commits: [], hasUncommittedChanges: false },
       });
 
       const steps = await http().get(`/api/runs/${runId}/steps`).set('Cookie', cookie);
