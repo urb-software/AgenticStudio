@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -33,4 +33,21 @@ describe('loadWorkerId', () => {
     expect(id).toMatch(UUID);
     expect(readFileSync(join(dataDir, WORKER_ID_FILE), 'utf8').trim()).toBe(id);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'never writes through a symlink put in its place (review N1 of #122)',
+    async () => {
+      await loadWorkerId(dataDir);
+      const outside = join(dataDir, '..', 'outside.txt');
+      writeFileSync(outside, 'untouched');
+      rmSync(join(dataDir, WORKER_ID_FILE));
+      symlinkSync(outside, join(dataDir, WORKER_ID_FILE));
+
+      const id = await loadWorkerId(dataDir);
+
+      expect(id).toMatch(UUID);
+      expect(readFileSync(outside, 'utf8')).toBe('untouched');
+      expect(lstatSync(join(dataDir, WORKER_ID_FILE)).isFile()).toBe(true);
+    },
+  );
 });

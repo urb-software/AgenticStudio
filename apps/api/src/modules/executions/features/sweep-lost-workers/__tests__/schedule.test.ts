@@ -9,6 +9,8 @@ const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
+/** No worker has reported (the sweep only needs it for delivery retries, #102). */
+const STATUSES = { record: () => undefined, latest: () => undefined, lastSeen: () => undefined };
 const later = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 
 describe('LostWorkerSweepSchedule at API start', () => {
@@ -28,7 +30,7 @@ describe('LostWorkerSweepSchedule at API start', () => {
     /** One API start: the schedule boots (renewing leases if allowed) and stops again. */
     const start = async () => {
       const schedule = new LostWorkerSweepSchedule(
-        new SweepLostWorkersHandler(runs, clock, LEASE),
+        new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES),
         new CancelLongWaitingRunsHandler(runs, clock),
         runs,
         clock,
@@ -38,7 +40,7 @@ describe('LostWorkerSweepSchedule at API start', () => {
       schedule.onApplicationShutdown();
       return schedule;
     };
-    const sweep = () => new SweepLostWorkersHandler(runs, clock, LEASE).execute();
+    const sweep = () => new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES).execute();
     return { runs, run, clock, start, sweep };
   }
 

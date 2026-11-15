@@ -302,6 +302,27 @@ export class RepositoryNotReadyError extends Error {
 }
 
 /**
+ * The gone-worker rule for a requested delivery retry (Issue #102, review N2 of #122): only the
+ * agent worker that started the Run has its Working copy; when it has not reported for longer
+ * than the lease (counted from when Studio started, if it never reported since), the retry
+ * fails with this failure and is released.
+ */
+export function goneWorkerRule(
+  now: Date,
+  leaseSeconds: number,
+): { seenBefore: Date; failure: RunFailure } {
+  return {
+    seenBefore: new Date(now.getTime() - leaseSeconds * 1000),
+    failure: {
+      code: 'delivery_failed',
+      detail:
+        `Working copy no longer exists (agent worker gone): the agent worker that started this ` +
+        `run has not reported for more than ${leaseSeconds} seconds.`,
+    },
+  };
+}
+
+/**
  * The lost-worker rule (Issue #96): a held Run whose last heartbeat is older than the lease
  * has lost its agent worker. Returns the cut-off and the failure it gets.
  */

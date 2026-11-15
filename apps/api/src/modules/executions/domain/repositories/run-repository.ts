@@ -186,6 +186,15 @@ export interface RunRepository {
    */
   requestDeliveryRetry(runId: string): Promise<Run | null>;
 
+  /** Requested delivery retries no worker holds, with the worker that started each (#102). */
+  listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]>;
+
+  /**
+   * Gives up a requested delivery retry no worker holds (review N2 of #122): it stays `failed`
+   * with `failure`, the request is cleared, finished at `now`. False if the condition failed.
+   */
+  abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean>;
+
   /**
    * Applies a delivery retry's outcome if the Run is still `failed`, its retry requested and
    * held by `outcome.workerId`; the request is cleared. `null` if the condition failed.
