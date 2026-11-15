@@ -26,13 +26,14 @@ describe('EnvironmentFileSecretValues', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     runId = (await runs.claimNext(WORKER, T0))!.id;
   });
 
   const attach = async (content: string) => {
     const snapshot = await secrets.put(content, { owner: RUN_ENVIRONMENT_FILE_SECRET_OWNER });
-    await runs.attachEnvironmentFile(runId, WORKER, snapshot);
+    await runs.attachEnvironmentFile(runId, WORKER, { path: '.env', secretRef: snapshot });
     return snapshot;
   };
 

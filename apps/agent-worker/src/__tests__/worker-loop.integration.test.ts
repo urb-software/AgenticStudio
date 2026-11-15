@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Deliveries } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import { GitRunner } from '../git.js';
 import { Retention } from '../retention.js';
@@ -27,7 +28,8 @@ import { RunnerDispatcher } from '../runner-dispatcher.js';
 import { StudioApi } from '../studio-api.js';
 import { AgentWorker } from '../worker.js';
 import { WorkingCopies } from '../working-copy.js';
-import { createRemote, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { createRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
 
 // Issue #96, the whole backbone: the real worker loop, in process, against the real Studio API
 // (its production build, as a separate process) on PostgreSQL and Redis from Testcontainers.
@@ -42,6 +44,8 @@ const STUDIO_ORIGIN = 'http://localhost:4300';
 // Throwaway values generated per run; none is committed.
 const OPERATOR_PASSWORD = randomBytes(18).toString('base64');
 const WORKER_TOKEN = randomBytes(32).toString('base64');
+// Issue #102: the Agent account's token of this run, for the stub of GitHub only.
+const AGENT_GITHUB_TOKEN = `ghp_${randomBytes(18).toString('hex')}`;
 
 type RunView = {
   id: string;
@@ -50,6 +54,8 @@ type RunView = {
   runBranch?: string;
   commits?: { id: string; subject: string }[];
   hasUncommittedChanges?: boolean;
+  pullRequest?: { url: string; number: number };
+  delivery?: 'none' | 'delivered' | 'failed';
 };
 
 const BOTH_ENABLED: ProviderSwitches = { claude_code: true, codex: true };
@@ -92,6 +98,9 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
   let gitEnv: Record<string, string>;
   let remoteUrl: string;
   let remoteHead: string;
+  let remoteDir: string;
+  // Issue #102: a local stub of GitHub's pull request API; nothing reaches real GitHub.
+  let github: StubGitHub;
   const workers: AgentWorker[] = [];
 
   // What the workers log (the leak test reads it).
@@ -117,6 +126,15 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
         agentGitEmail: 'agent@example.test',
         // The fixture remote is a file:// URL: a test worker.
         allowFileRemotes: true,
+        logger,
+      }),
+      deliveries: new Deliveries({
+        dataDir: workerDataDir,
+        git,
+        agentGitName: 'Studio Agent',
+        agentGitEmail: 'agent@example.test',
+        allowFileRemotes: true,
+        github: { token: AGENT_GITHUB_TOKEN, apiUrl: github.url },
         logger,
       }),
       pollMs: 50,
@@ -199,9 +217,12 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     fixtures = mkdtempSync(join(tmpdir(), 'studio-worker-it-git-'));
     mkdirSync(join(fixtures, 'home'));
     gitEnv = isolatedGitEnv(join(fixtures, 'home'));
-    const remote = createRemote(fixtures, 'shop', gitEnv);
+    // Under acme/: a test worker names a file:// remote by its last two parts (acme/shop).
+    const remote = createRemote(join(fixtures, 'acme'), 'shop', gitEnv);
     remoteHead = remote.commit('Initial commit', { 'README.md': '# Shop\n' });
     remoteUrl = remote.url;
+    remoteDir = join(fixtures, 'acme', 'shop.git');
+    github = await startStubGitHub();
     workerDataDir = join(fixtures, 'worker-data');
     const port = await freePort();
     apiUrl = `http://127.0.0.1:${port}`;
@@ -268,6 +289,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
       api.kill('SIGTERM');
       await exited;
     }
+    await github?.close();
     await db?.$disconnect();
     await Promise.all([postgres?.stop(), redis?.stop()]);
     if (dataDir) rmSync(dataDir, { recursive: true, force: true });
@@ -282,6 +304,9 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
     expect(run.state).toBe('succeeded');
     expect(run).not.toHaveProperty('failure');
+    // Issue #102: nothing changed, so nothing was pushed and no pull request opened.
+    expect(run.delivery).toBe('none');
+    expect(run).not.toHaveProperty('pullRequest');
     // Issue #98: the Working copy's state reaches the operator's Run.
     expect(run).toMatchObject({
       runBranch: `agent/add-a-health-check-r${runId.slice(0, 8)}`,
@@ -290,29 +315,99 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     });
   });
 
-  it('records the commit the fake runner makes on the Run branch (Issue #98)', async () => {
+  it('records the commit the fake runner makes and delivers it as a draft pull request (Issues #98, #102)', async () => {
     const runId = await startRun('[fake:commit] Add a file');
     startWorker();
 
     const run = await runReaches(runId, ['succeeded', 'failed']);
 
+    const runBranch = `agent/fake-commit-add-a-file-r${runId.slice(0, 8)}`;
     expect(run).toMatchObject({
       state: 'succeeded',
-      runBranch: `agent/fake-commit-add-a-file-r${runId.slice(0, 8)}`,
+      runBranch,
       commits: [{ id: expect.stringMatching(/^[0-9a-f]{40}$/), subject: 'Fake change' }],
       hasUncommittedChanges: false,
+      delivery: 'delivered',
+      pullRequest: { url: expect.stringMatching(/^https:\/\/github\.com\/acme\/shop\/pull\/\d+$/) },
     });
+    // The Run branch reached the remote at the reported commit, and a draft pull request
+    // against the integration branch was opened as the Agent account.
+    expect(git(remoteDir, ['rev-parse', `refs/heads/${runBranch}`], gitEnv)).toBe(
+      run.commits?.[0]?.id,
+    );
+    expect(github.created.at(-1)?.body).toMatchObject({
+      head: runBranch,
+      base: 'main',
+      draft: true,
+      title: 'Fake change',
+    });
+    expect(github.requests.at(-1)?.authorization).toBe(`Bearer ${AGENT_GITHUB_TOKEN}`);
   });
 
-  it('records uncommitted changes the fake runner leaves (Issue #98)', async () => {
+  it('commits what the fake runner leaves uncommitted, then delivers it (Issues #98, #102)', async () => {
     const runId = await startRun('[fake:dirty] Leave a file');
     startWorker();
 
     expect(await runReaches(runId, ['succeeded', 'failed'])).toMatchObject({
       state: 'succeeded',
-      commits: [],
-      hasUncommittedChanges: true,
+      commits: [{ subject: 'agent: The fake agent finished the task.' }],
+      hasUncommittedChanges: false,
+      delivery: 'delivered',
     });
+  });
+
+  it('never commits or pushes the Environment file: the delivered Run branch does not contain it (Issue #104)', async () => {
+    await announceWorker();
+    const projectId = await readyProject();
+    const set = await fetch(`${apiUrl}/api/projects/${projectId}/environment-file`, {
+      method: 'PUT',
+      headers: { Origin: STUDIO_ORIGIN, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'config/test.env', content: 'A=test-only-value\n' }),
+    });
+    expect(set.status).toBe(200);
+    const started = await requestRun('[fake:dirty] Env file', projectId);
+    const runId = ((await started.json()) as RunView).id;
+    startWorker();
+
+    const run = await runReaches(runId, ['succeeded', 'failed']);
+
+    expect(run).toMatchObject({ state: 'succeeded', delivery: 'delivered' });
+    const runBranch = `agent/fake-dirty-env-file-r${runId.slice(0, 8)}`;
+    const pushed = git(
+      remoteDir,
+      ['ls-tree', '-r', '--name-only', `refs/heads/${runBranch}`],
+      gitEnv,
+    ).split('\n');
+    expect(pushed).toContain('FAKE_CHANGE.md');
+    expect(pushed).not.toContain('config/test.env');
+  });
+
+  it('fails a delivery GitHub refuses as delivery_failed, and delivers on "Retry delivery" (Issue #102)', async () => {
+    const runId = await startRun('[fake:commit] Retry me');
+    github.failCreate = 502;
+    startWorker();
+
+    const failed = await runReaches(runId, ['succeeded', 'failed']);
+    expect(failed).toMatchObject({
+      state: 'failed',
+      delivery: 'failed',
+      failure: { code: 'delivery_failed', detail: expect.stringContaining('GitHub answered 502') },
+    });
+    const created = github.created.length;
+
+    const retry = await fetch(`${apiUrl}/api/runs/${runId}/retry-delivery`, {
+      method: 'POST',
+      headers: { Origin: STUDIO_ORIGIN, Cookie: cookie },
+    });
+    expect(retry.status).toBe(202);
+
+    const delivered = await runReaches(runId, ['succeeded']);
+    expect(delivered).toMatchObject({
+      delivery: 'delivered',
+      pullRequest: { number: expect.any(Number) },
+    });
+    expect(delivered).not.toHaveProperty('failure');
+    expect(github.created.length).toBe(created + 1);
   });
 
   it('fails a Run whose start commit the remote does not have as preparation_failed (Issue #98)', async () => {

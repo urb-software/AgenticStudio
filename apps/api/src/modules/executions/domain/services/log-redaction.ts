@@ -1,5 +1,3 @@
-import type { RunStepResult } from '@agentic-studio/contracts';
-
 /**
  * Redaction of Run event text before it is stored (Issue #99, security.md §3), the one place
  * it is written. **Best effort:** it catches the Run's known secret values, common token
@@ -89,6 +87,14 @@ export function redactLogText(text: string, knownSecrets: readonly string[]): st
   return TOKEN_SHAPES.reduce((current, shape) => current.replace(shape, REDACTED), redacted);
 }
 
+/** The free-text fields of a Run step's structured result (the worker protocol's shape). */
+interface StepResultText {
+  summary: string;
+  question?: string;
+  pullRequest?: { title: string; body: string };
+  checks?: { name: string; detail?: string }[];
+}
+
 /**
  * A Run step's structured result (validated by the worker protocol) with its free-text fields
  * redacted by {@link redactLogText}: the summary, the question, the pull request's title and
@@ -96,10 +102,10 @@ export function redactLogText(text: string, knownSecrets: readonly string[]): st
  * are never touched, so a known value that equals one (e.g. an Environment file value `done`)
  * cannot make the stored result invalid (#104, from the #119 review).
  */
-export function redactRunStepResult(
-  result: RunStepResult,
+export function redactRunStepResult<T extends StepResultText>(
+  result: T,
   knownSecrets: readonly string[],
-): RunStepResult {
+): T {
   const redact = (text: string) => redactLogText(text, knownSecrets);
   return {
     ...result,
@@ -122,5 +128,30 @@ export function redactRunStepResult(
             ...(check.detail === undefined ? {} : { detail: redact(check.detail) }),
           })),
         }),
+  };
+}
+
+/** A failure the worker reported, its detail redacted like the log (Issue #104). */
+export function redactFailure<T extends { detail: string }>(
+  failure: T,
+  knownSecrets: readonly string[],
+): T {
+  return { ...failure, detail: redactLogText(failure.detail, knownSecrets) };
+}
+
+/**
+ * A Working copy report, its commit subjects (written by the agent) redacted like the log
+ * (Issue #104); the commit ids and the branch name stay as they are.
+ */
+export function redactWorkingCopy<T extends { commits: { id: string; subject: string }[] }>(
+  workingCopy: T,
+  knownSecrets: readonly string[],
+): T {
+  return {
+    ...workingCopy,
+    commits: workingCopy.commits.map((commit) => ({
+      ...commit,
+      subject: redactLogText(commit.subject, knownSecrets),
+    })),
   };
 }

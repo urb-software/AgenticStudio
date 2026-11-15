@@ -17,6 +17,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     const run = (await runs.claimNext(WORKER, T0))!;
     await runs.transitionClaimed({
@@ -43,6 +44,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
         },
       },
       { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+      ['lint'],
     );
     const handler = new ListRunStepsHandler(runs, {
       forRun: () => Promise.resolve(['test-secret-value']),

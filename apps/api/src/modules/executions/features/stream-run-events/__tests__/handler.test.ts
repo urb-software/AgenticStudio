@@ -87,6 +87,7 @@ describe('a Run log, paged and live (Issue #99)', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
   });

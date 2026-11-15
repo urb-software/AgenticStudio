@@ -2,12 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/index.js';
 import {
-  checkEnvironmentFile,
   ENVIRONMENT_FILE_SECRET_OWNER,
   type EnvironmentFileInfo,
   EnvironmentFilePathTrackedError,
 } from '../../domain/entities/environment-file.js';
 import { isProjectId } from '../../domain/entities/project.js';
+import { checkEnvironmentFile } from './check.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,

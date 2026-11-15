@@ -1,4 +1,5 @@
 import type {
+  RunDelivery,
   RunEventInput,
   RunPayload,
   RunStepResult,
@@ -6,6 +7,7 @@ import type {
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DeliveryFailedError, type DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
 import { StudioApiError } from '../studio-api.js';
@@ -20,6 +22,9 @@ const payload = (task: string, n = 1): RunPayload => ({
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
+  integrationBranch: 'dev',
+  kind: 'start',
+  studioPaths: [],
 });
 
 const REPORT: WorkingCopyReport = {
@@ -57,6 +62,62 @@ class FakeWorkingCopies implements WorkingCopyPort {
     this.reported.push(prepared.runId);
     if (this.reportFailure) throw this.reportFailure;
     return REPORT;
+  }
+}
+
+const DELIVERED: RunDelivery = {
+  outcome: 'delivered',
+  pullRequest: { url: 'https://github.com/acme/shop/pull/7', number: 7 },
+};
+
+/** Issue #102: a recording fake of the delivery (the real one: delivery.linux.test.ts). */
+class FakeDeliveries implements DeliveryPort {
+  readonly calls: [string, string][] = [];
+  delivery: RunDelivery = DELIVERED;
+  commitFailure: Error | undefined;
+  deliverFailure: Error | undefined;
+  locateFailure: Error | undefined;
+  /** Called on every step, so a test can see what was reported before it. */
+  onCall: ((step: string) => void) | undefined;
+
+  async commit(_prepared: PreparedRun, _run: RunPayload, result: RunStepResult) {
+    this.calls.push(['commit', result.summary]);
+    this.onCall?.('commit');
+    if (this.commitFailure) throw this.commitFailure;
+  }
+  /** When set, delivering waits until it is aborted (a slow push). */
+  deliverHangs = false;
+
+  async deliver(
+    prepared: PreparedRun,
+    _run: RunPayload,
+    _result: RunStepResult,
+    signal: AbortSignal,
+  ) {
+    this.calls.push(['deliver', prepared.runId]);
+    this.onCall?.('deliver');
+    if (this.deliverFailure) throw this.deliverFailure;
+    if (this.deliverHangs) {
+      await new Promise((_resolve, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason)),
+      );
+    }
+    return this.delivery;
+  }
+  async locate(run: RunPayload) {
+    this.calls.push(['locate', run.runId]);
+    if (this.locateFailure) throw this.locateFailure;
+    return {
+      prepared: {
+        runId: run.runId,
+        runDir: `/data/runs/${run.runId}`,
+        repoDir: `/data/runs/${run.runId}/repo`,
+        runBranch: REPORT.runBranch,
+        startCommit: run.startCommit,
+        env: { COMPOSE_PROJECT_NAME: 'studio-run-0b8e5c2d1f3a' },
+      },
+      result: { outcome: 'done' as const, summary: 'Kept result.' },
+    };
   }
 }
 
@@ -124,12 +185,14 @@ function startWorker(
   api: RecordingApi,
   runner: Runner = new FakeRunner({ slowMs: 60_000 }),
   workingCopies: WorkingCopyPort = new FakeWorkingCopies(),
+  deliveries: DeliveryPort = new FakeDeliveries(),
 ) {
   worker = new AgentWorker({
     api,
     runner,
     status: STATUS,
     workingCopies,
+    deliveries,
     pollMs: 5,
     heartbeatMs: 10,
     logger: silent,
@@ -152,7 +215,7 @@ afterEach(async () => {
 });
 
 describe('AgentWorker', () => {
-  it('carries a Run to succeeded: running, the step result, succeeded', async () => {
+  it('carries a Run to succeeded: running, the step result, succeeded with its delivery', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     startWorker(api);
@@ -170,8 +233,188 @@ describe('AgentWorker', () => {
           workingCopy: REPORT,
         },
       ],
-      ['state', run.runId, { state: 'succeeded' }],
+      ['state', run.runId, { state: 'succeeded', delivery: DELIVERED }],
     ]);
+  });
+
+  it('commits what is left before the step report, and delivers after it (Issue #102)', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    const seen: Record<string, number> = {};
+    deliveries.onCall = (step) => (seen[step] = api.reports().length);
+    startWorker(api, undefined, undefined, deliveries);
+
+    await until(() => api.reports().length === 3);
+
+    expect(deliveries.calls).toEqual([
+      ['commit', 'The fake agent finished the task.'],
+      ['deliver', run.runId],
+    ]);
+    // After "running"; the step report (with the worker's commit) comes between the two.
+    expect(seen).toEqual({ commit: 1, deliver: 2 });
+  });
+
+  it('reports "No changes" as succeeded with the delivery none (Issue #102)', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    deliveries.delivery = { outcome: 'none' };
+    startWorker(api, undefined, undefined, deliveries);
+
+    await until(() => api.reports().length === 3);
+
+    expect(api.reports()[2]).toEqual([
+      'state',
+      run.runId,
+      { state: 'succeeded', delivery: { outcome: 'none' } },
+    ]);
+  });
+
+  it('reports a failed delivery as delivery_failed, after the step result (Issue #102)', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    deliveries.deliverFailure = new DeliveryFailedError('Pushing the Run branch was refused.');
+    startWorker(api, undefined, undefined, deliveries);
+
+    await until(() => api.reports().length === 3);
+
+    expect(api.reports()[1]?.[0]).toBe('step');
+    expect(api.reports()[2]).toEqual([
+      'state',
+      run.runId,
+      {
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'Pushing the Run branch was refused.' },
+        workingCopy: REPORT,
+      },
+    ]);
+  });
+
+  it('still reports the step result when committing the leftovers fails (Issue #102)', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    deliveries.commitFailure = new DeliveryFailedError('Not on the Run branch.');
+    startWorker(api, undefined, undefined, deliveries);
+
+    await until(() => api.reports().length === 3);
+
+    expect(api.reports()[1]?.[0]).toBe('step');
+    expect(api.reports()[2]?.[2]).toMatchObject({
+      state: 'failed',
+      failure: { code: 'delivery_failed', detail: 'Not on the Run branch.' },
+    });
+    expect(deliveries.calls.map(([step]) => step)).toEqual(['commit']);
+  });
+
+  it('reports a stop during the delivery as delivery_failed, so it can be retried (review of #122)', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    deliveries.deliverHangs = true;
+    const running = startWorker(api, undefined, undefined, deliveries);
+    await until(() => deliveries.calls.some(([step]) => step === 'deliver'));
+
+    await running.stop();
+
+    expect(api.reports().at(-1)?.[2]).toMatchObject({
+      state: 'failed',
+      failure: { code: 'delivery_failed', detail: expect.stringContaining('shut down') },
+    });
+  });
+
+  it('delivers nothing for a question or a failed Run (Issue #102)', async () => {
+    const api = new RecordingApi([payload('[fake:question]'), payload('[fake:fail]', 2)]);
+    const deliveries = new FakeDeliveries();
+    startWorker(api, undefined, undefined, deliveries);
+
+    await until(() => api.reports().length === 5);
+
+    expect(deliveries.calls).toEqual([]);
+  });
+
+  it('on a delivery claim only delivers from the kept Working copy: no preparation, no step (Issue #102)', async () => {
+    const run = {
+      ...payload('Add a feature'),
+      kind: 'deliver' as const,
+      runBranch: REPORT.runBranch,
+    };
+    const api = new RecordingApi([run]);
+    const workingCopies = new FakeWorkingCopies();
+    const deliveries = new FakeDeliveries();
+    let started = false;
+    const runner: Runner = {
+      // eslint-disable-next-line require-yield
+      async *start(): RunStep {
+        started = true;
+        return { outcome: 'done', summary: '' };
+      },
+      resume: () => {
+        throw new Error('not used');
+      },
+    };
+    startWorker(api, runner, workingCopies, deliveries);
+
+    await until(() => api.reports().length === 1);
+
+    expect(api.reports()).toEqual([
+      ['state', run.runId, { state: 'succeeded', delivery: DELIVERED, workingCopy: REPORT }],
+    ]);
+    expect(deliveries.calls).toEqual([
+      ['locate', run.runId],
+      ['commit', 'Kept result.'],
+      ['deliver', run.runId],
+    ]);
+    expect(started).toBe(false);
+    expect(workingCopies.prepared).toEqual([]);
+  });
+
+  it('reports a delivery retry whose Working copy is gone as delivery_failed (Issue #102)', async () => {
+    const run = {
+      ...payload('Add a feature'),
+      kind: 'deliver' as const,
+      runBranch: REPORT.runBranch,
+    };
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    deliveries.locateFailure = new DeliveryFailedError('Working copy no longer exists.');
+    startWorker(api, undefined, undefined, deliveries);
+
+    await until(() => api.reports().length === 1);
+
+    expect(api.reports()).toEqual([
+      [
+        'state',
+        run.runId,
+        {
+          state: 'failed',
+          failure: { code: 'delivery_failed', detail: 'Working copy no longer exists.' },
+        },
+      ],
+    ]);
+  });
+
+  it('keeps every failure of a delivery retry a delivery_failed, without the error text (Issue #102)', async () => {
+    const run = {
+      ...payload('Add a feature'),
+      kind: 'deliver' as const,
+      runBranch: REPORT.runBranch,
+    };
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    deliveries.deliverFailure = new Error('EACCES: /secret/path');
+    startWorker(api, undefined, undefined, deliveries);
+
+    await until(() => api.reports().length === 1);
+
+    expect(api.reports()[0]?.[2]).toMatchObject({
+      state: 'failed',
+      failure: { code: 'delivery_failed' },
+      workingCopy: REPORT,
+    });
+    expect(JSON.stringify(api.reports())).not.toContain('/secret/path');
   });
 
   it('prepares the Working copy while preparing, before it reports running (Issue #98)', async () => {
@@ -464,7 +707,11 @@ describe('AgentWorker', () => {
 
     await until(() => api.reports().length === 3);
 
-    expect(api.reports().at(-1)).toEqual(['state', run.runId, { state: 'succeeded' }]);
+    expect(api.reports().at(-1)).toEqual([
+      'state',
+      run.runId,
+      { state: 'succeeded', delivery: DELIVERED },
+    ]);
   });
 
   it('drops a Run the API says it no longer holds, without reporting it', async () => {

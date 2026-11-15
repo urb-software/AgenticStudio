@@ -6,8 +6,9 @@ import { ClaimRunRequestDto } from './schema.js';
 
 /**
  * `POST /api/worker/runs/claim` (Issue #96), worker token only: 200 with the Run payload, or
- * 204 when no Run is eligible. The payload carries what a Run needs and nothing else; the
- * Project's Environment file (Issue #104) is the one secret value in it.
+ * 204 when no Run is eligible. The payload carries what a Run needs and nothing else, and
+ * whether the worker starts the Run or only retries its delivery (Issue #102). The Project's
+ * Environment file (Issue #104) is the one secret value in it, in a start claim only.
  */
 @WorkerController('runs')
 export class ClaimRunEndpoint {
@@ -31,8 +32,17 @@ export class ClaimRunEndpoint {
       task: run.task,
       startCommit: run.startCommit,
       repository: { remoteUrl: run.remoteUrl },
-      // Issue #104: the snapshot, to the claiming worker only; never logged.
+      integrationBranch: run.integrationBranch,
+      // The Environment file's path (Issue #104), recorded at the start claim: delivery never
+      // commits or pushes it, in a retry too.
+      studioPaths: run.environmentFilePath ? [run.environmentFilePath] : [],
+      // Issue #104: the snapshot, to the claiming worker only, when it starts the Run; never logged.
       ...(run.environmentFile ? { environmentFile: run.environmentFile } : {}),
+      // Issue #102: a failed Run handed out again is a delivery retry, nothing else; it pushes
+      // exactly the Run branch Studio recorded (review R1 of #122).
+      ...(run.state === 'failed'
+        ? { kind: 'deliver', runBranch: run.workingCopy?.runBranch }
+        : { kind: 'start' }),
     });
   }
 }

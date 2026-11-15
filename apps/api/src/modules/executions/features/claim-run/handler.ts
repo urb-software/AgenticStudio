@@ -18,6 +18,13 @@ const NO_REMOTE: RunFailure = {
     "The run has no repository remote to prepare from (the project's repository was removed).",
 };
 
+const NOT_DELIVERABLE: RunFailure = {
+  code: 'delivery_failed',
+  detail:
+    'The run cannot be delivered: it has no repository remote, integration branch or recorded ' +
+    'Run branch.',
+};
+
 const ENVIRONMENT_FILE_UNAVAILABLE: RunFailure = {
   code: 'preparation_failed',
   detail:
@@ -27,7 +34,8 @@ const ENVIRONMENT_FILE_UNAVAILABLE: RunFailure = {
 
 /**
  * A claimed Run and what goes to the claiming worker with it: the Project's Environment file
- * as it was at the claim (Issue #104), or `null` when the Project has none.
+ * as it was at the claim (Issue #104), or `null` when the Project has none or the claim is a
+ * delivery retry (the file is already in the Working copy then).
  */
 export interface ClaimedRun extends Run {
   environmentFile: RunEnvironmentFile | null;
@@ -39,9 +47,11 @@ const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
 /**
  * Command (Issue #96): an agent worker asks for work. Lost workers are swept first (their
  * Runs fail and free their places), then the oldest eligible queued Run is handed out under
- * the concurrency limits; `null` when there is none. Issue #104: the Project's Environment
- * file is copied into a Run-scoped secret (the Run's snapshot: log redaction uses it, and
- * later changes to the file affect only later Runs) and handed to the claiming worker only.
+ * the concurrency limits; `null` when there is none. A `failed` Run whose delivery retry was
+ * requested is handed out too, for the delivery only (Issue #102). Issue #104: when a Run is
+ * started, the Project's Environment file is copied into a Run-scoped secret (the Run's
+ * snapshot: log redaction uses it, and later changes to the file affect only later Runs) and
+ * handed to the claiming worker only; the Run records its path.
  */
 @Injectable()
 export class ClaimRunHandler {
@@ -61,15 +71,37 @@ export class ClaimRunHandler {
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;
+      if (run.state === 'failed') {
+        // A delivery retry (Issue #102): without a remote, an integration branch or a recorded
+        // Run branch there is nothing to deliver; it fails again at once and is released
+        // (review R5 of #122).
+        if (run.remoteUrl !== '' && run.integrationBranch !== '' && run.workingCopy) {
+          return { ...run, environmentFile: null };
+        }
+        await this.runs.finishDeliveryRetry({
+          runId: run.id,
+          workerId,
+          result: { state: 'failed', failure: NOT_DELIVERABLE },
+          workingCopy: null,
+          now,
+        });
+        continue;
+      }
       // A Run from before Issue #98 whose project had no Repository has no remote to prepare
-      // from: it fails with preparation_failed here instead of reaching a worker (review S6).
-      if (run.remoteUrl === '') {
+      // from (nor an integration branch, Issue #102): it fails with preparation_failed here
+      // instead of reaching a worker (review S6).
+      if (run.remoteUrl === '' || run.integrationBranch === '') {
         await this.fail(run, workerId, NO_REMOTE, now);
         continue;
       }
       const environmentFile = await this.snapshot(run, workerId, now);
       if (environmentFile === SNAPSHOT_FAILED) continue;
-      return { ...run, environmentFileSupplied: environmentFile !== null, environmentFile };
+      return {
+        ...run,
+        environmentFileSupplied: environmentFile !== null,
+        environmentFilePath: environmentFile?.path ?? null,
+        environmentFile,
+      };
     }
   }
 
@@ -90,7 +122,9 @@ export class ClaimRunHandler {
       secretRef = await this.secrets.put(file.content, {
         owner: RUN_ENVIRONMENT_FILE_SECRET_OWNER,
       });
-      if (await this.runs.attachEnvironmentFile(run.id, workerId, secretRef)) return file;
+      if (await this.runs.attachEnvironmentFile(run.id, workerId, { path: file.path, secretRef })) {
+        return file;
+      }
     } catch (error) {
       // Only the error's class name: nothing logged here can hold the content.
       this.logger.error(

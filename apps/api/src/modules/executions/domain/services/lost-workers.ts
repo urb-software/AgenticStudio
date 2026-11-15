@@ -11,6 +11,6 @@ export function failLostWorkers(
   now: Date,
   leaseSeconds: number,
 ): Promise<number> {
-  const { staleBefore, failure } = lostWorkerRule(now, leaseSeconds);
-  return runs.failStaleClaims(staleBefore, failure, now);
+  const { staleBefore, failure, deliveryFailure } = lostWorkerRule(now, leaseSeconds);
+  return runs.failStaleClaims(staleBefore, failure, deliveryFailure, now);
 }

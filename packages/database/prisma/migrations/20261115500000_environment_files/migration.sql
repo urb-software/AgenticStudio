@@ -17,6 +17,7 @@ ALTER TABLE "environment_files" ADD CONSTRAINT "environment_files_project_id_fke
 
 -- AlterTable
 ALTER TABLE "runs" ADD COLUMN "environment_file_supplied" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "runs" ADD COLUMN "environment_file_path" VARCHAR(255);
 ALTER TABLE "runs" ADD COLUMN "environment_file_secret_id" UUID;
 
 -- Prisma cannot express CHECK constraints: added by hand.
@@ -24,6 +25,8 @@ ALTER TABLE "environment_files" ADD CONSTRAINT "environment_files_size_bytes_che
     CHECK ("size_bytes" >= 0 AND "size_bytes" <= 65536);
 ALTER TABLE "environment_files" ADD CONSTRAINT "environment_files_path_check"
     CHECK (char_length("path") >= 1);
--- A Run holds a snapshot secret only when it was supplied an Environment file.
-ALTER TABLE "runs" ADD CONSTRAINT "runs_environment_file_secret_check"
-    CHECK ("environment_file_secret_id" IS NULL OR "environment_file_supplied");
+-- A Run records the file's path exactly when it was supplied one, and holds a snapshot secret
+-- only then.
+ALTER TABLE "runs" ADD CONSTRAINT "runs_environment_file_check"
+    CHECK ("environment_file_supplied" = ("environment_file_path" IS NOT NULL)
+       AND ("environment_file_secret_id" IS NULL OR "environment_file_supplied"));

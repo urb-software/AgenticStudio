@@ -46,10 +46,55 @@ describe('run payload (claim response)', () => {
     task: 'Add a health check',
     startCommit: 'a'.repeat(40),
     repository: { remoteUrl: 'git@github.com:acme/shop.git' },
+    integrationBranch: 'dev',
+    kind: 'start',
+    studioPaths: [],
   };
 
   it('accepts exactly what a Run needs', () => {
     expect(runPayloadSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('hands out a Run to start or, after a retry request, only to deliver (Issue #102)', () => {
+    const withKind = (kind: unknown) => runPayloadSchema.safeParse({ ...payload, kind }).success;
+
+    expect(withKind('start')).toBe(true);
+    expect(withKind('deliver')).toBe(false);
+    expect(
+      runPayloadSchema.safeParse({ ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d' })
+        .success,
+    ).toBe(true);
+    expect(withKind('resume')).toBe(false);
+    expect(withKind(undefined)).toBe(false);
+  });
+
+  it("carries a delivery's recorded Run branch, and only with deliver (review R1 of #122)", () => {
+    expect(runPayloadSchema.safeParse({ ...payload, runBranch: 'agent/x-r0b8e5c2d' }).success).toBe(
+      false,
+    );
+    expect(runPayloadSchema.safeParse({ ...payload, kind: 'deliver', runBranch: '' }).success).toBe(
+      false,
+    );
+  });
+
+  it("carries Studio's list of the files it places in the Working copy (review R3 of #122)", () => {
+    const withPaths = (studioPaths: unknown) =>
+      runPayloadSchema.safeParse({ ...payload, studioPaths }).success;
+
+    expect(withPaths(['.env.studio'])).toBe(true);
+    expect(withPaths([''])).toBe(false);
+    expect(withPaths(Array.from({ length: 51 }, (_, n) => `f${n}`))).toBe(false);
+    expect(withPaths(undefined)).toBe(false);
+  });
+
+  it('names the integration branch the pull request targets (Issue #102)', () => {
+    const withBranch = (integrationBranch: unknown) =>
+      runPayloadSchema.safeParse({ ...payload, integrationBranch }).success;
+
+    expect(withBranch('main')).toBe(true);
+    expect(withBranch('')).toBe(false);
+    expect(withBranch('b'.repeat(256))).toBe(false);
+    expect(withBranch(undefined)).toBe(false);
   });
 
   it("carries the Repository's remote URL and nothing else about it (Issue #98)", () => {
@@ -91,6 +136,9 @@ describe('Environment file (Issue #104)', () => {
     task: 'Add a health check',
     startCommit: 'a'.repeat(40),
     repository: { remoteUrl: 'git@github.com:acme/shop.git' },
+    integrationBranch: 'main',
+    kind: 'start',
+    studioPaths: ['.env'],
   };
   // A test value only.
   const environmentFile = { path: '.env', content: 'DB_PASSWORD=test-only-1234\n' };
@@ -103,6 +151,20 @@ describe('Environment file (Issue #104)', () => {
     expect(
       runPayloadSchema.safeParse({ ...payload, environmentFile: { ...environmentFile, id: 'x' } })
         .success,
+    ).toBe(false);
+  });
+
+  it('comes with a start claim only, its path among the studioPaths', () => {
+    expect(
+      runPayloadSchema.safeParse({ ...payload, studioPaths: [], environmentFile }).success,
+    ).toBe(false);
+    expect(
+      runPayloadSchema.safeParse({
+        ...payload,
+        kind: 'deliver',
+        runBranch: 'agent/x-r0b8e5c2d',
+        environmentFile,
+      }).success,
     ).toBe(false);
   });
 
@@ -170,13 +232,15 @@ describe('worker requests', () => {
 
     expect(report({ state: 'running' })).toBe(true);
     expect(report({ state: 'waiting_for_operator' })).toBe(true);
-    expect(report({ state: 'succeeded' })).toBe(true);
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none' } })).toBe(true);
     expect(report({ state: 'failed', failure: { code: 'agent_failed', detail: 'exit 1' } })).toBe(
       true,
     );
 
     expect(report({ state: 'failed' })).toBe(false);
     expect(report({ state: 'succeeded', failure: { code: 'unknown', detail: '' } })).toBe(false);
+    // Issue #102 (review of #122): a succeeded Run always says how it was delivered.
+    expect(report({ state: 'succeeded' })).toBe(false);
     expect(report({ state: 'queued' })).toBe(false);
     expect(report({ state: 'cancelled' })).toBe(false);
     expect(report({ state: 'failed', failure: { code: 'oops', detail: '' } })).toBe(false);
@@ -195,10 +259,40 @@ describe('worker requests', () => {
     expect(report({ state: 'failed', failure, workingCopy })).toBe(true);
     expect(report({ state: 'failed', failure })).toBe(true);
     expect(report({ state: 'succeeded', workingCopy })).toBe(false);
+    // A delivery retry reports the Working copy with its outcome (Issue #102).
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none' }, workingCopy })).toBe(true);
     expect(report({ state: 'running', workingCopy })).toBe(false);
     expect(
       report({ state: 'failed', failure, workingCopy: { ...workingCopy, commits: [{ id: 'x' }] } }),
     ).toBe(false);
+  });
+
+  it('reports a delivery outcome with succeeded only (Issue #102)', () => {
+    const report = (body: object) =>
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+    const pullRequest = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none' } })).toBe(true);
+    expect(report({ state: 'succeeded', delivery: { outcome: 'delivered', pullRequest } })).toBe(
+      true,
+    );
+
+    expect(report({ state: 'succeeded', delivery: { outcome: 'delivered' } })).toBe(false);
+    expect(report({ state: 'succeeded', delivery: { outcome: 'none', pullRequest } })).toBe(false);
+    expect(report({ state: 'running', delivery: { outcome: 'none' } })).toBe(false);
+    expect(
+      report({
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'push refused' },
+        delivery: { outcome: 'none' },
+      }),
+    ).toBe(false);
+    const delivered = (pr: object) =>
+      report({ state: 'succeeded', delivery: { outcome: 'delivered', pullRequest: pr } });
+    expect(delivered({ ...pullRequest, url: 'http://github.com/acme/shop/pull/7' })).toBe(false);
+    expect(delivered({ ...pullRequest, url: 'javascript:alert(1)' })).toBe(false);
+    expect(delivered({ ...pullRequest, number: 0 })).toBe(false);
+    expect(delivered({ ...pullRequest, number: 1.5 })).toBe(false);
   });
 
   it('caps a failure detail at 2000 characters', () => {

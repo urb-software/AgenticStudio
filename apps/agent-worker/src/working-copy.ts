@@ -53,7 +53,7 @@ export interface RunFile {
   composeProjectName: string;
   /**
    * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment
-   * file (#104): never committed or pushed (Issue #102). Absent in a Run file from before.
+   * file (#104): never committed or pushed (Issue #102). Absent in a Run file from before #102.
    */
   studioPaths?: string[];
 }
@@ -162,7 +162,7 @@ export class WorkingCopies implements WorkingCopyPort {
       runBranch,
       startCommit,
       composeProjectName: compose,
-      studioPaths: environmentFile ? [environmentFile.path] : [],
+      studioPaths: [...run.studioPaths],
     };
     await writeFile(paths.runFile, `${JSON.stringify(runFile, null, 2)}\n`, {
       flag: 'wx',
@@ -306,7 +306,11 @@ export class WorkingCopies implements WorkingCopyPort {
       current = posix.join(current, segment);
       const stats = await lstat(current).catch(() => null);
       if (!stats) {
-        await mkdir(current, { mode: 0o700 });
+        await mkdir(current, { mode: 0o700 }).catch((error: unknown) => {
+          throw new PreparationFailedError(
+            `The Environment file's directory could not be made (${errorCode(error)}).`,
+          );
+        });
       } else if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new PreparationFailedError(
           'The Environment file path leads through a symlink or a file in the repository.',
@@ -317,7 +321,7 @@ export class WorkingCopies implements WorkingCopyPort {
     // `wx`: created exclusively, so an existing file or symlink at the path is never followed.
     const handle = await open(target, 'wx', 0o600).catch((error: unknown) => {
       throw new PreparationFailedError(
-        `The Environment file could not be written (${(error as NodeJS.ErrnoException).code ?? 'error'}).`,
+        `The Environment file could not be written (${errorCode(error)}).`,
       );
     });
     try {
@@ -440,6 +444,12 @@ export class WorkingCopies implements WorkingCopyPort {
 export function excludePattern(path: string): string {
   const escaped = path.replace(/[*?[]/g, (character) => `\\${character}`);
   return `/${escaped.replace(/ +$/, (spaces) => spaces.replace(/ /g, '\\ '))}`;
+}
+
+/** A file-system error's code (e.g. `EACCES`), never its message (it names paths). */
+function errorCode(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === 'string' && /^E[A-Z0-9]+$/.test(code) ? code : 'error';
 }
 
 /** A subject within the protocol's limit, never ending in half a surrogate pair. */

@@ -30,10 +30,11 @@ describe('Environment file snapshots', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
     const run = (await runs.claimNext(WORKER, T0))!;
     const snapshot = await secrets.put(content, OWNER);
-    await runs.attachEnvironmentFile(run.id, WORKER, snapshot);
+    await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: snapshot });
     return { runId: run.id, snapshot };
   }
 
@@ -50,7 +51,7 @@ describe('Environment file snapshots', () => {
   it("deletes the snapshots of Runs that ended any way, e.g. a lost worker, and keeps the others'", async () => {
     const lost = await claimedWithSnapshot(PROJECT, 'A=test-only-lost');
     const { staleBefore, failure } = lostWorkerRule(new Date(T0.getTime() + 61_000), 60);
-    await runs.failStaleClaims(staleBefore, failure, T0);
+    await runs.failStaleClaims(staleBefore, failure, failure, T0);
     const live = await claimedWithSnapshot(OTHER, 'B=test-only-live');
 
     await release.releaseFinal();

@@ -21,12 +21,13 @@ export const FAKE_SCENARIOS = [
   'crash',
   'commit',
   'dirty',
+  'checks-failed',
   'secret',
   'print-env',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
-const MARKER = /\[fake:([a-z][a-z-]*)\]/;
+const MARKER = /\[fake:([a-z-]+)\]/;
 
 /** The scenario a Task asks for; `success` without a (known) marker. */
 export function fakeScenarioOf(task: string): FakeScenario {
@@ -60,6 +61,7 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  *   changes nothing in the Working copy.
  * - `commit` (Issue #98): like `success`, after committing one new file on the Run branch.
  * - `dirty` (Issue #98): like `success`, leaving one new file uncommitted.
+ * - `checks-failed` (Issue #102): like `commit`, but the agent reports a failing check.
  * - `fail`: the agent fails ({@link AgentFailedError}).
  * - `question`: a `needs_input` result with a question.
  * - `slow`: prints a numbered line every `slowLineMs` for `slowMs` and one wide line,
@@ -68,7 +70,7 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  *   succeeds.
  * Each step streams an agent message, a command and its output, like a real agent.
  * - `print-env` (Issue #104): prints every file Studio placed in the Working copy (the
- *   Environment file; its paths from the Run file), as an agent could, then succeeds; the leak
+ *   Environment file; its paths from the claim), as an agent could, then succeeds; the leak
  *   test proves Studio redacts it.
  * - `crash`: the runner itself breaks (a plain error).
  * `resume` always succeeds.
@@ -115,7 +117,7 @@ export class FakeRunner implements Runner {
         yield { type: 'output', text: FAKE_TOKEN };
         return done();
       case 'print-env':
-        for (const path of await studioPaths(workspace)) {
+        for (const path of run.studioPaths) {
           yield { type: 'command', text: `cat ${path}` };
           yield { type: 'output', text: await readFile(join(workspace.repoDir, path), 'utf8') };
         }
@@ -128,6 +130,16 @@ export class FakeRunner implements Runner {
         await this.change(workspace, signal, false);
         yield { type: 'output', text: `left ${FAKE_CHANGE_FILE} uncommitted` };
         return done();
+      case 'checks-failed':
+        await this.change(workspace, signal, true);
+        yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}; a check failed` };
+        return {
+          ...done(),
+          checks: [
+            { name: 'fake check', result: 'passed' },
+            { name: 'fake unit tests', result: 'failed', detail: '1 of 12 tests failed.' },
+          ],
+        };
       case 'success':
         yield { type: 'command', text: 'fake-test --all' };
         yield { type: 'output', text: 'done' };
@@ -154,14 +166,6 @@ export class FakeRunner implements Runner {
     signal.throwIfAborted();
     return done();
   }
-}
-
-/** The paths Studio placed in the Working copy, from the Run file beside it. */
-async function studioPaths(workspace: RunWorkspace): Promise<string[]> {
-  const runFile = JSON.parse(await readFile(join(workspace.runDir, 'run.json'), 'utf8')) as {
-    studioPaths?: string[];
-  };
-  return runFile.studioPaths ?? [];
 }
 
 function done(): RunStepResult {

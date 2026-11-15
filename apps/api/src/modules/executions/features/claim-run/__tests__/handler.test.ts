@@ -31,6 +31,7 @@ describe('ClaimRunHandler', () => {
       task: `Task of ${projectId}`,
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
 
   beforeEach(() => {
@@ -91,6 +92,7 @@ describe('ClaimRunHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: '',
+      integrationBranch: '',
     });
     const next = await queue(B);
 
@@ -101,6 +103,143 @@ describe('ClaimRunHandler', () => {
       state: 'failed',
       failure: { code: 'preparation_failed' },
       claimedBy: null,
+    });
+  });
+
+  describe('delivery retries (Issue #102)', () => {
+    const WORKING_COPY = {
+      runBranch: 'agent/x-r0b8e5c2d',
+      commits: [],
+      hasUncommittedChanges: false,
+    };
+
+    /** A Run of `projectId` that WORKER started and whose delivery failed, released. */
+    async function failedDelivery(projectId: string, recorded = true) {
+      const run = await queue(projectId);
+      await runs.claimNext(WORKER, T0);
+      for (const [from, to] of [
+        ['preparing', 'running'],
+        ['running', 'failed'],
+      ] as const) {
+        await runs.transitionClaimed({
+          runId: run.id,
+          workerId: WORKER,
+          from,
+          to,
+          failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+          workingCopy: to === 'failed' && recorded ? WORKING_COPY : null,
+          now: T0,
+        });
+      }
+      return run;
+    }
+
+    it('hands out a requested delivery retry, still failed, held by the worker', async () => {
+      const run = await failedDelivery(A);
+      await runs.requestDeliveryRetry(run.id);
+
+      expect(await handler.execute(WORKER)).toMatchObject({
+        id: run.id,
+        state: 'failed',
+        deliveryRequested: true,
+        claimedBy: WORKER,
+      });
+      // Held: handed out once.
+      expect(await handler.execute(WORKER)).toBeNull();
+    });
+
+    it('hands out a retry without the Environment file content, keeping its recorded path (#104)', async () => {
+      const run = await queue(A);
+      await runs.claimNext(WORKER, T0);
+      await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'x' });
+      for (const [from, to] of [
+        ['preparing', 'running'],
+        ['running', 'failed'],
+      ] as const) {
+        await runs.transitionClaimed({
+          runId: run.id,
+          workerId: WORKER,
+          from,
+          to,
+          failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+          workingCopy: to === 'failed' ? WORKING_COPY : null,
+          now: T0,
+        });
+      }
+      await runs.requestDeliveryRetry(run.id);
+      files.set(A, { path: 'other.env', content: 'A=test-only-later' });
+
+      expect(await handler.execute(WORKER)).toMatchObject({
+        id: run.id,
+        state: 'failed',
+        environmentFilePath: '.env',
+        environmentFile: null,
+      });
+      expect(secrets.values.size).toBe(0);
+    });
+
+    it('hands a retry only to the worker that started the Run, which has its Working copy (review R4)', async () => {
+      const run = await failedDelivery(A);
+      await runs.requestDeliveryRetry(run.id);
+
+      expect(await handler.execute(OTHER_WORKER)).toBeNull();
+      expect((await handler.execute(WORKER))?.id).toBe(run.id);
+    });
+
+    it('hands out no failed delivery whose retry was not requested', async () => {
+      await failedDelivery(A);
+
+      expect(await handler.execute(WORKER)).toBeNull();
+    });
+
+    it('fails and releases at once a retry with no recorded Run branch (review R5)', async () => {
+      const run = await failedDelivery(A, false);
+      await runs.requestDeliveryRetry(run.id);
+
+      expect(await handler.execute(WORKER)).toBeNull();
+      expect(await runs.findById(run.id)).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'delivery_failed',
+          detail: expect.stringContaining('cannot be delivered'),
+        },
+        deliveryRequested: false,
+        claimedBy: null,
+      });
+    });
+
+    it('counts a held delivery retry toward the limits', async () => {
+      const retry = await failedDelivery(A);
+      await runs.requestDeliveryRetry(retry.id);
+      await handler.execute(WORKER);
+      const a2 = await queue(A);
+      const b1 = await queue(B);
+      const c1 = await queue(C);
+
+      expect((await handler.execute(OTHER_WORKER))?.id).toBe(b1.id);
+      expect(await handler.execute(OTHER_WORKER)).toBeNull();
+      expect((await runs.findById(a2.id))?.state).toBe('queued');
+      expect((await runs.findById(c1.id))?.state).toBe('queued');
+    });
+
+    it('keeps a retry whose worker was lost a failed delivery, so it can be retried again', async () => {
+      const run = await failedDelivery(A);
+      await runs.requestDeliveryRetry(run.id);
+      await handler.execute(WORKER);
+      now = new Date(T0.getTime() + 61_000);
+
+      await handler.execute(OTHER_WORKER);
+
+      expect(await runs.findById(run.id)).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'delivery_failed',
+          detail: expect.stringContaining('retried the delivery'),
+        },
+        delivery: 'failed',
+        deliveryRequested: false,
+        claimedBy: null,
+      });
     });
   });
 
@@ -135,6 +274,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
       task: 'Run the integration tests',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
     });
 
   beforeEach(() => {

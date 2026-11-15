@@ -278,6 +278,9 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect(claimed.status).toBe(200);
       expect(claimed.body).toMatchObject({
         runId,
+        kind: 'start',
+        // Issue #102's delivery never commits or pushes what Studio placed.
+        studioPaths: ['config/test.env'],
         environmentFile: { path: 'config/test.env', content: CONTENT },
       });
       const run = await http().get(`/api/runs/${runId}`).set('Cookie', cookie);
@@ -294,6 +297,7 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       const claimed = await worker('claim', { workerId: W1 });
 
       expect(claimed.body.runId).toBe(runId);
+      expect(claimed.body.studioPaths).toEqual([]);
       expect(claimed.body).not.toHaveProperty('environmentFile');
       expect((await http().get(`/api/runs/${runId}`).set('Cookie', cookie)).body).toMatchObject({
         environmentFileSupplied: false,
@@ -323,9 +327,15 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       });
       const events = await http().get(`/api/runs/${first}/events`).set('Cookie', cookie);
       expect(events.body.events[0].text).toBe(`pw ${REDACTED}`);
-      expect((await worker(`${first}/state`, { workerId: W1, state: 'succeeded' })).status).toBe(
-        204,
-      );
+      expect(
+        (
+          await worker(`${first}/state`, {
+            workerId: W1,
+            state: 'succeeded',
+            delivery: { outcome: 'none' },
+          })
+        ).status,
+      ).toBe(204);
 
       const second = await startRun(projectId);
       const claimed = await worker('claim', { workerId: W1 });
@@ -337,9 +347,15 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect((await worker(`${second}/state`, { workerId: W1, state: 'running' })).status).toBe(
         204,
       );
-      expect((await worker(`${second}/state`, { workerId: W1, state: 'succeeded' })).status).toBe(
-        204,
-      );
+      expect(
+        (
+          await worker(`${second}/state`, {
+            workerId: W1,
+            state: 'succeeded',
+            delivery: { outcome: 'none' },
+          })
+        ).status,
+      ).toBe(204);
       await remove(projectId);
       const third = await startRun(projectId);
       const none = await worker('claim', { workerId: W1 });
@@ -374,9 +390,15 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
         workingCopy: { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false },
       });
       expect(step.status).toBe(204);
-      expect((await worker(`${runId}/state`, { workerId: W1, state: 'succeeded' })).status).toBe(
-        204,
-      );
+      expect(
+        (
+          await worker(`${runId}/state`, {
+            workerId: W1,
+            state: 'succeeded',
+            delivery: { outcome: 'none' },
+          })
+        ).status,
+      ).toBe(204);
 
       const events = await http().get(`/api/runs/${runId}/events`).set('Cookie', cookie);
       const steps = await http().get(`/api/runs/${runId}/steps`).set('Cookie', cookie);
