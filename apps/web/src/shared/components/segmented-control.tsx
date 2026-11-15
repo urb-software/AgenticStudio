@@ -3,7 +3,17 @@
 import * as React from 'react';
 import { cn } from '@/shared/lib/utils';
 
-type SegmentedOption<T extends string> = { value: T; label: string };
+type SegmentedOption<T extends string> = {
+  value: T;
+  label: string;
+  /**
+   * Makes this option unavailable (e.g. a switched-off provider): it stays focusable, so its
+   * reason (`describedBy`) is announced, but it cannot be selected (`aria-disabled`).
+   */
+  disabled?: boolean;
+  /** Id of the text that says why it is locked (`aria-describedby`). */
+  describedBy?: string;
+};
 
 type SegmentedControlProps<T extends string> = {
   options: readonly SegmentedOption<T>[];
@@ -52,12 +62,17 @@ function SegmentedControl<T extends string>({
             key={option.value}
             type="button"
             aria-pressed={selected}
+            aria-describedby={option.describedBy}
+            aria-disabled={option.disabled ? true : undefined}
             disabled={disabled}
-            onClick={() => onChange(option.value)}
+            onClick={() => {
+              if (!option.disabled) onChange(option.value);
+            }}
             className={cn(
               'inline-flex h-7 min-w-[30px] cursor-pointer items-center justify-center gap-1.5 rounded-sm border px-2.5 text-code font-medium',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               'disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11',
+              'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
               selected
                 ? 'border-border bg-surface text-text shadow-xs'
                 : 'border-transparent bg-transparent text-text-muted hover:text-text',

@@ -34,6 +34,9 @@ const ALL_RUNS_KEY = ['runs', 'all'] as const;
 /** The project list, for the project names on the Executions page. */
 const PROJECTS_KEY = ['runs', 'projects'] as const;
 
+/** Provider availability for one opening of the New run dialog. */
+const providersKey = (opening: number) => ['runs', 'providers', opening] as const;
+
 /** One Run. */
 const runKey = (runId: string) => ['runs', 'run', runId] as const;
 
@@ -100,6 +103,22 @@ export function useRunProject(projectId: string | undefined) {
     queryKey: runProjectKey(projectId ?? ''),
     queryFn: () => api.getProject(projectId!),
     enabled: projectId !== undefined,
+  });
+}
+
+/**
+ * Which providers can take a Run now (Issue #101), for one opening of the New run dialog. Each
+ * opening has its own cache entry (`opening` counts them), so it starts with no answer (pending)
+ * and never shows an earlier opening's; finished entries are dropped (`gcTime: 0`). The server's
+ * start check and the agent worker's own check stay authoritative.
+ */
+export function useProviderAvailability(opening: number, enabled: boolean) {
+  return useQuery({
+    queryKey: providersKey(opening),
+    queryFn: api.listProviders,
+    enabled,
+    staleTime: Infinity,
+    gcTime: 0,
   });
 }
 
