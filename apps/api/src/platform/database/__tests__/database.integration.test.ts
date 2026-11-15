@@ -1,4 +1,8 @@
-import { committedMigrations, deployMigrations } from '@agentic-studio/database/migrations';
+import {
+  committedMigrations,
+  deployMigrations,
+  schemaDriftScript,
+} from '@agentic-studio/database/migrations';
 import { startPostgres, type TestService } from '@agentic-studio/testing';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -34,6 +38,36 @@ describe('database DI against a fresh PostgreSQL', () => {
     const committed = await committedMigrations();
     expect(committed[0]).toBe('20261112000000_baseline');
     expect(applied.map((row) => row.migration_name)).toEqual(committed);
+  });
+
+  it('keeps the partial unique index behind the one-active-Run-per-project limit (Issue #96)', async () => {
+    const client = app.get<DatabaseClient>(DATABASE_CLIENT);
+
+    const [index] = await client.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes WHERE indexname = 'runs_one_active_per_project_key'`;
+
+    expect(index?.indexdef).toMatch(
+      /^CREATE UNIQUE INDEX .* ON public\.runs .*\(project_id\) WHERE/,
+    );
+    expect(index?.indexdef).toMatch(/preparing.*running.*waiting_for_operator/);
+  });
+
+  it('records what `prisma migrate dev` would propose for objects Prisma does not model', async () => {
+    const script = await schemaDriftScript(postgres.url);
+    const statements = script
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(
+        (line) => line !== '' && !line.startsWith('--') && !line.startsWith('Loaded Prisma config'),
+      );
+    // Evidence for review finding 1 on #111: printed in the CI log.
+    console.info(`prisma migrate diff (database -> schema):\n${script.trim() || '(empty)'}`);
+
+    // CHECK constraints are invisible to Prisma; the only drift it may propose is dropping the
+    // partial index, which the migration author must delete from a generated migration.
+    expect(
+      statements.filter((line) => line !== 'DROP INDEX "runs_one_active_per_project_key";'),
+    ).toEqual([]);
   });
 
   it('round-trips a query through the DI-provided client', async () => {
