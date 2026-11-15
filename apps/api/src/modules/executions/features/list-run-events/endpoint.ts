@@ -5,6 +5,7 @@ import { ApiProblemResponses } from '../../../../platform/http/problem-details.j
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../contracts/http/problems.js';
 import { RunEventPageDto, toRunEventResponse } from '../../contracts/http/run-event-response.js';
 import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
+import { REDACTED } from '../../domain/services/log-redaction.js';
 import { ListRunEventsHandler } from './handler.js';
 import { ListRunEventsQueryDto } from './schema.js';
 
@@ -28,7 +29,9 @@ export class ListRunEventsEndpoint {
     try {
       const page = await this.handler.execute(runId, query.after, query.limit);
       return {
-        events: page.events.map(toRunEventResponse),
+        events: page.events.map((event) =>
+          toRunEventResponse({ ...event, redacted: event.text.includes(REDACTED) }),
+        ),
         ...(page.next === undefined ? {} : { next: page.next }),
       };
     } catch (error) {

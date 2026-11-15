@@ -23,6 +23,7 @@ import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useProjectRuns, useRun, useRunProject } from '../../api/runs-queries';
 import {
   FAILURE_MESSAGE,
+  FINAL_STATES,
   PROVIDER_LABEL,
   queuedReason,
   RUN_STATE_VIEW,
@@ -31,10 +32,8 @@ import {
 import { failedRequest } from '../../components/failed-request';
 import { StaleBanner } from '../../components/stale-banner';
 import { NewRunDialog } from '../new-run/new-run-dialog';
+import { RunLog } from '../run-log/run-log';
 import { PullRequestLink, RunDelivery } from './run-delivery';
-
-/** States in which a Run is over, so it can be run again. */
-const FINAL: readonly RunOutput['state'][] = ['succeeded', 'failed', 'cancelled', 'timed_out'];
 
 /** The request the page makes (generated `getRun`), shown verbatim when it fails. */
 const RUN_REQUEST = 'GET /api/runs/{runId}';
@@ -134,6 +133,7 @@ export function RunTitle({ runId }: { runId: string }) {
  * why it waits; a failed Run shows the message for its reason code and the detail in mono; a
  * finished one has "Run again". How the result reached GitHub (Issue #102) follows: the draft
  * pull request, "No changes", failing checks, "Retry delivery" or where the Run branch stays.
+ * Below, the Run's log (Issue #99).
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
@@ -199,7 +199,7 @@ export function RunDetail({ runId }: { runId: string }) {
             </span>
           </p>
         </div>
-        {FINAL.includes(run.state) ? <RunAgain run={run} /> : null}
+        {FINAL_STATES.includes(run.state) ? <RunAgain run={run} /> : null}
       </header>
 
       {isError ? (
@@ -256,6 +256,8 @@ export function RunDetail({ runId }: { runId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <RunLog key={run.id} run={run} />
     </div>
   );
 }

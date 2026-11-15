@@ -1,12 +1,20 @@
 import { once } from 'node:events';
 import type { ServerResponse } from 'node:http';
-import { Controller, Get, Headers, Logger, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Headers, Inject, Logger, Param, Query, Req, Res } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ApiProblemResponses } from '../../../../platform/http/problem-details.js';
-import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../contracts/http/problems.js';
+import { redactSecrets } from '../../../../platform/http/redact.js';
+import {
+  EXECUTIONS_PROBLEM_TYPES,
+  runNotFound,
+  tooManyLogStreams,
+} from '../../contracts/http/problems.js';
 import { toRunEventResponse } from '../../contracts/http/run-event-response.js';
 import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
+import { REDACTED } from '../../domain/services/log-redaction.js';
+import { OPERATOR_SESSIONS, type OperatorSessions } from '../../ports/operator-sessions.js';
 import { KEEP_ALIVE, type RunLogStreamItem, StreamRunEventsHandler } from './handler.js';
+import { LogStreamSlots } from './log-stream-slots.js';
 import { StreamRunEventsQueryDto } from './schema.js';
 
 /** A `Last-Event-ID` the stream itself sent: a seq (PostgreSQL INTEGER). */
@@ -20,22 +28,42 @@ function seqFromHeader(value: string | undefined): number {
   return seq <= SEQ_MAX ? seq : 0;
 }
 
+/** Waits until the response can take more (`drain`) or is gone (`close`), leaving no listener. */
+async function writable(response: ServerResponse): Promise<void> {
+  const done = new AbortController();
+  const options = { signal: done.signal };
+  try {
+    await Promise.race([
+      once(response, 'drain', options).catch(() => undefined),
+      once(response, 'close', options).catch(() => undefined),
+    ]);
+  } finally {
+    done.abort();
+  }
+}
+
 /**
  * `GET /api/runs/:runId/events/stream?after=<seq>` (Issue #99), behind the global session
  * guard: the Run's log as server-sent events. Each message's `id` is the event's seq and its
  * `data` one `RunEvent` as JSON. It opens with a `: connected` comment, and an idle stream
- * sends a `: keep-alive` comment every 15 s. Once the Run is final and every event is sent, it
- * sends one `end` event and closes; a stream that closes without it was dropped, and the
- * client reconnects. A reconnecting client sends `Last-Event-ID` (or `after`), so it
- * continues after the last event it received. Proxies must not buffer
- * it: `X-Accel-Buffering: no` asks nginx not to, and README.md documents the rest.
+ * sends a `: keep-alive` comment every 15 s, after checking that the operator session is still
+ * valid (a logout or expiry closes the stream; the client's reconnect then gets 401). Once the
+ * Run is final and every event is sent, it sends one `end` event and closes; a stream that
+ * closes without it was dropped, and the client reconnects. It resumes after the larger of
+ * `after` and `Last-Event-ID` (a browser reconnect sends the URL's old `after` with a newer
+ * header). At most 5 streams per session and 50 in total are open (429 beyond). Proxies must
+ * not buffer it: `X-Accel-Buffering: no` asks nginx not to, and README.md documents the rest.
  */
 @ApiTags('runs')
 @Controller('runs')
 export class StreamRunEventsEndpoint {
   private readonly logger = new Logger(StreamRunEventsEndpoint.name);
 
-  constructor(private readonly handler: StreamRunEventsHandler) {}
+  constructor(
+    private readonly handler: StreamRunEventsHandler,
+    private readonly slots: LogStreamSlots,
+    @Inject(OPERATOR_SESSIONS) private readonly sessions: OperatorSessions,
+  ) {}
 
   @Get(':runId/events/stream')
   @ApiOperation({ operationId: 'streamRunEvents' })
@@ -43,25 +71,29 @@ export class StreamRunEventsEndpoint {
   @ApiHeader({
     name: 'Last-Event-ID',
     required: false,
-    description: 'The last seq received; used when `after` is absent.',
+    description: 'The last seq received; the stream resumes after the larger of it and `after`.',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments.',
+      'Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments; `event: end` once the Run is final.',
     content: { 'text/event-stream': { schema: { type: 'string' } } },
   })
   @ApiProblemResponses({
     400: 'Invalid after',
     404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})`,
+    429: `Too many live logs open (${EXECUTIONS_PROBLEM_TYPES.tooManyLogStreams})`,
   })
   async stream(
     @Param('runId') runId: string,
     @Query() query: StreamRunEventsQueryDto,
     @Headers('last-event-id') lastEventId: string | undefined,
+    @Req() request: unknown,
     @Res() response: ServerResponse,
   ): Promise<void> {
-    const after = query.after ?? seqFromHeader(lastEventId);
+    const after = Math.max(query.after ?? 0, seqFromHeader(lastEventId));
+    // The global guard admitted this request, so the session cookie is there and valid.
+    const sessionId = this.sessions.idOf(request) ?? '';
     const abort = new AbortController();
     response.on('close', () => abort.abort());
     let stream: AsyncGenerator<RunLogStreamItem>;
@@ -71,6 +103,8 @@ export class StreamRunEventsEndpoint {
       if (error instanceof RunNotFoundError) throw runNotFound();
       throw error;
     }
+    const release = this.slots.acquire(sessionId);
+    if (!release) throw tooManyLogStreams();
     response.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -79,29 +113,39 @@ export class StreamRunEventsEndpoint {
     });
     // A first comment tells the client (and any proxy) that the stream is open.
     response.write(': connected\n\n');
+    let sessionGone = false;
     try {
       for await (const item of stream) {
+        if (item === KEEP_ALIVE && !(await this.sessions.isActive(sessionId))) {
+          // Logged out or expired: close without `end`; the reconnect gets 401.
+          sessionGone = true;
+          break;
+        }
         const chunk =
           item === KEEP_ALIVE
             ? ': keep-alive\n\n'
             : item
-                .map(
-                  (event) =>
-                    `id: ${event.seq}\ndata: ${JSON.stringify(toRunEventResponse(event))}\n\n`,
-                )
+                .map((event) => {
+                  const data = toRunEventResponse({
+                    ...event,
+                    redacted: event.text.includes(REDACTED),
+                  });
+                  return `id: ${event.seq}\ndata: ${JSON.stringify(data)}\n\n`;
+                })
                 .join('');
         // Backpressure: a slow client catching up on a long log is not buffered in memory.
-        if (!response.write(chunk) && !abort.signal.aborted) {
-          await Promise.race([once(response, 'drain'), once(response, 'close')]);
-        }
+        if (!response.write(chunk) && !abort.signal.aborted) await writable(response);
       }
       // The Run is final and every event was sent (not a dropped connection): the client stops.
-      if (!abort.signal.aborted) response.write('event: end\ndata: {}\n\n');
+      if (!abort.signal.aborted && !sessionGone) response.write('event: end\ndata: {}\n\n');
     } catch (error) {
       // The headers are sent, so no problem response is possible: the stream ends and the
       // client reconnects, catching up from the store.
-      this.logger.error(`The log stream of run ${runId} failed: ${(error as Error).message}`);
+      this.logger.error(
+        `The log stream of run ${runId} failed: ${redactSecrets((error as Error).message)}`,
+      );
     } finally {
+      release();
       response.end();
     }
   }

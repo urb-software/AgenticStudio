@@ -118,6 +118,7 @@ Feature-specific hooks, tests, UI elements and schema live near the feature. No 
 - Centralized typed generated API client with consistent errors, timeouts, and auth/session behavior; the backend remains the authorization source of truth.
 - **Auth baseline:** a dedicated login page uses the `/api/auth/login`, `/session` and `/logout` endpoints; server-side rules are canonical in [Security](../engineering/security.md) §8. On the browser side: only an opaque HttpOnly session cookie (never localStorage/sessionStorage tokens), same origin as `/api`, and Preview never shares the Studio's admin cookie origin.
 - SSE reconnects recover authoritative state from a REST query; an in-memory log stream is never the sole audit record.
+- **Run log (Issue #99):** the Run page reads the stored log in pages (`GET /api/runs/:runId/events`), then follows `GET /api/runs/:runId/events/stream` from the last seq it has. `platform/realtime` owns the lifecycle (open, `live`, `reconnecting` with backoff, `ended` on the server's `end` event); a reconnect resumes after the last seq, so the server's store fills the gap and nothing repeats. The shared `LogViewer` windows its fixed 20px rows with `@tanstack/react-virtual`, so long logs do not freeze the page.
 - The UI shows failures clearly and handles partial/long-running execution states.
 
 ## 8. Frontend quality gates
