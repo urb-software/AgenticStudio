@@ -3,6 +3,9 @@ import { Prisma, PrismaClient } from './generated/prisma/client.js';
 
 export type DatabaseClient = PrismaClient;
 
+/** Prisma's namespace: SQL fragments (`Prisma.join`) and JSON input types for adapters. */
+export { Prisma };
+
 /**
  * Creates a Prisma client backed by the PostgreSQL driver adapter. The client
  * connects lazily on the first query; the caller owns its lifecycle and must call

@@ -98,6 +98,46 @@ export const zVerifyRepositoryRequest = z.object({
     acceptHostKeyFingerprint: z.string().min(1).max(100).optional()
 });
 
+export const zStartRunRequest = z.object({
+    task: z.string().min(1).max(20000),
+    provider: z.enum(['claude_code', 'codex'])
+});
+
+export const zRunOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    provider: z.enum(['claude_code', 'codex']),
+    task: z.string(),
+    state: z.enum([
+        'queued',
+        'preparing',
+        'running',
+        'waiting_for_operator',
+        'succeeded',
+        'failed',
+        'cancelled',
+        'timed_out'
+    ]),
+    startCommit: z.string(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    startedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    failure: z.object({
+        code: z.enum([
+            'provider_disabled',
+            'preparation_failed',
+            'agent_failed',
+            'usage_limit',
+            'worker_lost',
+            'delivery_failed',
+            'unknown'
+        ]),
+        detail: z.string()
+    }).optional()
+});
+
+export const zRunListOutput = z.array(zRunOutput);
+
 export const zProblemDetails = z.object({
     type: z.string(),
     title: z.string(),
@@ -171,3 +211,25 @@ export const zVerifyRepositoryPath = z.object({
 });
 
 export const zVerifyRepositoryResponse = zRepositoryOutput;
+
+export const zListProjectRunsPath = z.object({
+    id: z.string()
+});
+
+export const zListProjectRunsResponse = zRunListOutput;
+
+export const zStartRunBody = zStartRunRequest;
+
+export const zStartRunPath = z.object({
+    id: z.string()
+});
+
+export const zStartRunResponse = zRunOutput;
+
+export const zListRunsResponse = zRunListOutput;
+
+export const zGetRunPath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunResponse = zRunOutput;

@@ -38,6 +38,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     // listen on 127.0.0.1 opt in explicitly (Issue #69).
     gitAllowPrivateRemotes: false,
     sshKnownHosts: [],
+    // No worker token: worker routes reject unless a suite sets one (Issue #96).
+    workerToken: null,
+    workerLeaseSeconds: 60,
     ...overrides,
   };
 }

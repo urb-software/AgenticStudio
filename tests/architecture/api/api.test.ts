@@ -210,4 +210,10 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'module-reaches-queue-health-via-port',
     expected: ['api-queue-health-platform-only'],
   },
+  // Cross-module use through the public contracts/index.ts only (backend.md §2, Issue #96).
+  { fixture: 'module-uses-other-module-public-contract', expected: [] },
+  {
+    fixture: 'module-imports-other-module-http-contract',
+    expected: ['api-cross-module-contracts-index-only'],
+  },
 ]);

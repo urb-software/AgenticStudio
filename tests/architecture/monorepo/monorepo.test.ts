@@ -7,6 +7,8 @@ describeGate('monorepo', monorepoGate, '.', [
   { fixture: 'apps-use-packages', expected: [] },
   { fixture: 'web-imports-api-implementation', expected: ['mono-no-cross-app-imports'] },
   { fixture: 'web-imports-database-package', expected: ['mono-web-no-server-implementations'] },
+  // The worker protocol (Issue #96) is for the API and the agent worker, not the browser.
+  { fixture: 'web-imports-contracts-package', expected: ['mono-web-no-server-implementations'] },
   {
     fixture: 'web-manifest-depends-on-database',
     expected: ['mono-manifest-web-no-server-packages'],

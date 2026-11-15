@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, VerifyRepositoryData, VerifyRepositoryErrors, VerifyRepositoryResponses } from './types.gen';
+import type { ConnectRepositoryData, ConnectRepositoryErrors, ConnectRepositoryResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, DisconnectRepositoryData, DisconnectRepositoryErrors, DisconnectRepositoryResponses, FetchRepositoryData, FetchRepositoryErrors, FetchRepositoryResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetProjectData, GetProjectErrors, GetProjectResponses, GetRepositoryData, GetRepositoryErrors, GetRepositoryResponses, GetRunData, GetRunErrors, GetRunResponses, GetSessionData, GetSessionErrors, GetSessionResponses, ListProjectRunsData, ListProjectRunsErrors, ListProjectRunsResponses, ListProjectsData, ListProjectsErrors, ListProjectsResponses, ListRunsData, ListRunsErrors, ListRunsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, StartRunData, StartRunErrors, StartRunResponses, VerifyRepositoryData, VerifyRepositoryErrors, VerifyRepositoryResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -81,3 +81,18 @@ export const verifyRepository = <ThrowOnError extends boolean = false>(options: 
         ...options.headers
     }
 });
+
+export const listProjectRuns = <ThrowOnError extends boolean = false>(options: Options<ListProjectRunsData, ThrowOnError>): RequestResult<ListProjectRunsResponses, ListProjectRunsErrors, ThrowOnError> => (options.client ?? client).get<ListProjectRunsResponses, ListProjectRunsErrors, ThrowOnError>({ url: '/api/projects/{id}/runs', ...options });
+
+export const startRun = <ThrowOnError extends boolean = false>(options: Options<StartRunData, ThrowOnError>): RequestResult<StartRunResponses, StartRunErrors, ThrowOnError> => (options.client ?? client).post<StartRunResponses, StartRunErrors, ThrowOnError>({
+    url: '/api/projects/{id}/runs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listRuns = <ThrowOnError extends boolean = false>(options?: Options<ListRunsData, ThrowOnError>): RequestResult<ListRunsResponses, ListRunsErrors, ThrowOnError> => (options?.client ?? client).get<ListRunsResponses, ListRunsErrors, ThrowOnError>({ url: '/api/runs', ...options });
+
+export const getRun = <ThrowOnError extends boolean = false>(options: Options<GetRunData, ThrowOnError>): RequestResult<GetRunResponses, GetRunErrors, ThrowOnError> => (options.client ?? client).get<GetRunResponses, GetRunErrors, ThrowOnError>({ url: '/api/runs/{runId}', ...options });

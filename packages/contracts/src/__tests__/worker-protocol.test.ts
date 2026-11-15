@@ -1,0 +1,144 @@
+import { describe, expect, it } from 'vitest';
+import {
+  claimRunRequestSchema,
+  heartbeatRequestSchema,
+  reportRunStateRequestSchema,
+  reportRunStepRequestSchema,
+  runnerEventSchema,
+  runPayloadSchema,
+  runStepResultSchema,
+  TASK_MAX_LENGTH,
+} from '../index.js';
+
+// Issue #96: the worker protocol is defined once here and shared by the API and the agent
+// worker. These tests pin the shapes both sides rely on.
+
+const WORKER_ID = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
+const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
+const PROJECT_ID = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';
+
+describe('run payload (claim response)', () => {
+  const payload = {
+    runId: RUN_ID,
+    projectId: PROJECT_ID,
+    provider: 'claude_code',
+    task: 'Add a health check',
+    startCommit: 'a'.repeat(40),
+  };
+
+  it('accepts exactly what a Run needs', () => {
+    expect(runPayloadSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('rejects an extra field, so nothing else can travel to the worker by accident', () => {
+    expect(runPayloadSchema.safeParse({ ...payload, deployKey: 'x' }).success).toBe(false);
+  });
+
+  it('accepts both providers and nothing else', () => {
+    expect(runPayloadSchema.safeParse({ ...payload, provider: 'codex' }).success).toBe(true);
+    expect(runPayloadSchema.safeParse({ ...payload, provider: 'gpt' }).success).toBe(false);
+  });
+
+  it('limits the Task to 1-20 000 characters', () => {
+    expect(TASK_MAX_LENGTH).toBe(20_000);
+    expect(runPayloadSchema.safeParse({ ...payload, task: '' }).success).toBe(false);
+    expect(runPayloadSchema.safeParse({ ...payload, task: 'x'.repeat(20_001) }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('worker requests', () => {
+  it('identifies the worker by a UUID on every request', () => {
+    expect(claimRunRequestSchema.parse({ workerId: WORKER_ID })).toEqual({ workerId: WORKER_ID });
+    expect(heartbeatRequestSchema.parse({ workerId: WORKER_ID })).toEqual({ workerId: WORKER_ID });
+    expect(claimRunRequestSchema.safeParse({ workerId: 'worker-1' }).success).toBe(false);
+    expect(heartbeatRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('reports only the states a worker reaches, with a failure exactly when failed', () => {
+    const report = (body: object) =>
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+
+    expect(report({ state: 'running' })).toBe(true);
+    expect(report({ state: 'waiting_for_operator' })).toBe(true);
+    expect(report({ state: 'succeeded' })).toBe(true);
+    expect(report({ state: 'failed', failure: { code: 'agent_failed', detail: 'exit 1' } })).toBe(
+      true,
+    );
+
+    expect(report({ state: 'failed' })).toBe(false);
+    expect(report({ state: 'succeeded', failure: { code: 'unknown', detail: '' } })).toBe(false);
+    expect(report({ state: 'queued' })).toBe(false);
+    expect(report({ state: 'cancelled' })).toBe(false);
+    expect(report({ state: 'failed', failure: { code: 'oops', detail: '' } })).toBe(false);
+  });
+
+  it('caps a failure detail at 2000 characters', () => {
+    const failure = { code: 'agent_failed', detail: 'x'.repeat(2001) };
+    expect(
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, state: 'failed', failure })
+        .success,
+    ).toBe(false);
+  });
+
+  it('reports a Run step of kind start or resume with its structured result', () => {
+    const result = { outcome: 'done', summary: 'Done.' };
+    expect(
+      reportRunStepRequestSchema.parse({ workerId: WORKER_ID, kind: 'start', result }),
+    ).toEqual({ workerId: WORKER_ID, kind: 'start', result });
+    expect(
+      reportRunStepRequestSchema.safeParse({ workerId: WORKER_ID, kind: 'retry', result }).success,
+    ).toBe(false);
+  });
+});
+
+describe('structured result of a Run step', () => {
+  it('accepts a full done result', () => {
+    const result = {
+      outcome: 'done',
+      summary: 'Added the endpoint.',
+      pullRequest: { title: 'Add health check', body: 'Adds GET /health.' },
+      checks: [
+        { name: 'unit tests', result: 'passed' },
+        { name: 'lint', result: 'failed', detail: '2 warnings' },
+        { name: 'e2e', result: 'not_run' },
+      ],
+    };
+    expect(runStepResultSchema.parse(result)).toEqual(result);
+  });
+
+  it('needs a question when the agent needs input', () => {
+    expect(
+      runStepResultSchema.safeParse({ outcome: 'needs_input', summary: 'Stuck.' }).success,
+    ).toBe(false);
+    expect(
+      runStepResultSchema.safeParse({
+        outcome: 'needs_input',
+        summary: 'Stuck.',
+        question: 'Which database?',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects an unknown outcome or check result', () => {
+    expect(runStepResultSchema.safeParse({ outcome: 'maybe', summary: '' }).success).toBe(false);
+    expect(
+      runStepResultSchema.safeParse({
+        outcome: 'done',
+        summary: '',
+        checks: [{ name: 'x', result: 'green' }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('runner event', () => {
+  it('is a typed line of text', () => {
+    expect(runnerEventSchema.parse({ type: 'output', text: 'compiling' })).toEqual({
+      type: 'output',
+      text: 'compiling',
+    });
+    expect(runnerEventSchema.safeParse({ type: 'secret', text: '' }).success).toBe(false);
+  });
+});

@@ -280,6 +280,43 @@ describe('OpenAPI document', () => {
     });
   });
 
+  it('documents the operator run endpoints (Issue #96)', () => {
+    const document = createOpenApiDocument(app);
+
+    const start = document.paths['/api/projects/{id}/runs']?.post;
+    expect(start?.operationId).toBe('startRun');
+    expect(start?.requestBody).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/StartRunRequest' } },
+      },
+    });
+    expect(Object.keys(start?.responses ?? {})).toEqual(
+      expect.arrayContaining(['201', '404', '409', '422']),
+    );
+    expect(document.components?.schemas?.StartRunRequest).toMatchObject({
+      properties: {
+        task: { type: 'string', minLength: 1, maxLength: 20_000 },
+        provider: { type: 'string', enum: ['claude_code', 'codex'] },
+      },
+      required: ['task', 'provider'],
+      additionalProperties: false,
+    });
+    expect(document.paths['/api/projects/{id}/runs']?.get?.operationId).toBe('listProjectRuns');
+    expect(document.paths['/api/runs']?.get?.operationId).toBe('listRuns');
+    expect(document.paths['/api/runs/{runId}']?.get?.operationId).toBe('getRun');
+    expect(document.components?.schemas?.Run_Output).toMatchObject({
+      required: ['id', 'projectId', 'provider', 'task', 'state', 'startCommit', 'createdAt'],
+    });
+  });
+
+  it('leaves the worker routes out, so the browser client never contains them (Issue #96)', () => {
+    const document = createOpenApiDocument(app);
+
+    expect(Object.keys(document.paths).filter((path) => path.startsWith('/api/worker'))).toEqual(
+      [],
+    );
+  });
+
   it('is deterministic', () => {
     expect(JSON.stringify(createOpenApiDocument(app))).toBe(
       JSON.stringify(createOpenApiDocument(app)),
