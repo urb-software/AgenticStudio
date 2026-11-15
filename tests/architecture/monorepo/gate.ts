@@ -158,10 +158,11 @@ export const monorepoGate: Gate = {
       name: 'mono-agent-worker-no-loader-core-modules',
       comment:
         "The agent worker's production code never imports node:module (createRequire would load " +
-        'child_process unseen), node:cluster or node:worker_threads (review of #116).',
+        'child_process unseen), node:vm (code the graph cannot see), node:cluster or ' +
+        'node:worker_threads (review of #116).',
       severity: 'error',
       from: AGENT_WORKER_PRODUCTION,
-      to: { path: coreModules('module', 'cluster', 'worker_threads') },
+      to: { path: coreModules('module', 'vm', 'cluster', 'worker_threads') },
     },
     {
       name: 'mono-workspace-imports-resolve',
