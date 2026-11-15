@@ -102,6 +102,12 @@ export type RunOutput = {
         code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'unknown';
         detail: string;
     };
+    runBranch?: string;
+    commits?: Array<{
+        id: string;
+        subject: string;
+    }>;
+    hasUncommittedChanges?: boolean;
 };
 
 export type RunListOutput = Array<RunOutput>;

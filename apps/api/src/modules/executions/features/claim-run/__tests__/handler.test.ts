@@ -23,6 +23,7 @@ describe('ClaimRunHandler', () => {
       provider: 'claude_code',
       task: `Task of ${projectId}`,
       startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
     });
 
   beforeEach(() => {
@@ -61,6 +62,26 @@ describe('ClaimRunHandler', () => {
 
     expect((await runs.findById(a2.id))?.state).toBe('queued');
     expect((await runs.findById(c1.id))?.state).toBe('queued');
+  });
+
+  it('fails a Run without a remote URL as preparation_failed and hands out the next (review of #117)', async () => {
+    const orphan = await runs.add({
+      projectId: A,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: '',
+    });
+    const next = await queue(B);
+
+    const claimed = await handler.execute(WORKER);
+
+    expect(claimed?.id).toBe(next.id);
+    expect(await runs.findById(orphan.id)).toMatchObject({
+      state: 'failed',
+      failure: { code: 'preparation_failed' },
+      claimedBy: null,
+    });
   });
 
   it('sweeps lost workers first, which frees their places', async () => {

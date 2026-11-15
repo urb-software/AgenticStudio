@@ -62,6 +62,23 @@ export interface RunFailure {
 /** Longest Task, in characters. */
 export const TASK_MAX_LENGTH = 20_000;
 
+/** One commit on a Run branch: its id and subject line. */
+export interface RunCommit {
+  id: string;
+  subject: string;
+}
+
+/**
+ * The Working copy's state as the agent worker last reported it after a Run step (Issue #98):
+ * the Run branch, its commits since the start commit (oldest first, capped by the worker
+ * protocol) and whether uncommitted changes remain.
+ */
+export interface RunWorkingCopy {
+  runBranch: string;
+  commits: RunCommit[];
+  hasUncommittedChanges: boolean;
+}
+
 export interface Run {
   id: string;
   projectId: string;
@@ -70,6 +87,10 @@ export interface Run {
   state: RunState;
   /** The integration branch's commit when the Run was started. */
   startCommit: string;
+  /** The Repository's remote URL when the Run was started (Issue #98); never a credential. */
+  remoteUrl: string;
+  /** The latest reported Working copy state; `null` until the first Run step is reported. */
+  workingCopy: RunWorkingCopy | null;
   createdAt: Date;
   /** When an agent worker claimed it. */
   startedAt: Date | null;

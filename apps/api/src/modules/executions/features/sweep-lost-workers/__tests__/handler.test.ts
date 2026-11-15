@@ -18,7 +18,13 @@ describe('SweepLostWorkersHandler', () => {
   let handler: SweepLostWorkersHandler;
 
   async function claimed(projectId: string) {
-    await runs.add({ projectId, provider: 'claude_code', task: 'x', startCommit: 'a' });
+    await runs.add({
+      projectId,
+      provider: 'claude_code',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+    });
     return (await runs.claimNext(WORKER, T0))!;
   }
 
@@ -95,7 +101,13 @@ describe('SweepLostWorkersHandler', () => {
   });
 
   it('leaves queued Runs alone', async () => {
-    await runs.add({ projectId: PROJECTS[1], provider: 'codex', task: 'x', startCommit: 'a' });
+    await runs.add({
+      projectId: PROJECTS[1],
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+    });
     now = later(3600);
 
     expect(await handler.execute()).toBe(0);

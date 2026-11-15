@@ -6,6 +6,8 @@ import { ClaimRunEndpoint } from './features/claim-run/endpoint.js';
 import { ClaimRunHandler } from './features/claim-run/handler.js';
 import { GetRunEndpoint } from './features/get-run/endpoint.js';
 import { GetRunHandler } from './features/get-run/handler.js';
+import { GetRunStatesEndpoint } from './features/get-run-states/endpoint.js';
+import { GetRunStatesHandler } from './features/get-run-states/handler.js';
 import { ListProvidersEndpoint } from './features/list-providers/endpoint.js';
 import { ListProvidersHandler } from './features/list-providers/handler.js';
 import { ListProjectRunsEndpoint } from './features/list-project-runs/endpoint.js';
@@ -63,6 +65,7 @@ export class ExecutionsModule {
         ReportRunStateEndpoint,
         ReportRunStepEndpoint,
         RecordHeartbeatEndpoint,
+        GetRunStatesEndpoint,
         ReportWorkerStatusEndpoint,
         ListProvidersEndpoint,
       ],
@@ -83,6 +86,7 @@ export class ExecutionsModule {
         ReportRunStateHandler,
         ReportRunStepHandler,
         RecordHeartbeatHandler,
+        GetRunStatesHandler,
         ReportWorkerStatusHandler,
         ListProvidersHandler,
         SweepLostWorkersHandler,

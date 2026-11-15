@@ -7,8 +7,15 @@ import {
   type Run,
   type RunFailure,
   type RunState,
+  type RunWorkingCopy,
 } from '../../entities/run.js';
-import type { ClaimedRunChange, NewRun, RunRepository, RunStepRecord } from '../run-repository.js';
+import type {
+  ClaimedRunChange,
+  NewRun,
+  RunRepository,
+  RunStateView,
+  RunStepRecord,
+} from '../run-repository.js';
 
 const isActive = (state: RunState) => (ACTIVE_RUN_STATES as readonly RunState[]).includes(state);
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
@@ -35,6 +42,7 @@ export class InMemoryRunRepository implements RunRepository {
       failure: null,
       claimedBy: null,
       heartbeatAt: null,
+      workingCopy: null,
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -85,6 +93,7 @@ export class InMemoryRunRepository implements RunRepository {
       claimedBy: held ? change.workerId : null,
       heartbeatAt: held ? change.now : null,
       finishedAt: isFinal(change.to) ? change.now : null,
+      ...(change.workingCopy ? { workingCopy: structuredClone(change.workingCopy) } : {}),
     });
     return Promise.resolve(this.view(run));
   }
@@ -96,13 +105,27 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(true);
   }
 
-  appendStep(runId: string, workerId: string, step: RunStepRecord): Promise<number | null> {
+  findStates(ids: readonly string[]): Promise<RunStateView[]> {
+    return Promise.resolve(
+      this.runs
+        .filter((run) => ids.includes(run.id))
+        .map((run) => ({ runId: run.id, state: run.state, finishedAt: run.finishedAt })),
+    );
+  }
+
+  appendStep(
+    runId: string,
+    workerId: string,
+    step: RunStepRecord,
+    workingCopy: RunWorkingCopy,
+  ): Promise<number | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (!run || run.state !== 'running' || run.claimedBy !== workerId) {
       return Promise.resolve(null);
     }
     const index = this.steps.filter((stored) => stored.runId === runId).length + 1;
     this.steps.push({ runId, index, step: structuredClone(step) });
+    run.workingCopy = structuredClone(workingCopy);
     return Promise.resolve(index);
   }
 

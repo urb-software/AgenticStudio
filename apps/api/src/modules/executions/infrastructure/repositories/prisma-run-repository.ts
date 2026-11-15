@@ -17,11 +17,13 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunState,
+  type RunWorkingCopy,
 } from '../../domain/entities/run.js';
 import type {
   ClaimedRunChange,
   NewRun,
   RunRepository,
+  RunStateView,
   RunStepRecord,
 } from '../../domain/repositories/run-repository.js';
 
@@ -32,6 +34,10 @@ const RUN_FIELDS = {
   task: true,
   state: true,
   startCommit: true,
+  remoteUrl: true,
+  runBranch: true,
+  commits: true,
+  hasUncommittedChanges: true,
   createdAt: true,
   startedAt: true,
   finishedAt: true,
@@ -47,6 +53,10 @@ interface RunRow {
   task: string;
   state: string;
   startCommit: string;
+  remoteUrl: string;
+  runBranch: string | null;
+  commits: Prisma.JsonValue;
+  hasUncommittedChanges: boolean | null;
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -84,6 +94,16 @@ function toRun(row: RunRow): Run {
     task: row.task,
     state: row.state as RunState,
     startCommit: row.startCommit,
+    remoteUrl: row.remoteUrl,
+    workingCopy:
+      row.runBranch === null
+        ? null
+        : {
+            runBranch: row.runBranch,
+            // Validated by the worker protocol when reported; stored as reported.
+            commits: row.commits as unknown as RunWorkingCopy['commits'],
+            hasUncommittedChanges: row.hasUncommittedChanges ?? false,
+          },
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
@@ -171,6 +191,13 @@ export class PrismaRunRepository implements RunRepository {
         claimedBy: held ? change.workerId : null,
         heartbeatAt: held ? change.now : null,
         ...(isFinal(change.to) ? { finishedAt: change.now } : {}),
+        ...(change.workingCopy
+          ? {
+              runBranch: change.workingCopy.runBranch,
+              commits: change.workingCopy.commits as unknown as Prisma.InputJsonValue,
+              hasUncommittedChanges: change.workingCopy.hasUncommittedChanges,
+            }
+          : {}),
       },
     });
     return count === 1 ? this.findById(change.runId) : null;
@@ -184,7 +211,25 @@ export class PrismaRunRepository implements RunRepository {
     return count === 1;
   }
 
-  async appendStep(runId: string, workerId: string, step: RunStepRecord): Promise<number | null> {
+  async findStates(ids: readonly string[]): Promise<RunStateView[]> {
+    const rows = await this.db.run.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, state: true, finishedAt: true },
+    });
+    return rows.map((row) => {
+      if (!includes(RUN_STATES, row.state)) {
+        throw new Error(`Unexpected run state in the database: ${row.state}`);
+      }
+      return { runId: row.id, state: row.state, finishedAt: row.finishedAt };
+    });
+  }
+
+  async appendStep(
+    runId: string,
+    workerId: string,
+    step: RunStepRecord,
+    workingCopy: RunWorkingCopy,
+  ): Promise<number | null> {
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the check and the numbering hold until the step is stored.
       const [run] = await tx.$queryRaw<{ id: string }[]>`
@@ -196,6 +241,15 @@ export class PrismaRunRepository implements RunRepository {
       const index = (last._max.index ?? 0) + 1;
       await tx.runStep.create({
         data: { runId, index, kind: step.kind, result: step.result as Prisma.InputJsonValue },
+      });
+      // The latest Working copy state (Issue #98), under the same row lock as the step.
+      await tx.run.update({
+        where: { id: runId },
+        data: {
+          runBranch: workingCopy.runBranch,
+          commits: workingCopy.commits as unknown as Prisma.InputJsonValue,
+          hasUncommittedChanges: workingCopy.hasUncommittedChanges,
+        },
       });
       return index;
     });

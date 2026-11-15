@@ -114,33 +114,44 @@ model Secret {
 /// CHECKs (the database integration test checks this). If a later version does, delete that
 /// statement from the generated migration before committing it.
 model Run {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// The owning project. Restrict: a project with Runs cannot be deleted silently.
-  projectId     String    @map("project_id") @db.Uuid
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId             String    @map("project_id") @db.Uuid
+  project               Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   /// claude_code | codex.
-  provider      String    @db.VarChar(32)
+  provider              String    @db.VarChar(32)
   /// The operator's instruction (1–20 000 characters).
-  task          String    @db.VarChar(20000)
+  task                  String    @db.VarChar(20000)
   /// queued | preparing | running | waiting_for_operator | succeeded | failed | cancelled | timed_out.
-  state         String    @db.VarChar(32)
+  state                 String    @db.VarChar(32)
   /// The integration branch's commit when the Run was started.
-  startCommit   String    @map("start_commit") @db.VarChar(64)
+  startCommit           String    @map("start_commit") @db.VarChar(64)
+  /// The Repository's remote URL when the Run was started (Issue #98); the agent worker fetches
+  /// the start commit from it with the agent user's own credentials. Never a credential.
+  remoteUrl             String    @map("remote_url") @db.VarChar(2048)
+  /// The Run branch in the Working copy, from the latest reported Run step (Issue #98); set
+  /// together with commits and has_uncommitted_changes.
+  runBranch             String?   @map("run_branch") @db.VarChar(255)
+  /// The commits on the Run branch since the start commit, `[{ id, subject }]`, oldest first,
+  /// as the worker protocol validated them.
+  commits               Json?
+  /// Whether uncommitted changes remained in the Working copy after the latest Run step.
+  hasUncommittedChanges Boolean?  @map("has_uncommitted_changes")
   /// Set by PostgreSQL, so the queue order (created_at, id) uses one clock.
-  createdAt     DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  createdAt             DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// When an agent worker claimed the Run.
-  startedAt     DateTime? @map("started_at") @db.Timestamptz(6)
+  startedAt             DateTime? @map("started_at") @db.Timestamptz(6)
   /// When the Run reached a final state.
-  finishedAt    DateTime? @map("finished_at") @db.Timestamptz(6)
+  finishedAt            DateTime? @map("finished_at") @db.Timestamptz(6)
   /// One of the fixed failure codes; set exactly when failed.
-  failureCode   String?   @map("failure_code") @db.VarChar(32)
+  failureCode           String?   @map("failure_code") @db.VarChar(32)
   /// A short explanation; set exactly when failed. Never a secret.
-  failureDetail String?   @map("failure_detail") @db.VarChar(2000)
+  failureDetail         String?   @map("failure_detail") @db.VarChar(2000)
   /// The agent worker holding the Run (its random id); set exactly when preparing or running.
-  claimedBy     String?   @map("claimed_by") @db.Uuid
+  claimedBy             String?   @map("claimed_by") @db.Uuid
   /// The holding worker's last heartbeat; set exactly when claimed_by is.
-  heartbeatAt   DateTime? @map("heartbeat_at") @db.Timestamptz(6)
-  steps         RunStep[]
+  heartbeatAt           DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+  steps                 RunStep[]
 
   /// Serves the newest-first list of all Runs.
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "runs_created_at_id_idx")

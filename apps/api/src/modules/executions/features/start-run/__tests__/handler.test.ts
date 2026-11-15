@@ -11,6 +11,7 @@ import { StartRunHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HEAD = 'd'.repeat(40);
+const REMOTE = 'git@github.com:acme/shop.git';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
 
@@ -47,7 +48,7 @@ describe('StartRunHandler', () => {
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
-    startPoint = { status: 'ready', startCommit: HEAD };
+    startPoint = { status: 'ready', startCommit: HEAD, remoteUrl: REMOTE };
     statuses = new InMemoryWorkerStatusStore();
     workerReports(true);
   });
@@ -61,6 +62,9 @@ describe('StartRunHandler', () => {
       task: 'Fix the login bug',
       state: 'queued',
       startCommit: HEAD,
+      // Issue #98: recorded with the commit, so the Run fetches the remote the commit is from.
+      remoteUrl: REMOTE,
+      workingCopy: null,
       startedAt: null,
       finishedAt: null,
       failure: null,

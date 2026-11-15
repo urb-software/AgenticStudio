@@ -3,12 +3,14 @@ import {
   type RunPayload,
   type RunStepResult,
   runStepResultSchema,
+  type WorkingCopyReport,
   type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ProviderDisabledError } from './provider-gate.js';
 import { AgentFailedError, drainRunStep, type Runner } from './runner.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
+import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from './working-copy.js';
 
 /** Where the worker writes what it does; never a token. */
 export interface WorkerLogger {
@@ -25,6 +27,8 @@ export type WorkerApi = Pick<
 export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
+  /** Prepares and inspects each Run's Working copy (Issue #98). */
+  workingCopies: WorkingCopyPort;
   /**
    * Reported to Studio before every claim and with every heartbeat (Issue #101), so Studio
    * knows which providers this worker enables. Fixed for the life of the process.
@@ -36,6 +40,9 @@ export interface AgentWorkerOptions {
   heartbeatMs: number;
   logger: WorkerLogger;
 }
+
+/** Longest wait for the Working copy's state that goes with a failure report. */
+const FAILURE_REPORT_TIMEOUT_MS = 30_000;
 
 /** The failure reported for the Run being carried when the worker shuts down (Issue #96). */
 export const SHUTDOWN_FAILURE: RunFailure = { code: 'worker_lost', detail: 'worker shut down' };
@@ -51,9 +58,10 @@ const INVALID_RESULT_FAILURE: RunFailure = {
 };
 
 /**
- * The agent worker's loop (Issue #96): claim a Run, carry it out through the runner while
- * sending heartbeats, report its Run step result and final state, repeat. It carries one Run
- * at a time. {@link stop} ends the loop: polling stops, the runner is aborted, and a Run
+ * The agent worker's loop (Issue #96): claim a Run, prepare its Working copy while the Run is
+ * `preparing` (Issue #98), carry it out through the runner while sending heartbeats, report
+ * its Run step result with the Working copy's state and its final state, repeat. It carries
+ * one Run at a time. {@link stop} ends the loop: polling stops, the runner is aborted, and a Run
  * still being carried is reported `failed` with `worker_lost` ("worker shut down").
  */
 export class AgentWorker {
@@ -61,9 +69,15 @@ export class AgentWorker {
   /** Aborted by {@link stop}: wakes the idle pause and abandons in-flight calls. */
   private readonly shutdown = new AbortController();
   private current: AbortController | undefined;
+  private currentRunId: string | undefined;
   private loop: Promise<void> | undefined;
 
   constructor(private readonly options: AgentWorkerOptions) {}
+
+  /** The Run this worker carries right now, if any (retention never removes its directory). */
+  get carrying(): string | undefined {
+    return this.currentRunId;
+  }
 
   /** Starts the loop; resolves when it has stopped. */
   run(): Promise<void> {
@@ -101,7 +115,9 @@ export class AgentWorker {
     const { api, logger, heartbeatMs } = this.options;
     const abort = new AbortController();
     this.current = abort;
+    this.currentRunId = run.runId;
     let lost = false;
+    let prepared: PreparedRun | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
     const heartbeats = setInterval(() => {
       // Keeps Studio's view of this worker fresh while it carries a long Run.
@@ -120,10 +136,13 @@ export class AgentWorker {
       if (this.stopping) abort.abort(new Error('worker shut down'));
       abort.signal.throwIfAborted();
       const signal = this.shutdown.signal;
-      await api.reportState(run.runId, { state: 'running' }, signal);
-      const result = await this.executeStart(run, abort.signal);
+      prepared = await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
-      await api.reportStep(run.runId, { kind: 'start', result }, signal);
+      await api.reportState(run.runId, { state: 'running' }, signal);
+      const result = await this.executeStart(run, prepared, abort.signal);
+      abort.signal.throwIfAborted();
+      const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
+      await api.reportStep(run.runId, { kind: 'start', result, workingCopy }, signal);
       await api.reportState(
         run.runId,
         { state: result.outcome === 'needs_input' ? 'waiting_for_operator' : 'succeeded' },
@@ -131,23 +150,34 @@ export class AgentWorker {
       );
       logger.info(`Run ${run.runId} reported: ${result.outcome}.`);
     } catch (error) {
-      await this.reportFailure(run, lost ? new RunLostError() : error);
+      await this.reportFailure(run, lost ? new RunLostError() : error, prepared);
     } finally {
       clearInterval(heartbeats);
       this.current = undefined;
+      this.currentRunId = undefined;
     }
   }
 
-  private async executeStart(run: RunPayload, signal: AbortSignal): Promise<RunStepResult> {
-    const result = await drainRunStep(this.options.runner.start({ run, signal }), (event) =>
-      this.options.logger.info(`Run ${run.runId} ${event.type}: ${event.text}`),
+  private async executeStart(
+    run: RunPayload,
+    prepared: PreparedRun,
+    signal: AbortSignal,
+  ): Promise<RunStepResult> {
+    const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
+    const result = await drainRunStep(
+      this.options.runner.start({ run, workspace, signal }),
+      (event) => this.options.logger.info(`Run ${run.runId} ${event.type}: ${event.text}`),
     );
     const parsed = runStepResultSchema.safeParse(result);
     if (!parsed.success) throw new InvalidResultError();
     return parsed.data;
   }
 
-  private async reportFailure(run: RunPayload, error: unknown): Promise<void> {
+  private async reportFailure(
+    run: RunPayload,
+    error: unknown,
+    prepared: PreparedRun | undefined,
+  ): Promise<void> {
     const { api, logger } = this.options;
     if (isRunLost(error) || error instanceof RunLostError) {
       logger.error(`Run ${run.runId} is no longer held by this worker; dropping it.`);
@@ -155,23 +185,50 @@ export class AgentWorker {
     }
     const failure = this.stopping
       ? SHUTDOWN_FAILURE
-      : error instanceof ProviderDisabledError
-        ? { code: 'provider_disabled' as const, detail: error.message }
-        : error instanceof AgentFailedError
-          ? { code: 'agent_failed' as const, detail: error.message.slice(0, 2000) }
-          : error instanceof InvalidResultError
-            ? INVALID_RESULT_FAILURE
-            : UNEXPECTED_FAILURE;
+      : error instanceof PreparationFailedError
+        ? { code: 'preparation_failed' as const, detail: error.detail.slice(0, 2000) }
+        : error instanceof ProviderDisabledError
+          ? { code: 'provider_disabled' as const, detail: error.message }
+          : error instanceof AgentFailedError
+            ? { code: 'agent_failed' as const, detail: error.message.slice(0, 2000) }
+            : error instanceof InvalidResultError
+              ? INVALID_RESULT_FAILURE
+              : UNEXPECTED_FAILURE;
     if (failure === UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
     try {
       // Not tied to the shutdown signal: on stop this is the report that must still go out
       // (bounded by the request timeout).
-      await api.reportState(run.runId, { state: 'failed', failure });
+      // What the failed or crashed step left in the Working copy (coordinator decision on #98),
+      // when it can be read; the failure is reported either way.
+      const workingCopy = prepared ? await this.readWorkingCopy(run, prepared) : undefined;
+      await api.reportState(run.runId, {
+        state: 'failed',
+        failure,
+        ...(workingCopy ? { workingCopy } : {}),
+      });
       logger.info(`Run ${run.runId} reported: failed (${failure.code}).`);
     } catch (reportError) {
       logger.error(`Reporting run ${run.runId} as failed failed: ${describe(reportError)}`);
+    }
+  }
+
+  /** The Working copy's state for a failure report, or `undefined` if it cannot be read in time. */
+  private async readWorkingCopy(
+    run: RunPayload,
+    prepared: PreparedRun,
+  ): Promise<WorkingCopyReport | undefined> {
+    try {
+      return await this.options.workingCopies.report(
+        prepared,
+        AbortSignal.timeout(FAILURE_REPORT_TIMEOUT_MS),
+      );
+    } catch (error) {
+      this.options.logger.error(
+        `Reading the Working copy of run ${run.runId} failed: ${describe(error)}`,
+      );
+      return undefined;
     }
   }
 

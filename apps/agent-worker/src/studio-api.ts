@@ -3,6 +3,8 @@ import {
   type ReportRunStepRequest,
   type RunPayload,
   runPayloadSchema,
+  type RunStatesResponse,
+  runStatesResponseSchema,
   type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 
@@ -67,6 +69,12 @@ export class StudioApi {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.post(`runs/${encodeURIComponent(runId)}/steps`, step, signal);
+  }
+
+  /** The states of these Runs (1-500 ids); unknown ids are left out (Issue #98). */
+  async runStates(runIds: readonly string[], signal?: AbortSignal): Promise<RunStatesResponse> {
+    const response = await this.post('runs/states', { runIds }, signal);
+    return runStatesResponseSchema.parse(await response.json());
   }
 
   /** Tells Studio this worker's runner mode and which providers it enables (Issue #101). */
