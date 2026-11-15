@@ -5,6 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectRuns } from '..';
 import { aRun, fakeRunsApi, problem, PROJECT } from './fake-runs-api';
 
+const SWITCHED_OFF = 'Switched off on the agent worker';
+const NO_WORKER = 'No agent worker is connected';
+
 // Runs section seam (Story #97): the public ProjectRuns of the executions module with the New
 // run dialog, the generated client, the API wrapper and TanStack Query real, and the API faked
 // at `fetch`.
@@ -290,6 +293,108 @@ describe('New run dialog', () => {
     const alert = await within(dialog()).findByRole('alert');
     expect(alert.textContent).toContain('Repository not ready');
     expect(alert.textContent).toContain('The repository of this project is not ready.');
+    expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe('New run dialog: provider availability (Issue #101)', () => {
+  it('shows a provider switched off on the worker as unavailable with the reason', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
+    ]);
+    renderRuns();
+    await openDialog();
+
+    const reason = await within(dialog()).findByText(`Codex: ${SWITCHED_OFF}`);
+    expect(providerButton('Codex')).toHaveProperty('disabled', true);
+    expect(providerButton('Codex').getAttribute('aria-describedby')).toBe(reason.id);
+    expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('true');
+    expect(providerButton('Claude Code')).toHaveProperty('disabled', false);
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('preselects the first available provider when Claude Code is switched off', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: false, reason: SWITCHED_OFF },
+      { id: 'codex', name: 'Codex', available: true },
+    ]);
+    renderRuns();
+    await openDialog();
+
+    await vi.waitFor(() =>
+      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
+    );
+    expect(providerButton('Claude Code')).toHaveProperty('disabled', true);
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+    expect(api.calls('start')[0]!.body).toEqual({ task: 'Add pagination', provider: 'codex' });
+  });
+
+  it('offers no provider and no start when no agent worker is connected', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: false, reason: NO_WORKER },
+      { id: 'codex', name: 'Codex', available: false, reason: NO_WORKER },
+    ]);
+    renderRuns();
+    await openDialog();
+
+    expect(await within(dialog()).findByText(`Claude Code: ${NO_WORKER}`)).toBeTruthy();
+    expect(within(dialog()).getByText(`Codex: ${NO_WORKER}`)).toBeTruthy();
+    expect(providerButton('Claude Code')).toHaveProperty('disabled', true);
+    expect(providerButton('Codex')).toHaveProperty('disabled', true);
+    expect(startButton()).toHaveProperty('disabled', true);
+    await expect(document.body).toHaveNoAxeViolations();
+    expect(api.calls('start')).toHaveLength(0);
+  });
+
+  it('reads the availability again each time the dialog opens', async () => {
+    const api = fakeRunsApi([]);
+    renderRuns();
+    await openDialog();
+    await vi.waitFor(() => expect(api.calls('providers')).toHaveLength(1));
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
+    ]);
+
+    await openDialog();
+
+    expect(await within(dialog()).findByText(`Codex: ${SWITCHED_OFF}`)).toBeTruthy();
+    expect(api.calls('providers')).toHaveLength(2);
+  });
+
+  it('offers both providers when the availability cannot be read (the server decides)', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('providers', 503, problem(503, 'Service Unavailable'));
+    renderRuns();
+    await openDialog();
+
+    expect(
+      await within(dialog()).findByText("Couldn't check which providers are available."),
+    ).toBeTruthy();
+    expect(providerButton('Claude Code')).toHaveProperty('disabled', false);
+    expect(providerButton('Codex')).toHaveProperty('disabled', false);
+  });
+
+  it("shows the server's message when it refuses an unavailable provider", async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('start', 409, problem(409, 'Provider unavailable', SWITCHED_OFF));
+    renderRuns();
+    await openDialog();
+
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    const alert = await within(dialog()).findByRole('alert');
+    expect(alert.textContent).toContain('Provider unavailable');
+    expect(alert.textContent).toContain(SWITCHED_OFF);
     expect(push).not.toHaveBeenCalled();
   });
 });

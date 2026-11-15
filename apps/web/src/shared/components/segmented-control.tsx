@@ -3,7 +3,14 @@
 import * as React from 'react';
 import { cn } from '@/shared/lib/utils';
 
-type SegmentedOption<T extends string> = { value: T; label: string };
+type SegmentedOption<T extends string> = {
+  value: T;
+  label: string;
+  /** Locks this option only (e.g. a provider that is unavailable). */
+  disabled?: boolean;
+  /** Id of the text that says why it is locked (`aria-describedby`). */
+  describedBy?: string;
+};
 
 type SegmentedControlProps<T extends string> = {
   options: readonly SegmentedOption<T>[];
@@ -52,7 +59,8 @@ function SegmentedControl<T extends string>({
             key={option.value}
             type="button"
             aria-pressed={selected}
-            disabled={disabled}
+            aria-describedby={option.describedBy}
+            disabled={disabled || option.disabled}
             onClick={() => onChange(option.value)}
             className={cn(
               'inline-flex h-7 min-w-[30px] cursor-pointer items-center justify-center gap-1.5 rounded-sm border px-2.5 text-code font-medium',

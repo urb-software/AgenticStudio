@@ -225,6 +225,27 @@ describe('Run page', () => {
     },
   );
 
+  it('switches Run again to an available provider when its own is switched off (Issue #101)', async () => {
+    const run = aRun({ state: 'failed', provider: 'codex' });
+    const api = fakeRunsApi([run]);
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: 'Switched off on the agent worker' },
+    ]);
+    renderRun(run.id);
+    await heading();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
+    const dialog = screen.getByRole('dialog', { name: 'New run' });
+
+    await vi.waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Claude Code' }).getAttribute('aria-pressed'),
+      ).toBe('true'),
+    );
+    expect(within(dialog).getByRole('button', { name: 'Codex' })).toHaveProperty('disabled', true);
+  });
+
   it.each(['queued', 'preparing', 'running', 'waiting_for_operator'] as const)(
     'has no Run again while the Run is %s',
     async (state) => {

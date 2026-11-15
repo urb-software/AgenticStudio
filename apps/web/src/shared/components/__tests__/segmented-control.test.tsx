@@ -74,4 +74,31 @@ describe('SegmentedControl', () => {
 
     expect(screen.getByRole('group', { name: 'Provider' })).toBeTruthy();
   });
+
+  it('disables a single option, described by its reason, and never selects it', async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <>
+        <SegmentedControl
+          label="Provider"
+          options={[
+            { value: 'a', label: 'Alpha' },
+            { value: 'b', label: 'Beta', disabled: true, describedBy: 'beta-reason' },
+          ]}
+          value="a"
+          onChange={onChange}
+        />
+        <p id="beta-reason">Beta is switched off.</p>
+      </>,
+    );
+    const beta = screen.getByRole('button', { name: 'Beta' });
+
+    await userEvent.click(beta);
+
+    expect(beta).toHaveProperty('disabled', true);
+    expect(beta.getAttribute('aria-describedby')).toBe('beta-reason');
+    expect(screen.getByRole('button', { name: 'Alpha' })).toHaveProperty('disabled', false);
+    expect(onChange).not.toHaveBeenCalled();
+    await expect(container).toHaveNoAxeViolations();
+  });
 });

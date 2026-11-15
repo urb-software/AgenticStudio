@@ -34,6 +34,9 @@ const ALL_RUNS_KEY = ['runs', 'all'] as const;
 /** The project list, for the project names on the Executions page. */
 const PROJECTS_KEY = ['runs', 'projects'] as const;
 
+/** Provider availability, from the latest agent worker status. */
+const PROVIDERS_KEY = ['runs', 'providers'] as const;
+
 /** One Run. */
 const runKey = (runId: string) => ['runs', 'run', runId] as const;
 
@@ -100,6 +103,21 @@ export function useRunProject(projectId: string | undefined) {
     queryKey: runProjectKey(projectId ?? ''),
     queryFn: () => api.getProject(projectId!),
     enabled: projectId !== undefined,
+  });
+}
+
+/**
+ * Which providers can take a Run now (Issue #101), read when the New run dialog opens and every
+ * time it opens again (never served from an earlier opening). The server's start check and the
+ * agent worker's own check stay authoritative.
+ */
+export function useProviderAvailability(enabled: boolean) {
+  return useQuery({
+    queryKey: PROVIDERS_KEY,
+    queryFn: api.listProviders,
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 

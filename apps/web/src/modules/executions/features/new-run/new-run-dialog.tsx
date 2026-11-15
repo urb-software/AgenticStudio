@@ -3,10 +3,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { PlayIcon, TriangleAlertIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useId, useRef } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useRef } from 'react';
 import { Controller, type Resolver, useForm } from 'react-hook-form';
 import { Banner } from '@/shared/components/banner';
-import { SegmentedControl } from '@/shared/components/segmented-control';
+import { SegmentedControl, type SegmentedOption } from '@/shared/components/segmented-control';
 import { TextField } from '@/shared/components/text-field';
 import { Button } from '@/shared/ui/button';
 import {
@@ -21,7 +21,7 @@ import {
 } from '@/shared/ui/dialog';
 import { Label } from '@/shared/ui/label';
 import { ApiError, type StartRunRequest, startRunRequestHint } from '../../../../platform/api';
-import { useStartRun } from '../../api/runs-queries';
+import { useProviderAvailability, useStartRun } from '../../api/runs-queries';
 import { PROVIDER_OPTIONS } from '../../components/run-presentation';
 
 /** Plain messages for the client-side checks; the generated schema has zod's defaults. */
@@ -63,9 +63,14 @@ type NewRunDialogProps = {
 
 const EMPTY: StartRunRequest = { task: '', provider: 'claude_code' };
 
+type Provider = StartRunRequest['provider'];
+
 /**
- * The New run dialog (a bottom sheet on phones): the Task as free text and the Provider, Claude
- * Code preselected. The generated Zod schema gives quick feedback; the API is authoritative,
+ * The New run dialog (a bottom sheet on phones): the Task as free text and the Provider. It reads
+ * which providers are available when it opens (Issue #101): an unavailable one is disabled with
+ * the server's reason, and the first available one is preselected (Claude Code when available),
+ * unless the prefilled one is available. When none is, it cannot start a Run. If availability
+ * cannot be read, both are offered and the server decides. The generated Zod schema gives quick feedback; the API is authoritative,
  * and its field errors land on the field, any other rejection (no ready Repository) shows the
  * server's title and detail. On success it opens the new Run's page. It cannot be closed while
  * the request is in flight.
@@ -81,17 +86,44 @@ export function NewRunDialog({
   const PROVIDER_LABEL_ID = `${id}-provider-label`;
   const PROVIDER_ERROR_ID = `${id}-provider-error`;
   const startRun = useStartRun(projectId);
+  const availability = useProviderAvailability(open);
   const {
     control,
     register,
     handleSubmit,
     setError,
+    setValue,
+    getValues,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<StartRunRequest>({
     resolver,
     defaultValues: initialValues,
   });
+
+  // Why each unavailable provider is unavailable; empty until the availability is read.
+  const unavailable = useMemo(
+    () =>
+      new Map<Provider, string>(
+        (availability.data ?? []).flatMap((provider) =>
+          provider.available ? [] : [[provider.id, provider.reason ?? 'Unavailable'] as const],
+        ),
+      ),
+    [availability.data],
+  );
+  const noneAvailable = unavailable.size === PROVIDER_OPTIONS.length;
+  const providerOptions: SegmentedOption<Provider>[] = PROVIDER_OPTIONS.map((option) =>
+    unavailable.has(option.value)
+      ? { ...option, disabled: true, describedBy: `${id}-unavailable-${option.value}` }
+      : option,
+  );
+
+  // Once availability arrives, move off an unavailable provider to the first available one.
+  useEffect(() => {
+    if (!availability.data || !unavailable.has(getValues('provider'))) return;
+    const first = PROVIDER_OPTIONS.find((option) => !unavailable.has(option.value));
+    if (first) setValue('provider', first.value);
+  }, [availability.data, unavailable, getValues, setValue]);
 
   const submitting = isSubmitting || startRun.isPending;
   // The disabled button stops clicks; this stops a second submit by other means (Enter, script).
@@ -178,13 +210,31 @@ export function NewRunDialog({
                   <SegmentedControl
                     aria-labelledby={PROVIDER_LABEL_ID}
                     aria-describedby={errors.provider ? PROVIDER_ERROR_ID : undefined}
-                    options={PROVIDER_OPTIONS}
+                    options={providerOptions}
                     value={field.value}
                     disabled={submitting}
                     onChange={field.onChange}
                   />
                 )}
               />
+              {providerOptions.flatMap((option) =>
+                option.describedBy ? (
+                  <p
+                    key={option.value}
+                    id={option.describedBy}
+                    className="mt-1.5 mb-0 text-code text-text-muted"
+                  >
+                    {option.label}: {unavailable.get(option.value)}
+                  </p>
+                ) : (
+                  []
+                ),
+              )}
+              {availability.isError ? (
+                <p className="mt-1.5 mb-0 text-code text-text-muted">
+                  Couldn&apos;t check which providers are available.
+                </p>
+              ) : null}
               {errors.provider?.message ? (
                 <p
                   id={PROVIDER_ERROR_ID}
@@ -203,7 +253,13 @@ export function NewRunDialog({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" variant="primary" icon={PlayIcon} loading={submitting}>
+            <Button
+              type="submit"
+              variant="primary"
+              icon={PlayIcon}
+              loading={submitting}
+              disabled={noneAvailable}
+            >
               {submitting ? 'Starting…' : 'Start run'}
             </Button>
           </DialogFooter>
