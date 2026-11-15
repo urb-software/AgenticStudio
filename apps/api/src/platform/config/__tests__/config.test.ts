@@ -67,7 +67,9 @@ describe('loadConfig', () => {
       gitAllowPrivateRemotes: false,
       sshKnownHosts: [],
       workerLeaseSeconds: 60,
+      runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       runLogMaxBytes: 8 * 1024 * 1024,
+      runSnapshotRetentionDays: 7,
     });
   });
 
@@ -448,6 +450,42 @@ describe('loadConfig', () => {
     );
   });
 
+  // Issue #100: the Run limits are configuration, with the Issue's defaults.
+  describe('Run limits', () => {
+    it('defaults to 60-minute Run steps, 10 Run steps and 14 days of waiting', () => {
+      expect(loadConfig(requiredEnv).runLimits).toEqual({
+        stepMinutes: 60,
+        maxSteps: 10,
+        waitingDays: 14,
+      });
+    });
+
+    it('takes each limit from its variable', () => {
+      expect(
+        loadConfig({
+          ...requiredEnv,
+          STUDIO_RUN_STEP_MINUTES: '5',
+          STUDIO_RUN_MAX_STEPS: '3',
+          STUDIO_RUN_WAITING_DAYS: '2',
+        }).runLimits,
+      ).toEqual({ stepMinutes: 5, maxSteps: 3, waitingDays: 2 });
+    });
+
+    it.each([
+      ['STUDIO_RUN_STEP_MINUTES', '0'],
+      ['STUDIO_RUN_STEP_MINUTES', '1441'],
+      ['STUDIO_RUN_STEP_MINUTES', '1.5'],
+      ['STUDIO_RUN_MAX_STEPS', '0'],
+      ['STUDIO_RUN_MAX_STEPS', '101'],
+      ['STUDIO_RUN_WAITING_DAYS', '0'],
+      ['STUDIO_RUN_WAITING_DAYS', '366'],
+      ['STUDIO_RUN_WAITING_DAYS', 'abc'],
+    ])('refuses %s=%j', (name, value) => {
+      const error = captureError(() => loadConfig({ ...requiredEnv, [name]: value }));
+      expect(error.message).toMatch(new RegExp(name));
+    });
+  });
+
   describe('STUDIO_RUN_LOG_MAX_BYTES (Issue #99)', () => {
     it('caps a Run log at 8 MiB by default', () => {
       expect(loadConfig(requiredEnv).runLogMaxBytes).toBe(8 * 1024 * 1024);
@@ -465,5 +503,22 @@ describe('loadConfig', () => {
         expect(error.message).toMatch(/STUDIO_RUN_LOG_MAX_BYTES/);
       },
     );
+  });
+
+  describe('STUDIO_RUN_SNAPSHOT_RETENTION_DAYS (Issue #104)', () => {
+    it('keeps a retryable Run snapshot 7 days by default', () => {
+      expect(loadConfig(requiredEnv).runSnapshotRetentionDays).toBe(7);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: '30' })
+          .runSnapshotRetentionDays,
+      ).toBe(30);
+    });
+
+    it.each([['0'], ['91'], ['1.5'], ['abc']])('refuses %j (whole days, 1-90)', (value) => {
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: value }),
+      );
+      expect(error.message).toMatch(/STUDIO_RUN_SNAPSHOT_RETENTION_DAYS/);
+    });
   });
 });

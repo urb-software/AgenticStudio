@@ -6,7 +6,12 @@ import {
   RUN_ENVIRONMENT_FILE_SECRET_OWNER,
 } from '../../domain/entities/run-environment-file.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
-import type { EnvironmentFileSnapshots } from '../../ports/environment-file-snapshots.js';
+import { CLOCK, type Clock } from '../../ports/clock.js';
+import {
+  type EnvironmentFileSnapshots,
+  RUN_SNAPSHOT_SETTINGS,
+  type RunSnapshotSettings,
+} from '../../ports/environment-file-snapshots.js';
 
 /**
  * {@link EnvironmentFileSnapshots} over the secret store (Issue #104): deletes the Environment file snapshots of Runs that are final. A final
@@ -24,12 +29,22 @@ export class SecretStoreEnvironmentFileSnapshots implements EnvironmentFileSnaps
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(SECRET_STORE) private readonly secrets: SecretStore,
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(RUN_SNAPSHOT_SETTINGS) private readonly settings: RunSnapshotSettings,
   ) {}
 
-  /** Deletes the snapshot of every final Run that still holds one, and old orphans. */
+  /**
+   * Deletes the snapshot of every final Run that no longer needs it (a retryable failed
+   * delivery keeps it for the retention period), and old orphans.
+   */
   async releaseFinal(): Promise<void> {
+    const retryableFinishedBefore = new Date(
+      this.clock.now().getTime() - this.settings.retentionDays * 24 * 60 * 60 * 1000,
+    );
     try {
-      for (const { runId, secretRef } of await this.runs.listFinalEnvironmentFileSecrets()) {
+      for (const { runId, secretRef } of await this.runs.listReleasableEnvironmentFileSecrets(
+        retryableFinishedBefore,
+      )) {
         await this.release(runId, secretRef);
       }
       const orphans = await this.secrets.listOlderThan(
@@ -47,7 +62,7 @@ export class SecretStoreEnvironmentFileSnapshots implements EnvironmentFileSnaps
     }
   }
 
-  /** Deletes the snapshot of one Run that is final (after its final state is stored). */
+  /** Deletes the snapshot of one Run that no longer needs it (the caller decides when). */
   async releaseFor(runId: string): Promise<void> {
     try {
       const secretRef = await this.runs.findEnvironmentFileSecret(runId);

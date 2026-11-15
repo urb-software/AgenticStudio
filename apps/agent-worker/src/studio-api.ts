@@ -1,4 +1,6 @@
 import {
+  type HeartbeatResponse,
+  heartbeatResponseSchema,
   type RunEventInput,
   type ReportRunStateRequest,
   type ReportRunStepRequest,
@@ -6,6 +8,7 @@ import {
   runPayloadSchema,
   type RunStatesResponse,
   runStatesResponseSchema,
+  WORKER_PROBLEM_TYPES,
   type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 
@@ -24,9 +27,30 @@ export class StudioApiError extends Error {
   }
 }
 
-/** Whether the API says this worker no longer holds the Run (or the transition is gone). */
+/**
+ * Whether the API says this worker no longer holds the Run (review of #121): a 404, or a 409
+ * whose problem type says so (`run-not-held`, or `step-limit-reached`, which failed the Run).
+ * Any other 409, e.g. `illegal-run-transition`, is a refusal of that one report, not a loss.
+ */
 export function isRunLost(error: unknown): boolean {
-  return error instanceof StudioApiError && (error.status === 409 || error.status === 404);
+  if (!(error instanceof StudioApiError)) return false;
+  if (error.status === 404) return true;
+  return (
+    error.status === 409 &&
+    (error.problemType === WORKER_PROBLEM_TYPES.runNotHeld ||
+      error.problemType === WORKER_PROBLEM_TYPES.stepLimitReached)
+  );
+}
+
+/**
+ * Whether a failed call may succeed later (Issue #100): Studio did not answer (network error,
+ * timeout) or answered with a server error. The worker keeps a Run step going through such an
+ * outage and retries its reports; any other answer is definitive.
+ */
+export function isTransient(error: unknown): boolean {
+  if (error instanceof StudioApiError) return error.status >= 500;
+  // An abort by the worker itself (it stops) is not an outage.
+  return !(error instanceof Error && error.name === 'AbortError');
 }
 
 /** Request bodies without the worker id, which the client adds itself. */
@@ -88,8 +112,10 @@ export class StudioApi {
     await this.post('status', status, signal);
   }
 
-  async heartbeat(runId: string, signal?: AbortSignal): Promise<void> {
-    await this.post(`runs/${encodeURIComponent(runId)}/heartbeat`, {}, signal);
+  /** Renews the lease; the answer says whether the operator asked to cancel (Issue #100). */
+  async heartbeat(runId: string, signal?: AbortSignal): Promise<HeartbeatResponse> {
+    const response = await this.post(`runs/${encodeURIComponent(runId)}/heartbeat`, {}, signal);
+    return heartbeatResponseSchema.parse(await response.json());
   }
 
   /**

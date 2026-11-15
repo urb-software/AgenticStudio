@@ -41,7 +41,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     // No worker token: worker routes reject unless a suite sets one (Issue #96).
     workerToken: null,
     workerLeaseSeconds: 60,
+    runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     runLogMaxBytes: 8 * 1024 * 1024,
+    runSnapshotRetentionDays: 7,
     ...overrides,
   };
 }

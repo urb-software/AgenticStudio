@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DeliveryFailedError, type DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
+import { ProviderDisabledError } from '../provider-gate.js';
 import { StudioApiError } from '../studio-api.js';
 import { AgentWorker, SHUTDOWN_FAILURE, type WorkerApi } from '../worker.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from '../working-copy.js';
@@ -22,6 +23,8 @@ const payload = (task: string, n = 1): RunPayload => ({
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
+  limits: { stepMinutes: 60, maxSteps: 10 },
+  completedSteps: 0,
   integrationBranch: 'dev',
   kind: 'start',
   studioPaths: [],
@@ -125,6 +128,10 @@ class RecordingApi implements WorkerApi {
   readonly calls: [string, string, unknown?][] = [];
   claims = 0;
   heartbeatError: Error | undefined;
+  /** What the heartbeat answers: whether the operator asked to cancel (Issue #100). */
+  cancelRequested = false;
+  /** Issue #100: while set, every report fails as if Studio were unreachable. */
+  studioDown: Error | undefined;
   eventsError: Error | undefined;
   claimError: Error | undefined;
   statusError: Error | undefined;
@@ -147,11 +154,31 @@ class RecordingApi implements WorkerApi {
     }
     return this.queue.shift() ?? null;
   }
-  async reportState(runId: string, report: unknown) {
+  /**
+   * Review of #121: reports Studio applies but whose answer is lost (a network error after the
+   * commit), by label: `running`, `step`, or the end state.
+   */
+  readonly loseAnswerOf = new Set<string>();
+  /** Review of #121: the next state report is refused with this error. */
+  stateRefusal: Error | undefined;
+  private answer(label: string) {
+    if (!this.loseAnswerOf.delete(label)) return;
+    throw new TypeError('fetch failed: the answer was lost');
+  }
+  async reportState(runId: string, report: { state: string }) {
+    if (this.studioDown) throw this.studioDown;
+    if (this.stateRefusal) {
+      const refusal = this.stateRefusal;
+      this.stateRefusal = undefined;
+      throw refusal;
+    }
     this.calls.push(['state', runId, report]);
+    this.answer(report.state);
   }
   async reportStep(runId: string, step: unknown) {
+    if (this.studioDown) throw this.studioDown;
     this.calls.push(['step', runId, step]);
+    this.answer('step');
   }
   async reportStatus(status: unknown) {
     this.calls.push(['status', '', status]);
@@ -159,9 +186,12 @@ class RecordingApi implements WorkerApi {
   }
   async heartbeat(runId: string) {
     this.calls.push(['heartbeat', runId]);
+    if (this.studioDown) throw this.studioDown;
     if (this.heartbeatError) throw this.heartbeatError;
+    return { cancelRequested: this.cancelRequested };
   }
   async appendEvents(runId: string, events: RunEventInput[]) {
+    if (this.studioDown) throw this.studioDown;
     if (this.eventsError) throw this.eventsError;
     this.calls.push(['events', runId, events]);
   }
@@ -181,20 +211,60 @@ const STATUS = { runner: 'fake', providers: { claude_code: true, codex: true } }
 const silent = { info: () => undefined, error: () => undefined };
 let worker: AgentWorker | undefined;
 
+/** Issue #100: the Run step's process groups and the Run's containers, as recording fakes. */
+class FakeProcesses {
+  terminated: { graceMs: number }[] = [];
+  released = 0;
+  register() {}
+  async terminate(graceMs: number) {
+    this.terminated.push({ graceMs });
+    return [];
+  }
+  async release() {
+    this.released++;
+  }
+}
+class FakeResources {
+  readonly cleaned: string[] = [];
+  async cleanUp(project: string) {
+    this.cleaned.push(project);
+  }
+}
+
+interface Extras {
+  processes?: FakeProcesses;
+  resources?: FakeResources;
+  killGraceMs?: number;
+  minuteMs?: number;
+  gate?: { assertEnabled(provider: string): void };
+}
+
 function startWorker(
   api: RecordingApi,
   runner: Runner = new FakeRunner({ slowMs: 60_000 }),
   workingCopies: WorkingCopyPort = new FakeWorkingCopies(),
-  deliveries: DeliveryPort = new FakeDeliveries(),
+  /** The Deliveries fake (Issue #102), or the Issue #100 extras. */
+  fourth: DeliveryPort | Extras = {},
+  more: Extras = {},
 ) {
+  const delivers = 'deliver' in fourth;
+  const deliveries: DeliveryPort = delivers ? fourth : new FakeDeliveries();
+  const extras: Extras = delivers ? more : fourth;
+  const processes = extras.processes ?? new FakeProcesses();
   worker = new AgentWorker({
     api,
     runner,
+    gate: extras.gate ?? { assertEnabled: () => undefined },
     status: STATUS,
     workingCopies,
+    resources: extras.resources ?? new FakeResources(),
     deliveries,
     pollMs: 5,
     heartbeatMs: 10,
+    killGraceMs: extras.killGraceMs ?? 50,
+    minuteMs: extras.minuteMs,
+    reportBackoff: { initialMs: 5, maxMs: 20 },
+    processesFor: () => processes,
     logger: silent,
   });
   void worker.run();
@@ -228,6 +298,7 @@ describe('AgentWorker', () => {
         'step',
         run.runId,
         {
+          index: 1,
           kind: 'start',
           result: expect.objectContaining({ outcome: 'done' }),
           workingCopy: REPORT,
@@ -601,7 +672,11 @@ describe('AgentWorker', () => {
   it('drops a Run when the events route says it no longer holds it', async () => {
     const run = payload('[fake:slow]');
     const api = new RecordingApi([run]);
-    api.eventsError = new StudioApiError(409, '/api/worker/runs/x/events');
+    api.eventsError = new StudioApiError(
+      409,
+      '/api/worker/runs/x/events',
+      'urn:agentic-studio:problem:run-not-held',
+    );
     startWorker(api);
 
     await until(() => api.claims >= 2);
@@ -717,7 +792,11 @@ describe('AgentWorker', () => {
   it('drops a Run the API says it no longer holds, without reporting it', async () => {
     const run = payload('[fake:slow]');
     const api = new RecordingApi([run]);
-    api.heartbeatError = new StudioApiError(409, '/api/worker/runs/x/heartbeat');
+    api.heartbeatError = new StudioApiError(
+      409,
+      '/api/worker/runs/x/heartbeat',
+      'urn:agentic-studio:problem:run-not-held',
+    );
     startWorker(api);
 
     await until(() => api.claims >= 2);
@@ -762,5 +841,281 @@ describe('AgentWorker', () => {
     const claims = api.claims;
     await delay(30);
     expect(api.claims).toBe(claims);
+  });
+
+  // Issue #100: cancel, the time limit, the step limit, a Studio outage.
+  describe('cancel and limits (Issue #100)', () => {
+    it('stops a running step when the heartbeat carries a cancel, and reports cancelled', async () => {
+      const run = payload('[fake:slow]');
+      const api = new RecordingApi([run]);
+      const processes = new FakeProcesses();
+      const resources = new FakeResources();
+      startWorker(api, undefined, undefined, { processes, resources });
+      await until(() => api.reports().length === 1);
+
+      api.cancelRequested = true;
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports()).toEqual([
+        ['state', run.runId, { state: 'running' }],
+        ['state', run.runId, { state: 'cancelled', workingCopy: REPORT }],
+      ]);
+      // The step's process groups are stopped and the Run's containers removed.
+      expect(processes.terminated).toEqual([{ graceMs: 50 }]);
+      expect(processes.released).toBe(1);
+      expect(resources.cleaned).toEqual(['studio-run-0b8e5c2d1f3a']);
+    });
+
+    it('cancels while the Working copy is being prepared, before the step starts', async () => {
+      const run = payload('Add a feature');
+      const api = new RecordingApi([run]);
+      api.cancelRequested = true;
+      let started = false;
+      const runner: Runner = {
+        // eslint-disable-next-line require-yield
+        async *start(): RunStep {
+          started = true;
+          return { outcome: 'done', summary: '' };
+        },
+        resume: () => {
+          throw new Error('not used');
+        },
+      };
+      const workingCopies = new FakeWorkingCopies();
+      // Preparation lasts until the cancel has been delivered and aborts it.
+      workingCopies.prepare = (_run: RunPayload, signal?: AbortSignal) =>
+        new Promise<PreparedRun>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('git killed')));
+        });
+      const resources = new FakeResources();
+      startWorker(api, runner, workingCopies, { resources });
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()).toEqual([['state', run.runId, { state: 'cancelled' }]]);
+      expect(started).toBe(false);
+      expect(resources.cleaned).toEqual([]);
+    });
+
+    it('gives up on a step that ignores the stop after the grace period (the hard path)', async () => {
+      const run = payload('[fake:stubborn]');
+      const api = new RecordingApi([run]);
+      const processes = new FakeProcesses();
+      startWorker(api, new FakeRunner({ slowMs: 60_000 }), undefined, {
+        processes,
+        killGraceMs: 30,
+      });
+      await until(() => api.reports().length === 1);
+      const started = Date.now();
+
+      api.cancelRequested = true;
+      await until(() => api.reports().length === 2, 3000);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({ state: 'cancelled' });
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(processes.terminated).toHaveLength(1);
+    });
+
+    it('stops a step at its time limit and reports timed_out', async () => {
+      const run = { ...payload('[fake:slow]'), limits: { stepMinutes: 1, maxSteps: 10 } };
+      const api = new RecordingApi([run]);
+      const resources = new FakeResources();
+      // One "minute" of the time limit lasts 40 ms here.
+      startWorker(api, undefined, undefined, { minuteMs: 40, resources });
+
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports()[1]).toEqual([
+        'state',
+        run.runId,
+        { state: 'timed_out', workingCopy: REPORT },
+      ]);
+      expect(resources.cleaned).toEqual(['studio-run-0b8e5c2d1f3a']);
+    });
+
+    it('does not time out a step that ends within its limit', async () => {
+      const run = { ...payload('Add a feature'), limits: { stepMinutes: 1, maxSteps: 10 } };
+      const api = new RecordingApi([run]);
+      startWorker(api, undefined, undefined, { minuteMs: 40 });
+
+      await until(() => api.reports().length === 3);
+      await delay(80);
+
+      expect(api.reports().at(-1)?.[2]).toMatchObject({ state: 'succeeded' });
+    });
+
+    it('refuses to start a step beyond the maximum: failed with step_limit, nothing prepared', async () => {
+      const run = { ...payload('Add a feature'), limits: { stepMinutes: 60, maxSteps: 2 } };
+      const api = new RecordingApi([{ ...run, completedSteps: 2 }]);
+      const workingCopies = new FakeWorkingCopies();
+      startWorker(api, undefined, workingCopies);
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()).toEqual([
+        [
+          'state',
+          run.runId,
+          {
+            state: 'failed',
+            failure: {
+              code: 'step_limit',
+              detail: 'The run reached its limit of 2 run steps; no further step was started.',
+            },
+          },
+        ],
+      ]);
+      expect(workingCopies.prepared).toEqual([]);
+    });
+
+    it('checks the provider gate before preparing the Working copy (note on #117)', async () => {
+      const run = payload('Add a feature');
+      const api = new RecordingApi([run]);
+      const workingCopies = new FakeWorkingCopies();
+      const gate = {
+        assertEnabled: (provider: string) => {
+          throw new ProviderDisabledError(provider as 'codex');
+        },
+      };
+      startWorker(api, undefined, workingCopies, { gate });
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()[0]?.[2]).toMatchObject({
+        state: 'failed',
+        failure: { code: 'provider_disabled' },
+      });
+      expect(workingCopies.prepared).toEqual([]);
+    });
+
+    it('keeps the step going while Studio is unreachable and delivers its reports in order afterwards', async () => {
+      const run = payload('[fake:slow]');
+      const api = new RecordingApi([run]);
+      api.studioDown = new TypeError('fetch failed');
+      startWorker(api, new FakeRunner({ slowMs: 100 }));
+      await until(() => api.calls.filter(([kind]) => kind === 'heartbeat').length >= 3);
+      // The step finished during the outage; nothing could be reported yet, its log neither.
+      await delay(150);
+      expect(api.reports()).toEqual([]);
+      expect(api.calls.filter(([kind]) => kind === 'events')).toEqual([]);
+
+      api.studioDown = undefined;
+      await until(() => api.reports().length === 3, 15_000);
+
+      // The log is delivered too, and before the end report (Studio takes events only while
+      // the worker holds the Run).
+      const events = api.calls
+        .filter(([kind]) => kind === 'events')
+        .flatMap(([, , batch]) => batch as RunEventInput[]);
+      expect(events.map((event) => event.kind)).toContain('step_finished');
+      expect(events.map((event) => event.seq)).toEqual(events.map((_event, i) => i + 1));
+      const lastEvents = api.calls.findLastIndex(([kind]) => kind === 'events');
+      const end = api.calls.findIndex(
+        ([kind, , body]) => kind === 'state' && (body as { state: string }).state === 'succeeded',
+      );
+      expect(lastEvents).toBeLessThan(end);
+
+      expect(
+        api.reports().map(([kind, , body]) => [kind, (body as { state?: string }).state]),
+      ).toEqual([
+        ['state', 'running'],
+        ['step', undefined],
+        ['state', 'succeeded'],
+      ]);
+    });
+
+    it('stops buffering and drops the Run when Studio, back, says it no longer holds it', async () => {
+      const run = payload('Add a feature');
+      const api = new RecordingApi([run]);
+      api.studioDown = new StudioApiError(503, '/api/worker/runs/x/state');
+      startWorker(api);
+      await delay(40);
+
+      api.studioDown = new StudioApiError(
+        409,
+        '/api/worker/runs/x/state',
+        'urn:agentic-studio:problem:run-not-held',
+      );
+      await until(() => api.claims >= 2);
+
+      expect(api.reports()).toEqual([]);
+    });
+  });
+
+  // Review of #121: Studio applied a report but the answer was lost; the worker sends it again
+  // (Studio treats the repeat as a no-op) and the Run goes on, numbered so nothing is doubled.
+  describe('reports whose answer is lost (review of #121)', () => {
+    it.each(['running', 'step', 'succeeded'])(
+      'sends the %s report again and carries the Run to its end',
+      async (label) => {
+        const run = payload('Add a feature');
+        const api = new RecordingApi([run]);
+        api.loseAnswerOf.add(label);
+        startWorker(api);
+
+        await until(() => api.reports().length === 4);
+
+        const kinds = api
+          .reports()
+          .map(([kind, , body]) => (kind === 'state' ? (body as { state: string }).state : kind));
+        expect(kinds).toEqual(
+          ['running', 'step', 'succeeded'].flatMap((each) =>
+            each === label ? [each, each] : [each],
+          ),
+        );
+        const steps = api.reports().filter(([kind]) => kind === 'step');
+        expect(steps.every(([, , body]) => (body as { index: number }).index === 1)).toBe(true);
+        // Not abandoned: nothing reported failed, and the worker claims the next Run.
+        await until(() => api.claims >= 2);
+      },
+    );
+
+    it('logs a refused report (illegal-run-transition) and goes on; only not-held abandons', async () => {
+      const run = payload('Add a feature');
+      const api = new RecordingApi([run]);
+      api.stateRefusal = new StudioApiError(
+        409,
+        '/api/worker/runs/x/state',
+        'urn:agentic-studio:problem:illegal-run-transition',
+      );
+      startWorker(api);
+
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports().map(([kind]) => kind)).toEqual(['step', 'state']);
+      expect(api.reports()[1]?.[2]).toMatchObject({ state: 'succeeded' });
+    });
+  });
+
+  // Issue #100 with #102: a cancel stops the Run before anything is pushed; during a push it
+  // still ends the Run as cancelled (the push is aborted).
+  describe('cancel and delivery', () => {
+    it('pushes nothing for a Run cancelled during its step', async () => {
+      const run = payload('[fake:slow]');
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      startWorker(api, undefined, undefined, deliveries);
+      await until(() => api.reports().length === 1);
+
+      api.cancelRequested = true;
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({ state: 'cancelled' });
+      expect(deliveries.calls.filter(([step]) => step === 'deliver')).toEqual([]);
+    });
+
+    it('ends a Run cancelled during its push as cancelled, not as a delivery to retry', async () => {
+      const run = payload('Add a feature');
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      deliveries.deliverHangs = true;
+      startWorker(api, undefined, undefined, deliveries);
+      await until(() => deliveries.calls.some(([step]) => step === 'deliver'));
+
+      api.cancelRequested = true;
+      await until(() => api.reports().length === 3);
+
+      expect(api.reports()[2]?.[2]).toMatchObject({ state: 'cancelled' });
+    });
   });
 });

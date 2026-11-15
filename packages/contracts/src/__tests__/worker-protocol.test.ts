@@ -9,6 +9,9 @@ import {
   jsonByteLength,
   RUN_STEP_RESULT_MAX_BYTES,
   heartbeatRequestSchema,
+  heartbeatResponseSchema,
+  RUN_FAILURE_CODES,
+  runLimitsSchema,
   reportRunStateRequestSchema,
   reportRunStepRequestSchema,
   RUN_EVENT_BATCH_MAX,
@@ -49,6 +52,8 @@ describe('run payload (claim response)', () => {
     integrationBranch: 'dev',
     kind: 'start',
     studioPaths: [],
+    limits: { stepMinutes: 60, maxSteps: 10 },
+    completedSteps: 0,
   };
 
   it('accepts exactly what a Run needs', () => {
@@ -139,6 +144,8 @@ describe('Environment file (Issue #104)', () => {
     integrationBranch: 'main',
     kind: 'start',
     studioPaths: ['.env'],
+    limits: { stepMinutes: 60, maxSteps: 10 },
+    completedSteps: 0,
   };
   // A test value only.
   const environmentFile = { path: '.env', content: 'DB_PASSWORD=test-only-1234\n' };
@@ -242,7 +249,8 @@ describe('worker requests', () => {
     // Issue #102 (review of #122): a succeeded Run always says how it was delivered.
     expect(report({ state: 'succeeded' })).toBe(false);
     expect(report({ state: 'queued' })).toBe(false);
-    expect(report({ state: 'cancelled' })).toBe(false);
+    expect(report({ state: 'preparing' })).toBe(false);
+    expect(report({ state: 'cancelled', failure: { code: 'unknown', detail: '' } })).toBe(false);
     expect(report({ state: 'failed', failure: { code: 'oops', detail: '' } })).toBe(false);
   });
 
@@ -259,6 +267,9 @@ describe('worker requests', () => {
     expect(report({ state: 'failed', failure, workingCopy })).toBe(true);
     expect(report({ state: 'failed', failure })).toBe(true);
     expect(report({ state: 'succeeded', workingCopy })).toBe(false);
+    // Issue #100: a cancelled or timed-out Run keeps its Working copy, and its state is recorded.
+    expect(report({ state: 'cancelled', workingCopy })).toBe(true);
+    expect(report({ state: 'timed_out', workingCopy })).toBe(true);
     // A delivery retry reports the Working copy with its outcome (Issue #102).
     expect(report({ state: 'succeeded', delivery: { outcome: 'none' }, workingCopy })).toBe(true);
     expect(report({ state: 'running', workingCopy })).toBe(false);
@@ -310,9 +321,13 @@ describe('worker requests', () => {
       commits: [],
       hasUncommittedChanges: false,
     };
-    const body = { workerId: WORKER_ID, kind: 'start', result, workingCopy };
+    const body = { workerId: WORKER_ID, index: 1, kind: 'start', result, workingCopy };
     expect(reportRunStepRequestSchema.parse(body)).toEqual(body);
     expect(reportRunStepRequestSchema.safeParse({ ...body, kind: 'retry' }).success).toBe(false);
+    // Review of #121: every step report carries its number, 1, 2, …
+    expect(reportRunStepRequestSchema.safeParse({ ...body, index: undefined }).success).toBe(false);
+    expect(reportRunStepRequestSchema.safeParse({ ...body, index: 0 }).success).toBe(false);
+    expect(reportRunStepRequestSchema.safeParse({ ...body, index: 1.5 }).success).toBe(false);
   });
 
   it("carries the Working copy's state with every Run step report (Issue #98)", () => {
@@ -344,6 +359,71 @@ describe('worker requests', () => {
         .success,
     ).toBe(false);
     expect(RUN_STATES).toContain('waiting_for_operator');
+  });
+});
+
+describe('cancellation and limits (Issue #100)', () => {
+  const payload = {
+    runId: RUN_ID,
+    projectId: PROJECT_ID,
+    provider: 'codex',
+    task: 'Add a health check',
+    startCommit: 'a'.repeat(40),
+    repository: { remoteUrl: 'https://github.com/acme/shop.git' },
+    integrationBranch: 'dev',
+    kind: 'start',
+    studioPaths: [],
+    limits: { stepMinutes: 60, maxSteps: 10 },
+    completedSteps: 0,
+  };
+
+  it('a worker reports a confirmed cancel or a timed-out Run step', () => {
+    const report = (state: string) =>
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, state }).success;
+
+    expect(report('cancelled')).toBe(true);
+    expect(report('timed_out')).toBe(true);
+  });
+
+  it('the step limit is a failure code of its own', () => {
+    expect(RUN_FAILURE_CODES).toContain('step_limit');
+    expect(
+      reportRunStateRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        state: 'failed',
+        failure: { code: 'step_limit', detail: 'The run reached its limit of 10 run steps.' },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('the claim payload carries the limits in force and the Run steps already taken', () => {
+    expect(runPayloadSchema.safeParse({ ...payload, limits: undefined }).success).toBe(false);
+    expect(runPayloadSchema.safeParse({ ...payload, completedSteps: undefined }).success).toBe(
+      false,
+    );
+    expect(runPayloadSchema.safeParse({ ...payload, completedSteps: -1 }).success).toBe(false);
+    expect(runPayloadSchema.safeParse({ ...payload, completedSteps: 1.5 }).success).toBe(false);
+  });
+
+  it('limits are whole, positive numbers within bounds', () => {
+    const limits = (value: object) => runLimitsSchema.safeParse(value).success;
+
+    expect(limits({ stepMinutes: 1, maxSteps: 1 })).toBe(true);
+    expect(limits({ stepMinutes: 1440, maxSteps: 100 })).toBe(true);
+    expect(limits({ stepMinutes: 0, maxSteps: 10 })).toBe(false);
+    expect(limits({ stepMinutes: 60, maxSteps: 0 })).toBe(false);
+    expect(limits({ stepMinutes: 1441, maxSteps: 10 })).toBe(false);
+    expect(limits({ stepMinutes: 60, maxSteps: 101 })).toBe(false);
+    expect(limits({ stepMinutes: 60.5, maxSteps: 10 })).toBe(false);
+    expect(limits({ stepMinutes: 60, maxSteps: 10, waitingDays: 14 })).toBe(false);
+  });
+
+  it('the heartbeat answer says whether the operator asked to cancel', () => {
+    expect(heartbeatResponseSchema.parse({ cancelRequested: true })).toEqual({
+      cancelRequested: true,
+    });
+    expect(heartbeatResponseSchema.safeParse({}).success).toBe(false);
+    expect(heartbeatResponseSchema.safeParse({ cancelRequested: 'yes' }).success).toBe(false);
   });
 });
 
@@ -574,6 +654,7 @@ describe('size of a structured result (review finding 4 on #111)', () => {
     };
     const body = {
       workerId: WORKER_ID,
+      index: 2_147_483_647,
       kind: 'resume',
       result: resultOf(RUN_STEP_RESULT_MAX_BYTES),
       workingCopy,

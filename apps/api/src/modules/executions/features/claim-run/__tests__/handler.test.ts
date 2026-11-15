@@ -20,6 +20,8 @@ describe('ClaimRunHandler', () => {
   let now: Date;
   let handler: ClaimRunHandler;
   let secrets: InMemorySecretStore;
+  /** Runs whose Environment file snapshot was released (Issue #104). */
+  let released: string[];
   // Each project's current Environment file (Issue #104); test values only.
   let files: Map<string, EnvironmentFile>;
   let filesFail: Error | undefined;
@@ -31,6 +33,7 @@ describe('ClaimRunHandler', () => {
       task: `Task of ${projectId}`,
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
 
@@ -38,6 +41,7 @@ describe('ClaimRunHandler', () => {
     runs = new InMemoryRunRepository();
     now = T0;
     secrets = new InMemorySecretStore();
+    released = [];
     files = new Map();
     filesFail = undefined;
     const environmentFiles = {
@@ -50,6 +54,10 @@ describe('ClaimRunHandler', () => {
       { seconds: 60 },
       environmentFiles,
       secrets,
+      {
+        releaseFor: (runId) => Promise.resolve(void released.push(runId)),
+        releaseFinal: () => Promise.resolve(),
+      },
     );
   });
 
@@ -92,6 +100,7 @@ describe('ClaimRunHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: '',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: '',
     });
     const next = await queue(B);
@@ -128,6 +137,7 @@ describe('ClaimRunHandler', () => {
           to,
           failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
           workingCopy: to === 'failed' && recorded ? WORKING_COPY : null,
+          cancelRequested: false,
           now: T0,
         });
       }
@@ -163,6 +173,7 @@ describe('ClaimRunHandler', () => {
           to,
           failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
           workingCopy: to === 'failed' ? WORKING_COPY : null,
+          cancelRequested: false,
           now: T0,
         });
       }
@@ -206,6 +217,8 @@ describe('ClaimRunHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
+      // Nothing left to deliver: its Environment file snapshot goes (Issue #104).
+      expect(released).toEqual([run.id]);
     });
 
     it('counts a held delivery retry toward the limits', async () => {
@@ -257,6 +270,62 @@ describe('ClaimRunHandler', () => {
     expect((await runs.findById(a1.id))?.failure?.code).toBe('worker_lost');
     expect((await runs.findById(b1.id))?.failure?.code).toBe('worker_lost');
   });
+
+  it('cancels a Run left waiting too long before it hands out work (Issue #100)', async () => {
+    const waiting = await queue(A);
+    await handler.execute(WORKER);
+    for (const [from, to] of [
+      ['preparing', 'running'],
+      ['running', 'waiting_for_operator'],
+    ] as const) {
+      await runs.transitionClaimed({
+        runId: waiting.id,
+        workerId: WORKER,
+        from,
+        to,
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+    }
+    const next = await queue(A);
+    now = new Date(T0.getTime() + 15 * 24 * 60 * 60 * 1000);
+
+    expect((await handler.execute(WORKER))?.id).toBe(next.id);
+    expect(await runs.findById(waiting.id)).toMatchObject({
+      state: 'cancelled',
+      cancellation: { by: 'system' },
+    });
+  });
+
+  it("times out a Run whose step ran past its limit plus Studio's grace (review of #121)", async () => {
+    const stuck = await queue(A);
+    await handler.execute(WORKER);
+    await runs.transitionClaimed({
+      runId: stuck.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T0,
+    });
+    // The worker keeps sending heartbeats, but its step never stops.
+    now = new Date(T0.getTime() + (60 + 5) * 60_000);
+    await runs.heartbeat(stuck.id, WORKER, now);
+    await handler.execute(OTHER_WORKER);
+    expect((await runs.findById(stuck.id))?.state).toBe('running');
+
+    now = new Date(now.getTime() + 1000);
+    await runs.heartbeat(stuck.id, WORKER, now);
+    await handler.execute(OTHER_WORKER);
+
+    expect(await runs.findById(stuck.id)).toMatchObject({
+      state: 'timed_out',
+      claimedBy: null,
+      finishedAt: now,
+    });
+  });
 });
 
 describe('ClaimRunHandler with Environment files (Issue #104)', () => {
@@ -275,6 +344,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       integrationBranch: 'dev',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     });
 
   beforeEach(() => {
@@ -291,6 +361,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
           failRead ? Promise.reject(failRead) : Promise.resolve(current && { ...current }),
       },
       secrets,
+      { releaseFor: () => Promise.resolve(), releaseFinal: () => Promise.resolve() },
     );
   });
 

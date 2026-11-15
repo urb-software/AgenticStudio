@@ -42,9 +42,12 @@ describe('ReportRunStateHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
+    // Supplied an Environment file, so its snapshot is released once the Run is done (#104).
+    await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot' });
   });
 
   it('moves a preparing Run to running, still held', async () => {
@@ -126,7 +129,7 @@ describe('ReportRunStateHandler', () => {
   it('keeps the last Working copy state when a failure brings none', async () => {
     await report({ state: 'running' });
     const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
-    await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, workingCopy, []);
+    await runs.appendStep(run.id, WORKER, { kind: 'start', result: {} }, workingCopy, [], T0);
 
     await report({ state: 'failed', failure: { code: 'unknown', detail: 'x' } });
 
@@ -252,6 +255,34 @@ describe('ReportRunStateHandler', () => {
       });
     });
 
+    it('keeps the snapshot of a failed delivery, redacts what its retry reports, and releases it once delivered (#104)', async () => {
+      await heldRetry();
+      // The failed delivery can be retried: its Environment file snapshot stays.
+      expect(released).toEqual([]);
+
+      const failedAgain = await report({
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'push of test-only-known refused' },
+        workingCopy: {
+          runBranch: 'agent/x',
+          commits: [{ id: 'c'.repeat(40), subject: 'agent: used test-only-known' }],
+          hasUncommittedChanges: false,
+        },
+      });
+      expect(failedAgain.failure?.detail).toBe('push of ••••••[redacted] refused');
+      expect(failedAgain.workingCopy?.commits[0]?.subject).toBe('agent: used ••••••[redacted]');
+      expect(released).toEqual([]);
+
+      await runs.requestDeliveryRetry(run.id);
+      expect((await runs.claimNext(WORKER, T1))?.id).toBe(run.id);
+      await report({
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+        workingCopy: { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+      });
+      expect(released).toEqual([run.id]);
+    });
+
     it('accepts no other outcome of a delivery retry', async () => {
       await heldRetry();
 
@@ -277,5 +308,127 @@ describe('ReportRunStateHandler', () => {
   it('rejects an unknown Run, also an id that is not a UUID', async () => {
     await expect(report({ runId: UNKNOWN_RUN })).rejects.toBeInstanceOf(RunNotFoundError);
     await expect(report({ runId: 'nope' })).rejects.toBeInstanceOf(RunNotFoundError);
+  });
+
+  // Issue #100: cancel confirmation, time limit, and a cancel that overtakes a step's end.
+  describe('cancel and time limit', () => {
+    it('ends a running Run as cancelled when the worker confirms a requested cancel', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+      const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: true };
+
+      expect(await report({ state: 'cancelled', workingCopy })).toMatchObject({
+        state: 'cancelled',
+        cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+        claimedBy: null,
+        finishedAt: T1,
+        workingCopy,
+      });
+    });
+
+    it('confirms a cancel requested while the Run was still preparing', async () => {
+      await runs.requestCancel(run.id, T0);
+
+      expect(await report({ state: 'cancelled' })).toMatchObject({ state: 'cancelled' });
+    });
+
+    it('refuses a cancelled report nobody asked for', async () => {
+      await report({ state: 'running' });
+
+      await expect(report({ state: 'cancelled' })).rejects.toBeInstanceOf(
+        IllegalRunTransitionError,
+      );
+      expect((await runs.findById(run.id))?.state).toBe('running');
+    });
+
+    it('ends the Run as cancelled when its step ends waiting for the operator after a cancel request', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+
+      expect(await report({ state: 'waiting_for_operator' })).toMatchObject({
+        state: 'cancelled',
+        cancellation: { by: 'operator' },
+        waitingSince: null,
+      });
+    });
+
+    it('keeps a succeeded report with its delivery after a cancel request (the push was done)', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+
+      expect(await report({ state: 'succeeded', delivery: { outcome: 'none' } })).toMatchObject({
+        state: 'succeeded',
+        delivery: 'none',
+        cancellation: null,
+      });
+    });
+
+    it('keeps a failure a failure after a cancel request', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+      const failure = { code: 'agent_failed', detail: 'exit 1' } as const;
+
+      expect(await report({ state: 'failed', failure })).toMatchObject({
+        state: 'failed',
+        failure,
+      });
+    });
+
+    it('ends a Run step stopped at its time limit as timed_out, keeping the Working copy state', async () => {
+      await report({ state: 'running' });
+      const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
+
+      expect(await report({ state: 'timed_out', workingCopy })).toMatchObject({
+        state: 'timed_out',
+        failure: null,
+        cancellation: null,
+        claimedBy: null,
+        finishedAt: T1,
+        workingCopy,
+      });
+    });
+
+    it('records when a Run began waiting for the operator', async () => {
+      await report({ state: 'running' });
+
+      expect(await report({ state: 'waiting_for_operator' })).toMatchObject({ waitingSince: T1 });
+    });
+  });
+
+  // Review of #121: a retried report whose answer was lost changes nothing and succeeds.
+  describe('retried reports', () => {
+    it('accepts a repeated running report as a no-op', async () => {
+      const first = await report({ state: 'running' });
+
+      expect(await report({ state: 'running' })).toEqual(first);
+    });
+
+    it('accepts a repeated end report from the worker that ended the Run', async () => {
+      await report({ state: 'running' });
+      const done = await report({ state: 'succeeded' });
+
+      expect(await report({ state: 'succeeded' })).toEqual(done);
+      await expect(report({ state: 'succeeded', workerId: OTHER_WORKER })).rejects.toBeInstanceOf(
+        RunNotHeldError,
+      );
+    });
+
+    it('accepts a repeated waiting report, and a repeat that became cancelled', async () => {
+      await report({ state: 'running' });
+      await runs.requestCancel(run.id, T0);
+      const cancelled = await report({ state: 'waiting_for_operator' });
+
+      expect(cancelled.state).toBe('cancelled');
+      expect(await report({ state: 'waiting_for_operator' })).toEqual(cancelled);
+    });
+
+    it('still refuses a different end report after the Run ended', async () => {
+      await report({ state: 'running' });
+      await report({ state: 'succeeded' });
+
+      await expect(
+        report({ state: 'failed', failure: { code: 'unknown', detail: 'x' } }),
+      ).rejects.toBeInstanceOf(RunNotHeldError);
+    });
   });
 });

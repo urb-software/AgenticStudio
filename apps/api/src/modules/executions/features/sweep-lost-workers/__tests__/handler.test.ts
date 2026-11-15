@@ -33,6 +33,8 @@ describe('SweepLostWorkersHandler', () => {
   let now: Date;
   let handler: SweepLostWorkersHandler;
   let statuses: InMemoryWorkerStatusStore;
+  /** Runs whose Environment file snapshot was released (Issue #104). */
+  let released: string[];
 
   async function claimed(projectId: string) {
     await runs.add({
@@ -41,6 +43,7 @@ describe('SweepLostWorkersHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     return (await runs.claimNext(WORKER, T0))!;
@@ -50,7 +53,11 @@ describe('SweepLostWorkersHandler', () => {
     runs = new InMemoryRunRepository();
     now = T0;
     statuses = new InMemoryWorkerStatusStore();
-    handler = new SweepLostWorkersHandler(runs, { now: () => now }, { seconds: 60 }, statuses);
+    released = [];
+    handler = new SweepLostWorkersHandler(runs, { now: () => now }, { seconds: 60 }, statuses, {
+      releaseFor: (runId) => Promise.resolve(void released.push(runId)),
+      releaseFinal: () => Promise.resolve(),
+    });
   });
 
   it('fails a preparing Run whose last heartbeat is older than the lease', async () => {
@@ -78,6 +85,7 @@ describe('SweepLostWorkersHandler', () => {
       from: 'preparing',
       to: 'running',
       failure: null,
+      cancelRequested: false,
       now: later(30),
     });
     now = later(91);
@@ -103,6 +111,7 @@ describe('SweepLostWorkersHandler', () => {
       from: 'preparing',
       to: 'running',
       failure: null,
+      cancelRequested: false,
       now: T0,
     });
     await runs.transitionClaimed({
@@ -111,6 +120,7 @@ describe('SweepLostWorkersHandler', () => {
       from: 'running',
       to: 'waiting_for_operator',
       failure: null,
+      cancelRequested: false,
       now: T0,
     });
     now = later(3600);
@@ -126,6 +136,7 @@ describe('SweepLostWorkersHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
     now = later(3600);
@@ -148,6 +159,7 @@ describe('SweepLostWorkersHandler', () => {
           from,
           to,
           failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+          cancelRequested: false,
           now: T0,
         });
       }
@@ -179,6 +191,8 @@ describe('SweepLostWorkersHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
+      // The Working copy is gone: its Environment file snapshot goes too (Issue #104).
+      expect(released).toEqual([run.id]);
     });
 
     it('keeps it while that worker reports within the lease', async () => {

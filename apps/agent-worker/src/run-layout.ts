@@ -8,8 +8,9 @@ import { posix } from 'node:path';
  * only, so paths are POSIX paths.
  *
  * Layout: `<dataDir>/cache/<projectId>.git` (one cache per Project) and
- * `<dataDir>/runs/<runId>/{repo/, task.md, run.json, result.json}` (the Working copy and,
- * beside it and outside the repository, the Task, the Run file and the agent's result).
+ * `<dataDir>/runs/<runId>/{repo/, task.md, run.json, result.json, step-processes}` (the Working
+ * copy and, beside it and outside the repository, the Task, the Run file, the agent's result
+ * and, while a Run step runs, its process groups: Issue #100).
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -66,6 +67,9 @@ export function cachesDirectory(dataDir: string): string {
   return inside(dataDir, 'cache');
 }
 
+/** The file in a Run's directory that lists the process groups of its Run step (Issue #100). */
+export const STEP_PROCESSES_FILE = 'step-processes';
+
 export interface RunDirectories {
   /** The Run's own directory. */
   runDir: string;
@@ -75,6 +79,8 @@ export interface RunDirectories {
   taskFile: string;
   /** What the worker records about the Run (its Project, Run branch, start commit). */
   runFile: string;
+  /** The process groups of the Run step in progress, one id per line (Issue #100). */
+  processesFile: string;
   /** The agent's structured result of a `done` step, kept for a delivery retry (Issue #102). */
   resultFile: string;
 }
@@ -86,6 +92,7 @@ export function runDirectories(dataDir: string, runId: string): RunDirectories {
     repoDir: posix.join(runDir, 'repo'),
     taskFile: posix.join(runDir, 'task.md'),
     runFile: posix.join(runDir, 'run.json'),
+    processesFile: posix.join(runDir, STEP_PROCESSES_FILE),
     resultFile: posix.join(runDir, 'result.json'),
   };
 }

@@ -56,6 +56,7 @@ export const RUN_FAILURE_CODES = [
   'usage_limit',
   'worker_lost',
   'delivery_failed',
+  'step_limit',
   'unknown',
 ] as const;
 export const runFailureCodeSchema = z.enum(RUN_FAILURE_CODES);
@@ -133,6 +134,20 @@ export const environmentFileSchema = z.strictObject({
 });
 export type EnvironmentFile = z.infer<typeof environmentFileSchema>;
 
+/** Bounds of the Run limits (Issue #100), for the API's configuration and the claim payload. */
+export const RUN_STEP_MINUTES_MAX = 1440;
+export const RUN_MAX_STEPS_MAX = 100;
+
+/**
+ * The limits a worker enforces on a Run (Issue #100), copied onto the Run when it is started:
+ * the longest a Run step may work, in minutes, and the most Run steps a Run may take. Time
+ * spent waiting for the operator is not a Run step and does not count.
+ */
+export const runLimitsSchema = z.strictObject({
+  stepMinutes: z.int().min(1).max(RUN_STEP_MINUTES_MAX),
+  maxSteps: z.int().min(1).max(RUN_MAX_STEPS_MAX),
+});
+export type RunLimits = z.infer<typeof runLimitsSchema>;
 /** Longest branch name, in characters (the Repository's integration branch, a Run branch). */
 export const BRANCH_NAME_MAX_LENGTH = 255;
 
@@ -187,6 +202,13 @@ export const runPayloadSchema = z
      * Never logged.
      */
     environmentFile: environmentFileSchema.optional(),
+    /** The limits in force for this Run (Issue #100). */
+    limits: runLimitsSchema,
+    /**
+     * How many Run steps the Run has already taken (Issue #100): the next one is
+     * `completedSteps + 1`, and the worker refuses to start it beyond `limits.maxSteps`.
+     */
+    completedSteps: z.int().min(0),
   })
   .refine((payload) => (payload.kind === 'deliver') === (payload.runBranch !== undefined), {
     path: ['runBranch'],
@@ -203,6 +225,18 @@ export const runPayloadSchema = z
   );
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
+/**
+ * Problem `type`s of the worker routes the agent worker acts on (review of #121). Only these
+ * (and 404) mean the worker no longer holds the Run and must abandon it; any other refusal,
+ * e.g. `illegal-run-transition`, is logged and the Run goes on. Pinned to the API's list by a
+ * test in the API.
+ */
+export const WORKER_PROBLEM_TYPES = {
+  runNotHeld: 'urn:agentic-studio:problem:run-not-held',
+  runNotFound: 'urn:agentic-studio:problem:run-not-found',
+  stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
+} as const;
+
 /** `POST /api/worker/runs/claim` body. */
 export const claimRunRequestSchema = z.strictObject({ workerId: workerIdSchema });
 export type ClaimRunRequest = z.infer<typeof claimRunRequestSchema>;
@@ -211,13 +245,29 @@ export type ClaimRunRequest = z.infer<typeof claimRunRequestSchema>;
 export const heartbeatRequestSchema = z.strictObject({ workerId: workerIdSchema });
 export type HeartbeatRequest = z.infer<typeof heartbeatRequestSchema>;
 
-/** The states a worker reports; every other transition belongs to the API or the operator. */
+/**
+ * `POST /api/worker/runs/:runId/heartbeat` answer (Issue #100): whether the operator asked to
+ * cancel the Run. The worker then stops the Run step and reports `cancelled`.
+ */
+export const heartbeatResponseSchema = z.strictObject({ cancelRequested: z.boolean() });
+export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
+
+/**
+ * The states a worker reports; every other transition belongs to the API or the operator.
+ * `cancelled` confirms an operator's cancel after the Run step was stopped, `timed_out` a Run
+ * step stopped at its time limit (Issue #100).
+ */
 export const WORKER_REPORTED_STATES = [
   'running',
   'waiting_for_operator',
   'succeeded',
   'failed',
+  'cancelled',
+  'timed_out',
 ] as const;
+
+/** The reported end states that may carry the Working copy's state (it is kept for inspection). */
+const STOPPED_STATES: readonly string[] = ['failed', 'cancelled', 'timed_out'];
 
 /** The agent's account of one check it ran. */
 export const runCheckSchema = z.strictObject({
@@ -331,7 +381,8 @@ export type RunDelivery = z.infer<typeof runDeliverySchema>;
  * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
  * commits of a step that failed or crashed are recorded too. A delivery outcome comes exactly
  * with `succeeded` (Issue #102), and with it the Working copy's state after the delivery
- * (a delivery retry has no step report).
+ * (a delivery retry has no step report). A cancelled or timed-out Run may carry its Working
+ * copy's state too (Issue #100).
  */
 export const reportRunStateRequestSchema = z
   .strictObject({
@@ -352,19 +403,27 @@ export const reportRunStateRequestSchema = z
   .refine(
     (report) =>
       report.workingCopy === undefined ||
-      report.state === 'failed' ||
+      STOPPED_STATES.includes(report.state) ||
       report.delivery !== undefined,
     {
       path: ['workingCopy'],
       message:
-        'A Working copy state comes with a step report, the state failed or a delivery outcome.',
+        'A Working copy state comes with a step report, the state failed, cancelled or timed_out, or a delivery outcome.',
     },
   );
 export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 
-/** `POST /api/worker/runs/:runId/steps` body: the step's result and the Working copy's state. */
+/**
+ * `POST /api/worker/runs/:runId/steps` body: the step's number and kind, its result and the
+ * Working copy's state.
+ */
 export const reportRunStepRequestSchema = z.strictObject({
   workerId: workerIdSchema,
+  /**
+   * The Run step's number, 1, 2, … (review of #121): a retried report of a step Studio already
+   * stored is recognised by it and changes nothing.
+   */
+  index: z.int().min(1).max(2_147_483_647),
   kind: z.enum(RUN_STEP_KINDS),
   result: runStepResultSchema,
   workingCopy: workingCopyReportSchema,

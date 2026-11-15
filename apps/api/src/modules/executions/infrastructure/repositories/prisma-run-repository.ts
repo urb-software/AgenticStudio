@@ -12,18 +12,23 @@ import {
   MAX_ACTIVE_RUNS,
   PROVIDERS,
   type Provider,
-  RUN_DELIVERIES,
+  RUN_CANCELLED_BY,
   RUN_FAILURE_CODES,
   RUN_STATES,
   type Run,
+  type RunCancellation,
+  type RunCancelledBy,
+  RUN_DELIVERIES,
   type RunDeliveryOutcome,
   type RunDeliveryState,
   type RunFailure,
   type RunFailureCode,
   type RunState,
   type RunWorkingCopy,
+  stepLimitFailure,
 } from '../../domain/entities/run.js';
 import type {
+  AppendStepOutcome,
   ClaimedRunChange,
   DeliveryRetryOutcome,
   NewRun,
@@ -58,6 +63,15 @@ const RUN_FIELDS = {
   claimedBy: true,
   environmentFileSupplied: true,
   environmentFilePath: true,
+  cancelRequestedAt: true,
+  cancelledBy: true,
+  cancelReason: true,
+  waitingSince: true,
+  limitStepMinutes: true,
+  limitMaxSteps: true,
+  limitWaitingDays: true,
+  stepStartedAt: true,
+  releasedBy: true,
 } as const;
 
 interface RunRow {
@@ -85,6 +99,15 @@ interface RunRow {
   claimedBy: string | null;
   environmentFileSupplied: boolean;
   environmentFilePath: string | null;
+  cancelRequestedAt: Date | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  waitingSince: Date | null;
+  limitStepMinutes: number;
+  limitMaxSteps: number;
+  limitWaitingDays: number;
+  stepStartedAt: Date | null;
+  releasedBy: string | null;
 }
 
 const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
@@ -128,6 +151,10 @@ function toRun(row: RunRow): Run {
   if (code !== null && !includes(RUN_FAILURE_CODES, code)) {
     throw new Error(`Unexpected run failure code in the database: ${code}`);
   }
+  const by = row.cancelledBy;
+  if (by !== null && !includes(RUN_CANCELLED_BY, by)) {
+    throw new Error(`Unexpected run cancellation in the database: ${by}`);
+  }
   if (row.delivery !== null && !includes(RUN_DELIVERIES, row.delivery)) {
     throw new Error(`Unexpected run delivery in the database: ${row.delivery}`);
   }
@@ -167,6 +194,16 @@ function toRun(row: RunRow): Run {
     claimedBy: row.claimedBy,
     environmentFileSupplied: row.environmentFileSupplied,
     environmentFilePath: row.environmentFilePath,
+    limits: {
+      stepMinutes: row.limitStepMinutes,
+      maxSteps: row.limitMaxSteps,
+      waitingDays: row.limitWaitingDays,
+    },
+    cancelRequestedAt: row.cancelRequestedAt,
+    cancellation: by === null ? null : { by: by as RunCancelledBy, reason: row.cancelReason ?? '' },
+    waitingSince: row.waitingSince,
+    stepStartedAt: row.stepStartedAt,
+    releasedBy: row.releasedBy,
   };
 }
 
@@ -183,8 +220,15 @@ export class PrismaRunRepository implements RunRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
 
   async add(run: NewRun): Promise<Run> {
+    const { limits, ...fields } = run;
     const row = await this.db.run.create({
-      data: { ...run, state: 'queued' },
+      data: {
+        ...fields,
+        state: 'queued',
+        limitStepMinutes: limits.stepMinutes,
+        limitMaxSteps: limits.maxSteps,
+        limitWaitingDays: limits.waitingDays,
+      },
       select: RUN_FIELDS,
     });
     return toRun(row);
@@ -258,14 +302,25 @@ export class PrismaRunRepository implements RunRepository {
 
   async transitionClaimed(change: ClaimedRunChange): Promise<Run | null> {
     const held = includes(CLAIMED_RUN_STATES, change.to);
+    const cancellation = change.to === 'cancelled' ? (change.cancellation ?? null) : null;
     const { count } = await this.db.run.updateMany({
-      where: { id: change.runId, state: change.from, claimedBy: change.workerId },
+      where: {
+        id: change.runId,
+        state: change.from,
+        claimedBy: change.workerId,
+        cancelRequestedAt: change.cancelRequested ? { not: null } : null,
+      },
       data: {
         state: change.to,
         failureCode: change.failure?.code ?? null,
         failureDetail: change.failure?.detail ?? null,
         claimedBy: held ? change.workerId : null,
         heartbeatAt: held ? change.now : null,
+        cancelledBy: cancellation?.by ?? null,
+        cancelReason: cancellation?.reason ?? null,
+        waitingSince: change.to === 'waiting_for_operator' ? change.now : null,
+        releasedBy: held ? null : change.workerId,
+        ...(change.to === 'running' ? { stepStartedAt: change.now } : {}),
         ...(isFinal(change.to) ? { finishedAt: change.now } : {}),
         ...workingCopyColumns(change.workingCopy),
         ...(change.to === 'succeeded' && change.delivery ? deliveryColumns(change.delivery) : {}),
@@ -318,6 +373,8 @@ export class PrismaRunRepository implements RunRepository {
       data: {
         claimedBy: null,
         heartbeatAt: null,
+        // A retried report of this outcome is then recognised (review of #121).
+        releasedBy: outcome.workerId,
         deliveryRequested: false,
         finishedAt: outcome.now,
         ...workingCopyColumns(outcome.workingCopy),
@@ -338,14 +395,84 @@ export class PrismaRunRepository implements RunRepository {
     return count === 1 ? this.findById(outcome.runId) : null;
   }
 
-  async heartbeat(runId: string, workerId: string, now: Date): Promise<boolean> {
-    // Held: preparing or running, or failed during a delivery retry (the CHECK constraint
-    // allows a holder in no other state).
+  async heartbeat(
+    runId: string,
+    workerId: string,
+    now: Date,
+  ): Promise<{ cancelRequested: boolean } | null> {
+    // One statement: the renewal and the cancel request it answers with are read together.
+    // Held: preparing or running, or failed during a delivery retry (Issue #102; the CHECK
+    // constraint allows a holder in no other state).
+    const [row] = await this.db.$queryRaw<{ cancel_requested: boolean }[]>`
+      UPDATE runs SET heartbeat_at = ${now}
+      WHERE id = ${runId}::uuid AND claimed_by = ${workerId}::uuid
+      RETURNING cancel_requested_at IS NOT NULL AS cancel_requested`;
+    return row ? { cancelRequested: row.cancel_requested } : null;
+  }
+
+  async cancelUnheld(
+    runId: string,
+    from: 'queued' | 'waiting_for_operator',
+    cancellation: RunCancellation,
+    now: Date,
+  ): Promise<Run | null> {
     const { count } = await this.db.run.updateMany({
-      where: { id: runId, claimedBy: workerId },
-      data: { heartbeatAt: now },
+      where: { id: runId, state: from },
+      data: {
+        state: 'cancelled',
+        cancelledBy: cancellation.by,
+        cancelReason: cancellation.reason,
+        waitingSince: null,
+        finishedAt: now,
+      },
     });
-    return count === 1;
+    return count === 1 ? this.findById(runId) : null;
+  }
+
+  async requestCancel(runId: string, now: Date): Promise<Run | null> {
+    // The first request's time is kept: a repeated cancel changes nothing.
+    await this.db.run.updateMany({
+      where: { id: runId, state: { in: [...CLAIMED_RUN_STATES] }, cancelRequestedAt: null },
+      data: { cancelRequestedAt: now },
+    });
+    const run = await this.findById(runId);
+    return run && includes(CLAIMED_RUN_STATES, run.state) && run.cancelRequestedAt ? run : null;
+  }
+
+  async listWaiting(): Promise<Run[]> {
+    const rows = await this.db.run.findMany({
+      where: { state: 'waiting_for_operator' },
+      orderBy: [{ waitingSince: 'asc' }, { id: 'asc' }],
+      select: RUN_FIELDS,
+    });
+    return rows.map(toRun);
+  }
+
+  async renewClaimsOncePerLease(now: Date, leaseSeconds: number): Promise<number | null> {
+    return this.db.$transaction(async (tx) => {
+      // Records this renewal only if the last one is at least a lease old (or there is none);
+      // the row lock serializes two APIs starting at once.
+      const renewed = await tx.$queryRaw<{ id: number }[]>`
+        INSERT INTO run_lease_renewals (id, renewed_at) VALUES (1, ${now})
+        ON CONFLICT (id) DO UPDATE SET renewed_at = EXCLUDED.renewed_at
+          WHERE run_lease_renewals.renewed_at <= ${now}::timestamptz - make_interval(secs => ${leaseSeconds})
+        RETURNING id`;
+      if (renewed.length === 0) return null;
+      const { count } = await tx.run.updateMany({
+        where: { state: { in: [...CLAIMED_RUN_STATES] } },
+        data: { heartbeatAt: now },
+      });
+      return count;
+    });
+  }
+
+  async timeOutOverdueSteps(now: Date, graceMinutes: number): Promise<number> {
+    return this.db.$executeRaw`
+      UPDATE runs
+      SET state = 'timed_out', claimed_by = NULL, heartbeat_at = NULL, finished_at = ${now}
+      WHERE state = 'running'
+        AND step_started_at + make_interval(mins => limit_step_minutes + ${graceMinutes}::int)
+            < ${now}::timestamptz`;
   }
 
   async findStates(ids: readonly string[]): Promise<RunStateView[]> {
@@ -367,16 +494,37 @@ export class PrismaRunRepository implements RunRepository {
     step: RunStepRecord,
     workingCopy: RunWorkingCopy,
     failingChecks: readonly string[],
-  ): Promise<number | null> {
-    return this.db.$transaction(async (tx) => {
+    now: Date,
+  ): Promise<AppendStepOutcome> {
+    return this.db.$transaction(async (tx): Promise<AppendStepOutcome> => {
       // Locks the Run row: the check and the numbering hold until the step is stored.
-      const [run] = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM runs
+      const [run] = await tx.$queryRaw<{ id: string; limit_max_steps: number }[]>`
+        SELECT id, limit_max_steps FROM runs
         WHERE id = ${runId}::uuid AND state = 'running' AND claimed_by = ${workerId}::uuid
         FOR UPDATE`;
-      if (!run) return null;
-      const last = await tx.runStep.aggregate({ where: { runId }, _max: { index: true } });
-      const index = (last._max.index ?? 0) + 1;
+      if (!run) return { status: 'not_held' };
+      const last =
+        (await tx.runStep.aggregate({ where: { runId }, _max: { index: true } }))._max.index ?? 0;
+      const index = step.index ?? last + 1;
+      // A retried report of a step already stored (review of #121): acknowledged, not stored.
+      if (index <= last) return { status: 'stored', index, duplicate: true };
+      if (index !== last + 1) return { status: 'out_of_order', expected: last + 1 };
+      if (index > run.limit_max_steps) {
+        // Issue #100: the step is not stored, and the Run fails under the same row lock.
+        const failure = stepLimitFailure(run.limit_max_steps);
+        await tx.run.update({
+          where: { id: runId },
+          data: {
+            state: 'failed',
+            failureCode: failure.code,
+            failureDetail: failure.detail,
+            claimedBy: null,
+            heartbeatAt: null,
+            finishedAt: now,
+          },
+        });
+        return { status: 'step_limit' };
+      }
       await tx.runStep.create({
         data: { runId, index, kind: step.kind, result: step.result as Prisma.InputJsonValue },
       });
@@ -389,7 +537,7 @@ export class PrismaRunRepository implements RunRepository {
           failingChecks: [...failingChecks],
         },
       });
-      return index;
+      return { status: 'stored', index };
     });
   }
 
@@ -466,9 +614,20 @@ export class PrismaRunRepository implements RunRepository {
     return row?.environmentFileSecretId ?? null;
   }
 
-  async listFinalEnvironmentFileSecrets(): Promise<{ runId: string; secretRef: string }[]> {
+  async listReleasableEnvironmentFileSecrets(
+    retryableFinishedBefore: Date,
+  ): Promise<{ runId: string; secretRef: string }[]> {
     const rows = await this.db.run.findMany({
-      where: { state: { in: [...FINAL_RUN_STATES] }, environmentFileSecretId: { not: null } },
+      where: {
+        state: { in: [...FINAL_RUN_STATES] },
+        environmentFileSecretId: { not: null },
+        // A failed delivery that can still be retried keeps its snapshot (Issue #104).
+        NOT: {
+          state: 'failed',
+          failureCode: 'delivery_failed',
+          OR: [{ deliveryRequested: true }, { finishedAt: { gte: retryableFinishedBefore } }],
+        },
+      },
       select: { id: true, environmentFileSecretId: true },
     });
     return rows.map((row) => ({ runId: row.id, secretRef: row.environmentFileSecretId! }));

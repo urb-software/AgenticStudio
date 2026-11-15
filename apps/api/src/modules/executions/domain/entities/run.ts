@@ -49,6 +49,7 @@ export const RUN_FAILURE_CODES = [
   'usage_limit',
   'worker_lost',
   'delivery_failed',
+  'step_limit',
   'unknown',
 ] as const;
 export type RunFailureCode = (typeof RUN_FAILURE_CODES)[number];
@@ -77,6 +78,28 @@ export interface RunWorkingCopy {
   runBranch: string;
   commits: RunCommit[];
   hasUncommittedChanges: boolean;
+}
+
+/**
+ * The limits of a Run (Issue #100), from the API's configuration, copied onto the Run when it
+ * is started: the longest a Run step may work, the most Run steps the Run may take, and the
+ * longest it may wait for the operator before it is cancelled.
+ */
+export interface RunLimits {
+  stepMinutes: number;
+  maxSteps: number;
+  waitingDays: number;
+}
+
+/** Who cancelled a Run (Issue #100): the operator, or Studio itself (a Run waiting too long). */
+export const RUN_CANCELLED_BY = ['operator', 'system'] as const;
+export type RunCancelledBy = (typeof RUN_CANCELLED_BY)[number];
+
+/** Why a Run was cancelled; set exactly when `cancelled`. */
+export interface RunCancellation {
+  by: RunCancelledBy;
+  /** A short explanation, shown to the operator. */
+  reason: string;
 }
 
 /**
@@ -144,6 +167,24 @@ export interface Run {
    * by a delivery, a retry too (Issue #102's `studioPaths`). Not secret, not in the operator API.
    */
   environmentFilePath: string | null;
+  /** The limits in force for this Run (Issue #100). */
+  limits: RunLimits;
+  /**
+   * When the operator asked to cancel a `preparing` or `running` Run (Issue #100); the Run
+   * stays in its state until the agent worker confirms the stop.
+   */
+  cancelRequestedAt: Date | null;
+  /** Set exactly when `cancelled`. */
+  cancellation: RunCancellation | null;
+  /** When it began waiting for the operator; set exactly when `waiting_for_operator`. */
+  waitingSince: Date | null;
+  /** When the current (or last) Run step started: set whenever the Run goes to `running`. */
+  stepStartedAt: Date | null;
+  /**
+   * The agent worker that released the Run (to `waiting_for_operator` or a final state), so a
+   * retried report of that same change is recognised (review of #121).
+   */
+  releasedBy: string | null;
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {
@@ -203,6 +244,51 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Whether `value` can be a Run id (a UUID); anything else names no Run. */
 export function isRunId(value: string): boolean {
   return UUID.test(value);
+}
+
+/** Cancelling a Run that has already reached a final state (Issue #100). */
+export class RunAlreadyFinishedError extends Error {
+  constructor(readonly state: RunState) {
+    super('Run already finished');
+    this.name = 'RunAlreadyFinishedError';
+  }
+}
+
+/** The cancellation recorded when the operator cancels a Run (Issue #100). */
+export const OPERATOR_CANCELLATION: RunCancellation = {
+  by: 'operator',
+  reason: 'Cancelled by the operator.',
+};
+
+/**
+ * The long-wait rule (Issue #100): a Run waiting for the operator longer than its
+ * `waitingDays` is cancelled by Studio, with that stated as the reason. Returns the
+ * cancellation when the rule applies at `now`, otherwise `null`.
+ */
+export function longWaitCancellation(run: Run, now: Date): RunCancellation | null {
+  if (run.state !== 'waiting_for_operator' || run.waitingSince === null) return null;
+  const limitMs = run.limits.waitingDays * 24 * 60 * 60 * 1000;
+  if (now.getTime() - run.waitingSince.getTime() <= limitMs) return null;
+  const days = run.limits.waitingDays;
+  return {
+    by: 'system',
+    reason: `Cancelled automatically: the run waited for the operator longer than ${days} ${days === 1 ? 'day' : 'days'}.`,
+  };
+}
+
+/**
+ * Studio's backstop for the step time limit (review of #121): the agent worker stops a Run step
+ * at `stepMinutes`; if a `running` Run's step is still going this much later, Studio itself ends
+ * the Run as `timed_out`.
+ */
+export const STEP_TIME_LIMIT_GRACE_MINUTES = 5;
+
+/** The failure of a Run that would exceed its maximum number of Run steps (Issue #100). */
+export function stepLimitFailure(maxSteps: number): RunFailure {
+  return {
+    code: 'step_limit',
+    detail: `The run reached its limit of ${maxSteps} run ${maxSteps === 1 ? 'step' : 'steps'}; no further step was started.`,
+  };
 }
 
 /** Starting a Run: no project has this id. */

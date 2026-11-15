@@ -27,9 +27,12 @@ export const runFailureCodeSchema = z.enum([
   'usage_limit',
   'worker_lost',
   'delivery_failed',
+  'step_limit',
   'unknown',
 ]);
 
+/** Who cancelled a Run (Issue #100). */
+export const runCancelledBySchema = z.enum(['operator', 'system']);
 /** How a Run was delivered (Issue #102): `none` is "No changes". */
 export const runDeliverySchema = z.enum(['none', 'delivered', 'failed']);
 
@@ -57,6 +60,24 @@ export const runResponseSchema = z
     hasUncommittedChanges: z.boolean().optional(),
     /** Whether the Run was given its Project's Environment file when it was claimed (Issue #104). */
     environmentFileSupplied: z.boolean(),
+    /**
+     * The limits in force for this Run (Issue #100): the longest a Run step may work, the most
+     * Run steps it may take, and the days it may wait for the operator before it is cancelled.
+     */
+    limits: z
+      .object({
+        stepMinutes: z.int().min(1),
+        maxSteps: z.int().min(1),
+        waitingDays: z.int().min(1),
+      })
+      .meta({ id: 'RunLimits' }),
+    /**
+     * When the operator asked to cancel a preparing or running Run (Issue #100): the agent
+     * worker is stopping it, and the Run ends as `cancelled` once it confirms.
+     */
+    cancelRequestedAt: z.iso.datetime().optional(),
+    /** Present exactly when `cancelled`: who cancelled it and why. */
+    cancellation: z.object({ by: runCancelledBySchema, reason: z.string() }).optional(),
     /**
      * How the Run was delivered (Issue #102): `none` (succeeded with no changes: nothing pushed),
      * `delivered` (succeeded with a draft pull request) or `failed` (failed with
@@ -98,6 +119,9 @@ export function toRunResponse(run: {
     hasUncommittedChanges: boolean;
   } | null;
   environmentFileSupplied: boolean;
+  limits: { stepMinutes: number; maxSteps: number; waitingDays: number };
+  cancelRequestedAt: Date | null;
+  cancellation: { by: z.infer<typeof runCancelledBySchema>; reason: string } | null;
   delivery: z.infer<typeof runDeliverySchema> | null;
   pullRequest: { url: string; number: number } | null;
   deliveryRequested: boolean;
@@ -121,6 +145,15 @@ export function toRunResponse(run: {
           commits: run.workingCopy.commits.map(({ id, subject }) => ({ id, subject })),
           hasUncommittedChanges: run.workingCopy.hasUncommittedChanges,
         }
+      : {}),
+    limits: {
+      stepMinutes: run.limits.stepMinutes,
+      maxSteps: run.limits.maxSteps,
+      waitingDays: run.limits.waitingDays,
+    },
+    ...(run.cancelRequestedAt ? { cancelRequestedAt: run.cancelRequestedAt.toISOString() } : {}),
+    ...(run.cancellation
+      ? { cancellation: { by: run.cancellation.by, reason: run.cancellation.reason } }
       : {}),
     ...(run.delivery ? { delivery: run.delivery } : {}),
     ...(run.pullRequest

@@ -28,6 +28,7 @@ describe('RetryDeliveryHandler', () => {
         from,
         to,
         failure: to === 'failed' ? { code, detail: 'x' } : null,
+        cancelRequested: false,
         now: T0,
       });
     }
@@ -42,6 +43,7 @@ describe('RetryDeliveryHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://github.com/acme/shop.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
       integrationBranch: 'dev',
     });
   });
