@@ -86,6 +86,46 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
+  it('never redacts the enum fields, even when a known value equals one (#104, #119 review)', async () => {
+    handler = new ReportRunStepHandler(
+      runs,
+      { now: () => T1 },
+      {
+        // Environment file values may be any word, e.g. `done` or `passed`.
+        forRun: () => Promise.resolve(['done', 'passed', 'needs_input']),
+      },
+    );
+    await running();
+    const result = {
+      outcome: 'needs_input',
+      summary: 'The checks passed; is it done?',
+      question: { text: 'Is it done?', options: ['done', 'not yet'], recommendation: 'done' },
+      sessionRef: 'session-done',
+      checks: [{ name: 'unit', result: 'passed' }],
+    };
+
+    await handler.execute({
+      runId: run.id,
+      workerId: WORKER,
+      kind: 'start',
+      result,
+      workingCopy: WORKING_COPY,
+    });
+
+    expect(runs.steps[0]!.step.result).toEqual({
+      outcome: 'needs_input',
+      summary: `The checks ${REDACTED}; is it ${REDACTED}?`,
+      question: {
+        text: `Is it ${REDACTED}?`,
+        options: [REDACTED, 'not yet'],
+        recommendation: REDACTED,
+      },
+      checks: [{ name: 'unit', result: 'passed' }],
+    });
+    // The session reference is opaque: kept exactly, on the Run (Issue #103).
+    expect((await runs.findById(run.id))?.sessionRef).toBe('session-done');
+  });
+
   it('stores the steps of a running Run, numbered in report order', async () => {
     await running();
 

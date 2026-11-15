@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { EnvironmentFile } from '@agentic-studio/contracts';
+import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/entities/run-environment-file.js';
 import { InMemoryRunLogRepository } from '../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { ClaimRunHandler } from '../handler.js';
 
 // Issue #96: handing out work under the concurrency limits, after the lost-worker sweep.
@@ -18,6 +21,12 @@ describe('ClaimRunHandler', () => {
   let logs: InMemoryRunLogRepository;
   let now: Date;
   let handler: ClaimRunHandler;
+  let secrets: InMemorySecretStore;
+  /** Runs whose Environment file snapshot was released (Issue #104). */
+  let released: string[];
+  // Each project's current Environment file (Issue #104); test values only.
+  let files: Map<string, EnvironmentFile>;
+  let filesFail: Error | undefined;
 
   const queue = (projectId: string) =>
     runs.add({
@@ -34,7 +43,26 @@ describe('ClaimRunHandler', () => {
     runs = new InMemoryRunRepository();
     logs = new InMemoryRunLogRepository(runs);
     now = T0;
-    handler = new ClaimRunHandler(runs, logs, { now: () => now }, { seconds: 60 });
+    secrets = new InMemorySecretStore();
+    released = [];
+    files = new Map();
+    filesFail = undefined;
+    const environmentFiles = {
+      forProject: (projectId: string) =>
+        filesFail ? Promise.reject(filesFail) : Promise.resolve(files.get(projectId) ?? null),
+    };
+    handler = new ClaimRunHandler(
+      runs,
+      logs,
+      { now: () => now },
+      { seconds: 60 },
+      environmentFiles,
+      secrets,
+      {
+        releaseFor: (runId) => Promise.resolve(void released.push(runId)),
+        releaseFinal: () => Promise.resolve(),
+      },
+    );
   });
 
   it('hands out nothing when no Run is queued', async () => {
@@ -134,6 +162,37 @@ describe('ClaimRunHandler', () => {
       expect(await handler.execute(WORKER)).toBeNull();
     });
 
+    it('hands out a retry without the Environment file content, keeping its recorded path (#104)', async () => {
+      const run = await queue(A);
+      await runs.claimNext(WORKER, T0);
+      await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'x' });
+      for (const [from, to] of [
+        ['preparing', 'running'],
+        ['running', 'failed'],
+      ] as const) {
+        await runs.transitionClaimed({
+          runId: run.id,
+          workerId: WORKER,
+          from,
+          to,
+          failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+          workingCopy: to === 'failed' ? WORKING_COPY : null,
+          cancelRequested: false,
+          now: T0,
+        });
+      }
+      await runs.requestDeliveryRetry(run.id);
+      files.set(A, { path: 'other.env', content: 'A=test-only-later' });
+
+      expect(await handler.execute(WORKER)).toMatchObject({
+        id: run.id,
+        state: 'failed',
+        environmentFilePath: '.env',
+        environmentFile: null,
+      });
+      expect(secrets.values.size).toBe(0);
+    });
+
     it('hands a retry only to the worker that started the Run, which has its Working copy (review R4)', async () => {
       const run = await failedDelivery(A);
       await runs.requestDeliveryRetry(run.id);
@@ -162,6 +221,8 @@ describe('ClaimRunHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
+      // Nothing left to deliver: its Environment file snapshot goes (Issue #104).
+      expect(released).toEqual([run.id]);
     });
 
     it('counts a held delivery retry toward the limits', async () => {
@@ -307,6 +368,51 @@ describe('ClaimRunHandler', () => {
       });
     });
 
+    it('hands a resume without the Environment file content, keeping its snapshot and path (#104)', async () => {
+      files.set(A, { path: '.env', content: 'A=test-only-1' });
+      const queued = await queue(A);
+      const started = await handler.execute(WORKER);
+      expect(started?.environmentFile).not.toBeNull();
+      const snapshot = await runs.findEnvironmentFileSecret(queued.id);
+      // Carry the started Run to a question and answer it (the helper does it for a new Run).
+      await runs.transitionClaimed({
+        runId: queued.id,
+        workerId: WORKER,
+        from: 'preparing',
+        to: 'running',
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+      await runs.appendStep(
+        queued.id,
+        WORKER,
+        { kind: 'start', result: {}, question: QUESTION, sessionRef: 'session-1' },
+        WORKING_COPY,
+        [],
+        T0,
+      );
+      await runs.transitionClaimed({
+        runId: queued.id,
+        workerId: WORKER,
+        from: 'running',
+        to: 'waiting_for_operator',
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+      await runs.answer(queued.id, 'Yes', T0);
+      files.set(A, { path: 'other.env', content: 'A=test-only-later' });
+
+      expect(await handler.execute(WORKER)).toMatchObject({
+        id: queued.id,
+        environmentFilePath: '.env',
+        environmentFile: null,
+      });
+      expect(await runs.findEnvironmentFileSecret(queued.id)).toBe(snapshot);
+      expect(secrets.values.size).toBe(1);
+    });
+
     it('starts a new Run with no steps taken and its events from seq 1', async () => {
       await queue(A);
 
@@ -383,5 +489,100 @@ describe('ClaimRunHandler', () => {
       claimedBy: null,
       finishedAt: now,
     });
+  });
+});
+
+describe('ClaimRunHandler with Environment files (Issue #104)', () => {
+  const FILE = { path: '.env', content: 'DB_PASSWORD=test-only-pw-1\n' };
+  let runs: InMemoryRunRepository;
+  let secrets: InMemorySecretStore;
+  let current: EnvironmentFile | null;
+  let failRead: Error | undefined;
+  let handler: ClaimRunHandler;
+
+  const queue = () =>
+    runs.add({
+      projectId: A,
+      provider: 'claude_code',
+      task: 'Run the integration tests',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+    });
+
+  beforeEach(() => {
+    runs = new InMemoryRunRepository();
+    secrets = new InMemorySecretStore();
+    current = FILE;
+    failRead = undefined;
+    handler = new ClaimRunHandler(
+      runs,
+      new InMemoryRunLogRepository(runs),
+      { now: () => T0 },
+      { seconds: 60 },
+      {
+        forProject: () =>
+          failRead ? Promise.reject(failRead) : Promise.resolve(current && { ...current }),
+      },
+      secrets,
+      { releaseFor: () => Promise.resolve(), releaseFinal: () => Promise.resolve() },
+    );
+  });
+
+  it("hands the Project's file to the claiming worker and keeps a Run-scoped snapshot", async () => {
+    const queued = await queue();
+
+    const claimed = await handler.execute(WORKER);
+
+    expect(claimed).toMatchObject({ id: queued.id, environmentFileSupplied: true });
+    expect(claimed?.environmentFile).toEqual(FILE);
+    expect((await runs.findById(queued.id))?.environmentFileSupplied).toBe(true);
+    const snapshot = await runs.findEnvironmentFileSecret(queued.id);
+    expect(secrets.values.get(snapshot!)).toBe(FILE.content);
+    expect(secrets.owners.get(snapshot!)).toBe(RUN_ENVIRONMENT_FILE_SECRET_OWNER);
+  });
+
+  it('keeps the snapshot of the claim when the file changes or goes afterwards', async () => {
+    const queued = await queue();
+    await handler.execute(WORKER);
+
+    current = { path: '.env', content: 'DB_PASSWORD=test-only-changed\n' };
+    const snapshot = await runs.findEnvironmentFileSecret(queued.id);
+
+    expect(secrets.values.get(snapshot!)).toBe(FILE.content);
+  });
+
+  it('records that no file was supplied when the Project has none', async () => {
+    current = null;
+    const queued = await queue();
+
+    const claimed = await handler.execute(WORKER);
+
+    expect(claimed).toMatchObject({ environmentFileSupplied: false, environmentFile: null });
+    expect(await runs.findEnvironmentFileSecret(queued.id)).toBeNull();
+    expect(secrets.values.size).toBe(0);
+  });
+
+  it('fails the Run with preparation_failed when the file cannot be read, handing out nothing', async () => {
+    failRead = new Error('The secret could not be decrypted.');
+    const queued = await queue();
+
+    expect(await handler.execute(WORKER)).toBeNull();
+    expect(await runs.findById(queued.id)).toMatchObject({
+      state: 'failed',
+      failure: { code: 'preparation_failed' },
+      environmentFileSupplied: false,
+    });
+  });
+
+  it('fails the Run and stores nothing when the snapshot cannot be stored', async () => {
+    secrets.failWith = new Error('The secret store is unavailable.');
+    const queued = await queue();
+
+    expect(await handler.execute(WORKER)).toBeNull();
+    expect((await runs.findById(queued.id))?.failure?.code).toBe('preparation_failed');
+    secrets.failWith = undefined;
+    expect(secrets.values.size).toBe(0);
   });
 });

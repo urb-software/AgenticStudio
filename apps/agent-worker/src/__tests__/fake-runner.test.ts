@@ -51,6 +51,7 @@ describe('fakeScenarioOf', () => {
     ['[fake:stubborn]', 'stubborn'],
     ['[fake:checks-failed] Add a file', 'checks-failed'],
     ['[fake:secret]', 'secret'],
+    ['Print it [fake:print-env]', 'print-env'],
     ['[fake:unknown]', 'success'],
   ])('reads %j as %s', (task, scenario) => {
     expect(fakeScenarioOf(task)).toBe(scenario);

@@ -101,6 +101,8 @@ describe('long-wait rule', () => {
     failure: null,
     claimedBy: null,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays },
+    environmentFileSupplied: false,
+    environmentFilePath: null,
     cancelRequestedAt: null,
     cancellation: null,
     waitingSince: since,
@@ -173,6 +175,8 @@ describe('questions and answers', () => {
     releasedBy: null,
     sessionRef: 'session-1',
     messages: [],
+    environmentFileSupplied: false,
+    environmentFilePath: null,
   };
   const question = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
   const asked: Run = { ...base, messages: [{ kind: 'question', question, at }] };

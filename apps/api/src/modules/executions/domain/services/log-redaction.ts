@@ -87,17 +87,85 @@ export function redactLogText(text: string, knownSecrets: readonly string[]): st
   return TOKEN_SHAPES.reduce((current, shape) => current.replace(shape, REDACTED), redacted);
 }
 
+/** The free-text fields of a Run step's structured result (the worker protocol's shape). */
+interface StepResultText {
+  summary: string;
+  question?: { text: string; options?: string[]; recommendation?: string };
+  pullRequest?: { title: string; body: string };
+  checks?: { name: string; detail?: string }[];
+}
+
 /**
- * `value` (JSON data, e.g. a Run step's structured result) with every string in it redacted
- * by {@link redactLogText}; keys, numbers and the shape stay as they are.
+ * A Run step's structured result (validated by the worker protocol) with its free-text fields
+ * redacted by {@link redactLogText}: the summary, the question (text, options, recommendation:
+ * Issue #103), the pull request's title and
+ * body, and each check's name and detail. The enum fields (`outcome`, each check's `result`)
+ * are never touched, so a known value that equals one (e.g. an Environment file value `done`)
+ * cannot make the stored result invalid (#104, from the #119 review).
  */
-export function redactJsonStrings(value: unknown, knownSecrets: readonly string[]): unknown {
-  if (typeof value === 'string') return redactLogText(value, knownSecrets);
-  if (Array.isArray(value)) return value.map((item) => redactJsonStrings(item, knownSecrets));
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, redactJsonStrings(item, knownSecrets)]),
-    );
-  }
-  return value;
+export function redactRunStepResult<T extends StepResultText>(
+  result: T,
+  knownSecrets: readonly string[],
+): T {
+  const redact = (text: string) => redactLogText(text, knownSecrets);
+  return {
+    ...result,
+    summary: redact(result.summary),
+    ...(result.question === undefined
+      ? {}
+      : {
+          question: {
+            ...result.question,
+            text: redact(result.question.text),
+            ...(result.question.options === undefined
+              ? {}
+              : { options: result.question.options.map(redact) }),
+            ...(result.question.recommendation === undefined
+              ? {}
+              : { recommendation: redact(result.question.recommendation) }),
+          },
+        }),
+    ...(result.pullRequest === undefined
+      ? {}
+      : {
+          pullRequest: {
+            title: redact(result.pullRequest.title),
+            body: redact(result.pullRequest.body),
+          },
+        }),
+    ...(result.checks === undefined
+      ? {}
+      : {
+          checks: result.checks.map((check) => ({
+            ...check,
+            name: redact(check.name),
+            ...(check.detail === undefined ? {} : { detail: redact(check.detail) }),
+          })),
+        }),
+  };
+}
+
+/** A failure the worker reported, its detail redacted like the log (Issue #104). */
+export function redactFailure<T extends { detail: string }>(
+  failure: T,
+  knownSecrets: readonly string[],
+): T {
+  return { ...failure, detail: redactLogText(failure.detail, knownSecrets) };
+}
+
+/**
+ * A Working copy report, its commit subjects (written by the agent) redacted like the log
+ * (Issue #104); the commit ids and the branch name stay as they are.
+ */
+export function redactWorkingCopy<T extends { commits: { id: string; subject: string }[] }>(
+  workingCopy: T,
+  knownSecrets: readonly string[],
+): T {
+  return {
+    ...workingCopy,
+    commits: workingCopy.commits.map((commit) => ({
+      ...commit,
+      subject: redactLogText(commit.subject, knownSecrets),
+    })),
+  };
 }

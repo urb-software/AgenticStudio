@@ -30,6 +30,7 @@ const run = {
   pullRequest: null,
   deliveryRequested: false,
   failingChecks: [],
+  environmentFileSupplied: false,
   messages: [{ kind: 'question' as const, question: QUESTION, at: T1 }],
 };
 

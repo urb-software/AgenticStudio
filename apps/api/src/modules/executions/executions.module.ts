@@ -2,6 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { AuthModule } from '../../platform/auth/auth.module.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
+import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
 import { AnswerRunEndpoint } from './features/answer-run/endpoint.js';
@@ -46,6 +47,13 @@ import {
   LostWorkerSweepSchedule,
   SweepLostWorkersHandler,
 } from './features/sweep-lost-workers/handler.js';
+import { EnvironmentFileSecretValues } from './infrastructure/adapters/environment-file-secret-values.js';
+import { SecretStoreEnvironmentFileSnapshots } from './infrastructure/adapters/environment-file-snapshots.js';
+import {
+  ENVIRONMENT_FILE_SNAPSHOTS,
+  RUN_SNAPSHOT_SETTINGS,
+  type RunSnapshotSettings,
+} from './ports/environment-file-snapshots.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
@@ -63,7 +71,7 @@ import { WORKER_STATUS_STORE } from './ports/worker-status-store.js';
 /**
  * Test seams of the module: a controlled clock for the lease and the lost-worker sweep, a
  * shorter keep-alive interval of live log streams, and known secret values of Runs for log
- * redaction (until Environment files, #104, supply them). Production passes nothing.
+ * redaction in place of the Runs' Environment file snapshots (#104). Production passes nothing.
  */
 export interface ExecutionsModuleOptions {
   clock?: Clock;
@@ -82,16 +90,15 @@ const LOG_KEEP_ALIVE_MS = 15_000;
 const LOG_STREAMS_PER_SESSION = 5;
 const LOG_STREAMS_TOTAL = 50;
 
-/** No secret values are known to a Run until Environment files (#104) supply them. */
-const NO_RUN_SECRET_VALUES: RunSecretValues = { forRun: () => Promise.resolve([]) };
-
 /**
  * `executions` business module (Issues #96, #99, #100, #103): the operator starts, reads,
  * cancels and answers Runs; the agent
  * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
- * only), including each Run's log, which the operator reads in pages or live. `projects` is
- * passed in by the composition root, which wires its public `RUN_START_POINTS` contract; this
- * module never imports it otherwise.
+ * only), including each Run's log, which the operator reads in pages or live. A claimed Run gets
+ * a snapshot of its Project's Environment file (Issue #104, `projects`' public
+ * `RUN_ENVIRONMENT_FILES` contract), kept in the secret store for its log redaction until it is
+ * final. `projects` is passed in by the composition root, which wires its public contracts;
+ * this module never imports it otherwise.
  */
 @Module({})
 export class ExecutionsModule {
@@ -99,7 +106,7 @@ export class ExecutionsModule {
     return {
       module: ExecutionsModule,
       // AuthModule: the live log stream re-checks its operator session (Issue #99 review).
-      imports: [DatabaseModule, AuthModule, projects],
+      imports: [DatabaseModule, AuthModule, SecretsModule, projects],
       controllers: [
         StartRunEndpoint,
         ListProjectRunsEndpoint,
@@ -125,7 +132,9 @@ export class ExecutionsModule {
         { provide: RUN_LOG_REPOSITORY, useClass: PrismaRunLogRepository },
         { provide: RUN_LOG_SIGNAL, useClass: InProcessRunLogSignal },
         { provide: OPERATOR_SESSIONS, useClass: PlatformOperatorSessions },
-        { provide: RUN_SECRET_VALUES, useValue: options.secretValues ?? NO_RUN_SECRET_VALUES },
+        options.secretValues
+          ? { provide: RUN_SECRET_VALUES, useValue: options.secretValues }
+          : { provide: RUN_SECRET_VALUES, useClass: EnvironmentFileSecretValues },
         {
           provide: RUN_LOG_SETTINGS,
           useFactory: (config: AppConfig): RunLogSettings => ({
@@ -169,6 +178,14 @@ export class ExecutionsModule {
         ReportWorkerStatusHandler,
         ListProvidersHandler,
         SweepLostWorkersHandler,
+        { provide: ENVIRONMENT_FILE_SNAPSHOTS, useClass: SecretStoreEnvironmentFileSnapshots },
+        {
+          provide: RUN_SNAPSHOT_SETTINGS,
+          useFactory: (config: AppConfig): RunSnapshotSettings => ({
+            retentionDays: config.runSnapshotRetentionDays,
+          }),
+          inject: [APP_CONFIG],
+        },
         LostWorkerSweepSchedule,
       ],
     };

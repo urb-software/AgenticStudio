@@ -190,6 +190,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         state: 'queued',
         startCommit: project.head,
         createdAt: expect.stringMatching(ISO_8601),
+        // Issue #104: set when the Run is claimed.
+        environmentFileSupplied: false,
         // Issue #100: the limits in force, copied onto the Run when it is started.
         limits: LIMITS,
         // Issue #103: the conversation starts with the Task.

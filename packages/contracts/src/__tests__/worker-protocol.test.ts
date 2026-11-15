@@ -7,6 +7,9 @@ import {
   SESSION_REF_MAX_LENGTH,
   claimRunRequestSchema,
   cutToBytes,
+  ENVIRONMENT_FILE_MAX_BYTES,
+  ENVIRONMENT_FILE_PATH_MAX_LENGTH,
+  environmentFilePathProblem,
   jsonByteLength,
   RUN_STEP_RESULT_MAX_BYTES,
   heartbeatRequestSchema,
@@ -172,6 +175,98 @@ describe('run payload (claim response)', () => {
     expect(runPayloadSchema.safeParse({ ...payload, task: 'x'.repeat(20_001) }).success).toBe(
       false,
     );
+  });
+});
+
+describe('Environment file (Issue #104)', () => {
+  const payload = {
+    runId: RUN_ID,
+    projectId: PROJECT_ID,
+    provider: 'claude_code',
+    task: 'Add a health check',
+    startCommit: 'a'.repeat(40),
+    repository: { remoteUrl: 'git@github.com:acme/shop.git' },
+    integrationBranch: 'main',
+    kind: 'start',
+    studioPaths: ['.env'],
+    limits: { stepMinutes: 60, maxSteps: 10 },
+    completedSteps: 0,
+  };
+  // A test value only.
+  const environmentFile = { path: '.env', content: 'DB_PASSWORD=test-only-1234\n' };
+
+  it('travels with the claim of a Run that has one, path and content only', () => {
+    expect(runPayloadSchema.parse({ ...payload, environmentFile })).toEqual({
+      ...payload,
+      environmentFile,
+    });
+    expect(
+      runPayloadSchema.safeParse({ ...payload, environmentFile: { ...environmentFile, id: 'x' } })
+        .success,
+    ).toBe(false);
+  });
+
+  it('comes with a start claim only, its path among the studioPaths', () => {
+    expect(
+      runPayloadSchema.safeParse({ ...payload, studioPaths: [], environmentFile }).success,
+    ).toBe(false);
+    expect(
+      runPayloadSchema.safeParse({
+        ...payload,
+        kind: 'deliver',
+        runBranch: 'agent/x-r0b8e5c2d',
+        environmentFile,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('limits the content to 64 KiB of UTF-8', () => {
+    expect(ENVIRONMENT_FILE_MAX_BYTES).toBe(65_536);
+    const withContent = (content: string) =>
+      runPayloadSchema.safeParse({ ...payload, environmentFile: { path: '.env', content } })
+        .success;
+    expect(withContent('x'.repeat(65_536))).toBe(true);
+    expect(withContent('x'.repeat(65_537))).toBe(false);
+    // Two bytes each in UTF-8: under the limit in characters, over it in bytes.
+    expect(withContent('é'.repeat(32_769))).toBe(false);
+  });
+
+  it('refuses a path that is not a safe relative path in the Working copy', () => {
+    expect(
+      runPayloadSchema.safeParse({ ...payload, environmentFile: { path: '../.env', content: '' } })
+        .success,
+    ).toBe(false);
+  });
+
+  it.each(['.env', 'config/test.env', 'apps/api/.env.test', '.git-env', 'a/.gitx/b', 'x'])(
+    'accepts the path %s',
+    (path) => {
+      expect(environmentFilePathProblem(path)).toBeNull();
+    },
+  );
+
+  it.each([
+    ['', 'empty'],
+    ['/etc/passwd', 'absolute'],
+    ['\\\\server\\share', 'backslash'],
+    ['a\\b', 'backslash'],
+    ['../.env', 'traversal'],
+    ['config/../../.env', 'traversal'],
+    ['./.env', 'dot segment'],
+    ['config//.env', 'empty segment'],
+    ['config/', 'empty segment'],
+    ['.git', 'inside .git'],
+    ['.git/config', 'inside .git'],
+    ['.GIT/hooks/pre-commit', 'inside .git'],
+    ['sub/.git/config', 'inside .git'],
+    ['a\u0000b', 'control character'],
+    ['a\nb', 'control character'],
+    ['a\u007fb', 'control character'],
+    ['x'.repeat(ENVIRONMENT_FILE_PATH_MAX_LENGTH + 1), 'too long'],
+  ])('refuses the path %j (%s), saying why', (path) => {
+    const problem = environmentFilePathProblem(path);
+    expect(problem).toEqual(expect.any(String));
+    expect(problem!.length).toBeGreaterThan(10);
   });
 });
 

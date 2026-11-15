@@ -653,6 +653,177 @@
         ]
       }
     },
+    "/api/projects/{id}/environment-file": {
+      "get": {
+        "operationId": "getEnvironmentFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Environment file, or null when none is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/EnvironmentFileInfo_Output"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "Sets the project's Environment file, or replaces it: a file of test settings Studio writes into each Run's Working copy (owner-only, never committed). The content is stored in the secret store and never returned. Runs prepared afterwards get the new file; Runs already claimed keep theirs.",
+        "operationId": "setEnvironmentFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetEnvironmentFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentFileInfo_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid path (not a safe relative path, inside .git, or tracked in the repository) or content (over 64 KiB, not UTF-8); field errors on path or content say why",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      },
+      "delete": {
+        "description": "Removes the project's Environment file and deletes its content from the secret store. Runs prepared afterwards get none; Runs already claimed keep theirs. Removing a file that is not set changes nothing.",
+        "operationId": "removeEnvironmentFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed (or there was none)"
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/projects/{id}/runs": {
       "post": {
         "operationId": "startRun",
@@ -1606,6 +1777,50 @@
         },
         "additionalProperties": false
       },
+      "SetEnvironmentFileRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Relative POSIX path in the repository (e.g. `.env`): no leading `/`, no `..`, `.` or empty segments, not inside `.git`, and not tracked in the repository."
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 65536,
+            "description": "The file's content, UTF-8, at most 65536 bytes. Test values only: the agent can read this file. Never returned by any endpoint."
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "EnvironmentFileInfo_Output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "path",
+          "sizeBytes",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
       "StartRunRequest": {
         "type": "object",
         "properties": {
@@ -1815,6 +2030,9 @@
           "hasUncommittedChanges": {
             "type": "boolean"
           },
+          "environmentFileSupplied": {
+            "type": "boolean"
+          },
           "limits": {
             "$ref": "#/components/schemas/RunLimits_Output"
           },
@@ -1898,6 +2116,7 @@
           "state",
           "startCommit",
           "createdAt",
+          "environmentFileSupplied",
           "limits",
           "messages"
         ],

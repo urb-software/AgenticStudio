@@ -74,6 +74,66 @@ const workerIdSchema = z.uuid();
 /** Longest Repository remote URL, in characters (the Repository's own limit). */
 export const REMOTE_URL_MAX_LENGTH = 2048;
 
+/** Largest Environment file content, in UTF-8 bytes (64 KiB, Issue #104). */
+export const ENVIRONMENT_FILE_MAX_BYTES = 64 * 1024;
+
+/** Longest Environment file path, in characters. */
+export const ENVIRONMENT_FILE_PATH_MAX_LENGTH = 255;
+
+/** A C0 control character or DEL. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
+/**
+ * Why `path` cannot be an Environment file path (Issue #104), or `null` when it can: a
+ * relative POSIX path inside the repository, at most {@link ENVIRONMENT_FILE_PATH_MAX_LENGTH}
+ * characters, with no empty, `.` or `..` segment, no leading `/`, no `\`, no control
+ * character, and no `.git` segment (in any letter case). The API checks it when the operator
+ * saves the path, and the agent worker again before it writes the file. Whether the path is
+ * tracked in the repository is a separate check (it needs the repository).
+ */
+export function environmentFilePathProblem(path: string): string | null {
+  if (path.length === 0) return 'Enter a path.';
+  if (path.length > ENVIRONMENT_FILE_PATH_MAX_LENGTH) {
+    return `The path is longer than ${ENVIRONMENT_FILE_PATH_MAX_LENGTH} characters.`;
+  }
+  if (CONTROL_CHARACTER.test(path)) return 'The path contains a control character.';
+  if (path.includes('\\')) return 'Use forward slashes (/) in the path, not backslashes.';
+  if (path.startsWith('/')) {
+    return 'The path must be relative to the repository root, without a leading /.';
+  }
+  const segments = path.split('/');
+  if (segments.includes('..')) return 'The path must stay inside the repository (no ..).';
+  if (segments.includes('.')) return 'The path must not contain . segments.';
+  if (segments.includes(''))
+    return 'The path must not contain empty segments (// or a trailing /).';
+  if (segments.some((segment) => segment.toLowerCase() === '.git')) {
+    return 'The path must not be inside .git.';
+  }
+  return null;
+}
+
+/**
+ * The Run's Environment file (Issue #104): its path in the Working copy and its content, a
+ * snapshot taken when the Run was claimed. Test values only (security.md §3); the worker
+ * writes it owner-only and never commits it.
+ */
+export const environmentFileSchema = z.strictObject({
+  path: z
+    .string()
+    .max(ENVIRONMENT_FILE_PATH_MAX_LENGTH)
+    .refine((path) => environmentFilePathProblem(path) === null, {
+      message: 'The Environment file path is not a safe relative path.',
+    }),
+  content: z
+    .string()
+    .max(ENVIRONMENT_FILE_MAX_BYTES)
+    .refine((content) => new TextEncoder().encode(content).length <= ENVIRONMENT_FILE_MAX_BYTES, {
+      message: `The Environment file is larger than ${ENVIRONMENT_FILE_MAX_BYTES} bytes.`,
+    }),
+});
+export type EnvironmentFile = z.infer<typeof environmentFileSchema>;
+
 /** Bounds of the Run limits (Issue #100), for the API's configuration and the claim payload. */
 export const RUN_STEP_MINUTES_MAX = 1440;
 export const RUN_MAX_STEPS_MAX = 100;
@@ -121,7 +181,8 @@ const sessionRefSchema = z.string().min(1).max(SESSION_REF_MAX_LENGTH);
 
 /**
  * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
- * Clone path, secret references or keys). Closed, so an extra field is an error on both sides.
+ * Clone path, secret references or keys; the Environment file's content is the one secret
+ * value, Issue #104). Closed, so an extra field is an error on both sides.
  */
 export const runPayloadSchema = z
   .strictObject({
@@ -141,7 +202,7 @@ export const runPayloadSchema = z
     kind: z.enum(RUN_PAYLOAD_KINDS),
     /**
      * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment file
-     * (#104; none yet): never committed or pushed (#102). Studio's list is authoritative; what the
+     * (#104): never committed or pushed (#102). Studio's list is authoritative; what the
      * agent can write beside the Working copy can only add to it (review R3 of #122).
      */
     studioPaths: z.array(z.string().min(1).max(STUDIO_PATH_MAX_LENGTH)).max(STUDIO_PATHS_MAX),
@@ -160,6 +221,12 @@ export const runPayloadSchema = z
      * the resumed step's events are not dropped as duplicates (Issue #99 note on #103).
      */
     nextSeq: z.int().min(1).max(2_147_483_647).optional(),
+    /**
+     * With `start` only: the Project's Environment file as it was when the Run was claimed
+     * (Issue #104), only for the worker that claimed the Run; its path is in `studioPaths`.
+     * Never logged.
+     */
+    environmentFile: environmentFileSchema.optional(),
     /** The limits in force for this Run (Issue #100). */
     limits: runLimitsSchema,
     /**
@@ -181,6 +248,15 @@ export const runPayloadSchema = z
       path: ['kind'],
       message:
         'A resume claim carries the session reference, the answer and the next seq; others none.',
+    },
+  )
+  .refine(
+    (payload) =>
+      payload.environmentFile === undefined ||
+      (payload.kind === 'start' && payload.studioPaths.includes(payload.environmentFile.path)),
+    {
+      path: ['environmentFile'],
+      message: 'An Environment file comes with a start claim, its path among the studioPaths.',
     },
   );
 export type RunPayload = z.infer<typeof runPayloadSchema>;

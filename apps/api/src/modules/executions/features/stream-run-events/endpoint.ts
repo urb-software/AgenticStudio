@@ -13,6 +13,7 @@ import { toRunEventResponse } from '../../contracts/http/run-event-response.js';
 import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../domain/services/log-redaction.js';
 import { OPERATOR_SESSIONS, type OperatorSessions } from '../../ports/operator-sessions.js';
+import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-settings.js';
 import { KEEP_ALIVE, type RunLogStreamItem, StreamRunEventsHandler } from './handler.js';
 import { LogStreamSlots } from './log-stream-slots.js';
 import { StreamRunEventsQueryDto } from './schema.js';
@@ -46,8 +47,9 @@ async function writable(response: ServerResponse): Promise<void> {
  * `GET /api/runs/:runId/events/stream?after=<seq>` (Issue #99), behind the global session
  * guard: the Run's log as server-sent events. Each message's `id` is the event's seq and its
  * `data` one `RunEvent` as JSON. It opens with a `: connected` comment, and an idle stream
- * sends a `: keep-alive` comment every 15 s, after checking that the operator session is still
- * valid (a logout or expiry closes the stream; the client's reconnect then gets 401). Once the
+ * sends a `: keep-alive` comment every 15 s. Every 15 s, idle or busy, it checks that the
+ * operator session is still valid (a logout or expiry closes the stream; the client's reconnect
+ * then gets 401). A busy stream never idles, so the check is timed (#104, from the #119 review). Once the
  * Run is final and every event is sent, it sends one `end` event and closes; a stream that
  * closes without it was dropped, and the client reconnects. It resumes after the larger of
  * `after` and `Last-Event-ID` (a browser reconnect sends the URL's old `after` with a newer
@@ -63,6 +65,7 @@ export class StreamRunEventsEndpoint {
     private readonly handler: StreamRunEventsHandler,
     private readonly slots: LogStreamSlots,
     @Inject(OPERATOR_SESSIONS) private readonly sessions: OperatorSessions,
+    @Inject(RUN_LOG_SETTINGS) private readonly settings: RunLogSettings,
   ) {}
 
   @Get(':runId/events/stream')
@@ -114,12 +117,17 @@ export class StreamRunEventsEndpoint {
     // A first comment tells the client (and any proxy) that the stream is open.
     response.write(': connected\n\n');
     let sessionGone = false;
+    let sessionCheckedAt = Date.now();
     try {
       for await (const item of stream) {
-        if (item === KEEP_ALIVE && !(await this.sessions.isActive(sessionId))) {
-          // Logged out or expired: close without `end`; the reconnect gets 401.
-          sessionGone = true;
-          break;
+        // On every idle tick, and at least once per interval while events keep coming.
+        if (item === KEEP_ALIVE || Date.now() - sessionCheckedAt >= this.settings.keepAliveMs) {
+          sessionCheckedAt = Date.now();
+          if (!(await this.sessions.isActive(sessionId))) {
+            // Logged out or expired: close without `end`; the reconnect gets 401.
+            sessionGone = true;
+            break;
+          }
         }
         const chunk =
           item === KEEP_ALIVE

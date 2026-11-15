@@ -82,6 +82,7 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
     state: 'queued',
     startCommit: SHA,
     createdAt,
+    environmentFileSupplied: false,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
     // Issue #103: the conversation starts with the Task.
     messages: [{ role: 'operator', kind: 'task', text: task, at: createdAt }],

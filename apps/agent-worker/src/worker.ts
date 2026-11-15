@@ -430,7 +430,17 @@ export class AgentWorker {
     log: RunLog,
   ): Promise<RunStepResult> {
     const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
-    const input = { run, workspace, signal, processes, agentDefinition: AGENT_DEFINITION };
+    // The Environment file is in the Working copy (Issue #104); its content goes to the runner
+    // no other way (never in a prompt, an argument or the process environment).
+    const { environmentFile, ...forRunner } = run;
+    void environmentFile;
+    const input = {
+      run: forRunner,
+      workspace,
+      signal,
+      processes,
+      agentDefinition: AGENT_DEFINITION,
+    };
     log.push(stepIndex, 'step_started', `Run step ${stepIndex} started`);
     const runnerStep =
       run.kind === 'resume' && run.sessionRef !== undefined && run.answer !== undefined
