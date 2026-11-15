@@ -3,247 +3,193 @@
 import * as z from 'zod';
 
 export const zHealthResponseOutput = z.object({
-  status: z.literal('ok'),
+    status: z.literal('ok')
 });
 
 export const zLoginRequest = z.object({
-  password: z.string().min(1).max(1024),
+    password: z.string().min(1).max(1024)
 });
 
 export const zSessionResponseOutput = z.object({
-  authenticated: z.literal(true),
+    authenticated: z.literal(true)
 });
 
 export const zCreateProjectRequest = z.object({
-  name: z.string().min(1).max(100),
+    name: z.string().min(1).max(100)
 });
 
 export const zProjectOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  name: z.string(),
-  createdAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    name: z.string(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
 export const zProjectListOutput = z.object({
-  items: z.array(zProjectOutput),
+    items: z.array(zProjectOutput)
 });
 
 /**
  * awaiting_key: an SSH repository whose Deploy key (publicKey) the operator still has to add on the Git host, then verify; awaiting_host_key: the Git host is not trusted yet, and the operator has to confirm its host key fingerprint (hostKeyFingerprint) by verifying with acceptHostKeyFingerprint; connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
  */
 export const zRepositoryStateOutput = z.enum([
-  'awaiting_key',
-  'awaiting_host_key',
-  'connecting',
-  'ready',
-  'fetching',
-  'failed',
-  'disconnecting',
+    'awaiting_key',
+    'awaiting_host_key',
+    'connecting',
+    'ready',
+    'fetching',
+    'failed',
+    'disconnecting'
 ]);
 
 export const zRepositorySummaryOutput = z.object({
-  state: zRepositoryStateOutput,
-  url: z.string(),
-  integrationBranch: z.string(),
+    state: zRepositoryStateOutput,
+    url: z.string(),
+    integrationBranch: z.string()
 });
 
 export const zProjectDetailOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  name: z.string(),
-  createdAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  repository: zRepositorySummaryOutput.nullable(),
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    name: z.string(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    repository: zRepositorySummaryOutput.nullable()
 });
 
 /**
  * The fixed failure reason codes (Epic #55). remote_not_allowed: the remote host is or resolves to an address Studio does not connect to (Issue #69); redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by a crash or a restart of Studio, not by the repository (Issue #72). Later versions may add values; treat an unknown value as a generic failure.
  */
 export const zRepositoryFailureCodeOutput = z.enum([
-  'auth_failed',
-  'host_unreachable',
-  'host_key_mismatch',
-  'repository_not_found',
-  'branch_not_found',
-  'timeout',
-  'size_limit',
-  'remote_not_allowed',
-  'redirect_refused',
-  'interrupted',
-  'unknown',
+    'auth_failed',
+    'host_unreachable',
+    'host_key_mismatch',
+    'repository_not_found',
+    'branch_not_found',
+    'timeout',
+    'size_limit',
+    'remote_not_allowed',
+    'redirect_refused',
+    'interrupted',
+    'unknown'
 ]);
 
 export const zRepositoryFailureOutput = z.object({
-  code: zRepositoryFailureCodeOutput,
-  detail: z.string(),
-  remoteDefaultBranch: z.string().optional(),
+    code: zRepositoryFailureCodeOutput,
+    detail: z.string(),
+    remoteDefaultBranch: z.string().optional()
 });
 
 export const zRepositoryOutput = z.object({
-  state: zRepositoryStateOutput,
-  url: z.string(),
-  integrationBranch: z.string(),
-  hasClone: z.boolean(),
-  headSha: z.string().optional(),
-  lastFetchedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  failure: zRepositoryFailureOutput.optional(),
-  publicKey: z.string().optional(),
-  hostKeyFingerprint: z.string().optional(),
+    state: zRepositoryStateOutput,
+    url: z.string(),
+    integrationBranch: z.string(),
+    hasClone: z.boolean(),
+    headSha: z.string().optional(),
+    lastFetchedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    failure: zRepositoryFailureOutput.optional(),
+    publicKey: z.string().optional(),
+    hostKeyFingerprint: z.string().optional()
 });
 
 export const zConnectRepositoryRequest = z.object({
-  url: z.string().min(1).max(2048),
-  integrationBranch: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(
-      /^(?!@$)(?![-\/.])(?!.*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/,
-    ),
+    url: z.string().min(1).max(2048),
+    integrationBranch: z.string().min(1).max(255).regex(/^(?!@$)(?![-\/.])(?!.*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/)
 });
 
 export const zVerifyRepositoryRequest = z.object({
-  acceptHostKeyFingerprint: z.string().min(1).max(100).optional(),
+    acceptHostKeyFingerprint: z.string().min(1).max(100).optional()
 });
 
 export const zStartRunRequest = z.object({
-  task: z.string().min(1).max(20000),
-  provider: z.enum(['claude_code', 'codex']),
+    task: z.string().min(1).max(20000),
+    provider: z.enum(['claude_code', 'codex'])
 });
 
 export const zRunOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  projectId: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  provider: z.enum(['claude_code', 'codex']),
-  task: z.string(),
-  state: z.enum([
-    'queued',
-    'preparing',
-    'running',
-    'waiting_for_operator',
-    'succeeded',
-    'failed',
-    'cancelled',
-    'timed_out',
-  ]),
-  startCommit: z.string(),
-  createdAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  startedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  finishedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  failure: z
-    .object({
-      code: z.enum([
-        'provider_disabled',
-        'preparation_failed',
-        'agent_failed',
-        'usage_limit',
-        'worker_lost',
-        'delivery_failed',
-        'unknown',
-      ]),
-      detail: z.string(),
-    })
-    .optional(),
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    provider: z.enum(['claude_code', 'codex']),
+    task: z.string(),
+    state: z.enum([
+        'queued',
+        'preparing',
+        'running',
+        'waiting_for_operator',
+        'succeeded',
+        'failed',
+        'cancelled',
+        'timed_out'
+    ]),
+    startCommit: z.string(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    startedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    failure: z.object({
+        code: z.enum([
+            'provider_disabled',
+            'preparation_failed',
+            'agent_failed',
+            'usage_limit',
+            'worker_lost',
+            'delivery_failed',
+            'unknown'
+        ]),
+        detail: z.string()
+    }).optional()
 });
 
 export const zRunListOutput = z.array(zRunOutput);
 
 export const zRunEventOutput = z.object({
-  seq: z.int().gte(1).lte(9007199254740991),
-  at: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  stepIndex: z.int().gte(1).lte(9007199254740991),
-  kind: z.enum(['message', 'command', 'output', 'step_started', 'step_finished', 'notice']),
-  text: z.string(),
-  truncated: z.literal(true).optional(),
+    seq: z.int().gte(1).lte(9007199254740991),
+    at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    stepIndex: z.int().gte(1).lte(9007199254740991),
+    kind: z.enum([
+        'message',
+        'command',
+        'output',
+        'step_started',
+        'step_finished',
+        'notice'
+    ]),
+    text: z.string(),
+    truncated: z.literal(true).optional()
 });
 
 export const zRunEventPageOutput = z.object({
-  events: z.array(zRunEventOutput),
-  next: z.int().gte(1).lte(9007199254740991).optional(),
+    events: z.array(zRunEventOutput),
+    next: z.int().gte(1).lte(9007199254740991).optional()
 });
 
 export const zRunStepOutput = z.object({
-  index: z.int().gte(1).lte(9007199254740991),
-  kind: z.enum(['start', 'resume']),
-  outcome: z.enum(['done', 'needs_input']),
-  summary: z.string(),
-  checks: z.array(
-    z.object({
-      name: z.string(),
-      result: z.enum(['passed', 'failed', 'not_run']),
-      detail: z.string().optional(),
-    }),
-  ),
-  reportedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
+    index: z.int().gte(1).lte(9007199254740991),
+    kind: z.enum(['start', 'resume']),
+    outcome: z.enum(['done', 'needs_input']),
+    summary: z.string(),
+    checks: z.array(z.object({
+        name: z.string(),
+        result: z.enum([
+            'passed',
+            'failed',
+            'not_run'
+        ]),
+        detail: z.string().optional()
+    })),
+    reportedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
 export const zRunStepListOutput = z.object({
-  steps: z.array(zRunStepOutput),
+    steps: z.array(zRunStepOutput)
 });
 
 export const zProblemDetails = z.object({
-  type: z.string(),
-  title: z.string(),
-  status: z.int().gte(400).lte(599),
-  detail: z.string(),
-  correlationId: z.string(),
-  errors: z
-    .array(
-      z.object({
+    type: z.string(),
+    title: z.string(),
+    status: z.int().gte(400).lte(599),
+    detail: z.string(),
+    correlationId: z.string(),
+    errors: z.array(z.object({
         path: z.string(),
-        message: z.string(),
-      }),
-    )
-    .optional(),
+        message: z.string()
+    })).optional()
 });
 
 export const zGetHealthResponse = zHealthResponseOutput;
@@ -266,19 +212,22 @@ export const zCreateProjectBody = zCreateProjectRequest;
 export const zCreateProjectResponse = zProjectOutput;
 
 export const zGetProjectPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zGetProjectResponse = zProjectDetailOutput;
 
 export const zDisconnectRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
-export const zDisconnectRepositoryResponse = z.union([zRepositoryOutput, z.void()]);
+export const zDisconnectRepositoryResponse = z.union([
+    zRepositoryOutput,
+    z.void()
+]);
 
 export const zGetRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zGetRepositoryResponse = zRepositoryOutput;
@@ -286,13 +235,13 @@ export const zGetRepositoryResponse = zRepositoryOutput;
 export const zConnectRepositoryBody = zConnectRepositoryRequest;
 
 export const zConnectRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zConnectRepositoryResponse = zRepositoryOutput;
 
 export const zFetchRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zFetchRepositoryResponse = zRepositoryOutput;
@@ -300,13 +249,13 @@ export const zFetchRepositoryResponse = zRepositoryOutput;
 export const zVerifyRepositoryBody = zVerifyRepositoryRequest;
 
 export const zVerifyRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zVerifyRepositoryResponse = zRepositoryOutput;
 
 export const zListProjectRunsPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zListProjectRunsResponse = zRunListOutput;
@@ -314,7 +263,7 @@ export const zListProjectRunsResponse = zRunListOutput;
 export const zStartRunBody = zStartRunRequest;
 
 export const zStartRunPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zStartRunResponse = zRunOutput;
@@ -322,32 +271,32 @@ export const zStartRunResponse = zRunOutput;
 export const zListRunsResponse = zRunListOutput;
 
 export const zGetRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunResponse = zRunOutput;
 
 export const zListRunEventsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zListRunEventsQuery = z.object({
-  after: z.int().gte(0).lte(2147483647).optional().default(0),
-  limit: z.int().gte(1).lte(1000).optional().default(500),
+    after: z.int().gte(0).lte(2147483647).optional().default(0),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
 });
 
 export const zListRunEventsResponse = zRunEventPageOutput;
 
 export const zStreamRunEventsHeaders = z.object({
-  'Last-Event-ID': z.string().optional(),
+    'Last-Event-ID': z.string().optional()
 });
 
 export const zStreamRunEventsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zStreamRunEventsQuery = z.object({
-  after: z.int().gte(0).lte(2147483647).optional(),
+    after: z.int().gte(0).lte(2147483647).optional()
 });
 
 /**
@@ -356,7 +305,7 @@ export const zStreamRunEventsQuery = z.object({
 export const zStreamRunEventsResponse = z.string();
 
 export const zListRunStepsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zListRunStepsResponse = zRunStepListOutput;
