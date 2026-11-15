@@ -8,7 +8,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FakeRunner } from '../fake-runner.js';
 import { StudioApi } from '../studio-api.js';
 import { AgentWorker } from '../worker.js';
@@ -171,6 +171,17 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
   afterEach(async () => {
     await Promise.all(workers.splice(0).map((worker) => worker.stop()));
+    // Test isolation (review of #112): no Run of one test (e.g. one waiting for the operator,
+    // which stays active) may hold a server-wide slot in the next. CASCADE empties runs too.
+    await db.$executeRaw`TRUNCATE TABLE projects CASCADE`;
+  });
+
+  beforeEach(async () => {
+    // Guard for the isolation above: every test starts with both server-wide slots free.
+    const [row] = await db.$queryRaw<{ active: bigint }[]>`
+      SELECT count(*) AS active FROM runs
+      WHERE state IN ('preparing', 'running', 'waiting_for_operator')`;
+    expect(Number(row?.active)).toBe(0);
   });
 
   afterAll(async () => {
