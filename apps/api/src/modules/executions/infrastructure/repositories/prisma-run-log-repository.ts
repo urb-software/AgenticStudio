@@ -1,15 +1,16 @@
+import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import {
-  type NewRunEvent,
   planLogAppend,
   RUN_EVENT_KINDS,
   type RunEvent,
   type RunEventKind,
 } from '../../domain/entities/run-event.js';
+import { CLAIMED_RUN_STATES } from '../../domain/entities/run.js';
 import type { RunLogRepository } from '../../domain/repositories/run-log-repository.js';
 
 const EVENT_FIELDS = {
@@ -33,13 +34,13 @@ export class PrismaRunLogRepository implements RunLogRepository {
   async append(
     runId: string,
     workerId: string,
-    events: readonly NewRunEvent[],
+    events: readonly RunEvent[],
     maxBytes: number,
   ): Promise<number | null> {
     return this.db.$transaction(async (tx) => {
       const [run] = await tx.$queryRaw<{ log_bytes: number; log_truncated: boolean }[]>`
         SELECT log_bytes, log_truncated FROM runs
-        WHERE id = ${runId}::uuid AND state IN ('preparing', 'running')
+        WHERE id = ${runId}::uuid AND state IN (${Prisma.join([...CLAIMED_RUN_STATES])})
           AND claimed_by = ${workerId}::uuid
         FOR UPDATE`;
       if (!run) return null;

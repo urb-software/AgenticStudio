@@ -60,10 +60,11 @@ const LOG_KEEP_ALIVE_MS = 15_000;
 const NO_RUN_SECRET_VALUES: RunSecretValues = { forRun: () => Promise.resolve([]) };
 
 /**
- * `executions` business module (Issue #96): the operator starts and reads Runs; the agent
+ * `executions` business module (Issues #96, #99): the operator starts and reads Runs; the agent
  * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
- * only), including each Run's log, which the operator reads in pages or live (Issue #99). `projects` is passed in by the composition root, which wires its public
- * `RUN_START_POINTS` contract; this module never imports it otherwise.
+ * only), including each Run's log, which the operator reads in pages or live. `projects` is
+ * passed in by the composition root, which wires its public `RUN_START_POINTS` contract; this
+ * module never imports it otherwise.
  */
 @Module({})
 export class ExecutionsModule {

@@ -196,6 +196,7 @@ describe('appending Run events (Issue #99)', () => {
     ['a sequence that goes back', [event(2), event(1)]],
     ['a repeated sequence number', [event(1), event(1)]],
     ['a sequence number below 1', [event(0)]],
+    ['a sequence number above PostgreSQL INTEGER', [event(2_147_483_648)]],
     ['a step index below 1', [event(1, { stepIndex: 0 })]],
     ['an unknown kind', [event(1, { kind: 'status' })]],
     ['a timestamp that is not ISO 8601', [event(1, { at: 'yesterday' })]],

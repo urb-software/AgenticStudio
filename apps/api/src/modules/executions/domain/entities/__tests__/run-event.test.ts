@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { LOG_TRUNCATED_NOTICE, type NewRunEvent, planLogAppend } from '../run-event.js';
+import { LOG_TRUNCATED_NOTICE, planLogAppend, type RunEvent } from '../run-event.js';
 
 const AT = new Date('2026-11-15T12:00:00.000Z');
-const event = (seq: number, text: string): NewRunEvent => ({
+const event = (seq: number, text: string): RunEvent => ({
   seq,
   at: AT,
   stepIndex: 1,

@@ -1,4 +1,5 @@
-import { type NewRunEvent, planLogAppend, type RunEvent } from '../../entities/run-event.js';
+import { planLogAppend, type RunEvent } from '../../entities/run-event.js';
+import { CLAIMED_RUN_STATES } from '../../entities/run.js';
 import type { RunLogRepository } from '../run-log-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
@@ -16,11 +17,12 @@ export class InMemoryRunLogRepository implements RunLogRepository {
   append(
     runId: string,
     workerId: string,
-    events: readonly NewRunEvent[],
+    events: readonly RunEvent[],
     maxBytes: number,
   ): Promise<number | null> {
     const run = this.runs.runs.find((candidate) => candidate.id === runId);
-    if (!run || !['preparing', 'running'].includes(run.state) || run.claimedBy !== workerId) {
+    const held = (CLAIMED_RUN_STATES as readonly string[]).includes(run?.state ?? '');
+    if (!run || !held || run.claimedBy !== workerId) {
       return Promise.resolve(null);
     }
     const stored = this.events.get(runId) ?? [];

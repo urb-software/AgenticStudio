@@ -25,9 +25,6 @@ export interface RunEvent {
   truncated: boolean;
 }
 
-/** An event about to be stored (already redacted and cut). */
-export type NewRunEvent = RunEvent;
-
 /** The notice stored once when a Run's log reaches its cap. */
 export const LOG_TRUNCATED_NOTICE =
   "log truncated: the Run's log reached its size limit; later output is not stored";
@@ -48,11 +45,11 @@ const utf8Length = (text: string) => Buffer.byteLength(text, 'utf8');
  */
 export function planLogAppend(
   state: LogCapState,
-  events: readonly NewRunEvent[],
+  events: readonly RunEvent[],
   maxBytes: number,
-): { store: NewRunEvent[]; state: LogCapState } {
+): { store: RunEvent[]; state: LogCapState } {
   if (state.truncated) return { store: [], state };
-  const store: NewRunEvent[] = [];
+  const store: RunEvent[] = [];
   let bytes = state.bytes;
   for (const event of events) {
     const size = utf8Length(event.text);

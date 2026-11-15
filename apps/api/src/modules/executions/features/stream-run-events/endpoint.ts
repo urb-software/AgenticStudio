@@ -1,3 +1,4 @@
+import { once } from 'node:events';
 import type { ServerResponse } from 'node:http';
 import { Controller, Get, Headers, Logger, Param, Query, Res } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -8,14 +9,23 @@ import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
 import { KEEP_ALIVE, type RunLogStreamItem, StreamRunEventsHandler } from './handler.js';
 import { StreamRunEventsQueryDto } from './schema.js';
 
-/** A `Last-Event-ID` the stream itself sent: a seq. */
+/** A `Last-Event-ID` the stream itself sent: a seq (PostgreSQL INTEGER). */
 const SEQ = /^\d{1,10}$/;
+const SEQ_MAX = 2_147_483_647;
+
+/** `Last-Event-ID` as a seq, or 0 when absent or not one this stream sent. */
+function seqFromHeader(value: string | undefined): number {
+  if (value === undefined || !SEQ.test(value)) return 0;
+  const seq = Number(value);
+  return seq <= SEQ_MAX ? seq : 0;
+}
 
 /**
  * `GET /api/runs/:runId/events/stream?after=<seq>` (Issue #99), behind the global session
  * guard: the Run's log as server-sent events. Each message's `id` is the event's seq and its
- * `data` one `RunEvent` as JSON; an idle stream sends a `: keep-alive` comment every 15 s. It
- * ends once the Run is final and every event is sent. A reconnecting EventSource sends
+ * `data` one `RunEvent` as JSON; an idle stream sends a `: keep-alive` comment every 15 s. Once
+ * the Run is final and every event is sent, it sends one `end` event and closes; a stream that
+ * closes without it was dropped, and the client reconnects. A reconnecting EventSource sends
  * `Last-Event-ID`, so it continues after the last event it received. Proxies must not buffer
  * it: `X-Accel-Buffering: no` asks nginx not to, and README.md documents the rest.
  */
@@ -50,8 +60,7 @@ export class StreamRunEventsEndpoint {
     @Headers('last-event-id') lastEventId: string | undefined,
     @Res() response: ServerResponse,
   ): Promise<void> {
-    const after =
-      query.after ?? (lastEventId !== undefined && SEQ.test(lastEventId) ? Number(lastEventId) : 0);
+    const after = query.after ?? seqFromHeader(lastEventId);
     const abort = new AbortController();
     response.on('close', () => abort.abort());
     let stream: AsyncGenerator<RunLogStreamItem>;
@@ -70,18 +79,22 @@ export class StreamRunEventsEndpoint {
     response.flushHeaders();
     try {
       for await (const item of stream) {
-        if (item === KEEP_ALIVE) {
-          response.write(': keep-alive\n\n');
-          continue;
+        const chunk =
+          item === KEEP_ALIVE
+            ? ': keep-alive\n\n'
+            : item
+                .map(
+                  (event) =>
+                    `id: ${event.seq}\ndata: ${JSON.stringify(toRunEventResponse(event))}\n\n`,
+                )
+                .join('');
+        // Backpressure: a slow client catching up on a long log is not buffered in memory.
+        if (!response.write(chunk) && !abort.signal.aborted) {
+          await Promise.race([once(response, 'drain'), once(response, 'close')]);
         }
-        response.write(
-          item
-            .map(
-              (event) => `id: ${event.seq}\ndata: ${JSON.stringify(toRunEventResponse(event))}\n\n`,
-            )
-            .join(''),
-        );
       }
+      // The Run is final and every event was sent (not a dropped connection): the client stops.
+      if (!abort.signal.aborted) response.write('event: end\ndata: {}\n\n');
     } catch (error) {
       // The headers are sent, so no problem response is possible: the stream ends and the
       // client reconnects, catching up from the store.

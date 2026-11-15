@@ -188,12 +188,15 @@ export function cutToBytes(text: string, maxBytes: number): { text: string; cut:
   return { text: new TextDecoder().decode(bytes.subarray(0, end)), cut: true };
 }
 
+/** Largest seq and step index: PostgreSQL INTEGER. */
+export const RUN_EVENT_SEQ_MAX = 2_147_483_647;
+
 /** One Run event as the worker sends it; `seq` is the worker's, per Run, from 1. */
 export const runEventInputSchema = z.strictObject({
-  seq: z.int().min(1),
+  seq: z.int().min(1).max(RUN_EVENT_SEQ_MAX),
   at: z.iso.datetime(),
   /** The Run step the event belongs to: 1, 2, … */
-  stepIndex: z.int().min(1),
+  stepIndex: z.int().min(1).max(RUN_EVENT_SEQ_MAX),
   kind: z.enum(RUN_EVENT_KINDS),
   // A character count bounds the bytes loosely; the worker cuts to bytes before sending.
   text: z.string().max(RUN_EVENT_TEXT_MAX_BYTES),

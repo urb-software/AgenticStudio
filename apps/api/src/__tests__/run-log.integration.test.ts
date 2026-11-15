@@ -20,8 +20,8 @@ import {
 // Throwaway values generated per run; none is committed.
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
-/** A small per-Run cap, so the cap test needs only a few events. */
-const LOG_MAX_BYTES = 4096;
+/** A small per-Run cap (above one full 16 KiB event), so the cap test needs few events. */
+const LOG_MAX_BYTES = 40_000;
 /** A known secret value of every Run in this suite (the #104 hook, through the test seam). */
 const KNOWN_SECRET = `env-value-${randomBytes(6).toString('hex')}`;
 const REDACTED = '••••••[redacted]';
@@ -41,13 +41,17 @@ function expectProblem(response: request.Response, status: number, type?: string
 function parseStream(body: string) {
   const messages = body
     .split('\n\n')
-    .filter((block) => block.includes('data: '))
+    .filter((block) => block.includes('data: ') && !block.startsWith('event: end'))
     .map((block) => {
       const id = /^id: (\d+)$/m.exec(block)?.[1];
       const data = /^data: (.*)$/m.exec(block)?.[1];
       return { id: Number(id), event: JSON.parse(data!) as SentEvent & { truncated?: true } };
     });
-  return { messages, keepAlives: body.split('\n\n').filter((b) => b === ': keep-alive').length };
+  return {
+    messages,
+    keepAlives: body.split('\n\n').filter((b) => b === ': keep-alive').length,
+    ended: body.endsWith('event: end\ndata: {}\n\n'),
+  };
 }
 
 describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
@@ -182,13 +186,29 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       ]);
     });
 
+    it('accepts a gap in the sequence and serves it as is, paged and streamed', async () => {
+      const runId = await runningRun();
+
+      await append(runId, [event(1), event(4)]);
+      await append(runId, [event(9)]);
+      await finish(runId);
+
+      expect((await page(runId)).body.events.map((stored: SentEvent) => stored.seq)).toEqual([
+        1, 4, 9,
+      ]);
+      const streamed = parseStream((await streamBody(runId, '?after=1')).body as string);
+      expect(streamed.messages.map((message) => message.id)).toEqual([4, 9]);
+    });
+
     it('stores one "log truncated" notice at the per-Run cap and keeps the Run going', async () => {
       const runId = await runningRun();
-      const big = 'x'.repeat(1500);
+      const big = 'x'.repeat(15_000);
 
       await append(runId, [event(1, { text: big }), event(2, { text: big })]);
       await append(runId, [event(3, { text: big }), event(4, { text: 'after' })]);
       await append(runId, [event(5, { text: 'later' })]);
+      // A re-send of the batch that hit the cap changes nothing: still one notice.
+      await append(runId, [event(3, { text: big }), event(4, { text: 'after' })]);
 
       const events = (await page(runId)).body.events as SentEvent[];
       expect(events.map(({ seq, kind }) => ({ seq, kind }))).toEqual([
@@ -282,6 +302,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
 
       expect(parseStream(received).messages.map((message) => message.id)).toEqual([1, 2]);
       expect(parseStream(received).keepAlives).toBeGreaterThan(0);
+      expect(parseStream(received).ended).toBe(true);
     });
 
     it('resumes after a seq, from the query or from Last-Event-ID, without repeats', async () => {
@@ -300,6 +321,15 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(parseStream(afterQuery.body as string).messages.map((m) => m.id)).toEqual([3]);
       const afterHeader = await streamBody(runId, '', { 'Last-Event-ID': '1' });
       expect(parseStream(afterHeader.body as string).messages.map((m) => m.id)).toEqual([2, 3]);
+      // `after` wins over the header; a header the stream never sent counts as none.
+      const both = await streamBody(runId, '?after=2', { 'Last-Event-ID': '1' });
+      expect(parseStream(both.body as string).messages.map((m) => m.id)).toEqual([3]);
+      for (const header of ['abc', '-1', '99999999999', '9999999999']) {
+        const malformed = await streamBody(runId, '', { 'Last-Event-ID': header });
+        expect(parseStream(malformed.body as string).messages.map((m) => m.id)).toEqual([1, 2, 3]);
+      }
+      // A completed stream ends with the `end` event, so the client does not reconnect.
+      expect(parseStream(all.body as string).ended).toBe(true);
     });
   });
 

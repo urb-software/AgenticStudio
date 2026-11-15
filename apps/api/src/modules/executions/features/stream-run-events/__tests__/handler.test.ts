@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Run } from '../../../domain/entities/run.js';
-import type { NewRunEvent } from '../../../domain/entities/run-event.js';
+import type { RunEvent } from '../../../domain/entities/run-event.js';
 import { InMemoryRunLogRepository } from '../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
@@ -13,7 +13,7 @@ const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 
-const event = (seq: number): NewRunEvent => ({
+const event = (seq: number): RunEvent => ({
   seq,
   at: T0,
   stepIndex: 1,

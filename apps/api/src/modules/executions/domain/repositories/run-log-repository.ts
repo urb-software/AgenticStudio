@@ -1,4 +1,4 @@
-import type { NewRunEvent, RunEvent } from '../entities/run-event.js';
+import type { RunEvent } from '../entities/run-event.js';
 
 /** DI token for the {@link RunLogRepository} adapter. */
 export const RUN_LOG_REPOSITORY = Symbol('RUN_LOG_REPOSITORY');
@@ -17,7 +17,7 @@ export interface RunLogRepository {
   append(
     runId: string,
     workerId: string,
-    events: readonly NewRunEvent[],
+    events: readonly RunEvent[],
     maxBytes: number,
   ): Promise<number | null>;
 
