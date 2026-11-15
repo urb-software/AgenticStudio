@@ -11,6 +11,7 @@ import {
   type RunState,
   type RunWorkingCopy,
 } from '../../domain/entities/run.js';
+import { keepsSnapshotForRetry } from '../../domain/entities/run-environment-file.js';
 import { redactFailure, redactWorkingCopy } from '../../domain/services/log-redaction.js';
 import {
   RUN_REPOSITORY,
@@ -80,8 +81,11 @@ export class ReportRunStateHandler {
     if (!changed) throw new RunNotHeldError();
     // Live log streams re-read the state: a final Run ends them (Issue #99).
     this.signal.notify(run.id);
-    // A final Run stores no more events: its Environment file snapshot goes (Issue #104).
-    if (isFinal(changed.state)) await this.snapshots.releaseFor(run.id);
+    // A final Run needs no more redaction, unless its failed delivery can be retried: its
+    // Environment file snapshot goes now, or when the retry ends it (Issue #104).
+    if (isFinal(changed.state) && !keepsSnapshotForRetry(changed)) {
+      await this.snapshots.releaseFor(run.id);
+    }
     return changed;
   }
 
@@ -116,6 +120,9 @@ export class ReportRunStateHandler {
     });
     if (!changed) throw new RunNotHeldError();
     this.signal.notify(run.id);
+    // Delivered at last: nothing more to redact (Issue #104). A retry that failed again keeps
+    // the snapshot, since the delivery can be retried once more.
+    if (!keepsSnapshotForRetry(changed)) await this.snapshots.releaseFor(run.id);
     return changed;
   }
 }

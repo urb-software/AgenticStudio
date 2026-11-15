@@ -466,9 +466,20 @@ export class PrismaRunRepository implements RunRepository {
     return row?.environmentFileSecretId ?? null;
   }
 
-  async listFinalEnvironmentFileSecrets(): Promise<{ runId: string; secretRef: string }[]> {
+  async listReleasableEnvironmentFileSecrets(
+    retryableFinishedBefore: Date,
+  ): Promise<{ runId: string; secretRef: string }[]> {
     const rows = await this.db.run.findMany({
-      where: { state: { in: [...FINAL_RUN_STATES] }, environmentFileSecretId: { not: null } },
+      where: {
+        state: { in: [...FINAL_RUN_STATES] },
+        environmentFileSecretId: { not: null },
+        // A failed delivery that can still be retried keeps its snapshot (Issue #104).
+        NOT: {
+          state: 'failed',
+          failureCode: 'delivery_failed',
+          OR: [{ deliveryRequested: true }, { finishedAt: { gte: retryableFinishedBefore } }],
+        },
+      },
       select: { id: true, environmentFileSecretId: true },
     });
     return rows.map((row) => ({ runId: row.id, secretRef: row.environmentFileSecretId! }));

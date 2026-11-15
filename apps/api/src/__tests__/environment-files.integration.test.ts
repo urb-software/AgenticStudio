@@ -407,6 +407,72 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect(none.body).not.toHaveProperty('environmentFile');
     });
 
+    it('keeps the snapshot while a failed delivery can be retried: the retry claim has no content, its reports are redacted (#125 review F1)', async () => {
+      const projectId = await readyProject();
+      await put(projectId, { path: '.env', content: CONTENT });
+      const runId = await startRun(projectId);
+      await worker('claim', { workerId: W1 });
+      await worker(`${runId}/state`, { workerId: W1, state: 'running' });
+      const workingCopy = (subject: string) => ({
+        runBranch: 'agent/x-r0b8e5c2d',
+        commits: [{ id: 'c'.repeat(40), subject }],
+        hasUncommittedChanges: false,
+      });
+      expect(
+        (
+          await worker(`${runId}/state`, {
+            workerId: W1,
+            state: 'failed',
+            failure: { code: 'delivery_failed', detail: 'push refused' },
+            workingCopy: workingCopy('Add a feature'),
+          })
+        ).status,
+      ).toBe(204);
+      // The delivery can be retried: the snapshot stays.
+      expect(await snapshotCount()).toBe(1);
+
+      const retry = () =>
+        http()
+          .post(`/api/runs/${runId}/retry-delivery`)
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+      expect((await retry()).status).toBe(202);
+      const claimed = await worker('claim', { workerId: W1 });
+      expect(claimed.body).toMatchObject({ runId, kind: 'deliver', studioPaths: ['.env'] });
+      expect(claimed.body).not.toHaveProperty('environmentFile');
+      expectNoContent(claimed);
+      expect(
+        (
+          await worker(`${runId}/state`, {
+            workerId: W1,
+            state: 'failed',
+            failure: { code: 'delivery_failed', detail: `push of ${PASSWORD_VALUE} refused` },
+            workingCopy: workingCopy(`agent: used ${KEY_VALUE}`),
+          })
+        ).status,
+      ).toBe(204);
+
+      const run = await http().get(`/api/runs/${runId}`).set('Cookie', cookie);
+      expectNoContent(run);
+      expect(run.body.failure.detail).toBe(`push of ${REDACTED} refused`);
+      expect(run.body.commits[0].subject).toBe(`agent: used ${REDACTED}`);
+      expect(await snapshotCount()).toBe(1);
+
+      // Delivered at last: nothing more to redact, the snapshot goes.
+      expect((await retry()).status).toBe(202);
+      expect((await worker('claim', { workerId: W1 })).body.kind).toBe('deliver');
+      expect(
+        (
+          await worker(`${runId}/state`, {
+            workerId: W1,
+            state: 'succeeded',
+            delivery: { outcome: 'none' },
+            workingCopy: workingCopy('Add a feature'),
+          })
+        ).status,
+      ).toBe(204);
+      expect(await snapshotCount()).toBe(0);
+    });
+
     it("redacts the file's values from the log and step results, and deletes the snapshot once final", async () => {
       const projectId = await readyProject();
       await put(projectId, { path: '.env', content: CONTENT });

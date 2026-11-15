@@ -227,6 +227,9 @@ const environmentSchema = z.object({
     .min(64 * 1024)
     .max(1024 * 1024 * 1024)
     .default(8 * 1024 * 1024),
+  // Days a Run's Environment file snapshot is kept while its failed delivery can be retried
+  // (Issue #104, review of #125): 1-90, default 7.
+  STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7),
   NODE_ENV: z.string().optional(),
 });
 
@@ -270,6 +273,11 @@ export interface AppConfig {
   workerLeaseSeconds: number;
   /** Per-Run log cap in UTF-8 bytes of event text (`STUDIO_RUN_LOG_MAX_BYTES`, default 8 MiB). */
   runLogMaxBytes: number;
+  /**
+   * Days a Run's Environment file snapshot is kept for its log redaction while its failed
+   * delivery can be retried (`STUDIO_RUN_SNAPSHOT_RETENTION_DAYS`, default 7; Issue #104).
+   */
+  runSnapshotRetentionDays: number;
 }
 
 export interface LoadConfigOptions {
@@ -317,5 +325,6 @@ export function loadConfig(
     workerToken: result.data.STUDIO_WORKER_TOKEN,
     workerLeaseSeconds: result.data.STUDIO_WORKER_LEASE_SECONDS,
     runLogMaxBytes: result.data.STUDIO_RUN_LOG_MAX_BYTES,
+    runSnapshotRetentionDays: result.data.STUDIO_RUN_SNAPSHOT_RETENTION_DAYS,
   };
 }

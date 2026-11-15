@@ -16,12 +16,14 @@ const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER = '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
+const DAY = 24 * 60 * 60 * 1000;
 const OWNER = { owner: RUN_ENVIRONMENT_FILE_SECRET_OWNER };
 
 describe('Environment file snapshots', () => {
   let runs: InMemoryRunRepository;
   let secrets: InMemorySecretStore;
   let release: SecretStoreEnvironmentFileSnapshots;
+  let now: Date;
 
   async function claimedWithSnapshot(projectId: string, content: string) {
     await runs.add({
@@ -43,7 +45,13 @@ describe('Environment file snapshots', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     runs = new InMemoryRunRepository();
     secrets = new InMemorySecretStore();
-    release = new SecretStoreEnvironmentFileSnapshots(runs, secrets);
+    now = T0;
+    release = new SecretStoreEnvironmentFileSnapshots(
+      runs,
+      secrets,
+      { now: () => now },
+      { retentionDays: 7 },
+    );
   });
 
   afterEach(() => vi.restoreAllMocks());
@@ -72,6 +80,55 @@ describe('Environment file snapshots', () => {
 
     expect([...secrets.values.keys()].sort()).toEqual([kept.snapshot, otherOwner, young].sort());
     expect(secrets.values.has(orphan)).toBe(false);
+  });
+
+  it('keeps the snapshot of a failed delivery that can be retried, for the retention period (#125 review)', async () => {
+    const run = await claimedWithSnapshot(PROJECT, 'A=test-only-retry');
+    for (const [from, to] of [
+      ['preparing', 'running'],
+      ['running', 'failed'],
+    ] as const) {
+      await runs.transitionClaimed({
+        runId: run.runId,
+        workerId: WORKER,
+        from,
+        to,
+        failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+        now: T0,
+      });
+    }
+
+    now = new Date(T0.getTime() + 6 * DAY);
+    await release.releaseFinal();
+    expect(secrets.values.has(run.snapshot)).toBe(true);
+
+    // A retry in progress keeps it even past the period.
+    await runs.requestDeliveryRetry(run.runId);
+    now = new Date(T0.getTime() + 8 * DAY);
+    await release.releaseFinal();
+    expect(secrets.values.has(run.snapshot)).toBe(true);
+  });
+
+  it('deletes the snapshot of a retryable failed delivery once the retention period is over', async () => {
+    const run = await claimedWithSnapshot(PROJECT, 'A=test-only-retry');
+    for (const [from, to] of [
+      ['preparing', 'running'],
+      ['running', 'failed'],
+    ] as const) {
+      await runs.transitionClaimed({
+        runId: run.runId,
+        workerId: WORKER,
+        from,
+        to,
+        failure: to === 'failed' ? { code: 'delivery_failed', detail: 'refused' } : null,
+        now: T0,
+      });
+    }
+
+    now = new Date(T0.getTime() + 7 * DAY + 1);
+    await release.releaseFinal();
+
+    expect(secrets.values.has(run.snapshot)).toBe(false);
   });
 
   it('never throws when the store is unavailable', async () => {

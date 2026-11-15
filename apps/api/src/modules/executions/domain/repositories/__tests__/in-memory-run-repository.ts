@@ -278,10 +278,18 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  listFinalEnvironmentFileSecrets(): Promise<{ runId: string; secretRef: string }[]> {
+  listReleasableEnvironmentFileSecrets(
+    retryableFinishedBefore: Date,
+  ): Promise<{ runId: string; secretRef: string }[]> {
+    const retryable = (run: Run) =>
+      run.state === 'failed' &&
+      run.failure?.code === 'delivery_failed' &&
+      (run.deliveryRequested ||
+        (run.finishedAt !== null && run.finishedAt >= retryableFinishedBefore));
     return Promise.resolve(
       this.runs
         .filter((run) => isFinal(run.state) && run.environmentFileSecret !== null)
+        .filter((run) => !retryable(run))
         .map((run) => ({ runId: run.id, secretRef: run.environmentFileSecret! })),
     );
   }

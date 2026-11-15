@@ -179,8 +179,15 @@ export interface RunRepository {
   /** The reference to the Run's Environment file snapshot, or `null` (none, or already deleted). */
   findEnvironmentFileSecret(runId: string): Promise<string | null>;
 
-  /** The Runs in a final state that still hold an Environment file snapshot reference. */
-  listFinalEnvironmentFileSecrets(): Promise<{ runId: string; secretRef: string }[]>;
+  /**
+   * The Runs in a final state that still hold an Environment file snapshot reference and no
+   * longer need it: every final Run, except a `failed` one with `delivery_failed` (its delivery
+   * can be retried) that finished at or after `retryableFinishedBefore` or whose retry is in
+   * progress.
+   */
+  listReleasableEnvironmentFileSecrets(
+    retryableFinishedBefore: Date,
+  ): Promise<{ runId: string; secretRef: string }[]>;
 
   /** Forgets the Run's snapshot reference if it is still `secretRef` (after its secret is deleted). */
   clearEnvironmentFileSecret(runId: string, secretRef: string): Promise<void>;

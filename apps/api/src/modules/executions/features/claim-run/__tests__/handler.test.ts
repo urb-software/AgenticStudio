@@ -20,6 +20,8 @@ describe('ClaimRunHandler', () => {
   let now: Date;
   let handler: ClaimRunHandler;
   let secrets: InMemorySecretStore;
+  /** Runs whose Environment file snapshot was released (Issue #104). */
+  let released: string[];
   // Each project's current Environment file (Issue #104); test values only.
   let files: Map<string, EnvironmentFile>;
   let filesFail: Error | undefined;
@@ -38,6 +40,7 @@ describe('ClaimRunHandler', () => {
     runs = new InMemoryRunRepository();
     now = T0;
     secrets = new InMemorySecretStore();
+    released = [];
     files = new Map();
     filesFail = undefined;
     const environmentFiles = {
@@ -50,6 +53,10 @@ describe('ClaimRunHandler', () => {
       { seconds: 60 },
       environmentFiles,
       secrets,
+      {
+        releaseFor: (runId) => Promise.resolve(void released.push(runId)),
+        releaseFinal: () => Promise.resolve(),
+      },
     );
   });
 
@@ -206,6 +213,8 @@ describe('ClaimRunHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
+      // Nothing left to deliver: its Environment file snapshot goes (Issue #104).
+      expect(released).toEqual([run.id]);
     });
 
     it('counts a held delivery retry toward the limits', async () => {
@@ -291,6 +300,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
           failRead ? Promise.reject(failRead) : Promise.resolve(current && { ...current }),
       },
       secrets,
+      { releaseFor: () => Promise.resolve(), releaseFinal: () => Promise.resolve() },
     );
   });
 

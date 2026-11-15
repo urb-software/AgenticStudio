@@ -252,6 +252,34 @@ describe('ReportRunStateHandler', () => {
       });
     });
 
+    it('keeps the snapshot of a failed delivery, redacts what its retry reports, and releases it once delivered (#104)', async () => {
+      await heldRetry();
+      // The failed delivery can be retried: its Environment file snapshot stays.
+      expect(released).toEqual([]);
+
+      const failedAgain = await report({
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'push of test-only-known refused' },
+        workingCopy: {
+          runBranch: 'agent/x',
+          commits: [{ id: 'c'.repeat(40), subject: 'agent: used test-only-known' }],
+          hasUncommittedChanges: false,
+        },
+      });
+      expect(failedAgain.failure?.detail).toBe('push of ••••••[redacted] refused');
+      expect(failedAgain.workingCopy?.commits[0]?.subject).toBe('agent: used ••••••[redacted]');
+      expect(released).toEqual([]);
+
+      await runs.requestDeliveryRetry(run.id);
+      expect((await runs.claimNext(WORKER, T1))?.id).toBe(run.id);
+      await report({
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+        workingCopy: { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+      });
+      expect(released).toEqual([run.id]);
+    });
+
     it('accepts no other outcome of a delivery retry', async () => {
       await heldRetry();
 

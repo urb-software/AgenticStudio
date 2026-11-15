@@ -38,6 +38,7 @@ const app = await buildApp(
       workerToken: null,
       workerLeaseSeconds: 60,
       runLogMaxBytes: 8 * 1024 * 1024,
+      runSnapshotRetentionDays: 7,
     },
     { queue: { startWorkers: false } },
   ),

@@ -44,7 +44,11 @@ import {
 } from './features/sweep-lost-workers/handler.js';
 import { EnvironmentFileSecretValues } from './infrastructure/adapters/environment-file-secret-values.js';
 import { SecretStoreEnvironmentFileSnapshots } from './infrastructure/adapters/environment-file-snapshots.js';
-import { ENVIRONMENT_FILE_SNAPSHOTS } from './ports/environment-file-snapshots.js';
+import {
+  ENVIRONMENT_FILE_SNAPSHOTS,
+  RUN_SNAPSHOT_SETTINGS,
+  type RunSnapshotSettings,
+} from './ports/environment-file-snapshots.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
@@ -158,6 +162,13 @@ export class ExecutionsModule {
         ListProvidersHandler,
         SweepLostWorkersHandler,
         { provide: ENVIRONMENT_FILE_SNAPSHOTS, useClass: SecretStoreEnvironmentFileSnapshots },
+        {
+          provide: RUN_SNAPSHOT_SETTINGS,
+          useFactory: (config: AppConfig): RunSnapshotSettings => ({
+            retentionDays: config.runSnapshotRetentionDays,
+          }),
+          inject: [APP_CONFIG],
+        },
         LostWorkerSweepSchedule,
       ],
     };

@@ -10,6 +10,10 @@ import type { Run, RunFailure } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import {
+  ENVIRONMENT_FILE_SNAPSHOTS,
+  type EnvironmentFileSnapshots,
+} from '../../ports/environment-file-snapshots.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
 const NO_REMOTE: RunFailure = {
@@ -63,6 +67,7 @@ export class ClaimRunHandler {
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RUN_ENVIRONMENT_FILES) private readonly environmentFiles: RunEnvironmentFiles,
     @Inject(SECRET_STORE) private readonly secrets: SecretStore,
+    @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
   ) {}
 
   async execute(workerId: string): Promise<ClaimedRun | null> {
@@ -85,6 +90,8 @@ export class ClaimRunHandler {
           workingCopy: null,
           now,
         });
+        // Nothing left to deliver, so nothing more to redact (Issue #104).
+        await this.snapshots.releaseFor(run.id);
         continue;
       }
       // A Run from before Issue #98 whose project had no Repository has no remote to prepare

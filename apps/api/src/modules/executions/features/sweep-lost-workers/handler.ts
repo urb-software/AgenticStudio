@@ -29,6 +29,7 @@ export class SweepLostWorkersHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(WORKER_STATUS_STORE) private readonly statuses: WorkerStatusStore,
+    @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
   ) {
     this.since = clock.now();
   }
@@ -56,6 +57,8 @@ export class SweepLostWorkersHandler {
         (retry.startedBy ? this.statuses.lastSeen(retry.startedBy) : undefined) ?? this.since;
       if (seen < seenBefore && (await this.runs.abandonDeliveryRetry(retry.runId, failure, now))) {
         abandoned++;
+        // The Working copy is gone with its worker: nothing more to redact (Issue #104).
+        await this.snapshots.releaseFor(retry.runId);
       }
     }
     return abandoned;
