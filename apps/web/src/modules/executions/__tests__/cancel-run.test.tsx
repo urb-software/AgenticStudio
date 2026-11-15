@@ -201,4 +201,33 @@ describe('Cancel run (Issue #100)', () => {
     expect(limits.textContent).toContain('at most 10 run steps');
     expect(limits.textContent).toContain('cancelled after 14 days waiting for you');
   });
+
+  it('says a Run cancelled during its delivery left a draft pull request (review of #121)', async () => {
+    const run = aRun({
+      state: 'cancelled',
+      finishedAt: '2026-11-15T10:05:00.000Z',
+      cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+      delivery: 'delivered',
+      pullRequest: { url: 'https://github.com/acme/shop/pull/9', number: 9 },
+      runBranch: 'agent/x-r1',
+      commits: [],
+      hasUncommittedChanges: false,
+    });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    expect(
+      screen.getByText('Cancelled during its delivery: a draft pull request was opened.'),
+    ).toBeTruthy();
+    const banner = screen
+      .getByText('Cancelled during its delivery: a draft pull request was opened.')
+      .closest('[data-tone]') as HTMLElement;
+    expect(within(banner).getByRole('link', { name: /Pull request #9/ })).toHaveProperty(
+      'href',
+      'https://github.com/acme/shop/pull/9',
+    );
+    expect(screen.queryByText('Nothing was pushed.')).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
 });

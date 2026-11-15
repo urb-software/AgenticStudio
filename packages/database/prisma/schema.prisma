@@ -181,8 +181,8 @@ model Run {
   limitStepMinutes      Int       @map("limit_step_minutes")
   limitMaxSteps         Int       @map("limit_max_steps")
   limitWaitingDays      Int       @map("limit_waiting_days")
-  /// When the current (or last) Run step started; set whenever the Run goes to running (review
-  /// of #121: Studio's backstop for the step time limit).
+  /// When the current Run step started; set whenever the Run goes to running and cleared when
+  /// its result is reported (review of #121: Studio's backstop for the step time limit).
   stepStartedAt         DateTime? @map("step_started_at") @db.Timestamptz(6)
   /// The agent worker that released the Run (to waiting_for_operator or a final state), so a
   /// retried report of that change is recognised (review of #121).

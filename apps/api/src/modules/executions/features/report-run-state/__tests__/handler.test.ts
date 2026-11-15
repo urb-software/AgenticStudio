@@ -360,4 +360,20 @@ describe('ReportRunStateHandler', () => {
       ).rejects.toBeInstanceOf(RunNotHeldError);
     });
   });
+
+  // Review round 2 of #121: a cancel that lands during the delivery leaves a trace.
+  it('records the pull request a delivery opened on a Run cancelled during it', async () => {
+    await report({ state: 'running' });
+    await runs.requestCancel(run.id, T0);
+    const pullRequest = { url: 'https://github.com/acme/shop/pull/9', number: 9 };
+
+    expect(
+      await report({ state: 'cancelled', delivery: { outcome: 'delivered', pullRequest } }),
+    ).toMatchObject({
+      state: 'cancelled',
+      cancellation: { by: 'operator' },
+      delivery: 'delivered',
+      pullRequest,
+    });
+  });
 });

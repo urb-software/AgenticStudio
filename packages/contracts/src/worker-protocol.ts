@@ -320,10 +320,18 @@ export const reportRunStateRequestSchema = z
     path: ['failure'],
     message: 'A failure is reported exactly with the state failed.',
   })
-  .refine((report) => (report.delivery !== undefined) === (report.state === 'succeeded'), {
-    path: ['delivery'],
-    message: 'A delivery outcome is reported exactly with the state succeeded.',
-  })
+  .refine(
+    (report) =>
+      report.state === 'succeeded'
+        ? report.delivery !== undefined
+        : report.delivery === undefined || report.state === 'cancelled',
+    {
+      path: ['delivery'],
+      message:
+        'A delivery outcome is reported with the state succeeded, or with cancelled when the ' +
+        'cancel arrived during the delivery (review of #121).',
+    },
+  )
   .refine(
     (report) =>
       report.workingCopy === undefined ||

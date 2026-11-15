@@ -138,7 +138,9 @@ export class InMemoryRunRepository implements RunRepository {
       stepStartedAt: change.to === 'running' ? change.now : run.stepStartedAt,
       releasedBy: held ? null : change.workerId,
       ...(change.workingCopy ? { workingCopy: structuredClone(change.workingCopy) } : {}),
-      ...(change.to === 'succeeded' && change.delivery ? deliveryFields(change.delivery) : {}),
+      ...((change.to === 'succeeded' || change.to === 'cancelled') && change.delivery
+        ? deliveryFields(change.delivery)
+        : {}),
       ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
     });
     return Promise.resolve(this.view(run));
@@ -311,6 +313,7 @@ export class InMemoryRunRepository implements RunRepository {
     this.steps.push({ runId, index, step: structuredClone({ kind, result }) });
     run.workingCopy = structuredClone(workingCopy);
     run.failingChecks = [...failingChecks];
+    run.stepStartedAt = null;
     return Promise.resolve({ status: 'stored', index });
   }
 

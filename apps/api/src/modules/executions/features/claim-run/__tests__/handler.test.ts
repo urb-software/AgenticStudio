@@ -266,4 +266,32 @@ describe('ClaimRunHandler', () => {
       finishedAt: now,
     });
   });
+
+  it("stops Studio's step clock once the step result is reported: a slow delivery is not timed out", async () => {
+    const delivering = await queue(A);
+    await handler.execute(WORKER);
+    await runs.transitionClaimed({
+      runId: delivering.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T0,
+    });
+    await runs.appendStep(
+      delivering.id,
+      WORKER,
+      { kind: 'start', result: { outcome: 'done', summary: 'x' } },
+      { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+      [],
+      T0,
+    );
+    // The push and pull request take long; the worker keeps sending heartbeats.
+    now = new Date(T0.getTime() + 2 * 60 * 60_000);
+    await runs.heartbeat(delivering.id, WORKER, now);
+    await handler.execute(OTHER_WORKER);
+
+    expect((await runs.findById(delivering.id))?.state).toBe('running');
+  });
 });

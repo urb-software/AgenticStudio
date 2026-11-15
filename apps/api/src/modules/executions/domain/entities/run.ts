@@ -168,7 +168,10 @@ export interface Run {
   cancellation: RunCancellation | null;
   /** When it began waiting for the operator; set exactly when `waiting_for_operator`. */
   waitingSince: Date | null;
-  /** When the current (or last) Run step started: set whenever the Run goes to `running`. */
+  /**
+   * When the current Run step started: set whenever the Run goes to `running`, cleared when the
+   * step's result is reported (Studio's time-limit backstop then stops: review of #121).
+   */
   stepStartedAt: Date | null;
   /**
    * The agent worker that released the Run (to `waiting_for_operator` or a final state), so a

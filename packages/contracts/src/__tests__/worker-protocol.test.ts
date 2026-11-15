@@ -601,3 +601,17 @@ describe('worker status report (Issue #101)', () => {
     expect(workerStatusRequestSchema.safeParse(body).success).toBe(false);
   });
 });
+
+describe('a cancel during the delivery (review round 2 of #121)', () => {
+  it('a cancelled report may carry what the delivery did; succeeded must, others must not', () => {
+    const report = (body: object) =>
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+    const delivery = { outcome: 'none' };
+
+    expect(report({ state: 'cancelled', delivery })).toBe(true);
+    expect(report({ state: 'cancelled' })).toBe(true);
+    expect(report({ state: 'succeeded' })).toBe(false);
+    expect(report({ state: 'timed_out', delivery })).toBe(false);
+    expect(report({ state: 'waiting_for_operator', delivery })).toBe(false);
+  });
+});

@@ -79,7 +79,8 @@ export class ReportRunStateHandler {
         to,
         failure: to === 'failed' ? input.failure : null,
         workingCopy: keepsWorkingCopy ? (input.workingCopy ?? null) : null,
-        delivery: to === 'succeeded' ? (input.delivery ?? null) : null,
+        // A cancel that arrived during the delivery keeps what was delivered (review of #121).
+        delivery: to === 'succeeded' || to === 'cancelled' ? (input.delivery ?? null) : null,
         cancellation: to === 'cancelled' ? OPERATOR_CANCELLATION : null,
         cancelRequested,
         now: this.clock.now(),

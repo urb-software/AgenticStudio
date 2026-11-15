@@ -90,6 +90,8 @@ class FakeDeliveries implements DeliveryPort {
   }
   /** When set, delivering waits until it is aborted (a slow push). */
   deliverHangs = false;
+  /** When set, delivering resolves only once this promise does (review of #121). */
+  deliverGate: Promise<void> | undefined;
 
   async deliver(
     prepared: PreparedRun,
@@ -100,6 +102,7 @@ class FakeDeliveries implements DeliveryPort {
     this.calls.push(['deliver', prepared.runId]);
     this.onCall?.('deliver');
     if (this.deliverFailure) throw this.deliverFailure;
+    if (this.deliverGate) await this.deliverGate;
     if (this.deliverHangs) {
       await new Promise((_resolve, reject) =>
         signal.addEventListener('abort', () => reject(signal.reason)),
@@ -1072,18 +1075,21 @@ describe('AgentWorker', () => {
       expect(deliveries.calls.filter(([step]) => step === 'deliver')).toEqual([]);
     });
 
-    it('ends a Run cancelled during its push as cancelled, not as a delivery to retry', async () => {
+    it('lets a delivery the operator cancels finish, and records its pull request on the cancelled Run (review of #121)', async () => {
       const run = payload('Add a feature');
       const api = new RecordingApi([run]);
       const deliveries = new FakeDeliveries();
-      deliveries.deliverHangs = true;
+      let release!: () => void;
+      deliveries.deliverGate = new Promise((resolve) => (release = resolve));
       startWorker(api, undefined, undefined, deliveries);
       await until(() => deliveries.calls.some(([step]) => step === 'deliver'));
 
       api.cancelRequested = true;
+      await until(() => api.calls.filter(([kind]) => kind === 'heartbeat').length >= 3);
+      release();
       await until(() => api.reports().length === 3);
 
-      expect(api.reports()[2]?.[2]).toMatchObject({ state: 'cancelled' });
+      expect(api.reports()[2]?.[2]).toEqual({ state: 'cancelled', delivery: DELIVERED });
     });
   });
 });
