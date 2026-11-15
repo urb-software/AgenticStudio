@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertSupportedPlatform,
   loadWorkerConfig,
+  STUDIO_SIDE_VARIABLES,
   UnsupportedPlatformError,
   WorkerConfigError,
 } from '../config.js';
@@ -27,6 +28,7 @@ describe('loadWorkerConfig', () => {
       token: TOKEN,
       pollMs: 5000,
       heartbeatMs: 10_000,
+      requestTimeoutMs: 30_000,
     });
   });
 
@@ -45,6 +47,11 @@ describe('loadWorkerConfig', () => {
     ['no token', { STUDIO_API_URL: env.STUDIO_API_URL }, /STUDIO_WORKER_TOKEN/],
     ['a short token', { ...env, STUDIO_WORKER_TOKEN: 'x'.repeat(31) }, /at least 32/],
     ['a bad interval', { ...env, STUDIO_WORKER_POLL_MS: 'soon' }, /STUDIO_WORKER_POLL_MS/],
+    [
+      'a too short request timeout',
+      { ...env, STUDIO_WORKER_REQUEST_TIMEOUT_MS: '10' },
+      /STUDIO_WORKER_REQUEST_TIMEOUT_MS/,
+    ],
   ])('refuses to start with %s', (_case, values, message) => {
     const error = captureError(() => loadWorkerConfig(values));
     expect(error).toBeInstanceOf(WorkerConfigError);
@@ -55,6 +62,36 @@ describe('loadWorkerConfig', () => {
     const short = 'secret-ish-value';
     const error = captureError(() => loadWorkerConfig({ ...env, STUDIO_WORKER_TOKEN: short }));
     expect(error.message).not.toContain(short);
+  });
+});
+
+describe('Studio-side variables (review of #112)', () => {
+  it.each(STUDIO_SIDE_VARIABLES.map((name) => [name]))(
+    'refuses to start when %s is present, naming it but not its value',
+    (name) => {
+      const value = `leaked-${randomBytes(8).toString('hex')}`;
+      const error = captureError(() => loadWorkerConfig({ ...env, [name]: value }));
+      expect(error).toBeInstanceOf(WorkerConfigError);
+      expect(error.message).toContain(`${name}: is a Studio-side setting`);
+      expect(error.message).not.toContain(value);
+    },
+  );
+
+  it('refuses even an empty one, and names every one present', () => {
+    const error = captureError(() =>
+      loadWorkerConfig({ ...env, DATABASE_URL: '', REDIS_URL: 'redis://x' }),
+    );
+    expect(error.message).toMatch(/DATABASE_URL[\s\S]*REDIS_URL/);
+  });
+
+  it('lists exactly the agreed variables', () => {
+    expect([...STUDIO_SIDE_VARIABLES]).toEqual([
+      'DATABASE_URL',
+      'REDIS_URL',
+      'STUDIO_SECRETS_KEY',
+      'STUDIO_OPERATOR_PASSWORD_HASH',
+      'POSTGRES_PASSWORD',
+    ]);
   });
 });
 

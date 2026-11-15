@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "start": "node --env-file-if-exists=../../.env dist/main.js",
+    "start": "node --env-file-if-exists=.env dist/main.js",
     "lint": "eslint --max-warnings 0 .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run build",

@@ -17,7 +17,22 @@ const environmentSchema = z.object({
     }),
   STUDIO_WORKER_POLL_MS: intervalMs(5000),
   STUDIO_WORKER_HEARTBEAT_MS: intervalMs(10_000),
+  // Longest wait for one call to the Studio API before it is abandoned.
+  STUDIO_WORKER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(30_000),
 });
+
+/**
+ * Studio-side settings that must never reach the agent worker (ADR 0002, review of #112): it
+ * holds no database, Redis, secret-store or operator credentials. If any is present in its
+ * environment (e.g. Studio's root .env was loaded), the worker refuses to start.
+ */
+export const STUDIO_SIDE_VARIABLES = [
+  'DATABASE_URL',
+  'REDIS_URL',
+  'STUDIO_SECRETS_KEY',
+  'STUDIO_OPERATOR_PASSWORD_HASH',
+  'POSTGRES_PASSWORD',
+] as const;
 
 export interface WorkerConfig {
   /** Base URL of the Studio API, without a trailing slash (e.g. `http://127.0.0.1:3001`). */
@@ -28,6 +43,8 @@ export interface WorkerConfig {
   pollMs: number;
   /** Interval of heartbeats while the worker carries a Run. */
   heartbeatMs: number;
+  /** Timeout of one call to the Studio API. */
+  requestTimeoutMs: number;
 }
 
 /** Thrown when the environment is invalid. Names variables, never their values. */
@@ -38,7 +55,22 @@ export class WorkerConfigError extends Error {
   }
 }
 
+/**
+ * Validates the worker's environment once at start-up. Throws {@link WorkerConfigError},
+ * naming variables but never their values, when a setting is invalid or when a Studio-side
+ * variable ({@link STUDIO_SIDE_VARIABLES}) is present.
+ */
 export function loadWorkerConfig(env: Record<string, string | undefined>): WorkerConfig {
+  const leaked = STUDIO_SIDE_VARIABLES.filter((name) => env[name] !== undefined);
+  if (leaked.length > 0) {
+    throw new WorkerConfigError(
+      leaked.map(
+        (name) =>
+          `${name}: is a Studio-side setting and must not be in the agent worker's environment ` +
+          '(give the worker its own apps/agent-worker/.env, never the root .env of Studio)',
+      ),
+    );
+  }
   const result = environmentSchema.safeParse(env);
   if (!result.success) {
     throw new WorkerConfigError(
@@ -50,6 +82,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     token: result.data.STUDIO_WORKER_TOKEN,
     pollMs: result.data.STUDIO_WORKER_POLL_MS,
     heartbeatMs: result.data.STUDIO_WORKER_HEARTBEAT_MS,
+    requestTimeoutMs: result.data.STUDIO_WORKER_REQUEST_TIMEOUT_MS,
   };
 }
 
