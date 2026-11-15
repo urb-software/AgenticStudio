@@ -16,6 +16,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
   /** 409 (worker routes): the reporting agent worker does not hold the Run. */
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
+  /** 429: this session (or the server) has as many live log streams open as allowed. */
+  tooManyLogStreams: 'urn:agentic-studio:problem:too-many-log-streams',
   /** 409 (worker routes): the reported state does not follow from the Run's state. */
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
 } as const;
@@ -53,6 +55,15 @@ export function providerUnavailable(detail: string): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.providerUnavailable,
     title: 'Provider unavailable',
     detail,
+  });
+}
+
+/** 429 when a live log stream would exceed the per-session or total limit. */
+export function tooManyLogStreams(): ProblemException {
+  return new ProblemException(HttpStatus.TOO_MANY_REQUESTS, {
+    type: EXECUTIONS_PROBLEM_TYPES.tooManyLogStreams,
+    title: 'Too many log streams',
+    detail: 'Too many live logs are open. Close one and try again.',
   });
 }
 

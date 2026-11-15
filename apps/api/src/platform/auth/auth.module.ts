@@ -26,5 +26,7 @@ import { SessionGuard } from './session.guard.js';
     { provide: APP_GUARD, useClass: MutationOriginGuard },
     { provide: APP_GUARD, useClass: SessionGuard },
   ],
+  // For long-lived responses that must notice a logout or expiry (the live Run log, #99).
+  exports: [SessionCookie, SessionStore],
 })
 export class AuthModule {}

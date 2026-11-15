@@ -974,7 +974,7 @@
           {
             "name": "Last-Event-ID",
             "in": "header",
-            "description": "The last seq received; used when `after` is absent.",
+            "description": "The last seq received; the stream resumes after the larger of it and `after`.",
             "required": false,
             "schema": {
               "type": "string"
@@ -983,7 +983,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments.",
+            "description": "Server-sent events: `id` is the seq, `data` a RunEvent as JSON; `: keep-alive` comments; `event: end` once the Run is final.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -1004,6 +1004,16 @@
           },
           "404": {
             "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many live logs open (urn:agentic-studio:problem:too-many-log-streams)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1570,6 +1580,10 @@
             "type": "string"
           },
           "truncated": {
+            "type": "boolean",
+            "const": true
+          },
+          "redacted": {
             "type": "boolean",
             "const": true
           }
