@@ -38,11 +38,11 @@ Studio (web, API, database, secrets, repository copies) runs in containers under
 ## Consequences and accepted risks
 
 - **The agent can read what its user can read.** That includes its own CLI logins, the agent account's token and the worker's token. A misled agent could misuse or leak them; the tokens are therefore kept narrow (managed repositories only; run handling only) and revocable.
-- **Both providers share one host user.** One provider's agent can read the other provider's login. With one agent user, user permissions alone do not separate one run's working copy from another's or from another project's files.
+- **Both providers share one host user.** One provider's agent can read the other provider's login. With one agent user, user permissions alone do not separate one run's working copy from another's or from another project's files. Dedicated users per provider are an upgrade path.
 - **A kernel vulnerability could cross the boundary.** The model relies on the kernel separating users and on rootless Docker's user namespaces. Keeping the host patched is part of the model.
 - **No production credentials may be placed on the server**, on either side of the boundary.
 - **Off-server backups are required**, so that a compromised or wiped server can be rebuilt.
-- **Runs and projects are kept apart by guardrails only (operator decision, 2026-11-15).** For the first version, cross-run and cross-project separation relies on the CLIs' permission rules and sandboxes and on Studio's own limits: runs start only on the operator's action, on the operator's own projects, at most two at a time. A misled agent could read or change another run's working copy or another project's files through the agent user's rights; the operator accepts that risk for this scope. It is revisited before Studio runs agents on repositories the operator does not control. Confinement inside the agent user (mount and user namespaces, or a rootless container per run) was not chosen: the agent user's own Docker daemon can mount anything that user can read, so it would bypass such confinement as soon as agents use Docker.
+- **Runs and projects are kept apart by guardrails only (operator decision, 2026-11-15).** For the first version, cross-run and cross-project separation relies on the CLIs' hooks and permission rules. A misled agent could get around them and read or change another run's working copy or another project's files through the agent user's rights. The operator accepts that risk for the intended use: runs started only on the operator's action, on the operator's own projects, at most two at a time. Confinement inside the agent user (mount and user namespaces, or a rootless container per run) was not chosen: the agent user's own Docker daemon can mount anything that user can read, so it would bypass such confinement as soon as agents use Docker.
 - **Studio's own Git rules do not cover the agent's Git commands.** The hardened Git adapter ([Security](../../engineering/security.md) §4) serves Studio's own operations; what an agent does with Git in its working copy is limited by the agent user's rights and the agent account's token.
 
 ## Upgrade paths
@@ -50,7 +50,7 @@ Studio (web, API, database, secrets, repository copies) runs in containers under
 Each keeps the same runner interface, so the run model and Studio's side stay unchanged:
 
 - **Dedicated host users per provider**, so that one provider's agent cannot read the other's logins or working copies.
-- **Dedicated host users per project**, each with its own CLI logins, per-project cache and rootless Docker daemon, created once at setup. This is the option that keeps runs of different projects apart while agents use Docker, since each project's daemon sees only its own user's files. It needs the CLIs signed in once per project user and a narrow way for the worker to start a run as that user.
+- **Dedicated host users per project**, each with its own CLI logins, per-project cache and rootless Docker daemon. This keeps different projects apart even while agents use Docker, since each project's daemon sees only its own user's files. Runs of the same project would still share a user.
 - **Short-lived tokens for the agent account**, issued per run instead of one long-lived token.
 - **A separate machine for agent runs**, with the worker still calling Studio over the network.
 
