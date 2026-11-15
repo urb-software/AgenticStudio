@@ -129,7 +129,7 @@ executions/features/complete-execution/handler.ts
 - Provider gate (canonical in [Security](../engineering/security.md) §2): the worker checks the fail-closed per-provider flag (`CLAUDE_CODE_ENABLED`, `CODEX_CLI_ENABLED`) before spawning any CLI subprocess, and never extracts, intercepts, shares or proxies subscription credentials.
 - The worker and its agents have **no access to the system Docker daemon or socket**, privileged Compose access, production DB credentials, Studio's files or unrestricted filesystem access. Agents may use the agent user's rootless Docker daemon ([Security](../engineering/security.md) §2).
 - Docker Compose actions go through `apps/environment-controller`, behind authorization and approved operations.
-- Git belongs to `projects`; other modules consume its public interfaces, not its adapter or repositories. Agents push their run branches through the agent account, not through the adapter ([Security](../engineering/security.md) §4).
+- Git belongs to `projects`; other modules consume its public interfaces, not its adapter or repositories. The agent worker pushes run branches through the agent account, not through the adapter ([Security](../engineering/security.md) §4).
 - External Git/Docker/CLI operations cannot be rolled back by a DB transaction: expose explicit states, timeouts, error handling and reconciliation.
 - `agents` owns separate `AgentDefinition` and `SkillDefinition` models; `mcp` owns reusable server definitions/bindings.
 
