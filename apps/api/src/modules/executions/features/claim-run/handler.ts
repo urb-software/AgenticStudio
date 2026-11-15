@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { lostWorkerRule, type Run } from '../../domain/entities/run.js';
+import type { Run } from '../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
+import { failLostWorkers } from '../../domain/services/lost-workers.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
@@ -19,8 +20,7 @@ export class ClaimRunHandler {
 
   async execute(workerId: string): Promise<Run | null> {
     const now = this.clock.now();
-    const { staleBefore, failure } = lostWorkerRule(now, this.lease.seconds);
-    await this.runs.failStaleClaims(staleBefore, failure, now);
+    await failLostWorkers(this.runs, now, this.lease.seconds);
     return this.runs.claimNext(workerId, now);
   }
 }
