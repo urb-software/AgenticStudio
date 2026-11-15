@@ -151,6 +151,9 @@ model Run {
   deliveryRequested     Boolean   @default(false) @map("delivery_requested")
   /// Names of the checks the agent reported failed in the latest Run step, `["..."]`.
   failingChecks         Json?     @map("failing_checks")
+  /// The agent worker that claimed the Run to start it: only it holds the Working copy, so a
+  /// delivery retry is handed to it alone (review R4 of #122).
+  lastClaimedBy         String?   @map("last_claimed_by") @db.Uuid
   /// Set by PostgreSQL, so the queue order (created_at, id) uses one clock.
   createdAt             DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// When an agent worker claimed the Run.

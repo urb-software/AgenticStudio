@@ -45,6 +45,7 @@ describe('run payload (claim response)', () => {
     repository: { remoteUrl: 'git@github.com:acme/shop.git' },
     integrationBranch: 'dev',
     kind: 'start',
+    studioPaths: [],
   };
 
   it('accepts exactly what a Run needs', () => {
@@ -55,9 +56,32 @@ describe('run payload (claim response)', () => {
     const withKind = (kind: unknown) => runPayloadSchema.safeParse({ ...payload, kind }).success;
 
     expect(withKind('start')).toBe(true);
-    expect(withKind('deliver')).toBe(true);
+    expect(withKind('deliver')).toBe(false);
+    expect(
+      runPayloadSchema.safeParse({ ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d' })
+        .success,
+    ).toBe(true);
     expect(withKind('resume')).toBe(false);
     expect(withKind(undefined)).toBe(false);
+  });
+
+  it("carries a delivery's recorded Run branch, and only with deliver (review R1 of #122)", () => {
+    expect(runPayloadSchema.safeParse({ ...payload, runBranch: 'agent/x-r0b8e5c2d' }).success).toBe(
+      false,
+    );
+    expect(runPayloadSchema.safeParse({ ...payload, kind: 'deliver', runBranch: '' }).success).toBe(
+      false,
+    );
+  });
+
+  it("carries Studio's list of the files it places in the Working copy (review R3 of #122)", () => {
+    const withPaths = (studioPaths: unknown) =>
+      runPayloadSchema.safeParse({ ...payload, studioPaths }).success;
+
+    expect(withPaths(['.env.studio'])).toBe(true);
+    expect(withPaths([''])).toBe(false);
+    expect(withPaths(Array.from({ length: 51 }, (_, n) => `f${n}`))).toBe(false);
+    expect(withPaths(undefined)).toBe(false);
   });
 
   it('names the integration branch the pull request targets (Issue #102)', () => {

@@ -76,6 +76,10 @@ export const REMOTE_URL_MAX_LENGTH = 2048;
 /** Longest branch name, in characters (the Repository's integration branch, a Run branch). */
 export const BRANCH_NAME_MAX_LENGTH = 255;
 
+/** Longest Studio-placed path and most of them in one payload (#102). */
+export const STUDIO_PATH_MAX_LENGTH = 1024;
+export const STUDIO_PATHS_MAX = 50;
+
 /**
  * What a claim hands out (Issue #102): a Run to `start` (prepare, run its first step, deliver),
  * or a `failed` Run with `delivery_failed` whose delivery the operator asked to retry: the
@@ -88,22 +92,39 @@ export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
  * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
  * Clone path, secret references or keys). Closed, so an extra field is an error on both sides.
  */
-export const runPayloadSchema = z.strictObject({
-  runId: z.uuid(),
-  projectId: z.uuid(),
-  provider: providerSchema,
-  task: z.string().min(1).max(TASK_MAX_LENGTH),
-  /** The commit of the integration branch the Run starts from. */
-  startCommit: z.string().min(1).max(64),
-  /**
-   * The Project's Repository (Issue #98): its remote URL as the operator connected it, never
-   * a credential. The agent worker fetches it with the agent user's own Git credentials.
-   */
-  repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
-  /** The Repository's integration branch when the Run started: the pull request's base (#102). */
-  integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
-  kind: z.enum(RUN_PAYLOAD_KINDS),
-});
+export const runPayloadSchema = z
+  .strictObject({
+    runId: z.uuid(),
+    projectId: z.uuid(),
+    provider: providerSchema,
+    task: z.string().min(1).max(TASK_MAX_LENGTH),
+    /** The commit of the integration branch the Run starts from. */
+    startCommit: z.string().min(1).max(64),
+    /**
+     * The Project's Repository (Issue #98): its remote URL as the operator connected it, never
+     * a credential. The agent worker fetches it with the agent user's own Git credentials.
+     */
+    repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
+    /** The Repository's integration branch when the Run started: the pull request's base (#102). */
+    integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
+    kind: z.enum(RUN_PAYLOAD_KINDS),
+    /**
+     * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment file
+     * (#104; none yet): never committed or pushed (#102). Studio's list is authoritative; what the
+     * agent can write beside the Working copy can only add to it (review R3 of #122).
+     */
+    studioPaths: z.array(z.string().min(1).max(STUDIO_PATH_MAX_LENGTH)).max(STUDIO_PATHS_MAX),
+    /**
+     * With `deliver` only: the Run branch Studio recorded from the worker's step report. A
+     * delivery retry pushes exactly this branch, never one named beside the Working copy (review
+     * R1 of #122).
+     */
+    runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH).optional(),
+  })
+  .refine((payload) => (payload.kind === 'deliver') === (payload.runBranch !== undefined), {
+    path: ['runBranch'],
+    message: 'A delivery claim carries the recorded Run branch, a start claim none.',
+  });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
 /** `POST /api/worker/runs/claim` body. */

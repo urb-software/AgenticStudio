@@ -152,7 +152,7 @@ export class WorkingCopies implements WorkingCopyPort {
       runBranch,
       startCommit,
       composeProjectName: compose,
-      studioPaths: [],
+      studioPaths: [...run.studioPaths],
     };
     await writeFile(paths.runFile, `${JSON.stringify(runFile, null, 2)}\n`, {
       flag: 'wx',

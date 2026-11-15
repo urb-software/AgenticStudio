@@ -35,7 +35,7 @@ const deliveryFields = (delivery: RunDeliveryOutcome) => ({
  * conditional on state and holder, steps are stored only for a held `running` Run.
  */
 export class InMemoryRunRepository implements RunRepository {
-  readonly runs: (Run & { heartbeatAt: Date | null })[] = [];
+  readonly runs: (Run & { heartbeatAt: Date | null; lastClaimedBy?: string })[] = [];
   readonly steps: { runId: string; index: number; step: RunStepRecord }[] = [];
   private sequence = 0;
 
@@ -86,7 +86,10 @@ export class InMemoryRunRepository implements RunRepository {
     const next = this.runs.find(
       (run) =>
         (run.state === 'queued' ||
-          (run.state === 'failed' && run.deliveryRequested && run.claimedBy === null)) &&
+          (run.state === 'failed' &&
+            run.deliveryRequested &&
+            run.claimedBy === null &&
+            run.lastClaimedBy === workerId)) &&
         !busy.has(run.projectId),
     );
     if (!next) return Promise.resolve(null);
@@ -94,6 +97,7 @@ export class InMemoryRunRepository implements RunRepository {
       Object.assign(next, {
         state: 'preparing',
         claimedBy: workerId,
+        lastClaimedBy: workerId,
         startedAt: now,
         heartbeatAt: now,
       });
@@ -222,9 +226,10 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(stale.length);
   }
 
-  private view(run: Run & { heartbeatAt: Date | null }): Run {
-    const { heartbeatAt, ...rest } = run;
+  private view(run: Run & { heartbeatAt: Date | null; lastClaimedBy?: string }): Run {
+    const { heartbeatAt, lastClaimedBy, ...rest } = run;
     void heartbeatAt; // internal: not part of a Run
+    void lastClaimedBy;
     return structuredClone(rest);
   }
 }

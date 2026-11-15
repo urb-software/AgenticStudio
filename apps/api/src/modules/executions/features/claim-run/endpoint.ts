@@ -32,8 +32,13 @@ export class ClaimRunEndpoint {
       startCommit: run.startCommit,
       repository: { remoteUrl: run.remoteUrl },
       integrationBranch: run.integrationBranch,
-      // Issue #102: a failed Run handed out again is a delivery retry, nothing else.
-      kind: run.state === 'failed' ? 'deliver' : 'start',
+      // Studio places no files in a Working copy yet; #104 adds the Environment file here.
+      studioPaths: [],
+      // Issue #102: a failed Run handed out again is a delivery retry, nothing else; it pushes
+      // exactly the Run branch Studio recorded (review R1 of #122).
+      ...(run.state === 'failed'
+        ? { kind: 'deliver', runBranch: run.workingCopy?.runBranch }
+        : { kind: 'start' }),
     });
   }
 }
