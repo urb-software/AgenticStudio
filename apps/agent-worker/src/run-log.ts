@@ -15,6 +15,8 @@ export const WORKER_BUFFER_NOTICE = 'log truncated (worker buffer)';
 const FLUSH_MS = 500;
 /** Events the worker holds while Studio is unreachable; output beyond is dropped. */
 const BUFFER_MAX = 10_000;
+/** UTF-8 bytes of event text the worker holds at most (16 MiB); output beyond is dropped. */
+const BUFFER_MAX_BYTES = 16 * 1024 * 1024;
 /**
  * Most bytes of events (as JSON) in one request, under the API's 100 KiB body limit with room
  * for the envelope. One event always fits alone: its text is at most 16 KiB of UTF-8, at most
@@ -37,19 +39,25 @@ export interface RunLogOptions {
   onLost: () => void;
   /** Buffer bound (tests make it small). */
   bufferMax?: number;
+  /** Buffer bound in UTF-8 bytes of event text (tests make it small). */
+  bufferMaxBytes?: number;
 }
 
 /**
  * Forwards one Run's events to Studio (Issue #99). Events are numbered per Run from 1, cut to
  * the per-event cap, buffered (bounded), and sent in order in batches every 500 ms or as soon
  * as 100 wait. A failed send is retried with backoff; Studio ignores seqs it already stored,
- * so a retry never duplicates. When the buffer overflows, further output is dropped and one
+ * so a retry never duplicates. The buffer holds at most 10 000 events and 16 MiB of text;
+ * when it overflows, further output is dropped and one
  * {@link WORKER_BUFFER_NOTICE} is sent. A step's structured result does not go through here.
  */
 export class RunLog {
   private seq = 0;
   private readonly buffer: RunEventInput[] = [];
   private readonly bufferMax: number;
+  private readonly bufferMaxBytes: number;
+  /** UTF-8 bytes of the texts in {@link buffer}. */
+  private bufferBytes = 0;
   private overflowed = false;
   private lost = false;
   private pump: Promise<void> | undefined;
@@ -58,6 +66,7 @@ export class RunLog {
 
   constructor(private readonly options: RunLogOptions) {
     this.bufferMax = options.bufferMax ?? BUFFER_MAX;
+    this.bufferMaxBytes = options.bufferMaxBytes ?? BUFFER_MAX_BYTES;
     this.timer = setInterval(() => this.flush(), FLUSH_MS);
     this.timer.unref();
   }
@@ -65,15 +74,20 @@ export class RunLog {
   /** Queues one event of Run step `stepIndex`. */
   push(stepIndex: number, kind: RunEventKind, text: string): void {
     if (this.lost) return;
-    if (this.buffer.length >= this.bufferMax && !MARKERS.includes(kind)) {
+    const event = cutToBytes(text, RUN_EVENT_TEXT_MAX_BYTES);
+    if (!MARKERS.includes(kind)) {
       if (this.overflowed) return;
-      this.overflowed = true;
-      this.options.logger.error(`Run ${this.options.runId}: log buffer full; dropping output.`);
-      this.enqueue(stepIndex, 'notice', WORKER_BUFFER_NOTICE);
-      return;
+      const full =
+        this.buffer.length >= this.bufferMax ||
+        this.bufferBytes + utf8Length(event.text) > this.bufferMaxBytes;
+      if (full) {
+        this.overflowed = true;
+        this.options.logger.error(`Run ${this.options.runId}: log buffer full; dropping output.`);
+        this.enqueue(stepIndex, 'notice', { text: WORKER_BUFFER_NOTICE, cut: false });
+        return;
+      }
     }
-    if (this.overflowed && !MARKERS.includes(kind)) return;
-    this.enqueue(stepIndex, kind, text);
+    this.enqueue(stepIndex, kind, event);
     if (this.buffer.length >= RUN_EVENT_BATCH_MAX) this.flush();
   }
 
@@ -94,21 +108,30 @@ export class RunLog {
   /** Drops everything at once (e.g. the worker stops); idempotent. */
   dispose(): void {
     clearInterval(this.timer);
-    this.buffer.length = 0;
+    this.clear();
     this.stop.abort();
   }
 
-  private enqueue(stepIndex: number, kind: RunEventKind, text: string): void {
-    const { text: cut, cut: truncated } = cutToBytes(text, RUN_EVENT_TEXT_MAX_BYTES);
+  private enqueue(
+    stepIndex: number,
+    kind: RunEventKind,
+    { text, cut }: { text: string; cut: boolean },
+  ): void {
     this.seq += 1;
     this.buffer.push({
       seq: this.seq,
       at: new Date().toISOString(),
       stepIndex,
       kind,
-      text: cut,
-      ...(truncated ? { truncated: true } : {}),
+      text,
+      ...(cut ? { truncated: true } : {}),
     });
+    this.bufferBytes += utf8Length(text);
+  }
+
+  private clear(): void {
+    this.buffer.length = 0;
+    this.bufferBytes = 0;
   }
 
   private flush(): void {
@@ -125,12 +148,14 @@ export class RunLog {
       const batch = this.nextBatch();
       try {
         await this.options.api.appendEvents(this.options.runId, batch, this.stop.signal);
-        this.buffer.splice(0, batch.length);
+        for (const sent of this.buffer.splice(0, batch.length)) {
+          this.bufferBytes -= utf8Length(sent.text);
+        }
         wait = RETRY_MS.first;
       } catch (error) {
         if (isRunLost(error)) {
           this.lost = true;
-          this.buffer.length = 0;
+          this.clear();
           this.options.onLost();
           return;
         }
@@ -146,7 +171,7 @@ export class RunLog {
       this.options.logger.error(
         `Run ${this.options.runId}: dropping ${this.buffer.length} log events; Studio stayed unreachable.`,
       );
-      this.buffer.length = 0;
+      this.clear();
     }
   }
 
@@ -180,6 +205,8 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     signal.addEventListener('abort', done, { once: true });
   });
 }
+
+const utf8Length = (text: string) => Buffer.byteLength(text, 'utf8');
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

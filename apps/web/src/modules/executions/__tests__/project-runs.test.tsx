@@ -413,12 +413,17 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     renderRuns();
 
     await openDialog();
-    expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true');
+    // The selection is applied in an effect after the answer renders: wait for it.
+    await vi.waitFor(() =>
+      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
+    );
     await userEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
     await openDialog();
 
     expect(api.calls('providers')).toHaveLength(2);
-    expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true');
+    await vi.waitFor(() =>
+      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
+    );
     expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('false');
     await userEvent.type(taskInput(), 'Add pagination');
     await userEvent.click(startButton());

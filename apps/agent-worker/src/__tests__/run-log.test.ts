@@ -155,6 +155,27 @@ describe('RunLog', () => {
     expect(WORKER_BUFFER_NOTICE).toBe('log truncated (worker buffer)');
   });
 
+  it('also bounds the buffer by bytes, with the same single notice (review of #118)', async () => {
+    create({ bufferMaxBytes: 10 });
+    api.failures = Array.from({ length: 3 }, () => new Error('down'));
+    log.push(1, 'output', '12345');
+    log.push(1, 'output', '6789');
+    log.push(1, 'output', 'too much');
+    log.push(1, 'output', 'x');
+    log.push(1, 'step_finished', 'Run step 1 finished: done');
+
+    const closed = log.close();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await closed;
+
+    expect(api.delivered().map(({ kind, text }) => [kind, text])).toEqual([
+      ['output', '12345'],
+      ['output', '6789'],
+      ['notice', WORKER_BUFFER_NOTICE],
+      ['step_finished', 'Run step 1 finished: done'],
+    ]);
+  });
+
   it('stops forwarding when Studio says the worker no longer holds the Run', async () => {
     create();
     api.failures = [new StudioApiError(409, '/api/worker/runs/x/events')];

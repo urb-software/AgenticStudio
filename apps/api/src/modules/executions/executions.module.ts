@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
+import { AuthModule } from '../../platform/auth/auth.module.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
@@ -33,15 +34,18 @@ import { StartRunEndpoint } from './features/start-run/endpoint.js';
 import { StartRunHandler } from './features/start-run/handler.js';
 import { StreamRunEventsEndpoint } from './features/stream-run-events/endpoint.js';
 import { StreamRunEventsHandler } from './features/stream-run-events/handler.js';
+import { LogStreamSlots } from './features/stream-run-events/log-stream-slots.js';
 import {
   LostWorkerSweepSchedule,
   SweepLostWorkersHandler,
 } from './features/sweep-lost-workers/handler.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
+import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
 import { CLOCK, type Clock } from './ports/clock.js';
+import { OPERATOR_SESSIONS } from './ports/operator-sessions.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL } from './ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from './ports/run-secret-values.js';
@@ -56,6 +60,8 @@ import { WORKER_STATUS_STORE } from './ports/worker-status-store.js';
 export interface ExecutionsModuleOptions {
   clock?: Clock;
   logKeepAliveMs?: number;
+  /** Lower stream limits for tests (defaults: 5 per session, 50 in total). */
+  logStreamLimits?: { perSession: number; total: number };
   secretValues?: RunSecretValues;
 }
 
@@ -63,6 +69,10 @@ const SYSTEM_CLOCK: Clock = { now: () => new Date() };
 
 /** An idle live log stream sends a keep-alive comment this often (Issue #99). */
 const LOG_KEEP_ALIVE_MS = 15_000;
+
+/** Most open live log streams per operator session, and in total (Issue #99 review). */
+const LOG_STREAMS_PER_SESSION = 5;
+const LOG_STREAMS_TOTAL = 50;
 
 /** No secret values are known to a Run until Environment files (#104) supply them. */
 const NO_RUN_SECRET_VALUES: RunSecretValues = { forRun: () => Promise.resolve([]) };
@@ -79,7 +89,8 @@ export class ExecutionsModule {
   static register(projects: DynamicModule, options: ExecutionsModuleOptions = {}): DynamicModule {
     return {
       module: ExecutionsModule,
-      imports: [DatabaseModule, projects],
+      // AuthModule: the live log stream re-checks its operator session (Issue #99 review).
+      imports: [DatabaseModule, AuthModule, projects],
       controllers: [
         StartRunEndpoint,
         ListProjectRunsEndpoint,
@@ -101,12 +112,15 @@ export class ExecutionsModule {
         { provide: RUN_REPOSITORY, useClass: PrismaRunRepository },
         { provide: RUN_LOG_REPOSITORY, useClass: PrismaRunLogRepository },
         { provide: RUN_LOG_SIGNAL, useClass: InProcessRunLogSignal },
+        { provide: OPERATOR_SESSIONS, useClass: PlatformOperatorSessions },
         { provide: RUN_SECRET_VALUES, useValue: options.secretValues ?? NO_RUN_SECRET_VALUES },
         {
           provide: RUN_LOG_SETTINGS,
           useFactory: (config: AppConfig): RunLogSettings => ({
             maxBytes: config.runLogMaxBytes,
             keepAliveMs: options.logKeepAliveMs ?? LOG_KEEP_ALIVE_MS,
+            streamsPerSession: options.logStreamLimits?.perSession ?? LOG_STREAMS_PER_SESSION,
+            streamsTotal: options.logStreamLimits?.total ?? LOG_STREAMS_TOTAL,
           }),
           inject: [APP_CONFIG],
         },
@@ -128,6 +142,7 @@ export class ExecutionsModule {
         AppendRunEventsHandler,
         ListRunEventsHandler,
         StreamRunEventsHandler,
+        LogStreamSlots,
         ListRunStepsHandler,
         GetRunStatesHandler,
         ReportWorkerStatusHandler,
