@@ -23,10 +23,11 @@ function seqFromHeader(value: string | undefined): number {
 /**
  * `GET /api/runs/:runId/events/stream?after=<seq>` (Issue #99), behind the global session
  * guard: the Run's log as server-sent events. Each message's `id` is the event's seq and its
- * `data` one `RunEvent` as JSON; an idle stream sends a `: keep-alive` comment every 15 s. Once
- * the Run is final and every event is sent, it sends one `end` event and closes; a stream that
- * closes without it was dropped, and the client reconnects. A reconnecting EventSource sends
- * `Last-Event-ID`, so it continues after the last event it received. Proxies must not buffer
+ * `data` one `RunEvent` as JSON. It opens with a `: connected` comment, and an idle stream
+ * sends a `: keep-alive` comment every 15 s. Once the Run is final and every event is sent, it
+ * sends one `end` event and closes; a stream that closes without it was dropped, and the
+ * client reconnects. A reconnecting client sends `Last-Event-ID` (or `after`), so it
+ * continues after the last event it received. Proxies must not buffer
  * it: `X-Accel-Buffering: no` asks nginx not to, and README.md documents the rest.
  */
 @ApiTags('runs')
@@ -76,7 +77,8 @@ export class StreamRunEventsEndpoint {
       'X-Accel-Buffering': 'no',
       Connection: 'keep-alive',
     });
-    response.flushHeaders();
+    // A first comment tells the client (and any proxy) that the stream is open.
+    response.write(': connected\n\n');
     try {
       for await (const item of stream) {
         const chunk =
