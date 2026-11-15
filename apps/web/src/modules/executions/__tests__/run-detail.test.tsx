@@ -104,6 +104,30 @@ describe('Run page', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it.each([
+    [
+      { state: 'running', startedAt: '2026-11-15T10:00:05.000Z', environmentFileSupplied: true },
+      'Environment file supplied',
+    ],
+    [
+      { state: 'running', startedAt: '2026-11-15T10:00:05.000Z', environmentFileSupplied: false },
+      'None',
+    ],
+    [{ state: 'queued', environmentFileSupplied: false }, 'Decided when the run starts'],
+  ] as const)(
+    'shows whether the Environment file was supplied (Issue #104): %j',
+    async (fields, text) => {
+      const run = aRun(fields);
+      fakeRunsApi([run]);
+      const { container } = renderRun(run.id);
+      await heading();
+
+      const term = screen.getByText('Environment file', { selector: 'dt' });
+      expect(term.nextElementSibling?.textContent).toBe(text);
+      await expect(container).toHaveNoAxeViolations();
+    },
+  );
+
   it('says why a queued Run waits when another Run holds the project', async () => {
     const queued = aRun({ state: 'queued' });
     fakeRunsApi([queued, aRun({ state: 'waiting_for_operator' })]);

@@ -8,6 +8,7 @@ import * as sdk from './generated';
 import type {
   ConnectRepositoryRequest,
   CreateProjectRequest,
+  EnvironmentFileInfoOutput,
   ProblemDetails,
   ProjectDetailOutput,
   ProjectListOutput,
@@ -20,6 +21,7 @@ import type {
   RunOutput,
   RunStepListOutput,
   SessionResponseOutput,
+  SetEnvironmentFileRequest,
   StartRunRequest,
   VerifyRepositoryRequest,
 } from './generated';
@@ -34,6 +36,7 @@ import {
 export type {
   ConnectRepositoryRequest,
   CreateProjectRequest,
+  EnvironmentFileInfoOutput,
   HealthResponseOutput,
   ProblemDetails,
   ProjectDetailOutput,
@@ -52,6 +55,7 @@ export type {
   RunStepListOutput,
   RunStepOutput,
   SessionResponseOutput,
+  SetEnvironmentFileRequest,
   StartRunRequest,
   VerifyRepositoryRequest,
 } from './generated';
@@ -185,6 +189,19 @@ export const api = {
     if (status === 204) return null;
     if (!isRepository(data)) throw new Error('The disconnect answer has no Repository.');
     return data;
+  },
+  /** The project's Environment file (path, size, last change; never the content), or `null`. */
+  getEnvironmentFile: (projectId: string): Promise<EnvironmentFileInfoOutput | null> =>
+    unwrap(sdk.getEnvironmentFile({ path: { id: projectId } })),
+  /** Sets or replaces the project's Environment file; the answer never has the content. */
+  setEnvironmentFile: (
+    projectId: string,
+    body: SetEnvironmentFileRequest,
+  ): Promise<EnvironmentFileInfoOutput> =>
+    unwrap(sdk.setEnvironmentFile({ path: { id: projectId }, body })),
+  /** Removes the project's Environment file (204, also when none was set). */
+  removeEnvironmentFile: async (projectId: string): Promise<void> => {
+    await unwrap(sdk.removeEnvironmentFile({ path: { id: projectId } }));
   },
   /** Starts a Run on the project (201: the Run, `queued`). */
   startRun: (projectId: string, body: StartRunRequest): Promise<RunOutput> =>
