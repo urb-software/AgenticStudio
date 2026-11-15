@@ -30,17 +30,25 @@ describe('LostWorkerSweepSchedule at API start', () => {
     /** One API start: the schedule boots (renewing leases if allowed) and stops again. */
     const start = async () => {
       const schedule = new LostWorkerSweepSchedule(
-        new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES),
+        new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES, {
+          releaseFor: () => Promise.resolve(),
+          releaseFinal: () => Promise.resolve(),
+        }),
         new CancelLongWaitingRunsHandler(runs, clock),
         runs,
         clock,
         LEASE,
+        { releaseFor: () => Promise.resolve(), releaseFinal: () => Promise.resolve() },
       );
       await schedule.onApplicationBootstrap();
       schedule.onApplicationShutdown();
       return schedule;
     };
-    const sweep = () => new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES).execute();
+    const sweep = () =>
+      new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES, {
+        releaseFor: () => Promise.resolve(),
+        releaseFinal: () => Promise.resolve(),
+      }).execute();
     return { runs, run, clock, start, sweep };
   }
 

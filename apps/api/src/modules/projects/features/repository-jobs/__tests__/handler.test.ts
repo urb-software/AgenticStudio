@@ -21,6 +21,9 @@ import {
 import { DeployKeyHandler } from '../../deploy-key/handler.js';
 import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
 import { SweepOrphanedDeployKeysHandler } from '../../sweep-orphaned-deploy-keys/handler.js';
+import { SweepOrphanedEnvironmentFilesHandler } from '../../sweep-orphaned-environment-files/handler.js';
+import { InMemoryEnvironmentFileRepository } from '../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
+import { InMemoryEnvironmentFileContents } from '../../../ports/__tests__/in-memory-environment-file-contents.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const COMMIT = 'a'.repeat(40);
@@ -93,7 +96,19 @@ describe('RepositoryJobsHandler', () => {
     vi.spyOn(cleanup, 'resumeAll');
     orphanedKeys = new SweepOrphanedDeployKeysHandler(projects, deployKeys, { gracePeriodMs: 0 });
     vi.spyOn(orphanedKeys, 'sweep');
-    handler = new RepositoryJobsHandler(queues, projects, clone, fetchClone, cleanup, orphanedKeys);
+    const orphanedFiles = new SweepOrphanedEnvironmentFilesHandler(
+      new InMemoryEnvironmentFileRepository(),
+      new InMemoryEnvironmentFileContents(),
+    );
+    handler = new RepositoryJobsHandler(
+      queues,
+      projects,
+      clone,
+      fetchClone,
+      cleanup,
+      orphanedKeys,
+      orphanedFiles,
+    );
     handler.onModuleInit();
   });
 

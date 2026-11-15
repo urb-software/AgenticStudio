@@ -98,6 +98,8 @@ describe('long-wait rule', () => {
     failure: null,
     claimedBy: null,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays },
+    environmentFileSupplied: false,
+    environmentFilePath: null,
     cancelRequestedAt: null,
     cancellation: null,
     waitingSince: since,

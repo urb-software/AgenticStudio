@@ -386,6 +386,40 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       );
     });
 
+    it('closes a busy live stream once its session is logged out, though it never idles (#104)', async () => {
+      const runId = await runningRun();
+      const session = await signIn(app);
+      const { response } = await openStream(runId, session);
+      expect(response.status).toBe(200);
+      // Events every few ms: the stream is woken before any keep-alive tick (200 ms here).
+      let appending = true;
+      let seq = 0;
+      const busy = (async () => {
+        while (appending) {
+          seq += 1;
+          await append(runId, [event(seq)]);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      })();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const logout = await http()
+        .post('/api/auth/logout')
+        .set({ Cookie: session, Origin: STUDIO_ORIGIN });
+      expect(logout.status).toBe(204);
+      // Closed by the timed check while events still arrive (an idle-only check never fires).
+      const body = await Promise.race([
+        response.text(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
+      appending = false;
+      await busy;
+
+      expect(body).not.toBeNull();
+      expect(parseStream(body!).messages.length).toBeGreaterThan(0);
+      expect(parseStream(body!).ended).toBe(false);
+    });
+
     it('limits open live streams per session and in total with 429', async () => {
       const runId = await runningRun();
       const other = await signIn(app);

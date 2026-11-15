@@ -38,7 +38,11 @@ const deliveryFields = (delivery: RunDeliveryOutcome) => ({
  * conditional on state and holder, steps are stored only for a held `running` Run.
  */
 export class InMemoryRunRepository implements RunRepository {
-  readonly runs: (Run & { heartbeatAt: Date | null; lastClaimedBy?: string })[] = [];
+  readonly runs: (Run & {
+    heartbeatAt: Date | null;
+    lastClaimedBy?: string;
+    environmentFileSecret: string | null;
+  })[] = [];
   readonly steps: { runId: string; index: number; step: RunStepRecord }[] = [];
   private sequence = 0;
 
@@ -65,6 +69,9 @@ export class InMemoryRunRepository implements RunRepository {
       pullRequest: null,
       deliveryRequested: false,
       failingChecks: [],
+      environmentFileSupplied: false,
+      environmentFilePath: null,
+      environmentFileSecret: null,
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -348,10 +355,69 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(stale.length);
   }
 
-  private view(run: Run & { heartbeatAt: Date | null; lastClaimedBy?: string }): Run {
-    const { heartbeatAt, lastClaimedBy, ...rest } = run;
-    void heartbeatAt; // internal: not part of a Run
+  attachEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string },
+  ): Promise<boolean> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || run.state !== 'preparing' || run.claimedBy !== workerId) {
+      return Promise.resolve(false);
+    }
+    Object.assign(run, {
+      environmentFileSupplied: true,
+      environmentFilePath: file.path,
+      environmentFileSecret: file.secretRef,
+    });
+    return Promise.resolve(true);
+  }
+
+  findEnvironmentFileSecret(runId: string): Promise<string | null> {
+    return Promise.resolve(
+      this.runs.find((candidate) => candidate.id === runId)?.environmentFileSecret ?? null,
+    );
+  }
+
+  listReleasableEnvironmentFileSecrets(
+    retryableFinishedBefore: Date,
+  ): Promise<{ runId: string; secretRef: string }[]> {
+    const retryable = (run: Run) =>
+      run.state === 'failed' &&
+      run.failure?.code === 'delivery_failed' &&
+      (run.deliveryRequested ||
+        (run.finishedAt !== null && run.finishedAt >= retryableFinishedBefore));
+    return Promise.resolve(
+      this.runs
+        .filter((run) => isFinal(run.state) && run.environmentFileSecret !== null)
+        .filter((run) => !retryable(run))
+        .map((run) => ({ runId: run.id, secretRef: run.environmentFileSecret! })),
+    );
+  }
+
+  clearEnvironmentFileSecret(runId: string, secretRef: string): Promise<void> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (run?.environmentFileSecret === secretRef) run.environmentFileSecret = null;
+    return Promise.resolve();
+  }
+
+  listEnvironmentFileSecretRefs(): Promise<string[]> {
+    return Promise.resolve(
+      this.runs.flatMap((run) => (run.environmentFileSecret ? [run.environmentFileSecret] : [])),
+    );
+  }
+
+  private view(
+    run: Run & {
+      heartbeatAt: Date | null;
+      lastClaimedBy?: string;
+      environmentFileSecret: string | null;
+    },
+  ): Run {
+    const { heartbeatAt, lastClaimedBy, environmentFileSecret, ...rest } = run;
+    // Internal: not part of a Run.
+    void heartbeatAt;
     void lastClaimedBy;
+    void environmentFileSecret;
     return structuredClone(rest);
   }
 }

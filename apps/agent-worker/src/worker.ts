@@ -407,9 +407,13 @@ export class AgentWorker {
     log: RunLog,
   ): Promise<RunStepResult> {
     const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
+    // The Environment file is in the Working copy (Issue #104); its content goes to the runner
+    // no other way (never in a prompt, an argument or the process environment).
+    const { environmentFile, ...forRunner } = run;
+    void environmentFile;
     log.push(START_STEP, 'step_started', `Run step ${START_STEP} started`);
     const step = drainRunStep(
-      this.options.runner.start({ run, workspace, signal, processes }),
+      this.options.runner.start({ run: forRunner, workspace, signal, processes }),
       (event) => log.push(START_STEP, event.type, event.text),
     );
     const stopped = rejectOnAbort(signal);

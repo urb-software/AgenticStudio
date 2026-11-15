@@ -58,6 +58,8 @@ export const runResponseSchema = z
     commits: z.array(z.object({ id: z.string(), subject: z.string() })).optional(),
     /** Whether the Working copy held uncommitted changes after the latest Run step. */
     hasUncommittedChanges: z.boolean().optional(),
+    /** Whether the Run was given its Project's Environment file when it was claimed (Issue #104). */
+    environmentFileSupplied: z.boolean(),
     /**
      * The limits in force for this Run (Issue #100): the longest a Run step may work, the most
      * Run steps it may take, and the days it may wait for the operator before it is cancelled.
@@ -116,6 +118,7 @@ export function toRunResponse(run: {
     commits: { id: string; subject: string }[];
     hasUncommittedChanges: boolean;
   } | null;
+  environmentFileSupplied: boolean;
   limits: { stepMinutes: number; maxSteps: number; waitingDays: number };
   cancelRequestedAt: Date | null;
   cancellation: { by: z.infer<typeof runCancelledBySchema>; reason: string } | null;
@@ -132,6 +135,7 @@ export function toRunResponse(run: {
     state: run.state,
     startCommit: run.startCommit,
     createdAt: run.createdAt.toISOString(),
+    environmentFileSupplied: run.environmentFileSupplied,
     ...(run.startedAt ? { startedAt: run.startedAt.toISOString() } : {}),
     ...(run.finishedAt ? { finishedAt: run.finishedAt.toISOString() } : {}),
     ...(run.failure ? { failure: { code: run.failure.code, detail: run.failure.detail } } : {}),

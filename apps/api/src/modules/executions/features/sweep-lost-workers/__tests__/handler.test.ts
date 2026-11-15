@@ -33,6 +33,8 @@ describe('SweepLostWorkersHandler', () => {
   let now: Date;
   let handler: SweepLostWorkersHandler;
   let statuses: InMemoryWorkerStatusStore;
+  /** Runs whose Environment file snapshot was released (Issue #104). */
+  let released: string[];
 
   async function claimed(projectId: string) {
     await runs.add({
@@ -51,7 +53,11 @@ describe('SweepLostWorkersHandler', () => {
     runs = new InMemoryRunRepository();
     now = T0;
     statuses = new InMemoryWorkerStatusStore();
-    handler = new SweepLostWorkersHandler(runs, { now: () => now }, { seconds: 60 }, statuses);
+    released = [];
+    handler = new SweepLostWorkersHandler(runs, { now: () => now }, { seconds: 60 }, statuses, {
+      releaseFor: (runId) => Promise.resolve(void released.push(runId)),
+      releaseFinal: () => Promise.resolve(),
+    });
   });
 
   it('fails a preparing Run whose last heartbeat is older than the lease', async () => {
@@ -185,6 +191,8 @@ describe('SweepLostWorkersHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
+      // The Working copy is gone: its Environment file snapshot goes too (Issue #104).
+      expect(released).toEqual([run.id]);
     });
 
     it('keeps it while that worker reports within the lease', async () => {
