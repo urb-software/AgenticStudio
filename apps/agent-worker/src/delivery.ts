@@ -390,7 +390,9 @@ export class Deliveries implements DeliveryPort {
         repoDir: paths.repoDir,
         runBranch: run.runBranch,
         startCommit: run.startCommit.toLowerCase(),
-        diffBase: run.mergedIntegrationCommit ?? run.startCommit.toLowerCase(),
+        ...(run.mergedIntegrationCommit === undefined
+          ? {}
+          : { diffBase: run.mergedIntegrationCommit }),
         env: { COMPOSE_PROJECT_NAME: composeProjectName(run.runId) },
       },
       result: saved.data,
