@@ -151,9 +151,13 @@ function QueuedReason({ run }: { run: RunOutput }) {
 
 function FollowUpQueuedReason({ run }: { run: RunOutput }) {
   const { data } = useProjectRuns(run.projectId);
+  // Issue #147: a request to bring the Run branch up to date is a Follow-up of its own source.
+  const bringUp = run.messages?.at(-1)?.source === 'bring_up_to_date';
   return (
-    <Banner tone="info" icon={ClockIcon} title="Follow-up sent.">
-      The agent continues the run with your Follow-up when its agent worker picks it up.
+    <Banner tone="info" icon={ClockIcon} title={bringUp ? 'Update requested.' : 'Follow-up sent.'}>
+      {bringUp
+        ? 'When its agent worker picks the run up, the integration branch is merged into the Run branch and the agent carries on from there.'
+        : 'The agent continues the run with your Follow-up when its agent worker picks it up.'}
       {data ? ` ${queuedReason(run, data)}` : null}
     </Banner>
   );
