@@ -352,6 +352,37 @@ export function isResumable(run: Pick<Run, 'state' | 'sessionRef' | 'messages'>)
   return run.state === 'queued' && resumeAnswer(run) !== null;
 }
 
+/**
+ * The message that resumes a Run stopped at the subscription's usage limit (Issue #105): sent
+ * to the agent as the next message of its session, stored as the operator's answer.
+ */
+export const USAGE_LIMIT_RESUME_TEXT = 'Continue where you stopped.';
+
+/**
+ * Whether the operator may resume a Run stopped at the usage limit (Issue #105): `failed` with
+ * `usage_limit`, with the agent session and the Working copy the worker reported, and no cancel
+ * request. It goes back to `queued` and is resumed like an answered Run (same holder rules).
+ */
+export function canResumeAfterUsageLimit(
+  run: Pick<Run, 'state' | 'failure' | 'sessionRef' | 'workingCopy' | 'cancelRequestedAt'>,
+): boolean {
+  return (
+    run.state === 'failed' &&
+    run.failure?.code === 'usage_limit' &&
+    run.sessionRef !== null &&
+    run.workingCopy !== null &&
+    run.cancelRequestedAt === null
+  );
+}
+
+/** Resuming a Run that did not stop at the usage limit with a session to resume (Issue #105). */
+export class RunNotResumableError extends Error {
+  constructor() {
+    super('Only a run stopped at the usage limit, with an agent session, can be resumed.');
+    this.name = 'RunNotResumableError';
+  }
+}
+
 /** Answering a Run that is not waiting for the operator (Issue #103). */
 export class RunNotWaitingError extends Error {
   constructor(readonly state: RunState) {

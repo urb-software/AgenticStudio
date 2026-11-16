@@ -70,6 +70,21 @@ export class AgentFailedError extends Error {
   }
 }
 
+/**
+ * The provider's subscription usage limit stopped the Run step (Issue #105). `message` is safe
+ * to show (it says when the limit resets, when the CLI reported it); `sessionRef` is the agent
+ * session the step ran in, so the operator can resume the Run once the limit has reset.
+ */
+export class UsageLimitError extends Error {
+  constructor(
+    message: string,
+    readonly sessionRef?: string,
+  ) {
+    super(message);
+    this.name = 'UsageLimitError';
+  }
+}
+
 /** Runs a step to its end, handing every event to `onEvent`; returns the structured result. */
 export async function drainRunStep(
   step: RunStep,

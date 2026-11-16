@@ -46,6 +46,11 @@ export interface ClaimedRunChange {
    * `delivery_failed` records the delivery `failed` by itself.
    */
   delivery?: RunDeliveryOutcome | null;
+  /**
+   * With `failed` / `usage_limit` (Issue #105): the agent session the stopped step ran in;
+   * becomes the Run's session reference, so the operator can resume the Run later.
+   */
+  sessionRef?: string | null;
   now: Date;
 }
 
@@ -218,6 +223,15 @@ export interface RunRepository {
    * open question (any more): a second answer, or one after a cancel, changes nothing.
    */
   answer(runId: string, text: string, now: Date): Promise<Run | null>;
+
+  /**
+   * Resumes a Run stopped at the usage limit (Issue #105), in one transaction: if it is still
+   * `failed` with `usage_limit`, a session reference, a Working copy and no cancel request,
+   * `text` is stored as the operator's answer and the Run goes back to `queued` (failure and
+   * finish time cleared), to be resumed like an answered Run by the worker that started it.
+   * `null` if the condition failed.
+   */
+  resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<Run | null>;
 
   /** Resumable Runs no worker claimed yet, with the worker that started each (Issue #103). */
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;

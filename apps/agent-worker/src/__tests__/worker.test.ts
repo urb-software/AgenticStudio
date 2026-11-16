@@ -9,7 +9,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DeliveryFailedError, type DeliveryPort } from '../delivery.js';
 import { FakeRunner, fakeSessionRef } from '../fake-runner.js';
-import type { ResumeRunStepInput, Runner, RunStep, StartRunStepInput } from '../runner.js';
+import {
+  type ResumeRunStepInput,
+  type Runner,
+  type RunStep,
+  type StartRunStepInput,
+  UsageLimitError,
+} from '../runner.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import { StudioApiError } from '../studio-api.js';
 import { AgentWorker, SHUTDOWN_FAILURE, type WorkerApi } from '../worker.js';
@@ -749,6 +755,41 @@ describe('AgentWorker', () => {
 
     expect(api.reports()[1]?.[2]).toMatchObject({ state: 'failed', failure: { code: 'unknown' } });
     expect(JSON.stringify(api.reports()[1])).not.toContain('crashed');
+  });
+
+  it('reports a usage limit as usage_limit, with the session to resume later (Issue #105)', async () => {
+    const limited: Runner = {
+      async *start(): RunStep {
+        yield { type: 'notice', text: 'Usage limit reached.' };
+        throw new UsageLimitError(
+          'The Claude Code usage limit was reached; it resets at 2026-11-16T17:00:00.000Z.',
+          'session-42',
+        );
+      },
+      resume: () => {
+        throw new Error('not used');
+      },
+    };
+    const run = payload('x');
+    const api = new RecordingApi([run]);
+    startWorker(api, limited);
+
+    await until(() => api.reports().length === 2);
+
+    expect(api.reports()[1]).toEqual([
+      'state',
+      run.runId,
+      {
+        state: 'failed',
+        failure: {
+          code: 'usage_limit',
+          detail: 'The Claude Code usage limit was reached; it resets at 2026-11-16T17:00:00.000Z.',
+        },
+        workingCopy: REPORT,
+        sessionRef: 'session-42',
+      },
+    ]);
+    expect(api.events().map((event) => event.kind)).toContain('notice');
   });
 
   it('refuses an invalid structured result as agent_failed', async () => {

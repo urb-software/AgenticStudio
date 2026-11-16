@@ -36,6 +36,7 @@ import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunLog } from '../run-log/run-log';
 import { PullRequestLink, RunDelivery } from './run-delivery';
+import { ResumeRun } from './run-resume';
 
 /** The request the page makes (generated `getRun`), shown verbatim when it fails. */
 const RUN_REQUEST = 'GET /api/runs/{runId}';
@@ -291,6 +292,7 @@ export function RunDetail({ runId }: { runId: string }) {
       ) : null}
       {run.state === 'queued' ? <QueuedReason run={run} /> : null}
       {run.failure ? <Failure failure={run.failure} /> : null}
+      {run.resumable ? <ResumeRun run={run} /> : null}
       <Stopped run={run} />
       <RunDelivery run={run} />
 

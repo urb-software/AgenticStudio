@@ -192,6 +192,7 @@ export const zRunOutput = z.object({
         number: z.int().gt(0).lte(9007199254740991)
     }).optional(),
     deliveryRetryRequested: z.literal(true).optional(),
+    resumable: z.literal(true).optional(),
     failingChecks: z.array(z.string()).optional(),
     question: zRunQuestionOutput.optional(),
     messages: z.array(zRunMessageOutput).optional()
@@ -396,6 +397,12 @@ export const zAnswerRunPath = z.object({
 });
 
 export const zAnswerRunResponse = zRunOutput;
+
+export const zResumeRunPath = z.object({
+    runId: z.string()
+});
+
+export const zResumeRunResponse = zRunOutput;
 
 export const zListRunEventsPath = z.object({
     runId: z.string()

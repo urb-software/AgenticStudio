@@ -109,6 +109,11 @@ export const runResponseSchema = z
     pullRequest: z.object({ url: z.url(), number: z.int().positive() }).optional(),
     /** Present (true) while a requested delivery retry is pending or in progress. */
     deliveryRetryRequested: z.literal(true).optional(),
+    /**
+     * Present (true) when the Run stopped at the subscription's usage limit and the operator can
+     * resume it (`POST /api/runs/:runId/resume`, Issue #105).
+     */
+    resumable: z.literal(true).optional(),
     /** The checks the agent reported failed in the latest Run step, when there are any. */
     failingChecks: z.array(z.string()).optional(),
     /** Present exactly while the Run waits for the operator's answer to it (Issue #103). */
@@ -155,6 +160,7 @@ export function toRunResponse(run: {
   pullRequest: { url: string; number: number } | null;
   deliveryRequested: boolean;
   failingChecks: string[];
+  sessionRef: string | null;
   messages: (
     | {
         kind: 'question';
@@ -199,6 +205,14 @@ export function toRunResponse(run: {
       ? { pullRequest: { url: run.pullRequest.url, number: run.pullRequest.number } }
       : {}),
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
+    // The domain's canResumeAfterUsageLimit, on the plain shape (Issue #105).
+    ...(run.state === 'failed' &&
+    run.failure?.code === 'usage_limit' &&
+    run.sessionRef !== null &&
+    run.workingCopy !== null &&
+    run.cancelRequestedAt === null
+      ? { resumable: true as const }
+      : {}),
     ...(run.failingChecks.length > 0 ? { failingChecks: [...run.failingChecks] } : {}),
     ...(open
       ? {

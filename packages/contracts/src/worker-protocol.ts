@@ -457,6 +457,11 @@ export const reportRunStateRequestSchema = z
     failure: runFailureSchema.optional(),
     delivery: runDeliverySchema.optional(),
     workingCopy: workingCopyReportSchema.optional(),
+    /**
+     * With `failed` / `usage_limit` only (Issue #105): the agent session the step ran in, so the
+     * operator can resume the Run once the limit resets.
+     */
+    sessionRef: sessionRefSchema.optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
@@ -484,6 +489,10 @@ export const reportRunStateRequestSchema = z
         'cancel arrived during the delivery (review of #121).',
     },
   )
+  .refine((report) => report.sessionRef === undefined || report.failure?.code === 'usage_limit', {
+    path: ['sessionRef'],
+    message: 'A session reference comes only with the failure usage_limit (Issue #105).',
+  })
   .refine(
     (report) =>
       report.workingCopy === undefined ||
@@ -516,10 +525,12 @@ export type ReportRunStepRequest = z.infer<typeof reportRunStepRequestSchema>;
 
 /**
  * One event a runner streams while a Run step executes (Issue #99): an agent message, a tool
- * call with its command, or a tool result (output). The worker forwards each as a Run event.
+ * call with its command, or a tool result (output). Issue #105: or a `notice`, what the runner
+ * says about the step itself (a denied tool call, a skipped instruction import). The worker
+ * forwards each as a Run event.
  */
 export const runnerEventSchema = z.strictObject({
-  type: z.enum(['message', 'command', 'output']),
+  type: z.enum(['message', 'command', 'output', 'notice']),
   text: z.string().max(20_000),
 });
 export type RunnerEvent = z.infer<typeof runnerEventSchema>;
@@ -633,10 +644,26 @@ export type WorkerRunnerMode = (typeof WORKER_RUNNER_MODES)[number];
  * own configuration enables, sent when it starts and with every poll. It is a report for
  * display and for refusing hopeless starts; the worker's own check stays authoritative.
  */
+/** Longest reason a worker gives for an unavailable provider (Issue #105). */
+export const PROVIDER_REASON_MAX_LENGTH = 500;
+
+const providerReasonSchema = z.string().min(1).max(PROVIDER_REASON_MAX_LENGTH);
+
 export const workerStatusRequestSchema = z.strictObject({
   workerId: workerIdSchema,
   runner: z.enum(WORKER_RUNNER_MODES),
   providers: providerSwitchesSchema,
+  /**
+   * Issue #105: why a provider whose switch is on cannot run on this worker (e.g. its CLI is
+   * missing or of an unsupported version). The switches keep their meaning; a reason makes the
+   * provider unavailable on top of them. Text for the operator, never a path or a credential.
+   */
+  providerReasons: z
+    .strictObject({
+      claude_code: providerReasonSchema.optional(),
+      codex: providerReasonSchema.optional(),
+    } satisfies Record<Provider, z.ZodOptional<z.ZodString>>)
+    .optional(),
 });
 export type WorkerStatusRequest = z.infer<typeof workerStatusRequestSchema>;
 

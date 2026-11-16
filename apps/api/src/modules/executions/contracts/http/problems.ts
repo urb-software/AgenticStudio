@@ -30,6 +30,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
   /** 409: the Run is not waiting for the operator's answer (Issue #103). */
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
+  /** 409: the Run did not stop at the usage limit with a session to resume (Issue #105). */
+  runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
 } as const;
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
@@ -38,6 +40,15 @@ export function projectNotFound(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.projectNotFound,
     title: 'Project not found',
     detail: 'No project has this id.',
+  });
+}
+
+/** 409: only a Run stopped at the usage limit, with an agent session, can be resumed (#105). */
+export function runNotResumable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.runNotResumable,
+    title: 'Run not resumable',
+    detail: 'Only a run stopped at the usage limit, with an agent session, can be resumed.',
   });
 }
 

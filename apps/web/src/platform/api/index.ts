@@ -198,6 +198,11 @@ export const api = {
   /** Repeats only the delivery of a Run whose delivery failed (202: the Run, retry requested). */
   retryRunDelivery: (runId: string): Promise<RunOutput> =>
     unwrap(sdk.retryRunDelivery({ path: { runId } })),
+  /**
+   * Resumes a Run stopped at the usage limit (Issue #105; 202: the Run, queued to resume its
+   * agent session with "Continue where you stopped.").
+   */
+  resumeRun: (runId: string): Promise<RunOutput> => unwrap(sdk.resumeRun({ path: { runId } })),
   /** Each provider and whether a Run can be started with it now, with the reason when not. */
   listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
   /**

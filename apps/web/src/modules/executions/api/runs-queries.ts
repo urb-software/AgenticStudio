@@ -147,6 +147,22 @@ export function useRetryDelivery(runId: string) {
 }
 
 /**
+ * "Resume run" (Issue #105): resumes a Run stopped at the subscription's usage limit. The 202
+ * answer (the Run, queued) replaces the cached Run, so the page follows it; every Run list is
+ * read again.
+ */
+export function useResumeRun(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.resumeRun(runId),
+    onSuccess: async (run: RunOutput) => {
+      queryClient.setQueryData(runKey(run.id), run);
+      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
+    },
+  });
+}
+
+/**
  * Starts a Run. The 201 answer seeds the Run's own query (its page shows it at once), and
  * every Run list of this module is read again.
  */

@@ -17,8 +17,11 @@ export const PROVIDER_UNAVAILABLE_REASONS = {
   switchedOff: 'Switched off on the agent worker',
   noWorker: 'No agent worker is connected',
 } as const;
-export type ProviderUnavailableReason =
-  (typeof PROVIDER_UNAVAILABLE_REASONS)[keyof typeof PROVIDER_UNAVAILABLE_REASONS];
+/**
+ * Studio's own reasons, or the reason the worker reported for a switched-on provider it cannot
+ * run (Issue #105: e.g. an unsupported CLI version).
+ */
+export type ProviderUnavailableReason = string;
 
 export interface ProviderAvailability {
   id: Provider;
@@ -30,7 +33,8 @@ export interface ProviderAvailability {
 
 /**
  * Which providers can take a Run, from the latest worker status. A status older than the
- * worker lease (`STUDIO_WORKER_LEASE_SECONDS`) counts as no worker connected.
+ * worker lease (`STUDIO_WORKER_LEASE_SECONDS`) counts as no worker connected. A switched-on
+ * provider with a reason from the worker (Issue #105) is unavailable with that reason.
  */
 export function providerAvailability(
   latest: RecordedWorkerStatus | undefined,
@@ -46,6 +50,8 @@ export function providerAvailability(
     if (latest.providers[id] !== true) {
       return { id, name, available: false, reason: PROVIDER_UNAVAILABLE_REASONS.switchedOff };
     }
+    const workerReason = latest.providerReasons?.[id];
+    if (workerReason !== undefined) return { id, name, available: false, reason: workerReason };
     return { id, name, available: true };
   });
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   ACTIVE_RUN_STATES,
+  canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
   isFinal,
   MAX_ACTIVE_RUNS,
@@ -160,6 +161,9 @@ export class InMemoryRunRepository implements RunRepository {
         ? deliveryFields(change.delivery)
         : {}),
       ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
+      ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
+        ? { sessionRef: change.sessionRef }
+        : {}),
     });
     return Promise.resolve(this.view(run));
   }
@@ -351,6 +355,14 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(this.view(run));
   }
 
+  resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<Run | null> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || !canResumeAfterUsageLimit(run)) return Promise.resolve(null);
+    run.messages.push({ kind: 'answer', text, at: now });
+    Object.assign(run, { state: 'queued', failure: null, finishedAt: null });
+    return Promise.resolve(this.view(run));
+  }
+
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
     return Promise.resolve(
       this.runs
@@ -428,7 +440,7 @@ export class InMemoryRunRepository implements RunRepository {
   ): Promise<{ runId: string; secretRef: string }[]> {
     const retryable = (run: Run) =>
       run.state === 'failed' &&
-      run.failure?.code === 'delivery_failed' &&
+      (run.failure?.code === 'delivery_failed' || run.failure?.code === 'usage_limit') &&
       (run.deliveryRequested ||
         (run.finishedAt !== null && run.finishedAt >= retryableFinishedBefore));
     return Promise.resolve(

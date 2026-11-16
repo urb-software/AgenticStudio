@@ -26,6 +26,7 @@ export class ReportRunStateEndpoint {
         failure: body.failure ?? null,
         workingCopy: body.workingCopy ?? null,
         delivery: body.delivery ?? null,
+        sessionRef: body.sessionRef ?? null,
       });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

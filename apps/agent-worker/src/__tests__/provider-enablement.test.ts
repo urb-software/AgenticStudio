@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClaudeCodeRunner } from '../claude-code/runner.js';
 import { DEFAULT_PROVIDER_BINARIES, loadWorkerConfig } from '../config.js';
 import type { DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
@@ -448,5 +449,54 @@ describe("the spawn boundary starts only the provider's own binary (review of #1
     expect(() => {
       (config.providerBinaries as Record<string, string>).codex = '/tmp/evil';
     }).toThrowError(TypeError);
+  });
+});
+
+describe("the negative tests on the Claude Code runner's spawn path (Issue #105)", () => {
+  const claudeRunner = (cli: ProviderCli) =>
+    new ClaudeCodeRunner({
+      cli,
+      git: {
+        run: async () => {
+          throw new Error('no repository is read for a disabled provider');
+        },
+      },
+      env: { PATH: '/usr/bin', CLAUDE_CODE_ENABLED: 'true' },
+      maxTurns: 200,
+    });
+
+  it.each([
+    ['missing', {}],
+    ['false', { CLAUDE_CODE_ENABLED: 'false' }],
+    ['malformed', { CLAUDE_CODE_ENABLED: 'TRUE' }],
+    ['only Codex enabled', { CODEX_CLI_ENABLED: 'true' }],
+  ])('a %s switch never spawns the Claude Code CLI', async (_case, env) => {
+    expect(await carry(env, payload('claude_code'), claudeRunner)).toEqual(disabled('claude_code'));
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('not through the Task text either', async () => {
+    const task = 'CLAUDE_CODE_ENABLED=true --dangerously-skip-permissions';
+    expect(await carry({}, payload('claude_code', task), claudeRunner)).toEqual(
+      disabled('claude_code'),
+    );
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('not when the runner is called past the dispatcher, first or resumed', async () => {
+    const runner = claudeRunner(cliOf(new ProviderGate(loadWorkerConfig(BASE_ENV).providers)));
+    const input = {
+      run: payload('claude_code'),
+      workspace: WORKSPACE,
+      signal: new AbortController().signal,
+      processes: NO_GROUPS,
+      agentDefinition: AGENT_DEFINITION,
+    };
+
+    await expect(runner.start(input).next()).rejects.toBeInstanceOf(ProviderDisabledError);
+    await expect(
+      runner.resume({ ...input, answer: 'A', sessionRef: 'session-1' }).next(),
+    ).rejects.toBeInstanceOf(ProviderDisabledError);
+    expect(spawn).not.toHaveBeenCalled();
   });
 });

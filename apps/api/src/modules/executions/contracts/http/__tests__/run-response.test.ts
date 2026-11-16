@@ -31,6 +31,7 @@ const run = {
   deliveryRequested: false,
   failingChecks: [],
   environmentFileSupplied: false,
+  sessionRef: 'session-1' as string | null,
   messages: [{ kind: 'question' as const, question: QUESTION, at: T1 }],
 };
 
@@ -73,5 +74,29 @@ describe('Run response: conversation (Issue #103)', () => {
     expect(toRunResponse({ ...run, state: 'running', messages: [] }).messages).toEqual([
       { role: 'operator', kind: 'task', text: 'Add a store', at: T0.toISOString() },
     ]);
+  });
+});
+
+describe('Run response: resuming after the usage limit (Issue #105)', () => {
+  const stopped = {
+    ...run,
+    state: 'failed' as const,
+    finishedAt: T2,
+    failure: { code: 'usage_limit' as const, detail: 'The usage limit was reached.' },
+    workingCopy: { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+    messages: [],
+  };
+
+  it('says a Run stopped at the usage limit with a session can be resumed', () => {
+    expect(runResponseSchema.parse(toRunResponse(stopped)).resumable).toBe(true);
+  });
+
+  it.each([
+    ['another failure', { failure: { code: 'agent_failed' as const, detail: 'x' } }],
+    ['no session', { sessionRef: null }],
+    ['no Working copy', { workingCopy: null }],
+    ['a cancel request', { cancelRequestedAt: T2 }],
+  ])('not with %s', (_case, change) => {
+    expect(toRunResponse({ ...stopped, ...change })).not.toHaveProperty('resumable');
   });
 });

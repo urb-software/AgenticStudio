@@ -1,4 +1,10 @@
-import { QUESTION_OPTIONS_MAX, QUESTION_TEXT_MAX_LENGTH } from '@agentic-studio/contracts';
+import {
+  QUESTION_OPTIONS_MAX,
+  QUESTION_TEXT_MAX_LENGTH,
+  runCheckSchema,
+  runQuestionSchema,
+} from '@agentic-studio/contracts';
+import { z } from 'zod';
 
 /**
  * The built-in agent definition (Issue #103): the instructions every real runner gives its agent
@@ -50,3 +56,22 @@ End every step with exactly one JSON object:
 Everything you write is shown to the operator as plain text; never rely on markup.
 `,
 };
+
+/**
+ * The structured result the agent ends a step with, as the agent writes it (Issue #105): the
+ * worker protocol's Run step result without the session reference, which the runner takes from
+ * the CLI's stream. A real runner gives its JSON Schema ({@link AGENT_RESULT_JSON_SCHEMA}) to its
+ * CLI (Claude Code: `--json-schema`); the worker still validates the result against the protocol.
+ */
+export const agentResultSchema = z.strictObject({
+  outcome: z.enum(['done', 'needs_input']),
+  summary: z.string().max(20_000),
+  question: runQuestionSchema.optional(),
+  pullRequest: z
+    .strictObject({ title: z.string().min(1).max(256), body: z.string().max(65_536) })
+    .optional(),
+  checks: z.array(runCheckSchema).max(100).optional(),
+});
+
+/** {@link agentResultSchema} as JSON Schema text, for the CLI's schema option. */
+export const AGENT_RESULT_JSON_SCHEMA = JSON.stringify(z.toJSONSchema(agentResultSchema));

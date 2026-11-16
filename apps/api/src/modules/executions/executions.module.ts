@@ -38,6 +38,8 @@ import { ReportWorkerStatusEndpoint } from './features/report-worker-status/endp
 import { ReportWorkerStatusHandler } from './features/report-worker-status/handler.js';
 import { RetryDeliveryEndpoint } from './features/retry-delivery/endpoint.js';
 import { RetryDeliveryHandler } from './features/retry-delivery/handler.js';
+import { ResumeRunEndpoint } from './features/resume-run/endpoint.js';
+import { ResumeRunHandler } from './features/resume-run/handler.js';
 import { StartRunEndpoint } from './features/start-run/endpoint.js';
 import { StartRunHandler } from './features/start-run/handler.js';
 import { StreamRunEventsEndpoint } from './features/stream-run-events/endpoint.js';
@@ -115,6 +117,7 @@ export class ExecutionsModule {
         CancelRunEndpoint,
         RetryDeliveryEndpoint,
         AnswerRunEndpoint,
+        ResumeRunEndpoint,
         ClaimRunEndpoint,
         ReportRunStateEndpoint,
         ReportRunStepEndpoint,
@@ -165,6 +168,7 @@ export class ExecutionsModule {
         CancelLongWaitingRunsHandler,
         RetryDeliveryHandler,
         AnswerRunHandler,
+        ResumeRunHandler,
         ClaimRunHandler,
         ReportRunStateHandler,
         ReportRunStepHandler,

@@ -16,6 +16,7 @@ type Route =
   | 'runs'
   | 'run'
   | 'retryDelivery'
+  | 'resume'
   | 'providers'
   | 'events'
   | 'steps'
@@ -34,6 +35,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs$/, () => 'runs'],
   [/^\/api\/runs\/([^/]+)$/, () => 'run'],
   [/^\/api\/runs\/([^/]+)\/retry-delivery$/, () => 'retryDelivery'],
+  [/^\/api\/runs\/([^/]+)\/resume$/, () => 'resume'],
   [/^\/api\/providers()$/, () => 'providers'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
@@ -113,6 +115,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     runs: [],
     run: [],
     retryDelivery: [],
+    resume: [],
     providers: [],
     cancel: [],
     events: [],
@@ -234,6 +237,23 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         const index = runs.findIndex((candidate) => candidate.id === id);
         if (index === -1) return json(404, problem(404, 'Run not found'));
         runs[index] = { ...runs[index]!, deliveryRetryRequested: true };
+        return json(202, runs[index]);
+      }
+      case 'resume': {
+        // Issue #105: back to the queue, "Continue where you stopped." as the operator's answer.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        if (index === -1) return json(404, problem(404, 'Run not found'));
+        const { failure, finishedAt, resumable, ...rest } = runs[index]!;
+        void failure;
+        void finishedAt;
+        void resumable;
+        const answer = {
+          role: 'operator' as const,
+          kind: 'answer' as const,
+          text: 'Continue where you stopped.',
+          at: new Date().toISOString(),
+        };
+        runs[index] = { ...rest, state: 'queued', messages: [...(rest.messages ?? []), answer] };
         return json(202, runs[index]);
       }
       case 'events': {
