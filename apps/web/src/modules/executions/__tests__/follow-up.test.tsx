@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ExecutionsOverview, RunDetail } from '..';
 import type { RunOutput } from '../../../platform/api';
+import { formatExactTime } from '@/shared/lib/relative-time';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
 // Issue #141 on the Run page seam: sending a Follow-up to a finished Run, and how the page shows
@@ -146,7 +147,11 @@ describe('Run page: Follow-up (Issue #141)', () => {
   });
 
   it.each([
-    ['working_copy_removed', 'The working copy was removed on the agent worker.', true],
+    [
+      'working_copy_removed',
+      'The working copy was removed on the agent worker, so the run can no longer be continued.',
+      true,
+    ],
     ['no_session', 'The run has no agent session to continue.', true],
     ['step_total_reached', 'The run has used all 50 run steps it may take in total.', true],
     ['provider_unavailable', "The run's provider is unavailable on the agent worker.", false],
@@ -164,6 +169,45 @@ describe('Run page: Follow-up (Issue #141)', () => {
     expect(screen.queryByLabelText('Follow-up')).toBeNull();
     expect(screen.getByRole('button', { name: 'Run again' })).toBeTruthy();
     await expect(container).toHaveNoAxeViolations();
+  });
+
+  // Issue #143: until when the Run stays open to Follow-ups.
+  it('says until when the Run is open to Follow-ups', async () => {
+    const openUntil = '2026-12-14T09:30:00.000Z';
+    const run = delivered({ followUp: { allowed: true, openUntil } });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    const section = screen.getByRole('region', { name: 'Send a Follow-up' });
+    expect(section.textContent).toContain(
+      `Open to Follow-ups until ${formatExactTime(new Date(openUntil))}.`,
+    );
+    expect(section.querySelector('time')?.getAttribute('datetime')).toBe(openUntil);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('also says it while the Run only waits for its worker, and never once it is not open', async () => {
+    const openUntil = '2026-12-14T09:30:00.000Z';
+    const waiting = delivered({
+      followUp: { allowed: false, reason: 'worker_unavailable', openUntil },
+    });
+    fakeRunsApi([waiting]);
+    renderRun(waiting.id);
+    await heading();
+    expect(screen.getByRole('region', { name: 'Follow-up not possible' }).textContent).toContain(
+      'Open to Follow-ups until',
+    );
+    cleanup();
+
+    const removed = delivered({ followUp: { allowed: false, reason: 'working_copy_removed' } });
+    fakeRunsApi([removed]);
+    renderRun(removed.id);
+    await heading();
+    const section = screen.getByRole('region', { name: 'Follow-up not possible' });
+    expect(section.textContent).not.toContain('Open to Follow-ups until');
+    expect(section.textContent).toContain('can no longer be continued');
+    expect(section.textContent).toContain('conversation, log, changes and pull request link stay');
   });
 
   it('offers no Follow-up while the page does not know whether it is possible', async () => {

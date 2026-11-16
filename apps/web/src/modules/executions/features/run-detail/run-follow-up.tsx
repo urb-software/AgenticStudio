@@ -4,6 +4,7 @@ import { MessageSquarePlusIcon, SendIcon } from 'lucide-react';
 import { type FormEvent, useEffect, useId, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { TextField } from '@/shared/components/text-field';
+import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
 import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useFollowUpRun } from '../../api/runs-queries';
@@ -35,7 +36,10 @@ function refusalText(run: RunOutput, reason: Refusal): { text: string; runAgain:
         runAgain: true,
       };
     case 'working_copy_removed':
-      return { text: 'The working copy was removed on the agent worker.', runAgain: true };
+      return {
+        text: 'The working copy was removed on the agent worker, so the run can no longer be continued. Its conversation, log, changes and pull request link stay here.',
+        runAgain: true,
+      };
     case 'no_session':
       return { text: 'The run has no agent session to continue.', runAgain: true };
     case 'step_total_reached':
@@ -61,6 +65,21 @@ function refusalText(run: RunOutput, reason: Refusal): { text: string; runAgain:
         runAgain: false,
       };
   }
+}
+
+/**
+ * "Open to Follow-ups until <date>" (Issue #143): when the Run's working copy and agent session
+ * are kept until, moved by activity on the Run. Nothing when the page has no date.
+ */
+function OpenUntil({ openUntil }: { openUntil: string | undefined }) {
+  if (openUntil === undefined) return null;
+  return (
+    <p className="m-0 text-small text-text-muted">
+      Open to Follow-ups until{' '}
+      <time dateTime={openUntil}>{formatExactTime(new Date(openUntil))}</time>. Activity on the run
+      moves the date.
+    </p>
+  );
 }
 
 /** Server field errors (422 `errors[]`) for the text. */
@@ -99,13 +118,22 @@ export function RunFollowUp({
           {text}
           {runAgain ? ' Use “Run again” to start a new run with the same Task.' : null}
         </p>
+        <OpenUntil openUntil={followUp.openUntil} />
       </section>
     );
   }
-  return <FollowUpForm run={run} titleId={titleId} />;
+  return <FollowUpForm run={run} titleId={titleId} openUntil={followUp.openUntil} />;
 }
 
-function FollowUpForm({ run, titleId }: { run: RunOutput; titleId: string }) {
+function FollowUpForm({
+  run,
+  titleId,
+  openUntil,
+}: {
+  run: RunOutput;
+  titleId: string;
+  openUntil: string | undefined;
+}) {
   const [text, setText] = useState('');
   const [localError, setLocalError] = useState<string | undefined>();
   const send = useFollowUpRun(run.id);
@@ -151,6 +179,7 @@ function FollowUpForm({ run, titleId }: { run: RunOutput; titleId: string }) {
         The same agent continues its session in the same working copy, with what it already knows,
         and updates the same pull request.
       </p>
+      <OpenUntil openUntil={openUntil} />
       {refused ? (
         <Banner tone="danger" title={refused.problem?.title ?? 'Could not send the Follow-up.'}>
           {refused.problem?.detail ?? 'Try again.'}
