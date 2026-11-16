@@ -316,6 +316,11 @@ model RunMessage {
   endFailureCode String?  @map("end_failure_code") @db.VarChar(32)
   /// With part_end only: that part's delivery (none | delivered | failed), when it had one.
   endDelivery    String?  @map("end_delivery") @db.VarChar(16)
+  /// With follow_up only (Issue #147): `bring_up_to_date`, a request to merge the integration
+  /// branch into the Run branch; its text is then the operator's optional note (may be empty).
+  source         String?  @db.VarChar(24)
+  /// With a source only: the integration branch commit the Run branch has merged, once reported.
+  mergedCommit   String?  @map("merged_commit") @db.VarChar(64)
 
   @@id([runId, seq], map: "run_messages_pkey")
   @@map("run_messages")

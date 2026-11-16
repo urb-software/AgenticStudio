@@ -187,7 +187,7 @@ describe('run payload (claim response)', () => {
 
     it('carries the Follow-up text, its number, the steps before it and the recorded pull request', () => {
       expect(runPayloadSchema.parse(followUp)).toEqual(followUp);
-      for (const reason of RESUME_REASONS) {
+      for (const reason of RESUME_REASONS.filter((name) => name !== 'bring_up_to_date')) {
         expect(runPayloadSchema.safeParse({ ...followUp, resumeReason: reason }).success).toBe(
           true,
         );
@@ -1293,5 +1293,92 @@ describe('lookups', () => {
         retryAfterSeconds: 0,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('bringing a Run branch up to date (Issue #147)', () => {
+  const claim = {
+    runId: '0b8e5c2d-3f4a-4b6c-8d9e-1a2b3c4d5e6f',
+    projectId: '7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f',
+    provider: 'claude_code',
+    task: 'Add the thing',
+    startCommit: 'a'.repeat(40),
+    repository: { remoteUrl: 'https://github.com/o/r.git' },
+    integrationBranch: 'main',
+    kind: 'resume',
+    studioPaths: [],
+    runBranch: 'agent/add-the-thing-r0b8e5c2d',
+    sessionRef: 'session-1',
+    answer: 'Keep our version of the config.',
+    resumeReason: 'bring_up_to_date',
+    followUpNumber: 1,
+    bringUpToDate: true,
+    nextSeq: 12,
+    limits: { stepMinutes: 30, maxSteps: 10 },
+    completedSteps: 2,
+  };
+
+  it('is a resume claim inside a Follow-up that carries the flag', () => {
+    expect(runPayloadSchema.parse(claim)).toEqual(claim);
+    const { bringUpToDate: _flag, ...withoutFlag } = claim;
+    void _flag;
+    expect(runPayloadSchema.safeParse(withoutFlag).success).toBe(false);
+    const { followUpNumber: _number, ...withoutNumber } = claim;
+    void _number;
+    expect(runPayloadSchema.safeParse(withoutNumber).success).toBe(false);
+    // The flag also marks a later resume inside the part (an answer to a question).
+    expect(runPayloadSchema.safeParse({ ...claim, resumeReason: 'answer' }).success).toBe(true);
+    expect(runPayloadSchema.safeParse({ ...claim, bringUpToDate: false }).success).toBe(false);
+    expect(runPayloadSchema.safeParse({ ...claim, kind: 'start' }).success).toBe(false);
+  });
+
+  it('takes the note as long as a Follow-up', () => {
+    expect(
+      runPayloadSchema.safeParse({ ...claim, answer: 'a'.repeat(FOLLOW_UP_MAX_LENGTH) }).success,
+    ).toBe(true);
+    expect(
+      runPayloadSchema.safeParse({ ...claim, answer: 'a'.repeat(FOLLOW_UP_MAX_LENGTH + 1) })
+        .success,
+    ).toBe(false);
+  });
+
+  describe('the state report', () => {
+    const valid = (body: object) =>
+      reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+    const merged = 'b'.repeat(40);
+    const delivery = { outcome: 'none' };
+
+    it('names the merged commit with running, succeeded or a failed delivery', () => {
+      expect(valid({ state: 'running', mergedCommit: merged })).toBe(true);
+      expect(valid({ state: 'succeeded', delivery, mergedCommit: merged })).toBe(true);
+      expect(
+        valid({
+          state: 'failed',
+          failure: { code: 'delivery_failed', detail: 'x' },
+          mergedCommit: merged,
+        }),
+      ).toBe(true);
+      expect(
+        valid({
+          state: 'failed',
+          failure: { code: 'agent_failed', detail: 'x' },
+          mergedCommit: merged,
+        }),
+      ).toBe(false);
+      expect(valid({ state: 'cancelled', mergedCommit: merged })).toBe(false);
+      expect(valid({ state: 'running', mergedCommit: 'abc' })).toBe(false);
+    });
+
+    it('reports a branch that was already up to date as succeeded without a delivery', () => {
+      expect(valid({ state: 'succeeded', alreadyUpToDate: true })).toBe(true);
+      expect(valid({ state: 'succeeded', alreadyUpToDate: true, delivery })).toBe(false);
+      expect(valid({ state: 'running', alreadyUpToDate: true })).toBe(false);
+      expect(valid({ state: 'succeeded', alreadyUpToDate: true, mergedCommit: merged })).toBe(
+        false,
+      );
+      expect(valid({ state: 'succeeded', alreadyUpToDate: false })).toBe(false);
+      // Without the flag a succeeded report still needs its delivery.
+      expect(valid({ state: 'succeeded' })).toBe(false);
+    });
   });
 });

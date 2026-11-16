@@ -167,12 +167,20 @@ export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
 
 /**
  * Why a `resume` claim continues the agent session (Issue #141): the operator's answer to a
- * question (`answer`), the resume after the subscription's usage limit (`usage_limit`), or a
- * Follow-up to a finished Run (`follow_up`). The worker and the built-in agent definition word
- * the step after it; the text travels the same way for all three (`answer`).
+ * question (`answer`), the resume after the subscription's usage limit (`usage_limit`), a
+ * Follow-up to a finished Run (`follow_up`), or (Issue #147) the operator's request to bring the
+ * Run branch up to date with the integration branch (`bring_up_to_date`): a Follow-up whose text
+ * is the operator's optional note. The worker and the built-in agent definition word the step
+ * after it; the text travels the same way for all four (`answer`).
  */
-export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up'] as const;
+export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up', 'bring_up_to_date'] as const;
 export type ResumeReason = (typeof RESUME_REASONS)[number];
+
+/**
+ * The text a bring-up-to-date claim carries when the operator gave no note (Issue #147); the worker
+ * words the instruction to the agent itself and leaves this text out of it.
+ */
+export const BRING_UP_TO_DATE_DEFAULT_TEXT = 'Bring the Run branch up to date.';
 
 /** Longest Follow-up text, in characters (Issue #141). */
 export const FOLLOW_UP_MAX_LENGTH = 10_000;
@@ -266,6 +274,13 @@ export const runPayloadSchema = z
      */
     followUpNumber: z.int().min(1).max(PG_INT_MAX).optional(),
     /**
+     * With `resume` only (Issue #147): the Run's current part is a request to bring the Run branch
+     * up to date (also when it resumes after a question or the usage limit inside it). A merge
+     * left open in the Working copy at the end of the step is then completed by the worker, or
+     * aborted when the part does not end well.
+     */
+    bringUpToDate: z.literal(true).optional(),
+    /**
      * Issue #141: how many Run steps the Run had taken when its current part began (the first
      * part: 0; a Follow-up: the steps before it). Each part gets `limits.maxSteps` Run steps, so
      * the worker refuses a step beyond `stepsBeforePart + limits.maxSteps`. Absent: 0.
@@ -327,14 +342,28 @@ export const runPayloadSchema = z
   .refine(
     (payload) =>
       (payload.followUpNumber === undefined || payload.kind === 'resume') &&
-      (payload.resumeReason !== 'follow_up' || payload.followUpNumber !== undefined) &&
+      ((payload.resumeReason !== 'follow_up' && payload.resumeReason !== 'bring_up_to_date') ||
+        payload.followUpNumber !== undefined) &&
       (payload.answer === undefined ||
         payload.answer.length <=
-          (payload.resumeReason === 'follow_up' ? FOLLOW_UP_MAX_LENGTH : ANSWER_MAX_LENGTH)),
+          (payload.resumeReason === 'follow_up' || payload.resumeReason === 'bring_up_to_date'
+            ? FOLLOW_UP_MAX_LENGTH
+            : ANSWER_MAX_LENGTH)),
     {
       path: ['followUpNumber'],
       message:
-        'A Follow-up number comes with a resume claim only, and always with the resume reason follow_up.',
+        'A Follow-up number comes with a resume claim only, and always with the resume reason follow_up or bring_up_to_date.',
+    },
+  )
+  .refine(
+    (payload) =>
+      (payload.bringUpToDate === undefined ||
+        (payload.kind === 'resume' && payload.followUpNumber !== undefined)) &&
+      (payload.resumeReason !== 'bring_up_to_date' || payload.bringUpToDate === true),
+    {
+      path: ['bringUpToDate'],
+      message:
+        'A bring-up-to-date flag comes with a resume claim inside a Follow-up, and always with the resume reason bring_up_to_date.',
     },
   )
   .refine((payload) => payload.pullRequestNumber === undefined || payload.kind !== 'start', {
@@ -607,6 +636,19 @@ export const reportRunStateRequestSchema = z
      * Studio shows it without waiting for a lookup.
      */
     pullRequestState: pullRequestStateSchema.optional(),
+    /**
+     * Issue #147, with a bring-up-to-date claim only: the commit of the integration branch the
+     * Run branch now has merged. Reported with `running` (a merge without conflicts), or with the
+     * end of the part (`succeeded`, or `failed` / `delivery_failed`) once a conflicted merge was
+     * completed; Studio shows it on the conversation entry.
+     */
+    mergedCommit: commitIdSchema.optional(),
+    /**
+     * Issue #147, with `succeeded` only: the Run branch already had everything the integration
+     * branch has, so nothing was changed, no agent was started and nothing was pushed. The Run
+     * goes back to the result it had before the request; no delivery comes with it.
+     */
+    alreadyUpToDate: z.literal(true).optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
@@ -624,9 +666,14 @@ export const reportRunStateRequestSchema = z
   )
   .refine(
     (report) =>
-      report.state === 'succeeded'
-        ? report.delivery !== undefined
-        : report.delivery === undefined || report.state === 'cancelled',
+      report.alreadyUpToDate === true
+        ? report.state === 'succeeded' &&
+          report.delivery === undefined &&
+          report.workingCopy === undefined &&
+          report.mergedCommit === undefined
+        : report.state === 'succeeded'
+          ? report.delivery !== undefined
+          : report.delivery === undefined || report.state === 'cancelled',
     {
       path: ['delivery'],
       message:
@@ -652,6 +699,18 @@ export const reportRunStateRequestSchema = z
       path: ['pushedCommit'],
       message:
         'A pushed commit on its own comes only with the failure delivery_failed (Issue #141).',
+    },
+  )
+  .refine(
+    (report) =>
+      report.mergedCommit === undefined ||
+      report.state === 'running' ||
+      report.state === 'succeeded' ||
+      report.failure?.code === 'delivery_failed',
+    {
+      path: ['mergedCommit'],
+      message:
+        'A merged commit comes with the state running or succeeded, or the failure delivery_failed (Issue #147).',
     },
   )
   .refine(
