@@ -1,0 +1,43 @@
+# Studio's reverse proxy (Issue #132; docs/engineering/deployment.md, "Reverse proxy and TLS").
+# The setup script installs it as /opt/agentic-studio/Caddyfile; the `proxy` service of
+# compose.server.app.yaml reads it. STUDIO_DOMAIN and STUDIO_TLS come from the root-only
+# /etc/agentic-studio/.env.
+#
+# - The only entry from outside: https://STUDIO_DOMAIN (ports 80 and 443; port 80 only redirects
+#   to https and answers ACME challenges). /api goes straight to the API, everything else to the
+#   web app, so the API always sees this proxy as the client's only hop.
+# - The agent worker's entry: plain HTTP on port 8080 of this proxy's fixed address inside
+#   Studio's network (not published on the host), /api only.
+# - X-Forwarded-For: Caddy trusts no incoming X-Forwarded-* header (no trusted proxy is set) and
+#   sets it to the address the connection came from; the API trusts it from this proxy only.
+# - No response buffering or compression: live Run logs (server-sent events) stream as they come.
+{
+	admin off
+	# With `tls internal`, never try to add Caddy's CA to a system trust store.
+	skip_install_trust
+	# TCP only (HTTP/1.1 and HTTP/2): only TCP ports are published.
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$STUDIO_DOMAIN} {
+	# An ACME account email (a public certificate) or `internal` (Caddy's own CA, for tests).
+	tls {$STUDIO_TLS}
+
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+http://:8080 {
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+	handle {
+		respond 404
+	}
+}

@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
+import { resolve } from 'node:path';
 
 // Same-origin /api/* proxy to the NestJS API, so the browser never needs CORS. The rules
 // (dev always; production only with STUDIO_WEB_API_PROXY=true + API_ORIGIN) are canonical
@@ -9,7 +10,10 @@ import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 const DEFAULT_DEV_API_ORIGIN = 'http://localhost:3001';
 const FLAG = 'STUDIO_WEB_API_PROXY';
 
-/** The environment (e.g. `process.env`); only API_ORIGIN and STUDIO_WEB_API_PROXY are read. */
+/**
+ * The environment (e.g. `process.env`); only API_ORIGIN, STUDIO_WEB_API_PROXY and
+ * STUDIO_WEB_STANDALONE are read.
+ */
 export type ApiProxyEnv = Readonly<Record<string, string | undefined>>;
 
 export interface ApiProxy {
@@ -67,11 +71,28 @@ export function resolveApiProxy(env: ApiProxyEnv, { devServer }: { devServer: bo
   return { origin: undefined };
 }
 
+/**
+ * The production image's build (apps/web/Dockerfile, Issue #132) sets STUDIO_WEB_STANDALONE=true
+ * for Next.js's self-contained server bundle, traced from the repository root (`next build` runs
+ * in apps/web). Unset, the build output is unchanged (`next start`, e2e:smoke).
+ */
+export function resolveOutput(
+  env: ApiProxyEnv,
+): Pick<NextConfig, 'output' | 'outputFileTracingRoot'> {
+  const value = env.STUDIO_WEB_STANDALONE;
+  if (value === undefined || value === '' || value === 'false') return {};
+  if (value !== 'true') {
+    throw new Error('STUDIO_WEB_STANDALONE must be "true" or "false" (or unset).');
+  }
+  return { output: 'standalone', outputFileTracingRoot: resolve(process.cwd(), '../..') };
+}
+
 export default function nextConfig(phase: string): NextConfig {
   const config: NextConfig = {
     // Agent instructions are owned by the repository AGENTS.md; stop `next dev`
     // from generating an untracked apps/web/AGENTS.md.
     agentRules: false,
+    ...resolveOutput(process.env),
   };
 
   const proxy = resolveApiProxy(process.env, { devServer: phase === PHASE_DEVELOPMENT_SERVER });

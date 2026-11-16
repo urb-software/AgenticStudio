@@ -1,50 +1,139 @@
-# Studio's web and API on the server (Issue #107), added on top of compose.server.yaml.
+# Studio's web and API on the server (Issues #107, #132), added on top of compose.server.yaml.
 #
-# GAP: Studio has no production container images yet (docs/engineering/deployment.md, "Known
-# gaps"). This file fixes how they are run once they exist: the image names come from
-# STUDIO_API_IMAGE and STUDIO_WEB_IMAGE, and the only host ports on the server are the API and
-# web ports, bound to 127.0.0.1 for a reverse proxy on the same host. The setup script installs
-# it root-only as /opt/agentic-studio/compose.app.yaml; agentic-studio-compose uses it only when
-# both image variables are set.
+# The images are built from apps/api/Dockerfile and apps/web/Dockerfile (docs/engineering/
+# deployment.md, "Production images"); their names come from STUDIO_API_IMAGE and
+# STUDIO_WEB_IMAGE. The setup script installs this file root-only as
+# /opt/agentic-studio/compose.app.yaml; agentic-studio-compose uses it only when both image
+# variables are set.
+#
+# The reverse proxy is the only service with host ports (80 and 443). The API and web publish
+# none: anything reaching a host-published port arrives from the network's gateway, which every
+# host process (the agent user included) shares, so the API trusts X-Forwarded-For from the
+# proxy's fixed address only and every client gets its own login rate-limit bucket by its real
+# address. The agent worker reaches the API through the proxy's worker port (8080, not
+# published), the only port its firewall rule allows on this network.
+#
+# Every Studio container runs as the fixed non-root uid STUDIO_CONTAINER_UID (10001, never the
+# agent user's uid; deploy/setup-server.sh owns the data directories for it), with a read-only
+# root filesystem, no capabilities beyond binding ports and no privilege escalation.
+x-hardening: &hardening
+  user: '${STUDIO_CONTAINER_UID:-10001}:${STUDIO_CONTAINER_UID:-10001}'
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  tmpfs: [/tmp]
+
 services:
+  # One-off: applies the committed database migrations (what `pnpm db:migrate:deploy` runs) and
+  # exits; the API starts only after it succeeded. Gets the database URL and nothing else.
+  migrate:
+    <<: *hardening
+    image: ${STUDIO_API_IMAGE:?set STUDIO_API_IMAGE in /etc/agentic-studio/.env}
+    restart: 'no'
+    working_dir: /app/packages/database
+    command: ['node', 'node_modules/prisma/build/index.js', 'migrate', 'deploy']
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in /etc/agentic-studio/.env}
+    networks:
+      - studio
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
+    <<: *hardening
     image: ${STUDIO_API_IMAGE:?set STUDIO_API_IMAGE in /etc/agentic-studio/.env}
     restart: unless-stopped
-    # A fixed non-root uid, never the agent user's (deploy/setup-server.sh owns the data
-    # directory for it).
-    user: '${STUDIO_CONTAINER_UID:-10001}:${STUDIO_CONTAINER_UID:-10001}'
     env_file:
       - path: ${STUDIO_ENV_FILE:-/etc/agentic-studio/.env}
         required: true
     environment:
-      # Inside the container the API listens on every interface; the host port below is
-      # bound to 127.0.0.1 only.
+      # Inside Studio's network only; no host port.
       API_HOST: 0.0.0.0
       API_PORT: '3001'
       STUDIO_DATA_DIR: /data
+      # Fixed here, never from the .env file: only the reverse proxy's X-Forwarded-For counts,
+      # never the network's gateway.
+      API_TRUSTED_PROXIES: ${STUDIO_PROXY_ADDRESS:-172.31.250.20}
+      STUDIO_ORIGIN: https://${STUDIO_DOMAIN:?set STUDIO_DOMAIN in /etc/agentic-studio/.env}
     volumes:
       - ${STUDIO_DATA_HOST_DIR:-/var/lib/agentic-studio/data}:/data
-    ports:
-      - '127.0.0.1:${API_PORT:-3001}:3001'
     networks:
-      - studio
+      studio:
+        ipv4_address: ${STUDIO_API_ADDRESS:-172.31.250.12}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
   web:
+    <<: *hardening
     image: ${STUDIO_WEB_IMAGE:?set STUDIO_WEB_IMAGE in /etc/agentic-studio/.env}
     restart: unless-stopped
-    user: '${STUDIO_CONTAINER_UID:-10001}:${STUDIO_CONTAINER_UID:-10001}'
-    # No env_file: the web app gets no Studio secret, only where the API is.
-    environment:
-      API_ORIGIN: http://api:3001
-      STUDIO_WEB_API_PROXY: 'true'
-    ports:
-      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    # No env_file and no environment: the web app gets no Studio secret. It serves the pages
+    # only; the reverse proxy sends /api to the API.
+    tmpfs: [/tmp, /app/apps/web/.next/cache]
     networks:
-      - studio
+      studio:
+        ipv4_address: ${STUDIO_WEB_ADDRESS:-172.31.250.13}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/login').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  proxy:
+    <<: *hardening
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    restart: unless-stopped
+    command: ['caddy', 'run', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile']
+    # Binding ports 80 and 443 as a non-root uid.
+    cap_add: [NET_BIND_SERVICE]
+    environment:
+      # The operator's domain (a placeholder until there is one) and the TLS setting: the ACME
+      # account email for a public certificate, or `internal` for Caddy's own CA (tests).
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN:?set STUDIO_DOMAIN in /etc/agentic-studio/.env}
+      STUDIO_TLS: ${STUDIO_TLS:?set STUDIO_TLS in /etc/agentic-studio/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account (root-only on the host, owned by the container uid).
+      - ${STUDIO_PROXY_HOST_DIR:-/var/lib/agentic-studio/proxy}:/data
+    tmpfs: [/tmp, /config]
+    # IPv4 only: on IPv6 Docker's userland proxy would relay every client from the gateway's
+    # address, mixing them with host processes in one login rate-limit bucket.
+    ports:
+      - '0.0.0.0:80:80'
+      - '0.0.0.0:443:443'
+    networks:
+      studio:
+        ipv4_address: ${STUDIO_PROXY_ADDRESS:-172.31.250.20}
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/api/health']
+      interval: 5s
+      timeout: 5s
+      retries: 30
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy

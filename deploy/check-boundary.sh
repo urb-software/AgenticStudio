@@ -11,7 +11,8 @@
 # token is read from the worker's own .env and sent only to the Studio API.
 #
 # Must be refused: reading Studio's configuration and data, the secret store's master key or a
-# deploy key; the system Docker socket; sudo without a password; Studio's PostgreSQL and Redis.
+# deploy key; the system Docker socket; sudo without a password; Studio's PostgreSQL and Redis, and
+# its API and web containers directly (only the reverse proxy's worker port is open to the agent).
 # Must work: rootless Docker (a container with resource limits, a Compose stack), the worker
 # routes with the worker token; that token reaches nothing else on the API. Also: not WSL with
 # interop or automount, cgroup v2 with limits on the agent user's slice.
@@ -25,9 +26,11 @@ STUDIO_COMPOSE_DIR="${STUDIO_COMPOSE_DIR:-/opt/agentic-studio}"
 SYSTEM_DOCKER_SOCKET="${SYSTEM_DOCKER_SOCKET:-/var/run/docker.sock}"
 SYSTEM_CONTAINERD_SOCKET="${SYSTEM_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}"
 SYSTEM_DOCKER_DATA="${SYSTEM_DOCKER_DATA:-/var/lib/docker}"
-# Studio's PostgreSQL and Redis (equal to compose.server.yaml and studio.env.example).
+# Studio's PostgreSQL, Redis, API and web (equal to the Compose files and studio.env.example).
 STUDIO_POSTGRES_ADDRESS="${STUDIO_POSTGRES_ADDRESS:-172.31.250.10}"
 STUDIO_REDIS_ADDRESS="${STUDIO_REDIS_ADDRESS:-172.31.250.11}"
+STUDIO_API_ADDRESS="${STUDIO_API_ADDRESS:-172.31.250.12}"
+STUDIO_WEB_ADDRESS="${STUDIO_WEB_ADDRESS:-172.31.250.13}"
 WORKER_ENV_FILE="${WORKER_ENV_FILE:-$HOME/.config/agentic-studio-worker/.env}"
 # A small public image for the rootless container checks.
 CHECK_IMAGE="${CHECK_IMAGE:-busybox:1.37}"
@@ -147,7 +150,7 @@ check_studio_files() {
   fi
 
   readable=()
-  for path in "$STUDIO_STATE_DIR" "$STUDIO_STATE_DIR/data" "$SYSTEM_DOCKER_DATA/volumes"; do
+  for path in "$STUDIO_STATE_DIR" "$STUDIO_STATE_DIR/data" "$STUDIO_STATE_DIR/proxy" "$SYSTEM_DOCKER_DATA/volumes"; do
     can_read "$path" && readable+=("$path")
   done
   if [ ! -e "$STUDIO_STATE_DIR" ]; then
@@ -155,7 +158,7 @@ check_studio_files() {
   elif [ "${#readable[@]}" -gt 0 ]; then
     fail studio-data-unreadable "readable: ${readable[*]}"
   else
-    pass studio-data-unreadable "$STUDIO_STATE_DIR and Docker volumes refused"
+    pass studio-data-unreadable "$STUDIO_STATE_DIR (data, proxy certificates) and Docker volumes refused"
   fi
 
   # The secret store's master key lives only in Studio's .env; deploy keys only in Studio's
@@ -217,7 +220,8 @@ check_sudo() {
 
 check_studio_network() {
   # Positive control: Studio must be up, or the refusals below prove nothing. Its health route
-  # (public, through the published API port) answers 200 only while Redis is reachable for it.
+  # (public, through the reverse proxy's worker port) answers 200 only while Redis is reachable
+  # for it.
   local api health
   api="$(worker_env_value STUDIO_API_URL || true)"
   api="${api%/}"
@@ -244,6 +248,16 @@ check_studio_network() {
     fail studio-redis-unreachable "connected to ${reached[*]}"
   else
     pass studio-redis-unreachable "127.0.0.1:6379 and $STUDIO_REDIS_ADDRESS:6379 refused"
+  fi
+  # The API and web only through the reverse proxy: no host port, and their containers refused.
+  reached=()
+  for target in "127.0.0.1:3001" "127.0.0.1:3000" "$STUDIO_API_ADDRESS:3001" "$STUDIO_WEB_ADDRESS:3000"; do
+    can_connect "${target%:*}" "${target##*:}" && reached+=("$target")
+  done
+  if [ "${#reached[@]}" -gt 0 ]; then
+    fail studio-app-direct-unreachable "connected to ${reached[*]}"
+  else
+    pass studio-app-direct-unreachable "127.0.0.1:3001/3000, $STUDIO_API_ADDRESS:3001 and $STUDIO_WEB_ADDRESS:3000 refused (only the proxy)"
   fi
 }
 

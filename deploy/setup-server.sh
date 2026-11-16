@@ -40,10 +40,12 @@ NODE_DIST_URL="${NODE_DIST_URL:-https://nodejs.org/dist}"
 # SHASUMS256.txt). Changing NODE_VERSION needs both values changed with it.
 NODE_SHA256_X64="${NODE_SHA256_X64:-6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6}"
 NODE_SHA256_ARM64="${NODE_SHA256_ARM64:-dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e}"
-# Studio's container network (equal to compose.server.yaml and studio.env.example). The agent
-# user may reach only the API's container port on it; everything else there is rejected.
+# Studio's container network and its reverse proxy's fixed address (equal to the Compose files
+# and studio.env.example). The agent user may reach only the proxy's worker port on it (the
+# worker's STUDIO_API_URL); the API, PostgreSQL, Redis and everything else there are rejected.
 STUDIO_NETWORK_SUBNET="${STUDIO_NETWORK_SUBNET:-172.31.250.0/24}"
-STUDIO_AGENT_ALLOWED_PORTS="${STUDIO_AGENT_ALLOWED_PORTS:-3001}"
+STUDIO_PROXY_ADDRESS="${STUDIO_PROXY_ADDRESS:-172.31.250.20}"
+STUDIO_PROXY_WORKER_PORT="${STUDIO_PROXY_WORKER_PORT:-8080}"
 # Limits for everything the agent user runs (its user slice, rootless Docker included).
 AGENT_MEMORY_MAX="${AGENT_MEMORY_MAX:-75%}"
 AGENT_TASKS_MAX="${AGENT_TASKS_MAX:-4096}"
@@ -104,14 +106,16 @@ logins     The agent user gets no cron (/etc/cron.deny), no at (/etc/at.deny) an
            (/etc/ssh/sshd_config.d/60-agentic-studio.conf, when sshd is installed); logind kills its
            session processes at logout (/etc/systemd/logind.conf.d/60-agentic-studio.conf).
 layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.env.example),
-           ${STUDIO_STATE_DIR} (0700, data/), ${STUDIO_COMPOSE_DIR} (0700, compose files 0600),
+           ${STUDIO_STATE_DIR} (0700; data/ and proxy/ owned by uid ${STUDIO_CONTAINER_UID}),
+           ${STUDIO_COMPOSE_DIR} (0700, compose files 0600, Caddyfile 0644),
            /usr/local/sbin/agentic-studio-compose; /usr/local/bin/agentic-studio-check-boundary.
            Agent side, written as the agent user: ~/.config/agentic-studio-worker/.env (0600, from
            apps/agent-worker/.env.example) and ~/.local/share/agentic-studio-worker (0700).
 worker     The agent worker's code from this checkout's HEAD into ${WORKER_CODE_DIR} (root-owned,
            world-readable, not writable by the agent user), installed and built there.
 firewall   /usr/local/sbin/agentic-studio-agent-firewall and agentic-studio-agent-firewall.service:
-           rejects the agent user's traffic to ${STUDIO_NETWORK_SUBNET} except TCP ${STUDIO_AGENT_ALLOWED_PORTS};
+           rejects the agent user's traffic to ${STUDIO_NETWORK_SUBNET} except the reverse proxy's worker
+           port (${STUDIO_PROXY_ADDRESS}:${STUDIO_PROXY_WORKER_PORT});
            a verify timer, and a drop-in binding user@<uid>.service to the firewall (fail closed).
 limits     /etc/systemd/system/user-<uid>.slice.d/50-agentic-studio.conf (MemoryMax=${AGENT_MEMORY_MAX},
            TasksMax=${AGENT_TASKS_MAX}, CPUWeight=${AGENT_CPU_WEIGHT}), cgroup delegation for user managers,
@@ -432,13 +436,16 @@ step_layout() {
   agent_exists || die "the agent user does not exist yet; run the user step first."
   ensure_root_dir "$STUDIO_CONFIG_DIR" 700
   ensure_root_dir "$STUDIO_STATE_DIR" 700
-  # The API container (uid STUDIO_CONTAINER_UID) writes Studio's data directory.
-  local data="$STUDIO_STATE_DIR/data" owner="$STUDIO_CONTAINER_UID:$STUDIO_CONTAINER_UID"
-  [ ! -L "$data" ] || die "$data is a symbolic link; refusing to use it."
-  if ! [ -d "$data" ] || [ "$(stat -c '%u:%g %a' "$data")" != "$owner 700" ]; then
-    install -d -o "$STUDIO_CONTAINER_UID" -g "$STUDIO_CONTAINER_UID" -m 0700 "$data"
-    changed "$data ($owner 700)"
-  fi
+  # The API container (uid STUDIO_CONTAINER_UID) writes Studio's data directory; the reverse
+  # proxy (the same uid) its certificates and ACME account.
+  local data owner="$STUDIO_CONTAINER_UID:$STUDIO_CONTAINER_UID"
+  for data in "$STUDIO_STATE_DIR/data" "$STUDIO_STATE_DIR/proxy"; do
+    [ ! -L "$data" ] || die "$data is a symbolic link; refusing to use it."
+    if ! [ -d "$data" ] || [ "$(stat -c '%u:%g %a' "$data")" != "$owner 700" ]; then
+      install -d -o "$STUDIO_CONTAINER_UID" -g "$STUDIO_CONTAINER_UID" -m 0700 "$data"
+      changed "$data ($owner 700)"
+    fi
+  done
   ensure_root_dir "$STUDIO_COMPOSE_DIR" 700
 
   local env="$STUDIO_CONFIG_DIR/.env"
@@ -452,6 +459,8 @@ step_layout() {
   fi
   install_content "$STUDIO_COMPOSE_DIR/compose.yaml" 600 <"$SCRIPT_DIR/compose.server.yaml" || true
   install_content "$STUDIO_COMPOSE_DIR/compose.app.yaml" 600 <"$SCRIPT_DIR/compose.server.app.yaml" || true
+  # Readable by the proxy container's uid (bind-mounted); the directory keeps it from everyone else.
+  install_content "$STUDIO_COMPOSE_DIR/Caddyfile" 644 <"$SCRIPT_DIR/Caddyfile" || true
   install_content /usr/local/sbin/agentic-studio-compose 700 <<EOF || true
 #!/usr/bin/env bash
 # Studio's Compose stack (installed by deploy/setup-server.sh). Root only. Adds the web and API
@@ -461,7 +470,7 @@ files=(-f "$STUDIO_COMPOSE_DIR/compose.yaml")
 if grep -Eq '^STUDIO_API_IMAGE=.+' "$env" && grep -Eq '^STUDIO_WEB_IMAGE=.+' "$env"; then
   files+=(-f "$STUDIO_COMPOSE_DIR/compose.app.yaml")
 fi
-export STUDIO_ENV_FILE="$env" STUDIO_DATA_HOST_DIR="$STUDIO_STATE_DIR/data" STUDIO_CONTAINER_UID="$STUDIO_CONTAINER_UID"
+export STUDIO_ENV_FILE="$env" STUDIO_DATA_HOST_DIR="$STUDIO_STATE_DIR/data" STUDIO_PROXY_HOST_DIR="$STUDIO_STATE_DIR/proxy" STUDIO_CONTAINER_UID="$STUDIO_CONTAINER_UID"
 exec docker compose --project-directory "$STUDIO_COMPOSE_DIR" --env-file "$env" "\${files[@]}" "\$@"
 EOF
   install_content /usr/local/bin/agentic-studio-check-boundary 755 <"$SCRIPT_DIR/check-boundary.sh" || true
@@ -479,7 +488,7 @@ EOF
   as_agent chmod 0700 "$home/.config/agentic-studio-worker" "$home/.local/share/agentic-studio-worker"
   if ! as_agent test -e "$worker_env"; then
     sed -e "s|^STUDIO_WORKER_DATA_DIR=.*|STUDIO_WORKER_DATA_DIR=$home/.local/share/agentic-studio-worker|" \
-      -e "s|^STUDIO_API_URL=.*|STUDIO_API_URL=http://127.0.0.1:3001|" \
+      -e "s|^STUDIO_API_URL=.*|STUDIO_API_URL=http://$STUDIO_PROXY_ADDRESS:$STUDIO_PROXY_WORKER_PORT|" \
       "$REPO_DIR/apps/agent-worker/.env.example" |
       as_agent sh -c 'umask 077 && cat > "$1"' sh "$worker_env"
     changed "$worker_env from apps/agent-worker/.env.example (no token: fill it in)"
@@ -531,17 +540,18 @@ step_worker() {
 step_firewall() {
   local uid
   uid="$(agent_uid)"
-  [[ "$STUDIO_AGENT_ALLOWED_PORTS" =~ ^[0-9]+(,[0-9]+)*$ ]] || die "STUDIO_AGENT_ALLOWED_PORTS must be a comma-separated port list."
+  [[ "$STUDIO_PROXY_ADDRESS" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "STUDIO_PROXY_ADDRESS must be an IPv4 address."
+  [[ "$STUDIO_PROXY_WORKER_PORT" =~ ^[0-9]{1,5}$ ]] || die "STUDIO_PROXY_WORKER_PORT must be a port number."
   install_content /usr/local/sbin/agentic-studio-agent-firewall 755 <<EOF || true
 #!/usr/bin/env bash
 # Keeps the agent user (uid $uid) away from Studio's container network $STUDIO_NETWORK_SUBNET:
-# only TCP $STUDIO_AGENT_ALLOWED_PORTS (the API) is allowed there; PostgreSQL, Redis and anything
-# else are rejected. Installed by deploy/setup-server.sh; run by agentic-studio-agent-firewall.service
+# only the reverse proxy's worker port ($STUDIO_PROXY_ADDRESS:$STUDIO_PROXY_WORKER_PORT) is allowed
+# there; the API, PostgreSQL, Redis and anything else are rejected. Installed by deploy/setup-server.sh; run by agentic-studio-agent-firewall.service
 # (apply, which fails unless the rules are verified in place) and its verify timer.
 set -euo pipefail
 verify() {
   iptables -w -C OUTPUT -m owner --uid-owner $uid -j $FIREWALL_CHAIN &&
-    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -m multiport --dports $STUDIO_AGENT_ALLOWED_PORTS -j RETURN &&
+    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_PROXY_ADDRESS/32 -p tcp --dport $STUDIO_PROXY_WORKER_PORT -j RETURN &&
     iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset &&
     iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -j REJECT
 }
@@ -551,7 +561,7 @@ case "\${1:-apply}" in
     iptables-restore -w --noflush <<RULES
 *filter
 :$FIREWALL_CHAIN - [0:0]
--A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -m multiport --dports $STUDIO_AGENT_ALLOWED_PORTS -j RETURN
+-A $FIREWALL_CHAIN -d $STUDIO_PROXY_ADDRESS/32 -p tcp --dport $STUDIO_PROXY_WORKER_PORT -j RETURN
 -A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset
 -A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -j REJECT
 COMMIT
@@ -634,7 +644,7 @@ EOF
     systemctl start agentic-studio-agent-firewall.service
   fi
   systemctl start agentic-studio-agent-firewall-verify.timer
-  step_log "ok (agent user -> $STUDIO_NETWORK_SUBNET rejected except TCP $STUDIO_AGENT_ALLOWED_PORTS; the agent side is bound to it)"
+  step_log "ok (agent user -> $STUDIO_NETWORK_SUBNET rejected except $STUDIO_PROXY_ADDRESS:$STUDIO_PROXY_WORKER_PORT; the agent side is bound to it)"
 }
 
 step_rootless() {
@@ -759,14 +769,15 @@ The script wrote no secret. Remaining manual steps (docs/engineering/deployment.
        POSTGRES_PASSWORD and DATABASE_URL (database), REDIS_PASSWORD and REDIS_URL (Redis),
        STUDIO_OPERATOR_PASSWORD_HASH (operator
        password hash), STUDIO_SECRETS_KEY (secret store master key; back it up off the server),
-       STUDIO_WORKER_TOKEN (worker token), STUDIO_ORIGIN.
+       STUDIO_WORKER_TOKEN (worker token); STUDIO_API_IMAGE and STUDIO_WEB_IMAGE (the production
+       images), STUDIO_DOMAIN and STUDIO_TLS (the reverse proxy).
   2. As the agent user, fill in $home/.config/agentic-studio-worker/.env (0600):
        STUDIO_WORKER_TOKEN (the same worker token), STUDIO_AGENT_GIT_NAME and STUDIO_AGENT_GIT_EMAIL,
        STUDIO_AGENT_GITHUB_TOKEN (the Agent account's token, limited to the managed repositories).
        Leave CLAUDE_CODE_ENABLED and CODEX_CLI_ENABLED false until the operator enables a provider.
   3. As the agent user: install each provider CLI with its official installer and log it in
      interactively (subscription login); configure the agent user's Git credentials.
-  4. As root: start Studio's stack: agentic-studio-compose up -d --wait
+  4. As root: start Studio's stack (migrations run first): agentic-studio-compose up -d --wait
      then the worker (as the agent user, e.g. sudo -iu $AGENT_USER with XDG_RUNTIME_DIR=/run/user/<uid>):
        systemctl --user restart agentic-studio-worker
   5. As the agent user: agentic-studio-check-boundary   (must end with RESULT: PASS)
