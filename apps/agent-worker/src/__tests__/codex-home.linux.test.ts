@@ -86,7 +86,7 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
 
     await prepare();
 
-    expect(config()).not.toMatch(/trusted"|mcp_servers|evil/);
+    expect(config()).not.toMatch(/"trusted"|mcp_servers|evil/);
     expect(readdirSync(join(codex(), 'rules'))).toEqual(['studio.rules']);
     expect(readFileSync(join(codex(), 'rules', 'studio.rules'), 'utf8')).toBe(
       readFileSync(new URL('../../guardrails/codex-studio.rules', import.meta.url), 'utf8'),
@@ -129,7 +129,7 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
 
     const text = config();
     expect(text.startsWith(await readConfigTemplate())).toBe(true);
-    expect(text.match(/trust_level = "untrusted"/g)).toHaveLength(2);
+    expect(text.match(/^trust_level = "untrusted"$/gm)).toHaveLength(2);
     expect(existsSync(join(codex(), '.studio-config.lock'))).toBe(false);
     expect(readdirSync(codex()).filter((name) => name.includes('.studio-'))).toEqual([]);
   });
