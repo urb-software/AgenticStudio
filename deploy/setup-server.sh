@@ -51,6 +51,8 @@ DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin dock
 BASE_PACKAGES=(ca-certificates curl gnupg git xz-utils uidmap slirp4netns dbus-user-session
   fuse-overlayfs iptables acl quota)
 FIREWALL_CHAIN="AGENTIC-STUDIO-AGENT"
+# Groups besides docker whose members can become root.
+ROOT_EQUIVALENT_GROUPS="lxd incus-admin libvirt disk"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -80,7 +82,7 @@ EOF
 
 list_steps() {
   cat <<EOF
-preflight  Checks: root, Ubuntu 24.04, and the agent user (if it exists) is not in the docker group
+preflight  Checks: root, Ubuntu 24.04, a root-only checkout, and the agent user (if it exists) is not in the docker group
            and has no passwordless sudo. Changes nothing.
 packages   Base packages (${BASE_PACKAGES[*]}), Docker's official apt repository
            (/etc/apt/keyrings/docker.asc, /etc/apt/sources.list.d/docker.sources, key fingerprint
@@ -133,6 +135,12 @@ assert_agent_safe() {
   if id -nG "$AGENT_USER" | tr ' ' '\n' | grep -qx docker; then
     die "the agent user '$AGENT_USER' is in the docker group: that is root-equivalent access to the system Docker daemon. Remove it (gpasswd -d $AGENT_USER docker) and run the script again."
   fi
+  local group
+  for group in $ROOT_EQUIVALENT_GROUPS; do
+    if id -nG "$AGENT_USER" | tr ' ' '\n' | grep -qx "$group"; then
+      die "the agent user '$AGENT_USER' is in the $group group, which is root-equivalent. Remove it (gpasswd -d $AGENT_USER $group) and run the script again."
+    fi
+  done
   if command -v sudo >/dev/null 2>&1; then
     if sudo -n -l -U "$AGENT_USER" 2>/dev/null | grep -Eq 'NOPASSWD|!authenticate'; then
       die "the agent user '$AGENT_USER' has passwordless sudo rules (sudo -l -U $AGENT_USER). Remove them and run the script again."
@@ -150,13 +158,13 @@ assert_agent_safe() {
 install_content() {
   local dest="$1" mode="$2" tmp
   tmp="$(mktemp)"
-  cat >"$tmp"
+  cat >"$tmp" || die "could not stage $dest."
   if [ -f "$dest" ] && [ ! -L "$dest" ] && cmp -s "$tmp" "$dest" &&
     [ "$(stat -c '%U:%G %a' "$dest")" = "root:root $mode" ]; then
     rm -f "$tmp"
     return 1
   fi
-  install -o root -g root -m "$mode" "$tmp" "$dest"
+  install -o root -g root -m "$mode" "$tmp" "$dest" || die "could not install $dest."
   rm -f "$tmp"
   changed "$dest"
 }
@@ -208,6 +216,11 @@ step_preflight() {
     log "WARNING: this looks like WSL. WSL with default settings is not an isolation boundary (ADR 0002); the target is native Linux."
   fi
   assert_agent_safe
+  # Root runs code from this checkout (the worker build, the installed check script), so only
+  # root may be able to change it.
+  local writable
+  writable="$(find "$REPO_DIR" -xdev \( ! -user root -o -perm /022 \) ! -type l -print -quit 2>/dev/null || true)"
+  [ -z "$writable" ] || die "the checkout $REPO_DIR must be owned by root and writable by root only (found: $writable). Clone it as root, e.g. into /usr/local/src/agentic-studio."
   step_log "ok"
 }
 
@@ -316,6 +329,7 @@ step_user() {
   done
   local home mode
   home="$(agent_home)"
+  [ -d "$home" ] || die "the agent user's home directory $home does not exist."
   mode="$(stat -c '%a' "$home")"
   if [ "${mode: -1}" != 0 ]; then
     chmod o-rwx "$home"
@@ -386,7 +400,7 @@ step_worker() {
   command -v git >/dev/null || die "git is missing; run the packages step first."
   [ -x /usr/local/bin/pnpm ] || die "pnpm is missing; run the node step first."
   local commit
-  commit="$(git -c safe.directory="$REPO_DIR" -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)" ||
+  commit="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)" ||
     die "$REPO_DIR is not a Git checkout; run the script from a clone of the repository."
   if [ -f "$WORKER_CODE_DIR/.source-commit" ] && [ "$(cat "$WORKER_CODE_DIR/.source-commit")" = "$commit" ] &&
     [ -f "$WORKER_CODE_DIR/apps/agent-worker/dist/main.js" ]; then
@@ -396,7 +410,7 @@ step_worker() {
   local staging="$WORKER_CODE_DIR.new"
   rm -rf "$staging"
   install -d -o root -g root -m 0755 "$staging"
-  git -c safe.directory="$REPO_DIR" -C "$REPO_DIR" archive --format=tar HEAD | tar -x -C "$staging" --no-same-owner
+  git -C "$REPO_DIR" archive --format=tar HEAD | tar -x -C "$staging" --no-same-owner
   # Dependency install scripts never run as root (--ignore-scripts); the worker needs none.
   (
     cd "$staging"

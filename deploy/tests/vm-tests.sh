@@ -10,7 +10,9 @@
 # shellcheck disable=SC2016 # single-quoted text run by another shell
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SETUP="$REPO/deploy/setup-server.sh"
+# The setup script refuses a checkout others can write: run it from a root-owned copy.
+SRC=/usr/local/src/agentic-studio
+SETUP="$SRC/deploy/setup-server.sh"
 # shellcheck source=deploy/tests/lib.sh
 . "$REPO/deploy/tests/lib.sh"
 
@@ -24,6 +26,7 @@ SETUP="$REPO/deploy/setup-server.sh"
 }
 
 section "Runner preparation (test environment only)"
+mkdir -p /usr/local/src && cp -a "$REPO" "$SRC" && chown -R root:root "$SRC" && chmod -R go-w "$SRC"
 # The runner image may carry its own apt source for Docker; the setup script refuses a second one.
 for file in /etc/apt/sources.list.d/*; do
   [ -f "$file" ] || continue

@@ -7,7 +7,7 @@
 #   agentic-studio-check-boundary --skip api   # leave out a group (reported as SKIP)
 #
 # Each check prints PASS, FAIL or SKIP and one line of detail; the last line is
-# `RESULT: PASS` (exit 0) or `RESULT: FAIL` (exit 1). Nothing secret is printed: the worker
+# `RESULT: PASS` (exit 0), `RESULT: PASS WITH SKIPS` (exit 0, incomplete) or `RESULT: FAIL` (exit 1). Nothing secret is printed: the worker
 # token is read from the worker's own .env and sent only to the Studio API.
 #
 # Must be refused: reading Studio's configuration and data, the secret store's master key or a
@@ -90,10 +90,12 @@ check_identity() {
   else
     pass not-root "running as $(id -un) (uid $(id -u))"
   fi
-  if id -nG | tr ' ' '\n' | grep -qx docker; then
-    fail not-in-docker-group "$(id -un) is in the docker group (root-equivalent)"
+  local groups
+  groups="$(id -nG | tr ' ' '\n' | grep -Ex 'docker|lxd|incus-admin|libvirt|disk' | tr '\n' ' ')"
+  if [ -n "$groups" ]; then
+    fail not-in-docker-group "$(id -un) is in root-equivalent group(s): ${groups% }"
   else
-    pass not-in-docker-group "$(id -un) is not in the docker group"
+    pass not-in-docker-group "$(id -un) is in none of docker, lxd, incus-admin, libvirt, disk"
   fi
 }
 
@@ -335,10 +337,13 @@ check_api() {
     status="$(http_status "${route% *}" "$api${route#* }" "$token")"
     [ "$status" = 401 ] || accepted+=("$route -> ${status:-no answer}")
   done
+  # A mutation as well (refused before it is handled: 401, or 403 from the Origin check).
+  status="$(http_status POST "$api/api/projects" "$token" '{"name":"boundary-check"}')"
+  [ "$status" = 401 ] || [ "$status" = 403 ] || accepted+=("POST /api/projects -> ${status:-no answer}")
   if [ "${#accepted[@]}" -gt 0 ]; then
     fail worker-token-nothing-else "not refused with 401: ${accepted[*]}"
   else
-    pass worker-token-nothing-else "operator routes refuse the worker token (401)"
+    pass worker-token-nothing-else "operator routes refuse the worker token (GET 401, POST 401/403)"
   fi
 }
 
@@ -383,7 +388,11 @@ main() {
     echo "RESULT: FAIL ($PASSED passed, $FAILED failed, $SKIPPED skipped)"
     exit 1
   fi
-  echo "RESULT: PASS ($PASSED passed, $SKIPPED skipped)"
+  if [ "$SKIPPED" -gt 0 ]; then
+    echo "RESULT: PASS WITH SKIPS ($PASSED passed, $SKIPPED skipped: not a complete server check)"
+  else
+    echo "RESULT: PASS ($PASSED passed)"
+  fi
 }
 
 main "$@"

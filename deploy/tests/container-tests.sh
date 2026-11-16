@@ -9,10 +9,13 @@
 # shellcheck disable=SC2016 # single-quoted text run by another shell
 set -uo pipefail
 REPO="${REPO:-/w}"
-SETUP="$REPO/deploy/setup-server.sh"
+# The setup script refuses a checkout others can write: run it from a root-owned copy.
+SRC=/usr/local/src/agentic-studio
+SETUP="$SRC/deploy/setup-server.sh"
 # shellcheck source=deploy/tests/lib.sh
 . "$REPO/deploy/tests/lib.sh"
 export DEBIAN_FRONTEND=noninteractive
+mkdir -p /usr/local/src && cp -a "$REPO" "$SRC" && chown -R root:root "$SRC" && chmod -R go-w "$SRC"
 
 as_agent() { (cd / && runuser -u agent -- env -i HOME=/home/agent PATH=/usr/local/bin:/usr/bin:/bin "$@"); }
 check_as_agent() { as_agent /usr/local/bin/agentic-studio-check-boundary "$@" 2>&1; }
@@ -32,6 +35,12 @@ expect_fail "refuses an agent user with passwordless sudo" "passwordless sudo" b
 rm -f /etc/sudoers.d/agent-test
 expect_fail "refuses a systemd step without systemd" "needs systemd as PID 1" bash "$SETUP" --only rootless
 expect_fail "refuses an unknown step" "unknown step" bash "$SETUP" --only nonsense
+chmod g+w "$SRC/deploy/check-boundary.sh"
+expect_fail "refuses a checkout others can write" "must be owned by root" bash "$SETUP" --only preflight
+chmod g-w "$SRC/deploy/check-boundary.sh"
+groupadd -f lxd && usermod -aG lxd agent
+expect_fail "refuses an agent user in the lxd group" "is in the lxd group" bash "$SETUP" --only preflight
+gpasswd -d agent lxd >/dev/null
 
 STEPS=packages,node,user,layout,worker
 snapshot() {

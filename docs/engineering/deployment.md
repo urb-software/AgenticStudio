@@ -16,7 +16,7 @@ All host names, accounts, domains and addresses below are placeholders.
 | Configuration | `/etc/agentic-studio/.env` (root, 0600) in `/etc/agentic-studio/` (root, 0700) | `~agent/.config/agentic-studio-worker/.env` (agent, 0600) |
 | Data | `/var/lib/agentic-studio/data` (root, 0700; the API's `STUDIO_DATA_DIR`), Docker volumes | `~agent/.local/share/agentic-studio-worker` (Working copies, per-project caches) |
 | Code | Compose files in `/opt/agentic-studio/` (root, 0700) | `/opt/agentic-studio-worker/` (root-owned, readable, not writable by the agent user) |
-| Network | Container network `172.31.250.0/24`; only the API (`127.0.0.1:3001`) and web (`127.0.0.1:3000`) ports are published | Calls the API at `http://127.0.0.1:3001` with the worker token; a firewall rule rejects its traffic to Studio's container network, except the API port |
+| Network | Container network `172.31.250.0/24`; only the API (`127.0.0.1:3001`) and web (`127.0.0.1:3000`) ports are published | Calls the API at `http://127.0.0.1:3001` with the worker token; a firewall rule rejects its traffic to Studio's container network, except the API port. Like any host process it reaches the two ports published on `127.0.0.1` (the API and the web login), never PostgreSQL or Redis |
 
 The worker always calls Studio; Studio never reaches into the host. The operating-system boundary is the security boundary; the CLIs' hooks and permission rules are guardrails on top of it ([Security](security.md) §2).
 
@@ -26,7 +26,7 @@ The worker always calls Studio; Studio never reaches into the host. The operatin
 
 - **Ubuntu 24.04 LTS on native Linux** (a VM or a dedicated machine), with systemd and cgroup v2 (the Ubuntu 24.04 default). The script refuses other distributions. WSL is not an isolation boundary with default settings ([trial](../architecture/adr/0002-trial-rootless-docker.md#security-finding-wsl)).
 - Outbound HTTPS to `download.docker.com`, `nodejs.org`, the npm registry and Docker Hub.
-- A clone of this repository owned by root, for example `git clone https://github.com/<owner>/AgenticStudio.git /usr/local/src/agentic-studio`. The script deploys the agent worker from this checkout's `HEAD`.
+- A clone of this repository owned by root and writable by root only (the script refuses anything else, because root builds the worker from it), for example `git clone https://github.com/<owner>/AgenticStudio.git /usr/local/src/agentic-studio`. The script deploys the agent worker from this checkout's `HEAD`.
 - Operator prerequisites on the Git host: the **Agent account**, with access limited to the managed repositories, and **branch protection** on their integration branches so the Agent account cannot merge or push to them.
 
 ## 3. The setup script
@@ -43,7 +43,7 @@ It is safe to run again: each step checks the current state and reports `unchang
 
 | Step | What it does |
 | --- | --- |
-| `preflight` | Root, Ubuntu 24.04, supported architecture, the agent user checks above. Changes nothing. |
+| `preflight` | Root, Ubuntu 24.04, supported architecture, no per-user directories in `/etc/environment`, the agent user checks above (also no `lxd`, `incus-admin`, `libvirt` or `disk` group), and a checkout only root can change. Changes nothing. |
 | `packages` | Base packages (`uidmap`, `slirp4netns`, `dbus-user-session`, `fuse-overlayfs`, `iptables`, `quota`, `git`, `curl`, ...); Docker's official apt repository with its signing key's fingerprint checked; `docker-ce`, the Compose and Buildx plugins and `docker-ce-rootless-extras`; enables the system Docker daemon. |
 | `node` | The official Node.js 24 binary tarball (the version CI uses) into `/usr/local`, checked against the release's `SHASUMS256.txt`; pnpm through corepack. |
 | `user` | Creates the agent user (home directory, own group, no password, no `sudo`) with a subordinate uid/gid range; makes its home directory inaccessible to other users. |
@@ -75,7 +75,7 @@ The script never writes a secret value. It prints the steps below; each value go
 6. **Start the worker**, as the agent user (for example `sudo -iu agent`, with `XDG_RUNTIME_DIR=/run/user/$(id -u)`): `systemctl --user restart agentic-studio-worker`, then `journalctl --user -u agentic-studio-worker`.
 7. **Run the boundary checks** as the agent user: `agentic-studio-check-boundary` must end with `RESULT: PASS` ([Boundary checks](#5-boundary-checks)).
 
-**Reverse proxy (placeholder).** A reverse proxy on the host terminates TLS for `studio.example.com` and forwards to the web app at `127.0.0.1:3000`; the web app forwards `/api` to the API. Turn response buffering off for `GET /api/runs/:runId/events/stream` (live Run logs, README "Web `/api` proxy"). `API_TRUSTED_PROXIES` names the address the proxy's requests arrive from inside the container network (the network's gateway, `172.31.250.1`, when the proxy runs on the host). Only ports 80 and 443 of the proxy, and SSH, are reachable from outside.
+**Reverse proxy (placeholder).** A reverse proxy on the host terminates TLS for `studio.example.com` and forwards to the web app at `127.0.0.1:3000`; the web app forwards `/api` to the API. Turn response buffering off for `GET /api/runs/:runId/events/stream` (live Run logs, README "Web `/api` proxy"). `API_TRUSTED_PROXIES` stays empty for now and never lists the network's gateway (`172.31.250.1`): every host process that reaches `127.0.0.1:3001`, the agent user included, arrives from it and could forge `X-Forwarded-For` past the login rate limit ([Known gaps](#known-gaps)). Only ports 80 and 443 of the proxy, and SSH, are reachable from outside.
 
 ### Disk quota
 
@@ -83,11 +83,11 @@ The `limits` step sets a disk quota only when `AGENT_DISK_QUOTA_GB` is set and u
 
 ## 5. Boundary checks
 
-[`deploy/check-boundary.sh`](../../deploy/check-boundary.sh), installed as `/usr/local/bin/agentic-studio-check-boundary`, runs as the agent user after every server change (packages, users, Docker, firewall, Compose files) and implements the checks of [Security](security.md) §9. Each check prints `PASS`, `FAIL` or `SKIP` with one line of detail; the last line is `RESULT: PASS` (exit 0) or `RESULT: FAIL` (exit 1). It prints no secret; attach its output, redacted of host names, to the server change.
+[`deploy/check-boundary.sh`](../../deploy/check-boundary.sh), installed as `/usr/local/bin/agentic-studio-check-boundary`, runs as the agent user after every server change (packages, users, Docker, firewall, Compose files) and implements the checks of [Security](security.md) §9. Each check prints `PASS`, `FAIL` or `SKIP` with one line of detail; the last line is `RESULT: PASS` (exit 0), `RESULT: PASS WITH SKIPS` (exit 0; not a complete server check) or `RESULT: FAIL` (exit 1). It prints no secret; attach its output, redacted of host names, to the server change.
 
 | Check | Must |
 | --- | --- |
-| `not-root`, `not-in-docker-group` | Run as the agent user, which is not in the `docker` group. |
+| `not-root`, `not-in-docker-group` | Run as the agent user, which is in none of the root-equivalent groups `docker`, `lxd`, `incus-admin`, `libvirt`, `disk` (the setup script refuses them too). |
 | `studio-config-unreadable`, `studio-data-unreadable` | Fail to read `/etc/agentic-studio`, its `.env`, `/opt/agentic-studio`, `/var/lib/agentic-studio` and Docker's volumes. |
 | `secrets-unreachable` | Fail to read the master key or a Deploy key; no Studio variable (`DATABASE_URL`, `REDIS_URL`, `STUDIO_SECRETS_KEY`, `STUDIO_OPERATOR_PASSWORD_HASH`, `POSTGRES_PASSWORD`) in its environment or the worker's `.env`. |
 | `system-docker-unreachable` | Fail to reach the system Docker socket (`curl --unix-socket`, `docker -H`). |
@@ -96,9 +96,9 @@ The `limits` step sets a disk quota only when `AGENT_DISK_QUOTA_GB` is set and u
 | `no-wsl-escape` | No WSL interop and no Windows drive mount. |
 | `cgroup-v2`, `agent-user-limits` | cgroup v2; the agent user's slice has a `MemoryMax` and a `TasksMax`. |
 | `rootless-docker`, `rootless-container-limits`, `rootless-compose` | The agent user's own daemon answers, is rootless on cgroup v2 with the systemd driver; a container started with `--memory` and `--pids-limit` gets them; a Compose stack starts and stops. |
-| `worker-token-works`, `worker-token-nothing-else` | A read-only worker route answers 200 with the worker token and 401 without it; operator routes (`/api/projects`, `/api/runs`, `/api/auth/session`, `/api/providers`) answer 401 to it. The token is read from the worker's `.env` and sent on stdin to `curl`, never on a command line. |
+| `worker-token-works`, `worker-token-nothing-else` | A read-only worker route answers 200 with the worker token and 401 without it; operator routes (`GET /api/projects`, `/api/runs`, `/api/auth/session`, `/api/providers`: 401; `POST /api/projects`: 401 or 403) refuse it. The token is read from the worker's `.env` and sent on stdin to `curl`, never on a command line. |
 
-`--skip <group>` leaves out a group (`identity`, `studio-files`, `docker-socket`, `sudo`, `studio-network`, `host`, `cgroup`, `rootless`, `api`) and reports it as `SKIP`; a server check counts only without skips. The settings at the top of the script (directories, the container addresses, `CHECK_IMAGE`) can be overridden through the environment.
+`--skip <group>` leaves out a group (`identity`, `studio-files`, `docker-socket`, `sudo`, `studio-network`, `host`, `cgroup`, `rootless`, `api`) and reports it as `SKIP`, ending with `RESULT: PASS WITH SKIPS`; a server check counts only as `RESULT: PASS`. The settings at the top of the script (directories, the container addresses, `CHECK_IMAGE`) can be overridden through the environment.
 
 ## 6. Enabling a provider
 
@@ -134,6 +134,8 @@ Not covered in CI: the `api` group against the real API (no images yet), a disk 
 ## Known gaps
 
 - **No production images for the API and web.** [`deploy/compose.server.app.yaml`](../../deploy/compose.server.app.yaml) fixes how they will run (image names from `STUDIO_API_IMAGE` and `STUDIO_WEB_IMAGE`, the root-only `.env` for the API, nothing secret for the web, host ports on `127.0.0.1` only); `agentic-studio-compose` adds it once both are set. Building the images, running database migrations (`pnpm db:migrate:deploy`) in a deployment and the web app's build-time `/api` proxy settings are follow-up work.
+- **Trusted proxy for the API.** Which address the API trusts for `X-Forwarded-For` (the web container, at a fixed address) is settled with the images; until then `API_TRUSTED_PROXIES` is empty, so all clients share one login rate-limit bucket.
+- **IPv4 only.** The firewall rule is `iptables` only; Studio's container network has no IPv6. Add an `ip6tables` rule if IPv6 is ever turned on for it.
 - **Redis has no password.** It is reachable only on Studio's container network: no host port, and the firewall rule keeps the agent user away from it.
 - **The CLI runners** are being built (#105, #106); the install and login steps above follow them.
 - **On-server verification** (#130): the setup and boundary checks on the target server, the rootless Docker trial repeated there, one real Run per enabled provider, the branch protection check and the compliance records' revalidation note.
