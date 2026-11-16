@@ -357,7 +357,13 @@ export class InMemoryRunRepository implements RunRepository {
 
   resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || !canResumeAfterUsageLimit(run)) return Promise.resolve(null);
+    if (
+      !run ||
+      !canResumeAfterUsageLimit(run) ||
+      (run.environmentFileSupplied && run.environmentFileSecret === null)
+    ) {
+      return Promise.resolve(null);
+    }
     run.messages.push({ kind: 'answer', text, at: now });
     Object.assign(run, { state: 'queued', failure: null, finishedAt: null });
     return Promise.resolve(this.view(run));

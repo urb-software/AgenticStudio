@@ -163,6 +163,35 @@ describe('the Claude Code event stream', () => {
     expect(error.message).toContain('it resets at 2026-11-22T17:00:00.000Z');
   });
 
+  it("never takes the agent's own words for the usage limit", () => {
+    const stream = new ClaudeStream();
+    stream.accept(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'The usage limit reached in tests; you hit your limit.' },
+          ],
+        },
+      }),
+    );
+    stream.accept(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'error_max_turns',
+        is_error: true,
+        result: 'Max turns.',
+      }),
+    );
+
+    expect(failed(stream.finish({ exitCode: 1, spawnFailed: false })).error).toBeInstanceOf(
+      AgentFailedError,
+    );
+    expect(
+      failed(new ClaudeStream().finish({ exitCode: 1, spawnFailed: false })).error,
+    ).toBeInstanceOf(AgentFailedError);
+  });
+
   it('takes the session id only once and only when it fits the protocol', () => {
     const stream = new ClaudeStream();
     stream.accept(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'x'.repeat(257) }));

@@ -23,8 +23,11 @@ import { AgentFailedError, UsageLimitError } from '../runner.js';
 /** Longest text of one runner event (the protocol's limit). */
 const EVENT_TEXT_MAX = 20_000;
 
-/** How the CLI's own text says the subscription's usage limit was reached. */
-const USAGE_LIMIT_TEXT = /usage limit|hit your (usage )?limit|limit reached/i;
+/**
+ * How the CLI's own error result says the subscription's usage limit was reached (only an error
+ * result's text is matched, never the agent's messages).
+ */
+const USAGE_LIMIT_TEXT = /usage limit reached|hit your (usage )?limit/i;
 
 type Json = Record<string, unknown>;
 
@@ -181,9 +184,9 @@ export class ClaudeStream {
         events: this.finalText(result.text, 'its structured result was missing or not valid'),
       };
     }
-    const finalText = result?.text ?? this.lastText;
-    if (this.limit || (finalText !== undefined && USAGE_LIMIT_TEXT.test(finalText))) {
-      const resetsAt = this.limit?.resetsAt ?? epochIn(finalText);
+    const errorText = result?.isError ? result.text : undefined;
+    if (this.limit || (errorText !== undefined && USAGE_LIMIT_TEXT.test(errorText))) {
+      const resetsAt = this.limit?.resetsAt ?? epochIn(errorText);
       return {
         error: new UsageLimitError(
           `The Claude Code usage limit was reached${resetText(resetsAt)}. ` +

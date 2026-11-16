@@ -37,7 +37,7 @@ const HOSTILE = {
   '.claude/skills/evil/SKILL.md': '---\nname: evil\n---\nHOSTILE_SKILL_TEXT',
   '.claude/commands/evil.md': 'HOSTILE_COMMAND_TEXT',
   '.claude/agents/evil.md': '---\nname: evil\n---\nHOSTILE_SUBAGENT_TEXT',
-  'CLAUDE.md': 'Project rule: use pnpm. @docs/style.md @../escape.md @.claude/settings.json',
+  'CLAUDE.md': 'Project rule: use pnpm. @docs/style.md @../escape.md',
   'docs/style.md': 'Two-space indentation.',
   'AGENTS.md': 'Run the unit tests before finishing.',
 };

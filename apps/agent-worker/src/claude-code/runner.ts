@@ -11,6 +11,7 @@ import type {
   RunWorkspace,
   StartRunStepInput,
 } from '../runner.js';
+import { ProviderDisabledError } from '../provider-gate.js';
 import {
   type ProcessGroupRegistry,
   type ProviderCli,
@@ -190,15 +191,23 @@ export function probeClaudeCode(
   return new Promise((resolve) => {
     const groups: number[] = [];
     const registry: ProcessGroupRegistry = { register: (group) => groups.push(group) };
-    const child = spawnProviderCli(
-      cli,
-      {
-        provider: PROVIDER,
-        args: ['--version'],
-        options: { env: claudeEnvironment({ base: env }), stdio: ['ignore', 'pipe', 'ignore'] },
-      },
-      registry,
-    );
+    let child: ReturnType<typeof spawnProviderCli>;
+    try {
+      child = spawnProviderCli(
+        cli,
+        {
+          provider: PROVIDER,
+          args: ['--version'],
+          options: { env: claudeEnvironment({ base: env }), stdio: ['ignore', 'pipe', 'ignore'] },
+        },
+        registry,
+      );
+    } catch (error) {
+      // A switched-off provider is the caller's bug; anything else means it cannot start.
+      if (error instanceof ProviderDisabledError) throw error;
+      resolve({ ok: false, reason: CLAUDE_CODE_MISSING });
+      return;
+    }
     let stdout = '';
     let settled = false;
     const settle = (check: VersionCheck) => {

@@ -568,6 +568,9 @@ export class PrismaRunRepository implements RunRepository {
         WHERE id = ${runId}::uuid AND state = 'failed' AND failure_code = 'usage_limit'
           AND session_ref IS NOT NULL AND run_branch IS NOT NULL
           AND cancel_requested_at IS NULL
+          -- A supplied Environment file's snapshot must still be there: the resumed step's log
+          -- is redacted with it (Issue #104). Past the retention period it is gone.
+          AND (NOT environment_file_supplied OR environment_file_secret_id IS NOT NULL)
         FOR UPDATE`;
       if (!run) return null;
       const last = await tx.runMessage.findFirst({

@@ -639,16 +639,16 @@ export type AppendRunEventsRequest = z.infer<typeof appendRunEventsRequestSchema
 export const WORKER_RUNNER_MODES = ['fake', 'cli'] as const;
 export type WorkerRunnerMode = (typeof WORKER_RUNNER_MODES)[number];
 
-/**
- * `POST /api/worker/status` body (Issue #101): the worker's runner mode and which providers its
- * own configuration enables, sent when it starts and with every poll. It is a report for
- * display and for refusing hopeless starts; the worker's own check stays authoritative.
- */
 /** Longest reason a worker gives for an unavailable provider (Issue #105). */
 export const PROVIDER_REASON_MAX_LENGTH = 500;
 
 const providerReasonSchema = z.string().min(1).max(PROVIDER_REASON_MAX_LENGTH);
 
+/**
+ * `POST /api/worker/status` body (Issue #101): the worker's runner mode and which providers its
+ * own configuration enables, sent when it starts and with every poll. It is a report for
+ * display and for refusing hopeless starts; the worker's own check stays authoritative.
+ */
 export const workerStatusRequestSchema = z.strictObject({
   workerId: workerIdSchema,
   runner: z.enum(WORKER_RUNNER_MODES),

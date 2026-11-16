@@ -109,6 +109,21 @@ describe('ResumeRunHandler', () => {
     expect((await runs.findById(run.id))?.state).toBe('failed');
   });
 
+  it("refuses once a supplied Environment file's snapshot is gone (no redaction for the step)", async () => {
+    await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot-1' });
+    await stop(USAGE_LIMIT);
+    await runs.clearEnvironmentFileSecret(run.id, 'snapshot-1');
+
+    await expect(handler.execute(run.id)).rejects.toBeInstanceOf(RunNotResumableError);
+  });
+
+  it('resumes while the snapshot is kept', async () => {
+    await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot-1' });
+    await stop(USAGE_LIMIT);
+
+    expect((await handler.execute(run.id)).state).toBe('queued');
+  });
+
   it('refuses a Run that has not failed', async () => {
     await expect(handler.execute(run.id)).rejects.toBeInstanceOf(RunNotResumableError);
   });

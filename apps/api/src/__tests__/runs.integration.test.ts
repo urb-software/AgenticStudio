@@ -1747,7 +1747,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       };
 
       /** W1 claims the queued Run; its first step stops at the usage limit. */
-      async function limitedRun(projectId: string, sessionRef: string | undefined = 'session-9') {
+      async function limitedRun(projectId: string, sessionRef: string | null = 'session-9') {
         const run = await queuedRun(projectId);
         expect((await claim()).body.kind).toBe('start');
         await report(run.id, { state: 'running' });
@@ -1811,7 +1811,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
       it('refuses a Run without a session, another failure, and a foreign Origin', async () => {
         const project = await readyProject('Shop');
-        const noSession = await limitedRun(project.id, undefined);
+        const noSession = await limitedRun(project.id, null);
         expect((await getRun(noSession.id)).body).not.toHaveProperty('resumable');
         expectProblem(await resume(noSession.id), 409, PROBLEM.runNotResumable);
 
