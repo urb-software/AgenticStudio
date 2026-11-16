@@ -133,6 +133,35 @@ describe('LogViewer', () => {
     expect(screen.getByText('first')).toBeTruthy();
   });
 
+  it('adds appended rows to the open section, also while it is collapsed (Issue #115)', () => {
+    const start: LogRow[] = [
+      { key: 's1', text: 'Run step 1 started', tone: 'section' },
+      { key: 'a', text: 'first', tone: 'plain' },
+    ];
+    const { rerender } = render(<LogViewer label="Run log" rows={start} />);
+    const section = screen.getByRole('button', { name: /Run step 1 started/ });
+    fireEvent.click(section);
+
+    // A live batch appends rows: the same rows plus new ones, as the Run log passes them.
+    const grown: LogRow[] = [
+      ...start,
+      { key: 'b', text: 'second', tone: 'plain' },
+      { key: 's2', text: 'Run step 2 started', tone: 'section' },
+      { key: 'c', text: 'third', tone: 'plain' },
+    ];
+    rerender(<LogViewer label="Run log" rows={grown} />);
+
+    expect(section.textContent).toContain('· 2');
+    expect(screen.queryByText('second')).toBeNull();
+    expect(screen.getByText('third').previousElementSibling?.textContent).toBe('5');
+    expect(screen.getByRole('button', { name: /Run step 2 started/ }).textContent).toContain('· 1');
+
+    // Rows that do not extend the previous ones (e.g. a reload) are laid out afresh.
+    rerender(<LogViewer label="Run log" rows={[{ key: 'x', text: 'other', tone: 'plain' }]} />);
+    expect(screen.getByText('other').previousElementSibling?.textContent).toBe('1');
+    expect(screen.queryByText('third')).toBeNull();
+  });
+
   it('keeps following when the operator is at the end', () => {
     render(<LogViewer label="Run log" rows={rows(100)} />);
 

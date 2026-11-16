@@ -298,6 +298,31 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(notReady.body.detail).toMatch(/not ready/);
     });
 
+    it('summarizes the Runs under way and waiting for the operator (Issue #115)', async () => {
+      const summary = () => http().get('/api/runs/summary').set('Cookie', cookie);
+      expect((await summary()).body).toEqual({ running: 0, waiting: 0 });
+      const shop = await readyProject('Shop');
+      const blog = await readyProject('Blog');
+      const waiting = await queuedRun(shop.id);
+      await queuedRun(shop.id, 'second');
+      await queuedRun(blog.id, 'third');
+      await claim();
+      await report(waiting.id, { state: 'running' });
+      await reportStep(waiting.id, {
+        outcome: 'needs_input',
+        summary: 'Stuck.',
+        question: { text: 'Which DB?' },
+        sessionRef: 'session-1',
+      });
+      await report(waiting.id, { state: 'waiting_for_operator' });
+
+      const response = await summary();
+
+      expect(response.status).toBe(200);
+      // Shop's second Run is queued, Blog's is queued or preparing: both under way.
+      expect(response.body).toEqual({ running: 2, waiting: 1 });
+    });
+
     it('answers 404 for an unknown Run', async () => {
       expectProblem(await getRun(randomUUID()), 404, PROBLEM.runNotFound);
       expectProblem(await getRun('nope'), 404, PROBLEM.runNotFound);
@@ -305,6 +330,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
     it('requires the operator session', async () => {
       expectProblem(await http().get('/api/runs'), 401);
+      expectProblem(await http().get('/api/runs/summary'), 401);
       expectProblem(
         await http()
           .post(`/api/projects/${randomUUID()}/runs`)

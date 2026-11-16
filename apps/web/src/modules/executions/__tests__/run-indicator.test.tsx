@@ -6,7 +6,8 @@ import type { RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi } from './fake-runs-api';
 
 // Run indicator seam (Story #97): the public RunIndicator of the executions module, with the
-// generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
+// generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`. It
+// reads the two counts of `GET /api/runs/summary`, never the Run list (Issue #115).
 
 function renderIndicator() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -44,18 +45,37 @@ describe('Run indicator', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
-  it('is amber only when a Run waits for the operator', async () => {
-    fakeRunsApi(runsIn('running', 'waiting_for_operator'));
+  it('reads the summary, not the list of every Run', async () => {
+    const api = fakeRunsApi(runsIn('running', 'waiting_for_operator'));
     renderIndicator();
 
-    expect((await indicator()).className).toContain('text-run-awaiting');
+    await indicator();
+    expect(api.calls('summary')).toHaveLength(1);
+    expect(api.calls('runs')).toHaveLength(0);
+  });
+
+  it('is amber only when a Run waits for the operator', async () => {
+    fakeRunsApi(runsIn('running', 'waiting_for_operator'));
+    const { unmount } = renderIndicator();
+
+    const waiting = await indicator();
+    expect(waiting.className).toContain('text-run-awaiting');
+    expect(waiting.className).not.toContain('text-run-running');
+    unmount();
+
+    fakeRunsApi(runsIn('queued', 'running'));
+    renderIndicator();
+
+    const running = await indicator();
+    expect(running.className).toContain('text-run-running');
+    expect(running.className).not.toContain('text-run-awaiting');
   });
 
   it('is hidden when no Run is active or waiting', async () => {
     const api = fakeRunsApi(runsIn('succeeded', 'cancelled', 'timed_out'));
     renderIndicator();
 
-    await vi.waitFor(() => expect(api.calls('runs')).toHaveLength(1));
+    await vi.waitFor(() => expect(api.calls('summary')).toHaveLength(1));
     expect(screen.queryByRole('link')).toBeNull();
   });
 

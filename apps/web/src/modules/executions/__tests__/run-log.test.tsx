@@ -246,6 +246,81 @@ describe('Run log', () => {
     vi.useRealTimers();
   });
 
+  it('announces the live stream once, not again after a reconnect (Issue #115)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
+    const api = fakeRunsApi([run]);
+    renderRun(run.id);
+    await waitFor(() => expect(api.streams()).toHaveLength(1));
+    const announcement = await screen.findByText('The log is streaming live.');
+
+    // The polite status keeps its words through the drop and the reconnect: no new message.
+    act(() => api.streams()[0]!.drop());
+    expect(await screen.findByText(/Reconnecting…/)).toBeTruthy();
+    expect(announcement.textContent).toBe('The log is streaming live.');
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    await waitFor(() => expect(api.streams()).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByText(/Reconnecting…/)).toBeNull());
+    expect(announcement.textContent).toBe('The log is streaming live.');
+    vi.useRealTimers();
+  });
+
+  it('backs off and reconnects on a 429 from the stream instead of stopping (Issue #115)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
+    const api = fakeRunsApi([run]);
+    api.respondNext('stream', 429, {
+      status: 429,
+      title: 'Too many live logs',
+      detail: 'Too many live logs are open.',
+    });
+    renderRun(run.id);
+    await waitFor(() => expect(api.calls('stream')).toHaveLength(1));
+
+    expect(await screen.findByText(/Reconnecting…/)).toBeTruthy();
+    expect(screen.queryByText('Couldn’t load the log.')).toBeNull();
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    await waitFor(() => expect(api.streams()).toHaveLength(1));
+    act(() => api.streams()[0]!.push(anEvent(1)));
+    await waitFor(async () => expect(await shown()).toEqual(['line 1']));
+    expect(screen.queryByText(/Reconnecting…/)).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('scrolls the log to a Run step from its "log below" link (Issue #115)', async () => {
+    const at = '2026-11-15T10:00:00.000Z';
+    const run = aRun({
+      state: 'waiting_for_operator',
+      question: { text: 'And the schema name?' },
+      messages: [
+        { role: 'operator', kind: 'task', text: 'Add a store', at },
+        { role: 'agent', kind: 'question', text: 'Which database?', at },
+        { role: 'operator', kind: 'answer', text: 'PostgreSQL', at },
+        { role: 'agent', kind: 'question', text: 'And the schema name?', at },
+      ],
+    });
+    const api = fakeRunsApi([run]);
+    const lines = (from: number) =>
+      Array.from({ length: 60 }, (_, i) => anEvent(from + i, { stepIndex: from < 60 ? 1 : 2 }));
+    api.storeEvents(
+      run.id,
+      anEvent(1, { kind: 'step_started', text: 'Run step 1 started' }),
+      ...lines(2),
+      anEvent(62, { kind: 'step_finished', text: 'Run step 1 finished: needs input' }),
+      anEvent(63, { kind: 'step_started', stepIndex: 2, text: 'Run step 2 started' }),
+      ...lines(64),
+    );
+    renderRun(run.id);
+    await waitFor(() => expect(lineCount()).toBe('123 lines'));
+
+    await userEvent.click(screen.getByRole('link', { name: 'Run step 2 · log below' }));
+
+    // Step 2 starts at row 63 (index 62): the log shows it at the top, with keyboard focus.
+    const element = await log();
+    expect(element.scrollTop).toBe(62 * 20);
+    expect(document.activeElement).toBe(element);
+  });
+
   it('stops and offers a retry when the stream is refused', async () => {
     const run = aRun({ state: 'running', startedAt: '2026-11-15T10:00:05.000Z' });
     const api = fakeRunsApi([run]);

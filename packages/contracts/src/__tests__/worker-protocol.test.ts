@@ -361,6 +361,19 @@ describe('worker requests', () => {
       report({ state: 'succeeded', delivery: { outcome: 'delivered', pullRequest: pr } });
     expect(delivered({ ...pullRequest, url: 'http://github.com/acme/shop/pull/7' })).toBe(false);
     expect(delivered({ ...pullRequest, url: 'javascript:alert(1)' })).toBe(false);
+    // Issue #115 (review Spec-1 of #123): a pull request on github.com, nowhere else.
+    for (const url of [
+      'https://github.example.com/acme/shop/pull/7',
+      'https://github.com.evil.test/acme/shop/pull/7',
+      'https://evil.test/acme/shop/pull/7',
+      'https://user@github.com/acme/shop/pull/7',
+      'https://github.com:8443/acme/shop/pull/7',
+      'https://github.com/acme/shop/issues/7',
+      'https://github.com/acme/shop/pull/7/files',
+      'https://github.com/acme/shop/pull/7?x=1',
+    ]) {
+      expect(delivered({ ...pullRequest, url }), url).toBe(false);
+    }
     expect(delivered({ ...pullRequest, number: 0 })).toBe(false);
     expect(delivered({ ...pullRequest, number: 1.5 })).toBe(false);
   });

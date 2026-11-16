@@ -15,6 +15,8 @@ import { AppendRunEventsHandler } from './features/append-run-events/handler.js'
 import { ClaimRunEndpoint } from './features/claim-run/endpoint.js';
 import { ClaimRunHandler } from './features/claim-run/handler.js';
 import { GetRunEndpoint } from './features/get-run/endpoint.js';
+import { GetRunsSummaryEndpoint } from './features/get-runs-summary/endpoint.js';
+import { GetRunsSummaryHandler } from './features/get-runs-summary/handler.js';
 import { GetRunHandler } from './features/get-run/handler.js';
 import { ListRunEventsEndpoint } from './features/list-run-events/endpoint.js';
 import { ListRunEventsHandler } from './features/list-run-events/handler.js';
@@ -113,6 +115,8 @@ export class ExecutionsModule {
         StartRunEndpoint,
         ListProjectRunsEndpoint,
         ListRunsEndpoint,
+        // Before GetRunEndpoint: `runs/:runId` would take `runs/summary` (Issue #115).
+        GetRunsSummaryEndpoint,
         GetRunEndpoint,
         CancelRunEndpoint,
         RetryDeliveryEndpoint,
@@ -163,6 +167,7 @@ export class ExecutionsModule {
         StartRunHandler,
         ListProjectRunsHandler,
         ListRunsHandler,
+        GetRunsSummaryHandler,
         GetRunHandler,
         CancelRunHandler,
         CancelLongWaitingRunsHandler,

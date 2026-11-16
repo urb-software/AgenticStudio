@@ -14,8 +14,10 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const BRANCH = 'agent/add-pagination-r0b8e5c2d';
 const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
 
-function renderRun(runId: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderRun(
+  runId: string,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <RunDetail runId={runId} />
@@ -46,11 +48,48 @@ describe('Run page: delivery (Issue #102)', () => {
     expect(link.getAttribute('href')).toBe(PULL_REQUEST.url);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noreferrer');
+    // Shown once (review Std-2 of #123): not again in Details.
+    expect(screen.getAllByRole('link', { name: /Pull request #7/ })).toHaveLength(1);
     const branch = screen.getAllByText(BRANCH);
     expect(branch.length).toBeGreaterThan(0);
     expect(branch.every((element) => element.className.includes('font-mono'))).toBe(true);
     expect(screen.queryByText('No changes.')).toBeNull();
     await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('links a pull request only on github.com, otherwise names it as text (Issue #115)', async () => {
+    const run = aRun({
+      state: 'succeeded',
+      runBranch: BRANCH,
+      delivery: 'delivered',
+      pullRequest: { url: 'https://github.example.com/acme/shop/pull/7', number: 7 },
+    });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    const banner = screen.getByText('Draft pull request opened.').closest('[data-slot="banner"]');
+    expect(within(banner as HTMLElement).getByText(/Pull request #7/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Pull request/ })).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('names a pull request outside github.com as text in the cancelled-delivery banner too', async () => {
+    const run = aRun({
+      state: 'cancelled',
+      delivery: 'delivered',
+      pullRequest: { url: 'https://evil.test/acme/shop/pull/7', number: 7 },
+      cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+    });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    const banner = screen
+      .getByText('Cancelled during its delivery: a draft pull request was opened.')
+      .closest('[data-slot="banner"]');
+    expect(within(banner as HTMLElement).getByText(/Pull request #7/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Pull request/ })).toBeNull();
   });
 
   it('says "No changes" when nothing was pushed for a succeeded Run', async () => {
@@ -190,19 +229,23 @@ describe('Run page: delivery (Issue #102)', () => {
       pullRequest: { ...PULL_REQUEST, number: 8, url: 'https://github.com/acme/shop/pull/8' },
       createdAt: '2026-11-15T11:00:00.000Z',
     });
-    fakeRunsApi([second, first]);
+    const api = fakeRunsApi([second, first]);
 
     const { unmount } = renderRun(first.id);
     expect(await screen.findByText('First delivery to this repository.')).toBeTruthy();
     unmount();
 
-    renderRun(second.id);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderRun(second.id, client);
     await heading();
     await screen.findByText('Draft pull request opened.');
-    // The project's Runs are read; the earlier Run was delivered.
-    await vi.waitFor(() =>
-      expect(screen.queryByText('First delivery to this repository.')).toBeNull(),
-    );
+    // Only once the project's Runs have loaded does the absence prove anything (review Spec-3
+    // of #123, Issue #115): the reminder shows nothing while they are loading.
+    await vi.waitFor(() => expect(api.calls('projectRuns')).toHaveLength(2));
+    await vi.waitFor(() => expect(client.isFetching()).toBe(0));
+    await act(async () => undefined);
+    // The earlier Run was delivered.
+    expect(screen.queryByText('First delivery to this repository.')).toBeNull();
   });
 });
 

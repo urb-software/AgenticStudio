@@ -40,8 +40,12 @@ function Options({
 }) {
   return (
     <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0" aria-label="Options offered">
-      {options.map((option) => (
-        <li key={option} className="flex flex-wrap items-center gap-2 text-small text-text-muted">
+      {/* Keyed by position: the agent may offer the same text twice (Issue #115). */}
+      {options.map((option, index) => (
+        <li
+          key={`${index}-${option}`}
+          className="flex flex-wrap items-center gap-2 text-small text-text-muted"
+        >
           <span className="break-words whitespace-pre-wrap">{option}</span>
           {option === recommendation ? <RecommendedMark /> : null}
         </li>
@@ -86,12 +90,27 @@ function Message({ message }: { message: RunMessageOutput }) {
   );
 }
 
-/** Between two turns: the Run step that ran, whose log is in the Log card below. */
-function StepDivider({ index }: { index: number }) {
+/**
+ * Between two turns: the Run step that ran, whose log is in the Log card below. The link shows
+ * that step in the log (Issue #115); without it loaded, it goes to the Log card.
+ */
+function StepDivider({
+  index,
+  onShowStep,
+}: {
+  index: number;
+  onShowStep: ((index: number) => boolean) | undefined;
+}) {
   return (
     <li className="flex items-center gap-2 text-caption text-text-dim">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
-      <a href="#run-log-title" className="text-text-muted no-underline hover:underline">
+      <a
+        href="#run-log-title"
+        onClick={(event) => {
+          if (onShowStep?.(index)) event.preventDefault();
+        }}
+        className="text-text-muted no-underline hover:underline"
+      >
         Run step {index} · log below
       </a>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
@@ -104,14 +123,21 @@ function StepDivider({ index }: { index: number }) {
  * the operator, in order, with the Run step that ran between them (its log is in the Log card).
  * The question is the end of Run step n; the answer resumes the session as step n + 1.
  */
-export function RunConversation({ messages }: { messages: readonly RunMessageOutput[] }) {
+export function RunConversation({
+  messages,
+  onShowStep,
+}: {
+  messages: readonly RunMessageOutput[];
+  /** Shows Run step `index` in the log; false when it cannot (the link then goes to the log). */
+  onShowStep?: (index: number) => boolean;
+}) {
   let step = 0;
   const items: ReactNode[] = [];
   messages.forEach((message, i) => {
     // A question ends a Run step: it ran after the Task or the previous answer.
     if (message.kind === 'question') {
       step += 1;
-      items.push(<StepDivider key={`step-${step}`} index={step} />);
+      items.push(<StepDivider key={`step-${step}`} index={step} onShowStep={onShowStep} />);
     }
     items.push(<Message key={`${i}-${message.kind}`} message={message} />);
   });
@@ -199,9 +225,9 @@ export function AnswerQuestion({ run, question }: { run: RunOutput; question: Ru
       <form onSubmit={submit} className="flex min-w-0 flex-col gap-3" noValidate>
         {question.options && question.options.length > 0 ? (
           <div role="group" aria-label="Options" className="flex flex-wrap gap-2">
-            {question.options.map((option) => (
+            {question.options.map((option, index) => (
               <Button
-                key={option}
+                key={`${index}-${option}`}
                 type="button"
                 variant="secondary"
                 aria-pressed={text.trim() === option}

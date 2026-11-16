@@ -651,7 +651,9 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(heading).toHaveText('Change a file [fake:checks-failed]');
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
   await expect(main.getByText('Draft pull request opened.')).toBeVisible();
-  await expect(main.getByRole('link', { name: /Pull request #1/ }).first()).toHaveAttribute(
+  // Shown once (Issue #115): in the success banner, not again in Details.
+  await expect(main.getByRole('link', { name: /Pull request #1/ })).toHaveCount(1);
+  await expect(main.getByRole('link', { name: /Pull request #1/ })).toHaveAttribute(
     'href',
     /^https:\/\/github\.com\/fixtures\/run-[^/]+\/pull\/1$/,
   );
@@ -732,8 +734,8 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(rows.nth(5)).toContainText('Succeeded');
   await expect(rows.nth(6)).toContainText('Succeeded');
   await expect(rows.nth(7)).toContainText('Succeeded');
-  await expectNoHorizontalScroll(page);
-  await expectNoAxeViolations(page);
+  // At this viewport, in both themes: no sideways scroll, no axe violations (Issue #115).
+  await expectInBothThemes(page, rows.nth(0));
 
   // Story #103: the operator answers the agent's question with one of its options; the same
   // agent worker resumes the session and the Run succeeds. The conversation and the log show

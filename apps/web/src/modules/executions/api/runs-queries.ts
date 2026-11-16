@@ -6,12 +6,11 @@ import {
   api,
   ApiError,
   type RunOutput,
+  type RunsSummaryOutput,
   type RunStepListOutput,
   type StartRunRequest,
 } from '../../../platform/api';
-
-/** States in which a Run is polled often: it moves on without the operator. */
-const MOVING: readonly RunOutput['state'][] = ['queued', 'preparing', 'running'];
+import { UNDER_WAY_STATES, WAITING_STATES } from '../components/run-states';
 
 /** How often a moving Run is read again while the page is visible. */
 const ACTIVE_POLL_MS = 2_000;
@@ -19,17 +18,24 @@ const ACTIVE_POLL_MS = 2_000;
 const WAITING_POLL_MS = 10_000;
 
 /**
- * The poll interval for a set of Runs (#97 DoR): fast while any is queued, preparing or
- * running (or retrying its delivery), slower while one only waits for the operator, and none once all are finished.
+ * The poll interval for a set of Runs (#97 DoR): fast while any is active (or retrying its
+ * delivery), slower while one only waits for the operator, and none once all are finished.
  */
 function pollIntervalFor(runs: readonly RunOutput[] | undefined): number | false {
   if (!runs) return false;
   // A requested delivery retry (Issue #102) moves on without the operator too.
-  if (runs.some((run) => MOVING.includes(run.state) || run.deliveryRetryRequested)) {
+  if (runs.some((run) => UNDER_WAY_STATES.includes(run.state) || run.deliveryRetryRequested)) {
     return ACTIVE_POLL_MS;
   }
-  if (runs.some((run) => run.state === 'waiting_for_operator')) return WAITING_POLL_MS;
+  if (runs.some((run) => WAITING_STATES.includes(run.state))) return WAITING_POLL_MS;
   return false;
+}
+
+/** The same rule for the summary's counts (Issue #115). */
+function summaryPollInterval(summary: RunsSummaryOutput | undefined): number | false {
+  if (!summary) return false;
+  if (summary.running > 0) return ACTIVE_POLL_MS;
+  return summary.waiting > 0 ? WAITING_POLL_MS : false;
 }
 
 /** Every cache entry of this module starts with this key, so a start can refresh them all. */
@@ -40,6 +46,9 @@ const projectRunsKey = (projectId: string) => ['runs', 'project', projectId] as 
 
 /** Every Run across all projects, newest first. */
 const ALL_RUNS_KEY = ['runs', 'all'] as const;
+
+/** How many Runs are active and waiting, across all projects. */
+const RUNS_SUMMARY_KEY = ['runs', 'summary'] as const;
 
 /** The project list, for the project names on the Executions page. */
 const PROJECTS_KEY = ['runs', 'projects'] as const;
@@ -69,14 +78,27 @@ export function useProjectRuns(projectId: string, enabled = true) {
 }
 
 /**
- * Every Run across all projects, from the server only. Polled like a project's Runs: while any
- * is active and the tab is visible. The Executions page and the top-bar run indicator share it.
+ * Every Run across all projects, from the server only, for the Executions page. Polled like a
+ * project's Runs: while any is active and the tab is visible.
  */
 export function useAllRuns() {
   return useQuery({
     queryKey: ALL_RUNS_KEY,
     queryFn: api.listRuns,
     refetchInterval: (query) => pollIntervalFor(query.state.data),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * How many Runs are active and waiting for the operator (Issue #115), for the top-bar run
+ * indicator on every page: two counts instead of every Run. Polled like the lists.
+ */
+export function useRunsSummary() {
+  return useQuery({
+    queryKey: RUNS_SUMMARY_KEY,
+    queryFn: api.getRunsSummary,
+    refetchInterval: (query) => summaryPollInterval(query.state.data),
     refetchIntervalInBackground: false,
   });
 }

@@ -115,6 +115,15 @@ export interface RunStateView {
 }
 
 /**
+ * How many Runs are under way (`UNDER_WAY_RUN_STATES`) and how many wait for the operator,
+ * across all projects (Issue #115).
+ */
+export interface RunsSummary {
+  running: number;
+  waiting: number;
+}
+
+/**
  * The Run aggregate's store (Issue #96). Every change a worker reports is conditional on the
  * stored state and holder still being what the caller read, so a late or repeated report
  * changes nothing; the store, not a prior read, decides.
@@ -134,6 +143,9 @@ export interface RunRepository {
 
   /** A project's Runs, newest first: by creation time, then by id; without their messages. */
   listByProjectNewestFirst(projectId: string): Promise<Run[]>;
+
+  /** The counts of Runs under way and waiting for the operator, read in one query (Issue #115). */
+  summarize(): Promise<RunsSummary>;
 
   /**
    * Hands the oldest eligible Run (by creation time, then id) to `workerId`: a `queued` one →

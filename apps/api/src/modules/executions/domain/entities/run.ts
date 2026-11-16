@@ -24,6 +24,16 @@ export const ACTIVE_RUN_STATES = [
   'waiting_for_operator',
 ] as const satisfies readonly RunState[];
 
+/**
+ * States in which a Run is under way without the operator (Issue #115): queued ones count too,
+ * they are on their way, only not started yet. The run indicator's "running".
+ */
+export const UNDER_WAY_RUN_STATES = [
+  'queued',
+  'preparing',
+  'running',
+] as const satisfies readonly RunState[];
+
 /** States an agent worker holds the Run in (it sends heartbeats); the lost-worker sweep's scope. */
 export const CLAIMED_RUN_STATES = ['preparing', 'running'] as const satisfies readonly RunState[];
 
@@ -287,7 +297,6 @@ export class RunAlreadyFinishedError extends Error {
   }
 }
 
-/** The cancellation recorded when the operator cancels a Run (Issue #100). */
 /**
  * The cancellation recorded when the operator's cancel arrived during the delivery, after the
  * Run branch was pushed but before a pull request was opened (review of #124).
@@ -298,6 +307,7 @@ export const OPERATOR_CANCELLATION_BRANCH_PUSHED: RunCancellation = {
     'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
 };
 
+/** The cancellation recorded when the operator cancels a Run (Issue #100). */
 export const OPERATOR_CANCELLATION: RunCancellation = {
   by: 'operator',
   reason: 'Cancelled by the operator.',

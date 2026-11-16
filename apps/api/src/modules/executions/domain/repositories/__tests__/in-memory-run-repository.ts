@@ -12,6 +12,7 @@ import {
   type RunState,
   type RunWorkingCopy,
   stepLimitFailure,
+  UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
 import type {
   AppendStepOutcome,
@@ -20,6 +21,7 @@ import type {
   NewRun,
   ResumeAfterLimitOutcome,
   RunRepository,
+  RunsSummary,
   RunStateView,
   RunStepRecord,
   StoredRunStep,
@@ -95,6 +97,15 @@ export class InMemoryRunRepository implements RunRepository {
 
   listNewestFirst(): Promise<Run[]> {
     return Promise.resolve([...this.runs].reverse().map((run) => this.listed(run)));
+  }
+
+  summarize(): Promise<RunsSummary> {
+    const count = (states: readonly RunState[]) =>
+      this.runs.filter((run) => states.includes(run.state)).length;
+    return Promise.resolve({
+      running: count(UNDER_WAY_RUN_STATES),
+      waiting: count(['waiting_for_operator']),
+    });
   }
 
   listByProjectNewestFirst(projectId: string): Promise<Run[]> {

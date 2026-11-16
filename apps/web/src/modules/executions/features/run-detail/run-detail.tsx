@@ -12,7 +12,7 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { StatusPill } from '@/shared/components/status-pill';
@@ -25,19 +25,19 @@ import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useProjectRuns, useRun, useRunProject } from '../../api/runs-queries';
 import {
   FAILURE_MESSAGE,
-  FINAL_STATES,
   PROVIDER_LABEL,
   queuedReason,
   RUN_STATE_VIEW,
   taskSummary,
 } from '../../components/run-presentation';
 import { failedRequest } from '../../components/failed-request';
+import { FINAL_STATES } from '../../components/run-states';
 import { StaleBanner } from '../../components/stale-banner';
 import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
-import { RunLog } from '../run-log/run-log';
+import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { AnswerQuestion, RunConversation } from './run-conversation';
-import { PullRequestLink, RunDelivery } from './run-delivery';
+import { RunDelivery } from './run-delivery';
 import { ResumeRun } from './run-resume';
 
 /** The request the page makes (generated `getRun`), shown verbatim when it fails. */
@@ -282,6 +282,7 @@ export function RunTitle({ runId }: { runId: string }) {
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
+  const log = useRef<RunLogHandle>(null);
 
   if (isPending) return <LoadingRun />;
   // A failed background poll keeps the last known Run on screen (below); only a first load
@@ -362,7 +363,10 @@ export function RunDetail({ runId }: { runId: string }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         {/* Issue #103: once the agent asked, the Task leads the conversation. */}
         {run.messages && run.messages.length > 1 ? (
-          <RunConversation messages={run.messages} />
+          <RunConversation
+            messages={run.messages}
+            onShowStep={(index) => log.current?.showStep(index) ?? false}
+          />
         ) : (
           <Card aria-labelledby="run-task-title">
             <CardHeader>
@@ -389,11 +393,6 @@ export function RunDetail({ runId }: { runId: string }) {
                   <span className="font-mono text-code break-all">{run.runBranch}</span>
                 </Fact>
               ) : null}
-              {run.pullRequest ? (
-                <Fact term="Pull request">
-                  <PullRequestLink pullRequest={run.pullRequest} />
-                </Fact>
-              ) : null}
               <Fact term="Environment file">
                 <EnvironmentFileFact run={run} />
               </Fact>
@@ -417,7 +416,7 @@ export function RunDetail({ runId }: { runId: string }) {
         </Card>
       </div>
 
-      <RunLog key={run.id} run={run} />
+      <RunLog key={run.id} ref={log} run={run} />
     </div>
   );
 }

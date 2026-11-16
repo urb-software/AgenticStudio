@@ -19,6 +19,7 @@
     "lint": "eslint --max-warnings 0 .",
     "typecheck": "pnpm run generate && tsc --noEmit -p tsconfig.json",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run build",
+    "test": "vitest run",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy"
   },
@@ -30,6 +31,8 @@
   "devDependencies": {
     "@types/node": "24.19.2",
     "eslint": "9.39.5",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
   }
 }

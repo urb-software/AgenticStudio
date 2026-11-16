@@ -3,11 +3,22 @@
 // process (the smoke runner's event loop is blocked while Playwright runs) on 127.0.0.1 at
 // STUB_GITHUB_PORT, and points the worker's STUDIO_AGENT_GITHUB_API_URL at it. Never real
 // GitHub. `GET /health` answers 200 once it listens.
+//
+// Like GitHub, it checks what the smoke must prove end to end (Issue #115): every call carries
+// the Agent token (`Authorization: Bearer $STUB_GITHUB_TOKEN`, else 401), and a new pull
+// request is a draft against the integration branch (`draft: true`, `base` =
+// $STUB_GITHUB_BASE, else 422). A refused call fails the delivery, and with it the smoke.
 import { createServer } from 'node:http';
 
 const port = Number(process.env.STUB_GITHUB_PORT);
 if (!Number.isInteger(port) || port <= 0) {
   console.error('STUB_GITHUB_PORT must be a port number');
+  process.exit(1);
+}
+const token = process.env.STUB_GITHUB_TOKEN ?? '';
+const base = process.env.STUB_GITHUB_BASE ?? '';
+if (!token || !base) {
+  console.error('STUB_GITHUB_TOKEN and STUB_GITHUB_BASE must be set');
   process.exit(1);
 }
 
@@ -23,6 +34,10 @@ const server = createServer((request, response) => {
   const match = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(url.pathname);
   if (!match) return send(404, { message: 'Not Found' });
   const [, owner, repo] = match;
+  if (request.headers.authorization !== `Bearer ${token}`) {
+    console.log(`[stub-github] refused ${request.method} ${url.pathname}: not the Agent token`);
+    return send(401, { message: 'Bad credentials' });
+  }
   const view = (pr) => ({
     number: pr.number,
     html_url: `https://github.com/${owner}/${repo}/pull/${pr.number}`,
@@ -39,6 +54,13 @@ const server = createServer((request, response) => {
   request.on('data', (chunk) => (text += chunk));
   request.on('end', () => {
     const body = JSON.parse(text || '{}');
+    if (body.draft !== true || body.base !== base) {
+      console.log(
+        `[stub-github] refused a pull request: draft ${body.draft}, base ${body.base} ` +
+          `(expected a draft against ${base})`,
+      );
+      return send(422, { message: 'Validation Failed' });
+    }
     const number = pulls.filter((pr) => pr.repo === `${owner}/${repo}`).length + 1;
     const pr = { repo: `${owner}/${repo}`, head: `${owner}:${body.head}`, number };
     pulls.push(pr);

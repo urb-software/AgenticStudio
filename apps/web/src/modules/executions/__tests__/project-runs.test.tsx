@@ -454,6 +454,8 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
     expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
     expect(startButton()).toHaveProperty('disabled', true);
+    // The checking state is accessible too (review R2-2 of #120, Issue #115).
+    await expect(document.body).toHaveNoAxeViolations();
     answer(
       new Response(
         JSON.stringify([

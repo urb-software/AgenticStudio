@@ -27,6 +27,7 @@ import {
   type RunState,
   type RunWorkingCopy,
   stepLimitFailure,
+  UNDER_WAY_RUN_STATES,
 } from '../../domain/entities/run.js';
 import type {
   AppendStepOutcome,
@@ -35,6 +36,7 @@ import type {
   DeliveryRetryOutcome,
   NewRun,
   RunRepository,
+  RunsSummary,
   RunStateView,
   RunStepRecord,
   StoredRunStep,
@@ -286,6 +288,20 @@ export class PrismaRunRepository implements RunRepository {
   async listNewestFirst(): Promise<Run[]> {
     const rows = await this.db.run.findMany({ orderBy: [...NEWEST_FIRST], select: LIST_FIELDS });
     return rows.map(toRun);
+  }
+
+  async summarize(): Promise<RunsSummary> {
+    // One bounded aggregate over the non-final states: two counts, never the Runs.
+    const groups = await this.db.run.groupBy({
+      by: ['state'],
+      where: { state: { in: [...UNDER_WAY_RUN_STATES, 'waiting_for_operator'] } },
+      _count: { _all: true },
+    });
+    const count = (states: readonly string[]) =>
+      groups
+        .filter((group) => states.includes(group.state))
+        .reduce((sum, group) => sum + group._count._all, 0);
+    return { running: count(UNDER_WAY_RUN_STATES), waiting: count(['waiting_for_operator']) };
   }
 
   async listByProjectNewestFirst(projectId: string): Promise<Run[]> {

@@ -14,6 +14,7 @@ type Route =
   | 'projectRuns'
   | 'start'
   | 'runs'
+  | 'summary'
   | 'run'
   | 'retryDelivery'
   | 'resume'
@@ -34,6 +35,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/projects\/([^/]+)$/, () => 'project'],
   [/^\/api\/projects\/([^/]+)\/runs$/, (method) => (method === 'POST' ? 'start' : 'projectRuns')],
   [/^\/api\/runs$/, () => 'runs'],
+  [/^\/api\/runs\/(summary)$/, () => 'summary'],
   [/^\/api\/runs\/([^/]+)$/, () => 'run'],
   [/^\/api\/runs\/([^/]+)\/retry-delivery$/, () => 'retryDelivery'],
   [/^\/api\/runs\/([^/]+)\/resume$/, () => 'resume'],
@@ -101,11 +103,11 @@ export const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000b2';
 
 /**
  * A fake of the executions operator API behind `fetch` (`GET|POST /api/projects/:id/runs`,
- * `GET /api/runs`, `GET /api/runs/:runId`, `GET /api/providers`, and `GET /api/projects(/:id)`
- * for project names),
- * so the generated client, the wrapper and TanStack Query run for real. `runs` is the server's
- * state, newest first; tests change a Run's state (as the agent worker would) and script error
- * responses. It keeps the contract (201 with a `queued` Run) without the API's rules.
+ * `GET /api/runs`, `GET /api/runs/summary`, `GET /api/runs/:runId`, `GET /api/providers`, and
+ * `GET /api/projects(/:id)` for project names), so the generated client, the wrapper and
+ * TanStack Query run for real. `runs` is the server's state, newest first; tests change a Run's
+ * state (as the agent worker would) and script error responses. It keeps the contract (201 with
+ * a `queued` Run) without the API's rules.
  */
 export function fakeRunsApi(initial: RunOutput[] = []) {
   const runs = [...initial];
@@ -115,6 +117,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     projectRuns: [],
     start: [],
     runs: [],
+    summary: [],
     run: [],
     retryDelivery: [],
     resume: [],
@@ -204,6 +207,13 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         );
       case 'runs':
         return json(200, [...runs]);
+      case 'summary':
+        // The API's counts (Issue #115): queued, preparing and running are under way.
+        return json(200, {
+          running: runs.filter((run) => ['queued', 'preparing', 'running'].includes(run.state))
+            .length,
+          waiting: runs.filter((run) => run.state === 'waiting_for_operator').length,
+        });
       case 'providers':
         return json(200, BOTH_AVAILABLE);
       case 'run': {

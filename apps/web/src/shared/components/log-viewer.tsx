@@ -40,7 +40,81 @@ export const LOG_ROW_HEIGHT = 20;
 /** Within this many pixels of the end counts as "at the newest row". */
 const AT_END_SLACK = 8;
 
+/** A row in view: its line number, and for a section header the rows it holds. */
+type VisibleRow = { row: LogRow; number: number; size: number };
+
+/** The rows in view for `rows` and `collapsed`, with what extending them needs. */
+interface Visible {
+  rows: readonly LogRow[];
+  collapsed: ReadonlySet<string>;
+  shown: readonly VisibleRow[];
+  /** Index in `shown` of the last section header, or -1 before the first one. */
+  header: number;
+  /** Whether the last section is collapsed (its rows are left out). */
+  hiding: boolean;
+}
+
+/**
+ * The rows in view: every row keeps its line number; rows of a collapsed section are left out.
+ * When `rows` only grew since `previous` (a live batch appended to the same rows) and nothing
+ * was collapsed or expanded, only the new rows are walked (Issue #115); otherwise all are.
+ */
+function visibleRows(
+  previous: Visible | undefined,
+  rows: readonly LogRow[],
+  collapsed: ReadonlySet<string>,
+): Visible {
+  if (previous && previous.rows === rows && previous.collapsed === collapsed) return previous;
+  const from = previous?.rows.length ?? 0;
+  const grew =
+    previous !== undefined &&
+    previous.collapsed === collapsed &&
+    from <= rows.length &&
+    (from === 0 || (rows[0] === previous.rows[0] && rows[from - 1] === previous.rows[from - 1]));
+  const start = grew ? from : 0;
+  const added: VisibleRow[] = [];
+  let header = grew ? previous.header : -1;
+  let hiding = grew ? previous.hiding : false;
+  // Rows added to the section that was already open when the batch arrived.
+  let grown = 0;
+  for (let index = start; index < rows.length; index++) {
+    const row = rows[index]!;
+    const number = index + 1;
+    if (row.tone === 'section') {
+      hiding = collapsed.has(row.key);
+      added.push({ row, number, size: 0 });
+      header = (grew ? previous.shown.length : 0) + added.length - 1;
+      continue;
+    }
+    const at = header - (grew ? previous.shown.length : 0);
+    if (at >= 0) added[at]!.size += 1;
+    else if (header >= 0) grown += 1;
+    if (!hiding) added.push({ row, number, size: 0 });
+  }
+  const shown = grew ? previous.shown.concat(added) : added;
+  if (grew && grown > 0) {
+    // The earlier section's header gets a new size; the previous rows stay untouched.
+    const last = previous.header;
+    shown[last] = { ...shown[last]!, size: shown[last]!.size + grown };
+  }
+  return { rows, collapsed, shown, header, hiding };
+}
+
+/** What a parent can ask of the viewer (through its `ref`). */
+export interface LogViewerHandle {
+  /**
+   * Shows the row with this key at the top of the log and moves keyboard focus to the log,
+   * which pauses following. False when no row in view has the key.
+   */
+  scrollToRow(key: string): boolean;
+}
+
 type LogViewerProps = {
+  ref?: React.Ref<LogViewerHandle>;
+  /**
+   * The rows, in order. To append, pass a new array that starts with the same row objects:
+   * only the new rows are then laid out (Issue #115); anything else is laid out afresh.
+   */
   rows: readonly LogRow[];
   /** Names the log for assistive technology (`role="log"`). */
   label: string;
@@ -70,6 +144,7 @@ type LogViewerProps = {
  * old rows while scrolling, which a screen reader would announce as new.
  */
 function LogViewer({
+  ref,
   rows,
   label,
   streaming = false,
@@ -84,23 +159,13 @@ function LogViewer({
   const followingRef = React.useRef(true);
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(new Set());
 
-  // The rows in view: every row keeps its line number; rows of a collapsed section are left out.
-  const visible = React.useMemo(() => {
-    const shown: { row: LogRow; number: number; size: number }[] = [];
-    let header: { size: number } | undefined;
-    let hiding = false;
-    rows.forEach((row, index) => {
-      if (row.tone === 'section') {
-        hiding = collapsed.has(row.key);
-        header = { size: 0 };
-        shown.push(Object.assign(header, { row, number: index + 1 }));
-        return;
-      }
-      if (header) header.size += 1;
-      if (!hiding) shown.push({ row, number: index + 1, size: 0 });
-    });
-    return shown;
-  }, [rows, collapsed]);
+  // Derived from the previous render's rows in view, so a live batch walks only its own rows.
+  const [layout, setLayout] = React.useState<Visible>(() =>
+    visibleRows(undefined, rows, collapsed),
+  );
+  const current = visibleRows(layout, rows, collapsed);
+  if (current !== layout) setLayout(current);
+  const visible = current.shown;
 
   const toggle = (key: string) =>
     setCollapsed((current) => {
@@ -141,6 +206,23 @@ function LogViewer({
     const atEnd = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END_SLACK;
     if (atEnd !== followingRef.current) setFollow(atEnd);
   };
+
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      scrollToRow(key) {
+        const element = scrollRef.current;
+        const index = visible.findIndex((item) => item.row.key === key);
+        if (!element || index === -1) return false;
+        // Fixed row heights: the row's offset is its index in view (Issue #115).
+        setFollow(false);
+        element.scrollTop = index * LOG_ROW_HEIGHT;
+        element.focus();
+        return true;
+      },
+    }),
+    [visible],
+  );
 
   const jumpToLatest = () => {
     setFollow(true);

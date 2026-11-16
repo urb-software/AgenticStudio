@@ -74,6 +74,27 @@ describe('Answering the agent (Issue #103)', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('shows every option, also when the agent offers one twice (Issue #115)', async () => {
+    const error = vi.spyOn(console, 'error');
+    const repeated = { text: 'Which one?', options: ['Yes', 'Yes', 'No'] };
+    const run = waitingRun({
+      question: repeated,
+      messages: [
+        { role: 'operator', kind: 'task', text: 'Add a store', at: T0 },
+        { role: 'agent', kind: 'question', ...repeated, at: T1 },
+      ],
+    });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    const options = within(await form()).getByRole('group', { name: 'Options' });
+    expect(within(options).getAllByRole('button', { name: 'Yes' })).toHaveLength(2);
+    const offered = screen.getByRole('list', { name: 'Options offered' });
+    expect(within(offered).getAllByText('Yes')).toHaveLength(2);
+    // Keyed by position, not text: React reports no duplicate keys.
+    expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+  });
+
   it('sends a chosen option; the Run is queued to resume and the answer joins the conversation', async () => {
     const run = waitingRun();
     const api = fakeRunsApi([run]);

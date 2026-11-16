@@ -19,8 +19,9 @@ type RunRowsProps = {
 
 /**
  * Runs as rows: the state pill, the start of the Task (the link to the Run page), the Provider,
- * a pull request marker when the Run was delivered (Issue #102), the project when the list spans projects, and how long ago it was created. One line per Run from tablet up; on phones each Run is a
- * stacked block, so the page never scrolls sideways.
+ * a pull request marker when the Run was delivered (Issue #102), the project when the list
+ * spans projects, and how long ago it was created. One line per Run from tablet up; on phones
+ * each Run is a stacked block, so the page never scrolls sideways.
  */
 export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
   return (
