@@ -2,10 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { FORBIDDEN_USER_SETTINGS, userSettingsProblem } from '../claude-code/user-settings.js';
+import { userSettingsProblem } from '../claude-code/user-settings.js';
 
-// Review R4 of #129: before every Run step the worker checks the agent user's own Claude Code
-// settings (the approved Mode keeps the user setting source). Key names only, never values.
+// Reviews R4 and N1 of #129: before every Run step the worker checks the agent user's own
+// Claude Code settings (the approved Mode keeps the user setting source). Coordinator decision:
+// absent, or only `$schema`. Key names only, never values.
 
 describe("the agent user's Claude Code settings", () => {
   let home: string;
@@ -21,15 +22,32 @@ describe("the agent user's Claude Code settings", () => {
   });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 
-  it('lets a step start without settings files, or with harmless ones', async () => {
+  it('lets a step start when the files are absent or hold only $schema', async () => {
     expect(await userSettingsProblem(home)).toBeNull();
-    write('settings.json', { model: 'some-model', theme: 'dark', includeCoAuthoredBy: false });
+    write('settings.json', { $schema: 'https://json.schemastore.org/claude-code-settings.json' });
+    write('settings.local.json', {});
     expect(await userSettingsProblem(home)).toBeNull();
     expect(await userSettingsProblem(undefined)).toBeNull();
   });
 
-  it.each(FORBIDDEN_USER_SETTINGS)('stops a step for %s, naming the key only', async (key) => {
-    write('settings.json', { [key]: 'test-only-secret-value' });
+  it.each([
+    'hooks',
+    'env',
+    'apiKeyHelper',
+    'permissions',
+    'mcpServers',
+    'enabledMcpjsonServers',
+    'awsAuthRefresh',
+    'awsCredentialExport',
+    'enabledPlugins',
+    'extraKnownMarketplaces',
+    'otelHeadersHelper',
+    'forceLoginMethod',
+    'statusLine',
+    // Even a harmless-looking key: only $schema is allowed.
+    'model',
+  ])('stops a step for %s, naming the key only', async (key) => {
+    write('settings.json', { $schema: 'x', [key]: 'test-only-secret-value' });
 
     const problem = await userSettingsProblem(home);
 
@@ -48,13 +66,16 @@ describe("the agent user's Claude Code settings", () => {
     );
   });
 
-  it('stops a step for a file it cannot check', async () => {
-    write('settings.json', '{ not json');
+  it.each(['{ not json', '[]', '"text"', 'null'])(
+    'stops a step for a file it cannot check: %j',
+    async (content) => {
+      write('settings.json', content);
 
-    expect(await userSettingsProblem(home)).toBe(
-      'Claude Code user settings could not be checked (~/.claude/settings.json); the operator must review them.',
-    );
-  });
+      expect(await userSettingsProblem(home)).toBe(
+        'Claude Code user settings could not be checked (~/.claude/settings.json); the operator must review them.',
+      );
+    },
+  );
 
   it.skipIf(process.platform === 'win32')('follows a symbolic link to the real file', async () => {
     const elsewhere = join(home, 'elsewhere.json');

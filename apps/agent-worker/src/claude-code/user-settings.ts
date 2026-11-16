@@ -2,26 +2,17 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
- * The agent user's own Claude Code settings (review R4 of #129). The approved Mode keeps the
- * user setting source (`--setting-sources user`), so `~/.claude/settings.json` and
- * `~/.claude/settings.local.json` still load, and an agent could write them through Bash. Keys
- * that run code, change the login or billing, widen permissions or connect MCP servers there
- * would apply to every later Run, so before every Run step the worker refuses to start the CLI
- * while either file holds one of them; the operator reviews the file. Only key names are ever
- * reported, never values.
+ * The agent user's own Claude Code settings (reviews R4 and N1 of #129). The approved Mode
+ * keeps the user setting source (`--setting-sources user`), so `~/.claude/settings.json` and
+ * `~/.claude/settings.local.json` still load, and an agent could write them through Bash for
+ * later Runs (hooks, env, an API key helper, plugins, status line, permissions, MCP servers).
+ * Coordinator decision: both files must be absent or hold only `$schema`. Before every Run step
+ * the worker refuses to start the CLI otherwise; the operator reviews the file. Only key names
+ * are ever reported, never values.
  */
 
-/** Top-level keys of a user settings file that stop a Run step. */
-export const FORBIDDEN_USER_SETTINGS = [
-  'hooks',
-  'env',
-  'apiKeyHelper',
-  'permissions',
-  'mcpServers',
-  'enabledMcpjsonServers',
-  'awsAuthRefresh',
-  'awsCredentialExport',
-] as const;
+/** The only top-level key a user settings file may hold. */
+export const ALLOWED_USER_SETTINGS: readonly string[] = ['$schema'];
 
 /** The user settings files, relative to the agent user's home directory. */
 export const USER_SETTINGS_FILES = ['.claude/settings.json', '.claude/settings.local.json'];
@@ -55,8 +46,8 @@ export async function userSettingsProblem(home: string | undefined): Promise<str
       unreadable.push(`~/${file}`);
       continue;
     }
-    for (const key of FORBIDDEN_USER_SETTINGS) {
-      if (Object.hasOwn(settings, key)) found.add(key);
+    for (const key of Object.keys(settings)) {
+      if (!ALLOWED_USER_SETTINGS.includes(key)) found.add(key);
     }
   }
   if (found.size > 0) {

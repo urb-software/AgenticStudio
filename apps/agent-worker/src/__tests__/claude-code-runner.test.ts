@@ -309,7 +309,7 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     mkdirSync(join(home, '.claude'), { recursive: true });
     writeFileSync(
       join(home, '.claude', 'settings.json'),
-      JSON.stringify({ model: 'x', hooks: { secret: 'test-only-value' }, env: { A: '1' } }),
+      JSON.stringify({ $schema: 'x', hooks: { secret: 'test-only-value' }, env: { A: '1' } }),
     );
     const withHome = new ClaudeCodeRunner({
       cli: {
