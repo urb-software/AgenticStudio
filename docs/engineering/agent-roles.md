@@ -55,5 +55,5 @@ Claude Code project skills in `.claude/skills/studio-*` (adapted from mattpocock
 - `studio-code-review` counts as independent review only in a fresh context that did not write the diff; in the implementer session it is a labelled self-review.
 - The domain glossary lives at `docs/architecture/glossary.md` and ADRs at `docs/architecture/adr/NNNN-slug.md`, both created lazily and changed only through PRs.
 - Skill changes are documentation changes: small, reviewed PRs.
-- **Model per role**, when a role runs as a Claude Code sub-agent: the independent reviewer and its two review sub-agents use `model: opus`; the reviewer is never a weaker model than the implementer. The implementer uses `model: sonnet` **as a trial**: compare turns per implementer, review rounds until approval and blocking findings per Story against earlier Stories, and return to `opus` if review rounds rise. The operator decides whether the trial becomes the rule.
+- **Model per role**, when a role runs as a Claude Code sub-agent: the independent reviewer and its two review sub-agents use `model: opus`; the reviewer is never a weaker model than the implementer. The implementer uses `model: sonnet`.
 - A second or later review round covers the changes since the previously reviewed SHA and the earlier findings, not the whole PR again (`studio-code-review` step 7).
