@@ -7,7 +7,8 @@ import type { RecordedWorkerStatus } from '../../../domain/services/provider-ava
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { runView } from '../../../domain/services/follow-up-context.js';
 import type { RetentionPolicy } from '../../../ports/retention-policy.js';
-import { FollowUpRunHandler } from '../handler.js';
+import { FollowUpRunHandler, ReviewCommentsNotLoadedError } from '../handler.js';
+import type { ReviewComment } from '../../../domain/entities/review-comments.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -112,7 +113,15 @@ describe('FollowUpRunHandler', () => {
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
     lookups = new InMemoryRunLookupRepository(runs);
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
+    handler = new FollowUpRunHandler(
+      runs,
+      { now: () => T1 },
+      workers,
+      LEASE,
+      lookups,
+      RETENTION,
+      lookups,
+    );
     connect();
   });
 
@@ -164,6 +173,89 @@ describe('FollowUpRunHandler', () => {
       expect(queued.messages.at(-1)).not.toHaveProperty('source');
       // A Follow-up of its own does not touch a draft the operator is still reviewing.
       expect(runs.prepared.has(run.id)).toBe(true);
+    });
+  });
+
+  // Issue #146: a Follow-up prepared from the pull request's Review comments.
+  describe('a Follow-up prepared from review comments', () => {
+    const comment = (id: string, author: string): ReviewComment => ({
+      id,
+      author,
+      kind: 'conversation',
+      text: 'Please add a test.',
+      createdAt: '2026-11-16T10:00:00.000Z',
+    });
+    const load = (runId: string) =>
+      runs.reviewSets.set(runId, {
+        scope: 'unresolved',
+        comments: [
+          comment('conversation-1', 'octocat'),
+          comment('conversation-2', 'octocat'),
+          comment('conversation-3', 'stranger'),
+        ],
+        truncated: false,
+        loadedAt: T0,
+      });
+
+    it('records the source, how many comments and their authors, and removes the loaded set', async () => {
+      const run = await finished();
+      load(run.id);
+
+      const { run: queued } = await handler.execute(
+        run.id,
+        'Add the test the reviewer asked for.',
+        'review_comments',
+        ['conversation-1', 'conversation-3'],
+      );
+
+      expect(queued.messages.at(-1)).toEqual({
+        kind: 'follow_up',
+        text: 'Add the test the reviewer asked for.',
+        at: T1,
+        source: 'review_comments',
+        sourceComments: { count: 2, authors: ['octocat', 'stranger'] },
+      });
+      expect(runs.reviewSets.has(run.id)).toBe(false);
+    });
+
+    it('refuses ids outside the loaded set, repeated ids and a set that was never loaded', async () => {
+      const run = await finished();
+      await expect(
+        handler.execute(run.id, 'x', 'review_comments', ['conversation-1']),
+      ).rejects.toBeInstanceOf(ReviewCommentsNotLoadedError);
+      load(run.id);
+
+      for (const ids of [['conversation-9'], ['conversation-1', 'conversation-1'], []]) {
+        await expect(handler.execute(run.id, 'x', 'review_comments', ids)).rejects.toBeInstanceOf(
+          ReviewCommentsNotLoadedError,
+        );
+      }
+
+      // Nothing was queued, and the set is still there.
+      expect((await runs.findById(run.id))?.followUpQueued).toBe(false);
+      expect(runs.reviewSets.has(run.id)).toBe(true);
+    });
+
+    it('keeps the loaded set when the Follow-up is refused', async () => {
+      const run = await finished();
+      await handler.execute(run.id, 'A first Follow-up.');
+      load(run.id);
+
+      await expect(
+        handler.execute(run.id, 'x', 'review_comments', ['conversation-1']),
+      ).rejects.toBeInstanceOf(FollowUpNotAllowedError);
+
+      expect(runs.reviewSets.has(run.id)).toBe(true);
+    });
+
+    it('leaves a loaded set alone when the operator writes a Follow-up from scratch', async () => {
+      const run = await finished();
+      load(run.id);
+
+      const { run: queued } = await handler.execute(run.id, 'Written from scratch.');
+
+      expect(queued.messages.at(-1)).not.toHaveProperty('source');
+      expect(runs.reviewSets.has(run.id)).toBe(true);
     });
   });
 
@@ -283,7 +375,15 @@ describe('FollowUpRunHandler', () => {
   it('refuses while the agent worker holding the Working copy is gone, or the Provider is off', async () => {
     const run = await finished('succeeded');
     workers = new InMemoryWorkerStatusStore();
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
+    handler = new FollowUpRunHandler(
+      runs,
+      { now: () => T1 },
+      workers,
+      LEASE,
+      lookups,
+      RETENTION,
+      lookups,
+    );
     connect(OTHER_WORKER);
     await expect(handler.execute(run.id, 'x')).rejects.toEqual(
       new FollowUpNotAllowedError('worker_unavailable'),

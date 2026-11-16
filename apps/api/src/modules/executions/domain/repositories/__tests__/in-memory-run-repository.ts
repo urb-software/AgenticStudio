@@ -3,6 +3,7 @@ import {
   ACTIVE_RUN_STATES,
   canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
+  type FollowUpComments,
   type FollowUpSource,
   isFinal,
   partEndOf,
@@ -18,6 +19,7 @@ import {
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
+import type { ReviewCommentSet } from '../../entities/review-comments.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
@@ -446,11 +448,15 @@ export class InMemoryRunRepository implements RunRepository {
   /** Issue #145: the prepared Follow-ups, by Run id (shared with the lookup and prepared stores). */
   readonly prepared = new Map<string, PreparedFollowUp>();
 
+  /** Issue #146: the loaded Review comments, by Run id (shared with the lookup store). */
+  readonly reviewSets = new Map<string, ReviewCommentSet>();
+
   queueFollowUp(
     runId: string,
     text: string,
     now: Date,
     source?: FollowUpSource,
+    comments?: FollowUpComments,
   ): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (
@@ -472,8 +478,10 @@ export class InMemoryRunRepository implements RunRepository {
       text,
       at: now,
       ...(source === undefined ? {} : { source }),
+      ...(comments === undefined ? {} : { sourceComments: comments }),
     });
-    if (source !== undefined && this.prepared.get(runId)?.source === source) {
+    if (source === 'review_comments') this.reviewSets.delete(runId);
+    else if (source !== undefined && this.prepared.get(runId)?.source === source) {
       this.prepared.delete(runId);
     }
     Object.assign(run, {

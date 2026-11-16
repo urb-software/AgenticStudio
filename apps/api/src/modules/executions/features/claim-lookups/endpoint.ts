@@ -33,6 +33,16 @@ export class ClaimLookupsEndpoint {
         pullRequestNumber: lookup.pullRequestNumber,
         runBranch: lookup.runBranch,
         integrationBranch: lookup.integrationBranch,
+        ...(lookup.reviewComments === undefined
+          ? {}
+          : {
+              reviewComments: {
+                scope: lookup.reviewComments.scope,
+                ...(lookup.reviewComments.since === undefined
+                  ? {}
+                  : { since: lookup.reviewComments.since.toISOString() }),
+              },
+            }),
       })),
     );
   }

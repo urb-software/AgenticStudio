@@ -11,10 +11,16 @@ import {
   type RunPullRequestChecks,
 } from '../../domain/entities/run.js';
 import {
+  REVIEW_COMMENT_SCOPES,
+  type ReviewCommentScope,
+  type ReviewCommentsRequest,
+} from '../../domain/entities/review-comments.js';
+import {
   type ClaimedLookup,
   LOOKUP_KINDS,
   type LookupKind,
   type PullRequestStateResult,
+  type ReviewCommentsResult,
 } from '../../domain/entities/run-lookup.js';
 import type {
   LookupAnswerOutcome,
@@ -46,7 +52,12 @@ function prEndedAtAssignment(state: PullRequestState, now: Date): Prisma.Sql {
 export class PrismaRunLookupRepository implements RunLookupRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
 
-  async request(runId: string, kind: LookupKind, now: Date): Promise<LookupRequestOutcome> {
+  async request(
+    runId: string,
+    kind: LookupKind,
+    now: Date,
+    review?: ReviewCommentsRequest,
+  ): Promise<LookupRequestOutcome> {
     return this.db.$transaction(async (tx) => {
       const [run] = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM runs
@@ -59,12 +70,21 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       if (open) return 'open';
       await tx.runLookup.create({
-        data: { runId, kind, status: 'requested', requestedAt: now },
+        data: {
+          runId,
+          kind,
+          status: 'requested',
+          requestedAt: now,
+          ...(review === undefined ? {} : { scope: review.scope, since: review.since }),
+        },
       });
-      await tx.run.update({
-        where: { id: runId },
-        data: requestedColumns(kind, now),
-      });
+      // A load of Review comments marks no column of the Run: its state is read from the lookups.
+      if (kind !== 'review_comments') {
+        await tx.run.update({
+          where: { id: runId },
+          data: requestedColumns(kind, now),
+        });
+      }
       return 'requested';
     });
   }
@@ -90,10 +110,12 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
           pull_request_number: number;
           run_branch: string;
           integration_branch: string;
+          scope: string | null;
+          since: Date | null;
         }[]
       >`
         SELECT l.id, l.kind, l.run_id, r.remote_url, r.pull_request_number, r.run_branch,
-               r.integration_branch
+               r.integration_branch, l.scope, l.since
         FROM run_lookups l
         JOIN runs r ON r.id = l.run_id
         WHERE l.status = 'requested'
@@ -119,6 +141,9 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
           pullRequestNumber: row.pull_request_number,
           runBranch: row.run_branch,
           integrationBranch: row.integration_branch,
+          ...(row.kind === 'review_comments'
+            ? { reviewComments: reviewCommentsOf(row.scope, row.since) }
+            : {}),
         };
       });
     });
@@ -211,6 +236,46 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     });
   }
 
+  async completeReviewComments(
+    lookupId: string,
+    workerId: string,
+    result: ReviewCommentsResult,
+    now: Date,
+  ): Promise<LookupAnswerOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const lookup = await tx.runLookup.findUnique({ where: { id: lookupId } });
+      if (!lookup || lookup.claimedBy !== workerId) return 'not_held';
+      if (lookup.status === 'done') return 'duplicate';
+      if (lookup.status !== 'claimed') return 'not_held';
+      const scope = reviewCommentsOf(lookup.scope, lookup.since).scope;
+      await tx.runLookup.update({
+        where: { id: lookupId },
+        data: {
+          status: 'done',
+          finishedAt: now,
+          // The comments are kept in the Run's set only, not twice.
+          result: { comments: result.comments.length, truncated: result.truncated },
+          error: null,
+          retryAt: null,
+        },
+      });
+      // The latest load replaces the earlier one.
+      const comments = result.comments as unknown as Prisma.InputJsonValue;
+      await tx.runReviewCommentSet.upsert({
+        where: { runId: lookup.runId },
+        create: {
+          runId: lookup.runId,
+          scope,
+          comments,
+          truncated: result.truncated,
+          loadedAt: now,
+        },
+        update: { scope, comments, truncated: result.truncated, loadedAt: now },
+      });
+      return 'stored';
+    });
+  }
+
   async fail(
     lookupId: string,
     workerId: string,
@@ -237,10 +302,13 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
             ? { status: 'failed', finishedAt: now, error }
             : { status: 'requested', claimedBy: null, claimedAt: null, retryAt, error },
       });
-      await tx.run.updateMany({
-        where: { id: lookup.runId },
-        data: failedColumns(lookup.kind as LookupKind, error, retryAt, lookup.requestedAt),
-      });
+      // A failed load of Review comments marks no column of the Run: the error stays on the lookup.
+      if (lookup.kind !== 'review_comments') {
+        await tx.run.updateMany({
+          where: { id: lookup.runId },
+          data: failedColumns(lookup.kind as LookupKind, error, retryAt, lookup.requestedAt),
+        });
+      }
       return 'stored';
     });
   }
@@ -302,6 +370,17 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     });
     return rows.map((row) => row.id);
   }
+}
+
+/** What a stored `review_comments` lookup asks for; the CHECK constraint fixes its scope. */
+function reviewCommentsOf(
+  scope: string | null,
+  since: Date | null,
+): { scope: ReviewCommentScope; since?: Date } {
+  if (!(REVIEW_COMMENT_SCOPES as readonly (string | null)[]).includes(scope)) {
+    throw new Error(`Unexpected review comment scope in the database: ${String(scope)}`);
+  }
+  return { scope: scope as ReviewCommentScope, ...(since === null ? {} : { since }) };
 }
 
 /**

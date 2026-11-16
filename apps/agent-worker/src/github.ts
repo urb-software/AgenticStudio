@@ -169,6 +169,44 @@ export interface CheckReport {
 /** What reading one job log gave (Issue #145): its last lines, or why there is none. */
 export type JobLogOutcome = { log: string } | { unavailable: string };
 
+/** One review as the Git host reports it (Issue #146): its summary and verdict, not its comments. */
+export interface ReviewReport {
+  id: number;
+  author: string;
+  /** GitHub's state, lower case: approved, changes_requested, commented, dismissed or pending. */
+  state: string;
+  body: string;
+  /** When the review was submitted; undefined while it is a pending draft. */
+  submittedAt: string | undefined;
+}
+
+/** One inline comment on the pull request's diff (Issue #146). */
+export interface InlineCommentReport {
+  id: number;
+  author: string;
+  path: string;
+  /** The line it is on now, or the one it was made on when the diff has moved; none for a file comment. */
+  line: number | undefined;
+  /** The diff lines around it, as GitHub gives them (a hunk). */
+  diffHunk: string | undefined;
+  body: string;
+  createdAt: string;
+}
+
+/** One conversation comment on the pull request (Issue #146). */
+export interface ConversationCommentReport {
+  id: number;
+  author: string;
+  body: string;
+  createdAt: string;
+}
+
+/** A listing read page by page: what was read, and whether the Git host had more. */
+export interface Listing<T> {
+  items: T[];
+  more: boolean;
+}
+
 /** A Run branch's position against the integration branch (Issue #142). */
 export interface BranchPosition {
   behindBy: number;
@@ -219,6 +257,23 @@ export interface PullRequestReader {
     jobId: number,
     signal: AbortSignal,
   ): Promise<JobLogOutcome>;
+  /** The pull request's reviews (Issue #146), oldest first, at most ten pages. */
+  reviews(pull: PullRequestNumber, signal: AbortSignal): Promise<Listing<ReviewReport>>;
+  /** The inline comments on the pull request's diff (Issue #146), oldest first. */
+  inlineComments(
+    pull: PullRequestNumber,
+    signal: AbortSignal,
+  ): Promise<Listing<InlineCommentReport>>;
+  /** The conversation comments on the pull request (Issue #146), oldest first. */
+  conversationComments(
+    pull: PullRequestNumber,
+    signal: AbortSignal,
+  ): Promise<Listing<ConversationCommentReport>>;
+  /**
+   * The ids of the inline comments in resolved review threads (Issue #146), through the GraphQL
+   * API (a read-only query): GitHub's REST API does not tell which threads are resolved.
+   */
+  resolvedInlineCommentIds(pull: PullRequestNumber, signal: AbortSignal): Promise<Set<number>>;
 }
 
 const pullRequestAnswer = z.object({ number: z.number(), html_url: z.string() });
@@ -236,6 +291,82 @@ const pullRequestDetailsAnswer = pullRequestAnswer.extend({
   }),
   user: z.object({ login: z.string() }).nullable().optional(),
 });
+
+const userAnswer = z.object({ login: z.string() }).nullable().optional();
+
+const reviewsAnswer = z.array(
+  z.object({
+    id: z.number(),
+    user: userAnswer,
+    state: z.string(),
+    body: z.string().nullable().optional(),
+    submitted_at: z.string().nullable().optional(),
+  }),
+);
+
+const inlineCommentsAnswer = z.array(
+  z.object({
+    id: z.number(),
+    user: userAnswer,
+    path: z.string(),
+    line: z.number().nullable().optional(),
+    original_line: z.number().nullable().optional(),
+    diff_hunk: z.string().nullable().optional(),
+    body: z.string().nullable().optional(),
+    created_at: z.string(),
+  }),
+);
+
+const conversationCommentsAnswer = z.array(
+  z.object({
+    id: z.number(),
+    user: userAnswer,
+    body: z.string().nullable().optional(),
+    created_at: z.string(),
+  }),
+);
+
+const reviewThreadsAnswer = z.object({
+  data: z
+    .object({
+      repository: z
+        .object({
+          pullRequest: z
+            .object({
+              reviewThreads: z.object({
+                pageInfo: z.object({
+                  hasNextPage: z.boolean(),
+                  endCursor: z.string().nullable(),
+                }),
+                nodes: z.array(
+                  z.object({
+                    isResolved: z.boolean(),
+                    comments: z.object({
+                      nodes: z.array(z.object({ databaseId: z.number().nullable() })),
+                    }),
+                  }),
+                ),
+              }),
+            })
+            .nullable(),
+        })
+        .nullable(),
+    })
+    .nullable()
+    .optional(),
+  errors: z.array(z.unknown()).optional(),
+});
+
+/** Most pages read of one listing of comments (a hundred each): the rest is "more". */
+const COMMENT_PAGES_MAX = 10;
+
+/** Most pages of review threads read (a hundred each). */
+const THREAD_PAGES_MAX = 10;
+
+const REVIEW_THREADS_QUERY =
+  'query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){' +
+  'pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}' +
+  'nodes{isResolved comments(first:100){nodes{databaseId}}}}}}}';
 
 const compareAnswer = z.object({ ahead_by: z.int().min(0), behind_by: z.int().min(0) });
 
@@ -516,6 +647,145 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     return reports.slice(0, PULL_REQUEST_CHECKS_MAX);
   }
 
+  async reviews(pull: PullRequestNumber, signal: AbortSignal): Promise<Listing<ReviewReport>> {
+    const { items, more } = await this.listing(`${this.pullPath(pull)}/reviews`, pull, signal);
+    const parsed = reviewsAnswer.safeParse(items);
+    if (!parsed.success) throw this.invalidAnswer();
+    return {
+      more,
+      items: parsed.data.map((review) => ({
+        id: review.id,
+        author: review.user?.login ?? 'ghost',
+        state: review.state.toLowerCase(),
+        body: review.body ?? '',
+        submittedAt: review.submitted_at ?? undefined,
+      })),
+    };
+  }
+
+  async inlineComments(
+    pull: PullRequestNumber,
+    signal: AbortSignal,
+  ): Promise<Listing<InlineCommentReport>> {
+    const { items, more } = await this.listing(`${this.pullPath(pull)}/comments`, pull, signal);
+    const parsed = inlineCommentsAnswer.safeParse(items);
+    if (!parsed.success) throw this.invalidAnswer();
+    return {
+      more,
+      items: parsed.data.map((comment) => {
+        const line = comment.line ?? comment.original_line ?? undefined;
+        return {
+          id: comment.id,
+          author: comment.user?.login ?? 'ghost',
+          path: comment.path,
+          line: line !== undefined && Number.isSafeInteger(line) && line > 0 ? line : undefined,
+          diffHunk: comment.diff_hunk ?? undefined,
+          body: comment.body ?? '',
+          createdAt: comment.created_at,
+        };
+      }),
+    };
+  }
+
+  async conversationComments(
+    pull: PullRequestNumber,
+    signal: AbortSignal,
+  ): Promise<Listing<ConversationCommentReport>> {
+    const path = `repos/${encodeURIComponent(pull.owner)}/${encodeURIComponent(pull.repo)}/issues/${pull.number}/comments`;
+    const { items, more } = await this.listing(path, pull, signal);
+    const parsed = conversationCommentsAnswer.safeParse(items);
+    if (!parsed.success) throw this.invalidAnswer();
+    return {
+      more,
+      items: parsed.data.map((comment) => ({
+        id: comment.id,
+        author: comment.user?.login ?? 'ghost',
+        body: comment.body ?? '',
+        createdAt: comment.created_at,
+      })),
+    };
+  }
+
+  async resolvedInlineCommentIds(
+    pull: PullRequestNumber,
+    signal: AbortSignal,
+  ): Promise<Set<number>> {
+    const resolved = new Set<number>();
+    let after: string | null = null;
+    for (let page = 0; page < THREAD_PAGES_MAX; page += 1) {
+      const response = await this.send(
+        'POST',
+        '',
+        {
+          query: REVIEW_THREADS_QUERY,
+          variables: { owner: pull.owner, name: pull.repo, number: pull.number, after },
+        },
+        pull,
+        signal,
+        'read',
+        'error',
+        this.graphqlUrl(),
+      );
+      const parsed = reviewThreadsAnswer.safeParse(
+        await response.json().catch(() => {
+          throw this.invalidAnswer();
+        }),
+      );
+      const threads = parsed.success
+        ? parsed.data.data?.repository?.pullRequest?.reviewThreads
+        : undefined;
+      if (!parsed.success || parsed.data.errors !== undefined || !threads) {
+        throw new PullRequestFailedError(
+          'GitHub could not tell which review threads are resolved. Check that the token of the ' +
+            'Agent account can read pull requests, then load the comments again.',
+        );
+      }
+      for (const thread of threads.nodes) {
+        if (!thread.isResolved) continue;
+        for (const comment of thread.comments.nodes) {
+          if (comment.databaseId !== null) resolved.add(comment.databaseId);
+        }
+      }
+      if (!threads.pageInfo.hasNextPage || threads.pageInfo.endCursor === null) return resolved;
+      after = threads.pageInfo.endCursor;
+    }
+    // More threads than that: the rest could not be told apart, so nothing is shown.
+    throw new PullRequestFailedError(
+      'The pull request has too many review threads to tell which are resolved.',
+    );
+  }
+
+  /** The GraphQL endpoint of the same GitHub as the REST API (api/v3 on an Enterprise server). */
+  private graphqlUrl(): string {
+    const api = this.options.apiUrl;
+    return api.endsWith('/api/v3')
+      ? `${api.slice(0, -'/api/v3'.length)}/api/graphql`
+      : `${api}/graphql`;
+  }
+
+  /** A paged listing: up to {@link COMMENT_PAGES_MAX} pages of a hundred, and whether more exist. */
+  private async listing(
+    path: string,
+    target: PullRequestNumber,
+    signal: AbortSignal,
+  ): Promise<Listing<unknown>> {
+    const items: unknown[] = [];
+    for (let page = 1; page <= COMMENT_PAGES_MAX; page += 1) {
+      const answer = await this.call(
+        'GET',
+        `${path}?per_page=${CHECKS_PAGE_SIZE}&page=${page}`,
+        undefined,
+        target,
+        signal,
+        'read',
+      );
+      if (!Array.isArray(answer)) throw this.invalidAnswer();
+      items.push(...answer);
+      if (answer.length < CHECKS_PAGE_SIZE) return { items, more: false };
+    }
+    return { items, more: true };
+  }
+
   async jobLog(
     repository: { owner: string; repo: string },
     jobId: number,
@@ -673,11 +943,13 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     signal: AbortSignal,
     action: 'open' | 'read' | 'update' | 'identify',
     redirect: 'error' | 'manual' = 'error',
+    /** The full address, when the call is not to the REST API (the GraphQL endpoint). */
+    address?: string,
   ): Promise<Response> {
     const call = this.options.fetch ?? fetch;
     let response: Response;
     try {
-      response = await call(`${this.options.apiUrl}/${path}`, {
+      response = await call(address ?? `${this.options.apiUrl}/${path}`, {
         method,
         headers: {
           Accept: 'application/vnd.github+json',

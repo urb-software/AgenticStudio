@@ -7,6 +7,7 @@ import {
   type RunLookupRepository,
 } from '../../domain/repositories/run-lookup-repository.js';
 import { prepareFailingChecksDraft } from '../../domain/services/failing-checks-draft.js';
+import { sanitizeReviewComments } from '../../domain/services/review-comments.js';
 import { safeCheckLink } from '../../domain/services/check-links.js';
 import { redactLogText } from '../../domain/services/log-redaction.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
@@ -40,7 +41,8 @@ export class LookupKindMismatchError extends Error {
  * Command (Issue #142): the agent worker holding a lookup reports its result, or why it failed.
  * A result replaces what Studio knows of the Run's pull request (Issue #145: with its Pull
  * request checks) or, for the logs of failing checks, becomes the Run's prepared Follow-up for the
- * operator to review, never sent by itself; a failure keeps the last known state and records why
+ * operator to review, never sent by itself; Review comments (Issue #146) replace the Run's loaded
+ * set, redacted and capped, and are sent only when the operator selects them; a failure keeps the last known state and records why
  * (the worker's words, redacted: never a token), and a rate limit puts the lookup back in the
  * queue for later. A repeated answer changes nothing. Throws
  * {@link LookupNotFoundError}, {@link LookupNotHeldError} or {@link LookupKindMismatchError}.
@@ -66,6 +68,23 @@ export class ReportLookupResultHandler {
       // A check's link that redaction would break is replaced by the pull request's checks page.
       const pull = (await this.runs.findById(found.runId))?.pullRequest;
       const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
+      if (answer.kind === 'review_comments') {
+        // Comments are untrusted text from the Git host: redacted (with the Run's known secret
+        // values too) and held to their limits before they are stored (Issue #146).
+        const clean = sanitizeReviewComments(
+          answer.result.comments,
+          answer.result.truncated,
+          known,
+        );
+        const stored = await this.lookups.completeReviewComments(
+          lookupId,
+          answer.workerId,
+          clean,
+          now,
+        );
+        if (stored === 'not_held') throw new LookupNotHeldError();
+        return;
+      }
       if (answer.kind === 'failing_check_logs') {
         const stored = await this.lookups.completeFailingCheckLogs(
           lookupId,

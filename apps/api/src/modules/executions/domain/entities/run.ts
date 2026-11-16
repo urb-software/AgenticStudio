@@ -256,11 +256,17 @@ export const ANSWER_MAX_LENGTH = 10_000;
 
 /**
  * What a Follow-up was prepared from (Issue #145): the text came from the failing Pull request
- * checks, which the operator reviewed and may have edited. A Follow-up written from scratch has
- * no source.
+ * checks, or (Issue #146) from the pull request's Review comments, which the operator reviewed
+ * and may have edited. A Follow-up written from scratch has no source.
  */
-export const FOLLOW_UP_SOURCES = ['pull_request_checks'] as const;
+export const FOLLOW_UP_SOURCES = ['pull_request_checks', 'review_comments'] as const;
 export type FollowUpSource = (typeof FOLLOW_UP_SOURCES)[number];
+
+/** What a Follow-up prepared from Review comments records: how many, and their authors (Issue #146). */
+export interface FollowUpComments {
+  count: number;
+  authors: string[];
+}
 
 /** Longest Follow-up, in characters (Issue #141). */
 export const FOLLOW_UP_MAX_LENGTH = 10_000;
@@ -283,7 +289,14 @@ export interface RunQuestion {
 export type RunMessage =
   | { kind: 'question'; question: RunQuestion; at: Date }
   | { kind: 'answer'; text: string; at: Date }
-  | { kind: 'follow_up'; text: string; at: Date; source?: FollowUpSource }
+  | {
+      kind: 'follow_up';
+      text: string;
+      at: Date;
+      source?: FollowUpSource;
+      /** With source review_comments (Issue #146): how many comments, and whose. */
+      sourceComments?: FollowUpComments;
+    }
   | ({ kind: 'part_end'; at: Date } & RunPartEnd);
 
 /**

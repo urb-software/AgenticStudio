@@ -24,6 +24,7 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
+  type FollowUpComments,
   type FollowUpSource,
   partEndOf,
   type RunPullRequestChecks,
@@ -125,6 +126,8 @@ const RUN_FIELDS = {
       endFailureCode: true,
       endDelivery: true,
       source: true,
+      sourceCount: true,
+      sourceAuthors: true,
     },
     orderBy: { seq: 'asc' },
   },
@@ -199,6 +202,8 @@ interface RunRow {
     endFailureCode: string | null;
     endDelivery: string | null;
     source: string | null;
+    sourceCount: number | null;
+    sourceAuthors: string[];
   }[];
 }
 
@@ -214,6 +219,9 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
       text: row.text,
       at: row.at,
       ...(row.source === null ? {} : { source: row.source as FollowUpSource }),
+      ...(row.sourceCount === null
+        ? {}
+        : { sourceComments: { count: row.sourceCount, authors: row.sourceAuthors } }),
     };
   }
   if (row.kind === 'part_end') {
@@ -788,6 +796,7 @@ export class PrismaRunRepository implements RunRepository {
     text: string,
     now: Date,
     source?: FollowUpSource,
+    comments?: FollowUpComments,
   ): Promise<Run | null> {
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the conditions, the message and the state change hold together, so a
@@ -835,10 +844,17 @@ export class PrismaRunRepository implements RunRepository {
           text,
           at: now,
           ...(source === undefined ? {} : { source }),
+          ...(comments === undefined
+            ? {}
+            : { sourceCount: comments.count, sourceAuthors: comments.authors }),
         },
       });
       // Issue #145: what was prepared has been sent (as the operator left it).
-      if (source !== undefined) {
+      if (source === 'review_comments') {
+        // Issue #146: the loaded comments were sent (those the operator selected): a new load
+        // follows the next result.
+        await tx.runReviewCommentSet.deleteMany({ where: { runId } });
+      } else if (source !== undefined) {
         await tx.runPreparedFollowUp.deleteMany({ where: { runId, source } });
       }
       // Back to the queue: the earlier result is cleared (the Run's state reflects its latest

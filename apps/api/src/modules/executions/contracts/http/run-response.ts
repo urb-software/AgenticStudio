@@ -56,8 +56,11 @@ export const pullRequestCheckStateSchema = z.enum([
 /** Where the preparation of a Follow-up from failing checks stands (Issue #145). */
 export const failingChecksPreparationSchema = z.enum(['preparing', 'ready', 'failed']);
 
-/** What a Follow-up was prepared from (Issue #145). Pinned to the domain's list by a test. */
-export const followUpSourceSchema = z.enum(['pull_request_checks']);
+/**
+ * What a Follow-up was prepared from (Issue #145; #146: the pull request's Review comments).
+ * Pinned to the domain's list by a test.
+ */
+export const followUpSourceSchema = z.enum(['pull_request_checks', 'review_comments']);
 
 /** The agent's open question (Issue #103): plain text, never markup. */
 export const runQuestionResponseSchema = z
@@ -119,6 +122,12 @@ export const runMessageResponseSchema = z
      * (the operator reviewed and may have edited it); absent for one written from scratch.
      */
     source: followUpSourceSchema.optional(),
+    /**
+     * With a `review_comments` source only (Issue #146): how many Review comments the Follow-up
+     * was prepared from, and the logins of their authors (distinct).
+     */
+    sourceCount: z.int().optional(),
+    sourceAuthors: z.array(z.string()).optional(),
     at: z.iso.datetime(),
   })
   .meta({ id: 'RunMessage' });
@@ -389,6 +398,7 @@ export function toRunResponse(
           text: string;
           at: Date;
           source?: z.infer<typeof followUpSourceSchema>;
+          sourceComments?: { count: number; authors: string[] };
         }
       | {
           kind: 'part_end';
@@ -529,6 +539,12 @@ export function toRunResponse(
                 text: message.text,
                 ...(message.kind === 'follow_up' && message.source !== undefined
                   ? { source: message.source }
+                  : {}),
+                ...(message.kind === 'follow_up' && message.sourceComments !== undefined
+                  ? {
+                      sourceCount: message.sourceComments.count,
+                      sourceAuthors: [...message.sourceComments.authors],
+                    }
                   : {}),
                 at: message.at.toISOString(),
               },

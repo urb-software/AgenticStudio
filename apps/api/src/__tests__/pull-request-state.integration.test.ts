@@ -980,7 +980,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
           .post(`/api/runs/${runId}/follow-up`)
           .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
           .send(body);
-      expect((await post({ text: 'x', source: 'review_comments' })).status).toBe(422);
+      expect((await post({ text: 'x', source: 'unknown-source' })).status).toBe(422);
       expect((await post({ text: 'one' })).status).toBe(202);
 
       expectProblem(

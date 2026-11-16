@@ -4,6 +4,12 @@ import {
   LOOKUP_KINDS as WORKER_LOOKUP_KINDS,
   LOOKUP_CLAIM_MAX as WORKER_LOOKUP_CLAIM_MAX,
   LOOKUP_RETRY_AFTER_MAX_SECONDS as WORKER_LOOKUP_RETRY_AFTER_MAX_SECONDS,
+  REVIEW_COMMENT_KINDS as WORKER_REVIEW_COMMENT_KINDS,
+  REVIEW_COMMENT_SCOPES as WORKER_REVIEW_COMMENT_SCOPES,
+  REVIEW_COMMENT_TEXT_MAX_BYTES as WORKER_REVIEW_COMMENT_TEXT_MAX_BYTES,
+  REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES as WORKER_REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES,
+  REVIEW_COMMENTS_MAX as WORKER_REVIEW_COMMENTS_MAX,
+  REVIEW_VERDICTS as WORKER_REVIEW_VERDICTS,
   PULL_REQUEST_CHECK_STATES as WORKER_PULL_REQUEST_CHECK_STATES,
   PULL_REQUEST_STATES as WORKER_PULL_REQUEST_STATES,
   RESUME_REASONS as WORKER_RESUME_REASONS,
@@ -18,6 +24,18 @@ import {
 import { EXECUTIONS_PROBLEM_TYPES } from '../../../contracts/http/problems.js';
 import { describe, expect, it } from 'vitest';
 import { runEventKindSchema } from '../../../contracts/http/run-event-response.js';
+import {
+  reviewCommentResponseSchema,
+  reviewCommentsResponseSchema,
+} from '../../../contracts/http/review-comments-response.js';
+import {
+  REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES,
+  REVIEW_COMMENT_KINDS,
+  REVIEW_COMMENT_SCOPES,
+  REVIEW_COMMENT_TEXT_MAX_BYTES,
+  REVIEW_COMMENTS_MAX,
+  REVIEW_VERDICTS,
+} from '../../../domain/entities/review-comments.js';
 import {
   followUpRefusalSchema,
   followUpSourceSchema,
@@ -68,6 +86,24 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     // Issue #145.
     expect(pullRequestCheckStateSchema.options).toEqual([...PULL_REQUEST_CHECK_STATES]);
     expect(followUpSourceSchema.options).toEqual([...FOLLOW_UP_SOURCES]);
+  });
+
+  it('HTTP and worker protocol: the same Review comment kinds, scopes, verdicts and limits (Issue #146)', () => {
+    expect(reviewCommentResponseSchema.shape.kind.options).toEqual([...REVIEW_COMMENT_KINDS]);
+    expect(reviewCommentResponseSchema.shape.verdict.unwrap().options).toEqual([
+      ...REVIEW_VERDICTS,
+    ]);
+    expect(reviewCommentsResponseSchema.shape.scope.unwrap().options).toEqual([
+      ...REVIEW_COMMENT_SCOPES,
+    ]);
+    expect([...WORKER_REVIEW_COMMENT_KINDS]).toEqual([...REVIEW_COMMENT_KINDS]);
+    expect([...WORKER_REVIEW_COMMENT_SCOPES]).toEqual([...REVIEW_COMMENT_SCOPES]);
+    expect([...WORKER_REVIEW_VERDICTS]).toEqual([...REVIEW_VERDICTS]);
+    expect(WORKER_REVIEW_COMMENTS_MAX).toBe(REVIEW_COMMENTS_MAX);
+    expect(WORKER_REVIEW_COMMENT_TEXT_MAX_BYTES).toBe(REVIEW_COMMENT_TEXT_MAX_BYTES);
+    expect(WORKER_REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES).toBe(
+      REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES,
+    );
   });
 
   it('worker protocol: the same Pull request check states (Issue #145)', () => {

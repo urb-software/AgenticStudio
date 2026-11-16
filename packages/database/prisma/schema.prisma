@@ -272,6 +272,9 @@ model Run {
   /// a new one is requested or succeeds.
   prPrepareError          String?      @map("pr_prepare_error") @db.VarChar(500)
   preparedFollowUp        RunPreparedFollowUp?
+  /// Issue #146: the pull request's Review comments as the last load read them (at most one set
+  /// per Run, replaced by each load).
+  reviewCommentSet        RunReviewCommentSet?
   /// Issue #143: when a lookup first reported the pull request merged, closed or missing; cleared
   /// when a later one reports it open or draft again. Set only with such a pr_state.
   prEndedAt               DateTime?    @map("pr_ended_at") @db.Timestamptz(6)
@@ -337,6 +340,10 @@ model RunMessage {
   /// With follow_up only (Issue #145): what the Follow-up was prepared from (pull_request_checks);
   /// null for one the operator wrote from scratch.
   source         String?  @db.VarChar(32)
+  /// With source review_comments only (Issue #146): how many Review comments the Follow-up was
+  /// prepared from, and the logins of their authors (distinct, at most 20).
+  sourceCount    Int?     @map("source_count")
+  sourceAuthors  String[] @default([]) @map("source_authors")
 
   @@id([runId, seq], map: "run_messages_pkey")
   @@map("run_messages")
@@ -361,6 +368,23 @@ model RunPreparedFollowUp {
   @@map("run_prepared_follow_ups")
 }
 
+/// The pull request's Review comments as an agent worker loaded them (Issue #146): at most one set
+/// per Run, replaced by each load, removed when a Follow-up prepared from it is sent. The comments
+/// are untrusted text from the Git host (redacted, capped): `[{id, author, kind, path?, line?,
+/// diffContext?, verdict?, text, textCut?, createdAt}]`, validated by the shared contract on read.
+model RunReviewCommentSet {
+  runId     String   @id @map("run_id") @db.Uuid
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// since_last_result | unresolved.
+  scope     String   @db.VarChar(16)
+  comments  Json
+  /// More comments existed, or a text was cut to its limit.
+  truncated Boolean
+  loadedAt  DateTime @map("loaded_at") @db.Timestamptz(6)
+
+  @@map("run_review_comment_sets")
+}
+
 /// A question for the Git host that only an agent worker can answer (Issue #142), e.g. the state
 /// of the Run's pull request. Studio records the request, any connected worker claims it and
 /// reports the result. At most one open (requested or claimed) lookup per Run and kind.
@@ -368,7 +392,7 @@ model RunLookup {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   runId       String    @map("run_id") @db.Uuid
   run         Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
-  /// pull_request_state | failing_check_logs (later stories add kinds).
+  /// pull_request_state | failing_check_logs | review_comments (later stories add kinds).
   kind        String    @db.VarChar(32)
   /// requested | claimed | done | failed.
   status      String    @db.VarChar(16)
@@ -383,6 +407,10 @@ model RunLookup {
   error       String?   @db.VarChar(500)
   /// A requested lookup that was rate limited is not handed out before this time.
   retryAt     DateTime? @map("retry_at") @db.Timestamptz(6)
+  /// review_comments only (Issue #146): since_last_result | unresolved, and for the first the time
+  /// after which a comment counts as new (the end of the Run's latest part).
+  scope       String?   @db.VarChar(16)
+  since       DateTime? @db.Timestamptz(6)
 
   @@index([status, requestedAt], map: "run_lookups_status_requested_at_idx")
   @@index([runId], map: "run_lookups_run_id_idx")

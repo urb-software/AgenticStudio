@@ -91,6 +91,18 @@ const workerTokenSchema = z
     value === undefined ? null : createSecretKey(createHash('sha256').update(value).digest()),
   );
 
+/**
+ * `STUDIO_OPERATOR_GITHUB_LOGIN` (Issue #146): a GitHub login (letters, digits and single
+ * hyphens, at most 39 characters), or unset or empty for none.
+ */
+const githubLoginSchema = z
+  .string()
+  .optional()
+  .transform((value) => (value === undefined || value.trim() === '' ? null : value.trim()))
+  .refine((value) => value === null || /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(value), {
+    message: 'must be a GitHub login: letters, digits and hyphens, at most 39 characters',
+  });
+
 const studioOriginSchema = z
   .url({ protocol: /^https?$/ })
   .refine((value) => new URL(value).origin === value.replace(/\/$/, ''), {
@@ -249,6 +261,10 @@ const environmentSchema = z.object({
   STUDIO_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
   STUDIO_RETENTION_OPEN_PR_IDLE_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   STUDIO_RETENTION_AFTER_PR_END_HOURS: z.coerce.number().int().min(0).max(8760).default(24),
+  // Issue #146: the operator's own GitHub login. Review comments written by it are preselected
+  // when the operator loads them; everyone else's are shown unselected. Matched exactly, case-
+  // insensitively. Unset or empty: nothing is preselected.
+  STUDIO_OPERATOR_GITHUB_LOGIN: githubLoginSchema,
   NODE_ENV: z.string().optional(),
 });
 
@@ -299,6 +315,11 @@ export interface AppConfig {
    * delivery can be retried (`STUDIO_RUN_SNAPSHOT_RETENTION_DAYS`, default 7; Issue #104).
    */
   runSnapshotRetentionDays: number;
+  /**
+   * The operator's own GitHub login (`STUDIO_OPERATOR_GITHUB_LOGIN`, Issue #146), or `null`:
+   * the author of the Review comments that are preselected.
+   */
+  operatorGithubLogin: string | null;
   /** Working copy retention on the agent side (Issue #143), from the `STUDIO_RETENTION_*` settings. */
   retention: {
     days: number;
@@ -360,6 +381,7 @@ export function loadConfig(
     },
     runLogMaxBytes: result.data.STUDIO_RUN_LOG_MAX_BYTES,
     runSnapshotRetentionDays: result.data.STUDIO_RUN_SNAPSHOT_RETENTION_DAYS,
+    operatorGithubLogin: result.data.STUDIO_OPERATOR_GITHUB_LOGIN,
     retention: {
       days: result.data.STUDIO_RETENTION_DAYS,
       maxPerProject: result.data.STUDIO_RETENTION_MAX_PER_PROJECT,

@@ -482,4 +482,166 @@ describe('GitHubPullRequests', () => {
       expect(error).toMatchObject({ status: 429, retryAfterSeconds: 30 });
     });
   });
+
+  // Issue #146: the reads for the Review comments of a pull request.
+  describe('review comments (Issue #146)', () => {
+    const pull = { owner: 'acme', repo: 'shop', number: 41 };
+    const signal = () => new AbortController().signal;
+
+    it('lists the reviews with their state, author and body', async () => {
+      stub.reviews.push(
+        {
+          id: 1,
+          user: { login: 'octocat' },
+          state: 'CHANGES_REQUESTED',
+          body: 'No.',
+          submitted_at: '2026-11-16T10:00:00Z',
+        },
+        { id: 2, user: null, state: 'APPROVED', body: null, submitted_at: '2026-11-16T11:00:00Z' },
+      );
+
+      const { items, more } = await client().reviews(pull, signal());
+
+      expect(more).toBe(false);
+      expect(items).toEqual([
+        {
+          id: 1,
+          author: 'octocat',
+          state: 'changes_requested',
+          body: 'No.',
+          submittedAt: '2026-11-16T10:00:00Z',
+        },
+        {
+          id: 2,
+          author: 'ghost',
+          state: 'approved',
+          body: '',
+          submittedAt: '2026-11-16T11:00:00Z',
+        },
+      ]);
+    });
+
+    it('lists inline comments with the line they are on now, or were made on', async () => {
+      stub.inlineComments.push(
+        {
+          id: 10,
+          user: { login: 'octocat' },
+          path: 'a.ts',
+          line: 5,
+          original_line: 3,
+          diff_hunk: '@@ x',
+          body: 'Hm.',
+          created_at: '2026-11-16T10:00:00Z',
+        },
+        {
+          id: 11,
+          user: { login: 'octocat' },
+          path: 'b.ts',
+          line: null,
+          original_line: 9,
+          body: 'Old.',
+          created_at: '2026-11-16T10:01:00Z',
+        },
+        {
+          id: 12,
+          user: { login: 'octocat' },
+          path: 'c.ts',
+          line: null,
+          original_line: null,
+          body: 'File.',
+          created_at: '2026-11-16T10:02:00Z',
+        },
+      );
+
+      const { items } = await client().inlineComments(pull, signal());
+
+      expect(items.map(({ id, line, diffHunk }) => ({ id, line, diffHunk }))).toEqual([
+        { id: 10, line: 5, diffHunk: '@@ x' },
+        { id: 11, line: 9, diffHunk: undefined },
+        { id: 12, line: undefined, diffHunk: undefined },
+      ]);
+    });
+
+    it('lists the conversation comments of the pull request', async () => {
+      stub.issueComments.push({
+        id: 20,
+        user: { login: 'stranger' },
+        body: 'Hi',
+        created_at: '2026-11-16T10:00:00Z',
+      });
+
+      expect((await client().conversationComments(pull, signal())).items).toEqual([
+        { id: 20, author: 'stranger', body: 'Hi', createdAt: '2026-11-16T10:00:00Z' },
+      ]);
+      expect(stub.requests.at(-1)).toMatchObject({
+        path: '/repos/acme/shop/issues/41/comments',
+        authorization: expect.stringMatching(/^Bearer /),
+      });
+    });
+
+    it('reads page after page and says when the host had more than the pages it reads', async () => {
+      stub.issueComments.push(
+        ...Array.from({ length: 1001 }, (_, index) => ({
+          id: index + 1,
+          user: { login: 'octocat' },
+          body: 'x',
+          created_at: '2026-11-16T10:00:00Z',
+        })),
+      );
+
+      const { items, more } = await client().conversationComments(pull, signal());
+
+      expect(items).toHaveLength(1000);
+      expect(more).toBe(true);
+      expect(
+        stub.requests.filter((request) => request.path.endsWith('/issues/41/comments')),
+      ).toHaveLength(10);
+    });
+
+    it('collects the comments of resolved threads through a read-only GraphQL query, page by page', async () => {
+      stub.reviewThreads.push(
+        { isResolved: true, commentIds: [10, 11] },
+        { isResolved: false, commentIds: [12] },
+        { isResolved: true, commentIds: [13] },
+      );
+
+      expect([...(await client().resolvedInlineCommentIds(pull, signal()))]).toEqual([10, 11, 13]);
+      const graphql = stub.requests.filter((request) => request.path === '/graphql');
+      expect(graphql).toHaveLength(2);
+      expect(graphql.every((request) => request.method === 'POST')).toBe(true);
+    });
+
+    it('refuses to guess which threads are resolved when GitHub answers errors', async () => {
+      stub.graphqlErrors = [{ message: 'Resource not accessible' }];
+
+      await expect(client().resolvedInlineCommentIds(pull, signal())).rejects.toThrow(/resolved/);
+    });
+
+    it('sends GraphQL to the Enterprise address for an api/v3 base', async () => {
+      const calls: string[] = [];
+      const fake = new GitHubPullRequests({
+        apiUrl: 'https://ghe.example.test/api/v3',
+        token,
+        fetch: (async (input: unknown) => {
+          calls.push(String(input));
+          return new Response(
+            JSON.stringify({
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        }) as typeof fetch,
+      });
+
+      await fake.resolvedInlineCommentIds(pull, signal());
+
+      expect(calls).toEqual(['https://ghe.example.test/api/graphql']);
+    });
+  });
 });

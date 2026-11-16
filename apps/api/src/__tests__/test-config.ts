@@ -44,6 +44,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     runLogMaxBytes: 8 * 1024 * 1024,
     runSnapshotRetentionDays: 7,
+    operatorGithubLogin: null,
     retention: {
       days: 7,
       maxPerProject: 10,

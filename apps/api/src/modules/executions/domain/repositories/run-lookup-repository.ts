@@ -1,6 +1,12 @@
 import type { PullRequestState } from '../entities/run.js';
 import type { PreparedFollowUp } from '../entities/prepared-follow-up.js';
-import type { ClaimedLookup, LookupKind, PullRequestStateResult } from '../entities/run-lookup.js';
+import type { ReviewCommentsRequest } from '../entities/review-comments.js';
+import type {
+  ClaimedLookup,
+  LookupKind,
+  PullRequestStateResult,
+  ReviewCommentsResult,
+} from '../entities/run-lookup.js';
 
 /** DI token for the {@link RunLookupRepository} adapter. */
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');
@@ -33,9 +39,16 @@ export interface RunLookupRepository {
   /**
    * Records a request of `kind` for the Run unless one is open, and marks the Run as being
    * refreshed (a `failing_check_logs` request marks it as preparing instead, Issue #145, and
-   * clears the last preparation's error). Serialized per Run, so two requests at once record one.
+   * clears the last preparation's error; a `review_comments` request marks no Run column: its
+   * state is read from the lookups, Issue #146, and it carries what to load as `review`).
+   * Serialized per Run, so two requests at once record one.
    */
-  request(runId: string, kind: LookupKind, now: Date): Promise<LookupRequestOutcome>;
+  request(
+    runId: string,
+    kind: LookupKind,
+    now: Date,
+    review?: ReviewCommentsRequest,
+  ): Promise<LookupRequestOutcome>;
 
   /**
    * Hands up to `limit` waiting requests (not those a rate limit asks to wait for) to
@@ -66,6 +79,18 @@ export interface RunLookupRepository {
     lookupId: string,
     workerId: string,
     draft: PreparedFollowUp,
+    now: Date,
+  ): Promise<LookupAnswerOutcome>;
+
+  /**
+   * Stores a `review_comments` result for a lookup `workerId` holds (Issue #146): the lookup is
+   * `done` and the Run's set of loaded Review comments is replaced by `result` (already
+   * redacted and within its limits), with the scope the lookup asked for.
+   */
+  completeReviewComments(
+    lookupId: string,
+    workerId: string,
+    result: ReviewCommentsResult,
     now: Date,
   ): Promise<LookupAnswerOutcome>;
 

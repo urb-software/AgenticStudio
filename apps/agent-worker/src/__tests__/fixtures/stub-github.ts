@@ -68,6 +68,16 @@ export interface StubGitHub {
    * `text` (as GitHub does), or answer a refusal status.
    */
   jobLogs: Map<number, { text: string } | { status: number }>;
+  /** Issue #146: what `GET /pulls/:n/reviews` answers, as GitHub words it. */
+  reviews: Record<string, unknown>[];
+  /** Issue #146: what `GET /pulls/:n/comments` (inline comments) answers. */
+  inlineComments: Record<string, unknown>[];
+  /** Issue #146: what `GET /issues/:n/comments` (conversation comments) answers. */
+  issueComments: Record<string, unknown>[];
+  /** Issue #146: the review threads the GraphQL query answers: resolved or not, comment ids. */
+  reviewThreads: { isResolved: boolean; commentIds: number[] }[];
+  /** Issue #146: when set, the GraphQL query answers these errors (with status 200). */
+  graphqlErrors: unknown[] | undefined;
   /** The `html_url` of a pull request (default: its github.com URL). */
   htmlUrl: (pr: StubPullRequest) => string;
   close(): Promise<void>;
@@ -94,6 +104,11 @@ export async function startStubGitHub(): Promise<StubGitHub> {
     checkRuns: [],
     statuses: [],
     jobLogs: new Map(),
+    reviews: [],
+    inlineComments: [],
+    issueComments: [],
+    reviewThreads: [],
+    graphqlErrors: undefined,
     htmlUrl: (pr) => `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.number}`,
   };
   const view = (pr: StubPullRequest) => ({ number: pr.number, html_url: stub.htmlUrl(pr) });
@@ -115,6 +130,47 @@ export async function startStubGitHub(): Promise<StubGitHub> {
         const refusal = stub.refuseNextRead;
         stub.refuseNextRead = undefined;
         return send(refusal.status, { message: 'Refused by the stub' }, refusal.headers);
+      }
+      // Issue #146: the comments of a pull request, a hundred to a page, and its review threads.
+      const comments =
+        /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/(reviews|comments)$/.exec(url.pathname) ??
+        /^\/repos\/[^/]+\/[^/]+\/(issues)\/\d+\/comments$/.exec(url.pathname);
+      if (request.method === 'GET' && comments) {
+        const list =
+          comments[1] === 'reviews'
+            ? stub.reviews
+            : comments[1] === 'comments'
+              ? stub.inlineComments
+              : stub.issueComments;
+        const size = Number(url.searchParams.get('per_page') ?? 30);
+        const page = Number(url.searchParams.get('page') ?? 1);
+        return send(200, list.slice((page - 1) * size, page * size));
+      }
+      if (request.method === 'POST' && url.pathname === '/graphql') {
+        const body = await readJson(request);
+        if (stub.graphqlErrors) return send(200, { errors: stub.graphqlErrors });
+        const variables = (body.variables ?? {}) as { after?: string | null };
+        const start = variables.after ? Number(variables.after) : 0;
+        const nodes = stub.reviewThreads.slice(start, start + 2);
+        const next = start + 2;
+        return send(200, {
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  pageInfo: {
+                    hasNextPage: next < stub.reviewThreads.length,
+                    endCursor: next < stub.reviewThreads.length ? String(next) : null,
+                  },
+                  nodes: nodes.map((thread) => ({
+                    isResolved: thread.isResolved,
+                    comments: { nodes: thread.commentIds.map((databaseId) => ({ databaseId })) },
+                  })),
+                },
+              },
+            },
+          },
+        });
       }
       // Issue #145: checks of a commit, and a job's log (a redirect to a download, as GitHub does).
       if (/^\/repos\/[^/]+\/[^/]+\/commits\/[^/]+\/check-runs$/.test(url.pathname)) {

@@ -8,6 +8,9 @@ import {
   lookupResultRequestSchema,
   pullRequestStateResultSchema,
   failingCheckLogsResultSchema,
+  reviewCommentsResultSchema,
+  REVIEW_COMMENTS_MAX,
+  REVIEW_COMMENT_TEXT_MAX_BYTES,
   FAILING_CHECK_EXCERPT_MAX_LENGTH,
   FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH,
   PULL_REQUEST_CHECKS_MAX,
@@ -1478,6 +1481,108 @@ describe('lookups', () => {
           }).success,
         ).toBe(true);
       });
+    });
+  });
+  describe('Review comments (Issue #146)', () => {
+    const comment = {
+      id: 'inline-12',
+      author: 'octocat',
+      kind: 'inline',
+      path: 'src/a.ts',
+      line: 3,
+      diffContext: '@@ -1 +1 @@\n-a\n+b',
+      text: 'Please rename this.',
+      createdAt: '2026-11-16T10:00:00.000Z',
+    };
+    const parse = (comments: unknown[], truncated = false) =>
+      reviewCommentsResultSchema.safeParse({ comments, truncated }).success;
+    const payload = {
+      id: LOOKUP_ID,
+      kind: 'review_comments',
+      runId: RUN_ID,
+      repository: { remoteUrl: 'https://github.com/acme/shop.git' },
+      pullRequestNumber: 7,
+      runBranch: 'agent/add-store-r0b8e5c2d',
+      integrationBranch: 'dev',
+    };
+
+    it('accepts the three kinds of comment', () => {
+      expect(
+        parse([
+          comment,
+          {
+            id: 'review-3',
+            author: 'octocat',
+            kind: 'review',
+            verdict: 'approved',
+            text: '',
+            createdAt: comment.createdAt,
+          },
+          {
+            id: 'conversation-4',
+            author: 'octocat',
+            kind: 'conversation',
+            text: 'Hi',
+            createdAt: comment.createdAt,
+          },
+        ]),
+      ).toBe(true);
+    });
+
+    it('keeps a file, line and diff context to inline comments and a verdict to reviews', () => {
+      expect(parse([{ ...comment, kind: 'conversation' }])).toBe(false);
+      expect(parse([{ ...comment, path: undefined }])).toBe(false);
+      expect(parse([{ ...comment, verdict: 'approved' }])).toBe(false);
+      expect(parse([{ ...comment, id: 'bad id' }])).toBe(false);
+    });
+
+    it('refuses repeated ids and more than 100 comments', () => {
+      expect(parse([comment, comment])).toBe(false);
+      const many = Array.from({ length: REVIEW_COMMENTS_MAX + 1 }, (_, n) => ({
+        ...comment,
+        id: `inline-${n + 1}`,
+      }));
+      expect(parse(many)).toBe(false);
+      expect(parse(many.slice(0, REVIEW_COMMENTS_MAX))).toBe(true);
+    });
+
+    it('caps a text at 8 KiB in UTF-8 bytes and a cut text sets truncated', () => {
+      expect(parse([{ ...comment, text: 'x'.repeat(REVIEW_COMMENT_TEXT_MAX_BYTES) }])).toBe(true);
+      expect(parse([{ ...comment, text: 'x'.repeat(REVIEW_COMMENT_TEXT_MAX_BYTES + 1) }])).toBe(
+        false,
+      );
+      expect(parse([{ ...comment, text: 'é'.repeat(REVIEW_COMMENT_TEXT_MAX_BYTES / 2 + 1) }])).toBe(
+        false,
+      );
+      expect(parse([{ ...comment, textCut: true }], false)).toBe(false);
+      expect(parse([{ ...comment, textCut: true }], true)).toBe(true);
+    });
+
+    it('is claimed with what to load, and answered with the kind review_comments only', () => {
+      const reviewComments = { scope: 'since_last_result', since: '2026-11-16T09:00:00.000Z' };
+      expect(lookupPayloadSchema.safeParse({ ...payload, reviewComments }).success).toBe(true);
+      expect(
+        lookupPayloadSchema.safeParse({ ...payload, reviewComments: { scope: 'unresolved' } })
+          .success,
+      ).toBe(true);
+      expect(lookupPayloadSchema.safeParse(payload).success).toBe(false);
+      expect(
+        lookupPayloadSchema.safeParse({ ...payload, reviewComments: { scope: 'all' } }).success,
+      ).toBe(false);
+      expect(
+        lookupPayloadSchema.safeParse({ ...payload, kind: 'pull_request_state', reviewComments })
+          .success,
+      ).toBe(false);
+      const answer = {
+        workerId: WORKER_ID,
+        ok: true,
+        kind: 'review_comments',
+        result: { comments: [comment], truncated: false },
+      };
+      expect(lookupResultRequestSchema.safeParse(answer).success).toBe(true);
+      expect(
+        lookupResultRequestSchema.safeParse({ ...answer, kind: 'failing_check_logs' }).success,
+      ).toBe(false);
     });
   });
 });
