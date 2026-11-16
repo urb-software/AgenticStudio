@@ -493,7 +493,10 @@ EOF
   if as_agent systemctl --user is-active --quiet docker.service; then
     step_log "unchanged (rootless Docker running for '$AGENT_USER')"
   else
-    as_agent dockerd-rootless-setuptool.sh install
+    if ! as_agent dockerd-rootless-setuptool.sh install; then
+      journalctl _SYSTEMD_USER_UNIT=docker.service _UID="$(agent_uid)" -n 40 --no-pager >&2 || true
+      die "rootless Docker did not start for '$AGENT_USER' (its log is above)."
+    fi
     as_agent systemctl --user enable --now docker.service
     changed "rootless Docker for '$AGENT_USER' as its systemd user service"
   fi
