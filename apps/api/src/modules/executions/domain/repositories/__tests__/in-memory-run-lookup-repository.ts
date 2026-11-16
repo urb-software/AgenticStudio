@@ -25,6 +25,11 @@ export interface FakeLookup {
   error: string | null;
 }
 
+/** The database adapter's `pr_ended_at` rule (Issue #143): first end kept, a reopen clears it. */
+function endedAt(state: PullRequestState, current: Date | null, now: Date): Date | null {
+  return state === 'merged' || state === 'closed' || state === 'missing' ? (current ?? now) : null;
+}
+
 /**
  * In-memory adapter of {@link RunLookupRepository} for handler tests, with the database
  * adapter's rules: one open lookup per Run and kind, a claim older than the lease is handed out
@@ -146,6 +151,7 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
         retryAt: null,
         refreshRequestedAt: null,
         lastAttemptAt: run.pullRequestStatus.lastAttemptAt,
+        endedAt: endedAt(result.state, run.pullRequestStatus.endedAt, now),
       };
     }
     return Promise.resolve('stored');
@@ -196,6 +202,7 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
         refreshedAt: now,
         refreshError: null,
         retryAt: null,
+        endedAt: endedAt(state, run.pullRequestStatus.endedAt, now),
       };
     }
     return Promise.resolve();

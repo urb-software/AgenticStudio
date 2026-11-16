@@ -107,7 +107,46 @@ describe('lookups: claim and result', () => {
       retryAt: null,
       refreshRequestedAt: null,
       lastAttemptAt: T0,
+      // Issue #143: the retention period counts from the first end.
+      endedAt: ['merged', 'closed', 'missing'].includes(result.state) ? T1 : null,
     });
+  });
+
+  // Issue #143: when the pull request ended, for the Working copy retention.
+  it('keeps the first time the pull request was read as ended, and clears it when it is reopened', async () => {
+    const { run, lookup } = await claimed();
+    await results.execute(lookup.id, {
+      workerId: WORKER,
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'closed' },
+    });
+    expect(status(run.id).endedAt).toEqual(T1);
+
+    // Read as ended again later: the end stays at the first time.
+    now = new Date(T1.getTime() + 3_600_000);
+    await lookups.request(run.id, 'pull_request_state', now);
+    const [again] = await claims.execute(WORKER);
+    await results.execute(again!.id, {
+      workerId: WORKER,
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'merged' },
+    });
+    expect(status(run.id)).toMatchObject({ state: 'merged', endedAt: T1 });
+
+    // Reopened, and then ended again: a new end.
+    const later = new Date(T1.getTime() + 7_200_000);
+    now = later;
+    await lookups.request(run.id, 'pull_request_state', now);
+    const [reopened] = await claims.execute(WORKER);
+    await results.execute(reopened!.id, {
+      workerId: WORKER,
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'open', behindBy: 0, aheadBy: 1 },
+    });
+    expect(status(run.id).endedAt).toBeNull();
   });
 
   it('keeps a repeated answer from changing anything', async () => {

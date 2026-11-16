@@ -161,7 +161,16 @@ export const runResponseSchema = z
      * answers only (`GET /api/runs/:runId` and the Follow-up command).
      */
     followUp: z
-      .object({ allowed: z.boolean(), reason: followUpRefusalSchema.optional() })
+      .object({
+        allowed: z.boolean(),
+        reason: followUpRefusalSchema.optional(),
+        /**
+         * Issue #143: until when the Run stays open to Follow-ups (its Working copy and agent
+         * session are kept until then), moved by the Run's activity. Present when the Run is
+         * open to one, now or once its worker or Provider is available; absent otherwise.
+         */
+        openUntil: z.iso.datetime().optional(),
+      })
       .meta({ id: 'RunFollowUpEligibility' })
       .optional(),
     /**
@@ -298,7 +307,9 @@ export function toRunResponse(
         }
     )[];
   },
-  followUp?: { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> },
+  followUp?: (
+    { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> }
+  ) & { openUntil?: Date },
   /**
    * Issue #142: whether an agent worker is connected, when the caller knows. A refresh that
    * waits while none is says so instead of loading for ever.
@@ -350,9 +361,10 @@ export function toRunResponse(
     followUps: run.followUpCount,
     ...(followUp
       ? {
-          followUp: followUp.allowed
-            ? { allowed: true }
-            : { allowed: false, reason: followUp.reason },
+          followUp: {
+            ...(followUp.allowed ? { allowed: true } : { allowed: false, reason: followUp.reason }),
+            ...(followUp.openUntil ? { openUntil: followUp.openUntil.toISOString() } : {}),
+          },
         }
       : {}),
     ...(run.cancelRequestedAt ? { cancelRequestedAt: run.cancelRequestedAt.toISOString() } : {}),

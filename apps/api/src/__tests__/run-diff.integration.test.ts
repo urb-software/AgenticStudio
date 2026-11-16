@@ -250,7 +250,7 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
     expect(file.body).toMatchObject({ path, patch: '+deep\n' });
   });
 
-  it('keeps where the diffs stand, and refuses a state that is not object ids (review S-1 of #149)', async () => {
+  it('keeps where the diffs stand, without a second copy of the pushed commit, and refuses a state that is not object ids (review S-1 of #149, N2 of #141)', async () => {
     const runId = await runningRun();
     const diff = diffOf([]);
 
@@ -268,9 +268,18 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
       400,
     );
 
-    const [stored] = await db().$queryRaw<{ result_tree: string; pushed_commit: string | null }[]>`
-      SELECT result_tree, pushed_commit FROM run_diff_states WHERE run_id = ${runId}::uuid`;
-    expect(stored).toEqual({ result_tree: STATE.resultTree, pushed_commit: 'f'.repeat(40) });
+    // Issue #143 (review N2 of #141): the pushed commit is stored once, on the Run, from the
+    // delivery reports; the diff state keeps no copy and the echo of it changes nothing.
+    const [stored] = await db().$queryRaw<{ result_tree: string; has_pushed_commit: boolean }[]>`
+      SELECT result_tree,
+             EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name = 'run_diff_states' AND column_name = 'pushed_commit')
+               AS has_pushed_commit
+      FROM run_diff_states WHERE run_id = ${runId}::uuid`;
+    expect(stored).toEqual({ result_tree: STATE.resultTree, has_pushed_commit: false });
+    const [run] = await db().$queryRaw<{ pushed_commit: string | null }[]>`
+      SELECT pushed_commit FROM runs WHERE id = ${runId}::uuid`;
+    expect(run).toEqual({ pushed_commit: null });
   });
 
   it('stores why the diffs could not be computed', async () => {

@@ -20,6 +20,7 @@ import type {
   AppendStepOutcome,
   ClaimedRunChange,
   DeliveryRetryOutcome,
+  LimitedRunView,
   NewRun,
   ResumeAfterLimitOutcome,
   RunRepository,
@@ -95,6 +96,8 @@ export class InMemoryRunRepository implements RunRepository {
       pushedCommit: null,
       workingCopyRemovedAt: null,
       pullRequestStatus: NO_PULL_REQUEST_STATUS,
+      // Like the database's default: the Run's creation.
+      lastActivityAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence - 1)),
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -332,7 +335,30 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(
       this.runs
         .filter((run) => ids.includes(run.id))
-        .map((run) => ({ runId: run.id, state: run.state, finishedAt: run.finishedAt })),
+        .map((run) => ({
+          runId: run.id,
+          projectId: run.projectId,
+          state: run.state,
+          finishedAt: run.finishedAt,
+          hasPullRequest: run.pullRequest !== null,
+          pullRequestState: run.pullRequestStatus.state,
+          pullRequestEndedAt: run.pullRequestStatus.endedAt,
+          lastActivityAt: run.lastActivityAt,
+        })),
+    );
+  }
+
+  findLimitedRuns(projectIds: readonly string[]): Promise<LimitedRunView[]> {
+    return Promise.resolve(
+      this.runs.flatMap((run) =>
+        projectIds.includes(run.projectId) &&
+        isFinal(run.state) &&
+        run.finishedAt !== null &&
+        run.pullRequest === null &&
+        run.workingCopyRemovedAt === null
+          ? [{ runId: run.id, projectId: run.projectId, finishedAt: run.finishedAt }]
+          : [],
+      ),
     );
   }
 
@@ -368,6 +394,7 @@ export class InMemoryRunRepository implements RunRepository {
     run.workingCopy = structuredClone(workingCopy);
     run.failingChecks = [...failingChecks];
     run.stepStartedAt = null;
+    run.lastActivityAt = now;
     if (step.sessionRef !== undefined) run.sessionRef = step.sessionRef;
     if (step.question) {
       run.messages.push({ kind: 'question', question: structuredClone(step.question), at: now });
@@ -381,7 +408,7 @@ export class InMemoryRunRepository implements RunRepository {
       return Promise.resolve(null);
     }
     run.messages.push({ kind: 'answer', text, at: now });
-    Object.assign(run, { state: 'queued', waitingSince: null });
+    Object.assign(run, { state: 'queued', waitingSince: null, lastActivityAt: now });
     return Promise.resolve(this.view(run));
   }
 
@@ -402,7 +429,12 @@ export class InMemoryRunRepository implements RunRepository {
       return Promise.resolve({ status: 'slot_taken', scope: 'server' });
     }
     run.messages.push({ kind: 'answer', text, at: now });
-    Object.assign(run, { state: 'queued', failure: null, finishedAt: null });
+    Object.assign(run, {
+      state: 'queued',
+      failure: null,
+      finishedAt: null,
+      lastActivityAt: now,
+    });
     return Promise.resolve({ status: 'resumed', run: this.view(run) });
   }
 
@@ -425,6 +457,7 @@ export class InMemoryRunRepository implements RunRepository {
     run.messages.push({ kind: 'follow_up', text, at: now });
     Object.assign(run, {
       state: 'queued',
+      lastActivityAt: now,
       followUpQueued: true,
       followUpCount: run.followUpCount + 1,
       stepsBeforePart: run.stepCount,

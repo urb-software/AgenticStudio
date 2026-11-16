@@ -37,6 +37,7 @@ import type {
   ClaimedRunChange,
   ResumeAfterLimitOutcome,
   DeliveryRetryOutcome,
+  LimitedRunView,
   NewRun,
   RunRepository,
   RunsSummary,
@@ -97,6 +98,8 @@ const LIST_FIELDS = {
   prRetryAt: true,
   prRefreshRequestedAt: true,
   prLastAttemptAt: true,
+  prEndedAt: true,
+  lastActivityAt: true,
   // Issue #141: the Run step total, counted with the Run.
   _count: { select: { steps: true } },
 } as const;
@@ -170,6 +173,8 @@ interface RunRow {
   prRetryAt: Date | null;
   prRefreshRequestedAt: Date | null;
   prLastAttemptAt: Date | null;
+  prEndedAt: Date | null;
+  lastActivityAt: Date;
   _count: { steps: number };
   /** Absent when a list read the Run (Issue #103). */
   messages?: {
@@ -349,7 +354,9 @@ function toRun(row: RunRow): Run {
       retryAt: row.prRetryAt,
       refreshRequestedAt: row.prRefreshRequestedAt,
       lastAttemptAt: row.prLastAttemptAt,
+      endedAt: row.prEndedAt,
     },
+    lastActivityAt: row.lastActivityAt,
   };
 }
 
@@ -671,7 +678,7 @@ export class PrismaRunRepository implements RunRepository {
       });
       const row = await tx.run.update({
         where: { id: runId },
-        data: { state: 'queued', waitingSince: null },
+        data: { state: 'queued', waitingSince: null, lastActivityAt: now },
         select: RUN_FIELDS,
       });
       return toRun(row);
@@ -738,7 +745,13 @@ export class PrismaRunRepository implements RunRepository {
     });
     const row = await tx.run.update({
       where: { id: runId },
-      data: { state: 'queued', failureCode: null, failureDetail: null, finishedAt: null },
+      data: {
+        state: 'queued',
+        failureCode: null,
+        failureDetail: null,
+        finishedAt: null,
+        lastActivityAt: now,
+      },
       select: RUN_FIELDS,
     });
     return { status: 'resumed', run: toRun(row) };
@@ -793,6 +806,7 @@ export class PrismaRunRepository implements RunRepository {
         where: { id: runId },
         data: {
           state: 'queued',
+          lastActivityAt: now,
           followUpQueued: true,
           followUpCount: { increment: 1 },
           stepsBeforePart: run.steps,
@@ -858,14 +872,52 @@ export class PrismaRunRepository implements RunRepository {
   async findStates(ids: readonly string[]): Promise<RunStateView[]> {
     const rows = await this.db.run.findMany({
       where: { id: { in: [...ids] } },
-      select: { id: true, state: true, finishedAt: true },
+      select: {
+        id: true,
+        projectId: true,
+        state: true,
+        finishedAt: true,
+        pullRequestNumber: true,
+        prState: true,
+        prEndedAt: true,
+        lastActivityAt: true,
+      },
     });
     return rows.map((row) => {
       if (!includes(RUN_STATES, row.state)) {
         throw new Error(`Unexpected run state in the database: ${row.state}`);
       }
-      return { runId: row.id, state: row.state, finishedAt: row.finishedAt };
+      return {
+        runId: row.id,
+        projectId: row.projectId,
+        state: row.state,
+        finishedAt: row.finishedAt,
+        hasPullRequest: row.pullRequestNumber !== null,
+        // The CHECK constraint fixes the state's values.
+        pullRequestState: row.prState as PullRequestState | null,
+        pullRequestEndedAt: row.prEndedAt,
+        lastActivityAt: row.lastActivityAt,
+      };
     });
+  }
+
+  async findLimitedRuns(projectIds: readonly string[]): Promise<LimitedRunView[]> {
+    if (projectIds.length === 0) return [];
+    const rows = await this.db.run.findMany({
+      where: {
+        projectId: { in: [...projectIds] },
+        state: { in: [...FINAL_RUN_STATES] },
+        finishedAt: { not: null },
+        pullRequestNumber: null,
+        workingCopyRemovedAt: null,
+      },
+      select: { id: true, projectId: true, finishedAt: true },
+    });
+    return rows.flatMap((row) =>
+      row.finishedAt === null
+        ? []
+        : [{ runId: row.id, projectId: row.projectId, finishedAt: row.finishedAt }],
+    );
   }
 
   async appendStep(
@@ -944,6 +996,7 @@ export class PrismaRunRepository implements RunRepository {
           // The step is over: Studio's time-limit backstop no longer runs for it (review of
           // #121), so a slow delivery after it is never timed out.
           stepStartedAt: null,
+          lastActivityAt: now,
           ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
         },
       });

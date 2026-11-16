@@ -124,6 +124,7 @@ describe('long-wait rule', () => {
     pushedCommit: null,
     workingCopyRemovedAt: null,
     pullRequestStatus: NO_PULL_REQUEST_STATUS,
+    lastActivityAt: since,
     ...overrides,
   });
   const after = (days: number, extraMs = 0) =>
@@ -206,6 +207,7 @@ describe('questions and answers', () => {
     pushedCommit: null,
     workingCopyRemovedAt: null,
     pullRequestStatus: NO_PULL_REQUEST_STATUS,
+    lastActivityAt: at,
   };
   const question = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
   const asked: Run = { ...base, messages: [{ kind: 'question', question, at }] };
