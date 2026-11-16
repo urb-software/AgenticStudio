@@ -149,7 +149,7 @@ function checkPath(tool, target, { project, home, tmp }) {
     WRITING_TOOLS.has(tool) &&
     !paths.every((path) => inside(path, project) || inside(path, tmp))
   ) {
-    return 'files are written only inside the Working copy (or the temporary directory)';
+    return 'files are written only inside the Working copy';
   }
   return null;
 }

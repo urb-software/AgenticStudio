@@ -20,7 +20,7 @@
 # `install` copies the files listed in apps/agent-worker/guardrails/managed-files.txt to their
 # managed paths, root:root, files 0644, directories 0755, and Node.js to /usr/local/bin/node when
 # it is not there (a copy of SMOKE_NODE_BIN, default: the `node` on root's PATH; root-owned,
-# 0755). It refuses to replace a file that differs from Studio's copy, and refuses while a managed
+# 0755; the source binary and its folders must be root-only, so not an nvm install). It refuses to replace a file that differs from Studio's copy, and refuses while a managed
 # input the manifest lists as `absent` exists. Everything it created is listed in a root-only
 # state file, written only once every check passed; `remove` deletes exactly that (a file, and the
 # Node.js copy, only while it still hashes to what was installed) and the state file.
@@ -44,19 +44,23 @@ die() {
 [ -f "$MANIFEST" ] || die "$MANIFEST not found."
 
 # Root-owned and writable by nobody else: the path itself and every directory above it, none of
-# them a symbolic link.
+# them a symbolic link. Taken as an absolute path (without resolving links, so a link is seen);
+# the walk ends at / and is bounded in any case.
 root_only() {
-  local path="$1"
-  while :; do
+  local path
+  path="$(realpath -s -- "$1" 2>/dev/null)" || return 1
+  [[ "$path" == /* ]] || return 1
+  for _ in $(seq 1 64); do
     [ ! -L "$path" ] || return 1
     [ "$(stat -c %u "$path" 2>/dev/null)" = 0 ] || return 1
     [ $((8#$(stat -c %a "$path") & 8#022)) -eq 0 ] || return 1
     [ "$path" != / ] || return 0
     path="$(dirname "$path")"
   done
+  return 1
 }
 
-for path in "${BASH_SOURCE[0]}" "$SCRIPT" "$GUARDRAILS" "$MANIFEST"; do
+for path in "$SCRIPT" "$GUARDRAILS" "$MANIFEST"; do
   root_only "$path" ||
     die "$path is not root-owned and closed to others (or is a symbolic link): run this from a root-owned copy of the checkout."
 done
@@ -103,6 +107,11 @@ install_files() {
   if [ ! -e "$NODE" ]; then
     node="${SMOKE_NODE_BIN:-$(command -v node || true)}"
     if [ -z "$node" ] || [ ! -x "$node" ]; then die "no Node.js to copy to $NODE (set SMOKE_NODE_BIN)."; fi
+    # It becomes the hooks' interpreter: only a binary the agent user cannot have changed (review
+    # N3 of #136), never one from an agent-writable folder such as nvm's.
+    node="$(readlink -f "$node")"
+    root_only "$node" ||
+      die "$node is not a root-owned binary closed to others in root-only directories; supply one (SMOKE_NODE_BIN), e.g. the official Node.js tarball unpacked by root."
   fi
   install -m 0600 /dev/null "$STATE"
   while read -r source dest; do
@@ -122,7 +131,7 @@ install_files() {
     fi
   done < <(entries)
   if [ -n "$node" ]; then
-    install -o root -g root -m 0755 "$(readlink -f "$node")" "$NODE"
+    install -o root -g root -m 0755 "$node" "$NODE"
     record node "$NODE" "$(sha "$NODE")"
   fi
   status

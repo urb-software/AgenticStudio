@@ -7,7 +7,10 @@
     "LD_LIBRARY_PATH": "",
     "LD_AUDIT": "",
     "NODE_OPTIONS": "",
-    "NODE_PATH": ""
+    "NODE_PATH": "",
+    "GLIBC_TUNABLES": "",
+    "GCONV_PATH": "",
+    "LOCPATH": ""
   },
   "permissions": {
     "allow": [

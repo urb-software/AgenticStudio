@@ -106,6 +106,9 @@ describe.skipIf(process.platform !== 'linux')("Studio's managed hook environment
       LD_AUDIT: '',
       NODE_OPTIONS: '',
       NODE_PATH: '',
+      GLIBC_TUNABLES: '',
+      GCONV_PATH: '',
+      LOCPATH: '',
     });
   });
 
