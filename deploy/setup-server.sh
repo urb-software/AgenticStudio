@@ -197,11 +197,14 @@ step_preflight() {
   if ! [[ "$AGENT_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || [ "$AGENT_USER" = root ]; then
     die "AGENT_USER '$AGENT_USER' is not a valid ordinary user name."
   fi
-  # A global XDG_RUNTIME_DIR (pam_env reads /etc/environment for user managers too) would point
-  # the agent user's services at another user's runtime directory.
-  if grep -Eq '^[[:space:]]*(export[[:space:]]+)?XDG_RUNTIME_DIR=' /etc/environment 2>/dev/null; then
-    die "/etc/environment sets XDG_RUNTIME_DIR for every user; remove that line and run the script again."
-  fi
+  # Per-user directories set globally (pam_env reads /etc/environment for user managers too) would
+  # point the agent user's services, rootless Docker included, at another user's directories.
+  local global
+  global="$(grep -Eo '^[[:space:]]*(export[[:space:]]+)?(XDG_[A-Z_]+|DOCKER_HOST|DOCKER_CONFIG)=' /etc/environment 2>/dev/null |
+    sed -E 's/^[[:space:]]*(export[[:space:]]+)?//; s/=$//' | tr '
+' ' ' || true)"
+  [ -z "$global" ] || die "/etc/environment sets per-user variables for every user (${global% }); remove those lines and run the script again."
+
   if grep -qi microsoft /proc/version 2>/dev/null; then
     log "WARNING: this looks like WSL. WSL with default settings is not an isolation boundary (ADR 0002); the target is native Linux."
   fi
