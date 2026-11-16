@@ -453,6 +453,54 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       );
     });
 
+    // Issue #143: the agent side's disk figures, shown on the Executions page.
+    describe('agent worker disk', () => {
+      const GIB = 1024 ** 3;
+      const DISK = {
+        workingCopiesBytes: 3 * GIB,
+        cachesBytes: GIB,
+        keptRuns: 4,
+        freeBytes: 40 * GIB,
+        totalBytes: 100 * GIB,
+        minFreeBytes: 10 * GIB,
+      };
+      const agentWorker = () => http().get('/api/agent-worker').set('Cookie', cookie);
+      const reportDisk = (disk: object) =>
+        http()
+          .post('/api/worker/status')
+          .set('Authorization', `Bearer ${WORKER_TOKEN}`)
+          .send({ workerId: W1, runner: 'cli', providers: BOTH_ENABLED, disk });
+
+      it('shows the figures of the latest report, and whether free space is below the threshold', async () => {
+        expect((await reportDisk(DISK)).status).toBe(204);
+        expect((await agentWorker()).body).toEqual({
+          connected: true,
+          disk: { ...DISK, low: false },
+        });
+
+        expect((await reportDisk({ ...DISK, freeBytes: 9 * GIB })).status).toBe(204);
+        expect((await agentWorker()).body).toMatchObject({ connected: true, disk: { low: true } });
+      });
+
+      it('shows no figures before the worker measured, and none once its report is stale', async () => {
+        expect((await workerStatus()).status).toBe(204);
+        expect((await agentWorker()).body).toEqual({ connected: true });
+
+        expect((await reportDisk(DISK)).status).toBe(204);
+        advance(LEASE_SECONDS + 1);
+        expect((await agentWorker()).body).toEqual({ connected: false });
+      });
+
+      it('refuses a malformed report, and the page needs the operator session', async () => {
+        expectProblem(await reportDisk({ ...DISK, keptRuns: -1 }), 400);
+        expectProblem(await http().get('/api/agent-worker'), 401);
+        expectProblem(
+          await http().get('/api/agent-worker').set('Authorization', `Bearer ${WORKER_TOKEN}`),
+          401,
+        );
+      });
+    });
+
     it('accepts status reports with the worker token only', async () => {
       const off = { claude_code: false, codex: false };
       expectProblem(await workerStatus(off, W1, null), 401);
@@ -624,7 +672,13 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(response.body).toHaveLength(2);
       expect(response.body).toEqual(
         expect.arrayContaining([
-          { runId: finished.id, state: 'failed', finishedAt: clock.current.toISOString() },
+          {
+            runId: finished.id,
+            state: 'failed',
+            finishedAt: clock.current.toISOString(),
+            // Issue #143: a Run without a pull request is kept seven days from its result.
+            keepUntil: new Date(clock.current.getTime() + 7 * 24 * 60 * 60_000).toISOString(),
+          },
           { runId: queued.id, state: 'queued', finishedAt: null },
         ]),
       );
@@ -638,6 +692,56 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       );
       expectProblem(await runStates([]), 400);
       expectProblem(await runStates(['../../etc']), 400);
+    });
+
+    it('removes beyond the newest ten finished Runs with a Working copy and no pull request, and no other (Issue #143)', async () => {
+      const project = await readyProject('Shop');
+      const other = await readyProject('Other');
+      const withCopy: string[] = [];
+      const fresh = async () => expect((await workerStatus()).status).toBe(204);
+      const finishWithCopy = async (projectId: string, delivery: object) => {
+        const run = await queuedRun(projectId, `Task ${withCopy.length}`);
+        await claim();
+        await report(run.id, { state: 'running' });
+        expect((await reportStep(run.id, { outcome: 'done', summary: 'Done.' })).status).toBe(204);
+        await report(run.id, { state: 'succeeded', delivery });
+        advance(60);
+        await fresh();
+        return run.id;
+      };
+      // One Run at a time (one active Run per project), each finishing a minute after the last:
+      // the project's oldest 11 have a Working copy and no pull request.
+      for (let n = 0; n < 11; n++)
+        withCopy.push(await finishWithCopy(project.id, { outcome: 'none' }));
+      // A Run with a pull request, newer than all of them, is neither counted nor removed.
+      const delivered = await finishWithCopy(project.id, {
+        outcome: 'delivered',
+        pullRequest: { url: 'https://github.com/acme/shop/pull/9', number: 9 },
+      });
+      const otherProject = await finishWithCopy(other.id, { outcome: 'none' });
+      // Newest of all: failed before any Working copy (refused by the free-space guard, say).
+      const never: string[] = [];
+      for (let n = 0; n < 3; n++) {
+        const run = await queuedRun(project.id, `Never ${n}`);
+        await claim();
+        await report(run.id, {
+          state: 'failed',
+          failure: { code: 'preparation_failed', detail: 'x' },
+        });
+        never.push(run.id);
+        advance(60);
+        await fresh();
+      }
+
+      const response = await runStates([...withCopy, delivered, otherProject, ...never]);
+
+      expect(response.status).toBe(200);
+      const removable = (response.body as { runId: string; removable?: true }[])
+        .filter((entry) => entry.removable)
+        .map((entry) => entry.runId);
+      // Only the oldest of the 11: the Run with a pull request, the other project's Run and the
+      // Runs that never had a Working copy fill no place.
+      expect(removable).toEqual([withCopy[0]]);
     });
 
     describe('delivery (Issue #102)', () => {
@@ -2200,7 +2304,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(cancelled.body).toMatchObject({ state: 'cancelled', followUps: 1 });
       // Cancelled before it was claimed: nothing is handed out, and it can be followed up again.
       expect((await claim()).status).toBe(204);
-      expect((await getRun(run.id)).body.followUp).toEqual({ allowed: true });
+      expect((await getRun(run.id)).body.followUp).toEqual({
+        allowed: true,
+        openUntil: expect.any(String),
+      });
     });
 
     it('refuses a Run that is queued, preparing or running, or has no session (409)', async () => {
@@ -2370,7 +2477,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expect(ended).toMatchObject({ state: end, pullRequest: PULL_REQUEST, followUps: 1 });
         expect(ended).not.toHaveProperty('delivery');
         // Its commits stay in the Working copy, and a further Follow-up can continue from them.
-        expect(ended.followUp).toEqual({ allowed: true });
+        expect(ended.followUp).toEqual({
+          allowed: true,
+          openUntil: expect.any(String),
+        });
       }
     });
 
@@ -2549,7 +2659,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       const { run } = await deliveredRun();
       // Another worker cannot report it.
       await worker('states', { workerId: W2, runIds: [run.id], removedRunIds: [run.id] });
-      expect((await getRun(run.id)).body.followUp).toEqual({ allowed: true });
+      expect((await getRun(run.id)).body.followUp).toEqual({
+        allowed: true,
+        openUntil: expect.any(String),
+      });
 
       const removed = await worker('states', {
         workerId: W1,
@@ -2572,11 +2685,13 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect((await getRun(run.id)).body.followUp).toEqual({
         allowed: false,
         reason: 'worker_unavailable',
+        openUntil: expect.any(String),
       });
       expect((await workerStatus({ claude_code: false, codex: true }, W1)).status).toBe(204);
       expect((await getRun(run.id)).body.followUp).toEqual({
         allowed: false,
         reason: 'provider_unavailable',
+        openUntil: expect.any(String),
       });
     });
   });

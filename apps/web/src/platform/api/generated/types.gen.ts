@@ -120,6 +120,8 @@ export type RunStepTotalsOutput = {
 export type RunFollowUpEligibilityOutput = {
     allowed: boolean;
     reason?: 'not_finished' | 'follow_up_queued' | 'pull_request_merged' | 'pull_request_closed' | 'pull_request_missing' | 'working_copy_removed' | 'no_session' | 'step_total_reached' | 'provider_unavailable' | 'worker_unavailable';
+    openUntil?: string;
+    removalPending?: true;
 };
 
 export type RunPullRequestOutput = {
@@ -284,6 +286,22 @@ export type ProviderAvailabilityOutput = {
 };
 
 export type ProviderListOutput = Array<ProviderAvailabilityOutput>;
+
+export type AgentWorkerDiskOutput = {
+    workingCopiesBytes: number;
+    cachesBytes: number;
+    keptRuns: number;
+    freeBytes: number;
+    totalBytes: number;
+    minFreeBytes: number;
+    low: boolean;
+    partial?: true;
+};
+
+export type AgentWorkerOutput = {
+    connected: boolean;
+    disk?: AgentWorkerDiskOutput;
+};
 
 export type ProblemDetails = {
     type: string;
@@ -1289,3 +1307,25 @@ export type ListProvidersResponses = {
 };
 
 export type ListProvidersResponse = ListProvidersResponses[keyof ListProvidersResponses];
+
+export type GetAgentWorkerData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent-worker';
+};
+
+export type GetAgentWorkerErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetAgentWorkerError = GetAgentWorkerErrors[keyof GetAgentWorkerErrors];
+
+export type GetAgentWorkerResponses = {
+    200: AgentWorkerOutput;
+};
+
+export type GetAgentWorkerResponse = GetAgentWorkerResponses[keyof GetAgentWorkerResponses];

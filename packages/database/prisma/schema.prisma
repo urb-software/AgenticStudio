@@ -260,6 +260,12 @@ model Run {
   /// When a lookup of the Run's pull request was last requested (review S1 of #152): the page-open
   /// throttle and the daily refresh count from the last attempt, whether or not it succeeded.
   prLastAttemptAt         DateTime?    @map("pr_last_attempt_at") @db.Timestamptz(6)
+  /// Issue #143: when a lookup first reported the pull request merged, closed or missing; cleared
+  /// when a later one reports it open or draft again. Set only with such a pr_state.
+  prEndedAt               DateTime?    @map("pr_ended_at") @db.Timestamptz(6)
+  /// Issue #143: when the Run last had activity (a Run step, an Answer or a Follow-up); starts at
+  /// creation. Working copy retention counts the idle time from here.
+  lastActivityAt          DateTime     @default(dbgenerated("now()")) @map("last_activity_at") @db.Timestamptz(6)
   steps                   RunStep[]
   events                  RunEvent[]
   messages                RunMessage[]
@@ -421,7 +427,6 @@ model RunDiffState {
   resultCommit   String  @map("result_commit") @db.VarChar(64)
   previousTree   String  @map("previous_tree") @db.VarChar(64)
   previousCommit String  @map("previous_commit") @db.VarChar(64)
-  pushedCommit   String? @map("pushed_commit") @db.VarChar(64)
 
   @@map("run_diff_states")
 }

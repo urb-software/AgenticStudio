@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { type FollowUpEligibility, isRunId, type Run } from '../../domain/entities/run.js';
+import { isRunId, type Run } from '../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
-import { runView } from '../../domain/services/follow-up-context.js';
+import { type FollowUpView, runView } from '../../domain/services/follow-up-context.js';
+import { isOverLimit } from '../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
@@ -21,13 +23,21 @@ export class GetRunHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_STATUS_STORE) private readonly workers: WorkerStatusStore,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
+    @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
   ) {}
 
   async execute(
     runId: string,
-  ): Promise<{ run: Run; followUp: FollowUpEligibility; workerConnected: boolean }> {
+  ): Promise<{ run: Run; followUp: FollowUpView; workerConnected: boolean }> {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
-    return runView(run, this.workers, this.clock.now(), this.lease.seconds);
+    return runView(
+      run,
+      this.workers,
+      this.clock.now(),
+      this.lease.seconds,
+      this.retention,
+      await isOverLimit(this.runs, run, this.retention),
+    );
   }
 }

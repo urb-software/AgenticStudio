@@ -20,6 +20,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { LowFreeSpaceError } from '../disk.js';
 import { FAKE_CHANGE_FILE, FakeRunner } from '../fake-runner.js';
 import { GitRunner } from '../git.js';
 import { drainRunStep } from '../runner.js';
@@ -55,13 +56,17 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
   /** A test worker: its fixture remotes are file:// URLs (allowed outside production only). */
-  function workingCopies(allowFileRemotes = true) {
+  function workingCopies(
+    allowFileRemotes = true,
+    freeSpace?: { assertEnoughFreeSpace(): Promise<void> },
+  ) {
     return new WorkingCopies({
       dataDir,
       git: new GitRunner({ env: { PATH: env.PATH!, HOME: home } }),
       ...AGENT,
       allowFileRemotes,
       logger: { error: (message) => errors.push(message) },
+      ...(freeSpace ? { freeSpace } : {}),
     });
   }
 
@@ -371,6 +376,49 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
   });
 
   // Issue #103: a resume continues in the kept Working copy, on the Run branch Studio recorded.
+  // Issue #143: no new Run is prepared while the disk is short of free space.
+  describe('free-space guard', () => {
+    const SHORT = "The agent worker's disk has 2.0 GiB free, below the 10.0 GiB it keeps free.";
+    const short = {
+      assertEnoughFreeSpace: () => Promise.reject(new LowFreeSpaceError(SHORT)),
+    };
+
+    it('fails the preparation with the free space in the detail, writing nothing', async () => {
+      const copies = workingCopies(true, short);
+
+      const failure = await copies.prepare(payload(), signal()).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(PreparationFailedError);
+      expect((failure as PreparationFailedError).detail).toBe(SHORT);
+      expect(existsSync(dataDir)).toBe(false);
+    });
+
+    it('prepares when there is room', async () => {
+      const copies = workingCopies(true, { assertEnoughFreeSpace: async () => undefined });
+
+      await expect(copies.prepare(payload(), signal())).resolves.toMatchObject({
+        runBranch: expect.any(String),
+      });
+    });
+
+    it('does not stop a resume (a Follow-up or an Answer) in the Working copy it has', async () => {
+      const run = payload();
+      const prepared = await workingCopies().prepare(run, signal());
+      const copies = workingCopies(true, short);
+
+      const located = await copies.locate({
+        ...run,
+        kind: 'resume',
+        runBranch: prepared.runBranch,
+        sessionRef: 's-1',
+        answer: 'yes',
+        nextSeq: 4,
+      });
+
+      expect(located.repoDir).toBe(prepared.repoDir);
+    });
+  });
+
   describe('locating the Working copy for a resume', () => {
     it('finds it unchanged on its Run branch', async () => {
       const copies = workingCopies();
@@ -493,6 +541,45 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
 
       expect(existsSync(join(prepared.repoDir, '.env'))).toBe(false);
       expect(readFileSync(outside, 'utf8')).toBe('keep me');
+    });
+
+    // Issue #143 (review N1 of #141): the agent may have committed a file at the new path since.
+    it("refuses a path the Run branch's current commit tracks, overwriting nothing", async () => {
+      const copies = workingCopies();
+      const run = payload({
+        environmentFile: { path: '.env', content: OLD },
+        studioPaths: ['.env'],
+      });
+      const prepared = await copies.prepare(run, signal());
+      writeFileSync(join(prepared.repoDir, 'settings.env'), 'COMMITTED_BY_AGENT=1');
+      inRepo(prepared.repoDir, ['add', 'settings.env']);
+      inRepo(prepared.repoDir, ['commit', '--quiet', '-m', 'Add settings']);
+      const { environmentFile: _file, ...rest } = run;
+      void _file;
+
+      const failure = await copies
+        .locate(
+          {
+            ...rest,
+            kind: 'resume',
+            runBranch: prepared.runBranch,
+            sessionRef: 's-1',
+            answer: 'Go on.',
+            resumeReason: 'follow_up',
+            followUpNumber: 1,
+            nextSeq: 4,
+            replaceEnvironmentFile: true,
+            environmentFile: { path: 'settings.env', content: NEW },
+          },
+          signal(),
+        )
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(PreparationFailedError);
+      expect((failure as PreparationFailedError).detail).toMatch(/tracked in the repository/);
+      expect(readFileSync(join(prepared.repoDir, 'settings.env'), 'utf8')).toBe(
+        'COMMITTED_BY_AGENT=1',
+      );
     });
 
     it('rewrites the same path with the new content', async () => {

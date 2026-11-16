@@ -1,5 +1,6 @@
 import type {
   Provider,
+  PullRequestState,
   Run,
   RunCancellation,
   RunDeliveryOutcome,
@@ -113,12 +114,30 @@ export interface StoredRunStep extends RunStepRecord {
   reportedAt: Date;
 }
 
-/** A Run's state for the agent worker's retention (Issue #98). */
+/**
+ * A Run's state for the agent worker's retention (Issue #98), with what Studio decides the
+ * Working copy's retention from (Issue #143; the fields of `RetentionFacts`).
+ */
 export interface RunStateView {
   runId: string;
+  projectId: string;
+  provider: Provider;
+  /** The agent session of the Run (internal: only the agent worker is told). */
+  sessionRef: string | null;
   state: RunState;
   /** Set exactly in a final state. */
   finishedAt: Date | null;
+  hasPullRequest: boolean;
+  pullRequestState: PullRequestState | null;
+  pullRequestEndedAt: Date | null;
+  lastActivityAt: Date;
+}
+
+/** A final Run without a pull request, whose Working copy the per-Project limit counts (#143). */
+export interface LimitedRunView {
+  runId: string;
+  projectId: string;
+  finishedAt: Date;
 }
 
 /**
@@ -296,6 +315,12 @@ export interface RunRepository {
 
   /** The states of the Runs with these ids (valid UUIDs); ids that name no Run are left out. */
   findStates(ids: readonly string[]): Promise<RunStateView[]>;
+
+  /**
+   * Issue #143: the final Runs without a pull request, in these Projects, whose Working copy was
+   * not reported removed: what the per-Project retention limit counts.
+   */
+  findLimitedRuns(projectIds: readonly string[]): Promise<LimitedRunView[]>;
 
   /**
    * Stores a Run step of a `running` Run held by `workerId`, numbered 1, 2, … in report

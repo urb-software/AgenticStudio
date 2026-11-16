@@ -335,6 +335,9 @@ async function main() {
         // test environment also accepts the file:// fixture remotes (#98).
         STUDIO_WORKER_RUNNER: 'fake',
         STUDIO_WORKER_ENVIRONMENT: 'test',
+        // Issue #143: the smoke runs on a CI machine whose free space is not what it tests;
+        // the worker still reports its disk, which the Executions page shows.
+        STUDIO_WORKER_MIN_FREE_GB: '0',
         CLAUDE_CODE_ENABLED: 'true',
         CODEX_CLI_ENABLED: 'true',
         HOME: workerHome,

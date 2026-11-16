@@ -472,10 +472,16 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
   describe('Follow-up eligibility by pull request state', () => {
     it('allows a Follow-up while the state is unknown, draft or open', async () => {
       const runId = await deliveredRun();
-      expect((await getRun(runId)).body.followUp).toEqual({ allowed: true });
+      expect((await getRun(runId)).body.followUp).toEqual({
+        allowed: true,
+        openUntil: expect.any(String),
+      });
       await refresh(runId);
       await readAs({ state: 'draft' });
-      expect((await getRun(runId)).body.followUp).toEqual({ allowed: true });
+      expect((await getRun(runId)).body.followUp).toEqual({
+        allowed: true,
+        openUntil: expect.any(String),
+      });
     });
 
     it.each([
@@ -502,7 +508,10 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       await refresh(runId);
       await readAs({ state: 'open', behindBy: 0, aheadBy: 1 });
 
-      expect((await getRun(runId)).body.followUp).toEqual({ allowed: true });
+      expect((await getRun(runId)).body.followUp).toEqual({
+        allowed: true,
+        openUntil: expect.any(String),
+      });
       expect((await followUp(runId)).status).toBe(202);
     });
 
@@ -514,6 +523,120 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       const claimed = await claimLookups();
       expect(claimed.status).toBe(200);
       expect(claimed.body[0]).toMatchObject({ runId, pullRequestNumber: 7 });
+    });
+  });
+
+  // Issue #143: how long the Working copy of a Run with a pull request is kept, decided by Studio.
+  describe('Working copy retention by pull request state', () => {
+    const HOUR = 60 * 60_000;
+    const DAY = 24 * HOUR;
+    const states = (runIds: string[], workerId = W1) =>
+      asWorker('runs/states', { workerId, runIds });
+    const answerFor = async (runId: string) => {
+      const response = await states([runId]);
+      expect(response.status).toBe(200);
+      return (response.body as { runId: string }[]).find((entry) => entry.runId === runId)!;
+    };
+    const lastActivity = async (runId: string) => {
+      const [row] = await db().$queryRaw<{ last_activity_at: Date }[]>`
+        SELECT last_activity_at FROM runs WHERE id = ${runId}::uuid`;
+      return row!.last_activity_at;
+    };
+
+    it('keeps a Run with a pull request of unknown state, then an open one, 30 days from its activity, and shows the date', async () => {
+      const runId = await deliveredRun();
+      const activity = await lastActivity(runId);
+      const until = new Date(activity.getTime() + 30 * DAY).toISOString();
+
+      // Never read: counts as open, so a Git host outage removes nothing.
+      expect(await answerFor(runId)).toMatchObject({ runId, state: 'succeeded', keepUntil: until });
+      expect((await getRun(runId)).body.followUp).toMatchObject({ openUntil: until });
+
+      await refresh(runId);
+      await readAs({ state: 'open', behindBy: 0, aheadBy: 1 });
+      expect(await answerFor(runId)).toMatchObject({ keepUntil: until });
+      expect(await answerFor(runId)).not.toHaveProperty('removable');
+      // Past the seven days of the other rule, still kept.
+      advance(10 * 24 * 60 * 60);
+      expect(await answerFor(runId)).toMatchObject({ keepUntil: until });
+    });
+
+    it('lets go of the Working copy 24 hours after the pull request was merged, and not before', async () => {
+      const runId = await deliveredRun();
+      await refresh(runId);
+      await readAs({ state: 'merged' });
+      const ended = clock.current;
+
+      expect(await answerFor(runId)).toMatchObject({
+        keepUntil: new Date(ended.getTime() + DAY).toISOString(),
+      });
+      const [stored] = await db().$queryRaw<{ pr_ended_at: Date }[]>`
+        SELECT pr_ended_at FROM runs WHERE id = ${runId}::uuid`;
+      expect(stored!.pr_ended_at).toEqual(ended);
+      // A merged pull request has nothing to open the Run to.
+      expect((await getRun(runId)).body.followUp).toEqual({
+        allowed: false,
+        reason: 'pull_request_merged',
+      });
+
+      advance(24 * 60 * 60 - 1);
+      expect(await answerFor(runId)).toHaveProperty('keepUntil');
+      advance(1);
+      expect(await answerFor(runId)).toMatchObject({ removable: true });
+      expect(await answerFor(runId)).not.toHaveProperty('keepUntil');
+    });
+
+    it('keeps the first end of a pull request, and counts again after it was reopened', async () => {
+      const runId = await deliveredRun();
+      const endedAt = async () => {
+        const [row] = await db().$queryRaw<{ pr_ended_at: Date | null }[]>`
+          SELECT pr_ended_at FROM runs WHERE id = ${runId}::uuid`;
+        return row!.pr_ended_at;
+      };
+      await refresh(runId);
+      await readAs({ state: 'closed' });
+      const first = clock.current;
+      expect(await endedAt()).toEqual(first);
+
+      advance(3600);
+      await refresh(runId);
+      await readAs({ state: 'merged' });
+      expect(await endedAt()).toEqual(first);
+
+      advance(3600);
+      await refresh(runId);
+      await readAs({ state: 'open', behindBy: 0, aheadBy: 1 });
+      expect(await endedAt()).toBeNull();
+      expect(await answerFor(runId)).toHaveProperty('keepUntil');
+    });
+
+    it('moves the date with activity on the Run: a Follow-up', async () => {
+      const runId = await deliveredRun();
+      const before = (await getRun(runId)).body.followUp.openUntil as string;
+
+      advance(2 * 24 * 60 * 60);
+      // The worker reports again: its status goes stale after the lease.
+      await connectWorker();
+      expect((await followUp(runId)).status).toBe(202);
+
+      expect((await lastActivity(runId)).getTime()).toBe(clock.current.getTime());
+      expect(new Date(clock.current.getTime() + 30 * DAY).getTime()).toBeGreaterThan(
+        Date.parse(before),
+      );
+      expect(await answerFor(runId)).not.toHaveProperty('removable');
+    });
+
+    it('keeps a Run without a pull request seven days from its result, which a Run with a pull request is not under', async () => {
+      const plain = await deliveredRun({ delivered: false });
+      const withPullRequest = await deliveredRun();
+      const plainAnswer = await answerFor(plain);
+      expect(plainAnswer).toMatchObject({
+        keepUntil: new Date(clock.current.getTime() + 7 * DAY).toISOString(),
+      });
+      // The Run with a pull request is not under the seven days.
+      advance(8 * 24 * 60 * 60);
+      expect(await answerFor(plain)).toMatchObject({ removable: true });
+      expect(await answerFor(withPullRequest)).toHaveProperty('keepUntil');
     });
   });
 

@@ -10,6 +10,7 @@ import { useAllRuns, useProjectNames } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
 import { RunRows } from '../../components/run-rows';
 import { StaleBanner } from '../../components/stale-banner';
+import { AgentWorkerDisk } from './agent-worker-disk';
 
 /** The request the list makes (generated `listRuns`), shown verbatim when it fails. */
 const LIST_REQUEST = 'GET /api/runs';
@@ -111,6 +112,7 @@ export function ExecutionsOverview() {
         <h1 className="m-0 text-page-title font-semibold tracking-[-0.015em]">Executions</h1>
         <p className="m-0 text-body text-text-muted">Every run across your projects.</p>
       </div>
+      <AgentWorkerDisk />
       {body}
     </>
   );

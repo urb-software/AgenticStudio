@@ -88,6 +88,11 @@ export const PULL_REQUEST_ENDED_REFUSALS = {
   missing: 'pull_request_missing',
 } as const satisfies Partial<Record<PullRequestState, FollowUpRefusal>>;
 
+/** Whether a pull request state is an end: merged, closed or not found (Issue #143). */
+export function isPullRequestEnded(state: PullRequestState | null): boolean {
+  return state !== null && state in PULL_REQUEST_ENDED_REFUSALS;
+}
+
 /**
  * What Studio knows about the Run's pull request (Issue #142), from the lookups the agent worker
  * answered through the Agent account; Studio itself never reads the Git host. `state` is `null`
@@ -111,6 +116,11 @@ export interface RunPullRequestStatus {
   refreshRequestedAt: Date | null;
   /** When a lookup was last requested, whether or not it succeeded (review S1 of #152). */
   lastAttemptAt: Date | null;
+  /**
+   * Issue #143: when a lookup first read the pull request as merged, closed or missing; `null`
+   * while it is not over (a reopened one is cleared). Working copy retention counts from it.
+   */
+  endedAt: Date | null;
 }
 
 /** No lookup yet: what a Run starts with. */
@@ -124,6 +134,7 @@ export const NO_PULL_REQUEST_STATUS: RunPullRequestStatus = {
   retryAt: null,
   refreshRequestedAt: null,
   lastAttemptAt: null,
+  endedAt: null,
 };
 
 /** One commit on a Run branch: its id and subject line. */
@@ -338,6 +349,11 @@ export interface Run {
   workingCopyRemovedAt: Date | null;
   /** Where the Run's pull request stands on the Git host, as last read (Issue #142). */
   pullRequestStatus: RunPullRequestStatus;
+  /**
+   * The latest Run step, Answer or Follow-up, or the Run's creation (Issue #143): Working copy
+   * retention counts a Run with a pull request idle from here.
+   */
+  lastActivityAt: Date;
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {
