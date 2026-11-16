@@ -1,0 +1,24 @@
+# Build context of the production images (apps/api/Dockerfile, apps/web/Dockerfile; Issue #132).
+# Nothing secret and nothing built on the host may reach an image layer: environment files,
+# Git metadata, dependencies and build output are left out, and the images build from source.
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+.claude
+**/node_modules
+**/dist
+**/.next
+**/*.tsbuildinfo
+**/next-env.d.ts
+packages/database/src/generated
+# Tests, test output and documentation are not part of an image.
+**/__tests__
+tests
+playwright-report
+docs
+design-system
+deploy
+*.md
+**/*.log

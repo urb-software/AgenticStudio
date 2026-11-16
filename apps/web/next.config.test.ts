@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { resolveApiProxy } from './next.config';
+import { resolve } from 'node:path';
+import { resolveApiProxy, resolveOutput } from './next.config';
 
 // The /api proxy of next.config.ts (Issue #30 decision 3): a production build proxies only on
 // an explicit, validated opt-in (STUDIO_WEB_API_PROXY=true + API_ORIGIN); API_ORIGIN alone
@@ -77,5 +78,28 @@ describe('resolveApiProxy: validation', () => {
     expect(() =>
       resolveApiProxy({ STUDIO_WEB_API_PROXY: 'secret-ish' }, { devServer: false }),
     ).toThrow(expect.objectContaining({ message: expect.not.stringContaining('secret-ish') }));
+  });
+});
+
+// The production image's standalone build (Issue #132): opt-in, so `next start` is unchanged.
+describe('resolveOutput', () => {
+  it.each([{}, { STUDIO_WEB_STANDALONE: '' }, { STUDIO_WEB_STANDALONE: 'false' }])(
+    'keeps the default build output for %j',
+    (env) => {
+      expect(resolveOutput(env)).toEqual({});
+    },
+  );
+
+  it('builds the standalone server, traced from the repository root, when set to true', () => {
+    expect(resolveOutput({ STUDIO_WEB_STANDALONE: 'true' })).toEqual({
+      output: 'standalone',
+      outputFileTracingRoot: resolve(process.cwd(), '../..'),
+    });
+  });
+
+  it.each(['TRUE', '1', 'yes'])('rejects the value %j', (value) => {
+    expect(() => resolveOutput({ STUDIO_WEB_STANDALONE: value })).toThrow(
+      /STUDIO_WEB_STANDALONE must be "true" or "false"/,
+    );
   });
 });

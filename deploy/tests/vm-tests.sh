@@ -4,9 +4,11 @@
 # you keep: it installs packages, creates the agent user and changes the firewall.
 #   sudo DEPLOY_VM_TESTS=yes bash deploy/tests/vm-tests.sh
 # Runs the setup twice (the second run must change nothing), starts Studio's PostgreSQL and
-# Redis from the server Compose file, then runs the boundary checks as the agent user. The API
-# group is skipped: Studio has no production images yet (the container tests cover the API checks
-# against a stub). Every password here is a throwaway test value.
+# Redis from the server Compose file, builds the API and web production images (Issue #132) and
+# starts the whole stack with them (migrations, API, web, reverse proxy), checks the login rate
+# limit per client through the proxy, then runs every boundary check as the agent user, the `api`
+# group included. Every password, key and token here is a throwaway test value; the domain is a
+# reserved test name served with Caddy's internal CA.
 # shellcheck disable=SC2016 # single-quoted text run by another shell
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -97,26 +99,133 @@ expect_false "the Redis password is on no host command line" \
   bash -c "grep -qF -f /root/redis-password.test /proc/[0-9]*/cmdline"
 rm -f /root/redis-password.test
 
-# No Studio images yet: a stand-in for the API's public health route on the published API port
-# is the positive control (the real API answers there once the images exist, #130).
-health_stub() {
-  /usr/local/bin/node -e "require('node:http').createServer((q, r) => {
-    r.writeHead(q.url === '/api/health' ? 200 : 404); r.end(); }).listen(3001, '127.0.0.1')" &
-  HEALTH_PID=$!
-  sleep 1
+section "Production images (apps/api/Dockerfile, apps/web/Dockerfile)"
+API_IMAGE=agentic-studio/api:ci
+WEB_IMAGE=agentic-studio/web:ci
+build_image() {
+  local log
+  log="$(mktemp)"
+  if docker build -f "$SRC/$1" -t "$2" "$SRC" >"$log" 2>&1; then
+    ok "built $2 from $1"
+  else
+    not_ok "building $2 from $1 failed:"
+    tail -n 80 "$log" | sed 's/^/      | /'
+  fi
+  rm -f "$log"
 }
+build_image apps/api/Dockerfile "$API_IMAGE"
+build_image apps/web/Dockerfile "$WEB_IMAGE"
+for image in "$API_IMAGE" "$WEB_IMAGE"; do
+  expect_true "$image runs as 10001:10001" bash -c "[ \"\$(docker image inspect -f '{{.Config.User}}' $image)\" = 10001:10001 ]"
+  found="$(docker run --rm --network none --user 10001:10001 --entrypoint sh "$image" -c \
+    "find / -xdev \( -name .env -o -name '.env.*' \) ! -name '*.example' 2>/dev/null")"
+  expect_line "$image holds no .env file" "${found:-none}" '^none$'
+done
 
-section "Boundary checks as the agent user"
-health_stub
-out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip api 2>&1)"
+section "Studio's web, API and reverse proxy from the production images"
+ENV_FILE=/etc/agentic-studio/.env
+WORKER_ENV=/home/agent/.config/agentic-studio-worker/.env
+DOMAIN=studio.example.test
+# set_env <file> <name> <value>: replaces the variable's line (test values only).
+set_env() {
+  sed -i "/^$2=/d" "$1"
+  printf '%s=%s\n' "$2" "$3" >>"$1"
+}
+POSTGRES_PASSWORD="$(sed -n 's/^POSTGRES_PASSWORD=//p' "$ENV_FILE")"
+REDIS_PASSWORD="$(sed -n 's/^REDIS_PASSWORD=//p' "$ENV_FILE")"
+OPERATOR_PASSWORD="$(openssl rand -hex 16)"
+WORKER_TOKEN="$(openssl rand -hex 24)"
+hash="$(printf '%s\n' "$OPERATOR_PASSWORD" | docker run --rm -i --network none "$API_IMAGE" node dist/platform/auth/hash-password.js | tail -n 1)"
+expect_line "the API image hashes the operator password (auth:hash-password)" "$hash" '^\$argon2id\$'
+set_env "$ENV_FILE" STUDIO_API_IMAGE "$API_IMAGE"
+set_env "$ENV_FILE" STUDIO_WEB_IMAGE "$WEB_IMAGE"
+set_env "$ENV_FILE" STUDIO_DOMAIN "$DOMAIN"
+set_env "$ENV_FILE" STUDIO_TLS internal
+set_env "$ENV_FILE" DATABASE_URL "postgresql://studio:$POSTGRES_PASSWORD@postgres:5432/agentic_studio"
+set_env "$ENV_FILE" REDIS_URL "redis://:$REDIS_PASSWORD@redis:6379"
+set_env "$ENV_FILE" STUDIO_OPERATOR_PASSWORD_HASH "'$hash'"
+set_env "$ENV_FILE" STUDIO_SECRETS_KEY "$(openssl rand -base64 32)"
+set_env "$ENV_FILE" STUDIO_WORKER_TOKEN "$WORKER_TOKEN"
+# A value in .env that must not win: the Compose file fixes the trusted proxy.
+set_env "$ENV_FILE" API_TRUSTED_PROXIES 172.31.250.1
+as_agent sed -i "s|^STUDIO_WORKER_TOKEN=.*|STUDIO_WORKER_TOKEN=$WORKER_TOKEN|" "$WORKER_ENV"
+expect_true "the worker reaches the API through the proxy's worker port" \
+  grep -qx 'STUDIO_API_URL=http://172.31.250.20:8080' "$WORKER_ENV"
+
+if agentic-studio-compose up -d --wait; then
+  ok "the whole stack is up (migrations, API, web, reverse proxy)"
+else
+  not_ok "the whole stack did not start"
+  agentic-studio-compose logs --no-color --tail 60 migrate api web proxy 2>&1 | sed 's/^/      | /'
+fi
+agentic-studio-compose ps -a | sed 's/^/      | /'
+migrate="$(agentic-studio-compose ps -a -q migrate)"
+expect_true "the migrate service ran and exited 0" \
+  bash -c "[ \"\$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' $migrate)\" = 'exited 0' ]"
+expect_line "the migrations were applied" "$(docker logs "$migrate" 2>&1)" 'migrations? (have been successfully applied|found in prisma/migrations)'
+for service in api web proxy; do
+  container="$(agentic-studio-compose ps -q "$service")"
+  expect_true "$service runs as 10001:10001" bash -c "[ \"\$(docker inspect -f '{{.Config.User}}' $container)\" = 10001:10001 ]"
+  uids="$(docker top "$container" -eo uid | tail -n +2 | sort -u | tr -d ' ' | tr '\n' ' ')"
+  expect_line "every $service process runs as uid 10001" "$uids" '^10001 $'
+  expect_true "$service has a read-only root filesystem" bash -c "[ \"\$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' $container)\" = true ]"
+done
+api="$(agentic-studio-compose ps -q api)"
+expect_line "the API trusts X-Forwarded-For from the proxy only" \
+  "$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$api" | grep '^API_TRUSTED_PROXIES=')" '^API_TRUSTED_PROXIES=172\.31\.250\.20$'
+ss -ltnH | sed 's/^/      | /'
+expect_true "the proxy publishes port 443 on IPv4" bash -c "ss -ltnH | grep -Eq '0\.0\.0\.0:443 '"
+expect_true "the proxy publishes port 80 on IPv4" bash -c "ss -ltnH | grep -Eq '0\.0\.0\.0:80 '"
+expect_false "nothing on IPv6 port 443" bash -c "ss -ltnH | grep -Eq '\]:443 '"
+expect_false "no host port for the API" bash -c "ss -ltnH | grep -q ':3001 '"
+expect_false "no host port for the web app" bash -c "ss -ltnH | grep -q ':3000 '"
+
+# The operator stands for a client from outside: the server's own address on its network
+# interface, a different source address than the agent user's (the gateway of Studio's network).
+HOST_IP="$(ip -4 route get 192.0.2.1 | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }')"
+public() { curl -sk --max-time 10 --resolve "$DOMAIN:443:$HOST_IP" --resolve "$DOMAIN:80:$HOST_IP" "$@"; }
+public_status() { public -o /dev/null -w '%{http_code}' "$@"; }
+expect_line "https://$DOMAIN/api/health answers 200 through the proxy" "$(public_status "https://$DOMAIN/api/health")" '^200$'
+expect_line "https://$DOMAIN/login (web) answers 200 through the proxy" "$(public_status "https://$DOMAIN/login")" '^200$'
+expect_line "http://$DOMAIN redirects to https" "$(public_status "http://$DOMAIN/login")" '^30[18]$'
+
+section "Login rate limit: one bucket per client through the proxy"
+login_body() { printf '{"password":"%s"}' "$1"; }
+agent_login() {
+  as_agent curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST \
+    -H "Origin: https://$DOMAIN" -H 'Content-Type: application/json' "$@" \
+    --data "$(login_body wrong-password-for-test)" http://172.31.250.20:8080/api/auth/login
+}
+codes=""
+for _ in 1 2 3 4 5; do codes+="$(agent_login) "; done
+expect_line "the agent user's 5 failed logins get 401" "$codes" '^401 401 401 401 401 $'
+expect_line "its 6th gets 429 (its own bucket is full)" "$(agent_login)" '^429$'
+expect_line "a forged X-Forwarded-For does not give it a fresh bucket" \
+  "$(agent_login -H 'X-Forwarded-For: 198.51.100.7')" '^429$'
+operator_login() {
+  public -o /dev/null -w '%{http_code}' -X POST -H "Origin: https://$DOMAIN" \
+    -H 'Content-Type: application/json' --data "$(login_body "$1")" "https://$DOMAIN/api/auth/login"
+}
+expect_line "the operator's failed login still gets 401, not 429" "$(operator_login wrong-password-for-test)" '^401$'
+expect_line "the operator still signs in" "$(operator_login "$OPERATOR_PASSWORD")" '^200$'
+cookie="$(public -D - -o /dev/null -X POST -H "Origin: https://$DOMAIN" -H 'Content-Type: application/json' \
+  --data "$(login_body "$OPERATOR_PASSWORD")" "https://$DOMAIN/api/auth/login" | grep -i '^set-cookie:' | tr '[:upper:]' '[:lower:]')"
+expect_line "the session cookie is Secure (https origin)" "$cookie" '; *secure'
+expect_line "the session cookie is HttpOnly" "$cookie" '; *httponly'
+
+section "Boundary checks as the agent user (every group, the API against the real stack)"
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary 2>&1)"
 status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'
-if [ "$status" -eq 0 ]; then ok "boundary checks pass (API group skipped)"; else not_ok "boundary checks failed (exit $status)"; fi
+if [ "$status" -eq 0 ]; then ok "boundary checks pass"; else not_ok "boundary checks failed (exit $status)"; fi
+expect_line "nothing skipped: RESULT: PASS" "$(tail -n 1 <<<"$out")" '^RESULT: PASS \('
+expect_false "no SKIP line" grep -q '^SKIP' <<<"$out"
 for name in not-root not-in-docker-group processes-in-user-manager no-studio-container-as-agent \
   studio-config-unreadable studio-data-unreadable secrets-unreachable \
   system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-stack-running \
-  studio-postgres-unreachable studio-redis-unreachable no-wsl-escape \
-  cgroup-v2 agent-user-limits rootless-docker rootless-container-limits rootless-compose; do
+  studio-postgres-unreachable studio-redis-unreachable studio-app-direct-unreachable no-wsl-escape \
+  cgroup-v2 agent-user-limits rootless-docker rootless-container-limits rootless-compose \
+  worker-token-works worker-token-nothing-else; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
 
@@ -131,14 +240,15 @@ gpasswd -d agent docker >/dev/null
 /usr/local/sbin/agentic-studio-agent-firewall remove
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip rootless,api 2>&1)"
 expect_line "no firewall rule -> FAIL studio-postgres-unreachable" "$out" '^FAIL  studio-postgres-unreachable '
+expect_line "no firewall rule -> FAIL studio-app-direct-unreachable" "$out" '^FAIL  studio-app-direct-unreachable '
 /usr/local/sbin/agentic-studio-agent-firewall apply
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip rootless,api 2>&1)"
 expect_line "firewall rule back -> PASS studio-postgres-unreachable" "$out" '^PASS  studio-postgres-unreachable '
+expect_line "firewall rule back -> PASS studio-app-direct-unreachable" "$out" '^PASS  studio-app-direct-unreachable '
 
-kill "$HEALTH_PID"
-wait "$HEALTH_PID" 2>/dev/null
+agentic-studio-compose stop api >/dev/null 2>&1
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip rootless,api 2>&1)"
-expect_line "Studio not answering -> FAIL studio-stack-running" "$out" '^FAIL  studio-stack-running '
+expect_line "API stopped -> FAIL studio-stack-running" "$out" '^FAIL  studio-stack-running '
 expect_line "... and the run fails" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
 
 section "Nothing of the agent user runs outside its user manager"

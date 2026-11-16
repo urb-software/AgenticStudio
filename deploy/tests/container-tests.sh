@@ -92,9 +92,11 @@ expect_stat /etc/agentic-studio root:root 700
 expect_stat /etc/agentic-studio/.env root:root 600
 expect_stat /var/lib/agentic-studio root:root 700
 expect_true "/var/lib/agentic-studio/data is 10001:10001 700 (the API container's uid)" bash -c '[ "$(stat -c "%u:%g %a" /var/lib/agentic-studio/data)" = "10001:10001 700" ]'
+expect_true "/var/lib/agentic-studio/proxy is 10001:10001 700 (the proxy container's uid)" bash -c '[ "$(stat -c "%u:%g %a" /var/lib/agentic-studio/proxy)" = "10001:10001 700" ]'
 expect_stat /opt/agentic-studio root:root 700
 expect_stat /opt/agentic-studio/compose.yaml root:root 600
 expect_stat /opt/agentic-studio/compose.app.yaml root:root 600
+expect_stat /opt/agentic-studio/Caddyfile root:root 644
 expect_stat /usr/local/sbin/agentic-studio-compose root:root 700
 expect_stat /usr/local/bin/agentic-studio-check-boundary root:root 755
 for name in POSTGRES_PASSWORD DATABASE_URL STUDIO_OPERATOR_PASSWORD_HASH STUDIO_SECRETS_KEY STUDIO_WORKER_TOKEN; do
@@ -119,6 +121,8 @@ done
 expect_true "worker .env: provider switches off" grep -qx 'CLAUDE_CODE_ENABLED=false' /home/agent/.config/agentic-studio-worker/.env
 expect_true "worker .env: data directory on the agent side" \
   grep -qx 'STUDIO_WORKER_DATA_DIR=/home/agent/.local/share/agentic-studio-worker' /home/agent/.config/agentic-studio-worker/.env
+expect_true "worker .env: the API through the reverse proxy's worker port" \
+  grep -qx 'STUDIO_API_URL=http://172.31.250.20:8080' /home/agent/.config/agentic-studio-worker/.env
 expect_stat /opt/agentic-studio-worker root:root 755
 expect_true "Node.js v24.22.1 in /usr/local" bash -c '[ "$(/usr/local/bin/node --version)" = v24.22.1 ]'
 expect_true "agent user can read the worker code" as_agent test -r /opt/agentic-studio-worker/apps/agent-worker/dist/main.js
@@ -144,7 +148,7 @@ printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -eq 1 ]; then ok "fails overall here (rootless Docker and slice limits need systemd)"; else not_ok "exit $status, expected 1"; fi
 for name in not-root not-in-docker-group processes-in-user-manager no-studio-container-as-agent studio-config-unreadable studio-data-unreadable secrets-unreachable \
   system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-postgres-unreachable \
-  studio-redis-unreachable no-wsl-escape; do
+  studio-redis-unreachable studio-app-direct-unreachable no-wsl-escape; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
 for name in rootless-docker agent-user-limits; do
@@ -166,7 +170,11 @@ chmod 0700 /etc/agentic-studio && chmod 0600 /etc/agentic-studio/.env
 chmod 0755 /var/lib/agentic-studio /var/lib/agentic-studio/data
 out="$(check_as_agent "${ONLY_LOCAL[@]}")"
 expect_line "readable Studio data -> FAIL studio-data-unreadable" "$out" '^FAIL  studio-data-unreadable '
-chmod 0700 /var/lib/agentic-studio /var/lib/agentic-studio/data
+chmod 0700 /var/lib/agentic-studio/data
+chmod 0755 /var/lib/agentic-studio/proxy
+out="$(check_as_agent "${ONLY_LOCAL[@]}")"
+expect_line "readable proxy certificates -> FAIL studio-data-unreadable" "$out" '^FAIL  studio-data-unreadable '
+chmod 0700 /var/lib/agentic-studio /var/lib/agentic-studio/proxy
 
 echo 'agent ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/agent-test && chmod 0440 /etc/sudoers.d/agent-test
 out="$(check_as_agent "${ONLY_LOCAL[@]}")"
@@ -183,21 +191,24 @@ out="$(check_as_agent "${ONLY_LOCAL[@]}")"
 expect_line "Studio variable in the worker .env -> FAIL secrets-unreachable" "$out" '^FAIL  secrets-unreachable '
 as_agent sed -i '/^DATABASE_URL=/d' /home/agent/.config/agentic-studio-worker/.env
 
-# A listener on the database and Redis ports stands in for a published Studio port.
-node -e "for (const p of [5432, 6379]) require('node:net').createServer((s) => s.end()).listen(p, '127.0.0.1')" &
+# A listener on the database, Redis and API ports stands in for a published Studio port.
+node -e "for (const p of [5432, 6379, 3001]) require('node:net').createServer((s) => s.end()).listen(p, '127.0.0.1')" &
 listener=$!
 sleep 1
 out="$(check_as_agent "${ONLY_LOCAL[@]}")"
 expect_line "reachable database port -> FAIL studio-postgres-unreachable" "$out" '^FAIL  studio-postgres-unreachable '
 expect_line "reachable Redis port -> FAIL studio-redis-unreachable" "$out" '^FAIL  studio-redis-unreachable '
+expect_line "reachable API port -> FAIL studio-app-direct-unreachable" "$out" '^FAIL  studio-app-direct-unreachable '
 kill "$listener"
 wait "$listener" 2>/dev/null
 
 section "API checks against a stub of Studio's worker routes"
 # A test-only token (not a secret) in the worker .env; the stub accepts it on worker routes only,
-# or, in leaky mode, on every route.
+# or, in leaky mode, on every route. The stub stands in for the reverse proxy's worker port on
+# loopback (the proxy's container address does not exist in this container).
 TEST_TOKEN="test-only-placeholder-token-0123456789abcdef"
 as_agent sed -i "s|^STUDIO_WORKER_TOKEN=.*|STUDIO_WORKER_TOKEN=$TEST_TOKEN|" /home/agent/.config/agentic-studio-worker/.env
+as_agent sed -i "s|^STUDIO_API_URL=.*|STUDIO_API_URL=http://127.0.0.1:8080|" /home/agent/.config/agentic-studio-worker/.env
 stub() {
   STUB_TOKEN="$TEST_TOKEN" STUB_LEAKY="$1" node -e "
     require('node:http').createServer((req, res) => {
@@ -207,7 +218,7 @@ stub() {
       const allowed = auth && (worker || process.env.STUB_LEAKY === '1');
       res.writeHead(allowed ? 200 : 401, { 'content-type': 'application/json' });
       res.end(allowed && worker ? '[]' : '{}');
-    }).listen(3001, '127.0.0.1');" &
+    }).listen(8080, '127.0.0.1');" &
   STUB_PID=$!
   sleep 1
 }

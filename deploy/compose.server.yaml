@@ -3,10 +3,13 @@
 # the `studio` network reach them, and Redis requires a password. The setup script installs this file root-only as
 # /opt/agentic-studio/compose.yaml; values come from the root-only /etc/agentic-studio/.env.
 #
-# The network has a fixed subnet and the two services fixed addresses so the setup script's
-# firewall rule (agent user -> this subnet: rejected, except the API port) and the boundary
-# checks know them. Keep these defaults equal to deploy/setup-server.sh, deploy/check-boundary.sh
-# and deploy/studio.env.example (deploy/tests/compose-server.test.mjs checks it).
+# The network has a fixed subnet and Studio's services fixed addresses (the reverse proxy, the API
+# and web in compose.server.app.yaml too) so the setup script's firewall rule (agent user -> this
+# subnet: rejected, except the reverse proxy's worker port), the API's trusted proxy and the
+# boundary checks know them. Containers without a fixed address get one from the upper half
+# (ip_range), so none can take a fixed one first. Keep these defaults equal to
+# deploy/setup-server.sh, deploy/check-boundary.sh and deploy/studio.env.example
+# (deploy/tests/compose-server.test.mjs checks it).
 name: ${COMPOSE_PROJECT_NAME:-agentic-studio}
 
 services:
@@ -55,6 +58,7 @@ networks:
     ipam:
       config:
         - subnet: ${STUDIO_NETWORK_SUBNET:-172.31.250.0/24}
+          ip_range: ${STUDIO_NETWORK_DYNAMIC_RANGE:-172.31.250.128/25}
 
 volumes:
   postgres-data:

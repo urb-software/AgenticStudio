@@ -298,9 +298,12 @@ jobs:
       - name: Setup and boundary checks in a clean Ubuntu 24.04 container
         run: docker run --rm -v "$PWD:/w:ro" ubuntu:24.04 bash /w/deploy/tests/container-tests.sh
       # The runner VM is Ubuntu 24.04 with systemd and cgroup v2: the whole setup runs twice as
-      # root, then the boundary checks run as the agent user (API checks skipped: no Studio
-      # images yet). The VM is discarded after the job.
-      - name: Full setup twice and boundary checks on the runner VM
+      # root, the API and web production images are built (#132) and the server Compose stack
+      # runs with them (migrations, API, web, reverse proxy); a health/login smoke and the
+      # per-client login rate limit go through the proxy, then every boundary check runs as the
+      # agent user, the `api` group against the real stack (no skips). Throwaway test values
+      # only; the VM is discarded after the job.
+      - name: Full setup twice, production images and boundary checks on the runner VM
         run: sudo DEPLOY_VM_TESTS=yes bash deploy/tests/vm-tests.sh
 
   ci-required:
