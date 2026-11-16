@@ -22,6 +22,7 @@ export const CLAUDE_USER_LEVEL_FILES: UserLevelFiles = {
   empty: [
     { path: '.claude/agents' },
     { path: '.claude/commands' },
+    { path: '.claude/rules' },
     // Created by the CLI at sign-in: skills synced from the operator's account, and its bin.
     { path: '.claude/skills', allowed: ['synced', '.trash'] },
   ],

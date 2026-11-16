@@ -98,14 +98,16 @@ describe("the agent user's Claude Code settings", () => {
     mkdirSync(join(home, '.claude', 'skills', 'evil'));
     writeFileSync(join(home, '.claude', 'commands'), 'not a directory');
     mkdirSync(join(home, '.claude', 'agents', 'helper.md'));
+    mkdirSync(join(home, '.claude', 'rules'));
+    writeFileSync(join(home, '.claude', 'rules', 'style.md'), 'test-only-rule');
 
     const problem = await userSettingsProblem(home);
     expect(problem).toBe(
       'Claude Code user-level instruction or skill files present: ~/.claude/CLAUDE.md, ' +
-        '~/.claude/agents/helper.md, ~/.claude/commands, ~/.claude/skills/evil; the operator ' +
-        'must review them.',
+        '~/.claude/agents/helper.md, ~/.claude/commands, ~/.claude/rules/style.md, ' +
+        '~/.claude/skills/evil; the operator must review them.',
     );
-    expect(problem).not.toContain('test-only-instructions');
+    expect(problem).not.toMatch(/test-only/);
   });
 
   it.skipIf(process.platform === 'win32')(
