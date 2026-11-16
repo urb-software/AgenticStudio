@@ -1,0 +1,37 @@
+# Studio's command rules for Codex (Issue #106). GUARDRAILS, NOT THE SECURITY BOUNDARY (ADR 0002,
+# docs/engineering/security.md §2). The agent worker writes this file as the only file in
+# $HOME/.codex/rules/ before every Codex Run step, removing anything else there: a rule another
+# file added (an `allow` runs a command outside the sandbox) never takes effect.
+# Only `forbidden` decisions: a Run never waits for an approval (approval_policy="never").
+
+prefix_rule(
+    pattern = [["sudo", "su", "doas", "pkexec"]],
+    decision = "forbidden",
+    justification = "No privilege escalation on the agent worker.",
+    match = ["sudo ls", "su root", "pkexec id"],
+    not_match = ["ls"],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "forbidden",
+    justification = "The agent worker pushes the Run branch when the step ends.",
+    match = ["git push origin main"],
+    not_match = ["git status"],
+)
+
+prefix_rule(
+    pattern = ["docker", ["-H", "--host", "context"]],
+    decision = "forbidden",
+    justification = "The Docker daemon is fixed for the Run: the agent user's rootless daemon.",
+    match = ["docker -H unix:///var/run/docker.sock ps", "docker context use default"],
+    not_match = ["docker ps"],
+)
+
+prefix_rule(
+    pattern = ["rm", ["-rf", "-fr", "-r", "-R"], ["/", "/*", "~", "~/"]],
+    decision = "forbidden",
+    justification = "Deleting the root or the home directory is not allowed.",
+    match = ["rm -rf /", "rm -r ~"],
+    not_match = ["rm -rf build"],
+)

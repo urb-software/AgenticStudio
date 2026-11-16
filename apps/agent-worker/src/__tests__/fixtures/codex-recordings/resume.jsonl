@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"0199a8f2-6c1e-7d43-9b2a-5e8f1c3d7a90"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I will use PostgreSQL."}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"{\"outcome\":\"done\",\"summary\":\"Added the store on PostgreSQL.\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":900,"cached_input_tokens":800,"output_tokens":60}}

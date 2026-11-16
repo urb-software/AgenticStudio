@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [{ "type": "command", "command": "node codex-guard.mjs", "timeout": 10 }]
+      }
+    ]
+  }
+}

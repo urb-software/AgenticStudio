@@ -96,6 +96,30 @@ function EnvironmentFileFact({ run }: { run: RunOutput }) {
   return <span className="text-text-dim">None</span>;
 }
 
+/**
+ * What a Codex Run runs under (Issue #106): the agent worker's sandbox mode (ADR 0002; the only
+ * mode it accepts, and each Run step states it in the log) and the accepted risks of the Codex
+ * compliance record, which the Run page does not hide.
+ */
+function CodexFacts() {
+  return (
+    <>
+      <Fact term="Sandbox">
+        Codex workspace-write sandbox, network on
+        <span className="block text-small text-text-muted">
+          Set by the agent worker; each run step states it in the log.
+        </span>
+      </Fact>
+      <Fact term="Accepted risks">
+        <ul className="m-0 flex list-disc flex-col gap-1 pl-4 text-small">
+          <li>Two Codex runs may share one ChatGPT plan login at the same time.</li>
+          <li>Codex runs with the plan login may work on public repositories.</li>
+        </ul>
+      </Fact>
+    </>
+  );
+}
+
 /** Why a queued Run waits; it needs the project's Runs, read (and polled) only while queued. */
 function QueuedReason({ run }: { run: RunOutput }) {
   // Issue #103: an answered Run waits for the agent worker that holds its Working copy.
@@ -356,6 +380,7 @@ export function RunDetail({ runId }: { runId: string }) {
           <CardContent>
             <dl className="m-0 flex flex-col gap-3.5">
               <Fact term="Provider">{PROVIDER_LABEL[run.provider]}</Fact>
+              {run.provider === 'codex' ? <CodexFacts /> : null}
               <Fact term="Start commit">
                 <span className="font-mono text-code break-all">{run.startCommit}</span>
               </Fact>

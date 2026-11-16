@@ -59,6 +59,30 @@ describe('Run page', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('states the sandbox and the accepted risks of a Codex run, and none for Claude Code (Issue #106)', async () => {
+    const codex = aRun({ provider: 'codex', state: 'running' });
+    const claude = aRun({ provider: 'claude_code', state: 'running' });
+    fakeRunsApi([codex, claude]);
+    const { container, unmount } = renderRun(codex.id);
+    await heading();
+
+    expect(screen.getByText('Codex workspace-write sandbox, network on')).toBeTruthy();
+    expect(screen.getByText(/each run step states it in the log/)).toBeTruthy();
+    expect(
+      screen.getByText('Two Codex runs may share one ChatGPT plan login at the same time.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Codex runs with the plan login may work on public repositories.'),
+    ).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+    unmount();
+
+    renderRun(claude.id);
+    await heading();
+    expect(screen.queryByText('Accepted risks')).toBeNull();
+    expect(screen.queryByText(/workspace-write/)).toBeNull();
+  });
+
   it.each([
     ['queued', 'Queued', 'queued'],
     ['preparing', 'Preparing', 'running'],

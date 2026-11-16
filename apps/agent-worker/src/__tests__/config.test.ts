@@ -46,6 +46,7 @@ describe('loadWorkerConfig', () => {
       retentionMaxPerProject: 10,
       killGraceMs: 10_000,
       claudeMaxTurns: 200,
+      codexSandbox: 'workspace-write',
       agentGitHub: { apiUrl: 'https://api.github.com' },
     });
   });
@@ -158,6 +159,18 @@ X-Evil: 1`,
     for (const invalid of ['0', '1001', '2.5', 'many']) {
       expect(() => loadWorkerConfig({ ...env, STUDIO_CLAUDE_MAX_TURNS: invalid })).toThrowError(
         /STUDIO_CLAUDE_MAX_TURNS/,
+      );
+    }
+  });
+
+  it('runs Codex in the workspace-write sandbox and refuses any other mode (Issue #106)', () => {
+    expect(loadWorkerConfig(env).codexSandbox).toBe('workspace-write');
+    expect(loadWorkerConfig({ ...env, STUDIO_CODEX_SANDBOX: 'workspace-write' }).codexSandbox).toBe(
+      'workspace-write',
+    );
+    for (const invalid of ['danger-full-access', 'read-only', 'WORKSPACE-WRITE', '']) {
+      expect(() => loadWorkerConfig({ ...env, STUDIO_CODEX_SANDBOX: invalid })).toThrowError(
+        /STUDIO_CODEX_SANDBOX/,
       );
     }
   });

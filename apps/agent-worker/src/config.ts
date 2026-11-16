@@ -5,6 +5,7 @@ import {
   type WorkerRunnerMode,
 } from '@agentic-studio/contracts';
 import { z } from 'zod';
+import { CODEX_SANDBOX_MODES, type CodexSandboxMode } from './codex/cli-options.js';
 import { readProviderSwitches } from './provider-gate.js';
 import type { ProviderBinaries } from './spawn-boundary.js';
 
@@ -95,6 +96,10 @@ const environmentSchema = z.object({
   STUDIO_WORKER_KILL_GRACE_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
   // Issue #105: the bound on agent turns per Claude Code Run step (`--max-turns`).
   STUDIO_CLAUDE_MAX_TURNS: z.coerce.number().int().min(1).max(1000).default(200),
+  // Issue #106: the Codex sandbox mode, set from the rootless Docker trial (ADR 0002). Only
+  // `workspace-write` (network access on, in Studio's Codex configuration); anything else is
+  // refused at start.
+  STUDIO_CODEX_SANDBOX: z.enum(CODEX_SANDBOX_MODES).default('workspace-write'),
   // Issue #102: the Agent account's GitHub token, from the worker's own .env only (Studio stores
   // none). Printable ASCII without spaces, so it can never inject a header. Empty means unset.
   // Messages never echo it.
@@ -156,6 +161,8 @@ export interface WorkerConfig {
   killGraceMs: number;
   /** The bound on agent turns per Claude Code Run step (Issue #105). */
   claudeMaxTurns: number;
+  /** The Codex sandbox mode in force (Issue #106). */
+  codexSandbox: CodexSandboxMode;
   /** The Agent account on GitHub (Issue #102): its token (if configured) and the API base URL. */
   agentGitHub: AgentGitHubConfig;
 }
@@ -239,6 +246,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     retentionMaxPerProject: result.data.STUDIO_WORKER_RETENTION_MAX_PER_PROJECT,
     killGraceMs: result.data.STUDIO_WORKER_KILL_GRACE_SECONDS * 1000,
     claudeMaxTurns: result.data.STUDIO_CLAUDE_MAX_TURNS,
+    codexSandbox: result.data.STUDIO_CODEX_SANDBOX,
     agentGitHub: {
       ...(githubToken ? { token: githubToken } : {}),
       apiUrl: githubApiUrl,

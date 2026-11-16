@@ -1,4 +1,9 @@
 import { posix } from 'node:path';
+import {
+  PROVIDER_PASSED_VARIABLES,
+  type ProviderEnvironmentInput,
+  providerEnvironment,
+} from '../provider-environment.js';
 
 /**
  * How the agent worker starts the Claude Code CLI (Issue #105): exactly the options of the
@@ -63,35 +68,15 @@ export const CLAUDE_CODE_MISSING =
 
 /**
  * The only variables of the worker's environment a Claude Code process gets (coordinator
- * decision on #105). Everything else is dropped, in particular `ANTHROPIC_API_KEY`,
- * `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL`, every
- * `CLAUDE_CODE_USE_*` (they would override the subscription login: compliance record, technical
- * finding 5) and all of Studio's and the worker's own settings (the worker token, the Agent
- * account's token).
+ * decision on #105, shared with Codex since #106): {@link PROVIDER_PASSED_VARIABLES}. Everything
+ * else is dropped, in particular `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+ * `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL`, every `CLAUDE_CODE_USE_*` (they would override
+ * the subscription login: compliance record, technical finding 5) and all of Studio's and the
+ * worker's own settings (the worker token, the Agent account's token).
  */
-export const CLAUDE_CODE_PASSED_VARIABLES = [
-  'PATH',
-  'HOME',
-  'USER',
-  'LOGNAME',
-  'LANG',
-  'LC_ALL',
-  'TZ',
-  'XDG_RUNTIME_DIR',
-  'DOCKER_HOST',
-] as const;
+export const CLAUDE_CODE_PASSED_VARIABLES = PROVIDER_PASSED_VARIABLES;
 
-/** The system Docker daemon's sockets: never handed to an agent as its `DOCKER_HOST`. */
-const SYSTEM_DOCKER_HOSTS = ['unix:///var/run/docker.sock', 'unix:///run/docker.sock'];
-
-export interface ClaudeEnvironmentInput {
-  /** The worker's own environment, filtered here. */
-  base: Record<string, string | undefined>;
-  /** The Run step's temporary directory, inside the Run's directory (none for the version check). */
-  tmpDir?: string;
-  /** The Run's Compose project name (`COMPOSE_PROJECT_NAME`), when it has one. */
-  composeProjectName?: string;
-}
+export type ClaudeEnvironmentInput = ProviderEnvironmentInput;
 
 /**
  * The complete environment of a Claude Code process: the allowlisted variables of the worker's
@@ -99,19 +84,7 @@ export interface ClaudeEnvironmentInput {
  * Run step's `TMPDIR` and the Run's `COMPOSE_PROJECT_NAME`.
  */
 export function claudeEnvironment(input: ClaudeEnvironmentInput): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const name of CLAUDE_CODE_PASSED_VARIABLES) {
-    const value = input.base[name];
-    if (value === undefined || value === '') continue;
-    if (name === 'DOCKER_HOST' && SYSTEM_DOCKER_HOSTS.includes(value.replace(/\/+$/, ''))) {
-      continue;
-    }
-    env[name] = value;
-  }
-  env.TERM = 'dumb';
-  if (input.tmpDir) env.TMPDIR = input.tmpDir;
-  if (input.composeProjectName) env.COMPOSE_PROJECT_NAME = input.composeProjectName;
-  return env;
+  return providerEnvironment(input);
 }
 
 export interface ClaudeArgumentsInput {
