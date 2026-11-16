@@ -41,11 +41,15 @@ _Avoid_: SSH key, access key, credential
 ### `executions`
 
 **Run**:
-One execution of an agent on an operator's Task in a Project, from the operator's start to its result.
+One execution of an agent on an operator's Task in a Project, from the operator's start to its latest result. A finished Run can be reopened by a Follow-up; one Run corresponds to at most one pull request.
 _Avoid_: Job, session, task run
 
 **Task**:
 The operator's instruction that starts a Run.
+
+**Follow-up**:
+The operator's further instruction to a finished Run: the agent continues the same agent session and the Run delivers to the same pull request. It is not an Answer: a Follow-up reopens a finished Run.
+_Avoid_: New task, re-run, continuation
 
 **Run step**:
 One non-interactive execution of the agent CLI within a Run. A Run consists of one or more Run steps.
@@ -67,7 +71,7 @@ _Avoid_: Worktree, workspace, checkout
 The branch in a Working copy that holds a Run's commits.
 
 **Run limits**:
-The limits a Run gets from Studio's configuration when it starts: the longest a Run step may work, the most Run steps the Run may take, and the longest it may wait for the operator. A Run step over its time limit ends the Run as timed out; one more Run step than allowed ends it as failed; a Run waiting too long is cancelled by Studio.
+The limits a Run gets from Studio's configuration when it starts: the longest a Run step may work, the most Run steps the Run or a Follow-up may take, the most Run steps the Run may take in total before it accepts no more Follow-ups, and the longest it may wait for the operator. A Run step over its time limit ends the Run as timed out; one more Run step than allowed ends it as failed; a Run waiting too long is cancelled by Studio.
 _Avoid_: Quota, timeout (unqualified)
 
 **Question**:
@@ -75,12 +79,24 @@ What the agent asks the operator when it is blocked on a decision that is the op
 _Avoid_: Prompt, approval request
 
 **Answer**:
-The operator's reply to a Question. It queues the Run again, and the agent worker that holds its Working copy resumes the same agent session with the answer as the next Run step.
-_Avoid_: Reply (for the stored record), follow-up (a later, separate feature)
+The operator's reply to a Question. It queues the Run again, and the agent worker that holds its Working copy resumes the same agent session with the answer as the next Run step. It is not a Follow-up: an Answer replies to a Question while the Run waits.
+_Avoid_: Reply (for the stored record)
 
 **Cancel**:
 The operator's stop of a Run. A queued or waiting Run is cancelled at once; a running Run gets a cancel request that the agent worker carries out by stopping the Run step, and the Run ends as cancelled. Nothing is pushed; the Working copy is kept.
 _Avoid_: Abort, kill
+
+**Reported checks**:
+What the agent says it ran in a Run step, and with what outcome, in its result.
+_Avoid_: Checks (unqualified), test results
+
+**Pull request checks**:
+The Git host's check results for a Run's pull request.
+_Avoid_: Checks (unqualified), CI status
+
+**Review comment**:
+A comment on a Run's pull request on the Git host.
+_Avoid_: Feedback, remark
 
 ### Cross-cutting
 
@@ -96,5 +112,5 @@ The process that carries out Runs by driving the agent CLIs, on the agents' side
 _Avoid_: Executor, agent host
 
 **Agent account**:
-The separate Git host account through which Run branches are pushed and draft pull requests opened; it is not the operator's account.
+The separate Git host account through which Run branches are pushed, draft pull requests opened, and a pull request's state, Pull request checks and Review comments read; it is not the operator's account.
 _Avoid_: Bot account, machine user, operator account
