@@ -10,6 +10,9 @@ services:
   api:
     image: ${STUDIO_API_IMAGE:?set STUDIO_API_IMAGE in /etc/agentic-studio/.env}
     restart: unless-stopped
+    # A fixed non-root uid, never the agent user's (deploy/setup-server.sh owns the data
+    # directory for it).
+    user: '${STUDIO_CONTAINER_UID:-10001}:${STUDIO_CONTAINER_UID:-10001}'
     env_file:
       - path: ${STUDIO_ENV_FILE:-/etc/agentic-studio/.env}
         required: true
@@ -34,6 +37,7 @@ services:
   web:
     image: ${STUDIO_WEB_IMAGE:?set STUDIO_WEB_IMAGE in /etc/agentic-studio/.env}
     restart: unless-stopped
+    user: '${STUDIO_CONTAINER_UID:-10001}:${STUDIO_CONTAINER_UID:-10001}'
     # No env_file: the web app gets no Studio secret, only where the API is.
     environment:
       API_ORIGIN: http://api:3001

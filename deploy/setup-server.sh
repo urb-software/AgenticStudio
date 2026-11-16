@@ -23,6 +23,12 @@ umask 022
 
 # --- Configuration (placeholders; override through the environment) ---------------------------
 AGENT_USER="${AGENT_USER:-agent}"
+# Fixed uid/gid for the agent user, outside the range ordinary users and images commonly use
+# (1000, 10001); an existing agent user below 2000 is refused.
+AGENT_UID="${AGENT_UID:-2001}"
+# The uid/gid Studio's API and web containers run as (compose.server.app.yaml); it owns Studio's
+# data directory. Never the agent user's uid.
+STUDIO_CONTAINER_UID="${STUDIO_CONTAINER_UID:-10001}"
 STUDIO_CONFIG_DIR="${STUDIO_CONFIG_DIR:-/etc/agentic-studio}"
 STUDIO_STATE_DIR="${STUDIO_STATE_DIR:-/var/lib/agentic-studio}"
 STUDIO_COMPOSE_DIR="${STUDIO_COMPOSE_DIR:-/opt/agentic-studio}"
@@ -47,7 +53,7 @@ AGENT_CPU_WEIGHT="${AGENT_CPU_WEIGHT:-50}"
 AGENT_DISK_QUOTA_GB="${AGENT_DISK_QUOTA_GB:-}"
 # -------------------------------------------------------------------------------------------------
 
-STEPS=(preflight packages node user layout worker firewall limits rootless service)
+STEPS=(preflight packages node user logins layout worker firewall limits rootless service)
 SYSTEMD_STEPS=(firewall limits rootless service)
 DOCKER_GPG_FINGERPRINT="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -92,8 +98,11 @@ packages   Base packages (${BASE_PACKAGES[*]}), Docker's official apt repository
            (/etc/apt/keyrings/docker.asc, /etc/apt/sources.list.d/docker.sources, key fingerprint
            checked) and ${DOCKER_PACKAGES[*]}; enables the system Docker daemon.
 node       Node.js ${NODE_VERSION} into /usr/local (root-owned), pinned SHA-256 verified; corepack enabled.
-user       Creates the agent user '${AGENT_USER}' (home directory, own group, no password, no sudo)
+user       Creates the agent user '${AGENT_USER}' with uid/gid ${AGENT_UID} (home directory, own group, no password, no sudo)
            with a subordinate uid/gid range; checks it again afterwards.
+logins     The agent user gets no cron (/etc/cron.deny), no at (/etc/at.deny) and no SSH login
+           (/etc/ssh/sshd_config.d/60-agentic-studio.conf, when sshd is installed); logind kills its
+           session processes at logout (/etc/systemd/logind.conf.d/60-agentic-studio.conf).
 layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.env.example),
            ${STUDIO_STATE_DIR} (0700, data/), ${STUDIO_COMPOSE_DIR} (0700, compose files 0600),
            /usr/local/sbin/agentic-studio-compose; /usr/local/bin/agentic-studio-check-boundary.
@@ -137,6 +146,10 @@ as_agent() {
 assert_agent_safe() {
   agent_exists || return 0
   [ "$(agent_uid)" != 0 ] || die "the agent user '$AGENT_USER' has uid 0."
+  [ "$(agent_uid)" -ge 2000 ] ||
+    die "the agent user '$AGENT_USER' has uid $(agent_uid), below 2000, where ordinary users and container images commonly run. Use a dedicated user with a uid of 2000 or more (AGENT_UID, default 2001)."
+  [ "$(agent_uid)" != "$STUDIO_CONTAINER_UID" ] ||
+    die "the agent user's uid equals STUDIO_CONTAINER_UID ($STUDIO_CONTAINER_UID), the uid of Studio's containers."
   if id -nG "$AGENT_USER" | tr ' ' '\n' | grep -qx docker; then
     die "the agent user '$AGENT_USER' is in the docker group: that is root-equivalent access to the system Docker daemon. Remove it (gpasswd -d $AGENT_USER docker) and run the script again."
   fi
@@ -329,8 +342,14 @@ step_node() {
 
 step_user() {
   if ! agent_exists; then
-    useradd --create-home --user-group --shell /bin/bash "$AGENT_USER"
-    changed "created the agent user '$AGENT_USER' (no password, no sudo)"
+    if ! [[ "$AGENT_UID" =~ ^[0-9]+$ ]] || [ "$AGENT_UID" -lt 2000 ]; then
+      die "AGENT_UID must be a number of 2000 or more."
+    fi
+    ! getent passwd "$AGENT_UID" >/dev/null || die "uid $AGENT_UID is already taken (AGENT_UID)."
+    ! getent group "$AGENT_UID" >/dev/null || die "gid $AGENT_UID is already taken (AGENT_UID)."
+    groupadd --gid "$AGENT_UID" "$AGENT_USER"
+    useradd --create-home --uid "$AGENT_UID" --gid "$AGENT_UID" --shell /bin/bash "$AGENT_USER"
+    changed "created the agent user '$AGENT_USER' with uid/gid $AGENT_UID (no password, no sudo)"
   fi
   # Rootless Docker needs a subordinate uid/gid range; useradd normally assigns one.
   local file start
@@ -358,11 +377,63 @@ step_user() {
   step_log "ok ('$AGENT_USER' is not in the docker group and has no passwordless sudo)"
 }
 
+# Adds the agent user to a deny list (one name per line), creating the file if needed.
+deny_listed() {
+  local file="$1"
+  if [ -f "$file" ] && grep -qx "$AGENT_USER" "$file"; then return 0; fi
+  [ ! -L "$file" ] || die "$file is a symbolic link; refusing to use it."
+  [ -e "$file" ] || install -o root -g root -m 0644 /dev/null "$file"
+  printf '%s\n' "$AGENT_USER" >>"$file"
+  changed "'$AGENT_USER' in $file"
+}
+
+step_logins() {
+  agent_exists || die "the agent user does not exist yet; run the user step first."
+  # Nothing of the agent user may run outside its user manager, which is bound to the firewall.
+  deny_listed /etc/cron.deny
+  deny_listed /etc/at.deny
+  local file
+  for file in /etc/cron.allow /etc/at.allow; do
+    if [ -f "$file" ] && grep -qx "$AGENT_USER" "$file"; then
+      die "$file allows the agent user '$AGENT_USER'; remove it from there and run the script again."
+    fi
+  done
+  if [ -x /usr/sbin/sshd ]; then
+    install -d -m 0755 /etc/ssh/sshd_config.d
+    if install_content /etc/ssh/sshd_config.d/60-agentic-studio.conf 644 <<EOF; then
+# Installed by deploy/setup-server.sh: the agent user never logs in over SSH.
+DenyUsers $AGENT_USER
+EOF
+      /usr/sbin/sshd -t || die "sshd rejects its configuration after adding DenyUsers."
+      if has_systemd && systemctl is-active --quiet ssh.service; then systemctl reload ssh.service; fi
+    fi
+  else
+    step_log "no sshd installed (no SSH login to deny)"
+  fi
+  install -d -m 0755 /etc/systemd/logind.conf.d
+  if install_content /etc/systemd/logind.conf.d/60-agentic-studio.conf 644 <<EOF; then
+# Installed by deploy/setup-server.sh: when a session of the agent user ends (for example the
+# operator's sudo -iu), its processes are killed; only its user manager keeps running.
+[Login]
+KillUserProcesses=yes
+KillOnlyUsers=$AGENT_USER
+EOF
+    if has_systemd; then systemctl kill --signal=HUP systemd-logind.service; fi
+  fi
+  step_log "ok (no cron, at or SSH for '$AGENT_USER'; its session processes end at logout)"
+}
+
 step_layout() {
   agent_exists || die "the agent user does not exist yet; run the user step first."
   ensure_root_dir "$STUDIO_CONFIG_DIR" 700
   ensure_root_dir "$STUDIO_STATE_DIR" 700
-  ensure_root_dir "$STUDIO_STATE_DIR/data" 700
+  # The API container (uid STUDIO_CONTAINER_UID) writes Studio's data directory.
+  local data="$STUDIO_STATE_DIR/data" owner="$STUDIO_CONTAINER_UID:$STUDIO_CONTAINER_UID"
+  [ ! -L "$data" ] || die "$data is a symbolic link; refusing to use it."
+  if ! [ -d "$data" ] || [ "$(stat -c '%u:%g %a' "$data")" != "$owner 700" ]; then
+    install -d -o "$STUDIO_CONTAINER_UID" -g "$STUDIO_CONTAINER_UID" -m 0700 "$data"
+    changed "$data ($owner 700)"
+  fi
   ensure_root_dir "$STUDIO_COMPOSE_DIR" 700
 
   local env="$STUDIO_CONFIG_DIR/.env"
@@ -385,7 +456,7 @@ files=(-f "$STUDIO_COMPOSE_DIR/compose.yaml")
 if grep -Eq '^STUDIO_API_IMAGE=.+' "$env" && grep -Eq '^STUDIO_WEB_IMAGE=.+' "$env"; then
   files+=(-f "$STUDIO_COMPOSE_DIR/compose.app.yaml")
 fi
-export STUDIO_ENV_FILE="$env" STUDIO_DATA_HOST_DIR="$STUDIO_STATE_DIR/data"
+export STUDIO_ENV_FILE="$env" STUDIO_DATA_HOST_DIR="$STUDIO_STATE_DIR/data" STUDIO_CONTAINER_UID="$STUDIO_CONTAINER_UID"
 exec docker compose --project-directory "$STUDIO_COMPOSE_DIR" --env-file "$env" "\${files[@]}" "\$@"
 EOF
   install_content /usr/local/bin/agentic-studio-check-boundary 755 <"$SCRIPT_DIR/check-boundary.sh" || true

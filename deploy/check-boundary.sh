@@ -34,7 +34,7 @@ CHECK_IMAGE="${CHECK_IMAGE:-busybox:1.37}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
 # -------------------------------------------------------------------------------------------------
 
-GROUPS_ALL=(identity studio-files docker-socket sudo studio-network host cgroup rootless api)
+GROUPS_ALL=(identity processes studio-files docker-socket sudo studio-network host cgroup rootless api)
 SKIP=""
 PASSED=0
 FAILED=0
@@ -97,6 +97,38 @@ check_identity() {
     fail not-in-docker-group "$(id -un) is in root-equivalent group(s): ${groups% }"
   else
     pass not-in-docker-group "$(id -un) is in none of docker, lxd, incus-admin, libvirt, disk"
+  fi
+}
+
+check_processes() {
+  # Every process of the agent user runs under its user manager (bound to the firewall), except
+  # this check's own session. Nothing of it runs in a system service or a Studio container.
+  local uid self pid owner cgroup outside=() containers=()
+  uid="$(id -u)"
+  self="$(sed -n 's/^0:://p' /proc/self/cgroup)"
+  for pid in /proc/[0-9]*; do
+    owner="$(stat -c %u "$pid" 2>/dev/null)" || continue
+    [ "$owner" = "$uid" ] || continue
+    cgroup="$(sed -n 's/^0:://p' "$pid/cgroup" 2>/dev/null)" || continue
+    [ -n "$cgroup" ] || continue
+    case "$cgroup" in
+      "/user.slice/user-$uid.slice/user@$uid.service"*) continue ;;
+      "$self") continue ;;
+    esac
+    case "$cgroup" in
+      /system.slice/docker-*.scope*) containers+=("${pid#/proc/}") ;;
+    esac
+    outside+=("${pid#/proc/}:$cgroup")
+  done
+  if [ "${#outside[@]}" -gt 0 ]; then
+    fail processes-in-user-manager "outside user@$uid.service: ${outside[*]:0:5}"
+  else
+    pass processes-in-user-manager "every process of $(id -un) runs under user@$uid.service (or this check)"
+  fi
+  if [ "${#containers[@]}" -gt 0 ]; then
+    fail no-studio-container-as-agent "system Docker container processes run as uid $uid: ${containers[*]:0:5}"
+  else
+    pass no-studio-container-as-agent "no system Docker container process runs as uid $uid"
   fi
 }
 

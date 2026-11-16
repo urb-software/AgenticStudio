@@ -109,6 +109,15 @@ describe(
       }
     });
 
+    it('runs the API and web as a fixed non-root uid, never the agent uid', () => {
+      const { services } = render([base, app]);
+      assert.equal(services.api.user, '10001:10001');
+      assert.equal(services.web.user, '10001:10001');
+      const setup = read('setup-server.sh');
+      assert.match(setup, /^STUDIO_CONTAINER_UID="\$\{STUDIO_CONTAINER_UID:-10001\}"$/m);
+      assert.match(setup, /^AGENT_UID="\$\{AGENT_UID:-2001\}"$/m);
+    });
+
     it('gives the web container no Studio secret', () => {
       const { services } = render([base, app], {
         ...TEST_ENV,

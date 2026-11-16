@@ -112,7 +112,8 @@ out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip api 2>&1)"
 status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -eq 0 ]; then ok "boundary checks pass (API group skipped)"; else not_ok "boundary checks failed (exit $status)"; fi
-for name in not-root not-in-docker-group studio-config-unreadable studio-data-unreadable secrets-unreachable \
+for name in not-root not-in-docker-group processes-in-user-manager no-studio-container-as-agent \
+  studio-config-unreadable studio-data-unreadable secrets-unreachable \
   system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-stack-running \
   studio-postgres-unreachable studio-redis-unreachable no-wsl-escape \
   cgroup-v2 agent-user-limits rootless-docker rootless-container-limits rootless-compose; do
@@ -139,6 +140,34 @@ wait "$HEALTH_PID" 2>/dev/null
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip rootless,api 2>&1)"
 expect_line "Studio not answering -> FAIL studio-stack-running" "$out" '^FAIL  studio-stack-running '
 expect_line "... and the run fails" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
+
+section "Nothing of the agent user runs outside its user manager"
+expect_true "agent user has uid and gid 2001" bash -c '[ "$(id -u agent):$(id -g agent)" = 2001:2001 ]'
+expect_true "logind kills the agent user's session processes" \
+  bash -c 'busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager KillOnlyUsers | grep -q "\"agent\""'
+if command -v crontab >/dev/null; then
+  expect_fail "cron refuses the agent user" "not allowed" bash -c "echo '* * * * * true' | runuser -u agent -- crontab -"
+else
+  expect_true "agent user is in /etc/cron.deny (no cron installed)" grep -qx agent /etc/cron.deny
+fi
+expect_true "agent user is in /etc/at.deny" grep -qx agent /etc/at.deny
+if [ -x /usr/sbin/sshd ]; then
+  expect_true "sshd denies the agent user" \
+    bash -c "/usr/sbin/sshd -T -C user=agent,host=client.invalid,addr=192.0.2.1 | grep -qix 'denyusers agent'"
+fi
+ONLY_PROCESSES=(--skip 'identity,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,api')
+systemd-run --quiet --uid=agent --unit=agent-stray-test sleep 300
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_PROCESSES[@]}" 2>&1)"
+expect_line "a system service as the agent user -> FAIL processes-in-user-manager" "$out" '^FAIL  processes-in-user-manager '
+systemctl stop agent-stray-test.service
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_PROCESSES[@]}" 2>&1)"
+expect_line "stopped -> PASS processes-in-user-manager" "$out" '^PASS  processes-in-user-manager '
+docker run -d --quiet --name agent-uid-test --user 2001:2001 busybox:1.37 sleep 300 >/dev/null
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_PROCESSES[@]}" 2>&1)"
+expect_line "a system container as the agent's uid -> FAIL no-studio-container-as-agent" "$out" '^FAIL  no-studio-container-as-agent '
+docker rm -f agent-uid-test >/dev/null
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_PROCESSES[@]}" 2>&1)"
+expect_line "removed -> PASS no-studio-container-as-agent" "$out" '^PASS  no-studio-container-as-agent '
 
 section "The agent side never runs without its firewall"
 agent_side_down() {

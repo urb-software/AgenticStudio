@@ -22,7 +22,8 @@ check_as_agent() { as_agent /usr/local/bin/agentic-studio-check-boundary "$@" 2>
 
 section "Refusals before any change"
 groupadd docker
-useradd --create-home --user-group --shell /bin/bash agent
+groupadd --gid 2001 agent
+useradd --create-home --uid 2001 --gid 2001 --shell /bin/bash agent
 usermod -aG docker agent
 expect_fail "refuses an agent user in the docker group" "is in the docker group" bash "$SETUP"
 expect_false "changed nothing before refusing" test -e /etc/agentic-studio
@@ -41,8 +42,11 @@ chmod g-w "$SRC/deploy/check-boundary.sh"
 groupadd -f lxd && usermod -aG lxd agent
 expect_fail "refuses an agent user in the lxd group" "is in the lxd group" bash "$SETUP" --only preflight
 gpasswd -d agent lxd >/dev/null
+useradd --create-home --uid 1500 lowuid
+expect_fail "refuses an agent user below uid 2000" "below 2000" env AGENT_USER=lowuid bash "$SETUP" --only preflight
+userdel -r lowuid 2>/dev/null
 
-STEPS=packages,node,user,layout,worker
+STEPS=packages,node,user,logins,layout,worker
 snapshot() {
   {
     find /etc/agentic-studio /var/lib/agentic-studio /opt/agentic-studio \
@@ -87,7 +91,7 @@ section "Studio's side: root only"
 expect_stat /etc/agentic-studio root:root 700
 expect_stat /etc/agentic-studio/.env root:root 600
 expect_stat /var/lib/agentic-studio root:root 700
-expect_stat /var/lib/agentic-studio/data root:root 700
+expect_stat /var/lib/agentic-studio/data 10001:10001 700
 expect_stat /opt/agentic-studio root:root 700
 expect_stat /opt/agentic-studio/compose.yaml root:root 600
 expect_stat /opt/agentic-studio/compose.app.yaml root:root 600
@@ -101,6 +105,11 @@ expect_true "system Docker and Compose plugin installed" docker compose version
 section "The agent side"
 expect_false "agent user is not in the docker group" bash -c "id -nG agent | tr ' ' '\n' | grep -qx docker"
 expect_true "agent user has a subordinate uid range" grep -q '^agent:' /etc/subuid
+expect_true "agent user has uid and gid 2001" bash -c '[ "$(id -u agent):$(id -g agent)" = 2001:2001 ]'
+expect_true "agent user is in /etc/cron.deny" grep -qx agent /etc/cron.deny
+expect_true "agent user is in /etc/at.deny" grep -qx agent /etc/at.deny
+expect_true "logind kills only the agent user's session processes" \
+  grep -qx 'KillOnlyUsers=agent' /etc/systemd/logind.conf.d/60-agentic-studio.conf
 expect_stat /home/agent/.config/agentic-studio-worker agent:agent 700
 expect_stat /home/agent/.config/agentic-studio-worker/.env agent:agent 600
 expect_stat /home/agent/.local/share/agentic-studio-worker agent:agent 700
@@ -133,7 +142,7 @@ out="$(check_as_agent --skip api)"
 status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -eq 1 ]; then ok "fails overall here (rootless Docker and slice limits need systemd)"; else not_ok "exit $status, expected 1"; fi
-for name in not-root not-in-docker-group studio-config-unreadable studio-data-unreadable secrets-unreachable \
+for name in not-root not-in-docker-group processes-in-user-manager no-studio-container-as-agent studio-config-unreadable studio-data-unreadable secrets-unreachable \
   system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-postgres-unreachable \
   studio-redis-unreachable no-wsl-escape; do
   expect_line "PASS $name" "$out" "^PASS  $name "
@@ -202,9 +211,9 @@ stub() {
   STUB_PID=$!
   sleep 1
 }
-ONLY_API=(--skip 'identity,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless')
+ONLY_API=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless')
 stub 0
-out="$(check_as_agent --skip 'identity,studio-files,docker-socket,sudo,host,cgroup,rootless,api')"
+out="$(check_as_agent --skip 'identity,processes,studio-files,docker-socket,sudo,host,cgroup,rootless,api')"
 expect_line "Studio answering -> PASS studio-stack-running" "$out" '^PASS  studio-stack-running '
 out="$(check_as_agent "${ONLY_API[@]}")"
 printf '%s\n' "$out" | sed 's/^/      | /'
