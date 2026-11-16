@@ -732,8 +732,8 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(rows.nth(5)).toContainText('Succeeded');
   await expect(rows.nth(6)).toContainText('Succeeded');
   await expect(rows.nth(7)).toContainText('Succeeded');
-  await expectNoHorizontalScroll(page);
-  await expectNoAxeViolations(page);
+  // At this viewport, in both themes: no sideways scroll, no axe violations (Issue #115).
+  await expectInBothThemes(page, rows.nth(0));
 
   // Story #103: the operator answers the agent's question with one of its options; the same
   // agent worker resumes the session and the Run succeeds. The conversation and the log show
