@@ -400,12 +400,17 @@ step_logins() {
   done
   if [ -x /usr/sbin/sshd ]; then
     install -d -m 0755 /etc/ssh/sshd_config.d
-    if install_content /etc/ssh/sshd_config.d/60-agentic-studio.conf 644 <<EOF; then
+    local ssh_changed=0
+    install_content /etc/ssh/sshd_config.d/60-agentic-studio.conf 644 <<EOF && ssh_changed=1
 # Installed by deploy/setup-server.sh: the agent user never logs in over SSH.
 DenyUsers $AGENT_USER
 EOF
-      /usr/sbin/sshd -t || die "sshd rejects its configuration after adding DenyUsers."
-      if has_systemd && systemctl is-active --quiet ssh.service; then systemctl reload ssh.service; fi
+    # sshd -t needs its privilege separation directory, which exists only while sshd runs when
+    # it is socket-activated (Ubuntu 24.04).
+    [ -d /run/sshd ] || install -d -m 0755 /run/sshd
+    /usr/sbin/sshd -t || die "sshd rejects its configuration (/etc/ssh/sshd_config.d/60-agentic-studio.conf)."
+    if [ "$ssh_changed" = 1 ] && has_systemd && systemctl is-active --quiet ssh.service; then
+      systemctl reload ssh.service
     fi
   else
     step_log "no sshd installed (no SSH login to deny)"
