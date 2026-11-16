@@ -1,5 +1,6 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -12,6 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prepareCodexHome, readConfigTemplate } from '../codex/codex-home.js';
+import { CODEX_USER_LEVEL_FILES } from '../codex/runner.js';
+import { presentUserLevelFiles } from '../user-level-files.js';
 
 // Issue #106: Studio owns the agent user's Codex configuration. Before every step the worker
 // rewrites config.toml (template + an untrusted entry per Working copy), hooks.json with
@@ -97,6 +100,44 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
       `'/usr/bin/node' '${join(codex(), 'studio', 'codex-guard.mjs')}'`,
     );
     expect(existsSync(join(codex(), 'studio', 'codex-guard.mjs'))).toBe(true);
+  });
+
+  it('replaces a symbolic link or a file at the folders it manages, never following it (review C1 of #133)', async () => {
+    const outside = join(root, 'outside');
+    mkdirSync(outside);
+    writeFileSync(join(outside, 'keep.txt'), 'not Studio');
+    mkdirSync(codex(), { recursive: true });
+    symlinkSync(outside, join(codex(), 'rules'));
+    symlinkSync(home, join(codex(), 'studio'));
+
+    await prepare();
+
+    expect(readdirSync(outside)).toEqual(['keep.txt']);
+    expect(existsSync(join(home, 'codex-guard.mjs'))).toBe(false);
+    for (const name of ['rules', 'studio']) {
+      expect(lstatSync(join(codex(), name)).isSymbolicLink()).toBe(false);
+      expect(lstatSync(join(codex(), name)).isDirectory()).toBe(true);
+    }
+    expect(readdirSync(join(codex(), 'rules'))).toEqual(['studio.rules']);
+
+    // A link inside rules/ is removed itself; its target stays.
+    symlinkSync(outside, join(codex(), 'rules', 'link'));
+    await prepare();
+    expect(readdirSync(join(codex(), 'rules'))).toEqual(['studio.rules']);
+    expect(readdirSync(outside)).toEqual(['keep.txt']);
+  });
+
+  it("refuses a symbolic link in place of the CLI's bundled skills (review C2 of #133)", async () => {
+    mkdirSync(join(codex(), 'skills'), { recursive: true });
+    mkdirSync(join(root, 'elsewhere'));
+    symlinkSync(join(root, 'elsewhere'), join(codex(), 'skills', '.system'));
+
+    expect(await presentUserLevelFiles(home, CODEX_USER_LEVEL_FILES)).toEqual([
+      '~/.codex/skills/.system',
+    ]);
+    rmSync(join(codex(), 'skills', '.system'));
+    mkdirSync(join(codex(), 'skills', '.system'));
+    expect(await presentUserLevelFiles(home, CODEX_USER_LEVEL_FILES)).toEqual([]);
   });
 
   it('drops the entry of a Working copy once retention removed it', async () => {

@@ -184,6 +184,21 @@ async function lock(path: string, timeoutMs: number): Promise<() => Promise<void
   }
 }
 
+/**
+ * Makes `path` a real directory Studio manages (review C1 of #133): a symbolic link or a file
+ * there is removed (never followed) and the directory created.
+ */
+async function realDirectory(path: string): Promise<void> {
+  try {
+    const stats = await lstat(path);
+    if (stats.isDirectory() && !stats.isSymbolicLink()) return;
+    await rm(path, { force: true }); // A link or a file: removed itself, never its target.
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  await mkdir(path, { mode: 0o700 });
+}
+
 /** Writes `content` to `path` through a temporary file and a rename. Owner-only. */
 async function replaceFile(path: string, content: string): Promise<void> {
   const temporary = `${path}.studio-${process.pid}-${Date.now()}`;
@@ -223,7 +238,7 @@ export async function prepareCodexHome(
     );
 
     const hook = posix.join(home, CODEX_HOME_FILES.hook);
-    await mkdir(posix.dirname(hook), { recursive: true, mode: 0o700 });
+    await realDirectory(posix.dirname(hook));
     await replaceFile(hook, await readFile(join(dir, CODEX_GUARDRAIL_FILES.hook), 'utf8'));
     const command = `${shellWord(options.nodePath ?? process.execPath)} ${shellWord(hook)}`;
     const hooks = JSON.parse(await readFile(join(dir, CODEX_GUARDRAIL_FILES.hooks), 'utf8')) as {
@@ -239,7 +254,8 @@ export async function prepareCodexHome(
 
     // Studio's rules are the only rules: anything else in the folder is removed first.
     const rulesDir = posix.join(home, CODEX_HOME_FILES.rulesDir);
-    await mkdir(rulesDir, { recursive: true, mode: 0o700 });
+    await realDirectory(rulesDir);
+    // fs.rm removes a link itself and never follows links inside a removed directory.
     for (const name of await readdir(rulesDir)) {
       if (name !== posix.basename(CODEX_HOME_FILES.rules)) {
         await rm(posix.join(rulesDir, name), { recursive: true, force: true });
