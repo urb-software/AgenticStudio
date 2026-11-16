@@ -7,8 +7,10 @@ import {
   ApiError,
   type ConnectRepositoryRequest,
   type CreateProjectRequest,
+  type EnvironmentFileInfoOutput,
   type ProjectDetailOutput,
   type RepositoryOutput,
+  type SetEnvironmentFileRequest,
   type VerifyRepositoryRequest,
 } from '../../../platform/api';
 
@@ -190,4 +192,47 @@ export function useDisconnectRepository(projectId: string, onDisconnected: () =>
 export function useRefreshProject(projectId: string) {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });
+}
+
+/** One project's Environment file setting (Issue #104). */
+const environmentFileKey = (projectId: string) =>
+  ['projects', projectId, 'environment-file'] as const;
+
+/**
+ * The project's Environment file as the operator may see it (path, size, last change), or
+ * `null` when none is set. The content is never sent to the browser.
+ */
+export function useEnvironmentFile(projectId: string) {
+  return useQuery({
+    queryKey: environmentFileKey(projectId),
+    queryFn: () => api.getEnvironmentFile(projectId),
+  });
+}
+
+/**
+ * Sets or replaces the Environment file; the answer (never the content) seeds the query. The
+ * request (with the content) is a mutation variable, so the mutation is dropped from the
+ * mutation cache as soon as nothing observes it (`gcTime: 0`; the dialog resets it when it
+ * closes): the content is not kept in the browser after the save (review of #126).
+ */
+export function useSetEnvironmentFile(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    gcTime: 0,
+    mutationFn: (request: SetEnvironmentFileRequest) => api.setEnvironmentFile(projectId, request),
+    onSuccess: (info: EnvironmentFileInfoOutput) => {
+      queryClient.setQueryData(environmentFileKey(projectId), info);
+    },
+  });
+}
+
+/** Removes the Environment file; the query then holds `null`. */
+export function useRemoveEnvironmentFile(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.removeEnvironmentFile(projectId),
+    onSuccess: () => {
+      queryClient.setQueryData(environmentFileKey(projectId), null);
+    },
+  });
 }

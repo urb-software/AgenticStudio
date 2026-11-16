@@ -6,6 +6,7 @@ import {
   RotateCcwIcon,
   ClockIcon,
   FolderIcon,
+  LockIcon,
   RefreshCwIcon,
   SearchXIcon,
   TriangleAlertIcon,
@@ -71,6 +72,26 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
       <dd className="m-0 min-w-0 text-body">{children}</dd>
     </div>
   );
+}
+
+/**
+ * Whether the Run was given its project's Environment file (Issue #104): it is decided when an
+ * agent worker claims the Run, so a Run that has not started says so.
+ */
+function EnvironmentFileFact({ run }: { run: RunOutput }) {
+  if (run.environmentFileSupplied) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <LockIcon aria-hidden="true" className="size-3.5 shrink-0 text-text-muted" />
+        Environment file supplied
+      </span>
+    );
+  }
+  // A Run that ended without ever starting (cancelled while queued, failed at claim) got none.
+  if (!run.startedAt && !FINAL_STATES.includes(run.state)) {
+    return <span className="text-text-dim">Decided when the run starts</span>;
+  }
+  return <span className="text-text-dim">None</span>;
 }
 
 /** Why a queued Run waits; it needs the project's Runs, read (and polled) only while queued. */
@@ -323,6 +344,9 @@ export function RunDetail({ runId }: { runId: string }) {
                   <PullRequestLink pullRequest={run.pullRequest} />
                 </Fact>
               ) : null}
+              <Fact term="Environment file">
+                <EnvironmentFileFact run={run} />
+              </Fact>
               <Fact term="Created">
                 <When iso={run.createdAt} />
               </Fact>
