@@ -271,11 +271,29 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
 
     await expect(
       drainRunStep(runner().start(input('x')), (event) => events.push(event)),
-    ).rejects.toThrow('Claude Code exited with code 2 without a result.');
+    ).rejects.toThrow(
+      'Claude Code exited with code 2 without a result. Its error output: Error: invalid settings file',
+    );
     expect(events.at(-1)).toEqual({
       type: 'notice',
       text: "Claude Code's error output: Error: invalid settings file",
     });
+  });
+
+  it("puts the CLI's reason for refusing an option into the failure detail (smoke of #129)", async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('Warning: something harmless\n');
+      child.stderr.write(
+        'Error: --json-schema is not a valid JSON Schema: no schema with key or ref "x"\n',
+      );
+      return child;
+    });
+
+    await expect(drain(runner().start(input('x')))).rejects.toThrow(
+      'Claude Code exited with code 1 without a result. Its error output: Error: --json-schema ' +
+        'is not a valid JSON Schema: no schema with key or ref "x"',
+    );
   });
 
   it('starts nothing and writes nothing when Claude Code is switched off', async () => {

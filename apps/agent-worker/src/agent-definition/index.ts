@@ -73,5 +73,14 @@ export const agentResultSchema = z.strictObject({
   checks: z.array(runCheckSchema).max(100).optional(),
 });
 
-/** {@link agentResultSchema} as JSON Schema text, for the CLI's schema option. */
-export const AGENT_RESULT_JSON_SCHEMA = JSON.stringify(z.toJSONSchema(agentResultSchema));
+/**
+ * {@link agentResultSchema} as JSON Schema text, for the CLI's schema option. Draft-07 keywords
+ * and no `$schema` key: Claude Code 2.1.325 refuses a schema that names draft 2020-12 ("no
+ * schema with key or ref", coordinator smoke of #105), and an unannotated draft-07 schema is
+ * valid under its validator's default draft.
+ */
+export const AGENT_RESULT_JSON_SCHEMA = (() => {
+  const { $schema, ...schema } = z.toJSONSchema(agentResultSchema, { target: 'draft-7' });
+  void $schema;
+  return JSON.stringify(schema);
+})();

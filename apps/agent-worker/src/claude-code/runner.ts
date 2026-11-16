@@ -1,15 +1,16 @@
-import type { Provider, RunnerEvent } from '@agentic-studio/contracts';
+import type { Provider } from '@agentic-studio/contracts';
 import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from '../git.js';
-import type {
-  ResumeRunStepInput,
-  Runner,
-  RunStep,
-  RunWorkspace,
-  StartRunStepInput,
+import {
+  AgentFailedError,
+  type ResumeRunStepInput,
+  type Runner,
+  type RunStep,
+  type RunWorkspace,
+  type StartRunStepInput,
 } from '../runner.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import {
@@ -144,8 +145,12 @@ export class ClaudeCodeRunner implements Runner {
     for (const event of outcome.events) yield event;
     if ('result' in outcome) return outcome.result;
     const errorOutput = stderr.trim();
-    if (errorOutput !== '') {
-      yield { type: 'notice', text: `Claude Code's error output: ${errorOutput}` } as RunnerEvent;
+    if (errorOutput === '') throw outcome.error;
+    yield { type: 'notice', text: `Claude Code's error output: ${errorOutput}` };
+    // The CLI's own reason (e.g. a refused option) goes into the failure detail as well, so the
+    // operator sees it on the Run without opening the log; Studio redacts the detail (#104).
+    if (outcome.error instanceof AgentFailedError) {
+      throw new AgentFailedError(`${outcome.error.message} ${errorReason(errorOutput)}`);
     }
     throw outcome.error;
   }
@@ -172,6 +177,20 @@ export class ClaudeCodeRunner implements Runner {
       },
     };
   }
+}
+
+/** Longest CLI reason taken into a failure detail. */
+const REASON_MAX = 500;
+
+/** "Its error output: <last line of standard error>", cut to {@link REASON_MAX} characters. */
+export function errorReason(stderr: string): string {
+  const lines = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const last = lines.at(-1) ?? '';
+  const reason = last.length > REASON_MAX ? `${last.slice(0, REASON_MAX - 1)}…` : last;
+  return `Its error output: ${reason}`;
 }
 
 /** Longest wait for `claude --version`. */
