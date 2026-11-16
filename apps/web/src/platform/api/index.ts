@@ -16,6 +16,7 @@ import type {
   ProjectListOutput,
   ProjectOutput,
   ProviderListOutput,
+  RefreshPullRequestRequest,
   RepositoryOutput,
   RunEventOutput,
   RunDiffFileOutput,
@@ -51,6 +52,7 @@ export type {
   ProjectOutput,
   ProviderAvailabilityOutput,
   ProviderListOutput,
+  RefreshPullRequestRequest,
   RepositoryFailureCodeOutput,
   RepositoryOutput,
   RepositoryStateOutput,
@@ -253,6 +255,14 @@ export const api = {
    */
   followUpRun: (runId: string, body: FollowUpRunRequest): Promise<RunOutput> =>
     unwrap(sdk.followUpRun({ path: { runId }, body })),
+  /**
+   * Asks for the state of a Run's pull request to be read again (Issue #142; 202: the Run, with
+   * `pullRequest.refreshing` while an agent worker reads it). `onOpen` is the Run page's own
+   * request on opening, which the API takes at most once a minute per Run. A Run without a pull
+   * request answers 409.
+   */
+  refreshRunPullRequest: (runId: string, body?: RefreshPullRequestRequest): Promise<RunOutput> =>
+    unwrap(sdk.refreshRunPullRequest({ path: { runId }, ...(body ? { body } : {}) })),
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),

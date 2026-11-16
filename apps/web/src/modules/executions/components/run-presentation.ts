@@ -22,6 +22,25 @@ export const RUN_STATE_VIEW: Record<RunState, { pill: PillStatus; label: string 
   timed_out: { pill: 'failed', label: 'Timed out' },
 };
 
+export type PullRequestState = NonNullable<NonNullable<RunOutput['pullRequest']>['state']>;
+
+/**
+ * How a pull request's state looks (Issue #142): the pill colour and the word. Colours follow the
+ * run states' meaning without borrowing amber, which is only for the operator: a draft is quiet
+ * (queued), an open one is under way (running), a merged one is done (succeeded), a closed one is
+ * an outline (cancelled) and one that is gone is red (failed).
+ */
+export const PULL_REQUEST_STATE_VIEW: Record<
+  PullRequestState,
+  { pill: PillStatus; label: string }
+> = {
+  draft: { pill: 'queued', label: 'Draft' },
+  open: { pill: 'running', label: 'Open' },
+  merged: { pill: 'succeeded', label: 'Merged' },
+  closed: { pill: 'cancelled', label: 'Closed' },
+  missing: { pill: 'failed', label: 'Missing' },
+};
+
 export const PROVIDER_LABEL: Record<Provider, string> = {
   claude_code: 'Claude Code',
   codex: 'Codex',

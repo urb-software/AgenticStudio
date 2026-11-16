@@ -6,6 +6,7 @@ import {
   api,
   type FollowUpRunRequest,
   ApiError,
+  type RefreshPullRequestRequest,
   type RunDiffOutput,
   type RunOutput,
   type RunsSummaryOutput,
@@ -26,7 +27,15 @@ const WAITING_POLL_MS = 10_000;
 function pollIntervalFor(runs: readonly RunOutput[] | undefined): number | false {
   if (!runs) return false;
   // A requested delivery retry (Issue #102) moves on without the operator too.
-  if (runs.some((run) => UNDER_WAY_STATES.includes(run.state) || run.deliveryRetryRequested)) {
+  // Issue #142: a pull request refresh an agent worker is carrying out moves on by itself too.
+  if (
+    runs.some(
+      (run) =>
+        UNDER_WAY_STATES.includes(run.state) ||
+        run.deliveryRetryRequested ||
+        run.pullRequest?.refreshing,
+    )
+  ) {
     return ACTIVE_POLL_MS;
   }
   if (runs.some((run) => WAITING_STATES.includes(run.state))) return WAITING_POLL_MS;
@@ -212,6 +221,22 @@ export function useFollowUpRun(runId: string) {
       if (error instanceof ApiError && error.status === 409) {
         await queryClient.invalidateQueries({ queryKey: runKey(runId) });
       }
+    },
+  });
+}
+
+/**
+ * Asks for the state of the Run's pull request to be read again (Issue #142), when the Run page
+ * opens (`onOpen`, which the API takes at most once a minute) or on "Refresh". The 202 answer (the
+ * Run, marked as refreshing) replaces the cached Run, so the page polls it until an agent worker
+ * has reported what it read.
+ */
+export function useRefreshPullRequest(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request?: RefreshPullRequestRequest) => api.refreshRunPullRequest(runId, request),
+    onSuccess: (run: RunOutput) => {
+      queryClient.setQueryData(runKey(run.id), run);
     },
   });
 }
