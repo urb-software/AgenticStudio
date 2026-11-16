@@ -176,6 +176,25 @@ export const QUESTION_TEXT_MAX_LENGTH = 4000;
 export const QUESTION_OPTIONS_MAX = 6;
 export const QUESTION_OPTION_MAX_LENGTH = 200;
 
+/** A Git object id: a full SHA-1 or SHA-256 in lowercase hex. */
+const objectIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+
+/**
+ * Where a Run's diffs stand (Issue #144, review S-1 of #149): the Working copy snapshot (tree)
+ * and commit of the latest result, those of the result before it (where "since the previous
+ * result" starts) and, once a delivery pushed, the Run branch tip it pushed. The worker reports
+ * it with the diffs; Studio keeps it and hands it back with a resume or delivery claim, so it
+ * never lives where the agent can write it.
+ */
+export const runDiffStateSchema = z.strictObject({
+  resultTree: objectIdSchema,
+  resultCommit: objectIdSchema,
+  previousTree: objectIdSchema,
+  previousCommit: objectIdSchema,
+  pushedCommit: objectIdSchema.optional(),
+});
+export type RunDiffState = z.infer<typeof runDiffStateSchema>;
+
 /** An opaque reference to the agent's session, as the runner reported it (Issue #103). */
 const sessionRefSchema = z.string().min(1).max(SESSION_REF_MAX_LENGTH);
 
@@ -231,6 +250,11 @@ export const runPayloadSchema = z
     /** The limits in force for this Run (Issue #100). */
     limits: runLimitsSchema,
     /**
+     * With `resume` and `deliver`, once the Run reported diffs (Issue #144): where they stand,
+     * as the worker last reported it.
+     */
+    diffState: runDiffStateSchema.optional(),
+    /**
      * How many Run steps the Run has already taken (Issue #100): the next one is
      * `completedSteps + 1`, and the worker refuses to start it beyond `limits.maxSteps`.
      */
@@ -259,7 +283,11 @@ export const runPayloadSchema = z
       path: ['environmentFile'],
       message: 'An Environment file comes with a start claim, its path among the studioPaths.',
     },
-  );
+  )
+  .refine((payload) => payload.diffState === undefined || payload.kind !== 'start', {
+    path: ['diffState'],
+    message: 'A start claim carries no diff state.',
+  });
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
 /**
@@ -614,7 +642,7 @@ export type RunDiffFile = z.infer<typeof runDiffFileSchema>;
  */
 export const runDiffSchema = z
   .strictObject({
-    baseCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+    baseCommit: objectIdSchema,
     includesUnpushed: z.boolean(),
     truncated: z.boolean(),
     files: z.array(runDiffFileSchema).max(RUN_DIFF_FILES_MAX),
@@ -637,23 +665,28 @@ export const runDiffSchema = z
 export type RunDiff = z.infer<typeof runDiffSchema>;
 
 /**
- * `POST /api/worker/runs/:runId/diff` body (Issue #144): both diffs, or the reason they could
- * not be computed (text for the operator, never a path or Git's own output). Studio replaces
- * the Run's stored diffs with it.
+ * `POST /api/worker/runs/:runId/diff` body (Issue #144): both diffs with where they stand
+ * (`state`), or the reason they could not be computed (text for the operator, never a path or
+ * Git's own output). Studio replaces the Run's stored diffs with it, and keeps the state (an
+ * unavailable report leaves the stored state as it was).
  */
 export const reportRunDiffRequestSchema = z
   .strictObject({
     workerId: workerIdSchema,
     run: runDiffSchema.optional(),
     last: runDiffSchema.optional(),
+    state: runDiffStateSchema.optional(),
     unavailable: z.string().min(1).max(RUN_DIFF_UNAVAILABLE_MAX_LENGTH).optional(),
   })
   .refine(
     (report) =>
       report.unavailable === undefined
-        ? report.run !== undefined && report.last !== undefined
-        : report.run === undefined && report.last === undefined,
-    { message: 'A diff report carries both diffs, or only the reason they are unavailable.' },
+        ? report.run !== undefined && report.last !== undefined && report.state !== undefined
+        : report.run === undefined && report.last === undefined && report.state === undefined,
+    {
+      message:
+        'A diff report carries both diffs and their state, or only the reason they are unavailable.',
+    },
   );
 export type ReportRunDiffRequest = z.infer<typeof reportRunDiffRequestSchema>;
 

@@ -1,5 +1,4 @@
 import { Prisma } from '@agentic-studio/database';
-import { RUN_DIFF_FILE_STATUSES } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import {
@@ -7,12 +6,14 @@ import {
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import { CLAIMED_RUN_STATES } from '../../domain/entities/run.js';
-import type {
-  NewRunDiff,
-  RunDiffFileSummary,
-  RunDiffFileView,
-  RunDiffScope,
-  StoredRunDiff,
+import {
+  type NewRunDiff,
+  RUN_DIFF_FILE_STATUSES,
+  type RunDiffFileSummary,
+  type RunDiffFileView,
+  type RunDiffScope,
+  type RunDiffState,
+  type StoredRunDiff,
 } from '../../domain/entities/run-diff.js';
 import type { RunDiffRepository } from '../../domain/repositories/run-diff-repository.js';
 
@@ -33,8 +34,9 @@ const storedFilesSchema = z.array(
 /**
  * PostgreSQL adapter of {@link RunDiffRepository} (Issue #144): one `run_diffs` row per Run and
  * scope (the file list as JSON) and one `run_diff_files` row per file with a patch, keyed by
- * the file's position in that list. A report
- * locks the Run row, checks the holder and replaces both scopes in one transaction.
+ * the file's position in that list; one `run_diff_states` row per Run (review S-1 of #149). A
+ * report locks the Run row, checks the holder and replaces both scopes (and the state, unless
+ * it is unavailable) in one transaction.
  */
 @Injectable()
 export class PrismaRunDiffRepository implements RunDiffRepository {
@@ -44,6 +46,7 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
     runId: string,
     workerId: string,
     diffs: Record<RunDiffScope, NewRunDiff>,
+    state: RunDiffState | null,
     now: Date,
   ): Promise<boolean> {
     return this.db.$transaction(async (tx) => {
@@ -88,6 +91,20 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
         );
         if (patches.length > 0) await tx.runDiffFile.createMany({ data: patches });
       }
+      if (state) {
+        const columns = {
+          resultTree: state.resultTree,
+          resultCommit: state.resultCommit,
+          previousTree: state.previousTree,
+          previousCommit: state.previousCommit,
+          pushedCommit: state.pushedCommit ?? null,
+        };
+        await tx.runDiffState.upsert({
+          where: { runId },
+          create: { runId, ...columns },
+          update: columns,
+        });
+      }
       return true;
     });
   }
@@ -128,5 +145,17 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
       select: { patch: true },
     });
     return stored ? { ...file, patch: stored.patch } : file;
+  }
+
+  async findState(runId: string): Promise<RunDiffState | null> {
+    const row = await this.db.runDiffState.findUnique({ where: { runId } });
+    if (!row) return null;
+    return {
+      resultTree: row.resultTree,
+      resultCommit: row.resultCommit,
+      previousTree: row.previousTree,
+      previousCommit: row.previousCommit,
+      ...(row.pushedCommit === null ? {} : { pushedCommit: row.pushedCommit }),
+    };
   }
 }

@@ -424,15 +424,14 @@ export class AgentWorker {
     const { prepared, result } = await deliveries.locate(run);
     located(prepared);
     await deliveries.commit(prepared, run, result, signal);
+    // Issue #144 (review S-2 of #149): the diffs again, whatever the delivery's outcome, so a
+    // result whose diff report was lost still gets one; once pushed, again as pushed.
+    const diff = await this.computeDiff(run, prepared, signal, true);
+    outbox.send('diff', (reportSignal) => api.reportDiff(run.runId, diff.report, reportSignal));
     const delivery = await deliveries.deliver(prepared, run, result, signal);
     signal.throwIfAborted();
-    // Issue #144: the stored diffs say whether their changes are pushed; a retry that pushed
-    // them reports them again. A diff that cannot be read now keeps the stored one.
-    if (delivery.outcome === 'delivered') {
-      const diff = await this.computeDiff(run, prepared, signal, true);
-      if (diff.computed) {
-        await this.reportPushedDiff(run, prepared, diff.computed, outbox, signal);
-      }
+    if (delivery.outcome === 'delivered' && diff.computed) {
+      await this.reportPushedDiff(run, prepared, diff.computed, outbox, signal);
     }
     const workingCopy = await workingCopies.report(prepared, signal);
     outbox.send('succeeded', (reportSignal) =>

@@ -89,6 +89,22 @@ describe('run payload (claim response)', () => {
     expect(withKind(undefined)).toBe(false);
   });
 
+  it('hands back the diff state with a resume or delivery claim, never with a start (Issue #144)', () => {
+    const diffState = {
+      resultTree: 'b'.repeat(40),
+      resultCommit: 'c'.repeat(40),
+      previousTree: 'd'.repeat(40),
+      previousCommit: 'a'.repeat(40),
+    };
+    const deliver = { ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d', nextSeq: 1 };
+    expect(runPayloadSchema.safeParse({ ...deliver, diffState }).success).toBe(true);
+    expect(runPayloadSchema.safeParse({ ...payload, diffState }).success).toBe(false);
+    expect(
+      runPayloadSchema.safeParse({ ...deliver, diffState: { ...diffState, resultTree: 'x' } })
+        .success,
+    ).toBe(false);
+  });
+
   describe('a resume claim (Issue #103)', () => {
     const resume = {
       ...payload,
@@ -896,13 +912,33 @@ describe('a Run diff report (Issue #144)', () => {
     truncated: false,
     files: [file],
   };
+  const state = {
+    resultTree: 'b'.repeat(40),
+    resultCommit: 'c'.repeat(40),
+    previousTree: 'd'.repeat(40),
+    previousCommit: 'a'.repeat(40),
+  };
   const parse = (body: object) =>
-    reportRunDiffRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+    reportRunDiffRequestSchema.safeParse({
+      workerId: WORKER_ID,
+      ...('unavailable' in body ? {} : { state }),
+      ...body,
+    }).success;
 
   it('carries both diffs, the whole Run and since the previous result', () => {
     expect(parse({ run: diff, last: diff })).toBe(true);
     expect(parse({ run: diff })).toBe(false);
     expect(parse({ last: diff })).toBe(false);
+  });
+
+  it('carries where the diffs stand: full object ids only (review S-1 of #149)', () => {
+    expect(
+      parse({ run: diff, last: diff, state: { ...state, pushedCommit: 'e'.repeat(64) } }),
+    ).toBe(true);
+    expect(parse({ run: diff, last: diff, state: undefined })).toBe(false);
+    expect(parse({ run: diff, last: diff, state: { ...state, resultTree: 'HEAD' } })).toBe(false);
+    expect(parse({ run: diff, last: diff, state: { ...state, pushedCommit: 'abc' } })).toBe(false);
+    expect(parse({ unavailable: 'failed', state })).toBe(false);
   });
 
   it('or the reason the diff could not be computed, never both', () => {

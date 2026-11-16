@@ -229,6 +229,7 @@ model Run {
   events                  RunEvent[]
   messages                RunMessage[]
   diffs                   RunDiff[]
+  diffState               RunDiffState?
 
   /// Serves the newest-first list of all Runs.
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "runs_created_at_id_idx")
@@ -338,6 +339,21 @@ model RunDiffFile {
 
   @@id([runId, scope, position], map: "run_diff_files_pkey")
   @@map("run_diff_files")
+}
+
+/// Where a Run's diffs stand (Issue #144, review S-1 of #149): the snapshot trees and commits of
+/// the latest and the previous result, and the Run branch tip the worker last pushed. Studio
+/// keeps it for the agent worker and hands it back with a resume or delivery claim.
+model RunDiffState {
+  runId          String  @id @map("run_id") @db.Uuid
+  run            Run     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  resultTree     String  @map("result_tree") @db.VarChar(64)
+  resultCommit   String  @map("result_commit") @db.VarChar(64)
+  previousTree   String  @map("previous_tree") @db.VarChar(64)
+  previousCommit String  @map("previous_commit") @db.VarChar(64)
+  pushedCommit   String? @map("pushed_commit") @db.VarChar(64)
+
+  @@map("run_diff_states")
 }
 
 /// When the API last renewed the leases of held Runs at start (review of #121): at most once per

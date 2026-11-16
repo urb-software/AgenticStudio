@@ -162,6 +162,14 @@ const DIFF = {
   files: [{ path: 'src/app.ts', status: 'modified' as const, additions: 1, deletions: 0 }],
 };
 
+/** Issue #144: where the fake's diffs stand. */
+const DIFF_STATE = {
+  resultTree: 'e'.repeat(40),
+  resultCommit: 'c'.repeat(40),
+  previousTree: 'f'.repeat(40),
+  previousCommit: 'a'.repeat(40),
+};
+
 /** Issue #144: a recording fake of the diffs. */
 class FakeRunDiffs implements RunDiffPort {
   readonly calls: [string, string, boolean?][] = [];
@@ -175,7 +183,7 @@ class FakeRunDiffs implements RunDiffPort {
     this.calls.push(['compute', prepared.runId, options.refresh ?? false]);
     if (this.failure) throw this.failure;
     return {
-      report: { run: DIFF, last: DIFF },
+      report: { run: DIFF, last: DIFF, state: DIFF_STATE },
       tree: 'e'.repeat(40),
       head: 'c'.repeat(40),
       headTree: 'e'.repeat(40),
@@ -187,6 +195,7 @@ class FakeRunDiffs implements RunDiffPort {
     return {
       run: { ...computed.report.run, includesUnpushed: false },
       last: { ...computed.report.last, includesUnpushed: false },
+      state: { ...computed.report.state, pushedCommit: 'c'.repeat(40) },
     };
   }
 }
@@ -494,10 +503,11 @@ describe('AgentWorker', () => {
 
       expect(kinds(api)).toEqual(['running', 'step', 'diff', 'diff', 'succeeded']);
       expect(diffsSent(api)).toEqual([
-        { run: DIFF, last: DIFF },
+        { run: DIFF, last: DIFF, state: DIFF_STATE },
         {
           run: { ...DIFF, includesUnpushed: false },
           last: { ...DIFF, includesUnpushed: false },
+          state: { ...DIFF_STATE, pushedCommit: 'c'.repeat(40) },
         },
       ]);
       expect(diffs.calls).toEqual([
@@ -579,11 +589,46 @@ describe('AgentWorker', () => {
 
       await until(() => api.reports().length === 1);
 
-      expect(kinds(api)).toEqual(['diff', 'succeeded']);
+      expect(kinds(api)).toEqual(['diff', 'diff', 'succeeded']);
       expect(diffs.calls).toEqual([
         ['compute', run.runId, true],
         ['pushed', run.runId],
       ]);
+    });
+
+    it('a delivery retry reports them whatever its outcome (review S-2 of #149)', async () => {
+      const retry = (n: number) => ({
+        ...payload('Add a feature', n),
+        kind: 'deliver' as const,
+        runBranch: REPORT.runBranch,
+        nextSeq: 7,
+      });
+      const nothing = retry(1);
+      const refused = retry(2);
+      const api = new RecordingApi([nothing, refused]);
+      const deliveries = new FakeDeliveries();
+      deliveries.delivery = { outcome: 'none' };
+      deliveries.onCall = (step) => {
+        if (
+          step === 'deliver' &&
+          deliveries.calls.filter(([name]) => name === 'deliver').length === 2
+        ) {
+          deliveries.deliverFailure = new DeliveryFailedError('GitHub refused the pull request.');
+        }
+      };
+      startWorker(api, undefined, new FakeWorkingCopies(), deliveries);
+
+      await until(() => api.reports().length === 2);
+
+      const byRun = (runId: string) =>
+        api
+          .reportsWithDiffs()
+          .filter(([, id]) => id === runId)
+          .map(([kind, , report]) =>
+            kind === 'state' ? (report as { state: string }).state : kind,
+          );
+      expect(byRun(nothing.runId)).toEqual(['diff', 'succeeded']);
+      expect(byRun(refused.runId)).toEqual(['diff', 'failed']);
     });
   });
 

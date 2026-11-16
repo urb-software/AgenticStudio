@@ -8,10 +8,14 @@ import {
   runDiffNotFound,
   runNotFound,
 } from '../../contracts/http/problems.js';
-import { RunDiffDto, RunDiffFileDto } from '../../contracts/http/run-diff-response.js';
 import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
 import { GetRunDiffHandler, RunDiffFileNotFoundError, RunDiffNotFoundError } from './handler.js';
-import { GetRunDiffFileQueryDto, GetRunDiffQueryDto } from './schema.js';
+import {
+  GetRunDiffFileQueryDto,
+  GetRunDiffQueryDto,
+  RunDiffDto,
+  RunDiffFileDto,
+} from './schema.js';
 
 /**
  * `GET /api/runs/:runId/diff?scope=run|last` and `GET /api/runs/:runId/diff/file?scope=&path=`
@@ -34,9 +38,9 @@ export class GetRunDiffEndpoint {
     try {
       const diff = await this.handler.diff(runId, query.scope);
       if (diff.kind === 'unavailable') {
+        // No pushed state for a diff that was not computed (review S-3 of #149).
         return {
           scope: query.scope,
-          includesUnpushed: false,
           truncated: false,
           files: [],
           unavailableReason: diff.reason,

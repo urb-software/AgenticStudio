@@ -29,6 +29,24 @@ CREATE TABLE "run_diff_files" (
     CONSTRAINT "run_diff_files_pkey" PRIMARY KEY ("run_id","scope","position")
 );
 
+-- Where a Run's diffs stand (review S-1 of #149): the trees and commits of the latest and the
+-- previous result, and the Run branch tip the worker last pushed. Kept by Studio for the
+-- worker, handed back with a resume or delivery claim; object ids only.
+-- CreateTable
+CREATE TABLE "run_diff_states" (
+    "run_id" UUID NOT NULL,
+    "result_tree" VARCHAR(64) NOT NULL,
+    "result_commit" VARCHAR(64) NOT NULL,
+    "previous_tree" VARCHAR(64) NOT NULL,
+    "previous_commit" VARCHAR(64) NOT NULL,
+    "pushed_commit" VARCHAR(64),
+
+    CONSTRAINT "run_diff_states_pkey" PRIMARY KEY ("run_id")
+);
+
+-- AddForeignKey
+ALTER TABLE "run_diff_states" ADD CONSTRAINT "run_diff_states_run_id_fkey" FOREIGN KEY ("run_id") REFERENCES "runs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 -- AddForeignKey
 ALTER TABLE "run_diffs" ADD CONSTRAINT "run_diffs_run_id_fkey" FOREIGN KEY ("run_id") REFERENCES "runs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -41,3 +59,10 @@ ALTER TABLE "run_diffs" ADD CONSTRAINT "run_diffs_scope_check" CHECK ("scope" IN
 ALTER TABLE "run_diffs" ADD CONSTRAINT "run_diffs_base_check"
     CHECK (("base_commit" IS NULL) = ("unavailable_reason" IS NOT NULL));
 ALTER TABLE "run_diff_files" ADD CONSTRAINT "run_diff_files_position_check" CHECK ("position" >= 0);
+ALTER TABLE "run_diff_states" ADD CONSTRAINT "run_diff_states_ids_check" CHECK (
+    "result_tree" ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'
+    AND "result_commit" ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'
+    AND "previous_tree" ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'
+    AND "previous_commit" ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'
+    AND ("pushed_commit" IS NULL OR "pushed_commit" ~ '^([0-9a-f]{40}|[0-9a-f]{64})$')
+);

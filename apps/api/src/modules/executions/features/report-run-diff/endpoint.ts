@@ -24,7 +24,7 @@ export class ReportRunDiffEndpoint {
         diffs:
           body.unavailable !== undefined
             ? { unavailable: body.unavailable }
-            : { run: body.run!, last: body.last! },
+            : { run: body.run!, last: body.last!, state: body.state! },
       });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

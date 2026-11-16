@@ -20,6 +20,13 @@ const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 const T0 = new Date('2026-11-16T12:00:00.000Z');
 
+const STATE = {
+  resultTree: 'b'.repeat(40),
+  resultCommit: 'c'.repeat(40),
+  previousTree: 'd'.repeat(40),
+  previousCommit: 'a'.repeat(40),
+};
+
 const diffOf = (files: RunDiff['files'], overrides: Partial<RunDiff> = {}): RunDiff => ({
   baseCommit: 'a'.repeat(40),
   includesUnpushed: true,
@@ -70,6 +77,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
           { path: 'logo.png', status: 'added', additions: 0, deletions: 0, binary: true },
         ]),
         last: diffOf([{ path: 'a.ts', status: 'modified', additions: 1, deletions: 1, patch }]),
+        state: STATE,
       },
     });
 
@@ -100,6 +108,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
       diffs: {
         run: diffOf([{ path: 'conf.ts', status: 'added', additions: 2, deletions: 0, patch }]),
         last: diffOf([{ path: 'conf.ts', status: 'added', additions: 2, deletions: 0, patch }]),
+        state: STATE,
       },
     });
 
@@ -113,12 +122,14 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     runs.runs.find((candidate) => candidate.id === run.id)!.environmentFilePath = 'config/.env';
     const files: RunDiff['files'] = [
       { path: 'config/.env', status: 'added', additions: 1, deletions: 0, patch: '+A=1\n' },
+      // Another spelling of the same path (review L-3 of #149).
+      { path: './config/.env', status: 'added', additions: 1, deletions: 0, patch: '+A=1\n' },
       { path: 'a.ts', status: 'added', additions: 1, deletions: 0, patch: '+a\n' },
     ];
     await report.execute({
       runId: run.id,
       workerId: WORKER,
-      diffs: { run: diffOf(files), last: diffOf(files) },
+      diffs: { run: diffOf(files), last: diffOf(files), state: STATE },
     });
 
     const whole = await read.diff(run.id, 'run');
@@ -129,8 +140,16 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
   it('replaces the stored diffs with each report', async () => {
     const first = diffOf([{ path: 'a.ts', status: 'added', additions: 1, deletions: 0 }]);
     const second = diffOf([{ path: 'b.ts', status: 'added', additions: 1, deletions: 0 }]);
-    await report.execute({ runId: run.id, workerId: WORKER, diffs: { run: first, last: first } });
-    await report.execute({ runId: run.id, workerId: WORKER, diffs: { run: second, last: second } });
+    await report.execute({
+      runId: run.id,
+      workerId: WORKER,
+      diffs: { run: first, last: first, state: STATE },
+    });
+    await report.execute({
+      runId: run.id,
+      workerId: WORKER,
+      diffs: { run: second, last: second, state: STATE },
+    });
 
     const whole = await read.diff(run.id, 'run');
     expect(whole.kind === 'computed' && whole.files.map((file) => file.path)).toEqual(['b.ts']);
@@ -152,16 +171,55 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     }
   });
 
+  it('keeps where the diffs stand for the next claim; an unavailable report keeps it (review S-1 of #149)', async () => {
+    const diff = diffOf([]);
+    await report.execute({
+      runId: run.id,
+      workerId: WORKER,
+      diffs: { run: diff, last: diff, state: STATE },
+    });
+    expect(await diffs.findState(run.id)).toEqual(STATE);
+
+    await report.execute({ runId: run.id, workerId: WORKER, diffs: { unavailable: 'failed' } });
+    expect(await diffs.findState(run.id)).toEqual(STATE);
+
+    await expect(
+      report.execute({
+        runId: run.id,
+        workerId: WORKER,
+        diffs: { run: diff, last: diff, state: { ...STATE, resultTree: 'HEAD' } },
+      }),
+    ).rejects.toThrow();
+    expect(await diffs.findState(run.id)).toEqual(STATE);
+  });
+
+  it('cuts a reason that redaction lengthened to what is stored (review L-2 of #149)', async () => {
+    secrets = ['true'];
+    await report.execute({
+      runId: run.id,
+      workerId: WORKER,
+      diffs: { unavailable: 'true '.repeat(100) },
+    });
+
+    const stored = await read.diff(run.id, 'run');
+    expect(stored.kind === 'unavailable' && stored.reason.length).toBe(500);
+    expect(stored.kind === 'unavailable' && stored.reason.startsWith(REDACTED)).toBe(true);
+  });
+
   it('refuses a worker that does not hold the Run, and an unknown Run', async () => {
     const diff = diffOf([]);
     await expect(
-      report.execute({ runId: run.id, workerId: OTHER_WORKER, diffs: { run: diff, last: diff } }),
+      report.execute({
+        runId: run.id,
+        workerId: OTHER_WORKER,
+        diffs: { run: diff, last: diff, state: STATE },
+      }),
     ).rejects.toThrow(RunNotHeldError);
     await expect(
       report.execute({
         runId: '00000000-0000-4000-8000-000000000000',
         workerId: WORKER,
-        diffs: { run: diff, last: diff },
+        diffs: { run: diff, last: diff, state: STATE },
       }),
     ).rejects.toThrow(RunNotFoundError);
     await expect(read.diff(run.id, 'run')).rejects.toThrow(RunDiffNotFoundError);

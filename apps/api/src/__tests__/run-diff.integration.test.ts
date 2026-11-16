@@ -53,7 +53,9 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
   ) => {
     const call = http().post(`/api/worker/runs/${runId}/diff`);
     if (token !== null) call.set('Authorization', `Bearer ${token}`);
-    return call.send({ workerId, ...body });
+    // Diffs go with where they stand (review S-1 of #149), unless a test sends its own.
+    const state = 'run' in body && !('state' in body) ? { state: STATE } : {};
+    return call.send({ workerId, ...body, ...state });
   };
   const readDiff = (runId: string, query: string) =>
     http().get(`/api/runs/${runId}/diff${query}`).set('Cookie', cookie);
@@ -65,6 +67,13 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
     files,
     ...overrides,
   });
+
+  const STATE = {
+    resultTree: 'b'.repeat(40),
+    resultCommit: 'c'.repeat(40),
+    previousTree: 'd'.repeat(40),
+    previousCommit: 'e'.repeat(40),
+  };
 
   /** A Run claimed by W1 and running (test setup: a project with a ready Repository). */
   async function runningRun(): Promise<string> {
@@ -241,6 +250,29 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
     expect(file.body).toMatchObject({ path, patch: '+deep\n' });
   });
 
+  it('keeps where the diffs stand, and refuses a state that is not object ids (review S-1 of #149)', async () => {
+    const runId = await runningRun();
+    const diff = diffOf([]);
+
+    expect(
+      (
+        await report(runId, {
+          run: diff,
+          last: diff,
+          state: { ...STATE, pushedCommit: 'f'.repeat(40) },
+        })
+      ).status,
+    ).toBe(204);
+    expectProblem(
+      await report(runId, { run: diff, last: diff, state: { ...STATE, resultTree: 'HEAD' } }),
+      400,
+    );
+
+    const [stored] = await db().$queryRaw<{ result_tree: string; pushed_commit: string | null }[]>`
+      SELECT result_tree, pushed_commit FROM run_diff_states WHERE run_id = ${runId}::uuid`;
+    expect(stored).toEqual({ result_tree: STATE.resultTree, pushed_commit: 'f'.repeat(40) });
+  });
+
   it('stores why the diffs could not be computed', async () => {
     const runId = await runningRun();
 
@@ -248,9 +280,9 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
       (await report(runId, { unavailable: 'The changes could not be computed.' })).status,
     ).toBe(204);
 
+    // No pushed state for a diff that was not computed (review S-3 of #149).
     expect((await readDiff(runId, '?scope=last')).body).toEqual({
       scope: 'last',
-      includesUnpushed: false,
       truncated: false,
       files: [],
       unavailableReason: 'The changes could not be computed.',

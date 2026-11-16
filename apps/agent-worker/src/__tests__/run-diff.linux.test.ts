@@ -198,10 +198,19 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     agentWrites(prepared, { 'one.md': 'one\n' }, 'First result');
     const firstHead = inRepo(prepared, ['rev-parse', 'HEAD']);
     const subject = diffs();
-    await subject.compute(prepared, run, signal());
+    const first = await subject.compute(prepared, run, signal());
+    // Studio keeps the state and hands it back with the next claim (review S-1 of #149).
+    expect(first.report.state).toMatchObject({
+      resultCommit: firstHead,
+      previousCommit: run.startCommit,
+    });
 
     agentWrites(prepared, { 'two.md': 'two\n' });
-    const second = await subject.compute(prepared, run, signal());
+    const second = await subject.compute(
+      prepared,
+      { ...run, diffState: first.report.state },
+      signal(),
+    );
 
     expect(second.report.run.files.map((file) => file.path).sort()).toEqual(['one.md', 'two.md']);
     expect(second.report.last.files.map((file) => file.path)).toEqual(['two.md']);
@@ -210,7 +219,12 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     // A refresh (a delivery retry, no new result) keeps "since the previous result" as it was.
     inRepo(prepared, ['add', '--all']);
     inRepo(prepared, ['commit', '--quiet', '-m', 'Commit what was left']);
-    const refreshed = await subject.compute(prepared, run, signal(), { refresh: true });
+    const refreshed = await subject.compute(
+      prepared,
+      { ...run, diffState: second.report.state },
+      signal(),
+      { refresh: true },
+    );
     expect(refreshed.report.last.files.map((file) => file.path)).toEqual(['two.md']);
     expect(refreshed.report.last.baseCommit).toBe(firstHead);
   });
@@ -275,10 +289,55 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     const pushed = await subject.pushed(prepared, computed, signal());
     expect(pushed.run.includesUnpushed).toBe(false);
     expect(pushed.last.includesUnpushed).toBe(false);
+    expect(pushed.state.pushedCommit).toBe(inRepo(prepared, ['rev-parse', 'HEAD']));
 
-    // The pushed tip is remembered: an uncommitted change later is unpushed again.
+    // The pushed tip comes back with the state: still pushed, until something changes.
+    const again = { ...run, diffState: pushed.state };
+    expect((await subject.compute(prepared, again, signal())).report.run.includesUnpushed).toBe(
+      false,
+    );
     agentWrites(prepared, { 'two.md': 'two\n' });
-    expect((await subject.compute(prepared, run, signal())).report.run.includesUnpushed).toBe(true);
+    expect((await subject.compute(prepared, again, signal())).report.run.includesUnpushed).toBe(
+      true,
+    );
+  });
+
+  it('ignores a state whose objects are not the trees and commits it names (review S-1 of #149)', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'one.md': 'one\n' }, 'Change');
+    const head = inRepo(prepared, ['rev-parse', 'HEAD']);
+    const headTree = inRepo(prepared, ['rev-parse', 'HEAD^{tree}']);
+    // A commit where a tree belongs, and a pushed commit that is not an object here.
+    const forged = {
+      resultTree: head,
+      resultCommit: head,
+      previousTree: headTree,
+      previousCommit: head,
+      pushedCommit: 'f'.repeat(40),
+    };
+
+    const computed = await diffs().compute(prepared, { ...run, diffState: forged }, signal());
+
+    expect(computed.report.last.baseCommit).toBe(run.startCommit);
+    expect(computed.report.last.files.map((file) => file.path)).toEqual(['one.md']);
+    expect(computed.report.run.includesUnpushed).toBe(true);
+  });
+
+  it('a committed Studio-placed path does not keep the changes unpushed (review S-4 of #149)', async () => {
+    const run = payload({
+      studioPaths: ['.env'],
+      environmentFile: { path: '.env', content: 'SECRET=test-only-value\n' },
+    });
+    const prepared = await prepare(run);
+    inRepo(prepared, ['add', '--force', '--all']);
+    inRepo(prepared, ['commit', '--quiet', '-m', 'Everything, the settings too']);
+    const subject = diffs();
+
+    const computed = await subject.compute(prepared, run, signal());
+    const pushed = await subject.pushed(prepared, computed, signal());
+
+    expect(pushed.run.includesUnpushed).toBe(false);
   });
 
   it('says why when the Working copy cannot be read, without Git output or paths', async () => {

@@ -2594,6 +2594,14 @@
               "renamed"
             ]
           },
+          "tooLarge": {
+            "type": "boolean",
+            "const": true
+          },
+          "binary": {
+            "type": "boolean",
+            "const": true
+          },
           "additions": {
             "type": "integer",
             "minimum": 0,
@@ -2603,14 +2611,6 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
-          },
-          "binary": {
-            "type": "boolean",
-            "const": true
-          },
-          "tooLarge": {
-            "type": "boolean",
-            "const": true
           }
         },
         "required": [
@@ -2652,7 +2652,6 @@
         },
         "required": [
           "scope",
-          "includesUnpushed",
           "truncated",
           "files"
         ],

@@ -1,7 +1,14 @@
-import type { RunDiff, RunDiffScope } from '@agentic-studio/contracts';
+import type { RunDiff } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../domain/entities/run.js';
-import type { NewRunDiff } from '../../domain/entities/run-diff.js';
+import {
+  isEnvironmentFilePath,
+  isRunDiffState,
+  type NewRunDiff,
+  RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
+  type RunDiffScope,
+  type RunDiffState,
+} from '../../domain/entities/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -19,8 +26,11 @@ import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-
 export interface ReportRunDiffInput {
   runId: string;
   workerId: string;
-  /** Both diffs (validated by the shared contract), or the reason they are unavailable. */
-  diffs: { run: RunDiff; last: RunDiff } | { unavailable: string };
+  /**
+   * Both diffs and where they stand (validated by the shared contract), or the reason they are
+   * unavailable.
+   */
+  diffs: { run: RunDiff; last: RunDiff; state: RunDiffState } | { unavailable: string };
 }
 
 /**
@@ -29,8 +39,9 @@ export interface ReportRunDiffInput {
  * patch, and the reason, is redacted with the log's rules (security.md §3: the Run's known
  * secret values, such as its Environment file's, and token-shaped strings) before it is
  * stored. The Environment file itself is never part of a diff: the worker leaves it out, and a
- * file at its path is dropped here too. Throws {@link RunNotFoundError} or
- * {@link RunNotHeldError}.
+ * file at its path (in any spelling) is dropped here too. The diff state is kept for the next
+ * resume or delivery claim (review S-1 of #149); an unavailable report keeps the stored one.
+ * Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
  */
 @Injectable()
 export class ReportRunDiffHandler {
@@ -53,21 +64,31 @@ export class ReportRunDiffHandler {
       includesUnpushed: diff.includesUnpushed,
       truncated: diff.truncated,
       files: diff.files
-        .filter((file) => file.path !== environmentFile && file.previousPath !== environmentFile)
+        .filter(
+          (file) =>
+            !isEnvironmentFilePath(file.path, environmentFile) &&
+            !(file.previousPath && isEnvironmentFilePath(file.previousPath, environmentFile)),
+        )
         .map(({ patch, ...file }) => ({
           ...file,
           hasPatch: patch !== undefined,
           ...(patch === undefined ? {} : { patch: redact(patch) }),
         })),
     });
+    // Redaction can lengthen the reason: cut after it, to what is stored (review L-2 of #149).
+    const reason = (text: string) => redact(text).slice(0, RUN_DIFF_UNAVAILABLE_MAX_LENGTH);
     const diffs: Record<RunDiffScope, NewRunDiff> =
       'unavailable' in input.diffs
         ? {
-            run: { kind: 'unavailable', reason: redact(input.diffs.unavailable) },
-            last: { kind: 'unavailable', reason: redact(input.diffs.unavailable) },
+            run: { kind: 'unavailable', reason: reason(input.diffs.unavailable) },
+            last: { kind: 'unavailable', reason: reason(input.diffs.unavailable) },
           }
         : { run: stored(input.diffs.run), last: stored(input.diffs.last) };
-    if (!(await this.diffs.replace(input.runId, input.workerId, diffs, this.clock.now()))) {
+    const state = 'state' in input.diffs ? input.diffs.state : null;
+    // The contract checked the format; checked again before it is kept (review S-1 of #149).
+    if (state && !isRunDiffState(state)) throw new Error('The diff state is not object ids.');
+    const now = this.clock.now();
+    if (!(await this.diffs.replace(input.runId, input.workerId, diffs, state, now))) {
       throw new RunNotHeldError();
     }
   }
