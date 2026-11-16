@@ -464,7 +464,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
 
     it('removes the earlier file when the Project has none now, never following a symlink', async () => {
       const copies = workingCopies();
-      const outside = join(dataDir, 'outside.txt');
+      const outside = join(root, 'follow-up-outside.txt');
       writeFileSync(outside, 'keep me');
       const run = payload({
         environmentFile: { path: '.env', content: OLD },
