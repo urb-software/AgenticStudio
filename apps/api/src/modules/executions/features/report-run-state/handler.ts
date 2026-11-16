@@ -42,6 +42,8 @@ export interface ReportRunStateInput {
   delivery?: RunDeliveryOutcome | null;
   /** With `failed` / `usage_limit`: the agent session to resume later (Issue #105). */
   sessionRef?: string | null;
+  /** With `failed` / `delivery_failed`: what the delivery pushed before it failed (#141, S2). */
+  pushedCommit?: string | null;
 }
 
 /**
@@ -106,6 +108,8 @@ export class ReportRunStateHandler {
               ? OPERATOR_CANCELLATION_BRANCH_PUSHED
               : OPERATOR_CANCELLATION,
         sessionRef: input.failure?.code === 'usage_limit' ? (input.sessionRef ?? null) : null,
+        pushedCommit:
+          input.failure?.code === 'delivery_failed' ? (input.pushedCommit ?? null) : null,
         cancelRequested,
         now: this.clock.now(),
       });
@@ -155,6 +159,7 @@ export class ReportRunStateHandler {
       workerId: input.workerId,
       result,
       workingCopy: input.workingCopy ?? null,
+      pushedCommit: result.state === 'failed' ? (input.pushedCommit ?? null) : null,
       now: this.clock.now(),
     });
     if (!changed) throw new RunNotHeldError();

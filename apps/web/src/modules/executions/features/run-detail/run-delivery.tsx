@@ -215,7 +215,8 @@ const shortId = (id: string) => id.slice(0, 7);
 
 /**
  * The Run branch's commits (Issue #141), oldest first: each says whether it is on the remote
- * Run branch (pushed) or exists only in the working copy on the agent worker. Plain text: the
+ * Run branch (pushed) or exists only in the working copy on the agent worker, or that this is
+ * unknown (review S5 of #150: the pushed commit is not among the listed ones). Plain text: the
  * subjects are the agent's.
  */
 export function RunCommits({ run }: { run: RunOutput }) {
@@ -240,7 +241,11 @@ export function RunCommits({ run }: { run: RunOutput }) {
                 {commit.subject}
               </span>
               <span className="text-caption font-medium text-text-dim">
-                {commit.pushed ? 'Pushed' : 'Only in the working copy'}
+                {commit.pushed === undefined
+                  ? 'Pushed state unknown'
+                  : commit.pushed
+                    ? 'Pushed'
+                    : 'Only in the working copy'}
               </span>
             </li>
           ))}

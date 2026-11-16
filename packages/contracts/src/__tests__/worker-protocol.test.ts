@@ -978,3 +978,66 @@ describe('the pushed commit of a delivery (Issue #141)', () => {
     expect(valid({ outcome: 'none', pushedCommit: 'c'.repeat(40) })).toBe(false);
   });
 });
+
+describe('a Follow-up with a new Environment file snapshot (Issue #141, review S3)', () => {
+  const resume = {
+    runId: RUN_ID,
+    projectId: PROJECT_ID,
+    provider: 'claude_code',
+    task: 'Add a health check',
+    startCommit: 'a'.repeat(40),
+    repository: { remoteUrl: 'git@github.com:acme/shop.git' },
+    integrationBranch: 'dev',
+    kind: 'resume',
+    runBranch: 'agent/x-r0b8e5c2d',
+    sessionRef: 'session-1',
+    answer: 'Go on.',
+    resumeReason: 'follow_up',
+    followUpNumber: 1,
+    nextSeq: 9,
+    studioPaths: ['.env', 'config/.env'],
+    limits: { stepMinutes: 60, maxSteps: 10 },
+    completedSteps: 1,
+  };
+  const file = { path: 'config/.env', content: 'A=1\n' };
+  const valid = (patch: object) => runPayloadSchema.safeParse({ ...resume, ...patch }).success;
+
+  it('carries the replacement, with or without a file, only with a resume claim', () => {
+    expect(valid({ replaceEnvironmentFile: true, environmentFile: file })).toBe(true);
+    expect(valid({ replaceEnvironmentFile: true })).toBe(true);
+    expect(valid({ environmentFile: file })).toBe(false);
+    expect(valid({ replaceEnvironmentFile: true, environmentFile: { ...file, path: 'x' } })).toBe(
+      false,
+    );
+    expect(
+      runPayloadSchema.safeParse({
+        ...resume,
+        kind: 'deliver',
+        sessionRef: undefined,
+        answer: undefined,
+        resumeReason: undefined,
+        followUpNumber: undefined,
+        replaceEnvironmentFile: true,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('the pushed commit of a failed delivery (Issue #141, review S2)', () => {
+  const report = (body: object) =>
+    reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+  it('comes only with delivery_failed', () => {
+    const pushedCommit = 'a'.repeat(40);
+    expect(
+      report({
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'x' },
+        pushedCommit,
+      }),
+    ).toBe(true);
+    expect(
+      report({ state: 'failed', failure: { code: 'agent_failed', detail: 'x' }, pushedCommit }),
+    ).toBe(false);
+    expect(report({ state: 'cancelled', pushedCommit })).toBe(false);
+  });
+});

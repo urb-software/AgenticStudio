@@ -265,11 +265,18 @@ export const runPayloadSchema = z
      */
     nextSeq: z.int().min(1).max(2_147_483_647).optional(),
     /**
-     * With `start` only: the Project's Environment file as it was when the Run was claimed
-     * (Issue #104), only for the worker that claimed the Run; its path is in `studioPaths`.
-     * Never logged.
+     * With `start`, or with a `resume` that replaces it (Issue #141): the Project's Environment
+     * file as it was when the Run was claimed (Issue #104), only for the worker that claimed the
+     * Run; its path is in `studioPaths`. Never logged.
      */
     environmentFile: environmentFileSchema.optional(),
+    /**
+     * With `resume` only (Issue #141): Studio took a new snapshot of the Project's Environment
+     * file for this part of the Run (a Follow-up, or a usage-limit resume inside one). The worker
+     * removes every Studio-placed file (`studioPaths`) from the Working copy, then writes
+     * `environmentFile` when there is one; without it the Run goes on without the file.
+     */
+    replaceEnvironmentFile: z.literal(true).optional(),
     /** The limits in force for this Run (Issue #100). */
     limits: runLimitsSchema,
     /**
@@ -312,11 +319,14 @@ export const runPayloadSchema = z
   })
   .refine(
     (payload) =>
-      payload.environmentFile === undefined ||
-      (payload.kind === 'start' && payload.studioPaths.includes(payload.environmentFile.path)),
+      (payload.replaceEnvironmentFile === undefined || payload.kind === 'resume') &&
+      (payload.environmentFile === undefined ||
+        ((payload.kind === 'start' || payload.replaceEnvironmentFile === true) &&
+          payload.studioPaths.includes(payload.environmentFile.path))),
     {
       path: ['environmentFile'],
-      message: 'An Environment file comes with a start claim, its path among the studioPaths.',
+      message:
+        'An Environment file comes with a start claim or a resume that replaces it, its path among the studioPaths.',
     },
   );
 export type RunPayload = z.infer<typeof runPayloadSchema>;
@@ -548,6 +558,12 @@ export const reportRunStateRequestSchema = z
      * operator can resume the Run once the limit resets.
      */
     sessionRef: sessionRefSchema.optional(),
+    /**
+     * With `failed` / `delivery_failed` only (Issue #141): the delivery pushed the Run branch to
+     * this commit before it failed (e.g. updating the pull request was refused), so Studio still
+     * knows which commits are pushed.
+     */
+    pushedCommit: commitIdSchema.optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
@@ -579,6 +595,14 @@ export const reportRunStateRequestSchema = z
     path: ['sessionRef'],
     message: 'A session reference comes only with the failure usage_limit (Issue #105).',
   })
+  .refine(
+    (report) => report.pushedCommit === undefined || report.failure?.code === 'delivery_failed',
+    {
+      path: ['pushedCommit'],
+      message:
+        'A pushed commit on its own comes only with the failure delivery_failed (Issue #141).',
+    },
+  )
   .refine(
     (report) =>
       report.workingCopy === undefined ||

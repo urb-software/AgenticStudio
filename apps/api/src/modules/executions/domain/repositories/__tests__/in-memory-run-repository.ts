@@ -4,6 +4,7 @@ import {
   canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
   isFinal,
+  partEndOf,
   MAX_ACTIVE_RUNS,
   type Run,
   type RunCancellation,
@@ -181,6 +182,7 @@ export class InMemoryRunRepository implements RunRepository {
         ? deliveryFields(change.delivery)
         : {}),
       ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
+      ...(change.pushedCommit ? { pushedCommit: change.pushedCommit } : {}),
       ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
         ? { sessionRef: change.sessionRef }
         : {}),
@@ -239,7 +241,11 @@ export class InMemoryRunRepository implements RunRepository {
       ...(outcome.workingCopy ? { workingCopy: structuredClone(outcome.workingCopy) } : {}),
       ...(result.state === 'succeeded'
         ? { state: 'succeeded', failure: null, ...deliveryFields(result.delivery) }
-        : { failure: { ...result.failure }, delivery: 'failed' }),
+        : {
+            failure: { ...result.failure },
+            delivery: 'failed',
+            ...(outcome.pushedCommit ? { pushedCommit: outcome.pushedCommit } : {}),
+          }),
     });
     return Promise.resolve(this.view(run));
   }
@@ -413,6 +419,7 @@ export class InMemoryRunRepository implements RunRepository {
     ) {
       return Promise.resolve(null);
     }
+    run.messages.push({ kind: 'part_end', ...partEndOf(run)!, at: now });
     run.messages.push({ kind: 'follow_up', text, at: now });
     Object.assign(run, {
       state: 'queued',
@@ -439,7 +446,6 @@ export class InMemoryRunRepository implements RunRepository {
       (run) =>
         runIds.includes(run.id) &&
         run.lastClaimedBy === workerId &&
-        isFinal(run.state) &&
         run.claimedBy === null &&
         run.workingCopyRemovedAt === null,
     );
@@ -514,6 +520,23 @@ export class InMemoryRunRepository implements RunRepository {
       environmentFileSupplied: true,
       environmentFilePath: file.path,
       environmentFileSecret: file.secretRef,
+    });
+    return Promise.resolve(true);
+  }
+
+  replaceEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string } | null,
+  ): Promise<boolean> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || run.state !== 'preparing' || run.claimedBy !== workerId) {
+      return Promise.resolve(false);
+    }
+    Object.assign(run, {
+      environmentFileSupplied: file !== null,
+      environmentFilePath: file?.path ?? null,
+      environmentFileSecret: file?.secretRef ?? null,
     });
     return Promise.resolve(true);
   }

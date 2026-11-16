@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   assertTransition,
   followUpEligibility,
+  partEndOf,
+  takesNewEnvironmentFile,
   resumeMessage,
   USAGE_LIMIT_RESUME_TEXT,
   canTransition,
@@ -9,7 +11,6 @@ import {
   isFinal,
   isResumable,
   longWaitCancellation,
-  resumeAnswer,
   RUN_STATES,
   type Run,
   type RunState,
@@ -216,14 +217,14 @@ describe('questions and answers', () => {
 
   it('a queued Run with a session and an answer is resumable, with that answer', () => {
     expect(isResumable(answered)).toBe(true);
-    expect(resumeAnswer(answered)).toBe('PostgreSQL');
+    expect(resumeMessage(answered)).toEqual({ text: 'PostgreSQL', reason: 'answer' });
     expect(isResumable({ ...answered, sessionRef: null })).toBe(false);
-    expect(resumeAnswer({ ...answered, sessionRef: null })).toBeNull();
+    expect(resumeMessage({ ...answered, sessionRef: null })).toBeNull();
     expect(isResumable(asked)).toBe(false);
-    expect(resumeAnswer(asked)).toBeNull();
+    expect(resumeMessage(asked)).toBeNull();
     // Claimed to resume, it still carries the answer for the worker.
     const claimed: Run = { ...answered, state: 'preparing' };
-    expect(resumeAnswer(claimed)).toBe('PostgreSQL');
+    expect(resumeMessage(claimed)?.text).toBe('PostgreSQL');
     expect(isResumable(claimed)).toBe(false);
   });
 });
@@ -296,5 +297,57 @@ describe('Follow-ups', () => {
     });
     expect(of([followUp, question])).toBeNull();
     expect(resumeMessage({ sessionRef: null, messages: [followUp] })).toBeNull();
+    const partEnd = {
+      kind: 'part_end' as const,
+      state: 'failed' as const,
+      failureCode: 'agent_failed' as const,
+      delivery: null,
+      detail: 'It broke.',
+      at,
+    };
+    expect(of([partEnd, followUp])).toEqual({ text: 'Also add tests.', reason: 'follow_up' });
+    expect(of([partEnd])).toBeNull();
+  });
+
+  it('records how a finished part ended: state, failure, delivery and the reason (review S1)', () => {
+    expect(
+      partEndOf({
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: 'It broke.' },
+        cancellation: null,
+        delivery: null,
+      }),
+    ).toEqual({
+      state: 'failed',
+      failureCode: 'agent_failed',
+      delivery: null,
+      detail: 'It broke.',
+    });
+    expect(
+      partEndOf({
+        state: 'cancelled',
+        failure: null,
+        cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+        delivery: null,
+      }),
+    ).toEqual({
+      state: 'cancelled',
+      failureCode: null,
+      delivery: null,
+      detail: 'Cancelled by the operator.',
+    });
+    expect(
+      partEndOf({ state: 'succeeded', failure: null, cancellation: null, delivery: 'delivered' }),
+    ).toEqual({ state: 'succeeded', failureCode: null, delivery: 'delivered', detail: '' });
+    expect(
+      partEndOf({ state: 'running', failure: null, cancellation: null, delivery: null }),
+    ).toBeNull();
+  });
+
+  it('takes a new Environment file snapshot for a Follow-up and a usage-limit resume inside one', () => {
+    expect(takesNewEnvironmentFile({ followUpCount: 1 }, 'follow_up')).toBe(true);
+    expect(takesNewEnvironmentFile({ followUpCount: 1 }, 'usage_limit')).toBe(true);
+    expect(takesNewEnvironmentFile({ followUpCount: 0 }, 'usage_limit')).toBe(false);
+    expect(takesNewEnvironmentFile({ followUpCount: 1 }, 'answer')).toBe(false);
   });
 });

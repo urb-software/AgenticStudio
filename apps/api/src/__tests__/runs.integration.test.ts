@@ -2147,8 +2147,14 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       // The earlier result stays in the conversation; the state reflects the latest one.
       expect(after.messages.map((message: { kind: string }) => message.kind)).toEqual([
         'task',
+        'part_end',
         'follow_up',
       ]);
+      expect(after.messages[1]).toMatchObject({
+        role: 'studio',
+        kind: 'part_end',
+        end: { state: 'succeeded', delivery: 'delivered' },
+      });
       expect(JSON.stringify(after)).not.toContain('session-7');
     });
 
@@ -2389,6 +2395,154 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         delivery: 'delivered',
         pullRequest: PULL_REQUEST,
       });
+    });
+
+    // Review S1 of #150: how a part ended stays in the conversation after a Follow-up.
+    it("keeps each part's end in the conversation: state, failure and delivery", async () => {
+      const project = await readyProject(`Shop ${randomUUID()}`);
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      await step(run.id, 1, 'start', DONE);
+      await report(run.id, {
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: 'The tests did not compile.' },
+        workingCopy: WORKING_COPY,
+      });
+
+      const sent = await followUp(run.id, { text: 'Fix the compile error.' });
+      expect(sent.status).toBe(202);
+      expect(sent.body.messages.slice(1)).toEqual([
+        {
+          role: 'studio',
+          kind: 'part_end',
+          text: 'The tests did not compile.',
+          end: { state: 'failed', failureCode: 'agent_failed' },
+          at: expect.stringMatching(ISO_8601),
+        },
+        {
+          role: 'operator',
+          kind: 'follow_up',
+          text: 'Fix the compile error.',
+          at: expect.stringMatching(ISO_8601),
+        },
+      ]);
+      expect(sent.body).not.toHaveProperty('failure');
+    });
+
+    // Review S2 of #150: a delivery that pushed before it failed still records the push.
+    it('records the pushed commit of a delivery that failed after its push', async () => {
+      const { run } = await deliveredRun();
+      await followUp(run.id, { text: 'Next.' });
+      await claim();
+      await report(run.id, { state: 'running' });
+      const twoCommits = {
+        ...WORKING_COPY,
+        commits: [...WORKING_COPY.commits, { id: C2, subject: 'Handle HEAD' }],
+      };
+      await step(run.id, 2, 'resume', DONE, twoCommits);
+      const failed = await report(run.id, {
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'Updating the pull request was refused.' },
+        pushedCommit: C2,
+      });
+      expect(failed.status).toBe(204);
+      expect((await getRun(run.id)).body).toMatchObject({
+        state: 'failed',
+        delivery: 'failed',
+        pullRequest: PULL_REQUEST,
+        commits: [
+          { id: C1, pushed: true },
+          { id: C2, pushed: true },
+        ],
+      });
+    });
+
+    // Review S9 of #150: a removal reported while a Follow-up waits is never dropped.
+    it('fails a queued Follow-up whose Working copy was removed meanwhile', async () => {
+      const { run } = await deliveredRun();
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+      await worker('states', { workerId: W1, runIds: [run.id], removedRunIds: [run.id] });
+
+      expect((await claim()).status).toBe(204);
+      expect((await getRun(run.id)).body).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'preparation_failed',
+          detail:
+            "Working copy no longer exists — run again: the agent worker's retention removed it.",
+        },
+        followUp: { allowed: false, reason: 'working_copy_removed' },
+      });
+    });
+
+    // Review S8 of #150.
+    it('fails a queued Follow-up whose agent worker is gone as preparation_failed', async () => {
+      const { run } = await deliveredRun();
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+
+      const shortLease = await startStudioApp(
+        {
+          ...services.config,
+          workerToken: WORKER_TOKEN_DIGEST,
+          workerLeaseSeconds: 2,
+          runLimits: LIMITS,
+        },
+        { executions: { clock } },
+      );
+      try {
+        advance(3);
+        const deadline = Date.now() + 10_000;
+        while ((await getRun(run.id)).body.state === 'queued' && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      } finally {
+        await shortLease.close();
+      }
+      expect((await getRun(run.id)).body).toMatchObject({
+        state: 'failed',
+        failure: { code: 'preparation_failed' },
+      });
+    });
+
+    it('resumes a Follow-up stopped at the usage limit, with a new Environment file snapshot', async () => {
+      const { run } = await deliveredRun();
+      await followUp(run.id, { text: 'Next.' });
+      expect((await claim()).body).toMatchObject({ replaceEnvironmentFile: true, studioPaths: [] });
+      await report(run.id, { state: 'running' });
+      await report(run.id, {
+        state: 'failed',
+        failure: { code: 'usage_limit', detail: 'The usage limit was reached.' },
+        workingCopy: WORKING_COPY,
+        sessionRef: 'session-7',
+      });
+
+      const resumed = await http()
+        .post(`/api/runs/${run.id}/resume`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+      expect(resumed.status).toBe(202);
+      expect((await claim()).body).toMatchObject({
+        kind: 'resume',
+        resumeReason: 'usage_limit',
+        followUpNumber: 1,
+        replaceEnvironmentFile: true,
+        answer: 'Continue where you stopped.',
+      });
+    });
+
+    it('counts toward the server-wide limit only once claimed', async () => {
+      const { run } = await deliveredRun();
+      // Two other projects take both places on the server.
+      const a = await queuedRun((await readyProject(`A ${randomUUID()}`)).id);
+      const b = await queuedRun((await readyProject(`B ${randomUUID()}`)).id);
+      expect((await claim(W2)).body.runId).toBe(a.id);
+      expect((await claim(W2)).body.runId).toBe(b.id);
+
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+      expect((await claim(W1)).status).toBe(204);
+      await report(a.id, { state: 'running' }, W2);
+      await report(a.id, { state: 'failed', failure: { code: 'agent_failed', detail: 'x' } }, W2);
+      expect((await claim(W1)).body).toMatchObject({ runId: run.id, resumeReason: 'follow_up' });
     });
 
     it('records the Working copies retention removed, reported by the worker that holds them', async () => {

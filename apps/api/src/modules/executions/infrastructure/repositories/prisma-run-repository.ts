@@ -24,6 +24,8 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
+  partEndOf,
+  type RunPartEnd,
   type RunState,
   type RunWorkingCopy,
   stepLimitFailure,
@@ -93,7 +95,16 @@ const LIST_FIELDS = {
 const RUN_FIELDS = {
   ...LIST_FIELDS,
   messages: {
-    select: { kind: true, text: true, options: true, recommendation: true, at: true },
+    select: {
+      kind: true,
+      text: true,
+      options: true,
+      recommendation: true,
+      at: true,
+      endState: true,
+      endFailureCode: true,
+      endDelivery: true,
+    },
     orderBy: { seq: 'asc' },
   },
 } as const;
@@ -148,6 +159,9 @@ interface RunRow {
     options: Prisma.JsonValue;
     recommendation: string | null;
     at: Date;
+    endState: string | null;
+    endFailureCode: string | null;
+    endDelivery: string | null;
   }[];
 }
 
@@ -157,6 +171,17 @@ const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
   if (row.kind === 'follow_up') return { kind: 'follow_up', text: row.text, at: row.at };
+  if (row.kind === 'part_end') {
+    // The CHECK constraints fix the state, the code and the delivery (review S1 of #150).
+    return {
+      kind: 'part_end',
+      state: row.endState as RunPartEnd['state'],
+      failureCode: row.endFailureCode as RunFailureCode | null,
+      delivery: row.endDelivery as RunDeliveryState | null,
+      detail: row.text,
+      at: row.at,
+    };
+  }
   if (row.kind !== 'question') {
     throw new Error(`Unexpected run message kind in the database: ${row.kind}`);
   }
@@ -438,6 +463,8 @@ export class PrismaRunRepository implements RunRepository {
           ? deliveryColumns(change.delivery)
           : {}),
         ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
+        // Review S2 of #150: a delivery that pushed before it failed still records the push.
+        ...(change.pushedCommit ? { pushedCommit: change.pushedCommit } : {}),
         // Issue #105: the session a Run stopped at the usage limit resumes later.
         ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
           ? { sessionRef: change.sessionRef }
@@ -506,6 +533,7 @@ export class PrismaRunRepository implements RunRepository {
               failureCode: result.failure.code,
               failureDetail: result.failure.detail,
               delivery: 'failed',
+              ...(outcome.pushedCommit ? { pushedCommit: outcome.pushedCommit } : {}),
             }),
       },
     });
@@ -690,7 +718,8 @@ export class PrismaRunRepository implements RunRepository {
       // Locks the Run row: the conditions, the message and the state change hold together, so a
       // second submission, a claim or a delivery retry in between leaves this one refused.
       const [run] = await tx.$queryRaw<{ id: string; steps: number }[]>`
-        SELECT r.id, (SELECT count(*) FROM run_steps s WHERE s.run_id = r.id)::int AS steps
+        SELECT r.id,
+               (SELECT count(*) FROM run_steps s WHERE s.run_id = r.id)::int AS steps
         FROM runs r
         WHERE r.id = ${runId}::uuid
           AND r.state IN (${Prisma.join([...FINAL_RUN_STATES])})
@@ -699,18 +728,32 @@ export class PrismaRunRepository implements RunRepository {
           AND r.working_copy_removed_at IS NULL
         FOR UPDATE`;
       if (!run) return null;
-      const limit = await tx.run.findUniqueOrThrow({
-        where: { id: runId },
-        select: { limitMaxTotalSteps: true },
-      });
-      if (run.steps >= limit.limitMaxTotalSteps) return null;
+      const current = toRun(
+        await tx.run.findUniqueOrThrow({ where: { id: runId }, select: RUN_FIELDS }),
+      );
+      if (run.steps >= current.limits.maxTotalSteps) return null;
       const last = await tx.runMessage.findFirst({
         where: { runId },
         orderBy: { seq: 'desc' },
         select: { seq: true },
       });
+      const seq = (last?.seq ?? 0) + 1;
+      // Review S1 of #150: how the part before the Follow-up ended stays in the conversation.
+      const ended = partEndOf(current)!;
       await tx.runMessage.create({
-        data: { runId, seq: (last?.seq ?? 0) + 1, kind: 'follow_up', text, at: now },
+        data: {
+          runId,
+          seq,
+          kind: 'part_end',
+          text: ended.detail,
+          endState: ended.state,
+          endFailureCode: ended.failureCode,
+          endDelivery: ended.delivery,
+          at: now,
+        },
+      });
+      await tx.runMessage.create({
+        data: { runId, seq: seq + 1, kind: 'follow_up', text, at: now },
       });
       // Back to the queue: the earlier result is cleared (the Run's state reflects its latest
       // result), its pull request stays (the same one is updated), and the new part gets its
@@ -745,12 +788,12 @@ export class PrismaRunRepository implements RunRepository {
   ): Promise<number> {
     if (runIds.length === 0) return 0;
     // Only the worker that holds a Run's Working copy can report it gone, and only for a Run it
-    // does not carry (retention never removes one that is not final).
+    // does not carry. Never dropped (review S9 of #150): a Follow-up queued meanwhile then fails
+    // at its claim, and the Run says its Working copy was removed.
     const { count } = await this.db.run.updateMany({
       where: {
         id: { in: [...runIds] },
         lastClaimedBy: workerId,
-        state: { in: [...FINAL_RUN_STATES] },
         claimedBy: null,
         workingCopyRemovedAt: null,
       },
@@ -937,6 +980,22 @@ export class PrismaRunRepository implements RunRepository {
         environmentFileSupplied: true,
         environmentFilePath: file.path,
         environmentFileSecretId: file.secretRef,
+      },
+    });
+    return count === 1;
+  }
+
+  async replaceEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string } | null,
+  ): Promise<boolean> {
+    const { count } = await this.db.run.updateMany({
+      where: { id: runId, state: 'preparing', claimedBy: workerId },
+      data: {
+        environmentFileSupplied: file !== null,
+        environmentFilePath: file?.path ?? null,
+        environmentFileSecretId: file?.secretRef ?? null,
       },
     });
     return count === 1;

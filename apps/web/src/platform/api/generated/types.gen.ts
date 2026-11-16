@@ -129,12 +129,19 @@ export type RunQuestionOutput = {
 };
 
 export type RunMessageOutput = {
-    role: 'operator' | 'agent';
-    kind: 'task' | 'question' | 'answer' | 'follow_up';
+    role: 'operator' | 'agent' | 'studio';
+    kind: 'task' | 'question' | 'answer' | 'follow_up' | 'part_end';
     text: string;
+    end?: RunPartEndOutput;
     options?: Array<string>;
     recommendation?: string;
     at: string;
+};
+
+export type RunPartEndOutput = {
+    state: 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
+    failureCode?: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'unknown';
+    delivery?: 'none' | 'delivered' | 'failed';
 };
 
 export type RunOutput = {
@@ -155,7 +162,7 @@ export type RunOutput = {
     commits?: Array<{
         id: string;
         subject: string;
-        pushed: boolean;
+        pushed?: boolean;
     }>;
     hasUncommittedChanges?: boolean;
     environmentFileSupplied: boolean;

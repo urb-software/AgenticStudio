@@ -1,5 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
+import type { z } from 'zod';
 import { ProblemException } from '../../../../platform/http/problem-details.js';
+import type { followUpRefusalSchema } from './run-response.js';
 
 /**
  * Problem `type` URIs of the executions API (RFC 9457 §3.1.1), shared by several features of
@@ -39,7 +41,7 @@ export const EXECUTIONS_PROBLEM_TYPES = {
 } as const;
 
 /** Why a Run cannot take a Follow-up, for the operator (Issue #141; keyed by the domain's codes). */
-const FOLLOW_UP_REFUSAL_DETAILS: Record<string, string> = {
+const FOLLOW_UP_REFUSAL_DETAILS: Record<z.infer<typeof followUpRefusalSchema>, string> = {
   not_finished:
     'The run is still working or waiting for you. Send a Follow-up once it has finished.',
   follow_up_queued: 'A Follow-up is already queued for this run. Wait until it has finished.',
@@ -55,11 +57,13 @@ const FOLLOW_UP_REFUSAL_DETAILS: Record<string, string> = {
 };
 
 /** 409 when the Run cannot take a Follow-up now (Issue #141); the detail says why. */
-export function followUpNotAllowed(reason: string): ProblemException {
+export function followUpNotAllowed(
+  reason: z.infer<typeof followUpRefusalSchema>,
+): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.followUpNotAllowed,
     title: 'Follow-up not possible',
-    detail: FOLLOW_UP_REFUSAL_DETAILS[reason] ?? 'The run cannot take a Follow-up now.',
+    detail: FOLLOW_UP_REFUSAL_DETAILS[reason],
   });
 }
 

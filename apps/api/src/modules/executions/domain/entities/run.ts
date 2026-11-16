@@ -162,7 +162,34 @@ export interface RunQuestion {
 export type RunMessage =
   | { kind: 'question'; question: RunQuestion; at: Date }
   | { kind: 'answer'; text: string; at: Date }
-  | { kind: 'follow_up'; text: string; at: Date };
+  | { kind: 'follow_up'; text: string; at: Date }
+  | ({ kind: 'part_end'; at: Date } & RunPartEnd);
+
+/**
+ * How a part of the Run (its first part, or a Follow-up) ended (review S1 of #150): recorded
+ * when a Follow-up reopens the Run, before its result is cleared, so the earlier result stays
+ * in the conversation. `detail` is the failure detail (redacted when it was reported) or the
+ * cancellation reason; empty otherwise.
+ */
+export interface RunPartEnd {
+  state: Extract<RunState, 'succeeded' | 'failed' | 'cancelled' | 'timed_out'>;
+  failureCode: RunFailureCode | null;
+  delivery: RunDeliveryState | null;
+  detail: string;
+}
+
+/** The end of the Run's current part, as {@link RunPartEnd}; `null` while it is not final. */
+export function partEndOf(
+  run: Pick<Run, 'state' | 'failure' | 'cancellation' | 'delivery'>,
+): RunPartEnd | null {
+  if (!isFinal(run.state)) return null;
+  return {
+    state: run.state as RunPartEnd['state'],
+    failureCode: run.failure?.code ?? null,
+    delivery: run.delivery,
+    detail: run.failure?.detail ?? run.cancellation?.reason ?? '',
+  };
+}
 
 export interface Run {
   id: string;
@@ -380,7 +407,8 @@ export function stepLimitFailure(maxSteps: number, inFollowUp = false): RunFailu
 }
 
 /** Why a resumed Run step continues the agent session (Issue #141; the worker protocol's list). */
-export type ResumeReason = 'answer' | 'usage_limit' | 'follow_up';
+export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up'] as const;
+export type ResumeReason = (typeof RESUME_REASONS)[number];
 
 /**
  * The message that resumes the Run's agent session, and why (Issue #103, #105, #141): the
@@ -394,15 +422,23 @@ export function resumeMessage(
   run: Pick<Run, 'sessionRef' | 'messages'>,
 ): { text: string; reason: ResumeReason } | null {
   const last = run.messages.at(-1);
-  if (run.sessionRef === null || last === undefined || last.kind === 'question') return null;
+  if (run.sessionRef === null || last === undefined) return null;
+  if (last.kind === 'question' || last.kind === 'part_end') return null;
   if (last.kind === 'follow_up') return { text: last.text, reason: 'follow_up' };
   const before = run.messages.at(-2);
   return { text: last.text, reason: before?.kind === 'question' ? 'answer' : 'usage_limit' };
 }
 
-/** The answer that resumes the Run's agent session (Issue #103); see {@link resumeMessage}. */
-export function resumeAnswer(run: Pick<Run, 'sessionRef' | 'messages'>): string | null {
-  return resumeMessage(run)?.text ?? null;
+/**
+ * Whether a resume claim takes a new snapshot of the Project's Environment file (review S3 of
+ * #150): a Follow-up, and a usage-limit resume inside one, work with the Project's current file
+ * (or none), snapshotted at the claim as at a Run's start.
+ */
+export function takesNewEnvironmentFile(
+  run: Pick<Run, 'followUpCount'>,
+  reason: ResumeReason,
+): boolean {
+  return reason === 'follow_up' || (reason === 'usage_limit' && run.followUpCount > 0);
 }
 
 /**

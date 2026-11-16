@@ -15,6 +15,7 @@ import {
   type RunQuestionOutput,
 } from '../../../../platform/api';
 import { useAnswerRun, useRunSteps } from '../../api/runs-queries';
+import { FAILURE_MESSAGE, RUN_STATE_VIEW } from '../../components/run-presentation';
 
 /** Longest answer the API takes, in characters (the API's limit is authoritative). */
 const ANSWER_MAX_LENGTH = 10_000;
@@ -24,12 +25,52 @@ const KIND_LABEL: Record<RunMessageOutput['kind'], string> = {
   question: 'Question',
   answer: 'Answer',
   follow_up: 'Follow-up',
+  part_end: 'Part ended',
 };
 
 const ROLE_LABEL: Record<RunMessageOutput['role'], string> = {
   operator: 'You',
   agent: 'Agent',
+  studio: 'Studio',
 };
+
+const DELIVERY_WORDS: Record<
+  NonNullable<NonNullable<RunMessageOutput['end']>['delivery']>,
+  string
+> = {
+  delivered: 'the draft pull request was delivered',
+  none: 'no changes, nothing pushed',
+  failed: 'the delivery failed',
+};
+
+/**
+ * Where a part of the Run ended before a Follow-up reopened it (review S1 of #150): its state,
+ * why (the failure or cancellation, as plain text) and its delivery. `part` is 0 for the first
+ * part, n for Follow-up n.
+ */
+function PartEnd({ message, part }: { message: RunMessageOutput; part: number }) {
+  const end = message.end;
+  if (!end) return null;
+  const which = part === 0 ? 'The first part' : `Follow-up ${part}`;
+  const reason = end.failureCode ? FAILURE_MESSAGE[end.failureCode] : undefined;
+  return (
+    <li
+      data-slot="run-part-end"
+      className="flex min-w-0 flex-col gap-1 border-t border-border-strong pt-2 text-small"
+    >
+      <p className="m-0 font-semibold text-text-muted">
+        {which} ended: {RUN_STATE_VIEW[end.state].label}
+        {end.delivery ? ` · ${DELIVERY_WORDS[end.delivery]}` : null}
+      </p>
+      {reason ? <p className="m-0 text-text-muted">{reason}</p> : null}
+      {message.text ? (
+        <p className="m-0 font-mono text-code break-words whitespace-pre-wrap text-text-muted">
+          {message.text}
+        </p>
+      ) : null}
+    </li>
+  );
+}
 
 /** The options a question offered, the recommended one marked. Plain text only. */
 function Options({
@@ -190,6 +231,10 @@ export function RunConversation({
       questions += 1;
       const index = asked[questions - 1]?.index ?? questions;
       items.push(<StepDivider key={`step-${index}`} index={index} onShowStep={onShowStep} />);
+    }
+    if (message.kind === 'part_end') {
+      items.push(<PartEnd key={`${i}-part-end`} message={message} part={followUps} />);
+      return;
     }
     if (message.kind === 'follow_up') {
       followUps += 1;

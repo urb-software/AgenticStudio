@@ -67,9 +67,23 @@ export const followUpRefusalSchema = z.enum([
  */
 export const runMessageResponseSchema = z
   .object({
-    role: z.enum(['operator', 'agent']),
-    kind: z.enum(['task', 'question', 'answer', 'follow_up']),
+    /** `studio` (review S1 of #150): Studio's record of how a part of the Run ended. */
+    role: z.enum(['operator', 'agent', 'studio']),
+    kind: z.enum(['task', 'question', 'answer', 'follow_up', 'part_end']),
+    /** A part's end: the failure detail or the cancellation reason (may be empty). */
     text: z.string(),
+    /**
+     * With `part_end` only (review S1 of #150): how the part before a Follow-up ended: its
+     * state, failure code and delivery.
+     */
+    end: z
+      .object({
+        state: z.enum(['succeeded', 'failed', 'cancelled', 'timed_out']),
+        failureCode: runFailureCodeSchema.optional(),
+        delivery: runDeliverySchema.optional(),
+      })
+      .meta({ id: 'RunPartEnd' })
+      .optional(),
     /** A question's offered options, when it offered any (review M2 of #127). */
     options: z.array(z.string()).optional(),
     /** The option a question recommended, when it recommended one. */
@@ -99,10 +113,11 @@ export const runResponseSchema = z
     /**
      * The commits on the Run branch since the start commit, oldest first (at most 200). `pushed`
      * (Issue #141): the commit is on the remote Run branch; otherwise it exists only in the
-     * Working copy.
+     * Working copy. Absent on every commit when the pushed commit is not among the listed ones
+     * (review S5 of #150): which are pushed is then unknown.
      */
     commits: z
-      .array(z.object({ id: z.string(), subject: z.string(), pushed: z.boolean() }))
+      .array(z.object({ id: z.string(), subject: z.string(), pushed: z.boolean().optional() }))
       .optional(),
     /** Whether the Working copy held uncommitted changes after the latest Run step. */
     hasUncommittedChanges: z.boolean().optional(),
@@ -225,15 +240,26 @@ export function toRunResponse(
           at: Date;
         }
       | { kind: 'answer' | 'follow_up'; text: string; at: Date }
+      | {
+          kind: 'part_end';
+          state: 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
+          failureCode: z.infer<typeof runFailureCodeSchema> | null;
+          delivery: z.infer<typeof runDeliverySchema> | null;
+          detail: string;
+          at: Date;
+        }
     )[];
   },
   followUp?: { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> },
 ): RunResponse {
   const last = run.messages.at(-1);
   // Issue #141: the commits up to and including the pushed one are on the remote Run branch.
+  // A pushed commit that is not in the list (rewritten history, or older than the listed
+  // commits) leaves each commit's pushed state unknown (review S5 of #150): no `pushed` field.
   const pushedUpTo = run.workingCopy
     ? run.workingCopy.commits.findIndex((commit) => commit.id === run.pushedCommit)
     : -1;
+  const pushedKnown = run.pushedCommit === null || pushedUpTo !== -1;
   const open = run.state === 'waiting_for_operator' && last?.kind === 'question' ? last : null;
   return {
     id: run.id,
@@ -253,7 +279,7 @@ export function toRunResponse(
           commits: run.workingCopy.commits.map(({ id, subject }, index) => ({
             id,
             subject,
-            pushed: index <= pushedUpTo,
+            ...(pushedKnown ? { pushed: index <= pushedUpTo } : {}),
           })),
           hasUncommittedChanges: run.workingCopy.hasUncommittedChanges,
         }
@@ -308,23 +334,35 @@ export function toRunResponse(
     messages: [
       { role: 'operator', kind: 'task', text: run.task, at: run.createdAt.toISOString() },
       ...run.messages.map((message) =>
-        message.kind === 'question'
+        message.kind === 'part_end'
           ? {
-              role: 'agent' as const,
-              kind: 'question' as const,
-              text: message.question.text,
-              ...(message.question.options ? { options: [...message.question.options] } : {}),
-              ...(message.question.recommendation === undefined
-                ? {}
-                : { recommendation: message.question.recommendation }),
+              role: 'studio' as const,
+              kind: 'part_end' as const,
+              text: message.detail,
+              end: {
+                state: message.state,
+                ...(message.failureCode ? { failureCode: message.failureCode } : {}),
+                ...(message.delivery ? { delivery: message.delivery } : {}),
+              },
               at: message.at.toISOString(),
             }
-          : {
-              role: 'operator' as const,
-              kind: message.kind,
-              text: message.text,
-              at: message.at.toISOString(),
-            },
+          : message.kind === 'question'
+            ? {
+                role: 'agent' as const,
+                kind: 'question' as const,
+                text: message.question.text,
+                ...(message.question.options ? { options: [...message.question.options] } : {}),
+                ...(message.question.recommendation === undefined
+                  ? {}
+                  : { recommendation: message.question.recommendation }),
+                at: message.at.toISOString(),
+              }
+            : {
+                role: 'operator' as const,
+                kind: message.kind,
+                text: message.text,
+                at: message.at.toISOString(),
+              },
       ),
     ],
   };
@@ -340,6 +378,3 @@ export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResp
   void _question;
   return item;
 }
-
-/** What the operator API needs from a Run, for the mappers above. */
-export type RunResponseSource = Parameters<typeof toRunResponse>[0];

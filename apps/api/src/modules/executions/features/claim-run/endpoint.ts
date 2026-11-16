@@ -37,9 +37,12 @@ export class ClaimRunEndpoint {
       integrationBranch: run.integrationBranch,
       // The Environment file's path (Issue #104), recorded at the start claim: delivery never
       // commits or pushes it, in a retry too.
-      studioPaths: run.environmentFilePath ? [run.environmentFilePath] : [],
-      // Issue #104: the snapshot, to the claiming worker only, when it starts the Run; never logged.
+      // Review S3 of #150: a Follow-up's claim lists the earlier path too, which the worker removes.
+      studioPaths: run.studioPaths,
+      // Issue #104: the snapshot, to the claiming worker only, when it starts the Run (or, review
+      // S3 of #150, takes a new one for a Follow-up); never logged.
       ...(run.environmentFile ? { environmentFile: run.environmentFile } : {}),
+      ...(run.replaceEnvironmentFile ? { replaceEnvironmentFile: true as const } : {}),
       // Issue #102: a failed Run handed out again is a delivery retry, nothing else; it pushes
       // exactly the Run branch Studio recorded (review R1 of #122). Issue #103: an answered Run
       // resumes its agent session with the answer, its events continuing after the stored log.

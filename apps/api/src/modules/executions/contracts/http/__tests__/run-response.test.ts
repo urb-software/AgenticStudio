@@ -167,6 +167,39 @@ describe('Run response: Follow-ups (Issue #141)', () => {
     expect(toRunListItem(followedUp).followUps).toBe(1);
   });
 
+  it('leaves the pushed state unknown when the pushed commit is not listed (review S5)', () => {
+    const response = runResponseSchema.parse(
+      toRunResponse({ ...followedUp, pushedCommit: 'f'.repeat(40) }),
+    );
+    expect(response.commits?.every((commit) => !('pushed' in commit))).toBe(true);
+  });
+
+  it("shows a part's end as Studio's record (review S1)", () => {
+    const response = runResponseSchema.parse(
+      toRunResponse({
+        ...followedUp,
+        messages: [
+          {
+            kind: 'part_end',
+            state: 'cancelled',
+            failureCode: null,
+            delivery: null,
+            detail: 'Cancelled by the operator.',
+            at: T1,
+          },
+          { kind: 'follow_up', text: 'Also add tests.', at: T2 },
+        ],
+      }),
+    );
+    expect(response.messages?.[1]).toEqual({
+      role: 'studio',
+      kind: 'part_end',
+      text: 'Cancelled by the operator.',
+      end: { state: 'cancelled' },
+      at: T1.toISOString(),
+    });
+  });
+
   it('carries the eligibility only when given: allowed, or refused with the reason', () => {
     expect(toRunResponse(followedUp).followUp).toBeUndefined();
     expect(toRunResponse(followedUp, { allowed: true }).followUp).toEqual({ allowed: true });

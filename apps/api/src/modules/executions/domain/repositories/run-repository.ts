@@ -51,6 +51,11 @@ export interface ClaimedRunChange {
    * becomes the Run's session reference, so the operator can resume the Run later.
    */
   sessionRef?: string | null;
+  /**
+   * With `failed` / `delivery_failed` (review S2 of #150): the commit the delivery pushed before
+   * it failed; recorded as the Run's pushed commit.
+   */
+  pushedCommit?: string | null;
   now: Date;
 }
 
@@ -66,6 +71,8 @@ export interface DeliveryRetryOutcome {
     { state: 'succeeded'; delivery: RunDeliveryOutcome } | { state: 'failed'; failure: RunFailure };
   /** When set, becomes the Run's latest Working copy state. */
   workingCopy: RunWorkingCopy | null;
+  /** A retry that failed after its push: the pushed commit (review S2 of #150). */
+  pushedCommit?: string | null;
   now: Date;
 }
 
@@ -259,7 +266,8 @@ export interface RunRepository {
   resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<ResumeAfterLimitOutcome>;
 
   /**
-   * Queues a Follow-up (Issue #141), in one transaction: if the Run is still finished (a final
+   * Queues a Follow-up (Issue #141), in one transaction, recording first how the part before it
+   * ended (a `part_end` message, review S1 of #150): if the Run is still finished (a final
    * state, held by no worker, no delivery retry requested, no Follow-up queued), has a session
    * reference and a recorded Working copy that was not reported removed, and has taken fewer Run
    * steps than its total, `text` is stored as a `follow_up` message and the Run goes back to
@@ -272,7 +280,8 @@ export interface RunRepository {
 
   /**
    * Records that `workerId`'s retention removed the Working copies of these Runs (Issue #141):
-   * only for final Runs it last claimed and does not hold. Returns how many were recorded.
+   * only for Runs it last claimed and does not hold, also one queued for a Follow-up meanwhile
+   * (review S9 of #150). Returns how many were recorded.
    */
   markWorkingCopiesRemoved(workerId: string, runIds: readonly string[], now: Date): Promise<number>;
 
@@ -329,6 +338,17 @@ export interface RunRepository {
     runId: string,
     workerId: string,
     file: { path: string; secretRef: string },
+  ): Promise<boolean>;
+
+  /**
+   * Records the new Environment file snapshot of a `preparing` Run held by `workerId` (review S3
+   * of #150: a Follow-up, or a usage-limit resume inside one, takes the Project's current file),
+   * or that it has none now; false (nothing changed) if the Run is no longer so held.
+   */
+  replaceEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string } | null,
   ): Promise<boolean>;
 
   /** The reference to the Run's Environment file snapshot, or `null` (none, or already deleted). */

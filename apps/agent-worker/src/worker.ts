@@ -8,7 +8,6 @@ import {
   type WorkingCopyReport,
   type WorkerStatusReport,
 } from '@agentic-studio/contracts';
-import { lstat } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AGENT_DEFINITION } from './agent-definition/index.js';
@@ -279,12 +278,14 @@ export class AgentWorker {
       // A resumed Run continues in the Working copy it kept (Issue #103).
       prepared =
         run.kind === 'resume'
-          ? await this.options.workingCopies.locate(run)
+          ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
       if (run.resumeReason === 'follow_up') {
         log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} started`);
-        await this.noticeMissingStudioPaths(run, prepared, stepIndex, log);
+      } else if (run.resumeReason === 'usage_limit' && run.followUpNumber !== undefined) {
+        // Review S7 of #150: the Follow-up the usage limit paused goes on.
+        log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} resumed`);
       }
       outbox.send('running', (signal) => api.reportState(run.runId, { state: 'running' }, signal));
       processes = this.processesFor(prepared);
@@ -385,12 +386,19 @@ export class AgentWorker {
       // A Follow-up ends with the step that did not finish (Issue #141); a failed delivery after
       // a done step already marked its end.
       if (run.kind !== 'deliver' && !followUpMarked && reason !== 'lost') {
-        followUpEnded(
-          run,
-          stepIndex,
-          log,
-          reason === 'cancel' ? 'cancelled' : reason === 'timeout' ? 'timed out' : 'failed',
-        );
+        // Review S7 of #150: the usage limit pauses the Follow-up; a resume continues it.
+        if (error instanceof UsageLimitError && reason === undefined) {
+          if (run.followUpNumber !== undefined) {
+            log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} paused: usage limit`);
+          }
+        } else {
+          followUpEnded(
+            run,
+            stepIndex,
+            log,
+            reason === 'cancel' ? 'cancelled' : reason === 'timeout' ? 'timed out' : 'failed',
+          );
+        }
       }
       if (reason !== 'lost') await this.closeLog(log);
       await this.finish(run, error, reason, {
@@ -527,31 +535,6 @@ export class AgentWorker {
     return parsed.data;
   }
 
-  /**
-   * Issue #141, coordinator decision 5: a Follow-up uses the Environment file only while the
-   * Working copy still holds it; the log says when it does not.
-   */
-  private async noticeMissingStudioPaths(
-    run: RunPayload,
-    prepared: PreparedRun,
-    stepIndex: number,
-    log: RunLog,
-  ): Promise<void> {
-    for (const path of run.studioPaths) {
-      const present = await lstat(posix.join(prepared.repoDir, path)).then(
-        () => true,
-        () => false,
-      );
-      if (!present) {
-        log.push(
-          stepIndex,
-          'notice',
-          `The Environment file ${path} is no longer in the Working copy; this Follow-up runs without it.`,
-        );
-      }
-    }
-  }
-
   /** Reports how a Run ended when its step did not end normally. */
   private async finish(
     run: RunPayload,
@@ -582,7 +565,15 @@ export class AgentWorker {
       const send = (signal?: AbortSignal) =>
         api.reportState(
           run.runId,
-          { state: 'failed', failure: deliveryFailure, ...withWorkingCopy },
+          {
+            state: 'failed',
+            failure: deliveryFailure,
+            ...withWorkingCopy,
+            // Review S2 of #150: what the delivery pushed before it failed.
+            ...(error instanceof DeliveryFailedError && error.pushedCommit !== undefined
+              ? { pushedCommit: error.pushedCommit }
+              : {}),
+          },
           signal,
         );
       try {

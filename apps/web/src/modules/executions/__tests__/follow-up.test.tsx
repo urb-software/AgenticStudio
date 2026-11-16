@@ -206,6 +206,13 @@ describe('Run page: Follow-up (Issue #141)', () => {
 describe('Run page: a Run with Follow-ups (Issue #141)', () => {
   const messages: RunOutput['messages'] = [
     { role: 'operator', kind: 'task', text: 'Add a health check', at: '2026-11-15T10:00:00.000Z' },
+    {
+      role: 'studio',
+      kind: 'part_end',
+      text: '',
+      end: { state: 'succeeded', delivery: 'delivered' },
+      at: '2026-11-15T11:00:00.000Z',
+    },
     { role: 'operator', kind: 'follow_up', text: 'Handle HEAD.', at: '2026-11-15T11:00:00.000Z' },
     {
       role: 'agent',
@@ -214,6 +221,13 @@ describe('Run page: a Run with Follow-ups (Issue #141)', () => {
       at: '2026-11-15T11:01:00.000Z',
     },
     { role: 'operator', kind: 'answer', text: '204', at: '2026-11-15T11:02:00.000Z' },
+    {
+      role: 'studio',
+      kind: 'part_end',
+      text: 'The tests did not compile.',
+      end: { state: 'failed', failureCode: 'agent_failed' },
+      at: '2026-11-15T12:00:00.000Z',
+    },
     { role: 'operator', kind: 'follow_up', text: 'And OPTIONS.', at: '2026-11-15T12:00:00.000Z' },
   ];
   const step = (index: number, outcome: 'done' | 'needs_input', summary: string, at: string) => ({
@@ -253,6 +267,7 @@ describe('Run page: a Run with Follow-ups (Issue #141)', () => {
       'You · Task',
       'Run step 1 · log below',
       'Agent · Result',
+      'The first part ended: Succeeded · the draft pull request was delivered',
       'Follow-up 1 begins',
       'You · Follow-up 1',
       'Run step 2 · log below',
@@ -260,6 +275,7 @@ describe('Run page: a Run with Follow-ups (Issue #141)', () => {
       'You · Answer',
       'Run step 3 · log below',
       'Agent · Result',
+      'Follow-up 1 ended: Failed',
       'Follow-up 2 begins',
       'You · Follow-up 2',
     ];
@@ -270,6 +286,8 @@ describe('Run page: a Run with Follow-ups (Issue #141)', () => {
       at = found + 1;
     }
     expect(within(conversation).getByText('Added GET /health.')).toBeTruthy();
+    // Review S1 of #150: the earlier failure's reason stays visible, as plain text.
+    expect(within(conversation).getByText('The tests did not compile.')).toBeTruthy();
     // The kept pull request: this Follow-up pushed nothing.
     expect(screen.getByText('This Follow-up pushed nothing.')).toBeTruthy();
     expect(screen.queryByText('Nothing was pushed.')).toBeNull();
@@ -300,6 +318,16 @@ describe('Run page: a Run with Follow-ups (Issue #141)', () => {
     // The agent's subject is plain text, never markup.
     expect(commits[1]?.textContent).toContain('Handle <b>HEAD</b>Only in the working copy');
     expect(commits[1]?.querySelector('b')).toBeNull();
+  });
+
+  it('says the pushed state is unknown when the pushed commit is not listed (review S5)', async () => {
+    const run = delivered({ commits: [{ id: C1, subject: 'Add GET /health' }] });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    const commits = within(screen.getByRole('list', { name: 'Commits' })).getAllByRole('listitem');
+    expect(commits[0]?.textContent).toContain('Pushed state unknown');
   });
 
   it('counts the run steps of the run when it has had no Follow-up', async () => {

@@ -2121,7 +2121,8 @@
             "type": "string",
             "enum": [
               "operator",
-              "agent"
+              "agent",
+              "studio"
             ]
           },
           "kind": {
@@ -2130,11 +2131,15 @@
               "task",
               "question",
               "answer",
-              "follow_up"
+              "follow_up",
+              "part_end"
             ]
           },
           "text": {
             "type": "string"
+          },
+          "end": {
+            "$ref": "#/components/schemas/RunPartEnd_Output"
           },
           "options": {
             "type": "array",
@@ -2156,6 +2161,45 @@
           "kind",
           "text",
           "at"
+        ],
+        "additionalProperties": false
+      },
+      "RunPartEnd_Output": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out"
+            ]
+          },
+          "failureCode": {
+            "type": "string",
+            "enum": [
+              "provider_disabled",
+              "preparation_failed",
+              "agent_failed",
+              "usage_limit",
+              "worker_lost",
+              "delivery_failed",
+              "step_limit",
+              "unknown"
+            ]
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "none",
+              "delivered",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "state"
         ],
         "additionalProperties": false
       },
@@ -2259,8 +2303,7 @@
               },
               "required": [
                 "id",
-                "subject",
-                "pushed"
+                "subject"
               ],
               "additionalProperties": false
             }

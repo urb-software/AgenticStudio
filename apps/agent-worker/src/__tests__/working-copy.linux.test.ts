@@ -415,6 +415,94 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     });
   });
 
+  // Review S3 of #150: a Follow-up works with the Project's current Environment file.
+  describe('replacing the Environment file for a Follow-up', () => {
+    const OLD = 'DB_PASSWORD=test-only-old';
+    const NEW = 'DB_PASSWORD=test-only-new';
+    async function followUp(copies: ReturnType<typeof workingCopies>, patch: Partial<RunPayload>) {
+      const run = payload({
+        environmentFile: { path: '.env', content: OLD },
+        studioPaths: ['.env'],
+      });
+      const prepared = await copies.prepare(run, signal());
+      const { environmentFile: _file, ...rest } = run;
+      void _file;
+      const located = await copies.locate(
+        {
+          ...rest,
+          kind: 'resume',
+          runBranch: prepared.runBranch,
+          sessionRef: 's-1',
+          answer: 'Go on.',
+          resumeReason: 'follow_up',
+          followUpNumber: 1,
+          nextSeq: 4,
+          replaceEnvironmentFile: true,
+          ...patch,
+        },
+        signal(),
+      );
+      return { prepared, located };
+    }
+
+    it("writes the Project's current file in place of the earlier one, owner-only and excluded", async () => {
+      const copies = workingCopies();
+      const { prepared } = await followUp(copies, {
+        studioPaths: ['.env', 'config/test.env'],
+        environmentFile: { path: 'config/test.env', content: NEW },
+      });
+
+      expect(existsSync(join(prepared.repoDir, '.env'))).toBe(false);
+      const file = join(prepared.repoDir, 'config', 'test.env');
+      expect(readFileSync(file, 'utf8')).toBe(NEW);
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(inRepo(prepared.repoDir, ['status', '--porcelain', '--untracked-files=all'])).toBe('');
+      expect(JSON.parse(readFileSync(join(prepared.runDir, 'run.json'), 'utf8'))).toMatchObject({
+        studioPaths: ['.env', 'config/test.env'],
+      });
+    });
+
+    it('removes the earlier file when the Project has none now, never following a symlink', async () => {
+      const copies = workingCopies();
+      const outside = join(dataDir, 'outside.txt');
+      writeFileSync(outside, 'keep me');
+      const run = payload({
+        environmentFile: { path: '.env', content: OLD },
+        studioPaths: ['.env'],
+      });
+      const prepared = await copies.prepare(run, signal());
+      rmSync(join(prepared.repoDir, '.env'));
+      symlinkSync(outside, join(prepared.repoDir, '.env'));
+      const { environmentFile: _file, ...rest } = run;
+      void _file;
+
+      await copies.locate(
+        {
+          ...rest,
+          kind: 'resume',
+          runBranch: prepared.runBranch,
+          sessionRef: 's-1',
+          answer: 'Go on.',
+          resumeReason: 'follow_up',
+          followUpNumber: 1,
+          nextSeq: 4,
+          replaceEnvironmentFile: true,
+        },
+        signal(),
+      );
+
+      expect(existsSync(join(prepared.repoDir, '.env'))).toBe(false);
+      expect(readFileSync(outside, 'utf8')).toBe('keep me');
+    });
+
+    it('rewrites the same path with the new content', async () => {
+      const { prepared } = await followUp(workingCopies(), {
+        environmentFile: { path: '.env', content: NEW },
+      });
+      expect(readFileSync(join(prepared.repoDir, '.env'), 'utf8')).toBe(NEW);
+    });
+  });
+
   describe('result report', () => {
     async function runFake(task: string) {
       const copies = workingCopies();

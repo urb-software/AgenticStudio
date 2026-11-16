@@ -419,6 +419,20 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       ).toBe(false);
     });
 
+    // Review S7 of #150: only what the agent gave replaces the old text.
+    it('replaces only the title when the agent gave a title without a description', async () => {
+      const { run, prepared } = await deliveredOnce();
+      agentWrites(prepared, { 'empty.ts': 'y\n' }, 'Handle the empty list');
+
+      await finish(run, prepared, {
+        ...DONE,
+        pullRequest: { title: 'A better title', body: '  ' },
+      });
+
+      expect(stub.updated).toHaveLength(1);
+      expect(stub.updated[0]?.body).toEqual({ title: 'A better title' });
+    });
+
     it('keeps the title and description when the agent gave no new ones', async () => {
       const { run, prepared } = await deliveredOnce();
       agentWrites(prepared, { 'empty.ts': 'y\n' }, 'Handle the empty list');

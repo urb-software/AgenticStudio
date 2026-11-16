@@ -258,6 +258,9 @@ export class Deliveries implements DeliveryPort {
     const pushedCommit = await this.push(prepared, run, target.transport, token, signal);
 
     const content = pullRequestContent(run, prepared, result);
+    // Review S7 of #150: only what the agent gave replaces the old text; a title alone keeps the
+    // description (whose footer is Studio's).
+    const update = result.pullRequest?.body.trim() ? content : { title: content.title };
     const pushed = { branchPushed: true, pushedCommit };
     if (recorded !== undefined) {
       // Repeated delivery: the same pull request; new title and description only when the
@@ -267,7 +270,7 @@ export class Deliveries implements DeliveryPort {
         async () => {
           if (result.pullRequest) {
             await client.update(
-              { owner: target.owner, repo: target.repo, number: recorded, ...content },
+              { owner: target.owner, repo: target.repo, number: recorded, ...update },
               signal,
             );
           }
@@ -296,7 +299,7 @@ export class Deliveries implements DeliveryPort {
         );
         if (pull.reused && result.pullRequest) {
           await client.update(
-            { owner: target.owner, repo: target.repo, number: pull.number, ...content },
+            { owner: target.owner, repo: target.repo, number: pull.number, ...update },
             signal,
           );
         }

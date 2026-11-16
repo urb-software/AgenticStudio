@@ -145,15 +145,45 @@ export const zRunQuestionOutput = z.object({
     recommendation: z.string().optional()
 });
 
+export const zRunPartEndOutput = z.object({
+    state: z.enum([
+        'succeeded',
+        'failed',
+        'cancelled',
+        'timed_out'
+    ]),
+    failureCode: z.enum([
+        'provider_disabled',
+        'preparation_failed',
+        'agent_failed',
+        'usage_limit',
+        'worker_lost',
+        'delivery_failed',
+        'step_limit',
+        'unknown'
+    ]).optional(),
+    delivery: z.enum([
+        'none',
+        'delivered',
+        'failed'
+    ]).optional()
+});
+
 export const zRunMessageOutput = z.object({
-    role: z.enum(['operator', 'agent']),
+    role: z.enum([
+        'operator',
+        'agent',
+        'studio'
+    ]),
     kind: z.enum([
         'task',
         'question',
         'answer',
-        'follow_up'
+        'follow_up',
+        'part_end'
     ]),
     text: z.string(),
+    end: zRunPartEndOutput.optional(),
     options: z.array(z.string()).optional(),
     recommendation: z.string().optional(),
     at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
@@ -195,7 +225,7 @@ export const zRunOutput = z.object({
     commits: z.array(z.object({
         id: z.string(),
         subject: z.string(),
-        pushed: z.boolean()
+        pushed: z.boolean().optional()
     })).optional(),
     hasUncommittedChanges: z.boolean().optional(),
     environmentFileSupplied: z.boolean(),

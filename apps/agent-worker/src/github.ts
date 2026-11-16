@@ -109,9 +109,12 @@ export interface PullRequestClient {
   openDraft(target: PullRequestTarget, signal: AbortSignal): Promise<OpenedPullRequest>;
   /** The Run's recorded pull request, by number (Issue #141). */
   get(pull: PullRequestNumber, signal: AbortSignal): Promise<PullRequestState>;
-  /** Replaces the pull request's title and description (Issue #141). */
+  /**
+   * Replaces the pull request's title and, when given, its description (Issue #141; review S7
+   * of #150: a title alone keeps the description).
+   */
   update(
-    pull: PullRequestNumber & { title: string; body: string },
+    pull: PullRequestNumber & { title: string; body?: string },
     signal: AbortSignal,
   ): Promise<void>;
 }
@@ -183,13 +186,13 @@ export class GitHubPullRequests implements PullRequestClient {
   }
 
   async update(
-    pull: PullRequestNumber & { title: string; body: string },
+    pull: PullRequestNumber & { title: string; body?: string },
     signal: AbortSignal,
   ): Promise<void> {
     const answer = await this.call(
       'PATCH',
       this.pullPath(pull),
-      { title: pull.title, body: pull.body },
+      { title: pull.title, ...(pull.body === undefined ? {} : { body: pull.body }) },
       pull,
       signal,
       'update',

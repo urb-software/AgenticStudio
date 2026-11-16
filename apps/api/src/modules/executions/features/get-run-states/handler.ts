@@ -23,9 +23,9 @@ export class GetRunStatesHandler {
 
   async execute(
     runIds: readonly string[],
-    removed: { workerId: string; runIds: readonly string[] } = { workerId: '', runIds: [] },
+    removed?: { workerId: string; runIds: readonly string[] },
   ): Promise<RunStateView[]> {
-    if (removed.runIds.length > 0) {
+    if (removed && removed.runIds.length > 0) {
       await this.runs.markWorkingCopiesRemoved(
         removed.workerId,
         [...new Set(removed.runIds)],

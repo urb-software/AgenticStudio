@@ -2,7 +2,8 @@
 -- Working copy and delivers to the same pull request. Additive columns; the pull request may now
 -- stay on a Run that is queued, running or ended otherwise after a Follow-up (it is the Run's one
 -- pull request), and a Run queued for a Follow-up holds no place until it is claimed.
--- Rollback (only once no Run has a Follow-up): drop the six columns and the new CHECK
+-- Rollback (only once no Run has a Follow-up): drop the six runs columns and the three
+-- run_messages columns and the new CHECK
 -- constraints, restore run_messages_kind_check, runs_pull_request_check and
 -- runs_one_active_per_project_key as created in 20261115800000_run_questions and
 -- 20261115300000_run_delivery.
@@ -27,9 +28,19 @@ ALTER TABLE "runs" ADD CONSTRAINT "runs_pull_request_check"
     CHECK (("pull_request_url" IS NULL) = ("pull_request_number" IS NULL)
        AND ("delivery" IS DISTINCT FROM 'delivered' OR "pull_request_url" IS NOT NULL));
 
+-- A Follow-up message, and the end of the part before it (review S1 of #150): how that part
+-- ended (its state, failure code and delivery; the failure detail or cancel reason as text),
+-- recorded before the Follow-up clears the Run's result.
+ALTER TABLE "run_messages" ADD COLUMN     "end_delivery" VARCHAR(16),
+ADD COLUMN     "end_failure_code" VARCHAR(32),
+ADD COLUMN     "end_state" VARCHAR(32);
 ALTER TABLE "run_messages" DROP CONSTRAINT "run_messages_kind_check";
 ALTER TABLE "run_messages" ADD CONSTRAINT "run_messages_kind_check"
-    CHECK ("kind" IN ('question', 'answer', 'follow_up'));
+    CHECK ("kind" IN ('question', 'answer', 'follow_up', 'part_end'));
+ALTER TABLE "run_messages" ADD CONSTRAINT "run_messages_part_end_check"
+    CHECK (("kind" = 'part_end') = ("end_state" IS NOT NULL)
+       AND ("end_state" IS NOT NULL OR ("end_failure_code" IS NULL AND "end_delivery" IS NULL))
+       AND ("end_state" IS NULL OR "end_state" IN ('succeeded', 'failed', 'cancelled', 'timed_out')));
 
 -- A Run queued for a Follow-up waits for a free place like any queued Run: it does not hold
 -- its project's place (an answered Run, queued with a session reference, still does).
