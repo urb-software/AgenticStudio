@@ -239,6 +239,16 @@ const environmentSchema = z.object({
   // Days a Run's Environment file snapshot is kept while its failed delivery can be retried
   // (Issue #104, review of #125): 1-90, default 7.
   STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  // Issue #143: how long a finished Run's Working copy on the agent side is kept. Studio decides;
+  // the agent worker removes what Studio says. Without a pull request: STUDIO_RETENTION_DAYS (7)
+  // after the Run finished, and at most STUDIO_RETENTION_MAX_PER_PROJECT (10) such Runs per
+  // Project. With a pull request: until STUDIO_RETENTION_OPEN_PR_IDLE_DAYS (30) days without
+  // activity, or STUDIO_RETENTION_AFTER_PR_END_HOURS (24) hours after it was merged or closed,
+  // whichever is first.
+  STUDIO_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
+  STUDIO_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
+  STUDIO_RETENTION_OPEN_PR_IDLE_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  STUDIO_RETENTION_AFTER_PR_END_HOURS: z.coerce.number().int().min(0).max(8760).default(24),
   NODE_ENV: z.string().optional(),
 });
 
@@ -289,6 +299,13 @@ export interface AppConfig {
    * delivery can be retried (`STUDIO_RUN_SNAPSHOT_RETENTION_DAYS`, default 7; Issue #104).
    */
   runSnapshotRetentionDays: number;
+  /** Working copy retention on the agent side (Issue #143), from the `STUDIO_RETENTION_*` settings. */
+  retention: {
+    days: number;
+    maxPerProject: number;
+    openPullRequestIdleDays: number;
+    hoursAfterPullRequestEnd: number;
+  };
 }
 
 export interface LoadConfigOptions {
@@ -343,5 +360,11 @@ export function loadConfig(
     },
     runLogMaxBytes: result.data.STUDIO_RUN_LOG_MAX_BYTES,
     runSnapshotRetentionDays: result.data.STUDIO_RUN_SNAPSHOT_RETENTION_DAYS,
+    retention: {
+      days: result.data.STUDIO_RETENTION_DAYS,
+      maxPerProject: result.data.STUDIO_RETENTION_MAX_PER_PROJECT,
+      openPullRequestIdleDays: result.data.STUDIO_RETENTION_OPEN_PR_IDLE_DAYS,
+      hoursAfterPullRequestEnd: result.data.STUDIO_RETENTION_AFTER_PR_END_HOURS,
+    },
   };
 }

@@ -9,8 +9,6 @@ import {
 } from '@agentic-studio/contracts';
 import { excerptAllowance, logExcerpt } from './check-logs.js';
 
-/** The whole reading of logs of one preparation stays below the lookup's lease of two minutes. */
-const LOGS_BUDGET_MS = 90_000;
 import {
   type CheckReport,
   GitHubPullRequests,
@@ -21,6 +19,12 @@ import {
 } from './github.js';
 import { isRunBranchOf } from './run-branch.js';
 import type { StudioApi } from './studio-api.js';
+
+/**
+ * How long one preparation may take in all, counted from the start of the lookup: it stays below
+ * the lookup's lease of two minutes, so no other worker is handed it while this one still reads.
+ */
+const LOGS_BUDGET_MS = 90_000;
 
 /**
  * Pull request lookups (Issue #142): the agent worker answers Studio's questions about a Run's
@@ -337,6 +341,7 @@ export class PullRequestLookups implements LookupService {
     target: PullRequestTarget,
     signal: AbortSignal,
   ): Promise<FailingCheckLogsResult> {
+    const deadline = Date.now() + (this.options.logsBudgetMs ?? LOGS_BUDGET_MS);
     try {
       const scope = await this.openScope(target, signal);
       if (scope.missing || scope.details.merged || scope.details.state === 'closed') {
@@ -355,7 +360,6 @@ export class PullRequestLookups implements LookupService {
       const failed = reports.filter((report) => report.state === 'failed');
       const checks: FailingCheckLogsResult['checks'] = [];
       let used = 0;
-      const deadline = Date.now() + (this.options.logsBudgetMs ?? LOGS_BUDGET_MS);
       for (const report of failed) {
         const entry = await this.failedCheck(reader, repository, report, used, signal, deadline);
         used += Buffer.byteLength(entry.excerpt ?? '', 'utf8');

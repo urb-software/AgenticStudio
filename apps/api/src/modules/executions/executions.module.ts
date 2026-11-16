@@ -29,6 +29,8 @@ import { ListRunEventsEndpoint } from './features/list-run-events/endpoint.js';
 import { ListRunEventsHandler } from './features/list-run-events/handler.js';
 import { ListRunStepsEndpoint } from './features/list-run-steps/endpoint.js';
 import { ListRunStepsHandler } from './features/list-run-steps/handler.js';
+import { GetAgentWorkerEndpoint } from './features/get-agent-worker/endpoint.js';
+import { GetAgentWorkerHandler } from './features/get-agent-worker/handler.js';
 import { GetRunStatesEndpoint } from './features/get-run-states/endpoint.js';
 import { GetRunStatesHandler } from './features/get-run-states/handler.js';
 import { ListProvidersEndpoint } from './features/list-providers/endpoint.js';
@@ -102,6 +104,7 @@ import { OPERATOR_SESSIONS } from './ports/operator-sessions.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL } from './ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from './ports/run-secret-values.js';
+import { RETENTION_POLICY, type RetentionPolicy } from './ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from './ports/worker-lease.js';
 import { WORKER_STATUS_STORE } from './ports/worker-status-store.js';
 
@@ -177,6 +180,7 @@ export class ExecutionsModule {
         GetRunStatesEndpoint,
         ReportWorkerStatusEndpoint,
         ListProvidersEndpoint,
+        GetAgentWorkerEndpoint,
       ],
       providers: [
         { provide: RUN_REPOSITORY, useClass: PrismaRunRepository },
@@ -204,6 +208,11 @@ export class ExecutionsModule {
         {
           provide: WORKER_LEASE,
           useFactory: (config: AppConfig): WorkerLease => ({ seconds: config.workerLeaseSeconds }),
+          inject: [APP_CONFIG],
+        },
+        {
+          provide: RETENTION_POLICY,
+          useFactory: (config: AppConfig): RetentionPolicy => ({ ...config.retention }),
           inject: [APP_CONFIG],
         },
         {
@@ -242,6 +251,7 @@ export class ExecutionsModule {
         GetRunStatesHandler,
         ReportWorkerStatusHandler,
         ListProvidersHandler,
+        GetAgentWorkerHandler,
         SweepLostWorkersHandler,
         { provide: ENVIRONMENT_FILE_SNAPSHOTS, useClass: SecretStoreEnvironmentFileSnapshots },
         {

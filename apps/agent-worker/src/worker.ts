@@ -6,6 +6,7 @@ import {
   type RunStepResult,
   runStepResultSchema,
   type WorkingCopyReport,
+  type WorkerDisk,
   type WorkerStatusReport,
 } from '@agentic-studio/contracts';
 import { posix } from 'node:path';
@@ -74,6 +75,11 @@ export interface AgentWorkerOptions {
    * knows which providers this worker enables. Fixed for the life of the process.
    */
   status: WorkerStatusReport;
+  /**
+   * Issue #143: the latest disk figures, added to each status report (none until measured). The
+   * monitor measures at most every ten minutes, so this is cheap to ask.
+   */
+  disk?: { snapshot(): WorkerDisk | undefined };
   /** Pause between two claims when there is no work, or after the API was unreachable. */
   pollMs: number;
   /** Interval of heartbeats while carrying a Run. */
@@ -803,7 +809,11 @@ export class AgentWorker {
   /** Never throws: a failed status report is logged, and the loop goes on. */
   private async reportStatus(): Promise<void> {
     try {
-      await this.options.api.reportStatus(this.options.status, this.shutdown.signal);
+      const disk = this.options.disk?.snapshot();
+      await this.options.api.reportStatus(
+        disk ? { ...this.options.status, disk } : this.options.status,
+        this.shutdown.signal,
+      );
     } catch (error) {
       if (!this.stopping)
         this.options.logger.error(`Reporting the status failed: ${describe(error)}`);

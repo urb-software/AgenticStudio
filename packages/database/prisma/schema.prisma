@@ -272,6 +272,12 @@ model Run {
   /// a new one is requested or succeeds.
   prPrepareError          String?      @map("pr_prepare_error") @db.VarChar(500)
   preparedFollowUp        RunPreparedFollowUp?
+  /// Issue #143: when a lookup first reported the pull request merged, closed or missing; cleared
+  /// when a later one reports it open or draft again. Set only with such a pr_state.
+  prEndedAt               DateTime?    @map("pr_ended_at") @db.Timestamptz(6)
+  /// Issue #143: when the Run last had activity (a Run step, an Answer or a Follow-up); starts at
+  /// creation. Working copy retention counts the idle time from here.
+  lastActivityAt          DateTime     @default(dbgenerated("now()")) @map("last_activity_at") @db.Timestamptz(6)
   steps                   RunStep[]
   events                  RunEvent[]
   messages                RunMessage[]
@@ -455,7 +461,6 @@ model RunDiffState {
   resultCommit   String  @map("result_commit") @db.VarChar(64)
   previousTree   String  @map("previous_tree") @db.VarChar(64)
   previousCommit String  @map("previous_commit") @db.VarChar(64)
-  pushedCommit   String? @map("pushed_commit") @db.VarChar(64)
 
   @@map("run_diff_states")
 }

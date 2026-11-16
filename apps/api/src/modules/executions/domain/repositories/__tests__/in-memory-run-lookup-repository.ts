@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PullRequestState } from '../../entities/run.js';
+import { isPullRequestEnded, type PullRequestState } from '../../entities/run.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type {
   ClaimedLookup,
@@ -25,6 +25,11 @@ export interface FakeLookup {
   retryAt: Date | null;
   finishedAt: Date | null;
   error: string | null;
+}
+
+/** The database adapter's `pr_ended_at` rule (Issue #143): first end kept, a reopen clears it. */
+function endedAt(state: PullRequestState, current: Date | null, now: Date): Date | null {
+  return isPullRequestEnded(state) ? (current ?? now) : null;
 }
 
 /**
@@ -156,6 +161,7 @@ export class InMemoryRunLookupRepository
             : result.checks !== undefined && result.checksCommit !== undefined
               ? { commit: result.checksCommit, checks: result.checks }
               : null,
+        endedAt: endedAt(result.state, run.pullRequestStatus.endedAt, now),
       };
     }
     return Promise.resolve('stored');
@@ -257,6 +263,7 @@ export class InMemoryRunLookupRepository
           : {}),
         ...(state === 'closed' ? { mergeable: null } : {}),
         ...(ended ? { checks: null } : {}),
+        endedAt: endedAt(state, run.pullRequestStatus.endedAt, now),
       };
     }
     return Promise.resolve();

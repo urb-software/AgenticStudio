@@ -70,6 +70,12 @@ describe('loadConfig', () => {
       runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
+      retention: {
+        days: 7,
+        maxPerProject: 10,
+        openPullRequestIdleDays: 30,
+        hoursAfterPullRequestEnd: 24,
+      },
     });
   });
 
@@ -523,6 +529,44 @@ describe('loadConfig', () => {
         loadConfig({ ...requiredEnv, STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: value }),
       );
       expect(error.message).toMatch(/STUDIO_RUN_SNAPSHOT_RETENTION_DAYS/);
+    });
+  });
+
+  describe('Working copy retention (Issue #143)', () => {
+    it('defaults to 7 days, 10 per Project, 30 idle days and 24 hours after a pull request ends', () => {
+      expect(loadConfig(requiredEnv).retention).toEqual({
+        days: 7,
+        maxPerProject: 10,
+        openPullRequestIdleDays: 30,
+        hoursAfterPullRequestEnd: 24,
+      });
+    });
+
+    it('reads every period and limit from its setting', () => {
+      expect(
+        loadConfig({
+          ...requiredEnv,
+          STUDIO_RETENTION_DAYS: '3',
+          STUDIO_RETENTION_MAX_PER_PROJECT: '25',
+          STUDIO_RETENTION_OPEN_PR_IDLE_DAYS: '14',
+          STUDIO_RETENTION_AFTER_PR_END_HOURS: '48',
+        }).retention,
+      ).toEqual({
+        days: 3,
+        maxPerProject: 25,
+        openPullRequestIdleDays: 14,
+        hoursAfterPullRequestEnd: 48,
+      });
+    });
+
+    it.each([
+      ['STUDIO_RETENTION_DAYS', '-1'],
+      ['STUDIO_RETENTION_MAX_PER_PROJECT', 'many'],
+      ['STUDIO_RETENTION_OPEN_PR_IDLE_DAYS', '0'],
+      ['STUDIO_RETENTION_AFTER_PR_END_HOURS', '1.5'],
+    ])('refuses %s=%j', (name, value) => {
+      const error = captureError(() => loadConfig({ ...requiredEnv, [name]: value }));
+      expect(error.message).toContain(name);
     });
   });
 });

@@ -1,10 +1,21 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  runResponseSchema,
+  toRunListItem,
+  toRunResponse,
+} from '../../../contracts/http/run-response.js';
+import { preparedFollowUpResponseSchema } from '../../get-prepared-follow-up/schema.js';
+import {
   LOOKUP_CLAIM_MAX,
   LOOKUP_LEASE_SECONDS,
   type PullRequestStateResult,
 } from '../../../domain/entities/run-lookup.js';
-import { deliveredRun, T0, WORKER } from '../../../domain/repositories/__tests__/delivered-run.js';
+import {
+  deliveredRun,
+  PULL_REQUEST,
+  T0,
+  WORKER,
+} from '../../../domain/repositories/__tests__/delivered-run.js';
 import { InMemoryRunLookupRepository } from '../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
@@ -21,15 +32,17 @@ describe('lookups: claim and result', () => {
   let claims: ClaimLookupsHandler;
   let results: ReportLookupResultHandler;
   /** The Run's known secret values (its Environment file), as the log redaction gets them. */
-  const secrets = { forRun: () => Promise.resolve(['hunter2-env-value']) };
+  let known = ['hunter2-env-value'];
+  const secrets = { forRun: () => Promise.resolve(known) };
 
   beforeEach(() => {
+    known = ['hunter2-env-value'];
     runs = new InMemoryRunRepository();
     lookups = new InMemoryRunLookupRepository(runs);
     now = T1;
     const clock = { now: () => now };
     claims = new ClaimLookupsHandler(lookups, clock);
-    results = new ReportLookupResultHandler(lookups, clock, secrets);
+    results = new ReportLookupResultHandler(lookups, clock, runs, secrets);
   });
 
   /** A delivered Run with a lookup requested and claimed by `WORKER`. */
@@ -109,6 +122,8 @@ describe('lookups: claim and result', () => {
       retryAt: null,
       refreshRequestedAt: null,
       lastAttemptAt: T0,
+      // Issue #143: the retention period counts from the first end.
+      endedAt: ['merged', 'closed', 'missing'].includes(result.state) ? T1 : null,
       checks: null,
       prepareRequestedAt: null,
       prepareError: null,
@@ -181,6 +196,30 @@ describe('lookups: claim and result', () => {
       const stored = JSON.stringify(status(run.id).checks);
       expect(stored).not.toContain('hunter2-env-value');
       expect(stored).not.toContain('s3cr3t');
+    });
+
+    it('keeps a check link a link when a known secret value is part of it: the checks page instead', async () => {
+      // An Environment file value that is part of the link's host would leave no address behind.
+      known = ['github.com'];
+      const { run, lookup } = await claimed();
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: {
+          state: 'open',
+          checksCommit: SHA,
+          checks: [{ name: 'build', state: 'failed', url: 'https://github.com/acme/shop/runs/1' }],
+        },
+      });
+
+      const stored = status(run.id).checks;
+      const url = stored && !stored.unavailable ? stored.checks[0]!.url : '';
+      expect(url).toBe(`${PULL_REQUEST.url}/checks`);
+      // The Run page and the lists can carry it: both responses still parse.
+      const withStatus = { ...runs.runs.find((candidate) => candidate.id === run.id)! };
+      expect(() => runResponseSchema.parse(toRunResponse(withStatus))).not.toThrow();
+      expect(() => runResponseSchema.parse(toRunListItem(withStatus))).not.toThrow();
     });
 
     it('masks token-shaped strings in the name of a check', async () => {
@@ -325,6 +364,35 @@ describe('lookups: claim and result', () => {
       }
     });
 
+    it('keeps a prepared check link a link when a known secret value is part of it', async () => {
+      known = ['github.com'];
+      const { run, lookup } = await claimedLogs();
+
+      await results.execute(lookup.id, {
+        ...logsAnswer,
+        result: {
+          commit: SHA,
+          checks: [
+            {
+              name: 'unit tests',
+              url: 'https://github.com/acme/shop/runs/2',
+              logAvailable: true,
+              excerpt: 'failed',
+            },
+          ],
+        },
+      });
+
+      const draft = runs.prepared.get(run.id)!;
+      expect(draft.items[0]!.url).toBe(`${PULL_REQUEST.url}/checks`);
+      const response = {
+        source: draft.source,
+        text: draft.text,
+        checks: draft.items,
+      };
+      expect(() => preparedFollowUpResponseSchema.parse(response)).not.toThrow();
+    });
+
     it('redacts token-shaped strings in the log before storing it', async () => {
       const { run, lookup } = await claimedLogs();
       const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
@@ -389,6 +457,43 @@ describe('lookups: claim and result', () => {
         }),
       ).rejects.toThrow("The answer is not of the lookup's kind.");
     });
+  });
+
+  // Issue #143: when the pull request ended, for the Working copy retention.
+  it('keeps the first time the pull request was read as ended, and clears it when it is reopened', async () => {
+    const { run, lookup } = await claimed();
+    await results.execute(lookup.id, {
+      workerId: WORKER,
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'closed' },
+    });
+    expect(status(run.id).endedAt).toEqual(T1);
+
+    // Read as ended again later: the end stays at the first time.
+    now = new Date(T1.getTime() + 3_600_000);
+    await lookups.request(run.id, 'pull_request_state', now);
+    const [again] = await claims.execute(WORKER);
+    await results.execute(again!.id, {
+      workerId: WORKER,
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'merged' },
+    });
+    expect(status(run.id)).toMatchObject({ state: 'merged', endedAt: T1 });
+
+    // Reopened, and then ended again: a new end.
+    const later = new Date(T1.getTime() + 7_200_000);
+    now = later;
+    await lookups.request(run.id, 'pull_request_state', now);
+    const [reopened] = await claims.execute(WORKER);
+    await results.execute(reopened!.id, {
+      workerId: WORKER,
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'open', behindBy: 0, aheadBy: 1 },
+    });
+    expect(status(run.id).endedAt).toBeNull();
   });
 
   it('keeps a repeated answer from changing anything', async () => {

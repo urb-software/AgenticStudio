@@ -556,6 +556,29 @@ describe('worker requests', () => {
     ).toBe(false);
     expect(RUN_STATES).toContain('waiting_for_operator');
   });
+
+  it('says how long a final Run is kept, or that it is removable (Issue #143)', () => {
+    const finishedAt = '2026-11-15T10:00:00.000Z';
+    const keep = {
+      runId: RUN_ID,
+      state: 'succeeded',
+      finishedAt,
+      keepUntil: '2026-11-22T10:00:00.000Z',
+    };
+    const remove = { runId: RUN_ID, state: 'failed', finishedAt, removable: true };
+    expect(runStatesResponseSchema.parse([keep, remove])).toEqual([keep, remove]);
+    const session = { provider: 'codex', ref: 'a1b2c3d4-0000-4000-8000-000000000001' };
+    expect(runStatesResponseSchema.safeParse([{ ...remove, session }]).success).toBe(true);
+    for (const bad of [
+      { ...keep, removable: true },
+      { ...keep, keepUntil: 'tomorrow' },
+      { ...remove, removable: false },
+      { ...keep, session },
+      { ...remove, session: { provider: 'gpt', ref: 'x' } },
+    ]) {
+      expect(runStatesResponseSchema.safeParse([bad]).success).toBe(false);
+    }
+  });
 });
 
 describe('cancellation and limits (Issue #100)', () => {
@@ -929,6 +952,27 @@ describe('worker status report (Issue #101)', () => {
     ['a reason that is too long', { ...report, providerReasons: { codex: 'x'.repeat(501) } }],
   ])('refuses %s', (_case, body) => {
     expect(workerStatusRequestSchema.safeParse(body).success).toBe(false);
+  });
+
+  it('may carry the disk figures of the agent side (Issue #143)', () => {
+    const disk = {
+      workingCopiesBytes: 5_000_000,
+      cachesBytes: 1_000_000,
+      keptRuns: 3,
+      freeBytes: 80_000_000_000,
+      totalBytes: 200_000_000_000,
+      minFreeBytes: 10_737_418_240,
+    };
+    expect(workerStatusRequestSchema.parse({ ...report, disk })).toEqual({ ...report, disk });
+    expect(workerStatusRequestSchema.safeParse(report).success).toBe(true);
+    for (const bad of [
+      { ...disk, keptRuns: -1 },
+      { ...disk, freeBytes: 1.5 },
+      { ...disk, cachesBytes: undefined },
+      { ...disk, extra: 1 },
+    ]) {
+      expect(workerStatusRequestSchema.safeParse({ ...report, disk: bad }).success).toBe(false);
+    }
   });
 
   it('carries why a switched-on provider is unavailable on the worker (Issue #105)', () => {

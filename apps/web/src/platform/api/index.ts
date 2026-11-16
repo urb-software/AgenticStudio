@@ -6,6 +6,7 @@
 // browser sends by itself: no code here reads it, and no token is ever stored.
 import * as sdk from './generated';
 import type {
+  AgentWorkerOutput,
   AnswerRunRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
@@ -41,6 +42,8 @@ import {
 } from './generated/zod.gen';
 
 export type {
+  AgentWorkerDiskOutput,
+  AgentWorkerOutput,
   AnswerRunRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
@@ -241,6 +244,11 @@ export const api = {
   resumeRun: (runId: string): Promise<RunOutput> => unwrap(sdk.resumeRun({ path: { runId } })),
   /** Each provider and whether a Run can be started with it now, with the reason when not. */
   listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
+  /**
+   * Whether an agent worker is connected and the disk figures of its latest report (Issue #143):
+   * the Working copies and caches, the Runs it keeps, and the free space with its threshold.
+   */
+  getAgentWorker: (): Promise<AgentWorkerOutput> => unwrap(sdk.getAgentWorker()),
   /**
    * Cancels a Run (Issue #100; 202: the Run). A queued or waiting Run comes back `cancelled`; a
    * preparing or running one carries `cancelRequestedAt` until the agent worker confirms.

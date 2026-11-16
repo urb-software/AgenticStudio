@@ -1,6 +1,7 @@
 import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../entities/run.js';
 import type { PreparedFollowUp, PreparedFollowUpItem } from '../entities/prepared-follow-up.js';
 import type { FailingCheckLogsResult } from '../entities/run-lookup.js';
+import { safeCheckLink } from './check-links.js';
 import { redactLogText } from './log-redaction.js';
 
 /** What a Follow-up prepared from failing checks is prepared from. */
@@ -79,11 +80,13 @@ function section(entry: Entry, excerpt: string | undefined, note = entry.note): 
 export function prepareFailingChecksDraft(
   result: FailingCheckLogsResult,
   known: readonly string[] = [],
+  /** The link of a check whose own link redaction would break: the pull request's checks page. */
+  fallbackUrl = 'https://github.com',
 ): PreparedFollowUp {
   const intro = introduction(result.commit);
   const entries: Entry[] = result.checks.map((check) => ({
     name: redactLogText(oneLine(check.name), known).slice(0, 200) || 'check',
-    url: redactLogText(oneLine(check.url), known),
+    url: safeCheckLink(oneLine(check.url), known, fallbackUrl),
     excerpt:
       check.logAvailable && check.excerpt !== undefined
         ? redactLogText(check.excerpt, known)

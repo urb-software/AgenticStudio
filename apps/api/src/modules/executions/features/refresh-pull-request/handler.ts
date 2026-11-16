@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { type FollowUpEligibility, isRunId, type Run } from '../../domain/entities/run.js';
+import { isRunId, type Run } from '../../domain/entities/run.js';
 import { canRefreshPullRequest, pageRefreshDue } from '../../domain/entities/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
@@ -10,8 +10,10 @@ import {
   RunNotFoundError,
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
-import { runView } from '../../domain/services/follow-up-context.js';
+import { type FollowUpView, runView } from '../../domain/services/follow-up-context.js';
+import { isOverLimit } from '../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
@@ -39,12 +41,13 @@ export class RefreshPullRequestHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_STATUS_STORE) private readonly workers: WorkerStatusStore,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
+    @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
   ) {}
 
   async execute(
     runId: string,
     options: { onOpen: boolean },
-  ): Promise<{ run: Run; followUp: FollowUpEligibility; workerConnected: boolean }> {
+  ): Promise<{ run: Run; followUp: FollowUpView; workerConnected: boolean }> {
     const found = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!found) throw new RunNotFoundError();
     if (!canRefreshPullRequest(found)) throw new PullRequestNotRefreshableError();
@@ -54,6 +57,13 @@ export class RefreshPullRequestHandler {
       if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     }
     const run = (await this.runs.findById(found.id)) ?? found;
-    return runView(run, this.workers, now, this.lease.seconds);
+    return runView(
+      run,
+      this.workers,
+      now,
+      this.lease.seconds,
+      this.retention,
+      await isOverLimit(this.runs, run, this.retention),
+    );
   }
 }

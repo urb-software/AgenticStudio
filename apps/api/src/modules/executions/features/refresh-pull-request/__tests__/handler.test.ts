@@ -36,7 +36,12 @@ describe('RefreshPullRequestHandler', () => {
     lookups = new InMemoryRunLookupRepository(runs);
     workers = new Workers();
     now = T0;
-    handler = new RefreshPullRequestHandler(runs, lookups, { now: () => now }, workers, LEASE);
+    handler = new RefreshPullRequestHandler(runs, lookups, { now: () => now }, workers, LEASE, {
+      days: 7,
+      maxPerProject: 10,
+      openPullRequestIdleDays: 30,
+      hoursAfterPullRequestEnd: 24,
+    });
   });
 
   const connect = (at = now) =>

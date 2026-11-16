@@ -230,6 +230,21 @@ describe('Run response: Follow-ups (Issue #141)', () => {
     );
     expect(refused.followUp).toEqual({ allowed: false, reason: 'step_total_reached' });
   });
+
+  it('says until when the Run is open to Follow-ups, when it is (Issue #143)', () => {
+    const open = runResponseSchema.parse(
+      toRunResponse(followedUp, { allowed: true, openUntil: T2 }),
+    );
+    expect(open.followUp).toEqual({ allowed: true, openUntil: T2.toISOString() });
+    const waiting = runResponseSchema.parse(
+      toRunResponse(followedUp, { allowed: false, reason: 'worker_unavailable', openUntil: T2 }),
+    );
+    expect(waiting.followUp).toEqual({
+      allowed: false,
+      reason: 'worker_unavailable',
+      openUntil: T2.toISOString(),
+    });
+  });
 });
 
 describe('Run response: pull request state (Issue #142)', () => {

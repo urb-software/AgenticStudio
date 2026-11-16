@@ -16,9 +16,15 @@ import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../domain/repositories/run-lookup-repository.js';
-import { followUpContext, runView } from '../../domain/services/follow-up-context.js';
+import {
+  followUpContext,
+  type FollowUpView,
+  runView,
+} from '../../domain/services/follow-up-context.js';
 import { redactSecrets } from '../../../../platform/http/redact.js';
+import { isOverLimit } from '../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
@@ -44,13 +50,14 @@ export class FollowUpRunHandler {
     @Inject(WORKER_STATUS_STORE) private readonly workers: WorkerStatusStore,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
+    @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
   ) {}
 
   async execute(
     runId: string,
     text: string,
     source?: FollowUpSource,
-  ): Promise<{ run: Run; followUp: FollowUpEligibility; workerConnected: boolean }> {
+  ): Promise<{ run: Run; followUp: FollowUpView; workerConnected: boolean }> {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
     const before = this.eligibility(run);
@@ -70,7 +77,14 @@ export class FollowUpRunHandler {
           );
         });
       const refreshed = (await this.runs.findById(queued.id)) ?? queued;
-      return runView(refreshed, this.workers, this.clock.now(), this.lease.seconds);
+      return runView(
+        refreshed,
+        this.workers,
+        this.clock.now(),
+        this.lease.seconds,
+        this.retention,
+        await isOverLimit(this.runs, refreshed, this.retention),
+      );
     }
     // The Run changed in between (a second submission, a claim): report why, as it is now.
     const current = await this.runs.findById(run.id);

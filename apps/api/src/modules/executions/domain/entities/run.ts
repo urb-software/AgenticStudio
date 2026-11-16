@@ -88,6 +88,11 @@ export const PULL_REQUEST_ENDED_REFUSALS = {
   missing: 'pull_request_missing',
 } as const satisfies Partial<Record<PullRequestState, FollowUpRefusal>>;
 
+/** Whether a pull request state is an end: merged, closed or not found (Issue #143). */
+export function isPullRequestEnded(state: PullRequestState | null): boolean {
+  return state !== null && state in PULL_REQUEST_ENDED_REFUSALS;
+}
+
 /**
  * How a Pull request check stands (Issue #145). The worker protocol's list is pinned to this one
  * by a test.
@@ -156,6 +161,11 @@ export interface RunPullRequestStatus {
   prepareError: string | null;
   /** Issue #145: whether a prepared Follow-up waits for the operator's review. */
   preparedFollowUp: boolean;
+  /**
+   * Issue #143: when a lookup first read the pull request as merged, closed or missing; `null`
+   * while it is not over (a reopened one is cleared). Working copy retention counts from it.
+   */
+  endedAt: Date | null;
 }
 
 /** No lookup yet: what a Run starts with. */
@@ -173,6 +183,7 @@ export const NO_PULL_REQUEST_STATUS: RunPullRequestStatus = {
   prepareRequestedAt: null,
   prepareError: null,
   preparedFollowUp: false,
+  endedAt: null,
 };
 
 /** One commit on a Run branch: its id and subject line. */
@@ -395,6 +406,11 @@ export interface Run {
   workingCopyRemovedAt: Date | null;
   /** Where the Run's pull request stands on the Git host, as last read (Issue #142). */
   pullRequestStatus: RunPullRequestStatus;
+  /**
+   * The latest Run step, Answer or Follow-up, or the Run's creation (Issue #143): Working copy
+   * retention counts a Run with a pull request idle from here.
+   */
+  lastActivityAt: Date;
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {

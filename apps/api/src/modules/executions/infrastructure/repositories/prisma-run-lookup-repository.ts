@@ -5,7 +5,11 @@ import {
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
-import type { PullRequestState, RunPullRequestChecks } from '../../domain/entities/run.js';
+import {
+  isPullRequestEnded,
+  type PullRequestState,
+  type RunPullRequestChecks,
+} from '../../domain/entities/run.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
@@ -19,6 +23,17 @@ import type {
 } from '../../domain/repositories/run-lookup-repository.js';
 
 const OPEN = ['requested', 'claimed'];
+
+/**
+ * The `pr_ended_at` assignment of a Run whose pull request was read as `state` (Issue #143): the
+ * first time it is read as merged, closed or missing is kept (the retention period counts from
+ * it); reading it open or draft again (a reopened pull request) clears it.
+ */
+function prEndedAtAssignment(state: PullRequestState, now: Date): Prisma.Sql {
+  return isPullRequestEnded(state)
+    ? Prisma.sql`pr_ended_at = COALESCE(pr_ended_at, ${now}::timestamptz)`
+    : Prisma.sql`pr_ended_at = NULL`;
+}
 
 /**
  * PostgreSQL adapter of {@link RunLookupRepository} (Issue #142): one `run_lookups` row per
@@ -132,20 +147,19 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       // A Run's state is what the latest answer says; the counts and the merge verdict are
       // cleared when the answer has none (a merged, closed or missing pull request).
-      await tx.run.updateMany({
-        where: { id: lookup.runId, pullRequestNumber: { not: null } },
-        data: {
-          prState: result.state,
-          prBehindBy: result.behindBy ?? null,
-          prAheadBy: result.aheadBy ?? null,
-          prMergeable: result.mergeable ?? null,
-          prRefreshedAt: now,
-          prRefreshError: null,
-          prRetryAt: null,
-          prRefreshRequestedAt: null,
-          prChecks: checksColumn(result),
-        },
-      });
+      await tx.$executeRaw`
+        UPDATE runs SET
+          pr_state = ${result.state},
+          pr_behind_by = ${result.behindBy ?? null}::int,
+          pr_ahead_by = ${result.aheadBy ?? null}::int,
+          pr_mergeable = ${result.mergeable ?? null}::boolean,
+          pr_refreshed_at = ${now}::timestamptz,
+          pr_refresh_error = NULL,
+          pr_retry_at = NULL,
+          pr_refresh_requested_at = NULL,
+          pr_checks = ${checksJson(result)}::jsonb,
+          ${prEndedAtAssignment(result.state, now)}
+        WHERE id = ${lookup.runId}::uuid AND pull_request_number IS NOT NULL`;
       return 'stored';
     });
   }
@@ -240,23 +254,20 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
   }
 
   async recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
-    await this.db.run.updateMany({
-      where: { id: runId, pullRequestNumber: { not: null } },
-      data: {
-        prState: state,
-        prRefreshedAt: now,
-        prRefreshError: null,
-        prRetryAt: null,
-        // Review N1 of #152: what an ended pull request cannot have is cleared with the state.
-        ...(state === 'merged' || state === 'missing'
-          ? { prBehindBy: null, prAheadBy: null, prMergeable: null }
-          : {}),
-        ...(state === 'closed' ? { prMergeable: null } : {}),
-        ...(state === 'merged' || state === 'missing' || state === 'closed'
-          ? { prChecks: Prisma.DbNull }
-          : {}),
-      },
-    });
+    // Review N1 of #152: what an ended pull request cannot have is cleared with the state (a closed
+    // one keeps its branch position); nothing is cleared for a draft or open one.
+    await this.db.$executeRaw`
+      UPDATE runs SET
+        pr_state = ${state},
+        pr_refreshed_at = ${now}::timestamptz,
+        pr_refresh_error = NULL,
+        pr_retry_at = NULL,
+        pr_behind_by = CASE WHEN ${state} IN ('merged', 'missing') THEN NULL ELSE pr_behind_by END,
+        pr_ahead_by = CASE WHEN ${state} IN ('merged', 'missing') THEN NULL ELSE pr_ahead_by END,
+        pr_mergeable = CASE WHEN ${state} IN ('merged', 'missing', 'closed') THEN NULL ELSE pr_mergeable END,
+        pr_checks = CASE WHEN ${state} IN ('merged', 'missing', 'closed') THEN NULL ELSE pr_checks END,
+        ${prEndedAtAssignment(state, now)}
+      WHERE id = ${runId}::uuid AND pull_request_number IS NOT NULL`;
   }
 
   async deleteFinishedBefore(before: Date): Promise<number> {
@@ -294,19 +305,18 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
 }
 
 /**
- * The `pr_checks` column for a state result (Issue #145): the checks and their commit, the
- * marker that the Git host would not tell, or nothing (null) when the result has no checks.
+ * The `pr_checks` value for a state result (Issue #145), as JSON text for a `::jsonb` cast: the
+ * checks and their commit, the marker that the Git host would not tell, or `null` when the
+ * result has no checks.
  */
-function checksColumn(
-  result: PullRequestStateResult,
-): Prisma.InputJsonValue | typeof Prisma.DbNull {
+function checksJson(result: PullRequestStateResult): string | null {
   const value: RunPullRequestChecks | null =
     result.checksUnavailable === true
       ? { unavailable: true }
       : result.checks !== undefined && result.checksCommit !== undefined
         ? { commit: result.checksCommit, checks: result.checks }
         : null;
-  return value === null ? Prisma.DbNull : (value as unknown as Prisma.InputJsonValue);
+  return value === null ? null : JSON.stringify(value);
 }
 
 /**

@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import { ExternalLinkIcon, GitBranchIcon, GitPullRequestIcon, RotateCwIcon } from 'lucide-react';
 import { Banner } from '@/shared/components/banner';
 import { Button } from '@/shared/ui/button';
@@ -61,6 +62,7 @@ const REPORTED_RESULT: Record<'passed' | 'failed' | 'not_run', string> = {
 function FailingChecks({ run }: { run: RunOutput }) {
   const names = run.failingChecks ?? [];
   const { data: steps } = useRunSteps(run.id);
+  const titleId = useId();
   // The Run's latest commit when the agent reported: the commit its reported checks belong to.
   const lastCommit = run.commits?.at(-1)?.id;
   if (names.length === 0) {
@@ -77,8 +79,8 @@ function FailingChecks({ run }: { run: RunOutput }) {
       .map(([result, count]) => `${count} ${REPORTED_RESULT[result]}`)
       .join(', ');
     return (
-      <section aria-labelledby="reported-checks-title" className="flex flex-col gap-1 text-small">
-        <h2 id="reported-checks-title" className="m-0 text-body font-semibold text-text">
+      <section aria-labelledby={titleId} className="flex flex-col gap-1 text-small">
+        <h2 id={titleId} className="m-0 text-body font-semibold text-text">
           Reported checks
         </h2>
         <p className="m-0 text-text-muted">

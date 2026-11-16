@@ -1,11 +1,13 @@
 import { LOOKUP_ERROR_MAX_LENGTH, type LookupResultRequest } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { retryDelaySeconds } from '../../domain/entities/run-lookup.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../domain/repositories/run-lookup-repository.js';
 import { prepareFailingChecksDraft } from '../../domain/services/failing-checks-draft.js';
+import { safeCheckLink } from '../../domain/services/check-links.js';
 import { redactLogText } from '../../domain/services/log-redaction.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
@@ -48,6 +50,7 @@ export class ReportLookupResultHandler {
   constructor(
     @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
   ) {}
 
@@ -60,11 +63,14 @@ export class ReportLookupResultHandler {
       if (answer.kind !== kind) throw new LookupKindMismatchError();
       // Text from CI jobs is redacted like the Run's log: with the Run's known secret values too.
       const known = await this.secrets.forRun(found.runId);
+      // A check's link that redaction would break is replaced by the pull request's checks page.
+      const pull = (await this.runs.findById(found.runId))?.pullRequest;
+      const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
       if (answer.kind === 'failing_check_logs') {
         const stored = await this.lookups.completeFailingCheckLogs(
           lookupId,
           answer.workerId,
-          prepareFailingChecksDraft(answer.result, known),
+          prepareFailingChecksDraft(answer.result, known, fallbackUrl),
           now,
         );
         if (stored === 'not_held') throw new LookupNotHeldError();
@@ -90,7 +96,7 @@ export class ReportLookupResultHandler {
                 checks: checks.map((check) => ({
                   ...check,
                   name: redactLogText(check.name, known),
-                  url: redactLogText(check.url, known),
+                  url: safeCheckLink(check.url, known, fallbackUrl),
                 })),
               }),
           ...(checksUnavailable === undefined ? {} : { checksUnavailable }),

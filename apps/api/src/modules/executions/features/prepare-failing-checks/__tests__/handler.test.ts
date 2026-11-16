@@ -39,7 +39,12 @@ describe('preparing a Follow-up from failing checks', () => {
     runs = new InMemoryRunRepository();
     lookups = new InMemoryRunLookupRepository(runs);
     workers = new Workers();
-    prepare = new PrepareFailingChecksHandler(runs, lookups, { now: () => T0 }, workers, LEASE);
+    prepare = new PrepareFailingChecksHandler(runs, lookups, { now: () => T0 }, workers, LEASE, {
+      days: 7,
+      maxPerProject: 10,
+      openPullRequestIdleDays: 30,
+      hoursAfterPullRequestEnd: 24,
+    });
   });
 
   const connect = () =>

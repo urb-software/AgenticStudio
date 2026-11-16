@@ -91,9 +91,9 @@ const environmentSchema = z.object({
     .string({ error: "is required: the Agent account's email for commits" })
     .max(320)
     .regex(/^[^\s<>@]+@[^\s<>@]+$/, { message: 'must be an email address' }),
-  // Retention of finished Working copies.
-  STUDIO_WORKER_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
-  STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
+  // Issue #143: free disk space (GiB) the worker keeps; below it no new Run is prepared and
+  // Studio warns. Retention itself is Studio's (`STUDIO_RETENTION_*` in the API's environment).
+  STUDIO_WORKER_MIN_FREE_GB: z.coerce.number().min(0).max(100_000).default(10),
   // Issue #100: how long a stopped Run step's processes get after the interrupt (SIGINT)
   // before the worker kills their whole process group (SIGKILL).
   STUDIO_WORKER_KILL_GRACE_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
@@ -176,10 +176,8 @@ export interface WorkerConfig {
   /** The Agent account's Git identity, set in each Working copy. */
   agentGitName: string;
   agentGitEmail: string;
-  /** A finished Working copy is removed after this many days... */
-  retentionDays: number;
-  /** ...and beyond the newest this many per Project. */
-  retentionMaxPerProject: number;
+  /** Free disk space in bytes below which no new Run is prepared (Issue #143); 0 turns it off. */
+  minFreeBytes: number;
   /** Grace between the interrupt and the kill of a stopped Run step's processes (Issue #100). */
   killGraceMs: number;
   /** The bound on agent turns per Claude Code Run step (Issue #105). */
@@ -277,8 +275,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     dataDir: result.data.STUDIO_WORKER_DATA_DIR,
     agentGitName: result.data.STUDIO_AGENT_GIT_NAME,
     agentGitEmail: result.data.STUDIO_AGENT_GIT_EMAIL,
-    retentionDays: result.data.STUDIO_WORKER_RETENTION_DAYS,
-    retentionMaxPerProject: result.data.STUDIO_WORKER_RETENTION_MAX_PER_PROJECT,
+    minFreeBytes: Math.round(result.data.STUDIO_WORKER_MIN_FREE_GB * 1024 ** 3),
     killGraceMs: result.data.STUDIO_WORKER_KILL_GRACE_SECONDS * 1000,
     claudeMaxTurns: result.data.STUDIO_CLAUDE_MAX_TURNS,
     codexSandbox: result.data.STUDIO_CODEX_SANDBOX,

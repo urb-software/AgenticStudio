@@ -779,6 +779,15 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   // At this viewport, in both themes: no sideways scroll, no axe violations (Issue #115).
   await expectInBothThemes(page, rows.nth(0));
 
+  // Issue #143: the agent worker's disk, as it measured it, with no warning (the smoke worker
+  // keeps no free space back).
+  const diskCard = main.getByRole('region', { name: 'Agent worker disk' });
+  await expect(diskCard).toBeVisible({ timeout: 30_000 });
+  await expect(diskCard).toContainText('Working copies');
+  await expect(diskCard).toContainText('Runs kept');
+  await expect(main.getByText("The agent worker's disk is nearly full")).toHaveCount(0);
+  await expectInBothThemes(page, diskCard);
+
   // Story #103: the operator answers the agent's question with one of its options; the same
   // agent worker resumes the session and the Run succeeds. The conversation and the log show
   // the question and the answer.
@@ -812,6 +821,8 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(heading).toHaveText('Change a file [fake:checks-failed]');
   const followUpForm = main.getByRole('region', { name: 'Send a Follow-up' });
   await expect(followUpForm).toBeVisible();
+  // Issue #143: until when the Run stays open to Follow-ups.
+  await expect(followUpForm).toContainText('Open to Follow-ups until');
   await expectInBothThemes(page, followUpForm);
   await followUpForm.getByLabel('Follow-up').fill('Commit once more [fake:commit]');
   await expectNoHorizontalScroll(page);

@@ -97,7 +97,9 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
           resultCommit: state.resultCommit,
           previousTree: state.previousTree,
           previousCommit: state.previousCommit,
-          pushedCommit: state.pushedCommit ?? null,
+          // Issue #143 (review N2 of #141): the pushed commit is stored once, on the Run, from
+          // the delivery reports; a pushed commit the worker sends with its diff state is only
+          // its echo of that value.
         };
         await tx.runDiffState.upsert({
           where: { runId },
@@ -155,7 +157,6 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
       resultCommit: row.resultCommit,
       previousTree: row.previousTree,
       previousCommit: row.previousCommit,
-      ...(row.pushedCommit === null ? {} : { pushedCommit: row.pushedCommit }),
     };
   }
 }
