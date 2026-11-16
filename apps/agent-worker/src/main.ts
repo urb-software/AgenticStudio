@@ -161,7 +161,7 @@ try {
 // without a known Run) and hourly; a failed pass is logged and retried at the next one.
 const retention = new Retention({
   dataDir: config.dataDir,
-  runStates: (runIds, signal) => api.runStates(runIds, signal),
+  runStates: (runIds, signal, removedRunIds) => api.runStates(runIds, signal, removedRunIds),
   resources,
   retentionDays: config.retentionDays,
   maxPerProject: config.retentionMaxPerProject,

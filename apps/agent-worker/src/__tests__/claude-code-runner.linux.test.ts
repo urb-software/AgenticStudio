@@ -274,7 +274,12 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     expect(asked.result).toMatchObject({ outcome: 'needs_input', sessionRef: SESSION });
 
     const resumed = await drain(
-      runner().resume({ ...input('Add a store'), answer: 'PostgreSQL', sessionRef: 'session-77' }),
+      runner().resume({
+        ...input('Add a store'),
+        answer: 'PostgreSQL',
+        reason: 'answer',
+        sessionRef: 'session-77',
+      }),
     );
 
     expect(resumed.result).toEqual({

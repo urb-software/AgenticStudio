@@ -297,7 +297,12 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     expect(asked.result).toMatchObject({ outcome: 'needs_input', sessionRef: THREAD });
 
     const resumed = await drain(
-      runner().resume({ ...input('Add a store'), answer: 'PostgreSQL', sessionRef: 'session-77' }),
+      runner().resume({
+        ...input('Add a store'),
+        answer: 'PostgreSQL',
+        reason: 'answer',
+        sessionRef: 'session-77',
+      }),
     );
 
     expect(resumed.result).toEqual({

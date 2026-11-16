@@ -101,9 +101,20 @@ export class StudioApi {
     await this.post(`runs/${encodeURIComponent(runId)}/events`, { events }, signal);
   }
 
-  /** The states of these Runs (1-500 ids); unknown ids are left out (Issue #98). */
-  async runStates(runIds: readonly string[], signal?: AbortSignal): Promise<RunStatesResponse> {
-    const response = await this.post('runs/states', { runIds }, signal);
+  /**
+   * The states of these Runs (1-500 ids); unknown ids are left out (Issue #98). Issue #141:
+   * `removedRunIds` reports the Runs whose Working copies retention removed.
+   */
+  async runStates(
+    runIds: readonly string[],
+    signal?: AbortSignal,
+    removedRunIds?: readonly string[],
+  ): Promise<RunStatesResponse> {
+    const response = await this.post(
+      'runs/states',
+      { runIds, ...(removedRunIds && removedRunIds.length > 0 ? { removedRunIds } : {}) },
+      signal,
+    );
     return runStatesResponseSchema.parse(await response.json());
   }
 

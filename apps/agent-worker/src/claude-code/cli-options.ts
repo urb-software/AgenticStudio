@@ -1,3 +1,4 @@
+import type { ResumeReason } from '@agentic-studio/contracts';
 import { posix } from 'node:path';
 import {
   PROVIDER_PASSED_VARIABLES,
@@ -144,8 +145,11 @@ export function claudeArguments(input: ClaudeArgumentsInput): string[] {
  * The step's message to the agent. A heading first, so the text never starts with `-` (the CLI
  * would read it as an option) and the agent can tell the Task from an answer.
  */
-export function claudePrompt(kind: 'task' | 'answer', text: string): string {
-  return kind === 'task' ? `The operator's Task:\n\n${text}` : `The operator's answer:\n\n${text}`;
+export function claudePrompt(kind: 'task' | ResumeReason, text: string): string {
+  if (kind === 'task') return `The operator's Task:\n\n${text}`;
+  // Issue #141: a Follow-up is a further instruction to the finished Task, not an answer.
+  if (kind === 'follow_up') return `The operator's Follow-up:\n\n${text}`;
+  return `The operator's answer:\n\n${text}`;
 }
 
 /** The files a Claude Code step uses in the Run's directory (outside the Working copy). */

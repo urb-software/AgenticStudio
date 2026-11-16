@@ -152,4 +152,55 @@ describe('GitHubPullRequests', () => {
 
     expect(error).toBeInstanceOf(PullRequestFailedError);
   });
+
+  describe('one pull request by number (Issue #141)', () => {
+    const pull = { owner: 'acme', repo: 'shop', number: 41 };
+    const signal = () => new AbortController().signal;
+
+    it('reads its state: open, closed or merged', async () => {
+      stub.pullRequests.push({ owner: 'acme', repo: 'shop', head: target.head, number: 41 });
+
+      expect(await client().get(pull, signal())).toEqual({
+        url: 'https://github.com/acme/shop/pull/41',
+        number: 41,
+        state: 'open',
+        merged: false,
+      });
+      stub.pullRequests[0]!.state = 'closed';
+      stub.pullRequests[0]!.merged = true;
+      expect(await client().get(pull, signal())).toMatchObject({ state: 'closed', merged: true });
+      expect(stub.requests.at(-1)).toMatchObject({
+        method: 'GET',
+        path: '/repos/acme/shop/pulls/41',
+        authorization: `Bearer ${token}`,
+      });
+    });
+
+    it('replaces its title and description', async () => {
+      stub.pullRequests.push({ owner: 'acme', repo: 'shop', head: target.head, number: 41 });
+
+      await client().update({ ...pull, title: 'New title', body: 'New body' }, signal());
+
+      expect(stub.updated).toEqual([
+        { owner: 'acme', repo: 'shop', number: 41, body: { title: 'New title', body: 'New body' } },
+      ]);
+      expect(stub.created).toEqual([]);
+    });
+
+    it('says what to check when GitHub refuses, without the token', async () => {
+      const read = await client()
+        .get(pull, signal())
+        .catch((caught: unknown) => caught);
+      expect(read).toBeInstanceOf(PullRequestFailedError);
+      expect((read as Error).message).toMatch(
+        /Reading the run's pull request failed: GitHub answered 404/,
+      );
+
+      const updated = await client()
+        .update({ ...pull, title: 't', body: 'b' }, signal())
+        .catch((caught: unknown) => caught);
+      expect((updated as Error).message).toMatch(/Updating the run's pull request failed/);
+      expect((updated as Error).message).not.toContain(token);
+    });
+  });
 });

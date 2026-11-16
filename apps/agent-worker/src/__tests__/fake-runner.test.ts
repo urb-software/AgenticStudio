@@ -1,4 +1,9 @@
-import { runStepResultSchema, type RunnerEvent, type RunPayload } from '@agentic-studio/contracts';
+import {
+  type ResumeReason,
+  runStepResultSchema,
+  type RunnerEvent,
+  type RunPayload,
+} from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
 import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import { FakeRunner, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
@@ -133,13 +138,20 @@ describe('FakeRunner', () => {
 
   // Issue #103: what a runner must do on resume, proven with the fake runner.
   describe('resume (Issue #103)', () => {
-    const resume = (task: string, sessionRef: string, completedSteps = 1, answer = 'Option A') => {
+    const resume = (
+      task: string,
+      sessionRef: string,
+      completedSteps = 1,
+      answer = 'Option A',
+      reason: ResumeReason = 'answer',
+    ) => {
       const events: RunnerEvent[] = [];
       return drainRunStep(
         new FakeRunner().resume({
           run: { ...run(task), completedSteps },
           workspace,
           answer,
+          reason,
           sessionRef,
           signal: new AbortController().signal,
           processes,
@@ -170,6 +182,37 @@ describe('FakeRunner', () => {
         sessionRef: SESSION,
       });
       expect((await resume('[fake:question-twice]', SESSION, 2)).result.outcome).toBe('done');
+    });
+
+    describe('a Follow-up (Issue #141)', () => {
+      it('plays the scenario its own text names, in the same session', async () => {
+        const { result, events } = await resume(
+          'Add a feature',
+          SESSION,
+          1,
+          'Also log it',
+          'follow_up',
+        );
+        expect(result.outcome).toBe('done');
+        expect(events.map((event) => event.text)).toEqual(
+          expect.arrayContaining(['fake runner: follow-up', 'follow-up received: success']),
+        );
+
+        const asked = await resume('Add a feature', SESSION, 1, '[fake:question] Hm', 'follow_up');
+        expect(runStepResultSchema.parse(asked.result)).toMatchObject({
+          outcome: 'needs_input',
+          sessionRef: SESSION,
+        });
+        await expect(
+          resume('Add a feature', SESSION, 1, '[fake:fail] Break', 'follow_up'),
+        ).rejects.toBeInstanceOf(AgentFailedError);
+      });
+
+      it('refuses a session it did not start', async () => {
+        await expect(
+          resume('Add a feature', 'another-session', 1, 'More', 'follow_up'),
+        ).rejects.toBeInstanceOf(AgentFailedError);
+      });
     });
 
     it('cannot resume a lost session: the provider refuses it', async () => {

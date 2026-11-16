@@ -232,4 +232,60 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
 
     expect((await retention().sweep()).removed).toEqual([]);
   });
+  describe('reporting removed Working copies (Issue #141)', () => {
+    type Call = { runIds: readonly string[]; removed: readonly string[] | undefined };
+
+    function recording(calls: Call[], failReports: { count: number }) {
+      return retention({
+        runStates: async (runIds, _signal, removed) => {
+          calls.push({ runIds, removed });
+          if (removed && failReports.count > 0) {
+            failReports.count -= 1;
+            throw new Error('fetch failed');
+          }
+          return runIds.flatMap((runId) => {
+            const state = states.get(runId);
+            return state ? [{ runId, ...state }] : [];
+          });
+        },
+      });
+    }
+
+    it('tells Studio which Working copies the sweep removed', async () => {
+      const kept = run(PROJECT_A, 'succeeded', 1);
+      const expired = run(PROJECT_A, 'failed', 8);
+      const calls: Call[] = [];
+
+      await recording(calls, { count: 0 }).sweep();
+
+      expect(left()).toEqual([kept]);
+      expect(calls.at(-1)).toEqual({ runIds: [expired], removed: [expired] });
+      expect(calls.filter((call) => call.removed !== undefined)).toHaveLength(1);
+    });
+
+    it('reports nothing when nothing was removed', async () => {
+      run(PROJECT_A, 'succeeded', 1);
+      const calls: Call[] = [];
+
+      await recording(calls, { count: 0 }).sweep();
+
+      expect(calls.every((call) => call.removed === undefined)).toBe(true);
+    });
+
+    it('keeps a removal it could not report and sends it with the next sweep', async () => {
+      const kept = run(PROJECT_A, 'succeeded', 1);
+      const expired = run(PROJECT_A, 'failed', 8);
+      const calls: Call[] = [];
+      const sweeper = recording(calls, { count: 1 });
+
+      await sweeper.sweep();
+      expect(calls.at(-1)?.removed).toEqual([expired]);
+
+      calls.length = 0;
+      await sweeper.sweep();
+
+      expect(calls[0]).toEqual({ runIds: [kept], removed: [expired] });
+      expect(calls).toHaveLength(1);
+    });
+  });
 });

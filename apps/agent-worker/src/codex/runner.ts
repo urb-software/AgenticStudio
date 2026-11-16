@@ -1,4 +1,4 @@
-import type { Provider } from '@agentic-studio/contracts';
+import type { Provider, ResumeReason } from '@agentic-studio/contracts';
 import { randomBytes } from 'node:crypto';
 import { closeSync, openSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -118,7 +118,7 @@ export class CodexRunner implements Runner {
 
   private async *step(
     input: StartRunStepInput,
-    resumed?: { answer: string; sessionRef: string },
+    resumed?: { answer: string; sessionRef: string; reason: ResumeReason },
   ): RunStep {
     const { run, workspace, signal, processes, agentDefinition } = input;
     // The dispatcher checked already; nothing is written for a provider that is off.
@@ -178,7 +178,9 @@ export class CodexRunner implements Runner {
       });
       stdinFile = files.promptFile;
     } else {
-      await writeFile(files.answerFile, codexAnswer(resumed.answer), { mode: 0o600 });
+      await writeFile(files.answerFile, codexAnswer(resumed.answer, resumed.reason), {
+        mode: 0o600,
+      });
       args = codexResumeArguments({
         workingCopy: workspace.repoDir,
         sandbox: this.options.sandbox,

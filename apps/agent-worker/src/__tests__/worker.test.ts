@@ -5,6 +5,9 @@ import type {
   RunStepResult,
   WorkingCopyReport,
 } from '@agentic-studio/contracts';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DeliveryFailedError, type DeliveryPort } from '../delivery.js';
@@ -1217,6 +1220,7 @@ describe('AgentWorker', () => {
       runBranch: REPORT.runBranch,
       sessionRef: fakeSessionRef(payload(task, n).runId),
       answer: 'Option A',
+      resumeReason: 'answer',
       nextSeq: 10,
       completedSteps,
     });
@@ -1250,6 +1254,7 @@ describe('AgentWorker', () => {
       expect(runner.resumed[0]).toMatchObject({
         sessionRef: run.sessionRef,
         answer: 'Option A',
+        reason: 'answer',
         workspace: { repoDir: `/data/runs/${run.runId}/repo` },
         agentDefinition: { version: expect.any(String) },
       });
@@ -1369,6 +1374,128 @@ describe('AgentWorker', () => {
         failure: { code: 'step_limit' },
       });
       expect(workingCopies.located).toEqual([]);
+    });
+
+    // Issue #141: a Follow-up continues the session of a finished Run as a new part of it.
+    describe('a Follow-up (Issue #141)', () => {
+      const followUpPayload = (text: string, overrides: Partial<RunPayload> = {}): RunPayload => ({
+        ...resumePayload('Add a feature', 3),
+        answer: text,
+        resumeReason: 'follow_up',
+        followUpNumber: 2,
+        stepsBeforePart: 3,
+        pullRequestNumber: 7,
+        ...overrides,
+      });
+      const notices = (api: RecordingApi) =>
+        api
+          .events()
+          .filter((event) => event.kind === 'notice')
+          .map((event) => event.text);
+
+      it('hands the runner the Follow-up text and its reason, and marks its start and end in the log', async () => {
+        const run = followUpPayload('Also handle the empty list.');
+        const api = new RecordingApi([run]);
+        const runner = new RecordingRunner();
+        startWorker(api, runner);
+
+        await until(() => api.reports().length === 3);
+
+        expect(runner.resumed[0]).toMatchObject({
+          answer: 'Also handle the empty list.',
+          reason: 'follow_up',
+          sessionRef: run.sessionRef,
+        });
+        const kinds = api.events().map((event) => [event.kind, event.text]);
+        expect(kinds[0]).toEqual(['notice', 'Follow-up 2 started']);
+        expect(kinds[1]?.[0]).toBe('step_started');
+        expect(kinds.at(-1)).toEqual(['notice', 'Follow-up 2 ended: done']);
+        expect(api.reports()[1]?.[2]).toMatchObject({ index: 4, kind: 'resume' });
+      });
+
+      it('marks the end of a Follow-up that failed, but not of one that asks', async () => {
+        const failing = followUpPayload('[fake:fail]');
+        const api = new RecordingApi([failing]);
+        startWorker(api);
+        await until(() => api.reports().length === 2);
+        expect(notices(api)).toEqual(['Follow-up 2 started', 'Follow-up 2 ended: failed']);
+        await worker?.stop();
+
+        const asking = followUpPayload('[fake:question]', { runId: payload('x', 2).runId });
+        const askingApi = new RecordingApi([
+          { ...asking, sessionRef: fakeSessionRef(asking.runId) },
+        ]);
+        startWorker(askingApi);
+        await until(() => askingApi.reports().length === 3);
+        expect(askingApi.reports()[2]?.[2]).toEqual({ state: 'waiting_for_operator' });
+        expect(notices(askingApi)).toEqual(['Follow-up 2 started']);
+      });
+
+      it('marks the end when an answer inside the Follow-up finishes it', async () => {
+        const { followUpNumber, ...rest } = followUpPayload('x');
+        const run: RunPayload = { ...rest, followUpNumber, resumeReason: 'answer', answer: 'A' };
+        const api = new RecordingApi([run]);
+        startWorker(api, new RecordingRunner());
+
+        await until(() => api.reports().length === 3);
+
+        expect(notices(api)).toEqual(['Follow-up 2 ended: done']);
+      });
+
+      it('gives each part its own allowance of Run steps', async () => {
+        // Three steps before the Follow-up, ten allowed per part: step 13 may start, 14 not.
+        const allowed = followUpPayload('More', { completedSteps: 12 });
+        const api = new RecordingApi([allowed]);
+        startWorker(api, new RecordingRunner());
+        await until(() => api.reports().length === 3);
+        expect(api.reports()[1]?.[2]).toMatchObject({ index: 13 });
+        await worker?.stop();
+
+        const beyond = followUpPayload('More', { completedSteps: 13 });
+        const refusedApi = new RecordingApi([beyond]);
+        const workingCopies = new FakeWorkingCopies();
+        startWorker(refusedApi, new RecordingRunner(), workingCopies);
+        await until(() => refusedApi.reports().length === 1);
+        expect(refusedApi.reports()[0]?.[2]).toMatchObject({
+          state: 'failed',
+          failure: { code: 'step_limit' },
+        });
+        expect(workingCopies.located).toEqual([]);
+      });
+
+      it('says when the Environment file is no longer in the Working copy (coordinator decision 5)', async () => {
+        const run = followUpPayload('More', { studioPaths: ['.env.test'] });
+        const api = new RecordingApi([run]);
+        startWorker(api, new RecordingRunner());
+
+        await until(() => api.reports().length === 3);
+
+        expect(notices(api)).toContain(
+          'The Environment file .env.test is no longer in the Working copy; this Follow-up runs without it.',
+        );
+      });
+
+      it('says nothing about an Environment file that is still there', async () => {
+        const repoDir = mkdtempSync(join(tmpdir(), 'studio-follow-up-'));
+        writeFileSync(join(repoDir, '.env.test'), 'A=1');
+        class HereWorkingCopies extends FakeWorkingCopies {
+          override async locate(run: RunPayload): Promise<PreparedRun> {
+            return { ...(await super.locate(run)), repoDir };
+          }
+        }
+        try {
+          const run = followUpPayload('More', { studioPaths: ['.env.test'] });
+          const api = new RecordingApi([run]);
+          startWorker(api, new RecordingRunner(), new HereWorkingCopies());
+
+          await until(() => api.reports().length === 3);
+
+          expect(notices(api)).toEqual(['Follow-up 2 started', 'Follow-up 2 ended: done']);
+        } finally {
+          await worker?.stop();
+          rmSync(repoDir, { recursive: true, force: true });
+        }
+      });
     });
 
     it('checks the provider gate before it resumes (provider_disabled)', async () => {

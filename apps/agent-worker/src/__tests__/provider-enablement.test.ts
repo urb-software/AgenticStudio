@@ -266,6 +266,7 @@ describe('provider enablement gate (quality.md §10)', () => {
         run: payload('claude_code'),
         workspace: WORKSPACE,
         answer: 'Option A',
+        reason: 'answer',
         sessionRef: 'session-1',
         signal: new AbortController().signal,
         processes: NO_GROUPS,
@@ -496,7 +497,7 @@ describe("the negative tests on the Claude Code runner's spawn path (Issue #105)
 
     await expect(runner.start(input).next()).rejects.toBeInstanceOf(ProviderDisabledError);
     await expect(
-      runner.resume({ ...input, answer: 'A', sessionRef: 'session-1' }).next(),
+      runner.resume({ ...input, answer: 'A', reason: 'answer', sessionRef: 'session-1' }).next(),
     ).rejects.toBeInstanceOf(ProviderDisabledError);
     expect(spawn).not.toHaveBeenCalled();
   });
@@ -543,7 +544,7 @@ describe("the negative tests on the Codex runner's spawn path (Issue #106)", () 
 
     await expect(runner.start(input).next()).rejects.toBeInstanceOf(ProviderDisabledError);
     await expect(
-      runner.resume({ ...input, answer: 'A', sessionRef: 'session-1' }).next(),
+      runner.resume({ ...input, answer: 'A', reason: 'answer', sessionRef: 'session-1' }).next(),
     ).rejects.toBeInstanceOf(ProviderDisabledError);
     expect(spawn).not.toHaveBeenCalled();
   });

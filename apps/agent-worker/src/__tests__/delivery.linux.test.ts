@@ -155,6 +155,8 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(delivery).toEqual({
       outcome: 'delivered',
       pullRequest: { url: 'https://github.com/acme/shop/pull/1', number: 1 },
+      // Issue #141: the commit the push left the remote Run branch at.
+      pushedCommit: inRepo(prepared, ['rev-parse', 'HEAD']),
     });
     expect(git(bare(), ['rev-parse', `refs/heads/${prepared.runBranch}`], env)).toBe(
       inRepo(prepared, ['rev-parse', 'HEAD']),
@@ -354,6 +356,148 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(attempt).toBeInstanceOf(DeliveryFailedError);
     expect((attempt as DeliveryFailedError).detail).toMatch(/not on its Run branch/);
     expect(stub.created).toHaveLength(0);
+  });
+
+  // Issue #141: a Follow-up delivers again, to the same pull request.
+  describe('repeated delivery after a Follow-up (Issue #141)', () => {
+    /** The first part of the Run, delivered: its pull request is #1. */
+    async function deliveredOnce() {
+      const run = payload();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+      await finish(run, prepared);
+      const followUp: RunPayload = {
+        ...run,
+        kind: 'resume',
+        runBranch: prepared.runBranch,
+        sessionRef: 'session-1',
+        answer: 'Also handle the empty list.',
+        resumeReason: 'follow_up',
+        followUpNumber: 1,
+        nextSeq: 10,
+        completedSteps: 1,
+        stepsBeforePart: 1,
+        pullRequestNumber: 1,
+      };
+      return { run: followUp, prepared };
+    }
+
+    it('pushes the new commits and updates the same pull request, never opening a second one', async () => {
+      const { run, prepared } = await deliveredOnce();
+      agentWrites(prepared, { 'empty.ts': 'y\n' }, 'Handle the empty list');
+      const requestsBefore = stub.requests.length;
+
+      const delivery = await finish(run, prepared, {
+        ...DONE,
+        pullRequest: { title: 'Add pagination and empty lists', body: 'Now with empty lists.' },
+      });
+
+      const head = inRepo(prepared, ['rev-parse', 'HEAD']);
+      expect(delivery).toEqual({
+        outcome: 'delivered',
+        pullRequest: { url: 'https://github.com/acme/shop/pull/1', number: 1 },
+        pushedCommit: head,
+      });
+      expect(git(bare(), ['rev-parse', `refs/heads/${prepared.runBranch}`], env)).toBe(head);
+      expect(stub.created).toHaveLength(1);
+      expect(stub.updated).toHaveLength(1);
+      expect(stub.updated[0]?.body.title).toBe('Add pagination and empty lists');
+      const body = String(stub.updated[0]?.body.body);
+      expect(body).toMatch(/^Now with empty lists\./);
+      expect(body).toContain('_Delivered by AI Agent Studio._');
+      expect(body).toContain(`- Run: \`${run.runId}\``);
+      // Exactly one ref, never forced, on every push.
+      const ref = `refs/heads/${prepared.runBranch}`;
+      expect(gitRunner.pushes().map((call) => call.args)).toEqual([
+        ['push', '--', remote.url, `${ref}:${ref}`],
+        ['push', '--', remote.url, `${ref}:${ref}`],
+      ]);
+      expect(
+        stub.requests
+          .slice(requestsBefore)
+          .some((request) => request.method === 'POST' || request.path.endsWith('/pulls')),
+      ).toBe(false);
+    });
+
+    it('keeps the title and description when the agent gave no new ones', async () => {
+      const { run, prepared } = await deliveredOnce();
+      agentWrites(prepared, { 'empty.ts': 'y\n' }, 'Handle the empty list');
+
+      await finish(run, prepared, { outcome: 'done', summary: 'Handled the empty list.' });
+
+      expect(stub.updated).toEqual([]);
+      expect(stub.created).toHaveLength(1);
+    });
+
+    it.each([
+      ['closed', false],
+      ['merged', true],
+    ])(
+      'refuses to deliver to a %s pull request, before anything is pushed',
+      async (word, merged) => {
+        const { run, prepared } = await deliveredOnce();
+        stub.pullRequests[0]!.state = 'closed';
+        stub.pullRequests[0]!.merged = merged;
+        agentWrites(prepared, { 'empty.ts': 'y\n' }, 'Handle the empty list');
+        const remoteTip = git(bare(), ['rev-parse', `refs/heads/${prepared.runBranch}`], env);
+
+        const error = await finish(run, prepared).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(DeliveryFailedError);
+        expect((error as DeliveryFailedError).detail).toMatch(
+          new RegExp(`pull request #1 is ${word} on GitHub`),
+        );
+        expect((error as DeliveryFailedError).branchPushed).toBe(false);
+        expect(git(bare(), ['rev-parse', `refs/heads/${prepared.runBranch}`], env)).toBe(remoteTip);
+        expect(gitRunner.pushes()).toHaveLength(1);
+        expect(stub.created).toHaveLength(1);
+      },
+    );
+
+    it('says what was pushed when the update of the pull request fails after the push', async () => {
+      const { run, prepared } = await deliveredOnce();
+      agentWrites(prepared, { 'empty.ts': 'y\n' }, 'Handle the empty list');
+      stub.failUpdate = 502;
+
+      const error = await finish(run, prepared).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(DeliveryFailedError);
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /Updating the run's pull request failed/,
+      );
+      expect((error as DeliveryFailedError).branchPushed).toBe(true);
+      expect((error as DeliveryFailedError).pushedCommit).toBe(
+        inRepo(prepared, ['rev-parse', 'HEAD']),
+      );
+      expect(stub.created).toHaveLength(1);
+    });
+
+    it('opens a draft pull request when the Run had none yet and now has commits', async () => {
+      const run = payload();
+      const prepared = await prepare(run);
+      // The first part changed nothing: "No changes", no pull request.
+      expect(await finish(run, prepared)).toEqual({ outcome: 'none' });
+      const followUp: RunPayload = {
+        ...run,
+        kind: 'resume',
+        runBranch: prepared.runBranch,
+        sessionRef: 'session-1',
+        answer: 'Now add pagination.',
+        resumeReason: 'follow_up',
+        followUpNumber: 1,
+        nextSeq: 5,
+        completedSteps: 1,
+        stepsBeforePart: 1,
+      };
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+
+      const delivery = await finish(followUp, prepared);
+
+      expect(delivery).toMatchObject({ outcome: 'delivered', pullRequest: { number: 1 } });
+      expect(stub.created).toEqual([
+        expect.objectContaining({ body: expect.objectContaining({ draft: true, base: 'main' }) }),
+      ]);
+    });
   });
 
   it('reuses the pull request on a repeated delivery instead of opening a second one', async () => {

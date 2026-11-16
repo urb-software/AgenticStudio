@@ -22,8 +22,15 @@ const FINAL_STATES = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 export interface RetentionOptions {
   /** The worker's data directory (`<dataDir>/runs/<runId>`). */
   dataDir: string;
-  /** Asks Studio for the states of Runs (the worker route `runs/states`). */
-  runStates(runIds: readonly string[], signal?: AbortSignal): Promise<RunStatesResponse>;
+  /**
+   * Asks Studio for the states of Runs (the worker route `runs/states`); Issue #141: reports the
+   * Runs whose Working copies were removed and not yet reported (`removedRunIds`).
+   */
+  runStates(
+    runIds: readonly string[],
+    signal?: AbortSignal,
+    removedRunIds?: readonly string[],
+  ): Promise<RunStatesResponse>;
   /** Removes a Run's containers, networks and volumes. */
   resources: RunResources;
   /** A finished Working copy is removed after this many days... */
@@ -63,9 +70,48 @@ interface Finished {
  * no Working copy is removed (only entries that cannot be a Run directory at all).
  */
 export class Retention {
+  /** Removed Run Working copies Studio has not been told of yet (Issue #141). */
+  private readonly unreported = new Set<string>();
+
   constructor(private readonly options: RetentionOptions) {}
 
   async sweep(signal?: AbortSignal): Promise<RetentionOutcome> {
+    const outcome = await this.apply(signal);
+    for (const removed of outcome.removed) {
+      if (isUuid(removed.name) && removed.name === removed.name.toLowerCase()) {
+        this.unreported.add(removed.name);
+      }
+    }
+    await this.reportRemoved(signal);
+    return outcome;
+  }
+
+  /**
+   * Tells Studio which Working copies were removed (Issue #141), so the Run page no longer
+   * offers a Follow-up. On a failure they stay pending and go with the next sweep's first
+   * request; the sweep itself is not failed by it.
+   */
+  private async reportRemoved(signal?: AbortSignal): Promise<void> {
+    while (this.unreported.size > 0) {
+      const batch = [...this.unreported].slice(0, RUN_STATES_REQUEST_MAX);
+      try {
+        await this.options.runStates(batch, signal, batch);
+      } catch (error) {
+        this.options.logger.error(
+          `Reporting removed Working copies failed; retried at the next sweep: ${String(error)}`,
+        );
+        return;
+      }
+      for (const runId of batch) this.unreported.delete(runId);
+    }
+  }
+
+  /** The unreported removals that fit into a states request, sent with its first one. */
+  private pendingBatch(): string[] {
+    return [...this.unreported].slice(0, RUN_STATES_REQUEST_MAX);
+  }
+
+  private async apply(signal?: AbortSignal): Promise<RetentionOutcome> {
     const outcome: RetentionOutcome = { removed: [] };
     let runsDir: string;
     let entries: { name: string; isDirectory(): boolean }[];
@@ -94,10 +140,14 @@ export class Retention {
 
     const states = new Map<string, RunStatesResponse[number]>();
     for (let i = 0; i < runIds.length; i += RUN_STATES_REQUEST_MAX) {
+      // The first request also carries removals an earlier sweep could not report (#141).
+      const pending = i === 0 ? this.pendingBatch() : [];
       const answer = await this.options.runStates(
         runIds.slice(i, i + RUN_STATES_REQUEST_MAX),
         signal,
+        ...(pending.length > 0 ? [pending] : []),
       );
+      for (const runId of pending) this.unreported.delete(runId);
       for (const state of answer) states.set(state.runId, state);
     }
 
