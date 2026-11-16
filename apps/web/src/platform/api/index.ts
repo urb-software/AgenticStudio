@@ -7,6 +7,7 @@
 import * as sdk from './generated';
 import type {
   AnswerRunRequest,
+  BringUpToDateRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -41,6 +42,7 @@ import {
 
 export type {
   AnswerRunRequest,
+  BringUpToDateRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -255,6 +257,13 @@ export const api = {
    */
   followUpRun: (runId: string, body: FollowUpRunRequest): Promise<RunOutput> =>
     unwrap(sdk.followUpRun({ path: { runId }, body })),
+  /**
+   * Asks for a finished Run's branch to be brought up to date with the integration branch (Issue
+   * #147; 202: the Run, `queued` as a Follow-up of that source). The note is optional. A Run that
+   * cannot take a Follow-up answers 409 saying why; a too long note 422.
+   */
+  bringUpToDateRun: (runId: string, body: BringUpToDateRequest): Promise<RunOutput> =>
+    unwrap(sdk.bringUpToDateRun({ path: { runId }, body })),
   /**
    * Asks for the state of a Run's pull request to be read again (Issue #142; 202: the Run, with
    * `pullRequest.refreshing` while an agent worker reads it). `onOpen` is the Run page's own

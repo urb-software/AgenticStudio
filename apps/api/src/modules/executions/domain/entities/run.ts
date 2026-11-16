@@ -215,8 +215,18 @@ export interface RunQuestion {
 export type RunMessage =
   | { kind: 'question'; question: RunQuestion; at: Date }
   | { kind: 'answer'; text: string; at: Date }
-  | { kind: 'follow_up'; text: string; at: Date }
+  | ({ kind: 'follow_up'; text: string; at: Date } & FollowUpSource)
   | ({ kind: 'part_end'; at: Date } & RunPartEnd);
+
+/**
+ * Where a Follow-up came from (Issue #147): the operator's own text, or (`bring_up_to_date`) the
+ * request to merge the integration branch into the Run branch, whose `text` is the operator's
+ * optional note (empty when there is none). `mergedCommit` is the integration branch commit the
+ * Run branch has merged, once the agent worker reported it.
+ */
+export type FollowUpSource =
+  | { source?: undefined; mergedCommit?: undefined }
+  | { source: 'bring_up_to_date'; mergedCommit?: string };
 
 /**
  * How a part of the Run (its first part, or a Follow-up) ended (review S1 of #150): recorded
@@ -462,7 +472,7 @@ export function stepLimitFailure(maxSteps: number, inFollowUp = false): RunFailu
 }
 
 /** Why a resumed Run step continues the agent session (Issue #141; the worker protocol's list). */
-export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up'] as const;
+export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up', 'bring_up_to_date'] as const;
 export type ResumeReason = (typeof RESUME_REASONS)[number];
 
 /**
@@ -479,7 +489,14 @@ export function resumeMessage(
   const last = run.messages.at(-1);
   if (run.sessionRef === null || last === undefined) return null;
   if (last.kind === 'question' || last.kind === 'part_end') return null;
-  if (last.kind === 'follow_up') return { text: last.text, reason: 'follow_up' };
+  if (last.kind === 'follow_up') {
+    return last.source === 'bring_up_to_date'
+      ? {
+          text: last.text === '' ? BRING_UP_TO_DATE_DEFAULT_TEXT : last.text,
+          reason: 'bring_up_to_date',
+        }
+      : { text: last.text, reason: 'follow_up' };
+  }
   const before = run.messages.at(-2);
   return { text: last.text, reason: before?.kind === 'question' ? 'answer' : 'usage_limit' };
 }
@@ -493,7 +510,27 @@ export function takesNewEnvironmentFile(
   run: Pick<Run, 'followUpCount'>,
   reason: ResumeReason,
 ): boolean {
-  return reason === 'follow_up' || (reason === 'usage_limit' && run.followUpCount > 0);
+  return (
+    reason === 'follow_up' ||
+    reason === 'bring_up_to_date' ||
+    (reason === 'usage_limit' && run.followUpCount > 0)
+  );
+}
+
+/**
+ * What the claim hands the worker as the text of a bring-up-to-date request that has no note
+ * (Issue #147): the worker words the instruction to the agent itself, with the merge's outcome.
+ * The same text as the worker protocol's (the domain does not import the contracts package).
+ */
+export const BRING_UP_TO_DATE_DEFAULT_TEXT = 'Bring the Run branch up to date.';
+
+/**
+ * Whether the Run's current part is a request to bring the Run branch up to date (Issue #147):
+ * its latest Follow-up has that source. The part goes on through questions and the usage limit.
+ */
+export function inBringUpToDate(run: Pick<Run, 'messages'>): boolean {
+  const lastFollowUp = run.messages.findLast((message) => message.kind === 'follow_up');
+  return lastFollowUp?.kind === 'follow_up' && lastFollowUp.source === 'bring_up_to_date';
 }
 
 /**

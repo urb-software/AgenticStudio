@@ -544,4 +544,92 @@ describe('ReportRunStateHandler', () => {
       expect(released).toEqual([run.id]);
     });
   });
+  // Issue #147: a bring-up-to-date request is a Follow-up the worker reports on.
+  describe('a bring-up-to-date request (Issue #147)', () => {
+    const MERGED = 'b'.repeat(40);
+    const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+
+    /** The Run delivered, then claimed again by WORKER for a request to bring it up to date. */
+    async function requested() {
+      await report({ state: 'running' });
+      await runs.appendStep(
+        run.id,
+        WORKER,
+        { kind: 'start', result: { outcome: 'done', summary: 'Done.' }, sessionRef: 's-1' },
+        { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false },
+        [],
+        T0,
+      );
+      await report({
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+      });
+      await runs.queueFollowUp(run.id, 'Mind the config.', T1, 'bring_up_to_date');
+      expect((await runs.claimNext(WORKER, T1))?.id).toBe(run.id);
+    }
+
+    const entry = () =>
+      runs.runs
+        .find((candidate) => candidate.id === run.id)!
+        .messages.findLast((message) => message.kind === 'follow_up');
+
+    it('records the merged commit reported with running, and with the end of the part', async () => {
+      await requested();
+
+      await report({ state: 'running', mergedCommit: MERGED });
+
+      expect(entry()).toMatchObject({ source: 'bring_up_to_date', mergedCommit: MERGED });
+      expect(
+        await report({ state: 'succeeded', delivery: { outcome: 'none' }, mergedCommit: MERGED }),
+      ).toMatchObject({ state: 'succeeded' });
+    });
+
+    it('records no merged commit for a worker that does not hold the Run', async () => {
+      await requested();
+
+      await expect(
+        report({ workerId: OTHER_WORKER, state: 'running', mergedCommit: MERGED }),
+      ).rejects.toBeInstanceOf(RunNotHeldError);
+      expect(entry()).not.toHaveProperty('mergedCommit');
+    });
+
+    it('returns the Run to its earlier result when the branch was already up to date', async () => {
+      await requested();
+
+      const restored = await report({ state: 'succeeded', alreadyUpToDate: true });
+
+      expect(restored).toMatchObject({
+        state: 'succeeded',
+        claimedBy: null,
+        delivery: 'delivered',
+        pullRequest: PULL_REQUEST,
+      });
+      expect(restored.messages.at(-1)).toMatchObject({
+        kind: 'part_end',
+        state: 'succeeded',
+        detail: expect.stringContaining('already has everything dev has'),
+      });
+      expect(notified).toContain(run.id);
+      // The worker's retry of the same report changes nothing.
+      expect(await report({ state: 'succeeded', alreadyUpToDate: true })).toMatchObject({
+        state: 'succeeded',
+      });
+      expect(restored.messages).toHaveLength((await runs.findById(run.id))!.messages.length);
+    });
+
+    it('refuses the report from a worker that does not hold the Run, or for a plain Follow-up', async () => {
+      await requested();
+      await expect(
+        report({ workerId: OTHER_WORKER, state: 'succeeded', alreadyUpToDate: true }),
+      ).rejects.toBeInstanceOf(RunNotHeldError);
+
+      // A Follow-up that is not a bring-up request has no earlier result to return to.
+      await runs.finishBringUpToDate(run.id, WORKER, 'x', T1);
+      await runs.queueFollowUp(run.id, 'Plain.', T1);
+      await runs.claimNext(WORKER, T1);
+      await expect(report({ state: 'succeeded', alreadyUpToDate: true })).rejects.toBeInstanceOf(
+        IllegalRunTransitionError,
+      );
+    });
+  });
 });

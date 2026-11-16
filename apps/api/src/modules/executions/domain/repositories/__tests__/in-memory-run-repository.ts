@@ -406,7 +406,12 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve({ status: 'resumed', run: this.view(run) });
   }
 
-  queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null> {
+  queueFollowUp(
+    runId: string,
+    text: string,
+    now: Date,
+    source?: 'bring_up_to_date',
+  ): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (
       !run ||
@@ -422,7 +427,11 @@ export class InMemoryRunRepository implements RunRepository {
       return Promise.resolve(null);
     }
     run.messages.push({ kind: 'part_end', ...partEndOf(run)!, at: now });
-    run.messages.push({ kind: 'follow_up', text, at: now });
+    run.messages.push(
+      source === undefined
+        ? { kind: 'follow_up', text, at: now }
+        : { kind: 'follow_up', text, at: now, source },
+    );
     Object.assign(run, {
       state: 'queued',
       followUpQueued: true,
@@ -453,6 +462,73 @@ export class InMemoryRunRepository implements RunRepository {
     );
     for (const run of removed) run.workingCopyRemovedAt = now;
     return Promise.resolve(removed.length);
+  }
+
+  recordMergedCommit(runId: string, workerId: string, commit: string): Promise<boolean> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    const entry = run?.messages.findLast((message) => message.kind === 'follow_up');
+    if (
+      !run ||
+      run.claimedBy !== workerId ||
+      entry?.kind !== 'follow_up' ||
+      entry.source !== 'bring_up_to_date' ||
+      entry.mergedCommit !== undefined
+    ) {
+      return Promise.resolve(false);
+    }
+    entry.mergedCommit = commit;
+    return Promise.resolve(true);
+  }
+
+  finishBringUpToDate(
+    runId: string,
+    workerId: string,
+    detail: string,
+    now: Date,
+  ): Promise<Run | null> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (!run || run.claimedBy !== workerId || !['preparing', 'running'].includes(run.state)) {
+      return Promise.resolve(null);
+    }
+    const index = run.messages.findLastIndex((message) => message.kind === 'follow_up');
+    const entry = run.messages[index];
+    const before = run.messages[index - 1];
+    if (
+      entry?.kind !== 'follow_up' ||
+      entry.source !== 'bring_up_to_date' ||
+      before?.kind !== 'part_end'
+    ) {
+      return Promise.resolve(null);
+    }
+    run.messages.push({
+      kind: 'part_end',
+      state: before.state,
+      failureCode: before.failureCode,
+      delivery: before.delivery,
+      detail,
+      at: now,
+    });
+    Object.assign(run, {
+      state: before.state,
+      failure:
+        before.state === 'failed' && before.failureCode
+          ? { code: before.failureCode, detail: before.detail }
+          : null,
+      cancellation:
+        before.state === 'cancelled'
+          ? {
+              by: before.detail.startsWith('Cancelled by the operator') ? 'operator' : 'system',
+              reason: before.detail,
+            }
+          : null,
+      delivery: before.delivery,
+      claimedBy: null,
+      heartbeatAt: null,
+      releasedBy: workerId,
+      finishedAt: now,
+      stepStartedAt: null,
+    });
+    return Promise.resolve(this.view(run));
   }
 
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {

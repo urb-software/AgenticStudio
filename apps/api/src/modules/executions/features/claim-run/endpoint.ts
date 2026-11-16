@@ -1,7 +1,7 @@
 import { type RunPayload, runPayloadSchema } from '@agentic-studio/contracts';
 import { Body, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
 import { WorkerController } from '../../../../platform/auth/worker-route.js';
-import { resumeMessage } from '../../domain/entities/run.js';
+import { inBringUpToDate, resumeMessage } from '../../domain/entities/run.js';
 import { type ClaimedRun, ClaimRunHandler } from './handler.js';
 import { ClaimRunRequestDto } from './schema.js';
 
@@ -81,6 +81,9 @@ function kindOf(run: ClaimedRun) {
       resumeReason: resume.reason,
       // Issue #141: while the Run works on a Follow-up, its number (the log marks its start and end).
       ...(run.followUpCount > 0 ? { followUpNumber: run.followUpCount } : {}),
+      // Issue #147: the part is a request to bring the Run branch up to date (a merge left open
+      // at its end is completed or aborted by the worker).
+      ...(inBringUpToDate(run) ? { bringUpToDate: true as const } : {}),
       nextSeq: run.nextSeq,
       ...pullRequest,
     };

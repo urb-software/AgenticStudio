@@ -2158,6 +2158,194 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(JSON.stringify(after)).not.toContain('session-7');
     });
 
+    // Issue #147: a request to bring the Run branch up to date is a Follow-up of its own source.
+    describe('bringing the branch up to date (Issue #147)', () => {
+      const MERGED = 'e'.repeat(40);
+      const bringUp = (runId: string, body?: unknown, origin: string | null = STUDIO_ORIGIN) => {
+        const call = http().post(`/api/runs/${runId}/bring-up-to-date`).set('Cookie', cookie);
+        if (origin !== null) call.set('Origin', origin);
+        return body === undefined ? call.send() : call.send(body as object);
+      };
+
+      it('queues the Run with its note, hands the claim the reason and records the merged commit', async () => {
+        const { run } = await deliveredRun();
+        advance(60);
+
+        const sent = await bringUp(run.id, { note: '  Keep our config.  ' });
+
+        expect(sent.status).toBe(202);
+        expect(sent.body).toMatchObject({
+          state: 'queued',
+          followUps: 1,
+          followUp: { allowed: false, reason: 'follow_up_queued' },
+          pullRequest: PULL_REQUEST,
+        });
+        expect(sent.body.messages.at(-1)).toEqual({
+          role: 'operator',
+          kind: 'follow_up',
+          text: 'Keep our config.',
+          source: 'bring_up_to_date',
+          at: clock.current.toISOString(),
+        });
+        // A second request, or a plain Follow-up, while one is queued is refused clearly.
+        expectProblem(await bringUp(run.id), 409, PROBLEM.followUpNotAllowed);
+        expectProblem(await followUp(run.id, { text: 'More.' }), 409, PROBLEM.followUpNotAllowed);
+
+        expect((await claim(W2)).status).toBe(204);
+        expect((await claim(W1)).body).toMatchObject({
+          runId: run.id,
+          kind: 'resume',
+          resumeReason: 'bring_up_to_date',
+          bringUpToDate: true,
+          followUpNumber: 1,
+          answer: 'Keep our config.',
+          sessionRef: 'session-7',
+          pullRequestNumber: 7,
+          stepsBeforePart: 1,
+        });
+        // The merge commit goes on the conversation entry with the part's running report.
+        expect((await report(run.id, { state: 'running', mergedCommit: MERGED })).status).toBe(204);
+        expect((await getRun(run.id)).body.messages.at(-1)).toMatchObject({
+          kind: 'follow_up',
+          source: 'bring_up_to_date',
+          mergedCommit: MERGED,
+        });
+        expect((await step(run.id, 2, 'resume', DONE)).status).toBe(204);
+        expect(
+          (
+            await report(run.id, {
+              state: 'succeeded',
+              delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST, pushedCommit: C2 },
+              mergedCommit: MERGED,
+            })
+          ).status,
+        ).toBe(204);
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'succeeded',
+          delivery: 'delivered',
+          steps: { used: 2, usedInPart: 1 },
+        });
+      });
+
+      it('takes no note, and gives the claim a default text', async () => {
+        const { run } = await deliveredRun();
+
+        const sent = await bringUp(run.id);
+
+        expect(sent.status).toBe(202);
+        expect(sent.body.messages.at(-1)).toMatchObject({
+          kind: 'follow_up',
+          text: '',
+          source: 'bring_up_to_date',
+        });
+        expect((await claim()).body).toMatchObject({
+          resumeReason: 'bring_up_to_date',
+          answer: 'Bring the Run branch up to date.',
+        });
+      });
+
+      it('returns the Run to its earlier result when the branch was already up to date', async () => {
+        const { run } = await deliveredRun();
+        await bringUp(run.id, { note: 'Please.' });
+        await claim();
+
+        expect((await report(run.id, { state: 'succeeded', alreadyUpToDate: true })).status).toBe(
+          204,
+        );
+
+        const after = (await getRun(run.id)).body;
+        expect(after).toMatchObject({
+          state: 'succeeded',
+          delivery: 'delivered',
+          pullRequest: PULL_REQUEST,
+          followUp: { allowed: true },
+          steps: { used: 1 },
+        });
+        expect(after.messages.map((message: { kind: string }) => message.kind)).toEqual([
+          'task',
+          'part_end',
+          'follow_up',
+          'part_end',
+        ]);
+        expect(after.messages.at(-1)).toMatchObject({
+          role: 'studio',
+          kind: 'part_end',
+          end: { state: 'succeeded', delivery: 'delivered' },
+          text: expect.stringContaining('already has everything'),
+        });
+        expect(after.messages.at(-2)).not.toHaveProperty('mergedCommit');
+        // The worker's retry of the same report changes nothing, and another request works.
+        expect((await report(run.id, { state: 'succeeded', alreadyUpToDate: true })).status).toBe(
+          204,
+        );
+        expect((await bringUp(run.id)).status).toBe(202);
+      });
+
+      it('fails a request whose integration branch could not be fetched, keeping the earlier result in the conversation', async () => {
+        const { run } = await deliveredRun();
+        await bringUp(run.id);
+        await claim();
+
+        expect(
+          (
+            await report(run.id, {
+              state: 'failed',
+              failure: {
+                code: 'preparation_failed',
+                detail: 'The integration branch dev could not be fetched.',
+              },
+            })
+          ).status,
+        ).toBe(204);
+
+        const after = (await getRun(run.id)).body;
+        expect(after).toMatchObject({
+          state: 'failed',
+          failure: { code: 'preparation_failed' },
+          followUp: { allowed: true },
+        });
+        expect(after.messages.map((message: { kind: string }) => message.kind)).toEqual([
+          'task',
+          'part_end',
+          'follow_up',
+        ]);
+        expect(after.messages[1]).toMatchObject({ end: { state: 'succeeded' } });
+      });
+
+      it('refuses what a Follow-up refuses, a bad note, an unknown Run and a missing session or origin', async () => {
+        const { run } = await deliveredRun();
+        expectProblem(await bringUp(run.id, { note: 'a'.repeat(10_001) }), 422);
+        expectProblem(await bringUp(run.id, { note: 'ok', extra: true }), 422);
+        expectProblem(await bringUp(randomUUID()), 404, PROBLEM.runNotFound);
+        expectProblem(await bringUp('nope'), 404, PROBLEM.runNotFound);
+        expect((await bringUp(run.id, undefined, 'https://evil.example.test')).status).toBe(403);
+        const withoutSession = await http()
+          .post(`/api/runs/${run.id}/bring-up-to-date`)
+          .set('Origin', STUDIO_ORIGIN)
+          .send();
+        expect(withoutSession.status).toBe(401);
+        expect((await getRun(run.id)).body.state).toBe('succeeded');
+        expect((await bringUp(run.id, { note: 'a'.repeat(10_000) })).status).toBe(202);
+
+        // A Run that is not finished takes none, as with a Follow-up.
+        const project = await readyProject(`Shop ${randomUUID()}`);
+        const working = await queuedRun(project.id);
+        expectProblem(await bringUp(working.id), 409, PROBLEM.followUpNotAllowed);
+      });
+
+      it('refuses the already-up-to-date report for a Run that is not carrying such a request', async () => {
+        const project = await readyProject(`Shop ${randomUUID()}`);
+        const plain = await queuedRun(project.id);
+        await claim();
+        await report(plain.id, { state: 'running' });
+
+        const refused = await report(plain.id, { state: 'succeeded', alreadyUpToDate: true });
+
+        expectProblem(refused, 409, PROBLEM.illegalRunTransition);
+        expect((await getRun(plain.id)).body.state).toBe('running');
+      });
+    });
+
     it.each([
       ['failed', { state: 'failed', failure: { code: 'agent_failed', detail: 'It broke.' } }],
       ['timed_out', { state: 'timed_out' }],

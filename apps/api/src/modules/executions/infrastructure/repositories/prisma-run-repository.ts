@@ -114,6 +114,8 @@ const RUN_FIELDS = {
       endState: true,
       endFailureCode: true,
       endDelivery: true,
+      source: true,
+      mergedCommit: true,
     },
     orderBy: { seq: 'asc' },
   },
@@ -181,6 +183,8 @@ interface RunRow {
     endState: string | null;
     endFailureCode: string | null;
     endDelivery: string | null;
+    source: string | null;
+    mergedCommit: string | null;
   }[];
 }
 
@@ -189,7 +193,18 @@ const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
 /** A message row as a Run's message (Issue #103); the CHECK constraint fixes the kinds. */
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
-  if (row.kind === 'follow_up') return { kind: 'follow_up', text: row.text, at: row.at };
+  if (row.kind === 'follow_up') {
+    // The CHECK constraint fixes the source (Issue #147).
+    return row.source === 'bring_up_to_date'
+      ? {
+          kind: 'follow_up',
+          text: row.text,
+          at: row.at,
+          source: 'bring_up_to_date',
+          ...(row.mergedCommit === null ? {} : { mergedCommit: row.mergedCommit }),
+        }
+      : { kind: 'follow_up', text: row.text, at: row.at };
+  }
   if (row.kind === 'part_end') {
     // The CHECK constraints fix the state, the code and the delivery (review S1 of #150).
     return {
@@ -744,7 +759,12 @@ export class PrismaRunRepository implements RunRepository {
     return { status: 'resumed', run: toRun(row) };
   }
 
-  async queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null> {
+  async queueFollowUp(
+    runId: string,
+    text: string,
+    now: Date,
+    source?: 'bring_up_to_date',
+  ): Promise<Run | null> {
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the conditions, the message and the state change hold together, so a
       // second submission, a claim or a delivery retry in between leaves this one refused.
@@ -784,7 +804,14 @@ export class PrismaRunRepository implements RunRepository {
         },
       });
       await tx.runMessage.create({
-        data: { runId, seq: seq + 1, kind: 'follow_up', text, at: now },
+        data: {
+          runId,
+          seq: seq + 1,
+          kind: 'follow_up',
+          text,
+          at: now,
+          ...(source === undefined ? {} : { source }),
+        },
       });
       // Back to the queue: the earlier result is cleared (the Run's state reflects its latest
       // result), its pull request stays (the same one is updated), and the new part gets its
@@ -804,6 +831,91 @@ export class PrismaRunRepository implements RunRepository {
           cancelRequestedAt: null,
           delivery: null,
           waitingSince: null,
+          stepStartedAt: null,
+        },
+        select: RUN_FIELDS,
+      });
+      return toRun(row);
+    });
+  }
+
+  async recordMergedCommit(runId: string, workerId: string, commit: string): Promise<boolean> {
+    return this.db.$transaction(async (tx) => {
+      const held = await tx.run.count({ where: { id: runId, claimedBy: workerId } });
+      if (held === 0) return false;
+      const entry = await tx.runMessage.findFirst({
+        where: { runId, kind: 'follow_up' },
+        orderBy: { seq: 'desc' },
+        select: { seq: true, source: true, mergedCommit: true },
+      });
+      if (!entry || entry.source !== 'bring_up_to_date' || entry.mergedCommit !== null) {
+        return false;
+      }
+      await tx.runMessage.update({
+        where: { runId_seq: { runId, seq: entry.seq } },
+        data: { mergedCommit: commit },
+      });
+      return true;
+    });
+  }
+
+  async finishBringUpToDate(
+    runId: string,
+    workerId: string,
+    detail: string,
+    now: Date,
+  ): Promise<Run | null> {
+    return this.db.$transaction(async (tx) => {
+      // Locks the Run row: the condition and the return to the earlier result hold together.
+      const [held] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM runs
+        WHERE id = ${runId}::uuid AND claimed_by = ${workerId}
+          AND state IN ('preparing', 'running')
+        FOR UPDATE`;
+      if (!held) return null;
+      const entry = await tx.runMessage.findFirst({
+        where: { runId, kind: 'follow_up' },
+        orderBy: { seq: 'desc' },
+        select: { seq: true, source: true },
+      });
+      if (!entry || entry.source !== 'bring_up_to_date') return null;
+      const before = await tx.runMessage.findUnique({
+        where: { runId_seq: { runId, seq: entry.seq - 1 } },
+      });
+      if (before?.kind !== 'part_end' || before.endState === null) return null;
+      const ended = before.endState as RunPartEnd['state'];
+      const last = await tx.runMessage.findFirst({
+        where: { runId },
+        orderBy: { seq: 'desc' },
+        select: { seq: true },
+      });
+      // Nothing was changed: the Run is as it was, and its conversation says so.
+      await tx.runMessage.create({
+        data: {
+          runId,
+          seq: (last?.seq ?? 0) + 1,
+          kind: 'part_end',
+          text: detail,
+          endState: before.endState,
+          endFailureCode: before.endFailureCode,
+          endDelivery: before.endDelivery,
+          at: now,
+        },
+      });
+      const operatorCancel = before.text.startsWith('Cancelled by the operator');
+      const row = await tx.run.update({
+        where: { id: runId },
+        data: {
+          state: ended,
+          failureCode: ended === 'failed' ? before.endFailureCode : null,
+          failureDetail: ended === 'failed' ? before.text : null,
+          cancelledBy: ended === 'cancelled' ? (operatorCancel ? 'operator' : 'system') : null,
+          cancelReason: ended === 'cancelled' ? before.text : null,
+          delivery: before.endDelivery,
+          claimedBy: null,
+          heartbeatAt: null,
+          releasedBy: workerId,
+          finishedAt: now,
           stepStartedAt: null,
         },
         select: RUN_FIELDS,

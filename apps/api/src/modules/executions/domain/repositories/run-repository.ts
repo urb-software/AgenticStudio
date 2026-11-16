@@ -276,7 +276,35 @@ export interface RunRepository {
    * Working copy, but holds no place while it waits: the claim starts it under the concurrency
    * limits. `null` if a condition failed (nothing changed).
    */
-  queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null>;
+  queueFollowUp(
+    runId: string,
+    text: string,
+    now: Date,
+    source?: 'bring_up_to_date',
+  ): Promise<Run | null>;
+
+  /**
+   * Records the integration branch commit a bring-up-to-date Follow-up has merged (Issue #147) on
+   * its conversation entry: only while `workerId` holds the Run, and only the Run's latest
+   * Follow-up, when it came from that request and has no commit yet. Idempotent. False when
+   * nothing was recorded.
+   */
+  recordMergedCommit(runId: string, workerId: string, commit: string): Promise<boolean>;
+
+  /**
+   * Ends a bring-up-to-date Follow-up whose branch was already up to date (Issue #147), in one
+   * transaction: if `workerId` holds the Run (preparing or running) and its latest Follow-up
+   * came from that request, the Run goes back to the result it had before it (the state, failure
+   * and delivery the `part_end` before the Follow-up recorded) and a `part_end` with `detail`
+   * notes that nothing was changed. Nothing was pushed and no Run step was taken. `null` when a
+   * condition failed.
+   */
+  finishBringUpToDate(
+    runId: string,
+    workerId: string,
+    detail: string,
+    now: Date,
+  ): Promise<Run | null>;
 
   /**
    * Records that `workerId`'s retention removed the Working copies of these Runs (Issue #141):

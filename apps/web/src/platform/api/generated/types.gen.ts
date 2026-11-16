@@ -146,6 +146,8 @@ export type RunMessageOutput = {
     kind: 'task' | 'question' | 'answer' | 'follow_up' | 'part_end';
     text: string;
     end?: RunPartEndOutput;
+    source?: 'bring_up_to_date';
+    mergedCommit?: string;
     options?: Array<string>;
     recommendation?: string;
     at: string;
@@ -210,6 +212,10 @@ export type AnswerRunRequest = {
 
 export type FollowUpRunRequest = {
     text: string;
+};
+
+export type BringUpToDateRequest = {
+    note?: string;
 };
 
 export type RefreshPullRequestRequest = {
@@ -1052,6 +1058,42 @@ export type FollowUpRunResponses = {
 };
 
 export type FollowUpRunResponse = FollowUpRunResponses[keyof FollowUpRunResponses];
+
+export type BringUpToDateRunData = {
+    body?: BringUpToDateRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/bring-up-to-date';
+};
+
+export type BringUpToDateRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run cannot take a Follow-up now (urn:agentic-studio:problem:follow-up-not-allowed)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type BringUpToDateRunError = BringUpToDateRunErrors[keyof BringUpToDateRunErrors];
+
+export type BringUpToDateRunResponses = {
+    202: RunOutput;
+};
+
+export type BringUpToDateRunResponse = BringUpToDateRunResponses[keyof BringUpToDateRunResponses];
 
 export type RefreshRunPullRequestData = {
     body?: RefreshPullRequestRequest;

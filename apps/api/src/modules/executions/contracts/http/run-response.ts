@@ -94,6 +94,17 @@ export const runMessageResponseSchema = z
       })
       .meta({ id: 'RunPartEnd' })
       .optional(),
+    /**
+     * With `follow_up` only (Issue #147): `bring_up_to_date`, the operator's request to merge the
+     * integration branch into the Run branch; `text` is then the operator's optional note (empty
+     * when there is none).
+     */
+    source: z.literal('bring_up_to_date').optional(),
+    /**
+     * With `source` only: the integration branch commit the Run branch has merged, once the
+     * agent worker reported it (absent when nothing was merged, or not yet).
+     */
+    mergedCommit: z.string().optional(),
     /** A question's offered options, when it offered any (review M2 of #127). */
     options: z.array(z.string()).optional(),
     /** The option a question recommended, when it recommended one. */
@@ -287,7 +298,14 @@ export function toRunResponse(
           question: { text: string; options?: string[]; recommendation?: string };
           at: Date;
         }
-      | { kind: 'answer' | 'follow_up'; text: string; at: Date }
+      | { kind: 'answer'; text: string; at: Date }
+      | {
+          kind: 'follow_up';
+          text: string;
+          at: Date;
+          source?: 'bring_up_to_date';
+          mergedCommit?: string;
+        }
       | {
           kind: 'part_end';
           state: 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
@@ -420,6 +438,14 @@ export function toRunResponse(
                 role: 'operator' as const,
                 kind: message.kind,
                 text: message.text,
+                ...(message.kind === 'follow_up' && message.source !== undefined
+                  ? {
+                      source: message.source,
+                      ...(message.mergedCommit === undefined
+                        ? {}
+                        : { mergedCommit: message.mergedCommit }),
+                    }
+                  : {}),
                 at: message.at.toISOString(),
               },
       ),
