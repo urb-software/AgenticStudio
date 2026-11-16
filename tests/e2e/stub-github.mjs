@@ -16,6 +16,11 @@
 // token, as GitHub does), and the same control endpoint sets what they answer (`checkRuns`,
 // `statuses`, `jobLogs`, `headSha`).
 //
+// Issue #146: the reads for a pull request's Review comments (its reviews, inline comments and
+// conversation comments, a hundred to a page, and the review threads through a read-only GraphQL
+// query), set through the same control endpoint (`reviews`, `inlineComments`, `issueComments`,
+// `reviewThreads`).
+//
 // Like GitHub, it checks what the smoke must prove end to end (Issue #115): every call carries
 // the Agent token (`Authorization: Bearer $STUB_GITHUB_TOKEN`, else 401), and a new pull
 // request is a draft against the integration branch (`draft: true`, `base` =
@@ -44,6 +49,13 @@ let checkRuns = [];
 let statuses = [];
 /** Job id (string) to the text of its log. */
 let jobLogs = {};
+
+/** Issue #146: what the comment routes answer, as GitHub words them; set through the control endpoint. */
+let reviews = [];
+let inlineComments = [];
+let issueComments = [];
+/** The review threads the GraphQL query answers: `{ isResolved, commentIds }`. */
+let reviewThreads = [];
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://stub');
@@ -74,6 +86,10 @@ const server = createServer((request, response) => {
       if (Array.isArray(body.checkRuns)) checkRuns = body.checkRuns;
       if (Array.isArray(body.statuses)) statuses = body.statuses;
       if (body.jobLogs && typeof body.jobLogs === 'object') jobLogs = body.jobLogs;
+      if (Array.isArray(body.reviews)) reviews = body.reviews;
+      if (Array.isArray(body.inlineComments)) inlineComments = body.inlineComments;
+      if (Array.isArray(body.issueComments)) issueComments = body.issueComments;
+      if (Array.isArray(body.reviewThreads)) reviewThreads = body.reviewThreads;
       if (Number.isInteger(body.behindBy)) pr.behindBy = body.behindBy;
       if (Number.isInteger(body.aheadBy)) pr.aheadBy = body.aheadBy;
       console.log(
@@ -97,7 +113,20 @@ const server = createServer((request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/plain' });
     return response.end(jobLogs[download[1]] ?? '');
   }
-  if (!match && !compare && !branches && !checksRoute && !logRoute && url.pathname !== '/user')
+  const commentsRoute =
+    /^\/repos\/([^/]+)\/([^/]+)\/pulls\/\d+\/(reviews|comments)$/.exec(url.pathname) ??
+    /^\/repos\/([^/]+)\/([^/]+)\/(issues)\/\d+\/comments$/.exec(url.pathname);
+  const graphql = url.pathname === '/graphql';
+  if (
+    !match &&
+    !compare &&
+    !branches &&
+    !checksRoute &&
+    !logRoute &&
+    !commentsRoute &&
+    !graphql &&
+    url.pathname !== '/user'
+  )
     return send(404, { message: 'Not Found' });
   if (request.headers.authorization !== `Bearer ${token}`) {
     console.log(`[stub-github] refused ${request.method} ${url.pathname}: not the Agent token`);
@@ -107,6 +136,40 @@ const server = createServer((request, response) => {
     return checksRoute[3] === 'check-runs'
       ? send(200, { total_count: checkRuns.length, check_runs: checkRuns })
       : send(200, { state: 'pending', statuses });
+  }
+  if (commentsRoute && request.method === 'GET') {
+    const list =
+      commentsRoute[3] === 'reviews'
+        ? reviews
+        : commentsRoute[3] === 'comments'
+          ? inlineComments
+          : issueComments;
+    const size = Number(url.searchParams.get('per_page') ?? 30);
+    const page = Number(url.searchParams.get('page') ?? 1);
+    return send(200, list.slice((page - 1) * size, page * size));
+  }
+  if (graphql && request.method === 'POST') {
+    request.resume();
+    return request.on('end', () =>
+      send(200, {
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: reviewThreads.map((thread) => ({
+                  isResolved: thread.isResolved,
+                  comments: {
+                    pageInfo: { hasNextPage: false },
+                    nodes: thread.commentIds.map((databaseId) => ({ databaseId })),
+                  },
+                })),
+              },
+            },
+          },
+        },
+      }),
+    );
   }
   if (logRoute && request.method === 'GET') {
     if (!(logRoute[3] in jobLogs)) return send(404, { message: 'Not Found' });

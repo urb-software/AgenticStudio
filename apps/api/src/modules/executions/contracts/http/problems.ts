@@ -46,6 +46,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   pullRequestNotRefreshable: 'urn:agentic-studio:problem:pull-request-not-refreshable',
   /** 409: no stored Pull request check of the Run has failed, so there is nothing to send (Issue #145). */
   noFailingChecks: 'urn:agentic-studio:problem:no-failing-checks',
+  /** 409: a load of the Run's Review comments is under way already (Issue #146). */
+  reviewCommentsLoadRunning: 'urn:agentic-studio:problem:review-comments-load-running',
   /** 404: the Run has no prepared Follow-up to review (Issue #145). */
   preparedFollowUpNotFound: 'urn:agentic-studio:problem:prepared-follow-up-not-found',
   /** 404 (worker routes): no lookup has this id (Issue #142). */
@@ -105,6 +107,15 @@ export function noFailingChecks(): ProblemException {
     title: 'No failing checks',
     detail:
       'None of the pull request checks Studio knows of has failed. Refresh the pull request and try again.',
+  });
+}
+
+/** 409: a load of the Run's Review comments is under way already (Issue #146). */
+export function reviewCommentsLoadRunning(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.reviewCommentsLoadRunning,
+    title: 'Load already running',
+    detail: 'A load of the review comments is already running. Wait for it to finish.',
   });
 }
 

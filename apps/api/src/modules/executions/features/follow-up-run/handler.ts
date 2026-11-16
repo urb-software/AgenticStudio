@@ -3,6 +3,7 @@ import {
   followUpEligibility,
   type FollowUpEligibility,
   FollowUpNotAllowedError,
+  type FollowUpOrigin,
   type FollowUpSource,
   isRunId,
   type Run,
@@ -38,9 +39,11 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
  * `source` when it was prepared from failing checks (Issue #145: the prepared draft is then
  * removed in the same step). Issue #147: the source `bring_up_to_date` marks a request to bring
  * the Run branch up to date, which is a Follow-up in every other respect (its text is the
- * operator's note, possibly empty). Returns the queued Run and its eligibility now. Throws
- * {@link RunNotFoundError} or
- * {@link FollowUpNotAllowedError}.
+ * operator's note, possibly empty). Returns the queued Run and its eligibility now. Issue #146: a
+ * Follow-up from `review_comments` names the selected comments, which must all be in the Run's
+ * loaded set (its text is the operator's); the Follow-up records how many there are and their
+ * authors, and the loaded set is removed with it. Throws {@link RunNotFoundError},
+ * {@link FollowUpNotAllowedError} or {@link ReviewCommentsNotLoadedError}.
  */
 @Injectable()
 export class FollowUpRunHandler {
@@ -59,12 +62,16 @@ export class FollowUpRunHandler {
     runId: string,
     text: string,
     source?: FollowUpSource,
+    reviewCommentIds: readonly string[] = [],
   ): Promise<{ run: Run; followUp: FollowUpView; workerConnected: boolean }> {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
     const before = this.eligibility(run);
     if (!before.allowed) throw new FollowUpNotAllowedError(before.reason);
-    const queued = await this.runs.queueFollowUp(run.id, text, this.clock.now(), source);
+    // Issue #146: the store checks the selected comments against the loaded set under its lock.
+    const origin: FollowUpOrigin | undefined =
+      source === 'review_comments' ? { source, commentIds: reviewCommentIds } : source;
+    const queued = await this.runs.queueFollowUp(run.id, text, this.clock.now(), origin);
     if (queued) {
       // Issue #142: the pull request state is read again with every Follow-up (the agent worker
       // also checks it before it starts the agent); the page then shows the state it found.

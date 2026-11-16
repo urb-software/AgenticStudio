@@ -5,9 +5,12 @@ import {
   type PullRequestCheck,
   type PullRequestStateName,
   type PullRequestStateResult,
+  type ReviewCommentScope,
+  type ReviewCommentsResult,
   type RunPayload,
 } from '@agentic-studio/contracts';
 import { excerptAllowance, logExcerpt } from './check-logs.js';
+import { buildReviewComments } from './review-comments.js';
 
 import {
   type CheckReport,
@@ -41,6 +44,11 @@ const LOGS_BUDGET_MS = 90_000;
  * of its latest commit, and a `failing_check_logs` lookup reads the end of the log of each failed
  * check. Both are reads through the same scope check; a log is untrusted text that is only
  * capped and cleaned of control characters here (Studio redacts it before it is stored).
+ *
+ * Issue #146: a `review_comments` lookup reads the pull request's reviews, inline comments and
+ * conversation comments (and which review threads are resolved) through the same scope check, and
+ * answers with the unresolved ones written by anyone but the Agent account. A comment is untrusted
+ * text; nothing here posts, replies to or resolves anything.
  */
 
 /** What a lookup needs to know about the Run's pull request. */
@@ -71,7 +79,7 @@ export interface PullRequestLookupsOptions {
   api: LookupApi;
   /** The Agent account on GitHub: its token (when configured) and the REST API's base URL. */
   github: { token?: string; apiUrl: string };
-  /** How long one preparation may read logs (default 90 s, below the lookup's lease). */
+  /** How long one preparation or comment load may read (default 90 s, below the lookup's lease). */
   logsBudgetMs?: number;
   /** A development or test worker: `file://` fixture remotes name a repository too. */
   allowFileRemotes: boolean;
@@ -150,6 +158,17 @@ export class PullRequestLookups implements LookupService {
       if (lookup.kind === 'failing_check_logs') {
         const result = await this.readFailingCheckLogs(lookupTarget(lookup), signal);
         return { ok: true, kind: 'failing_check_logs', result };
+      }
+      if (lookup.kind === 'review_comments') {
+        if (lookup.reviewComments === undefined) {
+          throw new LookupRefusal('failed', 'The lookup does not say which comments to load.');
+        }
+        const result = await this.readReviewComments(
+          lookupTarget(lookup),
+          lookup.reviewComments,
+          signal,
+        );
+        return { ok: true, kind: 'review_comments', result };
       }
       const result = await this.read(lookupTarget(lookup), signal, true);
       return { ok: true, kind: 'pull_request_state', result };
@@ -367,6 +386,58 @@ export class PullRequestLookups implements LookupService {
       }
       return { commit: details.headSha, checks };
     } catch (error) {
+      throw refusalOf(error);
+    }
+  }
+
+  /**
+   * The unresolved Review comments of the Run's pull request (Issue #146), after the scope check;
+   * throws {@link LookupRefusal}. A pull request that is merged or closed can still be read; one
+   * that is gone cannot. The whole read stays within the lookup's time budget.
+   */
+  private async readReviewComments(
+    target: PullRequestTarget,
+    request: { scope: ReviewCommentScope; since?: string | undefined },
+    signal: AbortSignal,
+  ): Promise<ReviewCommentsResult> {
+    const budget = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(this.options.logsBudgetMs ?? LOGS_BUDGET_MS),
+    ]);
+    try {
+      const scope = await this.openScope(target, budget);
+      if (scope.missing) {
+        throw new LookupRefusal(
+          'failed',
+          'The pull request was not found, so its comments were not read.',
+        );
+      }
+      const { reader, repository } = scope;
+      const pull = { ...repository, number: target.pullRequestNumber };
+      const agentLogin = await this.agentLogin(reader, budget);
+      const reviews = await reader.reviews(pull, budget);
+      const inline = await reader.inlineComments(pull, budget);
+      const conversation = await reader.conversationComments(pull, budget);
+      const resolved = await reader.resolvedInlineCommentIds(pull, budget);
+      return buildReviewComments(
+        {
+          reviews: reviews.items,
+          inline: inline.items,
+          conversation: conversation.items,
+          resolved,
+          agentLogin,
+          more: reviews.more || inline.more || conversation.more,
+        },
+        request,
+      );
+    } catch (error) {
+      // The time budget ran out (the worker itself is not stopping).
+      if (budget.aborted && !signal.aborted) {
+        throw new LookupRefusal(
+          'failed',
+          'Reading the comments from GitHub took too long. Try again.',
+        );
+      }
       throw refusalOf(error);
     }
   }

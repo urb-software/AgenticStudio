@@ -70,6 +70,7 @@ describe('loadConfig', () => {
       runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
+      operatorGithubLogin: null,
       retention: {
         days: 7,
         maxPerProject: 10,
@@ -530,6 +531,32 @@ describe('loadConfig', () => {
       );
       expect(error.message).toMatch(/STUDIO_RUN_SNAPSHOT_RETENTION_DAYS/);
     });
+  });
+
+  describe('the operator GitHub login (Issue #146)', () => {
+    it('is unset by default, and empty counts as unset', () => {
+      expect(loadConfig(requiredEnv).operatorGithubLogin).toBeNull();
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_OPERATOR_GITHUB_LOGIN: '  ' }).operatorGithubLogin,
+      ).toBeNull();
+    });
+
+    it('reads a login, trimmed', () => {
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_OPERATOR_GITHUB_LOGIN: ' Octo-Cat ' })
+          .operatorGithubLogin,
+      ).toBe('Octo-Cat');
+    });
+
+    it.each(['-octo', 'octo cat', 'octo/cat', 'a'.repeat(40), 'octo[bot]'])(
+      'refuses %j',
+      (value) => {
+        const error = captureError(() =>
+          loadConfig({ ...requiredEnv, STUDIO_OPERATOR_GITHUB_LOGIN: value }),
+        );
+        expect(error.message).toContain('STUDIO_OPERATOR_GITHUB_LOGIN');
+      },
+    );
   });
 
   describe('Working copy retention (Issue #143)', () => {

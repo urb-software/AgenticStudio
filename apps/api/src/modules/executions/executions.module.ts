@@ -6,6 +6,7 @@ import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_DIFF_REPOSITORY } from './domain/repositories/run-diff-repository.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
 import { PREPARED_FOLLOW_UP_REPOSITORY } from './domain/repositories/prepared-follow-up-repository.js';
+import { REVIEW_COMMENT_REPOSITORY } from './domain/repositories/review-comment-repository.js';
 import { RUN_LOOKUP_REPOSITORY } from './domain/repositories/run-lookup-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
 import { AnswerRunEndpoint } from './features/answer-run/endpoint.js';
@@ -43,6 +44,10 @@ import { RecordHeartbeatEndpoint } from './features/record-heartbeat/endpoint.js
 import { DiscardPreparedFollowUpEndpoint } from './features/discard-prepared-follow-up/endpoint.js';
 import { DiscardPreparedFollowUpHandler } from './features/discard-prepared-follow-up/handler.js';
 import { GetPreparedFollowUpEndpoint } from './features/get-prepared-follow-up/endpoint.js';
+import { GetReviewCommentsEndpoint } from './features/get-review-comments/endpoint.js';
+import { GetReviewCommentsHandler } from './features/get-review-comments/handler.js';
+import { LoadReviewCommentsEndpoint } from './features/load-review-comments/endpoint.js';
+import { LoadReviewCommentsHandler } from './features/load-review-comments/handler.js';
 import { GetPreparedFollowUpHandler } from './features/get-prepared-follow-up/handler.js';
 import { PrepareFailingChecksEndpoint } from './features/prepare-failing-checks/endpoint.js';
 import { PrepareFailingChecksHandler } from './features/prepare-failing-checks/handler.js';
@@ -93,6 +98,7 @@ import { PlatformOperatorSessions } from './infrastructure/adapters/platform-ope
 import { PrismaRunDiffRepository } from './infrastructure/repositories/prisma-run-diff-repository.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
 import { PrismaPreparedFollowUpRepository } from './infrastructure/repositories/prisma-prepared-follow-up-repository.js';
+import { PrismaReviewCommentRepository } from './infrastructure/repositories/prisma-review-comment-repository.js';
 import { PrismaRunLookupRepository } from './infrastructure/repositories/prisma-run-lookup-repository.js';
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
@@ -101,6 +107,7 @@ import {
   PULL_REQUEST_REFRESH_SETTINGS,
   type PullRequestRefreshSettings,
 } from './ports/pull-request-refresh-settings.js';
+import { OPERATOR_LOGIN, type OperatorLogin } from './ports/operator-login.js';
 import { RUN_LIMITS, type RunLimitsSetting } from './ports/run-limits.js';
 import { OPERATOR_SESSIONS } from './ports/operator-sessions.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './ports/run-log-settings.js';
@@ -167,6 +174,8 @@ export class ExecutionsModule {
         RefreshPullRequestEndpoint,
         PrepareFailingChecksEndpoint,
         GetPreparedFollowUpEndpoint,
+        LoadReviewCommentsEndpoint,
+        GetReviewCommentsEndpoint,
         DiscardPreparedFollowUpEndpoint,
         ClaimRunEndpoint,
         ClaimLookupsEndpoint,
@@ -191,6 +200,7 @@ export class ExecutionsModule {
         { provide: RUN_DIFF_REPOSITORY, useClass: PrismaRunDiffRepository },
         { provide: RUN_LOOKUP_REPOSITORY, useClass: PrismaRunLookupRepository },
         { provide: PREPARED_FOLLOW_UP_REPOSITORY, useClass: PrismaPreparedFollowUpRepository },
+        { provide: REVIEW_COMMENT_REPOSITORY, useClass: PrismaReviewCommentRepository },
         { provide: RUN_LOG_SIGNAL, useClass: InProcessRunLogSignal },
         { provide: OPERATOR_SESSIONS, useClass: PlatformOperatorSessions },
         options.secretValues
@@ -219,6 +229,11 @@ export class ExecutionsModule {
           inject: [APP_CONFIG],
         },
         {
+          provide: OPERATOR_LOGIN,
+          useFactory: (config: AppConfig): OperatorLogin => ({ login: config.operatorGithubLogin }),
+          inject: [APP_CONFIG],
+        },
+        {
           provide: RUN_LIMITS,
           useFactory: (config: AppConfig): RunLimitsSetting => ({ ...config.runLimits }),
           inject: [APP_CONFIG],
@@ -238,6 +253,8 @@ export class ExecutionsModule {
         RefreshPullRequestHandler,
         PrepareFailingChecksHandler,
         GetPreparedFollowUpHandler,
+        LoadReviewCommentsHandler,
+        GetReviewCommentsHandler,
         DiscardPreparedFollowUpHandler,
         ClaimRunHandler,
         ClaimLookupsHandler,

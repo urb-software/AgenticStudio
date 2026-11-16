@@ -1,3 +1,4 @@
+import type { ReviewComment, ReviewCommentScope } from './review-comments.js';
 import type { PullRequestCheck, PullRequestState, Run } from './run.js';
 
 /**
@@ -7,7 +8,11 @@ import type { PullRequestCheck, PullRequestState, Run } from './run.js';
  * the logs of the failed ones; later stories add theirs. The worker protocol's lists are pinned
  * to these by a test.
  */
-export const LOOKUP_KINDS = ['pull_request_state', 'failing_check_logs'] as const;
+export const LOOKUP_KINDS = [
+  'pull_request_state',
+  'failing_check_logs',
+  'review_comments',
+] as const;
 export type LookupKind = (typeof LOOKUP_KINDS)[number];
 
 /** A lookup is open while it waits for a worker (`requested`) or is being answered (`claimed`). */
@@ -44,6 +49,14 @@ export interface ClaimedLookup {
   pullRequestNumber: number;
   runBranch: string;
   integrationBranch: string;
+  /** Issue #146: what a `review_comments` lookup loads. */
+  reviewComments?: { scope: ReviewCommentScope; since?: Date };
+}
+
+/** What a worker read for a `review_comments` lookup (Issue #146), before Studio redacts it. */
+export interface ReviewCommentsResult {
+  comments: ReviewComment[];
+  truncated: boolean;
 }
 
 /** What a worker found out about a pull request. */

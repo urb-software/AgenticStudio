@@ -1,5 +1,5 @@
 import type {
-  FollowUpSource,
+  FollowUpOrigin,
   Provider,
   PullRequestState,
   Run,
@@ -295,14 +295,17 @@ export interface RunRepository {
    * from the steps it has taken. It is resumed like an answered Run by the worker that holds its
    * Working copy, but holds no place while it waits: the claim starts it under the concurrency
    * limits. With a `source` (Issue #145: the text was prepared from it) the message says so and
-   * the Run's prepared Follow-up of that source is removed in the same transaction. `null` if a
-   * condition failed (nothing changed).
+   * the Run's prepared Follow-up of that source is removed in the same transaction. Issue #146:
+   * a Follow-up from `review_comments` names the selected comment ids: under the Run's row lock the
+   * store checks they are all in the Run's loaded set (throws {@link ReviewCommentsNotLoadedError}
+   * otherwise, nothing changed), records how many comments and whose, and removes that set in the
+   * same transaction. `null` if a condition failed (nothing changed).
    */
   queueFollowUp(
     runId: string,
     text: string,
     now: Date,
-    source?: FollowUpSource,
+    origin?: FollowUpOrigin,
   ): Promise<Run | null>;
 
   /**

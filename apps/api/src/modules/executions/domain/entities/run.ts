@@ -256,12 +256,31 @@ export const ANSWER_MAX_LENGTH = 10_000;
 
 /**
  * What a Follow-up was prepared from (Issue #145): the text came from the failing Pull request
- * checks, which the operator reviewed and may have edited; (Issue #147) `bring_up_to_date` is the
- * request to merge the integration branch into the Run branch. A Follow-up written from scratch
- * has no source.
+ * checks, or (Issue #146) from the pull request's Review comments, which the operator reviewed
+ * and may have edited; (Issue #147) `bring_up_to_date` is the request to merge the integration
+ * branch into the Run branch. A Follow-up written from scratch has no source.
  */
-export const FOLLOW_UP_SOURCES = ['pull_request_checks', 'bring_up_to_date'] as const;
+export const FOLLOW_UP_SOURCES = [
+  'pull_request_checks',
+  'bring_up_to_date',
+  'review_comments',
+] as const;
 export type FollowUpSource = (typeof FOLLOW_UP_SOURCES)[number];
+
+/**
+ * Where a Follow-up's text came from, when it was prepared (Issue #145, #147, #146): the source, and
+ * for `review_comments` the ids of the comments the operator selected, which the store checks
+ * against the Run's loaded set in the same transaction that queues the Follow-up.
+ */
+export type FollowUpOrigin =
+  | Exclude<FollowUpSource, 'review_comments'>
+  | { source: 'review_comments'; commentIds: readonly string[] };
+
+/** What a Follow-up prepared from Review comments records: how many, and their authors (Issue #146). */
+export interface FollowUpComments {
+  count: number;
+  authors: string[];
+}
 
 /** Longest Follow-up, in characters (Issue #141). */
 export const FOLLOW_UP_MAX_LENGTH = 10_000;
@@ -284,7 +303,14 @@ export interface RunQuestion {
 export type RunMessage =
   | { kind: 'question'; question: RunQuestion; at: Date }
   | { kind: 'answer'; text: string; at: Date }
-  | ({ kind: 'follow_up'; text: string; at: Date; source?: FollowUpSource } & BringUpDetails)
+  | ({
+      kind: 'follow_up';
+      text: string;
+      at: Date;
+      source?: FollowUpSource;
+      /** With source review_comments (Issue #146): how many comments, and whose. */
+      sourceComments?: FollowUpComments;
+    } & BringUpDetails)
   | ({ kind: 'part_end'; at: Date } & RunPartEnd);
 
 /**

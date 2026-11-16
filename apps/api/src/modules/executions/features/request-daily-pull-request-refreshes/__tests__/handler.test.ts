@@ -104,6 +104,8 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
       claimedAt: null,
       retryAt: null,
       error: null,
+      scope: null,
+      since: null,
     };
     lookups.lookups.push(
       { ...entry, id: 'old-done', status: 'done', finishedAt: at(8) },

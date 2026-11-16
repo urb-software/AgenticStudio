@@ -1111,11 +1111,15 @@ export type WorkerStatusReport = Omit<WorkerStatusRequest, 'workerId'>;
  * Lookups (Issue #142): questions Studio has for the Git host that only the agent worker can
  * answer, through the Agent account. Studio records a request; any connected worker claims it
  * (it needs no Working copy), reads what the kind asks for and reports the result. The kinds
- * start with the pull request's state; later stories (Pull request checks, Review comments)
- * add theirs next to it. Reads only: no lookup changes anything on the Git host or starts an
+ * start with the pull request's state; later stories add theirs next to it (Issue #145: the
+ * logs of failing checks; Issue #146: the pull request's Review comments). Reads only: no lookup changes anything on the Git host or starts an
  * agent CLI.
  */
-export const LOOKUP_KINDS = ['pull_request_state', 'failing_check_logs'] as const;
+export const LOOKUP_KINDS = [
+  'pull_request_state',
+  'failing_check_logs',
+  'review_comments',
+] as const;
 export const lookupKindSchema = z.enum(LOOKUP_KINDS);
 export type LookupKind = z.infer<typeof lookupKindSchema>;
 
@@ -1224,23 +1228,132 @@ export const pullRequestStateResultSchema = z
 export type PullRequestStateResult = z.infer<typeof pullRequestStateResultSchema>;
 
 /**
+ * What a `review_comments` lookup loads (Issue #146): the comments created since the Run's latest
+ * result, or all that are unresolved.
+ */
+export const REVIEW_COMMENT_SCOPES = ['since_last_result', 'unresolved'] as const;
+export const reviewCommentScopeSchema = z.enum(REVIEW_COMMENT_SCOPES);
+export type ReviewCommentScope = z.infer<typeof reviewCommentScopeSchema>;
+
+/** The kinds of Review comment: a review's summary, an inline comment on the diff, a conversation comment. */
+export const REVIEW_COMMENT_KINDS = ['review', 'inline', 'conversation'] as const;
+export const reviewCommentKindSchema = z.enum(REVIEW_COMMENT_KINDS);
+export type ReviewCommentKind = z.infer<typeof reviewCommentKindSchema>;
+
+/** A review summary's verdict. */
+export const REVIEW_VERDICTS = ['commented', 'changes_requested', 'approved'] as const;
+export const reviewVerdictSchema = z.enum(REVIEW_VERDICTS);
+export type ReviewVerdict = z.infer<typeof reviewVerdictSchema>;
+
+/** Most Review comments one load keeps; the rest are left out and `truncated` says so. */
+export const REVIEW_COMMENTS_MAX = 100;
+
+/** Longest text of one Review comment, in UTF-8 bytes (8 KiB); a longer one is cut. */
+export const REVIEW_COMMENT_TEXT_MAX_BYTES = 8 * 1024;
+
+/** Most lines of the diff shown around an inline comment. */
+export const REVIEW_COMMENT_DIFF_CONTEXT_MAX_LINES = 6;
+
+/** Longest diff context of one inline comment, in UTF-8 bytes. */
+export const REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES = 2 * 1024;
+
+/** Longest author login (GitHub's own limit is 39; bots add a suffix). */
+export const REVIEW_COMMENT_AUTHOR_MAX_LENGTH = 100;
+
+/** Longest file path of an inline comment, in characters. */
+export const REVIEW_COMMENT_PATH_MAX_LENGTH = 500;
+
+/**
+ * One Review comment as the agent worker read it (Issue #146). `id` is unique within the pull
+ * request across the three kinds (`review-<n>`, `inline-<n>`, `conversation-<n>`). The text is
+ * untrusted: anyone can comment on a public pull request, and it may say anything. Studio redacts
+ * it, shows it as plain text and sends only what the operator selects. `textCut` marks a text that
+ * was cut to its size limit.
+ */
+export const reviewCommentSchema = z.strictObject({
+  id: z.string().regex(/^(?:review|inline|conversation)-[0-9]{1,20}$/),
+  author: z.string().min(1).max(REVIEW_COMMENT_AUTHOR_MAX_LENGTH),
+  kind: reviewCommentKindSchema,
+  path: z.string().min(1).max(REVIEW_COMMENT_PATH_MAX_LENGTH).optional(),
+  line: z.int().positive().max(PG_INT_MAX).optional(),
+  diffContext: z
+    .string()
+    .refine((text) => utf8Length(text) <= REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES, {
+      message: 'A diff context is at most 2 KiB.',
+    })
+    .optional(),
+  verdict: reviewVerdictSchema.optional(),
+  text: z.string().refine((text) => utf8Length(text) <= REVIEW_COMMENT_TEXT_MAX_BYTES, {
+    message: 'A comment text is at most 8 KiB.',
+  }),
+  textCut: z.literal(true).optional(),
+  createdAt: z.iso.datetime(),
+});
+export type ReviewComment = z.infer<typeof reviewCommentSchema>;
+
+/**
+ * The result of a `review_comments` lookup (Issue #146): the pull request's unresolved comments
+ * in the order they were written, without the Agent account's own and without those of resolved
+ * threads; at most {@link REVIEW_COMMENTS_MAX} (`truncated`: more existed, or a text was cut).
+ */
+export const reviewCommentsResultSchema = z
+  .strictObject({
+    comments: z.array(reviewCommentSchema).max(REVIEW_COMMENTS_MAX),
+    truncated: z.boolean(),
+  })
+  .refine(
+    (result) =>
+      new Set(result.comments.map((comment) => comment.id)).size === result.comments.length &&
+      result.comments.every(
+        (comment) =>
+          (comment.kind === 'inline') === (comment.path !== undefined) &&
+          (comment.kind === 'inline' ||
+            (comment.line === undefined && comment.diffContext === undefined)) &&
+          (comment.kind === 'review') === (comment.verdict !== undefined) &&
+          (comment.textCut === undefined || result.truncated),
+      ),
+    {
+      path: ['comments'],
+      message:
+        'Comment ids are unique; only an inline comment has a file, line and diff context, only a review a verdict; a cut text sets truncated.',
+    },
+  );
+export type ReviewCommentsResult = z.infer<typeof reviewCommentsResultSchema>;
+
+/**
  * One claimed lookup (`POST /api/worker/lookups/claim` answer, an array; empty when none is
  * waiting): what the worker needs to answer a `pull_request_state` lookup, nothing else. The
  * repository is the remote as the operator connected it (never a credential); the worker
  * checks it names a GitHub repository, and that the pull request is the Run's own, before it
  * reads anything.
  */
-export const lookupPayloadSchema = z.strictObject({
-  id: z.uuid(),
-  kind: lookupKindSchema,
-  runId: z.uuid(),
-  repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
-  pullRequestNumber: z.int().positive().max(PG_INT_MAX),
-  /** The Run branch the pull request must come from. */
-  runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
-  /** The integration branch the Run branch is compared with. */
-  integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
-});
+export const lookupPayloadSchema = z
+  .strictObject({
+    id: z.uuid(),
+    kind: lookupKindSchema,
+    runId: z.uuid(),
+    repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
+    pullRequestNumber: z.int().positive().max(PG_INT_MAX),
+    /** The Run branch the pull request must come from. */
+    runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
+    /** The integration branch the Run branch is compared with. */
+    integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
+    /** Issue #146: what a `review_comments` lookup loads; present for that kind only. */
+    reviewComments: z
+      .strictObject({
+        scope: reviewCommentScopeSchema,
+        /** For `since_last_result`: only comments created after this time; none: all unresolved. */
+        since: z.iso.datetime().optional(),
+      })
+      .optional(),
+  })
+  .refine(
+    (lookup) => (lookup.kind === 'review_comments') === (lookup.reviewComments !== undefined),
+    {
+      path: ['reviewComments'],
+      message: 'A review_comments lookup says what to load, and no other lookup does.',
+    },
+  );
 export type LookupPayload = z.infer<typeof lookupPayloadSchema>;
 
 /** `POST /api/worker/lookups/claim` body. */
@@ -1329,6 +1442,12 @@ export const lookupResultRequestSchema = z.union([
     ok: z.literal(true),
     kind: z.literal('failing_check_logs'),
     result: failingCheckLogsResultSchema,
+  }),
+  z.strictObject({
+    workerId: workerIdSchema,
+    ok: z.literal(true),
+    kind: z.literal('review_comments'),
+    result: reviewCommentsResultSchema,
   }),
   z.strictObject({
     workerId: workerIdSchema,

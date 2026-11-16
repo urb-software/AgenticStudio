@@ -239,7 +239,13 @@ export const zRunMessageOutput = z.object({
     mergedCommit: z.string().optional(),
     options: z.array(z.string()).optional(),
     recommendation: z.string().optional(),
-    source: z.enum(['pull_request_checks', 'bring_up_to_date']).optional(),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]).optional(),
+    sourceCount: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
+    sourceAuthors: z.array(z.string()).optional(),
     at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
@@ -318,7 +324,12 @@ export const zAnswerRunRequest = z.object({
 
 export const zFollowUpRunRequest = z.object({
     text: z.string().min(1).max(10000),
-    source: z.enum(['pull_request_checks', 'bring_up_to_date']).optional()
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]).optional(),
+    reviewCommentIds: z.array(z.string().min(1).max(40)).min(1).max(100).optional()
 });
 
 export const zBringUpToDateRequest = z.object({
@@ -337,9 +348,49 @@ export const zPreparedFollowUpCheckOutput = z.object({
 });
 
 export const zPreparedFollowUpOutput = z.object({
-    source: z.enum(['pull_request_checks', 'bring_up_to_date']),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]),
     text: z.string(),
     checks: z.array(zPreparedFollowUpCheckOutput)
+});
+
+export const zLoadReviewCommentsRequest = z.object({
+    scope: z.enum(['since_last_result', 'unresolved'])
+});
+
+export const zReviewCommentOutput = z.object({
+    id: z.string(),
+    author: z.string(),
+    byOperator: z.boolean(),
+    kind: z.enum([
+        'review',
+        'inline',
+        'conversation'
+    ]),
+    path: z.string().optional(),
+    line: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
+    diffContext: z.string().optional(),
+    verdict: z.enum([
+        'commented',
+        'changes_requested',
+        'approved'
+    ]).optional(),
+    text: z.string(),
+    textCut: z.literal(true).optional(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+});
+
+export const zReviewCommentsOutput = z.object({
+    operatorLogin: z.string().optional(),
+    comments: z.array(zReviewCommentOutput),
+    truncated: z.boolean(),
+    scope: z.enum(['since_last_result', 'unresolved']).optional(),
+    loadedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    loading: z.boolean(),
+    error: z.string().optional()
 });
 
 export const zRunEventOutput = z.object({
@@ -642,6 +693,20 @@ export const zGetRunPreparedFollowUpPath = z.object({
 });
 
 export const zGetRunPreparedFollowUpResponse = zPreparedFollowUpOutput;
+
+export const zLoadRunReviewCommentsBody = zLoadReviewCommentsRequest;
+
+export const zLoadRunReviewCommentsPath = z.object({
+    runId: z.string()
+});
+
+export const zLoadRunReviewCommentsResponse = zReviewCommentsOutput;
+
+export const zGetRunReviewCommentsPath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunReviewCommentsResponse = zReviewCommentsOutput;
 
 export const zListRunEventsPath = z.object({
     runId: z.string()

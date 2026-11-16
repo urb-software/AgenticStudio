@@ -16,11 +16,13 @@ import type {
   ProblemDetails,
   ProjectDetailOutput,
   ProjectListOutput,
+  LoadReviewCommentsRequest,
   ProjectOutput,
   PreparedFollowUpOutput,
   ProviderListOutput,
   RefreshPullRequestRequest,
   RepositoryOutput,
+  ReviewCommentsOutput,
   RunEventOutput,
   RunDiffFileOutput,
   RunDiffOutput,
@@ -57,6 +59,7 @@ export type {
   ProjectDetailOutput,
   ProjectListOutput,
   ProjectOutput,
+  LoadReviewCommentsRequest,
   PreparedFollowUpCheckOutput,
   PreparedFollowUpOutput,
   ProviderAvailabilityOutput,
@@ -66,6 +69,8 @@ export type {
   RepositoryOutput,
   RepositoryStateOutput,
   RepositorySummaryOutput,
+  ReviewCommentOutput,
+  ReviewCommentsOutput,
   RunDiffFileOutput,
   RunDiffFileSummaryOutput,
   RunDiffOutput,
@@ -300,6 +305,17 @@ export const api = {
   discardRunPreparedFollowUp: async (runId: string): Promise<void> => {
     await unwrap(sdk.discardRunPreparedFollowUp({ path: { runId } }));
   },
+  /**
+   * Asks the agent worker to load the Review comments of the Run's pull request (Issue #146; 202:
+   * the loaded set as it is now, marked as loading). Nothing is sent to an agent.
+   */
+  loadRunReviewComments: (
+    runId: string,
+    body: LoadReviewCommentsRequest,
+  ): Promise<ReviewCommentsOutput> => unwrap(sdk.loadRunReviewComments({ path: { runId }, body })),
+  /** The Run's loaded Review comments and the state of the latest load (Issue #146). */
+  getRunReviewComments: (runId: string): Promise<ReviewCommentsOutput> =>
+    unwrap(sdk.getRunReviewComments({ path: { runId } })),
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),

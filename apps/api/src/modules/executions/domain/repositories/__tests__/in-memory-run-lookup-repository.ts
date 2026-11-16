@@ -2,11 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { isPullRequestEnded, type PullRequestState } from '../../entities/run.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type {
+  ReviewCommentScope,
+  ReviewComments,
+  ReviewCommentsRequest,
+} from '../../entities/review-comments.js';
+import type {
   ClaimedLookup,
   LookupKind,
   PullRequestStateResult,
+  ReviewCommentsResult,
 } from '../../entities/run-lookup.js';
 import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
+import type { ReviewCommentRepository } from '../review-comment-repository.js';
 import type {
   LookupAnswerOutcome,
   LookupRequestOutcome,
@@ -25,6 +32,8 @@ export interface FakeLookup {
   retryAt: Date | null;
   finishedAt: Date | null;
   error: string | null;
+  scope: ReviewCommentScope | null;
+  since: Date | null;
 }
 
 /** The database adapter's `pr_ended_at` rule (Issue #143): first end kept, a reopen clears it. */
@@ -39,7 +48,7 @@ function endedAt(state: PullRequestState, current: Date | null, now: Date): Date
  * pull request status in the given Run store.
  */
 export class InMemoryRunLookupRepository
-  implements RunLookupRepository, PreparedFollowUpRepository
+  implements RunLookupRepository, PreparedFollowUpRepository, ReviewCommentRepository
 {
   readonly lookups: FakeLookup[] = [];
 
@@ -49,7 +58,12 @@ export class InMemoryRunLookupRepository
     return this.runs.runs.find((candidate) => candidate.id === runId);
   }
 
-  request(runId: string, kind: LookupKind, now: Date): Promise<LookupRequestOutcome> {
+  request(
+    runId: string,
+    kind: LookupKind,
+    now: Date,
+    review?: ReviewCommentsRequest,
+  ): Promise<LookupRequestOutcome> {
     const run = this.run(runId);
     if (!run || run.pullRequest === null || run.workingCopy === null) {
       return Promise.resolve('not_possible');
@@ -75,7 +89,10 @@ export class InMemoryRunLookupRepository
       retryAt: null,
       finishedAt: null,
       error: null,
+      scope: review?.scope ?? null,
+      since: review?.since ?? null,
     });
+    if (kind === 'review_comments') return Promise.resolve('requested');
     run.pullRequestStatus =
       kind === 'failing_check_logs'
         ? { ...run.pullRequestStatus, prepareRequestedAt: now, prepareError: null }
@@ -124,6 +141,14 @@ export class InMemoryRunLookupRepository
         pullRequestNumber: run.pullRequest.number,
         runBranch: run.workingCopy.runBranch,
         integrationBranch: run.integrationBranch,
+        ...(lookup.kind === 'review_comments' && lookup.scope !== null
+          ? {
+              reviewComments: {
+                scope: lookup.scope,
+                ...(lookup.since === null ? {} : { since: lookup.since }),
+              },
+            }
+          : {}),
       });
     }
     return Promise.resolve(claimed);
@@ -193,6 +218,50 @@ export class InMemoryRunLookupRepository
     return Promise.resolve('stored');
   }
 
+  completeReviewComments(
+    lookupId: string,
+    workerId: string,
+    result: ReviewCommentsResult,
+    now: Date,
+  ): Promise<LookupAnswerOutcome> {
+    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
+    if (!lookup || lookup.claimedBy !== workerId) return Promise.resolve('not_held');
+    if (lookup.status === 'done') return Promise.resolve('duplicate');
+    if (lookup.status !== 'claimed') return Promise.resolve('not_held');
+    lookup.status = 'done';
+    lookup.finishedAt = now;
+    lookup.error = null;
+    this.runs.reviewSets.set(lookup.runId, {
+      scope: lookup.scope ?? 'unresolved',
+      comments: result.comments,
+      truncated: result.truncated,
+      loadedAt: now,
+    });
+    return Promise.resolve('stored');
+  }
+
+  findReviewComments(runId: string): Promise<ReviewComments> {
+    const own = this.lookups.filter(
+      (lookup) => lookup.runId === runId && lookup.kind === 'review_comments',
+    );
+    const open = own.find((lookup) => lookup.status === 'requested' || lookup.status === 'claimed');
+    // The latest request; of equal times, the one recorded last.
+    const latest = own.reduce<FakeLookup | undefined>(
+      (best, lookup) =>
+        best === undefined || lookup.requestedAt.getTime() >= best.requestedAt.getTime()
+          ? lookup
+          : best,
+      undefined,
+    );
+    return Promise.resolve({
+      set: this.runs.reviewSets.get(runId) ?? null,
+      load: {
+        loading: open !== undefined,
+        error: open?.error ?? (latest?.status === 'failed' ? latest.error : null),
+      },
+    });
+  }
+
   find(runId: string): Promise<PreparedFollowUp | null> {
     return Promise.resolve(this.runs.prepared.get(runId) ?? null);
   }
@@ -225,7 +294,7 @@ export class InMemoryRunLookupRepository
     if (retryAt === null) Object.assign(lookup, { status: 'failed', finishedAt: now });
     else Object.assign(lookup, { status: 'requested', claimedBy: null, claimedAt: null, retryAt });
     const run = this.run(lookup.runId);
-    if (run) {
+    if (run && lookup.kind !== 'review_comments') {
       run.pullRequestStatus =
         lookup.kind === 'failing_check_logs'
           ? {

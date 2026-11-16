@@ -3,7 +3,8 @@ import {
   ACTIVE_RUN_STATES,
   canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
-  type FollowUpSource,
+  type FollowUpComments,
+  type FollowUpOrigin,
   isFinal,
   partEndOf,
   restoreEarlierResult,
@@ -19,6 +20,11 @@ import {
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
+import {
+  type ReviewCommentSet,
+  ReviewCommentsNotLoadedError,
+} from '../../entities/review-comments.js';
+import { distinctAuthors, selectReviewComments } from '../../services/review-comments.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
@@ -447,12 +453,16 @@ export class InMemoryRunRepository implements RunRepository {
   /** Issue #145: the prepared Follow-ups, by Run id (shared with the lookup and prepared stores). */
   readonly prepared = new Map<string, PreparedFollowUp>();
 
+  /** Issue #146: the loaded Review comments, by Run id (shared with the lookup store). */
+  readonly reviewSets = new Map<string, ReviewCommentSet>();
+
   queueFollowUp(
     runId: string,
     text: string,
     now: Date,
-    source?: FollowUpSource,
+    origin?: FollowUpOrigin,
   ): Promise<Run | null> {
+    const source = typeof origin === 'object' ? origin.source : origin;
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (
       !run ||
@@ -467,14 +477,23 @@ export class InMemoryRunRepository implements RunRepository {
     ) {
       return Promise.resolve(null);
     }
+    let comments: FollowUpComments | undefined;
+    if (typeof origin === 'object') {
+      const set = this.reviewSets.get(runId);
+      const chosen = set ? selectReviewComments(set, origin.commentIds) : null;
+      if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
+      comments = { count: chosen.length, authors: distinctAuthors(chosen) };
+    }
     run.messages.push({ kind: 'part_end', ...partEndOf(run)!, at: now });
     run.messages.push({
       kind: 'follow_up',
       text,
       at: now,
       ...(source === undefined ? {} : { source }),
+      ...(comments === undefined ? {} : { sourceComments: comments }),
     });
-    if (source !== undefined && this.prepared.get(runId)?.source === source) {
+    if (source === 'review_comments') this.reviewSets.delete(runId);
+    else if (source !== undefined && this.prepared.get(runId)?.source === source) {
       this.prepared.delete(runId);
     }
     Object.assign(run, {

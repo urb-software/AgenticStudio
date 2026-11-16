@@ -299,6 +299,8 @@ async function main() {
     STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
     STUDIO_DATA_DIR: dataDir,
     STUDIO_WORKER_TOKEN: workerToken,
+    // Issue #146: the operator's own GitHub login, whose review comments are preselected.
+    STUDIO_OPERATOR_GITHUB_LOGIN: 'Smoke-Operator',
   };
 
   startServer('api', process.execPath, ['apps/api/dist/main.js'], serverEnv);

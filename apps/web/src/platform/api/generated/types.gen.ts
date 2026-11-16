@@ -168,7 +168,9 @@ export type RunMessageOutput = {
     mergedCommit?: string;
     options?: Array<string>;
     recommendation?: string;
-    source?: 'pull_request_checks' | 'bring_up_to_date';
+    source?: 'pull_request_checks' | 'bring_up_to_date' | 'review_comments';
+    sourceCount?: number;
+    sourceAuthors?: Array<string>;
     at: string;
 };
 
@@ -231,7 +233,8 @@ export type AnswerRunRequest = {
 
 export type FollowUpRunRequest = {
     text: string;
-    source?: 'pull_request_checks' | 'bring_up_to_date';
+    source?: 'pull_request_checks' | 'bring_up_to_date' | 'review_comments';
+    reviewCommentIds?: Array<string>;
 };
 
 export type BringUpToDateRequest = {
@@ -250,9 +253,37 @@ export type PreparedFollowUpCheckOutput = {
 };
 
 export type PreparedFollowUpOutput = {
-    source: 'pull_request_checks' | 'bring_up_to_date';
+    source: 'pull_request_checks' | 'bring_up_to_date' | 'review_comments';
     text: string;
     checks: Array<PreparedFollowUpCheckOutput>;
+};
+
+export type LoadReviewCommentsRequest = {
+    scope: 'since_last_result' | 'unresolved';
+};
+
+export type ReviewCommentOutput = {
+    id: string;
+    author: string;
+    byOperator: boolean;
+    kind: 'review' | 'inline' | 'conversation';
+    path?: string;
+    line?: number;
+    diffContext?: string;
+    verdict?: 'commented' | 'changes_requested' | 'approved';
+    text: string;
+    textCut?: true;
+    createdAt: string;
+};
+
+export type ReviewCommentsOutput = {
+    operatorLogin?: string;
+    comments: Array<ReviewCommentOutput>;
+    truncated: boolean;
+    scope?: 'since_last_result' | 'unresolved';
+    loadedAt?: string;
+    loading: boolean;
+    error?: string;
 };
 
 export type RunEventOutput = {
@@ -1270,6 +1301,70 @@ export type GetRunPreparedFollowUpResponses = {
 };
 
 export type GetRunPreparedFollowUpResponse = GetRunPreparedFollowUpResponses[keyof GetRunPreparedFollowUpResponses];
+
+export type LoadRunReviewCommentsData = {
+    body: LoadReviewCommentsRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/pull-request/review-comments/load';
+};
+
+export type LoadRunReviewCommentsErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run has no pull request (urn:agentic-studio:problem:pull-request-not-refreshable), cannot take a Follow-up (urn:agentic-studio:problem:follow-up-not-allowed) or a load is running (urn:agentic-studio:problem:review-comments-load-running)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type LoadRunReviewCommentsError = LoadRunReviewCommentsErrors[keyof LoadRunReviewCommentsErrors];
+
+export type LoadRunReviewCommentsResponses = {
+    202: ReviewCommentsOutput;
+};
+
+export type LoadRunReviewCommentsResponse = LoadRunReviewCommentsResponses[keyof LoadRunReviewCommentsResponses];
+
+export type GetRunReviewCommentsData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/pull-request/review-comments';
+};
+
+export type GetRunReviewCommentsErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunReviewCommentsError = GetRunReviewCommentsErrors[keyof GetRunReviewCommentsErrors];
+
+export type GetRunReviewCommentsResponses = {
+    200: ReviewCommentsOutput;
+};
+
+export type GetRunReviewCommentsResponse = GetRunReviewCommentsResponses[keyof GetRunReviewCommentsResponses];
 
 export type ListRunEventsData = {
     body?: never;

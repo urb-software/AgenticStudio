@@ -28,6 +28,17 @@ const KIND_LABEL: Record<RunMessageOutput['kind'], string> = {
   part_end: 'Part ended',
 };
 
+/** "3 comments by octocat and stranger": how many Review comments a Follow-up came from, and whose. */
+function reviewCommentsWords(message: RunMessageOutput): string {
+  const count = message.sourceCount ?? 0;
+  const authors = message.sourceAuthors ?? [];
+  const by =
+    authors.length <= 1
+      ? (authors[0] ?? 'unknown')
+      : `${authors.slice(0, -1).join(', ')} and ${authors.at(-1)}`;
+  return `${count} ${count === 1 ? 'comment' : 'comments'} by ${by}`;
+}
+
 const ROLE_LABEL: Record<RunMessageOutput['role'], string> = {
   operator: 'You',
   agent: 'Agent',
@@ -257,7 +268,9 @@ export function RunConversation({
               ? ' · Bring up to date'
               : message.source === 'pull_request_checks'
                 ? ' · prepared from Pull request checks'
-                : ''
+                : message.source === 'review_comments'
+                  ? ` · prepared from Review comments (${reviewCommentsWords(message)})`
+                  : ''
           }`}
         >
           {bringUp ? (
