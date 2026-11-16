@@ -1,7 +1,7 @@
 'use client';
 
 import { MessageCircleQuestionIcon, SendIcon } from 'lucide-react';
-import { type FormEvent, type ReactNode, useId, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { TextField } from '@/shared/components/text-field';
 import { formatExactTime } from '@/shared/lib/relative-time';
@@ -66,7 +66,7 @@ function Message({ message }: { message: RunMessageOutput }) {
       data-slot="run-message"
       className={cn(
         'flex min-w-0 flex-col gap-1 rounded-md border px-3 py-2.5',
-        agent ? 'bg-subtle border-border' : 'border-border bg-surface',
+        agent ? 'border-border bg-bg-subtle' : 'border-border bg-surface',
       )}
     >
       <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-caption text-text-dim">
@@ -145,6 +145,16 @@ export function AnswerQuestion({ run, question }: { run: RunOutput; question: Ru
   const [text, setText] = useState('');
   const [localError, setLocalError] = useState<string | undefined>();
   const answer = useAnswerRun(run.id);
+  // Another Run's page reuses this form (review Std-2 of #128): nothing typed or refused for one
+  // Run carries over to the next. The reset happens during render, before anything is shown.
+  const [formRun, setFormRun] = useState(run.id);
+  if (formRun !== run.id) {
+    setFormRun(run.id);
+    setText('');
+    setLocalError(undefined);
+  }
+  const { reset } = answer;
+  useEffect(() => reset(), [run.id, reset]);
   const titleId = useId();
   const waiting = run.state === 'waiting_for_operator';
   const disabled = !waiting || answer.isPending;

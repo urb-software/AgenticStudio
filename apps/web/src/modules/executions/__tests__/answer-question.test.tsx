@@ -144,6 +144,51 @@ describe('Answering the agent (Issue #103)', () => {
     expect(alert.textContent).toContain('The run was cancelled; it takes no answer.');
   });
 
+  it('reads the Run again at once when the answer is refused (409), showing where it is now', async () => {
+    const run = waitingRun();
+    const api = fakeRunsApi([run]);
+    renderRun(run.id);
+    await form();
+    // Cancelled in another tab meanwhile; the page would only learn of it at its next poll.
+    api.update(run.id, {
+      state: 'cancelled',
+      question: undefined,
+      cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'SQLite' }));
+    await userEvent.click(send());
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="status-pill"]')?.textContent).toBe('Cancelled'),
+    );
+    expect(document.querySelector('[data-slot="answer-question"]')).toBeNull();
+  });
+
+  it('carries nothing typed for one Run over to the next Run’s page (review Std-2 of #128)', async () => {
+    const first = waitingRun();
+    const second = waitingRun({ task: 'Add a cache' });
+    fakeRunsApi([first, second]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Already read (e.g. from a list), so the page switches without a loading state in between.
+    client.setQueryData(['runs', 'run', second.id], second);
+    const page = (runId: string) => (
+      <QueryClientProvider client={client}>
+        <RunDetail runId={runId} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(page(first.id));
+    await form();
+    await userEvent.type(answerBox(), 'Half an answer');
+
+    rerender(page(second.id));
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Add a cache'),
+    );
+    expect((answerBox() as HTMLTextAreaElement).value).toBe('');
+  });
+
   it('shows the API’s field error for an answer it refuses (422)', async () => {
     const run = waitingRun();
     const api = fakeRunsApi([run]);
