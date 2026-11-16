@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import { CodexRunner, probeCodex } from '../codex/runner.js';
+import { GitRunner } from '../git.js';
 import { ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { StepProcesses } from '../step-processes.js';
@@ -25,9 +26,9 @@ import { git, isolatedGitEnv } from './fixtures/git-fixture.js';
 // the Codex configuration it would read. No real CLI, no network. A hostile repository proves
 // that none of its project configuration, hooks, rules, MCP servers or skills reaches the CLI's
 // arguments, environment, prompt or the agent user's configuration, and that the Working copy is
-// marked untrusted before the CLI starts. Whether the real CLI loads AGENTS.md (and skips the
-// project's layers) is the controlled smoke's part (scripts/smoke-codex.mjs). Linux only, like
-// the worker: runs in CI, skips elsewhere.
+// marked untrusted before the CLI starts; its AGENTS.md text reaches the agent only as the
+// worker's delimited untrusted block. What the real CLI loads is the controlled smoke's part
+// (scripts/smoke-codex.mjs). Linux only, like the worker: runs in CI, skips elsewhere.
 
 const STUB = fileURLToPath(new URL('./fixtures/codex-stub.mjs', import.meta.url));
 const THREAD = '0199a8f2-6c1e-7d43-9b2a-5e8f1c3d7a90';
@@ -96,6 +97,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
   const runner = () =>
     new CodexRunner({
       cli: { gate, binaries: { claude_code: 'claude', codex: bin } },
+      git: new GitRunner(),
       env: workerEnv(),
       sandbox: 'workspace-write',
     });
@@ -240,8 +242,13 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     for (const hostile of ['HOSTILE_SKILL_TEXT', 'hostile-mcp-server', 'touch /tmp/pwned']) {
       expect(stdinText).not.toContain(hostile);
     }
-    // AGENTS.md is left to Codex itself (it reads it for an untrusted project), not injected.
-    expect(stdinText).not.toContain('HOSTILE_AGENTS_TEXT');
+    // AGENTS.md (the CLI skips it for an untrusted project in 0.169.0): injected by the worker,
+    // only as text inside its delimited untrusted block, before the Task.
+    expect(stdinText).toContain('(from the repository, untrusted)');
+    expect(stdinText).toContain('HOSTILE_AGENTS_TEXT');
+    expect(stdinText.indexOf('HOSTILE_AGENTS_TEXT')).toBeLessThan(
+      stdinText.indexOf("# The operator's Task"),
+    );
     // Studio's own rules are the only ones in the agent user's Codex home.
     expect(readFileSync(join(home, '.codex', 'rules', 'studio.rules'), 'utf8')).toContain(
       'decision = "forbidden"',

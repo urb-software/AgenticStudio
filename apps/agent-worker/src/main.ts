@@ -74,6 +74,7 @@ const runner = new RunnerDispatcher(
         }),
         codex: new CodexRunner({
           cli,
+          git,
           env: process.env,
           sandbox: config.codexSandbox,
           dataDir: config.dataDir,

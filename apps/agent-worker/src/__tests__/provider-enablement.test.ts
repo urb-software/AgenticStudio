@@ -506,6 +506,11 @@ describe("the negative tests on the Codex runner's spawn path (Issue #106)", () 
   const codexRunner = (cli: ProviderCli) =>
     new CodexRunner({
       cli,
+      git: {
+        run: async () => {
+          throw new Error('no repository is read for a disabled provider');
+        },
+      },
       env: { PATH: '/usr/bin', HOME: '/nonexistent/agent', CODEX_CLI_ENABLED: 'true' },
       sandbox: 'workspace-write',
     });

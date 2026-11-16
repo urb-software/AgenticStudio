@@ -167,9 +167,12 @@ configuration. Leave your changes in the working copy; when the step ends done, 
 commits them on the Run branch and opens the pull request with your "pullRequest" title and body.
 `;
 
-/** Standard input of a first step: the agent definition, the Codex note and the Task. */
-export function codexPrompt(definition: string, task: string): string {
-  return `${definition.trimEnd()}\n\n${CODEX_DELIVERY_NOTE}\n# The operator's Task\n\n${task}\n`;
+/**
+ * Standard input of a first step: the instructions (the agent definition, then the repository's
+ * AGENTS.md text in its delimited untrusted block, if any), the Codex note and the Task.
+ */
+export function codexPrompt(instructions: string, task: string): string {
+  return `${instructions.trimEnd()}\n\n${CODEX_DELIVERY_NOTE}\n# The operator's Task\n\n${task}\n`;
 }
 
 /** Standard input of a resumed step: the operator's answer. */

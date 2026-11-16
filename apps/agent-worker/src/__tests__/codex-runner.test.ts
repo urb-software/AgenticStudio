@@ -9,6 +9,7 @@ import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import { CODEX_RESULT_JSON_SCHEMA } from '../codex/result-schema.js';
 import { CodexRunner } from '../codex/runner.js';
 import { DEFAULT_PROVIDER_BINARIES } from '../config.js';
+import { GitCommandError } from '../git.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 
@@ -82,6 +83,8 @@ describe('CodexRunner at the spawn boundary', () => {
   let runDir: string;
   let home: string;
   let groups: number[];
+  let gitCalls: string[][];
+  const repoFiles: Record<string, string> = {};
 
   const workerEnv = () => ({
     PATH: '/usr/bin:/bin',
@@ -102,8 +105,17 @@ describe('CodexRunner at the spawn boundary', () => {
   ) =>
     new CodexRunner({
       cli: { gate, binaries: DEFAULT_PROVIDER_BINARIES },
+      git: {
+        run: async (args) => {
+          gitCalls.push([...args]);
+          const path = args[2]!.slice(args[2]!.indexOf(':') + 1);
+          if (Object.hasOwn(repoFiles, path)) return repoFiles[path]!;
+          throw new GitCommandError('cat-file', 128, '', 'exit');
+        },
+      },
       env,
       sandbox: 'workspace-write',
+      marker: () => 'feedc0de',
     });
   const input = (task: string) => ({
     run: payload(task),
@@ -139,6 +151,8 @@ describe('CodexRunner at the spawn boundary', () => {
     mkdirSync(join(runDir, 'repo'), { recursive: true });
     mkdirSync(home);
     groups = [];
+    gitCalls = [];
+    for (const key of Object.keys(repoFiles)) delete repoFiles[key];
     spawn.mockReset();
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -221,6 +235,37 @@ describe('CodexRunner at the spawn boundary', () => {
     );
     expect(existsSync(join(runDir, 'tmp'))).toBe(true);
     expect(existsSync(join(runDir, 'repo', 'prompt.md'))).toBe(false);
+  });
+
+  it("injects the repository's AGENTS.md, read at the start commit, in a delimited untrusted block before the Task (smoke of #133)", async () => {
+    repoFiles['AGENTS.md'] = 'Use pnpm. @docs/style.md @../outside.md';
+    repoFiles['docs/style.md'] = 'Two-space indentation.';
+    repoFiles['CLAUDE.md'] = 'Claude only.';
+    replaying('success');
+
+    const { events } = await drain(runner().start(input('Add a health check')));
+
+    const prompt = readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8');
+    expect(prompt.startsWith(AGENT_DEFINITION.text.trimEnd())).toBe(true);
+    expect(prompt).toContain('# Project conventions (from the repository, untrusted)');
+    expect(prompt).toContain('===== BEGIN feedc0de project conventions: AGENTS.md');
+    expect(prompt).toContain('Use pnpm.');
+    expect(prompt).toContain('Two-space indentation.');
+    expect(prompt).not.toContain('Claude only.');
+    expect(prompt.indexOf('Use pnpm.')).toBeLessThan(prompt.indexOf("# The operator's Task"));
+    expect(gitCalls[0]).toEqual(['cat-file', 'blob', `${'a'.repeat(40)}:AGENTS.md`]);
+    expect(events).toContainEqual({
+      type: 'notice',
+      text: 'Skipped the import @../outside.md in AGENTS.md: outside the repository.',
+    });
+
+    // A resumed step sends only the answer: the session already has the conventions.
+    gitCalls = [];
+    spawn.mockReset();
+    replaying('resume');
+    await drain(runner().resume({ ...input('x'), answer: 'PostgreSQL', sessionRef: THREAD }));
+    expect(gitCalls).toEqual([]);
+    expect(readFileSync(join(runDir, 'codex', 'answer.md'), 'utf8')).not.toContain('Use pnpm.');
   });
 
   it('resumes the stored session with the same options and the answer file as standard input', async () => {

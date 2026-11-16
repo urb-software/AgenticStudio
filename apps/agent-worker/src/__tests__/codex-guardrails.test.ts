@@ -45,8 +45,8 @@ describe("Studio's Codex configuration template", () => {
 
     expect(settings).not.toMatch(/projects|mcp_servers|danger-full-access|sandbox_mode|trusted/);
     expect(settings).toMatch(/\[features\]\napps = false/);
-    // Smoke of #133: in 0.169.0 `hooks = false` also stopped AGENTS.md from loading; the flag
-    // stays at the CLI's default (no Studio hook, hooks.json removed before every step).
+    // Coordinator decision after the smoke of #133: the flag stays at the CLI's default (no
+    // Studio hook, hooks.json removed before every step).
     expect(settings).not.toMatch(/^\s*hooks\s*=/m);
     expect(settings).not.toMatch(/features\.hooks|codex_hooks/);
   });

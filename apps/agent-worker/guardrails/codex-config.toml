@@ -6,7 +6,8 @@
 # writes the whole of $HOME/.codex/config.toml from this file, overwriting any edits, and appends
 # one `[projects."<path>"] trust_level = "untrusted"` entry for every existing Working copy (the
 # command-line override is ignored by the CLI: compliance record, technical finding 3). An
-# untrusted project loads its AGENTS.md but none of its `.codex/` configuration, hooks or rules.
+# untrusted project loads none of its `.codex/` configuration, hooks or rules; in 0.169.0 the CLI
+# skips its AGENTS.md too, so the worker puts that text into the prompt itself.
 # Do not add a [projects] table here; the worker refuses a template that has one.
 
 # ADR 0002 (trial of 2026-11-15): the workspace-write sandbox is kept, with network access on,
@@ -40,8 +41,7 @@ include_only = [
 # Studio's guardrails for Codex are its command rules only: there is no Studio hook (a user-level
 # hook needs a trust the CLI keeps against its hash, so it would not run unattended), the worker
 # removes ~/.codex/hooks.json before every step, and an untrusted project's hooks are skipped.
-# The hooks feature flag is left at the CLI's default on purpose: in 0.169.0 `hooks = false` also
-# stopped AGENTS.md from loading (controlled smoke of #133). App (connector) integrations are
-# off: no MCP servers or connectors in the first version.
+# The hooks feature flag is left at the CLI's default (coordinator decision after the smoke of
+# #133). App (connector) integrations are off: no MCP servers or connectors in the first version.
 [features]
 apps = false

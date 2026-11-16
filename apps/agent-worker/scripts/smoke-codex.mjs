@@ -13,7 +13,8 @@
 // throwaway Git repository with hostile project configuration, in a temporary directory deleted
 // afterwards (pass --keep to keep it):
 //   1. the complete-install and version checks;
-//   2. a trivial change, with probes: AGENTS.md read (a marker), the project's .codex/ config,
+//   2. a trivial change, with probes: AGENTS.md text reaches the agent (a marker; injected by the
+//      worker, since the CLI skips it for an untrusted project in 0.169.0), the project's .codex/ config,
 //      hooks and rules not loaded, whether a project skill is offered;
 //   3. one question, then a resume with the answer (same session; result from the last message);
 //   4. a container through the agent user's rootless Docker (network on in the sandbox);
@@ -95,6 +96,7 @@ const startCommit = (await git.run(['rev-parse', 'HEAD'], local)).trim();
 
 const runner = new CodexRunner({
   cli,
+  git,
   env: process.env,
   sandbox: 'workspace-write',
   dataDir: root,
@@ -191,7 +193,7 @@ try {
     has(first.events, 'notice', /^Codex sandbox: workspace-write, network on/),
   );
   check(
-    'AGENTS.md was read (marker in the summary)',
+    'AGENTS.md reached the agent through the worker (marker in the summary)',
     !!first.result?.summary.includes(AGENTS_MARKER),
   );
   check('project rules not loaded (rule-probe.txt created)', read('rule-probe.txt') !== undefined);

@@ -1,16 +1,20 @@
 import type { Provider } from '@agentic-studio/contracts';
+import { randomBytes } from 'node:crypto';
 import { closeSync, openSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { buildInstructions, type RepositoryFiles } from '../claude-code/instructions.js';
 import { errorReason } from '../cli-output.js';
+import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from '../git.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import {
   AgentFailedError,
   type ResumeRunStepInput,
   type Runner,
   type RunStep,
+  type RunWorkspace,
   type StartRunStepInput,
 } from '../runner.js';
 import {
@@ -44,6 +48,9 @@ import { CodexStream, type ResultSource } from './stream.js';
 
 const PROVIDER: Provider = 'codex';
 
+/** The repository's instruction files the Codex runner injects into the prompt (Codex: AGENTS.md). */
+export const CODEX_PROJECT_INSTRUCTION_FILES = ['AGENTS.md'] as const;
+
 /**
  * Codex's user-level instruction and skill files (review C2 of #133), relative to the home
  * directory. `~/.codex/skills/.system` holds the skills bundled with the CLI, which the CLI
@@ -66,6 +73,10 @@ export interface CodexRunnerOptions {
   sandbox: CodexSandboxMode;
   /** The worker's data directory: every Working copy under it is marked untrusted. */
   dataDir?: string;
+  /** Reads the repository's AGENTS.md (and its imports) at the start commit. */
+  git: Pick<GitRunner, 'run'>;
+  /** Test seam: the per-step code that delimits the repository's instruction blocks. */
+  marker?: () => string;
   /** Test seam: where Studio's templates are. */
   guardrails?: { dir?: string };
 }
@@ -132,7 +143,17 @@ export class CodexRunner implements Runner {
     if (resumed === undefined) {
       await writeFile(files.schemaFile, CODEX_RESULT_JSON_SCHEMA, { mode: 0o600 });
       await rm(files.resultFile, { force: true });
-      await writeFile(files.promptFile, codexPrompt(agentDefinition.text, run.task), {
+      // Smoke of #133: in 0.169.0 an untrusted project's AGENTS.md is not loaded by the CLI, so
+      // the worker injects its text (read at the start commit) as Claude Code's runner does.
+      const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
+      const instructions = await buildInstructions(
+        agentDefinition,
+        this.repositoryFiles(workspace, run.startCommit, signal),
+        marker,
+        CODEX_PROJECT_INSTRUCTION_FILES,
+      );
+      for (const notice of instructions.notices) yield { type: 'notice', text: notice };
+      await writeFile(files.promptFile, codexPrompt(instructions.text, run.task), {
         mode: 0o600,
       });
       args = codexStartArguments({
@@ -168,6 +189,29 @@ export class CodexRunner implements Runner {
       stream,
       source,
     });
+  }
+
+  /** The repository's files at the start commit, read from the Working copy's object store. */
+  private repositoryFiles(
+    workspace: RunWorkspace,
+    startCommit: string,
+    signal: AbortSignal,
+  ): RepositoryFiles {
+    return {
+      read: async (path) => {
+        try {
+          return await this.options.git.run(['cat-file', 'blob', `${startCommit}:${path}`], {
+            cwd: workspace.repoDir,
+            timeoutMs: GIT_TIMEOUTS.local,
+            signal,
+          });
+        } catch (error) {
+          // No such file (or not a file) at the start commit.
+          if (error instanceof GitCommandError && error.reason === 'exit') return null;
+          throw error;
+        }
+      },
+    };
   }
 
   private async *execute(

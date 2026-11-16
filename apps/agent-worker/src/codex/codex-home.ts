@@ -30,7 +30,7 @@ import { isUuid, runsDirectory } from '../run-layout.js';
  *   Codex guardrail (coordinator decision after the smoke of #133). There is no Studio hook (a
  *   user-level hook needs a trust the CLI keeps against its hash, so it would not run
  *   unattended): `hooks.json` and `studio/` are removed. The template leaves the hooks feature
- *   flag at the CLI's default (in 0.169.0 `hooks = false` also stopped AGENTS.md loading).
+ *   flag at the CLI's default.
  *
  * GUARDRAILS, NOT THE SECURITY BOUNDARY (ADR 0002). Writes are serialised across Run steps and
  * worker processes with a lock file and land by rename, so a starting CLI never reads half a
@@ -95,7 +95,7 @@ export function trustEntries(paths: readonly string[]): string {
   );
   return (
     '\n# Working copies, written by the agent worker before every Codex Run step: untrusted, so\n' +
-    '# Codex loads their AGENTS.md but none of their .codex/ configuration, hooks or rules.\n\n' +
+    '# Codex loads none of their .codex/ configuration, hooks or rules.\n\n' +
     entries.join('\n')
   );
 }
