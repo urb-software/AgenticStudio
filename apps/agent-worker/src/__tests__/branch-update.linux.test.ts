@@ -447,6 +447,59 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     });
   });
 
+  describe('what a part that never reached the worker left behind (review R2 of #154)', () => {
+    it('does not reset a branch whose commits past the base were pushed', async () => {
+      const { run, prepared } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
+      const start = await updates().start(prepared, run, signal());
+      if (start.outcome !== 'merged') throw new Error('expected a clean merge');
+      const merged = headOf(prepared);
+
+      expect(await updates().abort(prepared, start.baseCommit, undefined, merged)).toBe(false);
+      expect(headOf(prepared)).toBe(merged);
+      // Pushed up to the base only: the merge itself is unpushed and goes.
+      expect(await updates().abort(prepared, start.baseCommit, undefined, start.baseCommit)).toBe(
+        true,
+      );
+      expect(headOf(prepared)).toBe(start.baseCommit);
+    });
+
+    it('moves the Run branch, never another one the agent left checked out', async () => {
+      const { run, prepared } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
+      const start = await updates().start(prepared, run, signal());
+      if (start.outcome !== 'merged') throw new Error('expected a clean merge');
+      const merged = headOf(prepared);
+      inRepo(prepared, ['checkout', '--quiet', '-b', 'agent-side']);
+
+      expect(await updates().abort(prepared, start.baseCommit)).toBe(true);
+
+      expect(inRepo(prepared, ['symbolic-ref', 'HEAD'])).toBe(`refs/heads/${prepared.runBranch}`);
+      expect(headOf(prepared)).toBe(start.baseCommit);
+      // The agent's own branch is untouched.
+      expect(inRepo(prepared, ['rev-parse', 'agent-side'])).toBe(merged);
+    });
+
+    it('does not accept a text conflict Git left as "ours" because of the repository attributes', async () => {
+      const run = payload();
+      const prepared = await prepare(run);
+      agentCommits(
+        prepared,
+        { '.gitattributes': '*.txt -merge\n', 'config.txt': 'a=run\n' },
+        'Run change',
+      );
+      remote.commit('Integration change', { 'config.txt': 'a=main\n' });
+      const start = await updates().start(prepared, run, signal());
+      expect(start.outcome).toBe('conflicts');
+      // No marker, and the file is still the "ours" version: not resolved by anyone.
+      expect(readFileSync(join(prepared.repoDir, 'config.txt'), 'utf8')).toBe('a=run\n');
+
+      await expect(updates().complete(prepared, run, signal())).rejects.toThrow(/config\.txt/);
+
+      // Once the agent changed it, the worker completes the merge.
+      writeFileSync(join(prepared.repoDir, 'config.txt'), 'a=both\n');
+      expect((await updates().complete(prepared, run, signal()))?.completed).toBe(true);
+    });
+  });
+
   describe('the Run own changes after a merge (review S1 of #154)', () => {
     it('counts the Run commits from the merged integration commit, not from the start commit', async () => {
       const { run, prepared, tip } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });

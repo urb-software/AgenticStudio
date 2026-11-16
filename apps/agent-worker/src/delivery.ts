@@ -150,6 +150,15 @@ export class Deliveries implements DeliveryPort {
           'branch up to date again, or look at the Working copy on the agent side.',
       );
     }
+    // Review R2-5: any unmerged path (a cherry-pick, a revert or a stash that conflicted too) is
+    // refused for the same reason.
+    const unmerged = await git.run(['diff', '--name-only', '--diff-filter=U', '-z'], local);
+    if (unmerged.length > 0) {
+      throw new DeliveryFailedError(
+        'The Working copy has files with unresolved conflicts, so nothing was committed or pushed. ' +
+          'Look at the Working copy on the agent side.',
+      );
+    }
     const status = await git.run(
       ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
       local,

@@ -4,6 +4,7 @@ import { WorkerController } from '../../../../platform/auth/worker-route.js';
 import {
   currentUpdateStart,
   latestMergedCommit,
+  pendingUpdate,
   resumeMessage,
 } from '../../domain/entities/run.js';
 import { type ClaimedRun, ClaimRunHandler } from './handler.js';
@@ -80,7 +81,10 @@ function kindOf(run: ClaimedRun) {
   // Issue #147 (review S1 of #154): the Run's own changes are counted from the integration branch
   // commit it last merged.
   const merged = latestMergedCommit(run);
-  const mergedBase = merged === undefined ? {} : { mergedIntegrationCommit: merged };
+  // Review R2-4: a delivery retry after a bring-up part counts from the commit it merged, which
+  // is not recorded as merged until the part succeeds.
+  const counted = currentUpdateStart(run)?.updateTip ?? merged;
+  const mergedBase = counted === undefined ? {} : { mergedIntegrationCommit: counted };
   if (run.state === 'failed') {
     return {
       ...mergedBase,
@@ -92,8 +96,11 @@ function kindOf(run: ClaimedRun) {
   }
   const resume = resumeMessage(run);
   if (resume !== null && run.sessionRef !== null) {
+    // Review R2-1: a merge an earlier bring-up part left behind is undone by the next part.
+    const pending = pendingUpdate(run);
     return {
       ...mergedBase,
+      ...(pending === undefined ? {} : { pendingUpdate: pending }),
       kind: 'resume' as const,
       runBranch: run.workingCopy?.runBranch,
       sessionRef: run.sessionRef,

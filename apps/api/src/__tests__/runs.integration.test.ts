@@ -2344,6 +2344,40 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expect(next).not.toHaveProperty('bringUpToDate');
       });
 
+      it('hands the next part the base of a bring-up part that failed, and the retry its merged commit (review R2)', async () => {
+        const { run } = await deliveredRun();
+        await bringUp(run.id);
+        await claim();
+        await report(run.id, {
+          state: 'running',
+          bringUpToDateStarted: { baseCommit: C1, integrationCommit: MERGED },
+        });
+        await step(run.id, 2, 'resume', DONE);
+        // The merge was made, the delivery failed: its retry counts from the merged commit.
+        await report(run.id, {
+          state: 'failed',
+          failure: { code: 'delivery_failed', detail: 'Pushing was refused.' },
+        });
+        await http()
+          .post(`/api/runs/${run.id}/retry-delivery`)
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+          .send();
+        const retry = (await claim()).body;
+        expect(retry).toMatchObject({ kind: 'deliver', mergedIntegrationCommit: MERGED });
+        expect(retry).not.toHaveProperty('pendingUpdate');
+        await report(run.id, {
+          state: 'failed',
+          failure: { code: 'delivery_failed', detail: 'Pushing was refused again.' },
+        });
+
+        // A plain Follow-up is a new part: it starts by undoing what the earlier one left.
+        expect((await followUp(run.id, { text: 'Go on without it.' })).status).toBe(202);
+        expect((await claim()).body).toMatchObject({
+          resumeReason: 'follow_up',
+          pendingUpdate: { baseCommit: C1 },
+        });
+      });
+
       it('hands every claim of the part where the merge started, until the part is over', async () => {
         const { run } = await deliveredRun();
         await bringUp(run.id);

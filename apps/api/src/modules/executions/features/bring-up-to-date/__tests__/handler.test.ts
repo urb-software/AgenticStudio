@@ -6,6 +6,7 @@ import {
   currentUpdateStart,
   inBringUpToDate,
   latestMergedCommit,
+  pendingUpdate,
   resumeMessage,
   type Run,
   type RunState,
@@ -270,6 +271,72 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
       ).toBe(false);
       expect(await runs.recordMergedCommit(run.id)).toBe(false);
       expect(currentUpdateStart((await runs.findById(run.id))!)).toBeUndefined();
+    });
+
+    describe('a merge an earlier part left behind (review R2-1 of #154)', () => {
+      const START = { baseCommit: 'a'.repeat(40), integrationCommit: MERGED };
+
+      /** A bring-up part whose merge started, then ended without succeeding. */
+      async function failedPart() {
+        const run = await finished();
+        await bringUp(run.id, undefined);
+        await claimed(run);
+        await runs.recordUpdateStart(run.id, WORKER, START);
+        await runs.transitionClaimed({
+          runId: run.id,
+          workerId: WORKER,
+          from: 'preparing',
+          to: 'failed',
+          failure: { code: 'worker_lost', detail: 'worker shut down' },
+          cancelRequested: false,
+          now: T2,
+        });
+        return run;
+      }
+
+      it('offers the base of the part before the current one, until a part has gone by', async () => {
+        const run = await failedPart();
+        expect(pendingUpdate((await runs.findById(run.id))!)).toBeUndefined();
+
+        await runs.queueFollowUp(run.id, 'Plain.', T2);
+        const queued = (await runs.findById(run.id))!;
+        expect(pendingUpdate(queued)).toEqual({ baseCommit: START.baseCommit });
+
+        // The Run's pushed commit goes with it, so the worker never undoes what was pushed.
+        expect(pendingUpdate({ ...queued, pushedCommit: 'c'.repeat(40) })).toEqual({
+          baseCommit: START.baseCommit,
+          pushedCommit: 'c'.repeat(40),
+        });
+      });
+
+      it('does not offer it once the part succeeded, nor again after the next part began', async () => {
+        const run = await failedPart();
+        await runs.queueFollowUp(run.id, 'Plain.', T2);
+        const first = (await runs.findById(run.id))!;
+        expect(pendingUpdate(first)).toBeDefined();
+        // A third part: the base is no longer the part right before it.
+        const copy = structuredClone(first);
+        copy.messages.push(
+          {
+            kind: 'part_end',
+            state: 'succeeded',
+            failureCode: null,
+            delivery: 'none',
+            detail: '',
+            at: T2,
+          },
+          { kind: 'follow_up', text: 'Third.', at: T2 },
+        );
+        expect(pendingUpdate(copy)).toBeUndefined();
+
+        // And a merge that succeeded is not pending.
+        const done = structuredClone(first);
+        const entry = done.messages.findLast(
+          (message) => message.kind === 'follow_up' && message.source,
+        );
+        if (entry?.kind === 'follow_up') entry.mergedCommit = MERGED;
+        expect(pendingUpdate(done)).toBeUndefined();
+      });
     });
 
     it('has no merged commit to record for a request whose merge never started', async () => {

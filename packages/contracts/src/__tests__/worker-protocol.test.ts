@@ -1518,6 +1518,30 @@ describe('bringing a Run branch up to date (Issue #147)', () => {
     expect(runPayloadSchema.safeParse({ ...claim, kind: 'start' }).success).toBe(false);
   });
 
+  it('carries a pending update only with a resume claim (review R2-1 of #154)', () => {
+    const pending = { baseCommit: 'a'.repeat(40), pushedCommit: 'b'.repeat(40) };
+    expect(runPayloadSchema.safeParse({ ...claim, pendingUpdate: pending }).success).toBe(true);
+    expect(
+      runPayloadSchema.safeParse({ ...claim, pendingUpdate: { baseCommit: 'a'.repeat(40) } })
+        .success,
+    ).toBe(true);
+    expect(
+      runPayloadSchema.safeParse({ ...claim, pendingUpdate: { baseCommit: 'abc' } }).success,
+    ).toBe(false);
+    expect(
+      runPayloadSchema.safeParse({
+        ...claim,
+        kind: 'deliver',
+        sessionRef: undefined,
+        answer: undefined,
+        resumeReason: undefined,
+        followUpNumber: undefined,
+        bringUpToDate: undefined,
+        pendingUpdate: pending,
+      }).success,
+    ).toBe(false);
+  });
+
   it('carries where the merge started, only with the flag, and the last merged commit', () => {
     const start = { updateBase: 'a'.repeat(40), updateTip: 'b'.repeat(40) };
     expect(runPayloadSchema.safeParse({ ...claim, ...start }).success).toBe(true);

@@ -2035,6 +2035,37 @@ describe('AgentWorker', () => {
         expect(workingCopies.located).toEqual([run.runId]);
       });
 
+      it('resets the branch to where an earlier update began when that part never succeeded (review R2-1)', async () => {
+        const run = bringUpPayload('More', {
+          resumeReason: 'follow_up',
+          bringUpToDate: undefined,
+          pendingUpdate: { baseCommit: BASE },
+        });
+        const api = new RecordingApi([run]);
+        const updates = new FakeBranchUpdates();
+        updates.undoes = true;
+        startWorker(api, new Recorder(), undefined, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(updates.calls).toEqual([`abort ${BASE}`]);
+      });
+
+      it('never resets on a later claim of the same part, nor for a delivery retry', async () => {
+        const run = bringUpPayload('Option A', {
+          resumeReason: 'answer',
+          pendingUpdate: { baseCommit: BASE },
+        });
+        const api = new RecordingApi([run]);
+        const updates = new FakeBranchUpdates();
+        updates.completion = { mergedCommit: MERGED, completed: true };
+        startWorker(api, new Recorder(), undefined, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(updates.calls).toEqual(['complete -']);
+      });
+
       it('aborts a merge an earlier part left open before a plain Follow-up starts, never mid-part', async () => {
         const run = bringUpPayload('More', {
           resumeReason: 'follow_up',
@@ -2049,7 +2080,7 @@ describe('AgentWorker', () => {
 
         expect(updates.calls).toEqual([STALE]);
         expect(notices(api)).toEqual([
-          'A merge an earlier part left open was aborted',
+          'What an earlier update left in the working copy was undone',
           'Follow-up 2 started',
           'Follow-up 2 ended: done',
         ]);

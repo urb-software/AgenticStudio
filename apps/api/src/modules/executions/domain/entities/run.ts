@@ -553,6 +553,32 @@ export function latestMergedCommit(run: Pick<Run, 'messages'>): string | undefin
   return undefined;
 }
 
+/**
+ * A bring-up-to-date merge the part before the current one began and that never succeeded (review
+ * R2-1 of #154): the Follow-up right before the current part, a bring-up request with the commit before its merge and
+ * no merged commit. Its merge commit may still be in the Working copy (cancelled while waiting, a
+ * lost worker); the next part resets the Run branch to `baseCommit` first, unless something past it
+ * was pushed. `undefined` when there is none.
+ */
+export function pendingUpdate(
+  run: Pick<Run, 'messages' | 'pushedCommit'>,
+): { baseCommit: string; pushedCommit?: string } | undefined {
+  // Only the part right before the current one: once that part reset the branch (or any later part
+  // built on it), the base is not offered again, so nothing a later part did is ever undone.
+  const followUps = run.messages.flatMap((message, index) =>
+    message.kind === 'follow_up' ? [index] : [],
+  );
+  const lastIndex = followUps.at(-2) ?? -1;
+  if (lastIndex === -1) return undefined;
+  const entry = run.messages[lastIndex];
+  if (entry?.kind !== 'follow_up' || entry.source !== 'bring_up_to_date') return undefined;
+  if (entry.updateBase === undefined || entry.mergedCommit !== undefined) return undefined;
+  return {
+    baseCommit: entry.updateBase,
+    ...(run.pushedCommit === null ? {} : { pushedCommit: run.pushedCommit }),
+  };
+}
+
 /** The latest Follow-up's merge start when the current part is a bring-up request (Issue #147). */
 export function currentUpdateStart(
   run: Pick<Run, 'messages'>,

@@ -364,8 +364,23 @@ export class AgentWorker {
       // (cancelled while it waited, a crash, the usage limit and then another request) is aborted
       // first, so nothing of it is built on or committed. A later claim of the same part goes on.
       if (run.resumeReason === 'follow_up' || run.resumeReason === 'bring_up_to_date') {
-        if (await this.options.branchUpdates.abort(prepared, undefined, abort.signal)) {
-          log.push(stepIndex, 'notice', 'A merge an earlier part left open was aborted');
+        // And a bring-up part that never succeeded (cancelled while waiting, a lost worker) leaves its
+        // merge commit: the branch goes back to where that part began, unless it was pushed past
+        // (review R2-1).
+        const pending = run.pendingUpdate;
+        if (
+          await this.options.branchUpdates.abort(
+            prepared,
+            pending?.baseCommit,
+            abort.signal,
+            pending?.pushedCommit,
+          )
+        ) {
+          log.push(
+            stepIndex,
+            'notice',
+            'What an earlier update left in the working copy was undone',
+          );
         }
       }
       if (run.resumeReason === 'bring_up_to_date') {

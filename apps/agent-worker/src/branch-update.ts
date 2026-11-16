@@ -59,9 +59,16 @@ export interface BranchUpdatePort {
    * Aborts a merge still open, so the Working copy returns to where it was. With `baseCommit`
    * (the Run branch's commit before the part's merge) a Run branch that moved on from it is also
    * reset to it: a part that did not end well leaves nothing of the update behind (review S3 of
-   * #154). True when anything was undone.
+   * #154). The reset moves only the Run branch (checked out first if the agent left it), only back
+   * along its history, and never undoes anything already pushed: with `pushedCommit` past the base
+   * it does nothing (review R2-1, R2-2). True when anything was undone.
    */
-  abort(prepared: PreparedRun, baseCommit?: string, signal?: AbortSignal): Promise<boolean>;
+  abort(
+    prepared: PreparedRun,
+    baseCommit?: string,
+    signal?: AbortSignal,
+    pushedCommit?: string,
+  ): Promise<boolean>;
 }
 
 /** The agent ended without resolving every conflict (or left conflict markers in a file). */
@@ -205,7 +212,7 @@ export class BranchUpdates implements BranchUpdatePort {
     for (const path of await this.unmerged(prepared, signal)) {
       if (
         (await resolvedInTree(prepared.repoDir, path)) &&
-        (await this.isTextConflict(prepared, path, signal))
+        (await this.isResolvedTextConflict(prepared, path, signal))
       ) {
         await git.run(['add', '--all', '--', `:(literal)${path}`], local);
       }
@@ -220,7 +227,12 @@ export class BranchUpdates implements BranchUpdatePort {
     return { mergedCommit, completed: true };
   }
 
-  async abort(prepared: PreparedRun, baseCommit?: string, signal?: AbortSignal): Promise<boolean> {
+  async abort(
+    prepared: PreparedRun,
+    baseCommit?: string,
+    signal?: AbortSignal,
+    pushedCommit?: string,
+  ): Promise<boolean> {
     const own = signal ?? AbortSignal.timeout(GIT_TIMEOUTS.local);
     const { git } = this.options;
     try {
@@ -230,12 +242,26 @@ export class BranchUpdates implements BranchUpdatePort {
         undone = true;
       }
       if (baseCommit !== undefined) {
-        const head = (
-          await git.run(['rev-parse', '--verify', 'HEAD^{commit}'], this.local(prepared, own))
-        ).trim();
+        const local = this.local(prepared, own);
+        const branchRef = `refs/heads/${prepared.runBranch}`;
+        // Never undo what was pushed: a base the pushed commit is past stays.
+        if (
+          pushedCommit !== undefined &&
+          pushedCommit !== baseCommit &&
+          (await this.isAncestor(prepared, baseCommit, pushedCommit, own))
+        ) {
+          return undone;
+        }
+        // The reset moves the Run branch only: the agent may have left another branch (or none)
+        // checked out (review R2-2).
+        const onBranch =
+          (await git.run(['symbolic-ref', '--quiet', 'HEAD'], local).catch(() => '')).trim() ===
+          branchRef;
+        if (!onBranch) await git.run(['checkout', '--force', '--quiet', prepared.runBranch], local);
+        const head = (await git.run(['rev-parse', '--verify', 'HEAD^{commit}'], local)).trim();
         // Only back along the Run branch's own history, never to a commit it does not contain.
         if (head !== baseCommit && (await this.isAncestor(prepared, baseCommit, 'HEAD', own))) {
-          await git.run(['reset', '--hard', '--quiet', baseCommit], this.local(prepared, own));
+          await git.run(['reset', '--hard', '--quiet', baseCommit], local);
           undone = true;
         }
       }
@@ -383,14 +409,40 @@ export class BranchUpdates implements BranchUpdatePort {
   }
 
   /**
-   * Whether the conflict at `path` is two changes to a text file: both sides present as regular
-   * files and neither a binary. Only those leave markers in the tree for an agent to resolve.
+   * Whether the conflict at `path` is two changes to a text file (both sides regular files, neither
+   * a binary) that the agent changed: a repository's attributes (`binary`, `-merge`) can make Git
+   * leave "ours" in the tree without a marker, so a file still equal to its "ours" version is not
+   * resolved (review R2-3). A deleted file counts as changed.
    */
-  private async isTextConflict(
+  private async isResolvedTextConflict(
     prepared: PreparedRun,
     path: string,
     signal: AbortSignal,
   ): Promise<boolean> {
+    const ours = await this.textConflictOurs(prepared, path, signal);
+    if (ours === undefined) return false;
+    const target = posix.join(prepared.repoDir, path);
+    if (!(await lstat(target).catch(() => null))) return true;
+    // `--no-filters`: no repository-defined filter driver runs.
+    const current = (
+      await this.options.git.run(
+        ['hash-object', '--no-filters', '--', target],
+        this.local(prepared, signal),
+      )
+    ).trim();
+    return current !== ours;
+  }
+
+  /**
+   * The "ours" blob of a conflict that is two changes to a text file: both sides present as
+   * regular files and neither a binary. Only those leave markers in the tree for an agent to
+   * resolve. `undefined` for any other kind of conflict.
+   */
+  private async textConflictOurs(
+    prepared: PreparedRun,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<string | undefined> {
     const { git } = this.options;
     const local = this.local(prepared, signal);
     const staged = await git.run(
@@ -405,17 +457,17 @@ export class BranchUpdates implements BranchUpdatePort {
     }
     const ours = sides.get('2');
     const theirs = sides.get('3');
-    if (!ours || !theirs) return false;
+    if (!ours || !theirs) return undefined;
     const regular = (mode: string) => mode === '100644' || mode === '100755';
-    if (!regular(ours.mode) || !regular(theirs.mode)) return false;
+    if (!regular(ours.mode) || !regular(theirs.mode)) return undefined;
     for (const side of [ours, theirs]) {
       const content = await git.run(['cat-file', 'blob', side.blob], {
         ...local,
         maxStdout: BINARY_SCAN_BYTES,
       });
-      if (content.includes('\0')) return false;
+      if (content.includes('\0')) return undefined;
     }
-    return true;
+    return ours.blob;
   }
 
   private identity(): GitOptions['config'] {

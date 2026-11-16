@@ -2,6 +2,7 @@ import type { RunPayload, RunStepResult } from '@agentic-studio/contracts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -162,6 +163,22 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(inRepo(prepared, ['rev-parse', 'HEAD'])).toBe(before);
     expect(inRepo(prepared, ['diff', '--name-only', '--diff-filter=U'])).toBe('README.md');
     expect(readFileSync(join(prepared.repoDir, 'README.md'), 'utf8')).toContain('<<<<<<<');
+  });
+
+  // Review R2-5 of #154: a conflict without an open merge (a cherry-pick, a revert) is refused too.
+  it('refuses to commit while any path is unmerged', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'README.md': 'run side\n' }, 'Run change');
+    const other = remote.commit('Integration change', { 'README.md': 'main side\n' });
+    inRepo(prepared, ['fetch', '--quiet', remote.url, 'main']);
+    expect(() => inRepo(prepared, ['cherry-pick', other])).toThrow();
+    expect(existsSync(join(prepared.repoDir, '.git', 'MERGE_HEAD'))).toBe(false);
+
+    await expect(deliveries().commit(prepared, run, DONE, signal())).rejects.toThrow(
+      /unresolved conflicts/,
+    );
+    expect(inRepo(prepared, ['diff', '--name-only', '--diff-filter=U'])).toBe('README.md');
   });
 
   it("pushes the agent's commits on the Run branch and opens a draft pull request", async () => {

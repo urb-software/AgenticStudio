@@ -295,6 +295,15 @@ export const runPayloadSchema = z
      */
     mergedIntegrationCommit: commitIdSchema.optional(),
     /**
+     * With a `resume` claim that starts a new part (review R2-1 of #154): an earlier bring-up-to-date
+     * part began a merge and never succeeded, so its merge commit may still be in the Working copy
+     * (the Run was cancelled while it waited, or the worker was lost). The worker resets the Run
+     * branch to `baseCommit` first, unless something past it was pushed (`pushedCommit`).
+     */
+    pendingUpdate: z
+      .strictObject({ baseCommit: commitIdSchema, pushedCommit: commitIdSchema.optional() })
+      .optional(),
+    /**
      * Issue #141: how many Run steps the Run had taken when its current part began (the first
      * part: 0; a Follow-up: the steps before it). Each part gets `limits.maxSteps` Run steps, so
      * the worker refuses a step beyond `stepsBeforePart + limits.maxSteps`. Absent: 0.
@@ -378,6 +387,10 @@ export const runPayloadSchema = z
       message: 'The merge start commits come only with the bring-up-to-date flag.',
     },
   )
+  .refine((payload) => payload.pendingUpdate === undefined || payload.kind === 'resume', {
+    path: ['pendingUpdate'],
+    message: 'A pending update comes with a resume claim only.',
+  })
   .refine((payload) => payload.mergedIntegrationCommit === undefined || payload.kind !== 'start', {
     path: ['mergedIntegrationCommit'],
     message: 'A start claim has merged nothing yet.',
