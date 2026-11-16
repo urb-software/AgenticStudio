@@ -159,6 +159,18 @@ describe("Studio's PreToolUse hook", () => {
     expect(decide({ tool_name: 'Bash', tool_input: { command: ['git', 'push'] } }, env)).toEqual(
       expect.any(String),
     );
+    // A shell's script argument is checked as the command it is.
+    for (const command of [
+      ['bash', '-lc', 'npm test && git push'],
+      ['/bin/sh', '-c', 'sudo true'],
+    ]) {
+      expect(decide({ tool_name: 'Bash', tool_input: { command } }, env)).toEqual(
+        expect.any(String),
+      );
+    }
+    expect(
+      decide({ tool_name: 'Bash', tool_input: { command: ['bash', '-lc', 'npm test'] } }, env),
+    ).toBeNull();
   });
 });
 

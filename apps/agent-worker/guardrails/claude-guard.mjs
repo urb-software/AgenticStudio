@@ -149,6 +149,15 @@ function checkPath(tool, target, { project, home, tmp }) {
   return null;
 }
 
+/** A command given as words: a shell's script (`bash -lc '<script>'`) is the command itself. */
+function commandText(words) {
+  const flag = words.findIndex((word, i) => i > 0 && /^-[a-z]*c$/.test(word));
+  const shell = /^(ba|z|da)?sh$/.test(posix.basename(words[0] ?? ''));
+  return shell && flag > 0 && flag + 1 < words.length
+    ? words.slice(flag + 1).join(' ')
+    : words.join(' ');
+}
+
 /**
  * Whether Studio's guardrails block a tool call: the reason, or `null` to leave it to the
  * permission rules. `env` gives `CLAUDE_PROJECT_DIR` (the Working copy; Codex: the input's
@@ -159,7 +168,7 @@ export function decide(input, env) {
   const toolInput = input?.tool_input ?? {};
   const where = { project: env.CLAUDE_PROJECT_DIR || input?.cwd, home: env.HOME, tmp: env.TMPDIR };
   const command = Array.isArray(toolInput.command)
-    ? toolInput.command.filter((word) => typeof word === 'string').join(' ')
+    ? commandText(toolInput.command.filter((word) => typeof word === 'string'))
     : toolInput.command;
   if (tool === 'Bash') return typeof command === 'string' ? checkBash(command) : null;
   if (tool === 'apply_patch') {
