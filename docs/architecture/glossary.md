@@ -110,7 +110,7 @@ The Git host's check results for a Run's pull request.
 _Avoid_: Checks (unqualified), CI status
 
 **Review comment**:
-A comment on a Run's pull request on the Git host.
+A comment on a Run's pull request on the Git host: a review's summary with its verdict, an inline comment on the diff, or a conversation comment. Anyone can write one on a public pull request, so it is untrusted text: the operator loads them on request, sees them (their own, by the configured GitHub login, preselected; everyone else's collapsed and unselected), and sends only the ones they choose, as a Follow-up prepared from them.
 _Avoid_: Feedback, remark
 
 ### Cross-cutting
