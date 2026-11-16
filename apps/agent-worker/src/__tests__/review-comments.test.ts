@@ -144,6 +144,22 @@ describe('buildReviewComments', () => {
     expect(comments[0]!.text).not.toContain('�');
   });
 
+  it('keeps the latest hundred comments when there are more, and says more existed', () => {
+    const many = Array.from({ length: 101 }, (_, index) =>
+      conversation(index + 1, `Comment ${index + 1}`, at(index)),
+    );
+
+    const { comments, truncated } = buildReviewComments(sources({ conversation: many }), {
+      scope: 'unresolved',
+    });
+
+    expect(comments).toHaveLength(100);
+    expect(comments[0]?.id).toBe('conversation-2');
+    expect(comments.at(-1)?.id).toBe('conversation-101');
+    expect(truncated).toBe(true);
+    expect(reviewCommentsResultSchema.safeParse({ comments, truncated }).success).toBe(true);
+  });
+
   it('filters by time for since_last_result only', () => {
     const list = sources({
       conversation: [conversation(1, 'old', at(1)), conversation(2, 'new', at(5))],

@@ -131,15 +131,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
     lookups = new InMemoryRunLookupRepository(runs);
-    handler = new FollowUpRunHandler(
-      runs,
-      { now: () => T1 },
-      workers,
-      LEASE,
-      lookups,
-      RETENTION,
-      lookups,
-    );
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
     connect();
   });
 

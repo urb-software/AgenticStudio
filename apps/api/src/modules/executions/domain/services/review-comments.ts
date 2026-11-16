@@ -1,4 +1,6 @@
 import {
+  type ReviewComments,
+  type ReviewCommentsView,
   FOLLOW_UP_AUTHORS_MAX,
   REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES,
   REVIEW_COMMENT_TEXT_MAX_BYTES,
@@ -12,7 +14,10 @@ import { redactLogText } from './log-redaction.js';
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
 
-/** `text` cut to at most `maxBytes` UTF-8 bytes at a character boundary. */
+/**
+ * `text` cut to at most `maxBytes` UTF-8 bytes at a character boundary. It mirrors `cutToBytes` of
+ * the worker protocol: the domain may not import the contracts package.
+ */
 function cutToBytes(text: string, maxBytes: number): { text: string; cut: boolean } {
   const bytes = Buffer.from(text, 'utf8');
   if (bytes.length <= maxBytes) return { text, cut: false };
@@ -79,6 +84,25 @@ export function selectReviewComments(
 /** The distinct authors of the comments, in order of appearance, at most the Follow-up's cap. */
 export function distinctAuthors(comments: readonly ReviewComment[]): string[] {
   return [...new Set(comments.map((comment) => comment.author))].slice(0, FOLLOW_UP_AUTHORS_MAX);
+}
+
+/** The Run's loaded comments as the page is shown them, each marked as the operator's or not. */
+export function reviewCommentsView(
+  view: ReviewComments,
+  operatorLogin: string | null,
+): ReviewCommentsView {
+  return {
+    operatorLogin,
+    comments: (view.set?.comments ?? []).map((comment) => ({
+      ...comment,
+      byOperator: isByOperator(comment.author, operatorLogin),
+    })),
+    truncated: view.set?.truncated ?? false,
+    scope: view.set?.scope ?? null,
+    loadedAt: view.set?.loadedAt ?? null,
+    loading: view.load.loading,
+    error: view.load.error,
+  };
 }
 
 /** Whether a comment was written by the operator's own account (exact, case-insensitive). */

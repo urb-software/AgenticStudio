@@ -21,15 +21,13 @@ import {
   useReviewComments,
 } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
+import { FOLLOW_UP_MAX_LENGTH } from '../../components/follow-up-limits';
 import {
   commentKindLabel,
   commentLocation,
   commentSection,
   preparedText,
 } from '../../components/review-comments-text';
-
-/** Longest Follow-up the API takes, in characters (the API's limit is authoritative). */
-const FOLLOW_UP_MAX_LENGTH = 10_000;
 
 const LOAD_REQUEST = 'POST /api/runs/{runId}/pull-request/review-comments/load';
 const READ_REQUEST = 'GET /api/runs/{runId}/pull-request/review-comments';

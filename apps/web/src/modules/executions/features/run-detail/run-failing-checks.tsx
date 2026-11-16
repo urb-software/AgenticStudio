@@ -13,12 +13,10 @@ import {
   usePreparedFollowUp,
 } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
+import { FOLLOW_UP_MAX_LENGTH } from '../../components/follow-up-limits';
 import { isGitHubUrl } from '../../components/github-links';
 
 type PullRequest = NonNullable<RunOutput['pullRequest']>;
-
-/** Longest Follow-up the API takes, in characters (the API's limit is authoritative). */
-const FOLLOW_UP_MAX_LENGTH = 10_000;
 
 const PREPARE_REQUEST = 'POST /api/runs/{runId}/pull-request/failing-checks/prepare';
 const PREPARED_REQUEST = 'GET /api/runs/{runId}/pull-request/failing-checks/prepared';

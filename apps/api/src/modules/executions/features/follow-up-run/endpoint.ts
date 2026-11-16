@@ -14,7 +14,8 @@ import {
 import { RunResponseDto, toRunResponse } from '../../contracts/http/run-response.js';
 import { FollowUpNotAllowedError } from '../../domain/entities/run.js';
 import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
-import { FollowUpRunHandler, ReviewCommentsNotLoadedError } from './handler.js';
+import { ReviewCommentsNotLoadedError } from '../../domain/entities/review-comments.js';
+import { FollowUpRunHandler } from './handler.js';
 import { followUpRunRequestSchema, FollowUpRunRequestDto } from './schema.js';
 
 /**

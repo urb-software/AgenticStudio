@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../domain/entities/run.js';
-import type { ReviewComments } from '../../domain/entities/review-comments.js';
+import type { ReviewCommentsView } from '../../domain/entities/review-comments.js';
+import { reviewCommentsView } from '../../domain/services/review-comments.js';
 import {
   REVIEW_COMMENT_REPOSITORY,
   type ReviewCommentRepository,
@@ -25,13 +26,10 @@ export class GetReviewCommentsHandler {
     @Inject(OPERATOR_LOGIN) private readonly operator: OperatorLogin,
   ) {}
 
-  async execute(runId: string): Promise<{ view: ReviewComments; operatorLogin: string | null }> {
+  async execute(runId: string): Promise<ReviewCommentsView> {
     if (!isRunId(runId) || (await this.runs.findById(runId)) === null) {
       throw new RunNotFoundError();
     }
-    return {
-      view: await this.comments.findReviewComments(runId),
-      operatorLogin: this.operator.login,
-    };
+    return reviewCommentsView(await this.comments.findReviewComments(runId), this.operator.login);
   }
 }

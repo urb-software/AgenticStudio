@@ -1,3 +1,4 @@
+import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 /**
@@ -54,3 +55,35 @@ export const reviewCommentsResponseSchema = z
   .meta({ id: 'ReviewComments' });
 
 export type ReviewCommentsResponse = z.infer<typeof reviewCommentsResponseSchema>;
+
+export class ReviewCommentsResponseDto extends createZodDto(reviewCommentsResponseSchema) {}
+
+/**
+ * What the response is built from: a plain shape the handlers make (a contract may not import the
+ * domain), with `byOperator` already worked out from the configured login.
+ */
+export interface ReviewCommentsResponseInput {
+  operatorLogin: string | null;
+  comments: z.infer<typeof reviewCommentResponseSchema>[];
+  truncated: boolean;
+  scope: (typeof REVIEW_COMMENT_SCOPES)[number] | null;
+  loadedAt: Date | null;
+  loading: boolean;
+  error: string | null;
+}
+
+/** The response for the Run's loaded Review comments. */
+export function toReviewCommentsResponse(
+  view: ReviewCommentsResponseInput,
+): ReviewCommentsResponse {
+  return {
+    ...(view.operatorLogin === null ? {} : { operatorLogin: view.operatorLogin }),
+    comments: view.comments.map((comment) => ({ ...comment })),
+    truncated: view.truncated,
+    ...(view.scope === null || view.loadedAt === null
+      ? {}
+      : { scope: view.scope, loadedAt: view.loadedAt.toISOString() }),
+    loading: view.loading,
+    ...(view.error === null ? {} : { error: view.error }),
+  };
+}

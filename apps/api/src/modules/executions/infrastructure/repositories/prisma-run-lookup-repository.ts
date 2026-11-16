@@ -78,13 +78,10 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
           ...(review === undefined ? {} : { scope: review.scope, since: review.since }),
         },
       });
-      // A load of Review comments marks no column of the Run: its state is read from the lookups.
-      if (kind !== 'review_comments') {
-        await tx.run.update({
-          where: { id: runId },
-          data: requestedColumns(kind, now),
-        });
-      }
+      await tx.run.update({
+        where: { id: runId },
+        data: requestedColumns(kind, now),
+      });
       return 'requested';
     });
   }
@@ -302,13 +299,10 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
             ? { status: 'failed', finishedAt: now, error }
             : { status: 'requested', claimedBy: null, claimedAt: null, retryAt, error },
       });
-      // A failed load of Review comments marks no column of the Run: the error stays on the lookup.
-      if (lookup.kind !== 'review_comments') {
-        await tx.run.updateMany({
-          where: { id: lookup.runId },
-          data: failedColumns(lookup.kind as LookupKind, error, retryAt, lookup.requestedAt),
-        });
-      }
+      await tx.run.updateMany({
+        where: { id: lookup.runId },
+        data: failedColumns(lookup.kind as LookupKind, error, retryAt, lookup.requestedAt),
+      });
       return 'stored';
     });
   }
@@ -404,9 +398,16 @@ function checksJson(result: PullRequestStateResult): string | null {
  * throttle alone).
  */
 function requestedColumns(kind: LookupKind, now: Date): Prisma.RunUpdateInput {
-  return kind === 'failing_check_logs'
-    ? { prPrepareRequestedAt: now, prPrepareError: null }
-    : { prRefreshRequestedAt: now, prLastAttemptAt: now };
+  switch (kind) {
+    case 'failing_check_logs':
+      return { prPrepareRequestedAt: now, prPrepareError: null };
+    // Issue #146: a load of Review comments marks no column of the Run; its state is read from the
+    // lookups.
+    case 'review_comments':
+      return {};
+    case 'pull_request_state':
+      return { prRefreshRequestedAt: now, prLastAttemptAt: now };
+  }
 }
 
 /**
@@ -420,7 +421,12 @@ function failedColumns(
   requestedAt: Date,
 ): Prisma.RunUpdateManyMutationInput {
   const waiting = retryAt === null ? null : requestedAt;
-  return kind === 'failing_check_logs'
-    ? { prPrepareError: error, prPrepareRequestedAt: waiting }
-    : { prRefreshError: error, prRetryAt: retryAt, prRefreshRequestedAt: waiting };
+  switch (kind) {
+    case 'failing_check_logs':
+      return { prPrepareError: error, prPrepareRequestedAt: waiting };
+    case 'review_comments':
+      return {};
+    case 'pull_request_state':
+      return { prRefreshError: error, prRetryAt: retryAt, prRefreshRequestedAt: waiting };
+  }
 }

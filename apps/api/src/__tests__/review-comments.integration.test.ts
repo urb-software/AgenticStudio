@@ -31,6 +31,8 @@ const WORKING_COPY = {
 const PROBLEM = {
   runNotFound: 'urn:agentic-studio:problem:run-not-found',
   pullRequestNotRefreshable: 'urn:agentic-studio:problem:pull-request-not-refreshable',
+  followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
+  reviewCommentsLoadRunning: 'urn:agentic-studio:problem:review-comments-load-running',
   lookupKindMismatch: 'urn:agentic-studio:problem:lookup-kind-mismatch',
 };
 const OPERATOR_LOGIN = 'Octo-Cat';
@@ -225,15 +227,28 @@ describe('review comments API (PostgreSQL + Redis via Testcontainers)', () => {
       expect((await asWorker('runs/claim', { workerId: W1 })).status).toBe(204);
     });
 
-    it('asks for all unresolved comments without a time, and keeps one open lookup per Run', async () => {
+    it('asks for all unresolved comments without a time, and refuses a second load while one runs', async () => {
       const runId = await deliveredRun();
 
       expect((await load(runId, { scope: 'unresolved' })).status).toBe(202);
-      expect((await load(runId, { scope: 'unresolved' })).status).toBe(202);
+      expectProblem(
+        await load(runId, { scope: 'since_last_result' }),
+        409,
+        PROBLEM.reviewCommentsLoadRunning,
+      );
 
       const claimed = await claimLookups();
       expect(claimed.body).toHaveLength(1);
       expect(claimed.body[0].reviewComments).toEqual({ scope: 'unresolved' });
+    });
+
+    it('refuses a Run that cannot take a Follow-up now, as the page does not offer it', async () => {
+      const runId = await deliveredRun();
+      expect((await followUp(runId, { text: 'Go on.' })).status).toBe(202);
+
+      expectProblem(await load(runId), 409, PROBLEM.followUpNotAllowed);
+
+      expect(await db().runLookup.count({ where: { runId, kind: 'review_comments' } })).toBe(0);
     });
 
     it('answers 409 for a Run without a pull request, 404 for an unknown Run, 422 for a bad scope', async () => {

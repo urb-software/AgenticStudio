@@ -7,8 +7,11 @@ import type { RecordedWorkerStatus } from '../../../domain/services/provider-ava
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { runView } from '../../../domain/services/follow-up-context.js';
 import type { RetentionPolicy } from '../../../ports/retention-policy.js';
-import { FollowUpRunHandler, ReviewCommentsNotLoadedError } from '../handler.js';
-import type { ReviewComment } from '../../../domain/entities/review-comments.js';
+import { FollowUpRunHandler } from '../handler.js';
+import {
+  type ReviewComment,
+  ReviewCommentsNotLoadedError,
+} from '../../../domain/entities/review-comments.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -113,15 +116,7 @@ describe('FollowUpRunHandler', () => {
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
     lookups = new InMemoryRunLookupRepository(runs);
-    handler = new FollowUpRunHandler(
-      runs,
-      { now: () => T1 },
-      workers,
-      LEASE,
-      lookups,
-      RETENTION,
-      lookups,
-    );
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
     connect();
   });
 
@@ -375,15 +370,7 @@ describe('FollowUpRunHandler', () => {
   it('refuses while the agent worker holding the Working copy is gone, or the Provider is off', async () => {
     const run = await finished('succeeded');
     workers = new InMemoryWorkerStatusStore();
-    handler = new FollowUpRunHandler(
-      runs,
-      { now: () => T1 },
-      workers,
-      LEASE,
-      lookups,
-      RETENTION,
-      lookups,
-    );
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
     connect(OTHER_WORKER);
     await expect(handler.execute(run.id, 'x')).rejects.toEqual(
       new FollowUpNotAllowedError('worker_unavailable'),

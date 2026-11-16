@@ -257,14 +257,14 @@ export interface PullRequestReader {
     jobId: number,
     signal: AbortSignal,
   ): Promise<JobLogOutcome>;
-  /** The pull request's reviews (Issue #146), oldest first, at most ten pages. */
+  /** The pull request's reviews (Issue #146), oldest first; of a long listing the newest ten pages. */
   reviews(pull: PullRequestNumber, signal: AbortSignal): Promise<Listing<ReviewReport>>;
-  /** The inline comments on the pull request's diff (Issue #146), oldest first. */
+  /** The inline comments on the pull request's diff (Issue #146), oldest first; of a long listing the newest ten pages. */
   inlineComments(
     pull: PullRequestNumber,
     signal: AbortSignal,
   ): Promise<Listing<InlineCommentReport>>;
-  /** The conversation comments on the pull request (Issue #146), oldest first. */
+  /** The conversation comments on the pull request (Issue #146), oldest first; of a long listing the newest ten pages. */
   conversationComments(
     pull: PullRequestNumber,
     signal: AbortSignal,
@@ -342,6 +342,7 @@ const reviewThreadsAnswer = z.object({
                   z.object({
                     isResolved: z.boolean(),
                     comments: z.object({
+                      pageInfo: z.object({ hasNextPage: z.boolean() }),
                       nodes: z.array(z.object({ databaseId: z.number().nullable() })),
                     }),
                   }),
@@ -366,7 +367,7 @@ const THREAD_PAGES_MAX = 10;
 const REVIEW_THREADS_QUERY =
   'query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){' +
   'pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}' +
-  'nodes{isResolved comments(first:100){nodes{databaseId}}}}}}}';
+  'nodes{isResolved comments(first:100){pageInfo{hasNextPage} nodes{databaseId}}}}}}}';
 
 const compareAnswer = z.object({ ahead_by: z.int().min(0), behind_by: z.int().min(0) });
 
@@ -742,6 +743,13 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
       }
       for (const thread of threads.nodes) {
         if (!thread.isResolved) continue;
+        // The comments after the hundredth of a resolved thread could not be told from unresolved
+        // ones: refuse rather than show them.
+        if (thread.comments.pageInfo.hasNextPage) {
+          throw new PullRequestFailedError(
+            'A resolved review thread has too many comments to tell which are resolved.',
+          );
+        }
         for (const comment of thread.comments.nodes) {
           if (comment.databaseId !== null) resolved.add(comment.databaseId);
         }
@@ -763,27 +771,49 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
       : `${api}/graphql`;
   }
 
-  /** A paged listing: up to {@link COMMENT_PAGES_MAX} pages of a hundred, and whether more exist. */
+  /**
+   * A paged listing, oldest first, of at most {@link COMMENT_PAGES_MAX} pages of a hundred: when the
+   * host has more pages than that, the newest pages are read (the first call only tells how many
+   * there are, from the `Link` header's last page) and `more` says the older ones are left out.
+   */
   private async listing(
     path: string,
     target: PullRequestNumber,
     signal: AbortSignal,
   ): Promise<Listing<unknown>> {
-    const items: unknown[] = [];
-    for (let page = 1; page <= COMMENT_PAGES_MAX; page += 1) {
-      const answer = await this.call(
-        'GET',
-        `${path}?per_page=${CHECKS_PAGE_SIZE}&page=${page}`,
-        undefined,
-        target,
-        signal,
-        'read',
-      );
-      if (!Array.isArray(answer)) throw this.invalidAnswer();
-      items.push(...answer);
-      if (answer.length < CHECKS_PAGE_SIZE) return { items, more: false };
+    const first = await this.listingPage(path, 1, target, signal);
+    if (first.last <= 1) return { items: first.items, more: false };
+    const lowest = Math.max(2, first.last - COMMENT_PAGES_MAX + 1);
+    const items = first.last <= COMMENT_PAGES_MAX ? [...first.items] : [];
+    for (let page = lowest; page <= first.last; page += 1) {
+      items.push(...(await this.listingPage(path, page, target, signal)).items);
     }
-    return { items, more: true };
+    return { items, more: first.last > COMMENT_PAGES_MAX };
+  }
+
+  /** One page of a listing, with the number of the last page when the host says so. */
+  private async listingPage(
+    path: string,
+    page: number,
+    target: PullRequestNumber,
+    signal: AbortSignal,
+  ): Promise<{ items: unknown[]; last: number }> {
+    const response = await this.send(
+      'GET',
+      `${path}?per_page=${CHECKS_PAGE_SIZE}&page=${page}`,
+      undefined,
+      target,
+      signal,
+      'read',
+    );
+    const answer: unknown = await response.json().catch(() => {
+      throw this.invalidAnswer();
+    });
+    if (!Array.isArray(answer)) throw this.invalidAnswer();
+    const link = /<[^>]*[?&]page=(\d+)[^>]*>;\s*rel="last"/.exec(
+      response.headers.get('link') ?? '',
+    );
+    return { items: answer, last: link ? Number(link[1]) : page };
   }
 
   async jobLog(

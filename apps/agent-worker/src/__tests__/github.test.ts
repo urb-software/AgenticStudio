@@ -579,7 +579,23 @@ describe('GitHubPullRequests', () => {
       });
     });
 
-    it('reads page after page and says when the host had more than the pages it reads', async () => {
+    it('reads every page of a listing that fits, oldest first', async () => {
+      stub.issueComments.push(
+        ...Array.from({ length: 250 }, (_, index) => ({
+          id: index + 1,
+          user: { login: 'octocat' },
+          body: 'x',
+          created_at: '2026-11-16T10:00:00Z',
+        })),
+      );
+
+      const { items, more } = await client().conversationComments(pull, signal());
+
+      expect(more).toBe(false);
+      expect(items.map((item) => item.id)).toEqual(Array.from({ length: 250 }, (_, i) => i + 1));
+    });
+
+    it('reads the newest ten pages of a longer listing, and says the older ones were left out', async () => {
       stub.issueComments.push(
         ...Array.from({ length: 1001 }, (_, index) => ({
           id: index + 1,
@@ -591,11 +607,14 @@ describe('GitHubPullRequests', () => {
 
       const { items, more } = await client().conversationComments(pull, signal());
 
-      expect(items).toHaveLength(1000);
+      // 1001 comments are eleven pages: the first call learns that, the newest ten are read.
+      expect(items).toHaveLength(901);
+      expect(items[0]?.id).toBe(101);
+      expect(items.at(-1)?.id).toBe(1001);
       expect(more).toBe(true);
       expect(
         stub.requests.filter((request) => request.path.endsWith('/issues/41/comments')),
-      ).toHaveLength(10);
+      ).toHaveLength(11);
     });
 
     it('collects the comments of resolved threads through a read-only GraphQL query, page by page', async () => {
@@ -609,6 +628,20 @@ describe('GitHubPullRequests', () => {
       const graphql = stub.requests.filter((request) => request.path === '/graphql');
       expect(graphql).toHaveLength(2);
       expect(graphql.every((request) => request.method === 'POST')).toBe(true);
+    });
+
+    it('refuses to guess when a resolved thread has more comments than one read gives', async () => {
+      stub.reviewThreads.push({ isResolved: true, commentIds: [10], moreComments: true });
+
+      await expect(client().resolvedInlineCommentIds(pull, signal())).rejects.toThrow(
+        /too many comments/,
+      );
+    });
+
+    it('does not mind an unresolved thread with more comments: all of it counts as unresolved', async () => {
+      stub.reviewThreads.push({ isResolved: false, commentIds: [10], moreComments: true });
+
+      expect((await client().resolvedInlineCommentIds(pull, signal())).size).toBe(0);
     });
 
     it('refuses to guess which threads are resolved when GitHub answers errors', async () => {

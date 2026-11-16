@@ -38,9 +38,9 @@ ALTER TABLE "run_messages" ADD CONSTRAINT "run_messages_source_check"
 ALTER TABLE "run_messages" ADD CONSTRAINT "run_messages_source_detail_check"
     CHECK (
       ("source" = 'review_comments' AND "source_count" BETWEEN 1 AND 100
-         AND cardinality("source_authors") BETWEEN 1 AND 20)
+         AND "source_authors" IS NOT NULL AND cardinality("source_authors") BETWEEN 1 AND 20)
       OR (("source" IS NULL OR "source" <> 'review_comments') AND "source_count" IS NULL
-         AND cardinality("source_authors") = 0)
+         AND "source_authors" IS NOT NULL AND cardinality("source_authors") = 0)
     );
 
 -- CreateTable

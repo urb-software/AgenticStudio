@@ -8,9 +8,7 @@ import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
 import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useFollowUpRun } from '../../api/runs-queries';
-
-/** Longest Follow-up the API takes, in characters (the API's limit is authoritative). */
-const FOLLOW_UP_MAX_LENGTH = 10_000;
+import { FOLLOW_UP_MAX_LENGTH } from '../../components/follow-up-limits';
 
 type Refusal = NonNullable<NonNullable<RunOutput['followUp']>['reason']>;
 

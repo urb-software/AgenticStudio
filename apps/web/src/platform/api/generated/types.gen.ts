@@ -1317,7 +1317,7 @@ export type LoadRunReviewCommentsErrors = {
      */
     404: ProblemDetails;
     /**
-     * The run has no pull request (urn:agentic-studio:problem:pull-request-not-refreshable)
+     * The run has no pull request (urn:agentic-studio:problem:pull-request-not-refreshable), cannot take a Follow-up (urn:agentic-studio:problem:follow-up-not-allowed) or a load is running (urn:agentic-studio:problem:review-comments-load-running)
      */
     409: ProblemDetails;
     /**

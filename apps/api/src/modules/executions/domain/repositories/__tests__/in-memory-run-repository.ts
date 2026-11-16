@@ -4,7 +4,7 @@ import {
   canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
   type FollowUpComments,
-  type FollowUpSource,
+  type FollowUpOrigin,
   isFinal,
   partEndOf,
   restoreEarlierResult,
@@ -20,7 +20,11 @@ import {
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
-import type { ReviewCommentSet } from '../../entities/review-comments.js';
+import {
+  type ReviewCommentSet,
+  ReviewCommentsNotLoadedError,
+} from '../../entities/review-comments.js';
+import { distinctAuthors, selectReviewComments } from '../../services/review-comments.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
@@ -456,9 +460,9 @@ export class InMemoryRunRepository implements RunRepository {
     runId: string,
     text: string,
     now: Date,
-    source?: FollowUpSource,
-    comments?: FollowUpComments,
+    origin?: FollowUpOrigin,
   ): Promise<Run | null> {
+    const source = typeof origin === 'object' ? origin.source : origin;
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (
       !run ||
@@ -472,6 +476,13 @@ export class InMemoryRunRepository implements RunRepository {
       run.stepCount >= run.limits.maxTotalSteps
     ) {
       return Promise.resolve(null);
+    }
+    let comments: FollowUpComments | undefined;
+    if (typeof origin === 'object') {
+      const set = this.reviewSets.get(runId);
+      const chosen = set ? selectReviewComments(set, origin.commentIds) : null;
+      if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
+      comments = { count: chosen.length, authors: distinctAuthors(chosen) };
     }
     run.messages.push({ kind: 'part_end', ...partEndOf(run)!, at: now });
     run.messages.push({

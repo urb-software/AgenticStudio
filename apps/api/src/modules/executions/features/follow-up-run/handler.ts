@@ -1,14 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  REVIEW_COMMENT_REPOSITORY,
-  type ReviewCommentRepository,
-} from '../../domain/repositories/review-comment-repository.js';
-import { distinctAuthors, selectReviewComments } from '../../domain/services/review-comments.js';
-import {
   followUpEligibility,
-  type FollowUpComments,
   type FollowUpEligibility,
   FollowUpNotAllowedError,
+  type FollowUpOrigin,
   type FollowUpSource,
   isRunId,
   type Run,
@@ -33,17 +28,6 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
-
-/**
- * The selected Review comments are not all in the Run's loaded set (loaded again meanwhile, sent
- * already, or never loaded): the operator loads them again (Issue #146).
- */
-export class ReviewCommentsNotLoadedError extends Error {
-  constructor() {
-    super('Some of the selected review comments are not loaded.');
-    this.name = 'ReviewCommentsNotLoadedError';
-  }
-}
 
 /**
  * Command (Issue #141): the operator sends a Follow-up to a finished Run. When the Run can take
@@ -72,7 +56,6 @@ export class FollowUpRunHandler {
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
     @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
-    @Inject(REVIEW_COMMENT_REPOSITORY) private readonly comments: ReviewCommentRepository,
   ) {}
 
   async execute(
@@ -85,9 +68,10 @@ export class FollowUpRunHandler {
     if (!run) throw new RunNotFoundError();
     const before = this.eligibility(run);
     if (!before.allowed) throw new FollowUpNotAllowedError(before.reason);
-    const sent =
-      source === 'review_comments' ? await this.selected(run.id, reviewCommentIds) : undefined;
-    const queued = await this.runs.queueFollowUp(run.id, text, this.clock.now(), source, sent);
+    // Issue #146: the store checks the selected comments against the loaded set under its lock.
+    const origin: FollowUpOrigin | undefined =
+      source === 'review_comments' ? { source, commentIds: reviewCommentIds } : source;
+    const queued = await this.runs.queueFollowUp(run.id, text, this.clock.now(), origin);
     if (queued) {
       // Issue #142: the pull request state is read again with every Follow-up (the agent worker
       // also checks it before it starts the agent); the page then shows the state it found.
@@ -115,14 +99,6 @@ export class FollowUpRunHandler {
     const current = await this.runs.findById(run.id);
     const after = current ? this.eligibility(current) : before;
     throw new FollowUpNotAllowedError(after.allowed ? 'not_finished' : after.reason);
-  }
-
-  /** What the Follow-up records of the selected comments; they must all be in the loaded set. */
-  private async selected(runId: string, ids: readonly string[]): Promise<FollowUpComments> {
-    const { set } = await this.comments.findReviewComments(runId);
-    const chosen = set === null ? null : selectReviewComments(set, ids);
-    if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
-    return { count: chosen.length, authors: distinctAuthors(chosen) };
   }
 
   private eligibility(run: Run): FollowUpEligibility {

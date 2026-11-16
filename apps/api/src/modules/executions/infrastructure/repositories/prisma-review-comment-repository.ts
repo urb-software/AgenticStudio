@@ -1,15 +1,11 @@
-import { reviewCommentSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { z } from 'zod';
 import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import type { ReviewCommentScope, ReviewComments } from '../../domain/entities/review-comments.js';
 import type { ReviewCommentRepository } from '../../domain/repositories/review-comment-repository.js';
-
-/** What `comments` holds, checked on read: the column is JSON, written by a load. */
-const commentsSchema = z.array(reviewCommentSchema);
+import { commentsSchema } from './review-comment-json.js';
 
 const OPEN = ['requested', 'claimed'];
 

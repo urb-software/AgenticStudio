@@ -160,6 +160,7 @@ const server = createServer((request, response) => {
                 nodes: reviewThreads.map((thread) => ({
                   isResolved: thread.isResolved,
                   comments: {
+                    pageInfo: { hasNextPage: false },
                     nodes: thread.commentIds.map((databaseId) => ({ databaseId })),
                   },
                 })),

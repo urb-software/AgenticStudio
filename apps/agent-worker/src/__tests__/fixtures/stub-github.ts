@@ -75,7 +75,7 @@ export interface StubGitHub {
   /** Issue #146: what `GET /issues/:n/comments` (conversation comments) answers. */
   issueComments: Record<string, unknown>[];
   /** Issue #146: the review threads the GraphQL query answers: resolved or not, comment ids. */
-  reviewThreads: { isResolved: boolean; commentIds: number[] }[];
+  reviewThreads: { isResolved: boolean; commentIds: number[]; moreComments?: boolean }[];
   /** Issue #146: when set, the GraphQL query answers these errors (with status 200). */
   graphqlErrors: unknown[] | undefined;
   /** The `html_url` of a pull request (default: its github.com URL). */
@@ -144,7 +144,10 @@ export async function startStubGitHub(): Promise<StubGitHub> {
               : stub.issueComments;
         const size = Number(url.searchParams.get('per_page') ?? 30);
         const page = Number(url.searchParams.get('page') ?? 1);
-        return send(200, list.slice((page - 1) * size, page * size));
+        const last = Math.max(1, Math.ceil(list.length / size));
+        return send(200, list.slice((page - 1) * size, page * size), {
+          Link: `<http://${request.headers.host}${url.pathname}?per_page=${size}&page=${last}>; rel="last"`,
+        });
       }
       if (request.method === 'POST' && url.pathname === '/graphql') {
         const body = await readJson(request);
@@ -164,7 +167,10 @@ export async function startStubGitHub(): Promise<StubGitHub> {
                   },
                   nodes: nodes.map((thread) => ({
                     isResolved: thread.isResolved,
-                    comments: { nodes: thread.commentIds.map((databaseId) => ({ databaseId })) },
+                    comments: {
+                      pageInfo: { hasNextPage: thread.moreComments === true },
+                      nodes: thread.commentIds.map((databaseId) => ({ databaseId })),
+                    },
                   })),
                 },
               },

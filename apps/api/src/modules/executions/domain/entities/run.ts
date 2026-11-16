@@ -267,6 +267,15 @@ export const FOLLOW_UP_SOURCES = [
 ] as const;
 export type FollowUpSource = (typeof FOLLOW_UP_SOURCES)[number];
 
+/**
+ * Where a Follow-up's text came from, when it was prepared (Issue #145, #147, #146): the source, and
+ * for `review_comments` the ids of the comments the operator selected, which the store checks
+ * against the Run's loaded set in the same transaction that queues the Follow-up.
+ */
+export type FollowUpOrigin =
+  | Exclude<FollowUpSource, 'review_comments'>
+  | { source: 'review_comments'; commentIds: readonly string[] };
+
 /** What a Follow-up prepared from Review comments records: how many, and their authors (Issue #146). */
 export interface FollowUpComments {
   count: number;

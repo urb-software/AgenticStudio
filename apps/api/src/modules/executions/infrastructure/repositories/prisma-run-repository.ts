@@ -25,6 +25,7 @@ import {
   type RunFailureCode,
   type RunMessage,
   type FollowUpComments,
+  type FollowUpOrigin,
   type FollowUpSource,
   partEndOf,
   restoreEarlierResult,
@@ -36,6 +37,9 @@ import {
   stepLimitFailure,
   UNDER_WAY_RUN_STATES,
 } from '../../domain/entities/run.js';
+import { ReviewCommentsNotLoadedError } from '../../domain/entities/review-comments.js';
+import { distinctAuthors, selectReviewComments } from '../../domain/services/review-comments.js';
+import { commentsSchema } from './review-comment-json.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
@@ -806,9 +810,9 @@ export class PrismaRunRepository implements RunRepository {
     runId: string,
     text: string,
     now: Date,
-    source?: FollowUpSource,
-    comments?: FollowUpComments,
+    origin?: FollowUpOrigin,
   ): Promise<Run | null> {
+    const source = typeof origin === 'object' ? origin.source : origin;
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the conditions, the message and the state change hold together, so a
       // second submission, a claim or a delivery retry in between leaves this one refused.
@@ -827,6 +831,18 @@ export class PrismaRunRepository implements RunRepository {
         await tx.run.findUniqueOrThrow({ where: { id: runId }, select: RUN_FIELDS }),
       );
       if (run.steps >= current.limits.maxTotalSteps) return null;
+      // Issue #146: the selected comments must all be in the loaded set as it is now, under the
+      // same lock, so a load that completes meanwhile cannot be sent or dropped unseen.
+      let comments: FollowUpComments | undefined;
+      if (typeof origin === 'object') {
+        const stored = await tx.runReviewCommentSet.findUnique({ where: { runId } });
+        const parsed = stored ? commentsSchema.safeParse(stored.comments) : undefined;
+        const chosen = parsed?.success
+          ? selectReviewComments({ comments: parsed.data }, origin.commentIds)
+          : null;
+        if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
+        comments = { count: chosen.length, authors: distinctAuthors(chosen) };
+      }
       const last = await tx.runMessage.findFirst({
         where: { runId },
         orderBy: { seq: 'desc' },
