@@ -52,8 +52,7 @@ export interface ProcessEnd {
 
 /** What the step ended with: its result, or the error to throw after the events to log. */
 export type StepOutcome =
-  | { result: RunStepResult; events: RunnerEvent[] }
-  | { error: Error; events: RunnerEvent[] };
+  { result: RunStepResult; events: RunnerEvent[] } | { error: Error; events: RunnerEvent[] };
 
 export class ClaudeStream {
   private session: string | undefined;
@@ -154,13 +153,18 @@ export class ClaudeStream {
     if (info.status !== 'rejected' || this.limit) return [];
     const resetsAt = typeof info.resetsAt === 'number' ? info.resetsAt : undefined;
     this.limit = resetsAt === undefined ? {} : { resetsAt };
-    return [{ type: 'notice', text: `The Claude Code usage limit was reached${resetText(resetsAt)}.` }];
+    return [
+      { type: 'notice', text: `The Claude Code usage limit was reached${resetText(resetsAt)}.` },
+    ];
   }
 
   /** How the step ended, once the process has exited. */
   finish(end: ProcessEnd): StepOutcome {
     if (end.spawnFailed) {
-      return { error: new AgentFailedError('Claude Code could not be started on the agent worker.'), events: [] };
+      return {
+        error: new AgentFailedError('Claude Code could not be started on the agent worker.'),
+        events: [],
+      };
     }
     const result = this.result;
     if (result && !result.isError && result.subtype === 'success' && end.exitCode === 0) {

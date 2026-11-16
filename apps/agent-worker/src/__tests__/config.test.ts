@@ -45,6 +45,7 @@ describe('loadWorkerConfig', () => {
       retentionDays: 7,
       retentionMaxPerProject: 10,
       killGraceMs: 10_000,
+      claudeMaxTurns: 200,
       agentGitHub: { apiUrl: 'https://api.github.com' },
     });
   });
@@ -150,6 +151,15 @@ X-Evil: 1`,
     expect(loadWorkerConfig({ ...env, STUDIO_WORKER_KILL_GRACE_SECONDS: '3' }).killGraceMs).toBe(
       3000,
     );
+  });
+
+  it('reads the bound on Claude Code agent turns, 200 by default (Issue #105)', () => {
+    expect(loadWorkerConfig({ ...env, STUDIO_CLAUDE_MAX_TURNS: '30' }).claudeMaxTurns).toBe(30);
+    for (const invalid of ['0', '1001', '2.5', 'many']) {
+      expect(() => loadWorkerConfig({ ...env, STUDIO_CLAUDE_MAX_TURNS: invalid })).toThrowError(
+        /STUDIO_CLAUDE_MAX_TURNS/,
+      );
+    }
   });
 
   it('reads the intervals', () => {

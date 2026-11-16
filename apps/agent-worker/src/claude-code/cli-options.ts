@@ -42,7 +42,10 @@ export function checkClaudeVersion(output: string): VersionCheck {
   }
   const version = [Number(match[1]), Number(match[2]), Number(match[3])] as const;
   const text = version.join('.');
-  if (compare(version, CLAUDE_CODE_VERSIONS.min) < 0 || compare(version, CLAUDE_CODE_VERSIONS.below) >= 0) {
+  if (
+    compare(version, CLAUDE_CODE_VERSIONS.min) < 0 ||
+    compare(version, CLAUDE_CODE_VERSIONS.below) >= 0
+  ) {
     return {
       ok: false,
       reason:

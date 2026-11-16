@@ -29,9 +29,8 @@ const resumed = value('--resume');
 const scenario = /\[stub:([a-z-]+)\]/.exec(prompt)?.[1] ?? (resumed ? 'resume' : 'success');
 
 const stdinStat = fstatSync(0);
-const stdin = stdinStat.isFIFO() || stdinStat.isSocket()
-  ? 'pipe'
-  : `closed (${readFileSync(0).length} bytes)`;
+const stdin =
+  stdinStat.isFIFO() || stdinStat.isSocket() ? 'pipe' : `closed (${readFileSync(0).length} bytes)`;
 appendFileSync(
   resolve(process.cwd(), '..', 'claude-stub-calls.ndjson'),
   `${JSON.stringify({ argv: args, env: process.env, cwd: process.cwd(), stdin, scenario })}\n`,
@@ -42,8 +41,10 @@ const EXIT_CODES = { error: 1, 'usage-limit': 1, 'no-result': 2 };
 const here = dirname(fileURLToPath(import.meta.url));
 const recordings = join(here, 'claude-recordings');
 const replay = (name) =>
-  readFileSync(join(recordings, `${name}.ndjson`), 'utf8')
-    .replaceAll(RECORDED_SESSION, resumed ?? RECORDED_SESSION);
+  readFileSync(join(recordings, `${name}.ndjson`), 'utf8').replaceAll(
+    RECORDED_SESSION,
+    resumed ?? RECORDED_SESSION,
+  );
 
 if (scenario === 'slow') {
   process.stdout.write(replay('success').split('\n')[0] + '\n');

@@ -85,7 +85,9 @@ async function collect(
     const text = await files.read(path);
     if (text === null) {
       if (importedBy !== undefined) {
-        notices.push(`Skipped the import @${path} in ${importedBy}: no such file at the start commit.`);
+        notices.push(
+          `Skipped the import @${path} in ${importedBy}: no such file at the start commit.`,
+        );
       }
       return;
     }
@@ -139,10 +141,7 @@ export async function buildInstructions(
       continue;
     }
     const cut = `\n[... cut: the instructions reached Studio's limit of ${INSTRUCTIONS_MAX_BYTES / 1024} KiB]`;
-    const room =
-      INSTRUCTIONS_MAX_BYTES -
-      used -
-      new TextEncoder().encode(begin + cut + end).length;
+    const room = INSTRUCTIONS_MAX_BYTES - used - new TextEncoder().encode(begin + cut + end).length;
     if (room > 0) text += begin + cutToBytes(file.text, room).text + cut + end;
     notices.push(
       `The repository's instruction text was cut at ${INSTRUCTIONS_MAX_BYTES / 1024} KiB ` +

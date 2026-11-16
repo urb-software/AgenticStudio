@@ -198,7 +198,12 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     );
 
     const args = spawn.mock.calls[0]![1] as string[];
-    expect(args.slice(0, 4)).toEqual(['-p', "The operator's answer:\n\nPostgreSQL", '--resume', SESSION]);
+    expect(args.slice(0, 4)).toEqual([
+      '-p',
+      "The operator's answer:\n\nPostgreSQL",
+      '--resume',
+      SESSION,
+    ]);
     expect(args.slice(4, 11)).toEqual([
       '--output-format',
       'stream-json',
@@ -286,7 +291,10 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
 
   it('starts nothing when the version check found Claude Code unavailable', async () => {
     const unavailable = runner(
-      new ProviderGate({ claude_code: true, codex: false }, { claude_code: 'Claude Code 2.2.0 is not a supported version.' }),
+      new ProviderGate(
+        { claude_code: true, codex: false },
+        { claude_code: 'Claude Code 2.2.0 is not a supported version.' },
+      ),
     );
 
     await expect(unavailable.start(input('x')).next()).rejects.toThrow(
@@ -311,7 +319,13 @@ describe('the version check at worker start', () => {
 
     expect(await probeClaudeCode(cli(), WORKER_ENV)).toEqual({ ok: true, version: '2.1.325' });
     expect(spawn).toHaveBeenCalledWith('claude', ['--version'], {
-      env: { PATH: '/usr/bin:/bin', HOME: '/home/agent', USER: 'agent', LANG: 'C.UTF-8', TERM: 'dumb' },
+      env: {
+        PATH: '/usr/bin:/bin',
+        HOME: '/home/agent',
+        USER: 'agent',
+        LANG: 'C.UTF-8',
+        TERM: 'dumb',
+      },
       stdio: ['ignore', 'pipe', 'ignore'],
       shell: false,
       detached: true,
@@ -348,7 +362,9 @@ describe('the version check at worker start', () => {
   });
 
   it('gives up on a CLI that does not answer in time', async () => {
-    spawn.mockImplementation(() => Object.assign(new EventEmitter(), { stdout: new PassThrough() }));
+    spawn.mockImplementation(() =>
+      Object.assign(new EventEmitter(), { stdout: new PassThrough() }),
+    );
 
     const check = await probeClaudeCode(cli(), WORKER_ENV, 20);
     expect(check.ok).toBe(false);

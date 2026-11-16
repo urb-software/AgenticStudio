@@ -37,7 +37,9 @@ export function ResumeRun({ run }: { run: RunOutput }) {
       </p>
       {resume.isError ? (
         <Banner tone="danger" title="Couldn't resume the run.">
-          <span className="font-mono text-small">{failedRequest(RESUME_REQUEST, resume.error)}</span>
+          <span className="font-mono text-small">
+            {failedRequest(RESUME_REQUEST, resume.error)}
+          </span>
         </Banner>
       ) : null}
       <div>

@@ -20,7 +20,7 @@ const BASE = {
   jsonSchema: '{"type":"object"}',
 };
 
-describe('the CLI arguments (the record\'s Mode)', () => {
+describe("the CLI arguments (the record's Mode)", () => {
   it('starts a step with exactly the approved options', () => {
     expect(claudeArguments(BASE)).toEqual([
       '-p',
@@ -137,13 +137,14 @@ describe('the environment of a Claude Code process', () => {
     });
   });
 
-  it.each(['unix:///var/run/docker.sock', 'unix:///run/docker.sock', 'unix:///var/run/docker.sock/'])(
-    "never hands over the system Docker daemon's socket: %s",
-    (socket) => {
-      const env = claudeEnvironment({ base: { ...WORKER_ENV, DOCKER_HOST: socket } });
-      expect(env).not.toHaveProperty('DOCKER_HOST');
-    },
-  );
+  it.each([
+    'unix:///var/run/docker.sock',
+    'unix:///run/docker.sock',
+    'unix:///var/run/docker.sock/',
+  ])("never hands over the system Docker daemon's socket: %s", (socket) => {
+    const env = claudeEnvironment({ base: { ...WORKER_ENV, DOCKER_HOST: socket } });
+    expect(env).not.toHaveProperty('DOCKER_HOST');
+  });
 
   it('leaves out what the worker does not have', () => {
     expect(claudeEnvironment({ base: { PATH: '/usr/bin' } })).toEqual({

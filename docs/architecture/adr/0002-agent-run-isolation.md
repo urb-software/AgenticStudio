@@ -88,5 +88,5 @@ The rootless Docker trial (#94) ran on 2026-11-15 in WSL on the operator's machi
 
 - **Provider compliance records** (B6, B7), including whether subscription login is permitted for this use. A provider stays disabled until its record is `Approved`.
 - **Rootless Docker trial (#94): done, 2026-11-15**, in WSL on the operator's machine; the decision stands (see [Trial result](#trial-result-2026-11-15)). It is repeated on the target server, with the boundary checks, in the server setup task (#107).
-- **Next review of the Claude Code compliance record:** add the [Claude Code finding](#claude-code-finding-2026-11-15) about what `--setting-sources user` excludes.
+- **Claude Code compliance record: done, 2026-11-16** (#105): the [Claude Code finding](#claude-code-finding-2026-11-15) about what `--setting-sources user` excludes is in the record's technical findings.
 - **Next review of the Codex compliance record:** add the [trial result](0002-trial-rootless-docker.md#codex) that the rootless Docker socket is reachable from `workspace-write` only with `sandbox_workspace_write.network_access=true`, and the resulting posture, sandbox kept (see [Run decisions](#run-decisions-2026-11-15)).

@@ -794,7 +794,7 @@ describe('worker status report (Issue #101)', () => {
     expect(workerStatusRequestSchema.safeParse(body).success).toBe(false);
   });
 
-  it("carries why a switched-on provider is unavailable on the worker (Issue #105)", () => {
+  it('carries why a switched-on provider is unavailable on the worker (Issue #105)', () => {
     const withReason = {
       ...report,
       providerReasons: { claude_code: 'Claude Code 2.2.0 is not supported (>=2.1.325 <2.2.0).' },
@@ -824,7 +824,11 @@ describe('a Run that reached the usage limit (Issue #105)', () => {
     expect(report({ state: 'running', sessionRef: 'session-1' })).toBe(false);
     expect(report({ state: 'failed', failure: usageLimit, sessionRef: '' })).toBe(false);
     expect(
-      report({ state: 'failed', failure: usageLimit, sessionRef: 's'.repeat(SESSION_REF_MAX_LENGTH + 1) }),
+      report({
+        state: 'failed',
+        failure: usageLimit,
+        sessionRef: 's'.repeat(SESSION_REF_MAX_LENGTH + 1),
+      }),
     ).toBe(false);
   });
 });

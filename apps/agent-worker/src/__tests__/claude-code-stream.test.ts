@@ -42,7 +42,10 @@ describe('the Claude Code event stream', () => {
       result: {
         outcome: 'done',
         summary: 'Added GET /health with a test.',
-        pullRequest: { title: 'Add a health check', body: 'Adds GET /health.\n\nAssumptions: none.' },
+        pullRequest: {
+          title: 'Add a health check',
+          body: 'Adds GET /health.\n\nAssumptions: none.',
+        },
         checks: [{ name: 'unit tests', result: 'passed', detail: '3 passed' }],
         sessionRef: SESSION,
       },
@@ -115,9 +118,9 @@ describe('the Claude Code event stream', () => {
   });
 
   it('fails a non-zero exit as agent_failed, even after a successful result', () => {
-    expect(failed(replay('success', { exitCode: 3, spawnFailed: false }).outcome).error.message).toBe(
-      'Claude Code exited with code 3.',
-    );
+    expect(
+      failed(replay('success', { exitCode: 3, spawnFailed: false }).outcome).error.message,
+    ).toBe('Claude Code exited with code 3.');
     const stream = new ClaudeStream();
     expect(failed(stream.finish({ exitCode: 2, spawnFailed: false })).error.message).toBe(
       'Claude Code exited with code 2 without a result.',

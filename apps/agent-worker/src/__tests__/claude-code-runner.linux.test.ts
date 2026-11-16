@@ -286,7 +286,7 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     expect(denied.events.map((event) => event.type)).toContain('notice');
   });
 
-  it("is stopped through its process group, like every Run step (Issue #100)", async () => {
+  it('is stopped through its process group, like every Run step (Issue #100)', async () => {
     const abort = new AbortController();
     const step = drain(runner().start(input('x [stub:slow]', abort.signal)));
     step.catch(() => undefined);
@@ -302,14 +302,19 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
   });
 
   it('checks the version through the boundary at start', async () => {
-    expect(await probeClaudeCode({ gate, binaries: { claude_code: bin, codex: 'codex' } }, workerEnv())).toEqual({
+    expect(
+      await probeClaudeCode({ gate, binaries: { claude_code: bin, codex: 'codex' } }, workerEnv()),
+    ).toEqual({
       ok: true,
       version: '2.1.325',
     });
     const old = join(root, 'claude-old');
     writeFileSync(old, '#!/bin/sh\necho "2.1.300 (Claude Code)"\n');
     chmodSync(old, 0o755);
-    const check = await probeClaudeCode({ gate, binaries: { claude_code: old, codex: 'codex' } }, workerEnv());
+    const check = await probeClaudeCode(
+      { gate, binaries: { claude_code: old, codex: 'codex' } },
+      workerEnv(),
+    );
     expect(check.ok).toBe(false);
     const missing = await probeClaudeCode(
       { gate, binaries: { claude_code: join(root, 'nope'), codex: 'codex' } },
