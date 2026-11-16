@@ -1,5 +1,4 @@
 import {
-  copyFile,
   lstat,
   mkdir,
   open,
@@ -12,6 +11,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -155,11 +155,16 @@ async function withRealPaths(paths: readonly string[]): Promise<string[]> {
 async function lock(path: string, timeoutMs: number): Promise<() => Promise<void>> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    const token = `${process.pid}-${randomUUID()}\n`;
     try {
       const handle = await open(path, 'wx', 0o600);
-      await handle.writeFile(`${process.pid}\n`);
+      await handle.writeFile(token);
       await handle.close();
-      return () => unlink(path).catch(() => undefined);
+      // Released only while it is still this writer's lock (never one taken over meanwhile).
+      return async () => {
+        const held = await readFile(path, 'utf8').catch(() => undefined);
+        if (held === token) await unlink(path).catch(() => undefined);
+      };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
@@ -219,7 +224,7 @@ export async function prepareCodexHome(
 
     const hook = posix.join(home, CODEX_HOME_FILES.hook);
     await mkdir(posix.dirname(hook), { recursive: true, mode: 0o700 });
-    await copyFile(join(dir, CODEX_GUARDRAIL_FILES.hook), hook);
+    await replaceFile(hook, await readFile(join(dir, CODEX_GUARDRAIL_FILES.hook), 'utf8'));
     const command = `${shellWord(options.nodePath ?? process.execPath)} ${shellWord(hook)}`;
     const hooks = JSON.parse(await readFile(join(dir, CODEX_GUARDRAIL_FILES.hooks), 'utf8')) as {
       hooks: Record<string, { hooks: { command: string }[] }[]>;

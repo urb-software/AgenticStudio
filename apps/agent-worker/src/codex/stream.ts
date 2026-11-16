@@ -22,6 +22,9 @@ import { AgentFailedError, UsageLimitError } from '../runner.js';
  *   the turn recovered from (it completed, exit 0) stays a notice.
  */
 
+/** Longest CLI reason taken into a failure detail. */
+const REASON_MAX = 500;
+
 /** Longest text of one runner event (the protocol's limit). */
 const EVENT_TEXT_MAX = 20_000;
 
@@ -70,9 +73,15 @@ export class CodexStream {
   private lastMessage: string | undefined;
   private readonly commands = new Set<string>();
 
-  /** The session id the CLI reported, once it has. */
+  /**
+   * @param resumed A resumed step's session: kept when the stream reports none of its own, so a
+   *   usage limit on resume can still be resumed later (review of #133).
+   */
+  constructor(private readonly resumed?: string) {}
+
+  /** The session id the CLI reported, else the resumed one. */
   get sessionRef(): string | undefined {
-    return this.session;
+    return this.session ?? this.resumed;
   }
 
   /** One line of the CLI's output → the Run events it maps to (none for most lines). */
@@ -186,7 +195,7 @@ export class CodexStream {
       return {
         error: new UsageLimitError(
           'The Codex usage limit was reached. Resume the run once the limit has reset.',
-          this.session,
+          this.sessionRef,
         ),
         events: [],
       };
@@ -195,7 +204,7 @@ export class CodexStream {
       const reason = this.failures.find(Boolean);
       return {
         error: new AgentFailedError(
-          `Codex ended with an error${reason ? `: ${cut(reason).slice(0, 500)}` : '.'}`,
+          `Codex ended with an error${reason ? `: ${reason.slice(0, REASON_MAX)}` : '.'}`,
         ),
         events: [],
       };
@@ -210,7 +219,7 @@ export class CodexStream {
       };
     }
     const raw = source.kind === 'file' ? source.text?.trim() : this.lastMessage;
-    const parsed = parseResult(raw, this.session);
+    const parsed = parseResult(raw, this.sessionRef);
     if (parsed !== undefined) return { result: parsed, events: [] };
     return {
       error: new AgentFailedError(

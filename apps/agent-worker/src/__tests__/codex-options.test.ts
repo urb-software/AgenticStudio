@@ -162,5 +162,7 @@ describe('the Codex version check', () => {
   it('refuses output without a version', () => {
     expect(checkCodexVersion('').ok).toBe(false);
     expect(checkCodexVersion('error: unknown flag').ok).toBe(false);
+    // A pre-release is not a tested version.
+    expect(checkCodexVersion('codex-cli 0.169.0-alpha.1').ok).toBe(false);
   });
 });

@@ -35,6 +35,7 @@ import { StepProcesses } from '../dist/step-processes.js';
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const AGENTS_MARKER = 'STUDIO-SMOKE-AGENTS-7Q2';
 const SKILL_NAME = 'studio-smoke-skill';
+const PROJECT_MARKER = 'STUDIO-SMOKE-PROJECT-4K9';
 const keep = process.argv.includes('--keep');
 const line = (text) => process.stdout.write(`${text}\n`);
 
@@ -195,6 +196,12 @@ try {
   );
   check('project rules not loaded (rule-probe.txt created)', read('rule-probe.txt') !== undefined);
   check('project hooks not loaded (no hook probe file)', !existsSync(hookProbe));
+  // Two probes for the project's config.toml: instructions (not masked by Studio's environment
+  // allowlist, review of #133) and an environment variable.
+  check(
+    'project config not loaded (no project instructions marker in the summary)',
+    !first.result?.summary.includes(PROJECT_MARKER),
+  );
   check(
     'project config not loaded (STUDIO_PROJECT_LAYER not set)',
     !has(first.events, 'output', /^loaded\s*$/),

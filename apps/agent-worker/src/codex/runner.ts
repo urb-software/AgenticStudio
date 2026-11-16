@@ -145,7 +145,11 @@ export class CodexRunner implements Runner {
       resumed === undefined
         ? { kind: 'file', text: await readFile(files.resultFile, 'utf8').catch(() => undefined) }
         : { kind: 'last-message' };
-    return yield* this.execute(args, env, workspace.repoDir, stdinFile, processes, signal, source);
+    const stream = new CodexStream(resumed?.sessionRef);
+    return yield* this.execute(args, env, workspace.repoDir, stdinFile, processes, signal, {
+      stream,
+      source,
+    });
   }
 
   private async *execute(
@@ -155,7 +159,7 @@ export class CodexRunner implements Runner {
     stdinFile: string,
     processes: ProcessGroupRegistry,
     signal: AbortSignal,
-    source: () => Promise<ResultSource>,
+    { stream, source }: { stream: CodexStream; source: () => Promise<ResultSource> },
   ): RunStep {
     // Record, finding 8: standard input is a file, so it ends; it is never left open.
     const stdin = openSync(stdinFile, 'r');
@@ -183,7 +187,6 @@ export class CodexRunner implements Runner {
     child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-STDERR_MAX);
     });
-    const stream = new CodexStream();
     if (child.stdout) {
       for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
         for (const event of stream.accept(line)) yield event;

@@ -35,7 +35,7 @@ export type VersionCheck = { ok: true; version: string } | { ok: false; reason: 
 
 /** What `codex --version` printed (`codex-cli 0.169.0`), checked against {@link CODEX_VERSIONS}. */
 export function checkCodexVersion(output: string): VersionCheck {
-  const match = /^\s*(?:codex(?:-cli)?\s+)?v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})(?:[\s(-]|$)/.exec(
+  const match = /^\s*(?:codex(?:-cli)?\s+)?v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})(?:[\s(]|$)/.exec(
     output,
   );
   if (!match) {

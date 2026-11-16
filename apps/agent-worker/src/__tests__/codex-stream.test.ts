@@ -172,6 +172,27 @@ describe('the Codex stream', () => {
     });
   });
 
+  it('keeps the resumed session when a resumed stream reports none (review of #133)', () => {
+    const limited = new CodexStream('session-77');
+    limited.accept(
+      JSON.stringify({ type: 'turn.failed', error: { message: "You've hit your usage limit." } }),
+    );
+    const outcome = limited.finish({ exitCode: 1, spawnFailed: false }, { kind: 'last-message' });
+    expect('error' in outcome && (outcome.error as UsageLimitError).sessionRef).toBe('session-77');
+
+    const done = new CodexStream('session-77');
+    done.accept(
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: '{"outcome":"done","summary":"s"}' },
+      }),
+    );
+    done.accept(JSON.stringify({ type: 'turn.completed' }));
+    expect(done.finish(ok, { kind: 'last-message' })).toMatchObject({
+      result: { sessionRef: 'session-77' },
+    });
+  });
+
   it('ignores unknown events, item types and lines that are not JSON', () => {
     const { stream, events } = replay('unknown-events');
 

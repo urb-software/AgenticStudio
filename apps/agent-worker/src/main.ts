@@ -165,8 +165,11 @@ const sweep = () => {
   sweeping ??= retention
     .sweep(retentionAbort.signal)
     .then(async (outcome) => {
-      if (!codexInUse || outcome.removed.length === 0 || !process.env.HOME) return;
-      await prepareCodexHome({ home: process.env.HOME, dataDir: config.dataDir });
+      const home = process.env.HOME;
+      if (!codexInUse || outcome.removed.length === 0 || !home || !home.startsWith('/')) return;
+      await prepareCodexHome({ home, dataDir: config.dataDir }).catch((error: unknown) => {
+        logger.error(`Rewriting Studio's Codex configuration failed: ${(error as Error).message}`);
+      });
     })
     .catch((error: unknown) => {
       if (!retentionAbort.signal.aborted) {
