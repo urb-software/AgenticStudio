@@ -74,7 +74,7 @@ export interface CodexRunnerOptions {
  * The Codex runner (Issue #106): runs a Run step with the Codex CLI, signed in with the
  * operator's ChatGPT plan, behind the runner interface. Per step it states the sandbox mode in
  * the Run's log, rewrites Studio's Codex configuration in the agent user's Codex home (the
- * Working copies marked untrusted, Studio's rules, hooks off), writes the step's files in the
+ * Working copies marked untrusted, Studio's rules, no user-level hooks), writes the step's files in the
  * Run's directory (outside the Working copy), then starts the CLI through the spawn boundary
  * with exactly the compliance record's command, a minimal environment and standard input read
  * from a file, in the Working copy. It maps the streamed events to the Run's log and ends with

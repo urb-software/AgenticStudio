@@ -27,9 +27,10 @@ import { isUuid, runsDirectory } from '../run-layout.js';
  *   (and the step's own), so no project `.codex/` layer, hook or rule loads (record, finding 3);
  *   whatever an agent wrote into the file is overwritten;
  * - `rules/studio.rules`: Studio's command rules, as the only file in `rules/`: Studio's only
- *   Codex guardrail (coordinator decision after the smoke of #133). The template turns lifecycle
- *   hooks off (`[features] hooks = false`): a user-level hook needs a trust the CLI keeps against
- *   its hash, so it would not run unattended; `hooks.json` and `studio/` are removed.
+ *   Codex guardrail (coordinator decision after the smoke of #133). There is no Studio hook (a
+ *   user-level hook needs a trust the CLI keeps against its hash, so it would not run
+ *   unattended): `hooks.json` and `studio/` are removed. The template leaves the hooks feature
+ *   flag at the CLI's default (in 0.169.0 `hooks = false` also stopped AGENTS.md loading).
  *
  * GUARDRAILS, NOT THE SECURITY BOUNDARY (ADR 0002). Writes are serialised across Run steps and
  * worker processes with a lock file and land by rename, so a starting CLI never reads half a
@@ -231,8 +232,8 @@ export async function prepareCodexHome(
       template + trustEntries(untrusted),
     );
 
-    // No hooks (they are off in the template): a hooks file and Studio's earlier hook folder are
-    // removed, a link itself and never its target.
+    // No user-level hooks: a hooks file and Studio's earlier hook folder are removed, a link
+    // itself and never its target.
     for (const leftover of LEFTOVERS) {
       await rm(posix.join(home, leftover), { recursive: true, force: true });
     }

@@ -37,10 +37,11 @@ include_only = [
   "COMPOSE_PROJECT_NAME",
 ]
 
-# Lifecycle hooks are off: Studio's guardrails for Codex are its command rules only (coordinator
-# decision after the smoke of #133; a user-level hook needs a trust the CLI keeps against its
-# hash, so it would not run unattended). App (connector) integrations are off: no MCP servers or
-# connectors in the first version.
+# Studio's guardrails for Codex are its command rules only: there is no Studio hook (a user-level
+# hook needs a trust the CLI keeps against its hash, so it would not run unattended), the worker
+# removes ~/.codex/hooks.json before every step, and an untrusted project's hooks are skipped.
+# The hooks feature flag is left at the CLI's default on purpose: in 0.169.0 `hooks = false` also
+# stopped AGENTS.md from loading (controlled smoke of #133). App (connector) integrations are
+# off: no MCP servers or connectors in the first version.
 [features]
-hooks = false
 apps = false

@@ -8,7 +8,7 @@
 //   CODEX_CLI_ENABLED=true node apps/agent-worker/scripts/smoke-codex.mjs
 //
 // Studio owns the agent user's Codex configuration: like every Codex Run step, this script
-// rewrites ~/.codex/config.toml (hooks off) and ~/.codex/rules/ (it never reads the
+// rewrites ~/.codex/config.toml and ~/.codex/rules/ and removes ~/.codex/hooks.json (it never reads the
 // login or the session files). It runs the runner directly (no Studio, no database) on a
 // throwaway Git repository with hostile project configuration, in a temporary directory deleted
 // afterwards (pass --keep to keep it):
@@ -17,7 +17,7 @@
 //      hooks and rules not loaded, whether a project skill is offered;
 //   3. one question, then a resume with the answer (same session; result from the last message);
 //   4. a container through the agent user's rootless Docker (network on in the sandbox);
-//   5. a command Studio's rules forbid (Studio's only Codex guardrail; hooks are off).
+//   5. a command Studio's rules forbid (Studio's only Codex guardrail; no Studio hook).
 // It prints only redacted summary lines: outcomes, counts and yes/no checks. Never the agent's
 // output, the session id, the environment or file content.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

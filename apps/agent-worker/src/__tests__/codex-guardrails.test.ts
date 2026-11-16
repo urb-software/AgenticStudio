@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readConfigTemplate, tomlString, trustEntries } from '../codex/codex-home.js';
 
 // Issue #106: Studio's guardrails for Codex, from Studio's own folder: the configuration
-// template and the command rules (Studio's only Codex guardrail: hooks are off, coordinator
+// template and the command rules (Studio's only Codex guardrail: no Studio hook, coordinator
 // decision after the smoke of #133). Guardrails, not the boundary.
 
 describe("Studio's Codex configuration template", () => {
@@ -36,7 +36,7 @@ describe("Studio's Codex configuration template", () => {
     ]);
   });
 
-  it('turns hooks off and defines no trust entries, MCP servers or sandbox override', async () => {
+  it('leaves the hooks flag at its default and defines no trust entries, MCP servers or sandbox override', async () => {
     const template = await readConfigTemplate();
     const settings = template
       .split('\n')
@@ -44,7 +44,11 @@ describe("Studio's Codex configuration template", () => {
       .join('\n');
 
     expect(settings).not.toMatch(/projects|mcp_servers|danger-full-access|sandbox_mode|trusted/);
-    expect(settings).toMatch(/\[features\]\nhooks = false\napps = false/);
+    expect(settings).toMatch(/\[features\]\napps = false/);
+    // Smoke of #133: in 0.169.0 `hooks = false` also stopped AGENTS.md from loading; the flag
+    // stays at the CLI's default (no Studio hook, hooks.json removed before every step).
+    expect(settings).not.toMatch(/^\s*hooks\s*=/m);
+    expect(settings).not.toMatch(/features\.hooks|codex_hooks/);
   });
 
   it('writes Working copy paths as safe TOML strings', () => {
