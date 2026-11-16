@@ -37,7 +37,7 @@ import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { AnswerQuestion, RunConversation } from './run-conversation';
-import { PullRequestLink, RunDelivery } from './run-delivery';
+import { RunDelivery } from './run-delivery';
 import { ResumeRun } from './run-resume';
 
 /** The request the page makes (generated `getRun`), shown verbatim when it fails. */
@@ -391,11 +391,6 @@ export function RunDetail({ runId }: { runId: string }) {
               {run.runBranch ? (
                 <Fact term="Run branch">
                   <span className="font-mono text-code break-all">{run.runBranch}</span>
-                </Fact>
-              ) : null}
-              {run.pullRequest ? (
-                <Fact term="Pull request">
-                  <PullRequestLink pullRequest={run.pullRequest} />
                 </Fact>
               ) : null}
               <Fact term="Environment file">

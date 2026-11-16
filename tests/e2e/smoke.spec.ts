@@ -651,7 +651,9 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(heading).toHaveText('Change a file [fake:checks-failed]');
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
   await expect(main.getByText('Draft pull request opened.')).toBeVisible();
-  await expect(main.getByRole('link', { name: /Pull request #1/ }).first()).toHaveAttribute(
+  // Shown once (Issue #115): in the success banner, not again in Details.
+  await expect(main.getByRole('link', { name: /Pull request #1/ })).toHaveCount(1);
+  await expect(main.getByRole('link', { name: /Pull request #1/ })).toHaveAttribute(
     'href',
     /^https:\/\/github\.com\/fixtures\/run-[^/]+\/pull\/1$/,
   );

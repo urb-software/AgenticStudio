@@ -309,8 +309,13 @@ async function main() {
     const workerHome = join(scratch, 'agent-home');
     await mkdir(workerHome, { recursive: true });
     // Its own process: this script's event loop is blocked while Playwright runs.
+    // Issue #102: a throwaway Agent account token, for the stub of GitHub only; the stub
+    // accepts only this token, a draft and the smoke Runs' integration branch (Issue #115).
+    const githubToken = `ghp_${randomBytes(18).toString('hex')}`;
     startServer('stub-github', process.execPath, ['tests/e2e/stub-github.mjs'], {
       STUB_GITHUB_PORT: String(GITHUB_STUB_PORT),
+      STUB_GITHUB_TOKEN: githubToken,
+      STUB_GITHUB_BASE: 'dev',
     });
     const githubApi = `http://127.0.0.1:${GITHUB_STUB_PORT}`;
     await waitUntilReady(`${githubApi}/health`);
@@ -336,8 +341,7 @@ async function main() {
         STUDIO_WORKER_DATA_DIR: join(scratch, 'agent-worker-data'),
         STUDIO_AGENT_GIT_NAME: 'Smoke Agent',
         STUDIO_AGENT_GIT_EMAIL: 'agent@example.test',
-        // Issue #102: a throwaway Agent account token, for the stub of GitHub only.
-        STUDIO_AGENT_GITHUB_TOKEN: `ghp_${randomBytes(18).toString('hex')}`,
+        STUDIO_AGENT_GITHUB_TOKEN: githubToken,
         STUDIO_AGENT_GITHUB_API_URL: githubApi,
       },
       { clean: true },

@@ -417,9 +417,21 @@ export type WorkingCopyReport = z.infer<typeof workingCopyReportSchema>;
 /** Longest pull request URL, in characters. */
 export const PULL_REQUEST_URL_MAX_LENGTH = 2048;
 
-/** The draft pull request a delivery opened or reused (Issue #102): its https URL and number. */
+/**
+ * A pull request's page on github.com (Issue #115): `https://github.com/<owner>/<repo>/pull/<n>`,
+ * without credentials, port, query or fragment. Delivery targets GitHub only.
+ */
+const GITHUB_PULL_REQUEST_URL = /^https:\/\/github\.com\/[^/?#@:]+\/[^/?#@:]+\/pull\/[1-9]\d*$/;
+
+/**
+ * The draft pull request a delivery opened or reused (Issue #102): its URL on github.com
+ * (Issue #115) and number.
+ */
 export const pullRequestRefSchema = z.strictObject({
-  url: z.url({ protocol: /^https$/ }).max(PULL_REQUEST_URL_MAX_LENGTH),
+  url: z
+    .url({ protocol: /^https$/, hostname: /^github\.com$/ })
+    .max(PULL_REQUEST_URL_MAX_LENGTH)
+    .regex(GITHUB_PULL_REQUEST_URL),
   number: z.number().int().positive(),
 });
 export type PullRequestRef = z.infer<typeof pullRequestRefSchema>;

@@ -18,8 +18,35 @@ function Mono({ children }: { children: string }) {
   return <code className="font-mono text-code break-all">{children}</code>;
 }
 
-/** The Run's draft pull request on GitHub, opened in a new tab. */
-export function PullRequestLink({ pullRequest }: { pullRequest: { url: string; number: number } }) {
+/**
+ * Whether `url` is a page on github.com over https (Issue #115). The worker protocol only
+ * accepts such URLs; this keeps any other host from ever becoming a link on the Run page.
+ */
+function isGitHubUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === 'https:' &&
+      parsed.hostname === 'github.com' &&
+      parsed.port === '' &&
+      parsed.username === '' &&
+      parsed.password === ''
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The Run's draft pull request on GitHub, opened in a new tab; as text if not on github.com. */
+function PullRequestLink({ pullRequest }: { pullRequest: { url: string; number: number } }) {
+  if (!isGitHubUrl(pullRequest.url)) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <GitPullRequestIcon aria-hidden="true" className="size-3.5" />
+        Pull request #{pullRequest.number}
+      </span>
+    );
+  }
   return (
     <a
       href={pullRequest.url}

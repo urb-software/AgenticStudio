@@ -40,8 +40,12 @@ function Options({
 }) {
   return (
     <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0" aria-label="Options offered">
-      {options.map((option) => (
-        <li key={option} className="flex flex-wrap items-center gap-2 text-small text-text-muted">
+      {/* Keyed by position: the agent may offer the same text twice (Issue #115). */}
+      {options.map((option, index) => (
+        <li
+          key={`${index}-${option}`}
+          className="flex flex-wrap items-center gap-2 text-small text-text-muted"
+        >
           <span className="break-words whitespace-pre-wrap">{option}</span>
           {option === recommendation ? <RecommendedMark /> : null}
         </li>
@@ -221,9 +225,9 @@ export function AnswerQuestion({ run, question }: { run: RunOutput; question: Ru
       <form onSubmit={submit} className="flex min-w-0 flex-col gap-3" noValidate>
         {question.options && question.options.length > 0 ? (
           <div role="group" aria-label="Options" className="flex flex-wrap gap-2">
-            {question.options.map((option) => (
+            {question.options.map((option, index) => (
               <Button
-                key={option}
+                key={`${index}-${option}`}
                 type="button"
                 variant="secondary"
                 aria-pressed={text.trim() === option}
