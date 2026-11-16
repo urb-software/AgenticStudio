@@ -111,6 +111,19 @@ export type RunLimitsOutput = {
     waitingDays: number;
 };
 
+export type RunQuestionOutput = {
+    text: string;
+    options?: Array<string>;
+    recommendation?: string;
+};
+
+export type RunMessageOutput = {
+    role: 'operator' | 'agent';
+    kind: 'task' | 'question' | 'answer';
+    text: string;
+    at: string;
+};
+
 export type RunOutput = {
     id: string;
     projectId: string;
@@ -145,9 +158,15 @@ export type RunOutput = {
     };
     deliveryRetryRequested?: true;
     failingChecks?: Array<string>;
+    question?: RunQuestionOutput;
+    messages?: Array<RunMessageOutput>;
 };
 
 export type RunListOutput = Array<RunOutput>;
+
+export type AnswerRunRequest = {
+    text: string;
+};
 
 export type RunEventOutput = {
     seq: number;
@@ -831,6 +850,42 @@ export type RetryRunDeliveryResponses = {
 };
 
 export type RetryRunDeliveryResponse = RetryRunDeliveryResponses[keyof RetryRunDeliveryResponses];
+
+export type AnswerRunData = {
+    body: AnswerRunRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/answer';
+};
+
+export type AnswerRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run is not waiting for an answer (urn:agentic-studio:problem:run-not-waiting)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type AnswerRunError = AnswerRunErrors[keyof AnswerRunErrors];
+
+export type AnswerRunResponses = {
+    202: RunOutput;
+};
+
+export type AnswerRunResponse = AnswerRunResponses[keyof AnswerRunResponses];
 
 export type ListRunEventsData = {
     body?: never;

@@ -214,4 +214,78 @@ describe('SweepLostWorkersHandler', () => {
       expect((await runs.findById(run.id))?.deliveryRequested).toBe(false);
     });
   });
+  describe('an answered Run whose worker is gone (Issue #103)', () => {
+    /** A Run WORKER carried to a question, which the operator answered. */
+    async function answered() {
+      const run = await claimed(PROJECTS[0]);
+      await runs.transitionClaimed({
+        runId: run.id,
+        workerId: WORKER,
+        from: 'preparing',
+        to: 'running',
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+      await runs.appendStep(
+        run.id,
+        WORKER,
+        {
+          kind: 'start',
+          result: {},
+          question: { text: 'Which?' },
+          sessionRef: 'session-1',
+        },
+        { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+        [],
+        T0,
+      );
+      await runs.transitionClaimed({
+        runId: run.id,
+        workerId: WORKER,
+        from: 'running',
+        to: 'waiting_for_operator',
+        failure: null,
+        cancelRequested: false,
+        now: T0,
+      });
+      await runs.answer(run.id, 'That one.', T0);
+      return run;
+    }
+    const report = (at: Date) =>
+      statuses.record({
+        workerId: WORKER,
+        runner: 'fake',
+        providers: { claude_code: true, codex: true },
+        reportedAt: at,
+      });
+
+    it('fails it with preparation_failed, "Working copy no longer exists", so it can run again', async () => {
+      const run = await answered();
+      report(later(10));
+      now = later(71);
+
+      expect(await handler.execute()).toBe(1);
+
+      expect(await runs.findById(run.id)).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'preparation_failed',
+          detail: expect.stringMatching(
+            /^Working copy no longer exists \(agent worker gone\) — run again/,
+          ),
+        },
+        finishedAt: later(71),
+      });
+    });
+
+    it('keeps it while that worker reports within the lease', async () => {
+      const run = await answered();
+      report(later(50));
+      now = later(100);
+
+      expect(await handler.execute()).toBe(0);
+      expect((await runs.findById(run.id))?.state).toBe('queued');
+    });
+  });
 });

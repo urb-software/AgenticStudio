@@ -74,16 +74,20 @@ let nextRun = 1;
 /** A Run of `PROJECT` with defaults; tests override what they look at. */
 export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
   const n = nextRun++;
+  const task = overrides.task ?? `Task number ${n}`;
+  const createdAt = overrides.createdAt ?? '2026-11-15T10:00:00.000Z';
   return {
     id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
     projectId: PROJECT.id,
     provider: 'claude_code',
-    task: `Task number ${n}`,
+    task,
     state: 'queued',
     startCommit: SHA,
-    createdAt: '2026-11-15T10:00:00.000Z',
+    createdAt,
     environmentFileSupplied: false,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+    // Issue #103: the conversation starts with the Task.
+    messages: [{ role: 'operator', kind: 'task', text: task, at: createdAt }],
     ...overrides,
   };
 }

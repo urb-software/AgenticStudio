@@ -50,6 +50,7 @@ const PROBLEM = {
   stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
+  runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
 };
 
 const BOTH_ENABLED = { claude_code: true, codex: true };
@@ -193,14 +194,26 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         environmentFileSupplied: false,
         // Issue #100: the limits in force, copied onto the Run when it is started.
         limits: LIMITS,
+        // Issue #103: the conversation starts with the Task.
+        messages: [
+          {
+            role: 'operator',
+            kind: 'task',
+            text: 'Fix the login bug',
+            at: created.body.createdAt,
+          },
+        ],
       });
       expect((await getRun(created.body.id)).body).toEqual(created.body);
       const projectRuns = await http()
         .get(`/api/projects/${project.id}/runs`)
         .set('Cookie', cookie);
       expect(projectRuns.status).toBe(200);
-      expect(projectRuns.body).toEqual([created.body]);
-      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([created.body]);
+      // Lists leave the conversation out (Issue #103, coordinator decision).
+      const { messages: _messages, ...listed } = created.body;
+      void _messages;
+      expect(projectRuns.body).toEqual([listed]);
+      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listed]);
     });
 
     it('lists Runs newest first, all projects or one', async () => {
@@ -493,7 +506,12 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(before).not.toHaveProperty('commits');
       expect(before).not.toHaveProperty('hasUncommittedChanges');
 
-      await reportStep(run.id, { outcome: 'needs_input', summary: 'Stuck.', question: 'Q?' });
+      await reportStep(run.id, {
+        outcome: 'needs_input',
+        summary: 'Stuck.',
+        question: { text: 'Q?' },
+        sessionRef: 'session-1',
+      });
       const later = {
         runBranch: WORKING_COPY.runBranch,
         commits: [...WORKING_COPY.commits, { id: 'd'.repeat(40), subject: 'Fix it' }],
@@ -917,7 +935,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       await reportStep(run.id, {
         outcome: 'needs_input',
         summary: 'Stuck.',
-        question: 'Which DB?',
+        question: { text: 'Which DB?' },
+        sessionRef: 'session-1',
       });
 
       expect((await report(run.id, { state: 'waiting_for_operator' })).status).toBe(204);
@@ -1390,6 +1409,303 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await claim(W2);
 
         expect((await getRun(run.id)).body.failure?.code).toBe('worker_lost');
+      });
+    });
+
+    // Issue #103: a question pauses the Run, the operator's answer resumes the same session on
+    // the worker that holds the Working copy.
+    describe('questions and answers (Issue #103)', () => {
+      const QUESTION = {
+        text: 'Which database should the store use?',
+        options: ['PostgreSQL', 'SQLite'],
+        recommendation: 'PostgreSQL',
+      };
+      const answer = (runId: string, body: unknown, origin: string | null = STUDIO_ORIGIN) => {
+        const call = http().post(`/api/runs/${runId}/answer`).set('Cookie', cookie);
+        if (origin !== null) call.set('Origin', origin);
+        return call.send(body as object);
+      };
+      const step = (
+        runId: string,
+        index: number,
+        kind: 'start' | 'resume',
+        result: object,
+        workerId = W1,
+      ) => worker(`${runId}/steps`, { workerId, index, kind, result, workingCopy: WORKING_COPY });
+      const asking = (text = QUESTION.text) => ({
+        outcome: 'needs_input',
+        summary: 'A decision is needed.',
+        question: { ...QUESTION, text },
+        sessionRef: 'session-1',
+      });
+      /** Events of step `stepIndex` with these seqs, as the worker sends them. */
+      const events = (runId: string, stepIndex: number, seqs: number[], workerId = W1) =>
+        worker(`${runId}/events`, {
+          workerId,
+          events: seqs.map((seq) => ({
+            seq,
+            at: clock.current.toISOString(),
+            stepIndex,
+            kind: 'message',
+            text: `event ${seq}`,
+          })),
+        });
+
+      /** W1 claims the queued Run and carries its first step to a question. */
+      async function askedRun(projectId: string, task = 'Add a store') {
+        const run = await queuedRun(projectId, task);
+        expect((await claim()).body.kind).toBe('start');
+        await report(run.id, { state: 'running' });
+        expect((await events(run.id, 1, [1, 2, 3])).status).toBe(204);
+        expect((await step(run.id, 1, 'start', asking())).status).toBe(204);
+        expect((await report(run.id, { state: 'waiting_for_operator' })).status).toBe(204);
+        return run;
+      }
+
+      it('shows the question, takes the answer and resumes the same session to success', async () => {
+        const project = await readyProject('Shop');
+        const run = await askedRun(project.id);
+
+        const waiting = (await getRun(run.id)).body;
+        expect(waiting).toMatchObject({ state: 'waiting_for_operator', question: QUESTION });
+        expect(waiting.messages).toEqual([
+          { role: 'operator', kind: 'task', text: 'Add a store', at: waiting.createdAt },
+          {
+            role: 'agent',
+            kind: 'question',
+            text: QUESTION.text,
+            at: expect.stringMatching(ISO_8601),
+          },
+        ]);
+        // Internal: the session reference never reaches the operator API.
+        expect(JSON.stringify(waiting)).not.toContain('session-1');
+        // Lists leave the conversation out (coordinator decision); the state shows it waits.
+        const [listed] = (await http().get('/api/runs').set('Cookie', cookie)).body;
+        expect(listed).toMatchObject({ id: run.id, state: 'waiting_for_operator' });
+        expect(listed).not.toHaveProperty('messages');
+        expect(listed).not.toHaveProperty('question');
+
+        advance(60);
+        const answered = await answer(run.id, { text: '  PostgreSQL  ' });
+        expect(answered.status).toBe(202);
+        expect(answered.body.state).toBe('queued');
+        expect(answered.body).not.toHaveProperty('question');
+        expect(answered.body.messages.at(-1)).toEqual({
+          role: 'operator',
+          kind: 'answer',
+          text: 'PostgreSQL',
+          at: clock.current.toISOString(),
+        });
+
+        // Only the worker that holds the Working copy and the session resumes it.
+        expect((await claim(W2)).status).toBe(204);
+        const resumed = await claim(W1);
+        expect(resumed.status).toBe(200);
+        expect(resumed.body).toMatchObject({
+          runId: run.id,
+          kind: 'resume',
+          runBranch: WORKING_COPY.runBranch,
+          sessionRef: 'session-1',
+          answer: 'PostgreSQL',
+          // The resumed step's events continue after the stored log (note from #99).
+          nextSeq: 4,
+          completedSteps: 1,
+        });
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'preparing',
+          startedAt: waiting.startedAt,
+        });
+
+        await report(run.id, { state: 'running' });
+        expect((await events(run.id, 2, [4, 5])).status).toBe(204);
+        expect(
+          (await step(run.id, 2, 'resume', { outcome: 'done', summary: 'Done.' })).status,
+        ).toBe(204);
+        expect(
+          (await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } })).status,
+        ).toBe(204);
+
+        expect((await getRun(run.id)).body.state).toBe('succeeded');
+        const log = await http().get(`/api/runs/${run.id}/events`).set('Cookie', cookie);
+        expect(log.body.events.map((event: { seq: number }) => event.seq)).toEqual([1, 2, 3, 4, 5]);
+      });
+
+      it('asks more than once; each question ends a Run step toward the maximum', async () => {
+        const project = await readyProject('Shop');
+        const run = await askedRun(project.id);
+        await answer(run.id, { text: 'PostgreSQL' });
+        expect((await claim()).body).toMatchObject({ kind: 'resume', completedSteps: 1 });
+        await report(run.id, { state: 'running' });
+        expect((await step(run.id, 2, 'resume', asking('And the schema name?'))).status).toBe(204);
+        await report(run.id, { state: 'waiting_for_operator' });
+
+        expect((await getRun(run.id)).body.question.text).toBe('And the schema name?');
+        await answer(run.id, { text: 'store' });
+
+        // LIMITS.maxSteps is 2: the worker refuses a third step and reports step_limit.
+        const third = await claim();
+        expect(third.body).toMatchObject({ kind: 'resume', completedSteps: 2, answer: 'store' });
+        await report(run.id, {
+          state: 'failed',
+          failure: {
+            code: 'step_limit',
+            detail: 'The run reached its limit of 2 run steps; no further step was started.',
+          },
+        });
+        const failed = (await getRun(run.id)).body;
+        expect(failed).toMatchObject({ state: 'failed', failure: { code: 'step_limit' } });
+        expect(
+          failed.messages.map((m: { kind: string; text: string }) => [m.kind, m.text]),
+        ).toEqual([
+          ['task', 'Add a store'],
+          ['question', QUESTION.text],
+          ['answer', 'PostgreSQL'],
+          ['question', 'And the schema name?'],
+          ['answer', 'store'],
+        ]);
+      });
+
+      it('takes an answer only while the Run waits: a second one is refused clearly', async () => {
+        const project = await readyProject('Shop');
+        const queued = await queuedRun(project.id, 'Queued');
+        expectProblem(await answer(queued.id, { text: 'x' }), 409, PROBLEM.runNotWaiting);
+        await claim();
+        await report(queued.id, { state: 'running' });
+        expectProblem(await answer(queued.id, { text: 'x' }), 409, PROBLEM.runNotWaiting);
+        await report(queued.id, { state: 'succeeded', delivery: { outcome: 'none' } });
+
+        const run = await askedRun(project.id);
+        expect((await answer(run.id, { text: 'PostgreSQL' })).status).toBe(202);
+        const second = await answer(run.id, { text: 'SQLite' });
+        expectProblem(second, 409, PROBLEM.runNotWaiting);
+        expect(second.body.detail).toBe('The question was already answered; the run continues.');
+        expect((await getRun(run.id)).body.messages.at(-1).text).toBe('PostgreSQL');
+      });
+
+      it('validates the answer (422), finds the Run (404) and guards the session and origin', async () => {
+        const project = await readyProject('Shop');
+        const run = await askedRun(project.id);
+
+        expectProblem(await answer(run.id, { text: '   ' }), 422);
+        expectProblem(await answer(run.id, { text: 'a'.repeat(10_001) }), 422);
+        expectProblem(await answer(run.id, { text: 'ok', extra: true }), 422);
+        expectProblem(await answer(run.id, {}), 422);
+        expectProblem(await answer(randomUUID(), { text: 'x' }), 404, PROBLEM.runNotFound);
+        expectProblem(await answer('nope', { text: 'x' }), 404, PROBLEM.runNotFound);
+        expect((await answer(run.id, { text: 'x' }, 'https://evil.example.test')).status).toBe(403);
+        const withoutSession = await http()
+          .post(`/api/runs/${run.id}/answer`)
+          .set('Origin', STUDIO_ORIGIN)
+          .send({ text: 'x' });
+        expect(withoutSession.status).toBe(401);
+        expect((await getRun(run.id)).body.state).toBe('waiting_for_operator');
+        expect((await answer(run.id, { text: 'a'.repeat(10_000) })).status).toBe(202);
+      });
+
+      it('refuses an answer after a cancel; an answered Run is cancelled at once, freeing its project', async () => {
+        const project = await readyProject('Shop');
+        const cancel = (runId: string) =>
+          http().post(`/api/runs/${runId}/cancel`).set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+        const first = await askedRun(project.id, 'First');
+        await cancel(first.id);
+        const late = await answer(first.id, { text: 'x' });
+        expectProblem(late, 409, PROBLEM.runNotWaiting);
+        expect(late.body.detail).toBe('The run was cancelled; it takes no answer.');
+
+        const second = await askedRun(project.id, 'Second');
+        await answer(second.id, { text: 'PostgreSQL' });
+        const next = await queuedRun(project.id, 'Third');
+        // The answered Run keeps its project's place: another worker gets nothing.
+        expect((await claim(W2)).status).toBe(204);
+        expect((await cancel(second.id)).body).toMatchObject({ state: 'cancelled' });
+        expect((await claim(W2)).body.runId).toBe(next.id);
+      });
+
+      it('loses nothing over a Studio restart while waiting', async () => {
+        const project = await readyProject('Shop');
+        const run = await askedRun(project.id);
+        advance(24 * 3600);
+        const restarted = await startStudioApp(
+          {
+            ...services.config,
+            workerToken: WORKER_TOKEN_DIGEST,
+            workerLeaseSeconds: LEASE_SECONDS,
+            runLimits: LIMITS,
+          },
+          { executions: { clock } },
+        );
+        try {
+          const after = await request(restarted.getHttpServer())
+            .get(`/api/runs/${run.id}`)
+            .set('Cookie', cookie);
+          expect(after.body).toMatchObject({ state: 'waiting_for_operator', question: QUESTION });
+        } finally {
+          await restarted.close();
+        }
+        expect((await workerStatus()).status).toBe(204);
+        await answer(run.id, { text: 'PostgreSQL' });
+        expect((await claim()).body).toMatchObject({ kind: 'resume', sessionRef: 'session-1' });
+      });
+
+      it('fails a resume whose worker is gone as preparation_failed, so it can run again', async () => {
+        const project = await readyProject('Shop');
+        const run = await askedRun(project.id);
+        await answer(run.id, { text: 'PostgreSQL' });
+
+        // The interval sweep notices it: an instance with a 2-second lease sweeps every second.
+        const shortLease = await startStudioApp(
+          {
+            ...services.config,
+            workerToken: WORKER_TOKEN_DIGEST,
+            workerLeaseSeconds: 2,
+            runLimits: LIMITS,
+          },
+          { executions: { clock } },
+        );
+        try {
+          advance(3);
+          const deadline = Date.now() + 10_000;
+          while ((await getRun(run.id)).body.state === 'queued' && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+        } finally {
+          await shortLease.close();
+        }
+
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'failed',
+          failure: {
+            code: 'preparation_failed',
+            detail: expect.stringMatching(
+              /^Working copy no longer exists \(agent worker gone\) — run again/,
+            ),
+          },
+        });
+      });
+
+      it('records a resume the worker could not carry out: missing Working copy or refused session', async () => {
+        const project = await readyProject('Shop');
+        const missing = await askedRun(project.id, 'Missing');
+        await answer(missing.id, { text: 'x' });
+        await claim();
+        await report(missing.id, {
+          state: 'failed',
+          failure: {
+            code: 'preparation_failed',
+            detail: 'Working copy no longer exists — run again.',
+          },
+        });
+        expect((await getRun(missing.id)).body.failure.code).toBe('preparation_failed');
+
+        const refused = await askedRun(project.id, 'Refused');
+        await answer(refused.id, { text: 'x' });
+        await claim();
+        await report(refused.id, { state: 'running' });
+        await report(refused.id, {
+          state: 'failed',
+          failure: { code: 'agent_failed', detail: 'The provider has no session session-1.' },
+        });
+        expect((await getRun(refused.id)).body.failure.code).toBe('agent_failed');
       });
     });
 

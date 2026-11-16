@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANSWER_MAX_LENGTH,
   appendRunEventsRequestSchema,
+  QUESTION_OPTION_MAX_LENGTH,
+  QUESTION_TEXT_MAX_LENGTH,
+  SESSION_REF_MAX_LENGTH,
   claimRunRequestSchema,
   cutToBytes,
   ENVIRONMENT_FILE_MAX_BYTES,
@@ -66,11 +70,65 @@ describe('run payload (claim response)', () => {
     expect(withKind('start')).toBe(true);
     expect(withKind('deliver')).toBe(false);
     expect(
-      runPayloadSchema.safeParse({ ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d' })
-        .success,
+      runPayloadSchema.safeParse({
+        ...payload,
+        kind: 'deliver',
+        runBranch: 'agent/x-r0b8e5c2d',
+        nextSeq: 1,
+      }).success,
     ).toBe(true);
     expect(withKind('resume')).toBe(false);
     expect(withKind(undefined)).toBe(false);
+  });
+
+  describe('a resume claim (Issue #103)', () => {
+    const resume = {
+      ...payload,
+      kind: 'resume',
+      runBranch: 'agent/x-r0b8e5c2d',
+      sessionRef: 'session-1',
+      answer: 'Use PostgreSQL.',
+      nextSeq: 42,
+      completedSteps: 1,
+    };
+
+    it("carries the session reference, the operator's answer, the next seq and the Run branch", () => {
+      expect(runPayloadSchema.parse(resume)).toEqual(resume);
+    });
+
+    it('needs all four, and only a resume claim carries the session and answer', () => {
+      for (const field of ['runBranch', 'sessionRef', 'answer', 'nextSeq'] as const) {
+        const { [field]: _left, ...without } = resume;
+        void _left;
+        expect(runPayloadSchema.safeParse(without).success).toBe(false);
+      }
+      for (const field of ['sessionRef', 'answer', 'nextSeq'] as const) {
+        expect(runPayloadSchema.safeParse({ ...payload, [field]: resume[field] }).success).toBe(
+          false,
+        );
+      }
+    });
+
+    it('a delivery claim carries the next seq too, never a session or an answer', () => {
+      const deliver = { ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d', nextSeq: 9 };
+      expect(runPayloadSchema.safeParse(deliver).success).toBe(true);
+      const { nextSeq: _seq, ...withoutSeq } = deliver;
+      void _seq;
+      expect(runPayloadSchema.safeParse(withoutSeq).success).toBe(false);
+      expect(runPayloadSchema.safeParse({ ...deliver, answer: 'x' }).success).toBe(false);
+    });
+
+    it('bounds the session reference, the answer and the seq', () => {
+      const valid = (patch: object) => runPayloadSchema.safeParse({ ...resume, ...patch }).success;
+      expect(valid({ sessionRef: 's'.repeat(SESSION_REF_MAX_LENGTH) })).toBe(true);
+      expect(valid({ sessionRef: 's'.repeat(SESSION_REF_MAX_LENGTH + 1) })).toBe(false);
+      expect(valid({ sessionRef: '' })).toBe(false);
+      expect(valid({ answer: 'a'.repeat(ANSWER_MAX_LENGTH) })).toBe(true);
+      expect(valid({ answer: 'a'.repeat(ANSWER_MAX_LENGTH + 1) })).toBe(false);
+      expect(valid({ answer: '' })).toBe(false);
+      expect(valid({ nextSeq: 0 })).toBe(false);
+      expect(valid({ nextSeq: 1 })).toBe(true);
+    });
   });
 
   it("carries a delivery's recorded Run branch, and only with deliver (review R1 of #122)", () => {
@@ -170,6 +228,7 @@ describe('Environment file (Issue #104)', () => {
         ...payload,
         kind: 'deliver',
         runBranch: 'agent/x-r0b8e5c2d',
+        nextSeq: 1,
         environmentFile,
       }).success,
     ).toBe(false);
@@ -487,17 +546,52 @@ describe('structured result of a Run step', () => {
     expect(runStepResultSchema.parse(result)).toEqual(result);
   });
 
-  it('needs a question when the agent needs input', () => {
-    expect(
-      runStepResultSchema.safeParse({ outcome: 'needs_input', summary: 'Stuck.' }).success,
-    ).toBe(false);
-    expect(
+  it('needs a question and a session reference when the agent needs input (Issue #103)', () => {
+    const question = { text: 'Which database?' };
+    const valid = (result: object) => runStepResultSchema.safeParse(result).success;
+    expect(valid({ outcome: 'needs_input', summary: 'Stuck.', sessionRef: 's-1' })).toBe(false);
+    expect(valid({ outcome: 'needs_input', summary: 'Stuck.', question })).toBe(false);
+    expect(valid({ outcome: 'needs_input', summary: 'Stuck.', question, sessionRef: 's-1' })).toBe(
+      true,
+    );
+    // A done result may carry its session too (a later follow-up); it never needs one.
+    expect(valid({ outcome: 'done', summary: 'Done.', sessionRef: 's-1' })).toBe(true);
+  });
+
+  it('a question has its text, at most six options and a recommendation (Issue #103)', () => {
+    const valid = (question: unknown) =>
       runStepResultSchema.safeParse({
         outcome: 'needs_input',
         summary: 'Stuck.',
-        question: 'Which database?',
-      }).success,
-    ).toBe(true);
+        question,
+        sessionRef: 's-1',
+      }).success;
+    const full = {
+      text: 'Which database?',
+      options: ['PostgreSQL', 'SQLite'],
+      recommendation: 'PostgreSQL',
+    };
+    expect(valid(full)).toBe(true);
+    expect(valid('Which database?')).toBe(false);
+    expect(valid({ text: '' })).toBe(false);
+    expect(valid({ text: 'q'.repeat(QUESTION_TEXT_MAX_LENGTH) })).toBe(true);
+    expect(valid({ text: 'q'.repeat(QUESTION_TEXT_MAX_LENGTH + 1) })).toBe(false);
+    expect(valid({ ...full, options: Array.from({ length: 6 }, (_, n) => `o${n}`) })).toBe(true);
+    expect(valid({ ...full, options: Array.from({ length: 7 }, (_, n) => `o${n}`) })).toBe(false);
+    expect(valid({ ...full, options: ['o'.repeat(QUESTION_OPTION_MAX_LENGTH + 1)] })).toBe(false);
+    expect(valid({ ...full, options: [''] })).toBe(false);
+    expect(valid({ ...full, recommendation: 'r'.repeat(QUESTION_OPTION_MAX_LENGTH + 1) })).toBe(
+      false,
+    );
+    expect(valid({ ...full, extra: true })).toBe(false);
+  });
+
+  it('bounds the session reference at 256 characters (Issue #103)', () => {
+    const valid = (sessionRef: string) =>
+      runStepResultSchema.safeParse({ outcome: 'done', summary: '', sessionRef }).success;
+    expect(valid('s'.repeat(SESSION_REF_MAX_LENGTH))).toBe(true);
+    expect(valid('s'.repeat(SESSION_REF_MAX_LENGTH + 1))).toBe(false);
+    expect(valid('')).toBe(false);
   });
 
   it('rejects an unknown outcome or check result', () => {

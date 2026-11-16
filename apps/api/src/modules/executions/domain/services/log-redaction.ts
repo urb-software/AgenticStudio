@@ -90,14 +90,15 @@ export function redactLogText(text: string, knownSecrets: readonly string[]): st
 /** The free-text fields of a Run step's structured result (the worker protocol's shape). */
 interface StepResultText {
   summary: string;
-  question?: string;
+  question?: { text: string; options?: string[]; recommendation?: string };
   pullRequest?: { title: string; body: string };
   checks?: { name: string; detail?: string }[];
 }
 
 /**
  * A Run step's structured result (validated by the worker protocol) with its free-text fields
- * redacted by {@link redactLogText}: the summary, the question, the pull request's title and
+ * redacted by {@link redactLogText}: the summary, the question (text, options, recommendation:
+ * Issue #103), the pull request's title and
  * body, and each check's name and detail. The enum fields (`outcome`, each check's `result`)
  * are never touched, so a known value that equals one (e.g. an Environment file value `done`)
  * cannot make the stored result invalid (#104, from the #119 review).
@@ -110,7 +111,20 @@ export function redactRunStepResult<T extends StepResultText>(
   return {
     ...result,
     summary: redact(result.summary),
-    ...(result.question === undefined ? {} : { question: redact(result.question) }),
+    ...(result.question === undefined
+      ? {}
+      : {
+          question: {
+            ...result.question,
+            text: redact(result.question.text),
+            ...(result.question.options === undefined
+              ? {}
+              : { options: result.question.options.map(redact) }),
+            ...(result.question.recommendation === undefined
+              ? {}
+              : { recommendation: redact(result.question.recommendation) }),
+          },
+        }),
     ...(result.pullRequest === undefined
       ? {}
       : {

@@ -584,6 +584,60 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     );
   });
 
+  // Issue #103: the operator answers through the API; the same worker resumes the session.
+  describe('answering a question (Issue #103)', () => {
+    const answer = (runId: string, text: string) =>
+      fetch(`${apiUrl}/api/runs/${runId}/answer`, {
+        method: 'POST',
+        headers: { Origin: STUDIO_ORIGIN, Cookie: cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+
+    it('resumes the same session with the answer and continues the log, to succeeded', async () => {
+      const runId = await startRun('[fake:question-twice] Ask before changing anything');
+      startWorker();
+      const waiting = (await runReaches(runId, ['waiting_for_operator', 'failed'])) as RunView & {
+        question?: { text: string; options?: string[]; recommendation?: string };
+      };
+      expect(waiting.question).toMatchObject({ options: ['Option A', 'Option B'] });
+
+      expect((await answer(runId, 'Option A')).status).toBe(202);
+      // The resumed step asks again; the Working copy and session stay the same.
+      await until(
+        () => getRun(runId) as Promise<RunView & { messages: { kind: string }[] }>,
+        (run) => run.state === 'waiting_for_operator' && run.messages.length === 4,
+      );
+      expect((await answer(runId, 'Option B')).status).toBe(202);
+
+      expect((await runReaches(runId, ['succeeded', 'failed'])).state).toBe('succeeded');
+      const response = await fetch(`${apiUrl}/api/runs/${runId}/events?limit=1000`, {
+        headers: { Cookie: cookie },
+      });
+      const { events } = (await response.json()) as {
+        events: { seq: number; stepIndex: number; text: string }[];
+      };
+      // Nothing dropped as a duplicate: one log, numbered on across the three Run steps.
+      expect(events.map((event) => event.seq)).toEqual(events.map((_event, i) => i + 1));
+      expect([...new Set(events.map((event) => event.stepIndex))]).toEqual([1, 2, 3]);
+      expect(events.map((event) => event.text)).toEqual(
+        expect.arrayContaining(['answer received: Option A', 'answer received: Option B']),
+      );
+    });
+
+    it('fails a Run whose session cannot be resumed as agent_failed', async () => {
+      const runId = await startRun('[fake:lost-session]');
+      startWorker();
+      await runReaches(runId, ['waiting_for_operator']);
+
+      expect((await answer(runId, 'Option A')).status).toBe(202);
+
+      expect(await runReaches(runId, ['succeeded', 'failed'])).toMatchObject({
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: expect.stringContaining('no such session') },
+      });
+    });
+  });
+
   it('on shutdown reports the Run it carries as failed with worker_lost', async () => {
     const runId = await startRun('[fake:slow]');
     const worker = startWorker();

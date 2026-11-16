@@ -1,3 +1,4 @@
+import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import { type RunPayload, runPayloadSchema, type RunStepResult } from '@agentic-studio/contracts';
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -71,6 +72,9 @@ const workingCopies: WorkingCopyPort = {
     }
   ),
   report: async () => ({ runBranch: 'agent/x', commits: [], hasUncommittedChanges: false }),
+  locate: async () => {
+    throw new Error('not used');
+  },
 };
 
 /** Issue #102: delivery is not what this suite is about (delivery.linux.test.ts). */
@@ -103,6 +107,7 @@ class CliRunner implements Runner {
       workspace: WORKSPACE,
       signal: new AbortController().signal,
       processes: NO_GROUPS,
+      agentDefinition: AGENT_DEFINITION,
     });
   }
 }
@@ -259,8 +264,10 @@ describe('provider enablement gate (quality.md §10)', () => {
         run: payload('claude_code'),
         workspace: WORKSPACE,
         answer: 'Option A',
+        sessionRef: 'session-1',
         signal: new AbortController().signal,
         processes: NO_GROUPS,
+        agentDefinition: AGENT_DEFINITION,
       });
 
       await expect(resume.next()).rejects.toBeInstanceOf(ProviderDisabledError);

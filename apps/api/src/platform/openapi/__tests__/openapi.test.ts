@@ -320,6 +320,32 @@ describe('OpenAPI document', () => {
     });
   });
 
+  it('documents POST /api/runs/{runId}/answer: 202 with the Run, 404, 409, 422 (Issue #103)', () => {
+    const document = createOpenApiDocument(app);
+
+    const answer = document.paths['/api/runs/{runId}/answer']?.post;
+    expect(answer?.operationId).toBe('answerRun');
+    expect(answer?.requestBody).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/AnswerRunRequest' } },
+      },
+    });
+    expect(Object.keys(answer?.responses ?? {})).toEqual(
+      expect.arrayContaining(['202', '404', '409', '422']),
+    );
+    expect(document.components?.schemas?.AnswerRunRequest).toMatchObject({
+      properties: { text: { type: 'string', minLength: 1, maxLength: 10_000 } },
+      required: ['text'],
+      additionalProperties: false,
+    });
+    const run = document.components?.schemas?.Run_Output as {
+      properties: Record<string, unknown>;
+    };
+    expect(Object.keys(run.properties)).toEqual(expect.arrayContaining(['question', 'messages']));
+    // Internal: the session reference is never part of the operator API.
+    expect(JSON.stringify(document)).not.toMatch(/sessionRef/);
+  });
+
   it("documents a project's Environment file endpoints, none returning the content (Issue #104)", () => {
     const document = createOpenApiDocument(app);
 

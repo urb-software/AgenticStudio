@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
-import { RunListResponseDto, toRunResponse } from '../../contracts/http/run-response.js';
+import { RunListResponseDto, toRunListItem } from '../../contracts/http/run-response.js';
 import { ListRunsHandler } from './handler.js';
 
 /** `GET /api/runs` (Issue #96): every project's Runs, newest first; behind the session guard. */
@@ -14,6 +14,6 @@ export class ListRunsEndpoint {
   @ApiOperation({ operationId: 'listRuns' })
   @ZodResponse({ status: 200, type: RunListResponseDto })
   async list() {
-    return (await this.handler.execute()).map(toRunResponse);
+    return (await this.handler.execute()).map(toRunListItem);
   }
 }

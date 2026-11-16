@@ -8,8 +8,8 @@ import type {
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DeliveryFailedError, type DeliveryPort } from '../delivery.js';
-import { FakeRunner } from '../fake-runner.js';
-import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
+import { FakeRunner, fakeSessionRef } from '../fake-runner.js';
+import type { ResumeRunStepInput, Runner, RunStep, StartRunStepInput } from '../runner.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import { StudioApiError } from '../studio-api.js';
 import { AgentWorker, SHUTDOWN_FAILURE, type WorkerApi } from '../worker.js';
@@ -60,6 +60,23 @@ class FakeWorkingCopies implements WorkingCopyPort {
 
   /** When set, reading the Working copy fails. */
   reportFailure: Error | undefined;
+
+  /** Issue #103: the kept Working copies a resume located; `locateFailure` when it is gone. */
+  readonly located: string[] = [];
+  locateFailure: Error | undefined;
+
+  async locate(run: RunPayload): Promise<PreparedRun> {
+    this.located.push(run.runId);
+    if (this.locateFailure) throw this.locateFailure;
+    return {
+      runId: run.runId,
+      runDir: `/data/runs/${run.runId}`,
+      repoDir: `/data/runs/${run.runId}/repo`,
+      runBranch: run.runBranch ?? '',
+      startCommit: run.startCommit,
+      env: { COMPOSE_PROJECT_NAME: 'studio-run-0b8e5c2d1f3a' },
+    };
+  }
 
   async report(prepared: PreparedRun): Promise<WorkingCopyReport> {
     this.reported.push(prepared.runId);
@@ -417,6 +434,7 @@ describe('AgentWorker', () => {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
       runBranch: REPORT.runBranch,
+      nextSeq: 7,
     };
     const api = new RecordingApi([run]);
     const workingCopies = new FakeWorkingCopies();
@@ -453,6 +471,7 @@ describe('AgentWorker', () => {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
       runBranch: REPORT.runBranch,
+      nextSeq: 7,
     };
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -478,6 +497,7 @@ describe('AgentWorker', () => {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
       runBranch: REPORT.runBranch,
+      nextSeq: 7,
     };
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -1146,6 +1166,186 @@ describe('AgentWorker', () => {
     expect(api.reports()[2]?.[2]).toMatchObject({
       state: 'cancelled',
       delivery: { outcome: 'none', branchPushed: true },
+    });
+  });
+  // Issue #103: an answered Run resumes the same agent session in the kept Working copy.
+  describe('resume (Issue #103)', () => {
+    const resumePayload = (task: string, completedSteps = 1, n = 1): RunPayload => ({
+      ...payload(task, n),
+      kind: 'resume',
+      runBranch: REPORT.runBranch,
+      sessionRef: fakeSessionRef(payload(task, n).runId),
+      answer: 'Option A',
+      nextSeq: 10,
+      completedSteps,
+    });
+
+    /** A runner that records the resume it was asked for, then finishes. */
+    class RecordingRunner implements Runner {
+      readonly resumed: ResumeRunStepInput[] = [];
+      // eslint-disable-next-line require-yield
+      async *start(): RunStep {
+        throw new Error('not used');
+      }
+      async *resume(input: ResumeRunStepInput): RunStep {
+        this.resumed.push(input);
+        yield { type: 'message', text: 'resumed' };
+        return { outcome: 'done', summary: 'Resumed and finished.' };
+      }
+    }
+
+    it('resumes the same session with the answer as the next Run step, in the kept Working copy', async () => {
+      const run = resumePayload('[fake:question]');
+      const api = new RecordingApi([run]);
+      const runner = new RecordingRunner();
+      const workingCopies = new FakeWorkingCopies();
+      startWorker(api, runner, workingCopies);
+
+      await until(() => api.reports().length === 3);
+
+      expect(workingCopies.prepared).toEqual([]);
+      expect(workingCopies.located).toEqual([run.runId]);
+      expect(runner.resumed).toHaveLength(1);
+      expect(runner.resumed[0]).toMatchObject({
+        sessionRef: run.sessionRef,
+        answer: 'Option A',
+        workspace: { repoDir: `/data/runs/${run.runId}/repo` },
+        agentDefinition: { version: expect.any(String) },
+      });
+      expect(api.reports()).toEqual([
+        ['state', run.runId, { state: 'running' }],
+        [
+          'step',
+          run.runId,
+          {
+            index: 2,
+            kind: 'resume',
+            result: { outcome: 'done', summary: 'Resumed and finished.' },
+            workingCopy: REPORT,
+          },
+        ],
+        ['state', run.runId, { state: 'succeeded', delivery: DELIVERED }],
+      ]);
+    });
+
+    it("continues a delivery retry's log after the stored events (coordinator decision)", async () => {
+      const run = {
+        ...payload('Add a feature'),
+        kind: 'deliver' as const,
+        runBranch: REPORT.runBranch,
+        nextSeq: 7,
+        completedSteps: 2,
+      };
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      deliveries.deliverHangs = true;
+      startWorker(api, undefined, undefined, deliveries);
+      await until(() => deliveries.calls.some(([step]) => step === 'deliver'));
+
+      api.cancelRequested = true;
+      await until(() => api.reports().length === 1 && api.events().length > 0);
+
+      expect(api.events()[0]).toMatchObject({ seq: 7, stepIndex: 2, kind: 'notice' });
+    });
+
+    it("numbers the resumed step's events after the stored log (note from #99)", async () => {
+      const run = resumePayload('[fake:question]');
+      const api = new RecordingApi([run]);
+      startWorker(api);
+
+      await until(() => api.reports().length === 3 && api.events().length >= 3);
+
+      const events = api.events();
+      expect(events[0]).toMatchObject({ seq: 10, stepIndex: 2, kind: 'step_started' });
+      expect(events.map((event) => event.seq)).toEqual(events.map((_event, i) => 10 + i));
+      expect(events.every((event) => event.stepIndex === 2)).toBe(true);
+    });
+
+    it('reports a second question as waiting_for_operator again', async () => {
+      const run = resumePayload('[fake:question-twice]');
+      const api = new RecordingApi([run]);
+      startWorker(api);
+
+      await until(() => api.reports().length === 3);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        index: 2,
+        kind: 'resume',
+        result: { outcome: 'needs_input', sessionRef: run.sessionRef },
+      });
+      expect(api.reports()[2]).toEqual(['state', run.runId, { state: 'waiting_for_operator' }]);
+    });
+
+    it('fails as preparation_failed when the Working copy is gone, without resuming', async () => {
+      const run = resumePayload('[fake:question]');
+      const api = new RecordingApi([run]);
+      const runner = new RecordingRunner();
+      const workingCopies = new FakeWorkingCopies();
+      workingCopies.locateFailure = new PreparationFailedError(
+        'Working copy no longer exists — run again.',
+      );
+      startWorker(api, runner, workingCopies);
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()[0]).toEqual([
+        'state',
+        run.runId,
+        {
+          state: 'failed',
+          failure: {
+            code: 'preparation_failed',
+            detail: 'Working copy no longer exists — run again.',
+          },
+        },
+      ]);
+      expect(runner.resumed).toEqual([]);
+    });
+
+    it('fails as agent_failed when the provider refuses the session', async () => {
+      const run = { ...resumePayload('[fake:question]'), sessionRef: 'someone-elses-session' };
+      const api = new RecordingApi([run]);
+      startWorker(api);
+
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: expect.stringContaining('no such session') },
+      });
+    });
+
+    it('refuses a resume beyond the maximum number of Run steps (step_limit), touching nothing', async () => {
+      const run = resumePayload('[fake:question]', 10);
+      const api = new RecordingApi([run]);
+      const workingCopies = new FakeWorkingCopies();
+      startWorker(api, undefined, workingCopies);
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()[0]?.[2]).toMatchObject({
+        state: 'failed',
+        failure: { code: 'step_limit' },
+      });
+      expect(workingCopies.located).toEqual([]);
+    });
+
+    it('checks the provider gate before it resumes (provider_disabled)', async () => {
+      const run = resumePayload('[fake:question]');
+      const api = new RecordingApi([run]);
+      const workingCopies = new FakeWorkingCopies();
+      startWorker(api, undefined, workingCopies, {
+        gate: {
+          assertEnabled: () => {
+            throw new ProviderDisabledError('codex');
+          },
+        },
+      });
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()[0]?.[2]).toMatchObject({ failure: { code: 'provider_disabled' } });
+      expect(workingCopies.located).toEqual([]);
     });
   });
 });

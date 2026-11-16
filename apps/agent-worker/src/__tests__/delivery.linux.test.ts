@@ -340,6 +340,22 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(stub.created).toHaveLength(1);
   });
 
+  it('refuses a retry from a Working copy that is not on its Run branch (coordinator decision on #103)', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+    await deliveries().commit(prepared, run, DONE, signal());
+    inRepo(prepared, ['checkout', '--quiet', '-b', 'elsewhere']);
+
+    const attempt = await deliveries()
+      .locate({ ...run, kind: 'deliver', runBranch: prepared.runBranch, nextSeq: 1 })
+      .catch((caught: unknown) => caught);
+
+    expect(attempt).toBeInstanceOf(DeliveryFailedError);
+    expect((attempt as DeliveryFailedError).detail).toMatch(/not on its Run branch/);
+    expect(stub.created).toHaveLength(0);
+  });
+
   it('reuses the pull request on a repeated delivery instead of opening a second one', async () => {
     const run = payload();
     const prepared = await prepare(run);

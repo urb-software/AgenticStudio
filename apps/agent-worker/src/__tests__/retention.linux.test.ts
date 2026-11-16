@@ -159,6 +159,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
       run(PROJECT_A, 'preparing'),
       run(PROJECT_B, 'running'),
       run(PROJECT_A, 'waiting_for_operator'),
+      // Also an answered Run queued to resume its session in this Working copy (Issue #103).
       run(PROJECT_B, 'queued'),
     ];
 

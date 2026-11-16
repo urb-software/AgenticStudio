@@ -28,6 +28,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
   /** 409: the Run's delivery cannot be retried (it is not failed with delivery_failed). */
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
+  /** 409: the Run is not waiting for the operator's answer (Issue #103). */
+  runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
 } as const;
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
@@ -133,5 +135,24 @@ export function stepOutOfOrder(expected: number): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.stepOutOfOrder,
     title: 'Step out of order',
     detail: `The next run step of this run is number ${expected}.`,
+  });
+}
+
+const NOT_WAITING_DETAILS: Record<string, string> = {
+  queued: 'The question was already answered; the run continues.',
+  preparing: 'The question was already answered; the run continues.',
+  running: 'The run is working; there is no question to answer.',
+  succeeded: 'The run has already finished: it succeeded.',
+  failed: 'The run has already finished: it failed.',
+  cancelled: 'The run was cancelled; it takes no answer.',
+  timed_out: 'The run has already finished: it timed out.',
+};
+
+/** 409 when answering a Run that is not waiting for the operator (Issue #103); says why. */
+export function runNotWaiting(state: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.runNotWaiting,
+    title: 'Run not waiting for an answer',
+    detail: NOT_WAITING_DETAILS[state] ?? 'The run is not waiting for an answer.',
   });
 }

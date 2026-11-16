@@ -70,6 +70,14 @@ The branch in a Working copy that holds a Run's commits.
 The limits a Run gets from Studio's configuration when it starts: the longest a Run step may work, the most Run steps the Run may take, and the longest it may wait for the operator. A Run step over its time limit ends the Run as timed out; one more Run step than allowed ends it as failed; a Run waiting too long is cancelled by Studio.
 _Avoid_: Quota, timeout (unqualified)
 
+**Question**:
+What the agent asks the operator when it is blocked on a decision that is the operator's. It ends a Run step with a `needs_input` result (text, offered options, a recommendation); the Run then waits for the operator. Shown as plain text.
+_Avoid_: Prompt, approval request
+
+**Answer**:
+The operator's reply to a Question. It queues the Run again, and the agent worker that holds its Working copy resumes the same agent session with the answer as the next Run step.
+_Avoid_: Reply (for the stored record), follow-up (a later, separate feature)
+
 **Cancel**:
 The operator's stop of a Run. A queued or waiting Run is cancelled at once; a running Run gets a cancel request that the agent worker carries out by stopping the Run step, and the Run ends as cancelled. Nothing is pushed; the Working copy is kept.
 _Avoid_: Abort, kill

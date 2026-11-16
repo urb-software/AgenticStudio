@@ -222,8 +222,12 @@ model Run {
   /// The secret store's reference to the Run's snapshot of that file, kept for log redaction
   /// until the Run is final (then deleted and cleared). Never the content.
   environmentFileSecretId String?    @map("environment_file_secret_id") @db.Uuid
+  /// The agent session the last Run step reported (Issue #103): an answer resumes it. Internal:
+  /// sent only to the agent worker that started the Run, never to the operator API.
+  sessionRef              String?    @map("session_ref") @db.VarChar(256)
   steps                   RunStep[]
   events                  RunEvent[]
+  messages                RunMessage[]
 
   /// Serves the newest-first list of all Runs.
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "runs_created_at_id_idx")
@@ -249,6 +253,28 @@ model RunStep {
 
   @@unique([runId, index], map: "run_steps_run_id_index_key")
   @@map("run_steps")
+}
+
+/// One turn of a Run's conversation after its Task (Issue #103): the agent's question from a
+/// needs_input Run step, or the operator's answer to it, in order.
+model RunMessage {
+  runId          String   @map("run_id") @db.Uuid
+  run            Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// 1, 2, … within the Run, in order.
+  seq            Int
+  /// question | answer.
+  kind           String   @db.VarChar(16)
+  /// The question's text (redacted, the agent's) or the operator's answer.
+  text           String
+  /// A question's options, `["..."]`, when the agent offered any.
+  options        Json?
+  /// The option a question recommends, when it recommends one.
+  recommendation String?
+  /// When the question was reported or the answer given.
+  at             DateTime @db.Timestamptz(6)
+
+  @@id([runId, seq], map: "run_messages_pkey")
+  @@map("run_messages")
 }
 
 /// One event of a Run's log (Issue #99): the durable record; the live stream is built on it.
