@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClaudeCodeRunner } from '../claude-code/runner.js';
 import { CodexRunner } from '../codex/runner.js';
 import { DEFAULT_PROVIDER_BINARIES, loadWorkerConfig } from '../config.js';
+import type { BranchUpdatePort } from '../branch-update.js';
 import type { DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
@@ -173,6 +174,7 @@ async function carry(
     gate,
     status: { runner: config.runner, providers: gate.snapshot() },
     workingCopies,
+    branchUpdates: {} as BranchUpdatePort,
     resources: { cleanUp: async () => undefined },
     deliveries,
     diffs,

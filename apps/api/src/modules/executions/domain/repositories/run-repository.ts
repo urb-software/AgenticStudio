@@ -306,6 +306,40 @@ export interface RunRepository {
   ): Promise<Run | null>;
 
   /**
+   * Records where a bring-up-to-date merge started (Issue #147) on the Run's latest Follow-up:
+   * the Run branch's commit before it and the integration branch commit being merged, kept for
+   * the later claims of the part. Only while `workerId` holds the Run, only when that Follow-up
+   * came from the request and has none yet. False when nothing was recorded.
+   */
+  recordUpdateStart(
+    runId: string,
+    workerId: string,
+    start: { baseCommit: string; integrationCommit: string },
+  ): Promise<boolean>;
+
+  /**
+   * Once a bring-up-to-date part succeeded (Issue #147): its merge is in the pushed Run branch, so
+   * the Follow-up's `updateTip` becomes its `mergedCommit` (what the page shows and what the Run's
+   * own changes are counted from). Idempotent; false when there was nothing to record.
+   */
+  recordMergedCommit(runId: string): Promise<boolean>;
+
+  /**
+   * Ends a bring-up-to-date Follow-up whose branch was already up to date (Issue #147), in one
+   * transaction: if `workerId` holds the Run (preparing or running) and its latest Follow-up
+   * came from that request, the Run goes back to the result it had before it (the state, failure
+   * and delivery the `part_end` before the Follow-up recorded) and a `part_end` with `detail`
+   * notes that nothing was changed. Nothing was pushed and no Run step was taken. `null` when a
+   * condition failed.
+   */
+  finishBringUpToDate(
+    runId: string,
+    workerId: string,
+    detail: string,
+    now: Date,
+  ): Promise<Run | null>;
+
+  /**
    * Records that `workerId`'s retention removed the Working copies of these Runs (Issue #141):
    * only for Runs it last claimed and does not hold, also one queued for a Follow-up meanwhile
    * (review S9 of #150). Returns how many were recorded.

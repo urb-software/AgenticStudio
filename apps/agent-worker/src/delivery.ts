@@ -25,7 +25,7 @@ import {
 import { isRunBranchOf } from './run-branch.js';
 import { composeProjectName, runDirectories } from './run-layout.js';
 import { studioPathspecs } from './studio-paths.js';
-import { onBranch, type PreparedRun, readRunFile } from './working-copy.js';
+import { diffBaseOf, onBranch, type PreparedRun, readRunFile } from './working-copy.js';
 
 /**
  * Delivery of a Run's result (Issue #102, ADR 0002): after a `done` Run step the worker commits
@@ -135,6 +135,30 @@ export class Deliveries implements DeliveryPort {
       { mode: 0o600 },
     );
     const local = this.local(prepared, signal);
+    // Review S4 of #154: a merge still open is never committed (`add --all` would mark its
+    // conflicted files resolved, markers included). The worker completes or aborts it first.
+    const mergeOpen = await git
+      .run(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD^{commit}'], local)
+      .then(() => true)
+      .catch((error: unknown) => {
+        if (error instanceof GitCommandError && error.reason === 'exit') return false;
+        throw error;
+      });
+    if (mergeOpen) {
+      throw new DeliveryFailedError(
+        'A merge is still open in the Working copy, so nothing was committed or pushed. Bring the ' +
+          'branch up to date again, or look at the Working copy on the agent side.',
+      );
+    }
+    // Review R2-5: any unmerged path (a cherry-pick, a revert or a stash that conflicted too) is
+    // refused for the same reason.
+    const unmerged = await git.run(['diff', '--name-only', '--diff-filter=U', '-z'], local);
+    if (unmerged.length > 0) {
+      throw new DeliveryFailedError(
+        'The Working copy has files with unresolved conflicts, so nothing was committed or pushed. ' +
+          'Look at the Working copy on the agent side.',
+      );
+    }
     const status = await git.run(
       ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
       local,
@@ -196,7 +220,7 @@ export class Deliveries implements DeliveryPort {
     const { git } = this.options;
     const local = this.local(prepared, signal);
     const branchRef = `refs/heads/${prepared.runBranch}`;
-    const range = `${prepared.startCommit}..${branchRef}`;
+    const range = `${diffBaseOf(prepared)}..${branchRef}`;
     const count = await git
       .run(['rev-list', '--count', range, '--'], local)
       .then((output) => Number.parseInt(output.trim(), 10))
@@ -375,6 +399,9 @@ export class Deliveries implements DeliveryPort {
         repoDir: paths.repoDir,
         runBranch: run.runBranch,
         startCommit: run.startCommit.toLowerCase(),
+        ...(run.mergedIntegrationCommit === undefined
+          ? {}
+          : { diffBase: run.mergedIntegrationCommit }),
         env: { COMPOSE_PROJECT_NAME: composeProjectName(run.runId) },
       },
       result: saved.data,

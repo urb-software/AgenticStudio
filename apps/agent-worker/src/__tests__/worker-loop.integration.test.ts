@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { BranchUpdates } from '../branch-update.js';
 import { Deliveries } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
@@ -125,6 +126,15 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     const gate = new ProviderGate(providers);
     const git = new GitRunner({ env: { PATH: gitEnv.PATH!, HOME: gitEnv.HOME! } });
     const fake = extras.runner ?? new FakeRunner({ slowMs: 60_000, git });
+    const workingCopies = new WorkingCopies({
+      dataDir: workerDataDir,
+      git,
+      agentGitName: 'Studio Agent',
+      agentGitEmail: 'agent@example.test',
+      // The fixture remote is a file:// URL: a test worker.
+      allowFileRemotes: true,
+      logger,
+    });
     const worker = new AgentWorker({
       api: new StudioApi({ apiUrl, token, workerId: randomUUID(), fetch: extras.fetch }),
       runner: new RunnerDispatcher(gate, { claude_code: fake, codex: fake }),
@@ -133,13 +143,13 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
       killGraceMs: 500,
       minuteMs: extras.minuteMs,
       status: { runner: 'fake', providers: gate.snapshot() },
-      workingCopies: new WorkingCopies({
+      workingCopies,
+      branchUpdates: new BranchUpdates({
         dataDir: workerDataDir,
         git,
+        workingCopies,
         agentGitName: 'Studio Agent',
         agentGitEmail: 'agent@example.test',
-        // The fixture remote is a file:// URL: a test worker.
-        allowFileRemotes: true,
         logger,
       }),
       deliveries: new Deliveries({

@@ -108,12 +108,15 @@ function RecommendedMark() {
 function Message({
   message,
   label,
+  children,
 }: {
   message: Pick<RunMessageOutput, 'role' | 'text' | 'at' | 'options' | 'recommendation'> & {
     kind?: RunMessageOutput['kind'];
   };
   /** Who and what kind, e.g. "You · Follow-up 2"; by default from the message's role and kind. */
   label?: string;
+  /** What goes under the text, e.g. the commit a bring-up-to-date request merged (Issue #147). */
+  children?: ReactNode;
 }) {
   label ??= `${ROLE_LABEL[message.role]} · ${KIND_LABEL[message.kind ?? 'answer']}`;
   const agent = message.role === 'agent';
@@ -132,7 +135,10 @@ function Message({
         </time>
       </p>
       {/* The agent's text (and the operator's) is rendered as text: never markup. */}
-      <p className="m-0 break-words whitespace-pre-wrap">{message.text}</p>
+      {message.text === '' ? null : (
+        <p className="m-0 break-words whitespace-pre-wrap">{message.text}</p>
+      )}
+      {children}
       {message.options ? (
         <Options options={message.options} recommendation={message.recommendation} />
       ) : null}
@@ -239,17 +245,38 @@ export function RunConversation({
     if (message.kind === 'follow_up') {
       followUps += 1;
       items.push(<FollowUpDivider key={`follow-up-${followUps}`} number={followUps} />);
+      // Issue #147: a request to bring the Run branch up to date is a Follow-up of its own source.
+      const bringUp = message.source === 'bring_up_to_date';
       items.push(
         <Message
           key={`${i}-${message.kind}`}
           message={message}
-          label={
-            // Issue #145: where a prepared Follow-up came from.
-            message.source === 'pull_request_checks'
-              ? `You · Follow-up ${followUps} · prepared from Pull request checks`
-              : `You · Follow-up ${followUps}`
-          }
-        />,
+          label={`You · Follow-up ${followUps}${
+            // Issue #145: where a prepared Follow-up came from; Issue #147: a bring-up request.
+            bringUp
+              ? ' · Bring up to date'
+              : message.source === 'pull_request_checks'
+                ? ' · prepared from Pull request checks'
+                : ''
+          }`}
+        >
+          {bringUp ? (
+            <>
+              {message.text === '' ? (
+                <p className="m-0 text-small text-text-muted">No note.</p>
+              ) : null}
+              {message.mergedCommit ? (
+                <p className="m-0 text-small text-text-muted">
+                  Merged the integration branch commit{' '}
+                  <code className="font-mono text-code" title={message.mergedCommit}>
+                    {message.mergedCommit.slice(0, 7)}
+                  </code>
+                  .
+                </p>
+              ) : null}
+            </>
+          ) : null}
+        </Message>,
       );
       return;
     }

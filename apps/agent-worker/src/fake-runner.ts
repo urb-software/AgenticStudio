@@ -29,6 +29,8 @@ export const FAKE_SCENARIOS = [
   'secret',
   'print-env',
   'two-files',
+  'resolve-conflicts',
+  'resolve-in-tree',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
@@ -107,6 +109,11 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  *   up on it after the grace period (the hard path).
  * - `long` (Issue #100): like `slow`, but for `longMs` (ten minutes): a Run to cancel.
  * - `crash`: the runner itself breaks (a plain error).
+ * - `resolve-conflicts` and `resolve-in-tree` (Issue #147, in the note of a bring-up-to-date
+ *   request): resolve every conflicted file of the open merge, the first also staging it, the
+ *   second leaving it for the worker to stage (an agent whose sandbox cannot write `.git`). A
+ *   bring-up-to-date request with any other note leaves the merge as it is, then plays that
+ *   scenario (`success` by default).
  * `resume` checks that it continues the Run's own session and got an answer (else it fails as
  * the agent, like a provider without that session), then succeeds. A Follow-up (Issue #141)
  * plays the scenario its own text names (`[fake:<scenario>]`, default `success`) like a first
@@ -228,11 +235,31 @@ export class FakeRunner implements Runner {
             { name: 'fake unit tests', result: 'failed', detail: '1 of 12 tests failed.' },
           ],
         };
+      case 'resolve-conflicts':
+      case 'resolve-in-tree':
       case 'success':
         yield { type: 'command', text: 'fake-test --all' };
         yield { type: 'output', text: 'done' };
         return done();
     }
+  }
+
+  /**
+   * Resolves every conflicted file of the merge left open in the Working copy (Issue #147), and
+   * stages each when `stage`. Returns the paths. Never writes through a symlink.
+   */
+  private async resolveConflicts(workspace: RunWorkspace, signal: AbortSignal, stage: boolean) {
+    const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
+    const listed = await this.git.run(['diff', '--name-only', '--diff-filter=U', '-z'], options);
+    const paths = listed.split('\0').filter((path) => path !== '');
+    for (const path of paths) {
+      if (path.split('/').some((part) => part === '..' || part === '.')) continue;
+      const file = join(workspace.repoDir, path);
+      await rm(file, { force: true });
+      await writeFile(file, `Resolved by the fake runner.\n`, { flag: 'wx', mode: 0o644 });
+      if (stage) await this.git.run(['add', '--', `:(literal)${path}`], options);
+    }
+    return paths;
   }
 
   /** Writes the fake change into the Working copy and, if asked, commits it on the Run branch. */
@@ -298,6 +325,22 @@ export class FakeRunner implements Runner {
       );
     }
     if (answer.trim() === '') throw new AgentFailedError('The fake agent got no answer.');
+    if (reason === 'bring_up_to_date') {
+      // Issue #147: the instruction carries the operator's note; the note names the scenario.
+      const updateScenario = fakeScenarioOf(answer);
+      yield { type: 'output', text: `bring-up received: ${updateScenario}` };
+      if (updateScenario === 'resolve-conflicts' || updateScenario === 'resolve-in-tree') {
+        for (const path of await this.resolveConflicts(
+          workspace,
+          signal,
+          updateScenario === 'resolve-conflicts',
+        )) {
+          yield { type: 'output', text: `resolved ${path}` };
+        }
+        return done();
+      }
+      return yield* this.play(updateScenario, run, workspace, signal, true);
+    }
     if (reason === 'follow_up') {
       // Issue #141: a Follow-up names its own scenario (`[fake:<scenario>]` in its text).
       const followUpScenario = fakeScenarioOf(answer);

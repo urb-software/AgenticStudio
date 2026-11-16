@@ -1,7 +1,7 @@
 'use client';
 
-import { ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
-import { type ReactNode, useEffect, useId, useRef } from 'react';
+import { ExternalLinkIcon, GitMergeIcon, RefreshCwIcon } from 'lucide-react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { StatusPill } from '@/shared/components/status-pill';
 import { formatExactTime } from '@/shared/lib/relative-time';
@@ -12,6 +12,7 @@ import { useRefreshPullRequest } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
 import { isGitHubPullRequestUrl } from '../../components/github-links';
 import { PULL_REQUEST_STATE_VIEW, summarizeChecks } from '../../components/run-presentation';
+import { BringUpToDateDialog } from '../bring-up-to-date/bring-up-to-date-dialog';
 import { RunFailingChecks } from './run-failing-checks';
 import { RunPullRequestChecks } from './run-pull-request-checks';
 
@@ -74,6 +75,46 @@ function Mergeable({ pullRequest }: { pullRequest: PullRequest }) {
     return <span className="text-text-dim">GitHub has not said yet</span>;
   }
   return <span className="text-text-dim">—</span>;
+}
+
+/**
+ * "Bring up to date" (Issue #147): offered while the Run branch is behind the integration branch
+ * and the Run can take a Follow-up. Says how far behind it is and whether GitHub reports
+ * conflicts, and opens the confirm that explains what will happen and takes an optional note.
+ */
+function BringUpToDate({ run, pullRequest }: { run: RunOutput; pullRequest: PullRequest }) {
+  const [open, setOpen] = useState(false);
+  const behindBy = pullRequest.behindBy ?? 0;
+  const offered = behindBy > 0 && run.followUp?.allowed === true;
+  // Once the request is sent the Run is queued and the offer goes away. The confirm stays
+  // mounted, so its own close (on success) still runs, and it is never shown without the offer.
+  const conflicts =
+    pullRequest.mergeable === false
+      ? 'GitHub reports conflicts with the integration branch.'
+      : pullRequest.mergeable === true
+        ? 'GitHub reports no conflicts.'
+        : 'GitHub has not said whether there are conflicts.';
+  return (
+    <>
+      {offered ? (
+        <div
+          data-slot="run-bring-up-to-date"
+          className="flex min-w-0 flex-col gap-2 border-t border-border pt-3"
+        >
+          <p className="m-0 text-body">
+            The Run branch is {plural(behindBy, 'commit', 'commits')} behind the integration branch.{' '}
+            {conflicts}
+          </p>
+          <div>
+            <Button icon={GitMergeIcon} onClick={() => setOpen(true)}>
+              Bring up to date
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <BringUpToDateDialog run={run} open={open && offered} onOpenChange={setOpen} />
+    </>
+  );
 }
 
 /** When the state was last read. */
@@ -201,6 +242,7 @@ export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullReque
             <Refreshed iso={pullRequest.refreshedAt} />
           </Fact>
         </dl>
+        <BringUpToDate run={run} pullRequest={pullRequest} />
         {pullRequest.state === 'missing' ? (
           <p className="m-0 text-small text-text-muted">
             The pull request, or the Run branch it came from, was not found on GitHub: it may be

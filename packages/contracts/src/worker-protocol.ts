@@ -167,12 +167,20 @@ export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
 
 /**
  * Why a `resume` claim continues the agent session (Issue #141): the operator's answer to a
- * question (`answer`), the resume after the subscription's usage limit (`usage_limit`), or a
- * Follow-up to a finished Run (`follow_up`). The worker and the built-in agent definition word
- * the step after it; the text travels the same way for all three (`answer`).
+ * question (`answer`), the resume after the subscription's usage limit (`usage_limit`), a
+ * Follow-up to a finished Run (`follow_up`), or (Issue #147) the operator's request to bring the
+ * Run branch up to date with the integration branch (`bring_up_to_date`): a Follow-up whose text
+ * is the operator's optional note. The worker and the built-in agent definition word the step
+ * after it; the text travels the same way for all four (`answer`).
  */
-export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up'] as const;
+export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up', 'bring_up_to_date'] as const;
 export type ResumeReason = (typeof RESUME_REASONS)[number];
+
+/**
+ * The text a bring-up-to-date claim carries when the operator gave no note (Issue #147); the worker
+ * words the instruction to the agent itself and leaves this text out of it.
+ */
+export const BRING_UP_TO_DATE_DEFAULT_TEXT = 'Bring the Run branch up to date.';
 
 /** Longest Follow-up text, in characters (Issue #141). */
 export const FOLLOW_UP_MAX_LENGTH = 10_000;
@@ -266,6 +274,36 @@ export const runPayloadSchema = z
      */
     followUpNumber: z.int().min(1).max(PG_INT_MAX).optional(),
     /**
+     * With `resume` only (Issue #147): the Run's current part is a request to bring the Run branch
+     * up to date (also when it resumes after a question or the usage limit inside it). A merge
+     * left open in the Working copy at the end of the step is then completed by the worker, or
+     * aborted when the part does not end well.
+     */
+    bringUpToDate: z.literal(true).optional(),
+    /**
+     * With `bringUpToDate` (Issue #147, review S3/S6 of #154), once the worker reported the merge's
+     * start: the Run branch's commit just before it (after the leftovers were committed) and the
+     * integration branch commit being merged. Studio holds them, so a later claim of the same part
+     * still knows what to reset the branch to when the part fails, and which merge to expect.
+     */
+    updateBase: commitIdSchema.optional(),
+    updateTip: commitIdSchema.optional(),
+    /**
+     * With `resume` and `deliver` (Issue #147, review S1 of #154): the integration branch commit the
+     * Run branch last merged. The Run's own changes, in its diffs and its commit list, are counted
+     * from it, as the pull request counts them from the merge base; absent: from the start commit.
+     */
+    mergedIntegrationCommit: commitIdSchema.optional(),
+    /**
+     * With a `resume` claim that starts a new part (review R2-1 of #154): an earlier bring-up-to-date
+     * part began a merge and never succeeded, so its merge commit may still be in the Working copy
+     * (the Run was cancelled while it waited, or the worker was lost). The worker resets the Run
+     * branch to `baseCommit` first, unless something past it was pushed (`pushedCommit`).
+     */
+    pendingUpdate: z
+      .strictObject({ baseCommit: commitIdSchema, pushedCommit: commitIdSchema.optional() })
+      .optional(),
+    /**
      * Issue #141: how many Run steps the Run had taken when its current part began (the first
      * part: 0; a Follow-up: the steps before it). Each part gets `limits.maxSteps` Run steps, so
      * the worker refuses a step beyond `stepsBeforePart + limits.maxSteps`. Absent: 0.
@@ -327,14 +365,45 @@ export const runPayloadSchema = z
   .refine(
     (payload) =>
       (payload.followUpNumber === undefined || payload.kind === 'resume') &&
-      (payload.resumeReason !== 'follow_up' || payload.followUpNumber !== undefined) &&
+      ((payload.resumeReason !== 'follow_up' && payload.resumeReason !== 'bring_up_to_date') ||
+        payload.followUpNumber !== undefined) &&
       (payload.answer === undefined ||
         payload.answer.length <=
-          (payload.resumeReason === 'follow_up' ? FOLLOW_UP_MAX_LENGTH : ANSWER_MAX_LENGTH)),
+          (payload.resumeReason === 'follow_up' || payload.resumeReason === 'bring_up_to_date'
+            ? FOLLOW_UP_MAX_LENGTH
+            : ANSWER_MAX_LENGTH)),
     {
       path: ['followUpNumber'],
       message:
-        'A Follow-up number comes with a resume claim only, and always with the resume reason follow_up.',
+        'A Follow-up number comes with a resume claim only, and always with the resume reason follow_up or bring_up_to_date.',
+    },
+  )
+  .refine(
+    (payload) =>
+      (payload.updateBase === undefined && payload.updateTip === undefined) ||
+      payload.bringUpToDate === true,
+    {
+      path: ['updateBase'],
+      message: 'The merge start commits come only with the bring-up-to-date flag.',
+    },
+  )
+  .refine((payload) => payload.pendingUpdate === undefined || payload.kind === 'resume', {
+    path: ['pendingUpdate'],
+    message: 'A pending update comes with a resume claim only.',
+  })
+  .refine((payload) => payload.mergedIntegrationCommit === undefined || payload.kind !== 'start', {
+    path: ['mergedIntegrationCommit'],
+    message: 'A start claim has merged nothing yet.',
+  })
+  .refine(
+    (payload) =>
+      (payload.bringUpToDate === undefined ||
+        (payload.kind === 'resume' && payload.followUpNumber !== undefined)) &&
+      (payload.resumeReason !== 'bring_up_to_date' || payload.bringUpToDate === true),
+    {
+      path: ['bringUpToDate'],
+      message:
+        'A bring-up-to-date flag comes with a resume claim inside a Follow-up, and always with the resume reason bring_up_to_date.',
     },
   )
   .refine((payload) => payload.pullRequestNumber === undefined || payload.kind !== 'start', {
@@ -607,6 +676,24 @@ export const reportRunStateRequestSchema = z
      * Studio shows it without waiting for a lookup.
      */
     pullRequestState: pullRequestStateSchema.optional(),
+    /**
+     * Issue #147, with `running` of a bring-up-to-date claim only: the merge started. `baseCommit`
+     * is the Run branch's commit just before it, `integrationCommit` the integration branch commit
+     * being merged; Studio keeps both on the conversation entry and hands them back with every later
+     * claim of the part. The merged commit the page shows is recorded when the part succeeds.
+     */
+    bringUpToDateStarted: z
+      .strictObject({ baseCommit: commitIdSchema, integrationCommit: commitIdSchema })
+      .optional(),
+    /**
+     * Issue #147, with `succeeded` only: the bring-up-to-date request changed nothing (the Run
+     * branch already had everything the integration branch has, or the integration branch could
+     * not be fetched): no agent was started and nothing was pushed. The Run goes back to the result
+     * it had before the request; no delivery comes with it.
+     */
+    unchanged: z.literal(true).optional(),
+    /** With `unchanged`: why nothing changed, in the conversation (default: already up to date). */
+    unchangedDetail: z.string().min(1).max(FAILURE_DETAIL_MAX_LENGTH).optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
@@ -624,9 +711,13 @@ export const reportRunStateRequestSchema = z
   )
   .refine(
     (report) =>
-      report.state === 'succeeded'
-        ? report.delivery !== undefined
-        : report.delivery === undefined || report.state === 'cancelled',
+      report.unchanged === true
+        ? report.state === 'succeeded' &&
+          report.delivery === undefined &&
+          report.workingCopy === undefined
+        : report.state === 'succeeded'
+          ? report.delivery !== undefined
+          : report.delivery === undefined || report.state === 'cancelled',
     {
       path: ['delivery'],
       message:
@@ -654,6 +745,14 @@ export const reportRunStateRequestSchema = z
         'A pushed commit on its own comes only with the failure delivery_failed (Issue #141).',
     },
   )
+  .refine((report) => report.bringUpToDateStarted === undefined || report.state === 'running', {
+    path: ['bringUpToDateStarted'],
+    message: 'The merge start comes only with the state running (Issue #147).',
+  })
+  .refine((report) => report.unchangedDetail === undefined || report.unchanged === true, {
+    path: ['unchangedDetail'],
+    message: 'A reason for no change comes only with unchanged (Issue #147).',
+  })
   .refine(
     (report) =>
       report.workingCopy === undefined ||

@@ -3,6 +3,7 @@ import { ClaudeCodeRunner, probeClaudeCode } from './claude-code/runner.js';
 import { prepareCodexHome } from './codex/codex-home.js';
 import { CodexRunner, probeCodex } from './codex/runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
+import { BranchUpdates } from './branch-update.js';
 import { Deliveries } from './delivery.js';
 import { DiskMonitor } from './disk.js';
 import { FakeRunner } from './fake-runner.js';
@@ -119,6 +120,16 @@ const disk = new DiskMonitor({
   now: () => new Date(),
   logger,
 });
+const workingCopies = new WorkingCopies({
+  dataDir: config.dataDir,
+  git,
+  freeSpace: disk,
+  agentGitName: config.agentGitName,
+  agentGitEmail: config.agentGitEmail,
+  // A local (file) remote only for a development or test worker (coordinator decision, #98).
+  allowFileRemotes: config.environment !== 'production',
+  logger,
+});
 const worker = new AgentWorker({
   api,
   runner,
@@ -130,14 +141,14 @@ const worker = new AgentWorker({
     ...(Object.keys(reasons).length > 0 ? { providerReasons: { ...reasons } } : {}),
   },
   disk,
-  workingCopies: new WorkingCopies({
+  workingCopies,
+  // Issue #147: the integration branch merged into a Run branch on the operator's request.
+  branchUpdates: new BranchUpdates({
     dataDir: config.dataDir,
     git,
-    freeSpace: disk,
+    workingCopies,
     agentGitName: config.agentGitName,
     agentGitEmail: config.agentGitEmail,
-    // A local (file) remote only for a development or test worker (coordinator decision, #98).
-    allowFileRemotes: config.environment !== 'production',
     logger,
   }),
   // Issue #102: the Agent account's token stays on the agent side (the worker's own .env).

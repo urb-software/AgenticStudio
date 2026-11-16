@@ -1414,6 +1414,87 @@
         ]
       }
     },
+    "/api/runs/{runId}/bring-up-to-date": {
+      "post": {
+        "operationId": "bringUpToDateRun",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BringUpToDateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run cannot take a Follow-up now (urn:agentic-studio:problem:follow-up-not-allowed)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request body (field errors)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/runs/{runId}/pull-request/refresh": {
       "post": {
         "operationId": "refreshRunPullRequest",
@@ -2706,6 +2787,9 @@
           "end": {
             "$ref": "#/components/schemas/RunPartEnd_Output"
           },
+          "mergedCommit": {
+            "type": "string"
+          },
           "options": {
             "type": "array",
             "items": {
@@ -2718,7 +2802,8 @@
           "source": {
             "type": "string",
             "enum": [
-              "pull_request_checks"
+              "pull_request_checks",
+              "bring_up_to_date"
             ]
           },
           "at": {
@@ -3025,13 +3110,24 @@
           "source": {
             "type": "string",
             "enum": [
-              "pull_request_checks"
+              "pull_request_checks",
+              "bring_up_to_date"
             ]
           }
         },
         "required": [
           "text"
         ],
+        "additionalProperties": false
+      },
+      "BringUpToDateRequest": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 10000
+          }
+        },
         "additionalProperties": false
       },
       "RefreshPullRequestRequest": {
@@ -3074,7 +3170,8 @@
           "source": {
             "type": "string",
             "enum": [
-              "pull_request_checks"
+              "pull_request_checks",
+              "bring_up_to_date"
             ]
           },
           "text": {

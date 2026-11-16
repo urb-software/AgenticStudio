@@ -182,5 +182,9 @@ export function codexPrompt(instructions: string, task: string): string {
  */
 export function codexAnswer(answer: string, reason: ResumeReason = 'answer'): string {
   if (reason === 'follow_up') return `The operator's Follow-up:\n\n${answer}\n`;
+  // Issue #147: the worker's own instruction after it merged the integration branch.
+  if (reason === 'bring_up_to_date') {
+    return `Studio's instruction to bring the branch up to date:\n\n${answer}\n`;
+  }
   return `The operator's answer:\n\n${answer}\n`;
 }

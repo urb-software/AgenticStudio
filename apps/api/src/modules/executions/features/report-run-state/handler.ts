@@ -54,6 +54,26 @@ export interface ReportRunStateInput {
    * a Follow-up (review S4 of #152).
    */
   pullRequestState?: PullRequestState | null;
+  /**
+   * With `running` of a bring-up-to-date Follow-up (Issue #147): where the merge started, kept on
+   * its conversation entry for the later claims of the part.
+   */
+  bringUpToDateStarted?: { baseCommit: string; integrationCommit: string } | null;
+  /**
+   * With `succeeded` and a bring-up-to-date Follow-up (Issue #147): the request changed nothing;
+   * the Run returns to the result it had before it. `unchangedDetail` says why (default: the
+   * branch was already up to date).
+   */
+  unchanged?: boolean;
+  unchangedDetail?: string | null;
+}
+
+/** What the conversation says when a bring-up-to-date request found nothing to merge (Issue #147). */
+export function alreadyUpToDateDetail(integrationBranch: string): string {
+  return (
+    `The Run branch already has everything ${integrationBranch} has, so nothing was changed: ` +
+    'no agent was started and nothing was pushed.'
+  );
 }
 
 /**
@@ -90,6 +110,7 @@ export class ReportRunStateHandler {
     for (let attempt = 1; attempt <= 2; attempt++) {
       const run = await this.runs.findById(input.runId);
       if (!run) throw new RunNotFoundError();
+      if (input.unchanged) return this.finishUpToDate(run, input);
       if (run.state === 'failed' && run.deliveryRequested && run.claimedBy === input.workerId) {
         return this.finishRetry(run, input);
       }
@@ -102,6 +123,11 @@ export class ReportRunStateHandler {
         throw new IllegalRunTransitionError(run.state, to);
       }
       assertTransition(run.state, to);
+      // Issue #147: where a bring-up-to-date merge started (only while this worker holds the Run;
+      // a repeated report records nothing twice).
+      if (input.bringUpToDateStarted && to === 'running') {
+        await this.runs.recordUpdateStart(run.id, input.workerId, input.bringUpToDateStarted);
+      }
       const keepsWorkingCopy = to === 'failed' || to === 'cancelled' || to === 'timed_out';
       const changed = await this.runs.transitionClaimed({
         runId: run.id,
@@ -125,6 +151,8 @@ export class ReportRunStateHandler {
         now: this.clock.now(),
       });
       if (changed) {
+        // Issue #147: a succeeded bring-up-to-date part has its merge in the pushed Run branch.
+        if (to === 'succeeded') await this.runs.recordMergedCommit(run.id);
         // Review S4 of #152: what the worker read about the pull request before it refused a
         // Follow-up is what the page shows.
         if (input.failure?.code === 'preparation_failed' && input.pullRequestState) {
@@ -150,15 +178,39 @@ export class ReportRunStateHandler {
 
   /** The worker's free text (failure detail, commit subjects) redacted like the log (#104). */
   private async redacted(input: ReportRunStateInput): Promise<ReportRunStateInput> {
-    if (!input.failure && !input.workingCopy) return input;
+    if (!input.failure && !input.workingCopy && !input.unchangedDetail) return input;
     const known = await this.secrets.forRun(input.runId);
     return {
       ...input,
+      unchangedDetail: input.unchangedDetail
+        ? cutDetail(redactFailure({ code: 'unknown', detail: input.unchangedDetail }, known)).detail
+        : input.unchangedDetail,
       failure: input.failure && cutDetail(redactFailure(input.failure, known)),
       workingCopy: input.workingCopy
         ? redactWorkingCopy(input.workingCopy, known)
         : input.workingCopy,
     };
+  }
+
+  /**
+   * A bring-up-to-date request whose branch was already up to date (Issue #147): the Run goes back
+   * to the result it had before, and its conversation notes that nothing was changed. A repeat
+   * of the report that already applied is a no-op success.
+   */
+  private async finishUpToDate(run: Run, input: ReportRunStateInput): Promise<Run> {
+    if (run.claimedBy !== input.workerId) {
+      if (run.releasedBy === input.workerId && isFinal(run.state)) return run;
+      throw new RunNotHeldError();
+    }
+    const changed = await this.runs.finishBringUpToDate(
+      run.id,
+      input.workerId,
+      input.unchangedDetail ?? alreadyUpToDateDetail(run.integrationBranch),
+      this.clock.now(),
+    );
+    if (!changed) throw new IllegalRunTransitionError(run.state, 'succeeded');
+    this.signal.notify(run.id);
+    return changed;
   }
 
   /** The outcome of a delivery retry: the one way out of `failed` (Issue #102). */
@@ -179,6 +231,7 @@ export class ReportRunStateHandler {
       now: this.clock.now(),
     });
     if (!changed) throw new RunNotHeldError();
+    if (result.state === 'succeeded') await this.runs.recordMergedCommit(run.id);
     this.signal.notify(run.id);
     // Delivered at last: nothing more to redact (Issue #104). A retry that failed again keeps
     // the snapshot, since the delivery can be retried once more.

@@ -41,8 +41,19 @@ export interface PreparedRun {
   repoDir: string;
   runBranch: string;
   startCommit: string;
+  /**
+   * Issue #147 (review S1 of #154): where the Run's own changes are counted from, in its diffs and
+   * its commit list: the integration branch commit the Run branch last merged (as the pull request
+   * counts from the merge base), else the start commit. The worker moves it on when a merge starts.
+   */
+  diffBase?: string;
   /** Variables every Run step of this Run gets, e.g. `COMPOSE_PROJECT_NAME`. */
   env: Record<string, string>;
+}
+
+/** Where the Run's own changes are counted from (see {@link PreparedRun.diffBase}). */
+export function diffBaseOf(prepared: Pick<PreparedRun, 'startCommit' | 'diffBase'>): string {
+  return prepared.diffBase ?? prepared.startCommit;
 }
 
 /** What the worker records in `run.json` beside the Working copy; retention reads it. */
@@ -155,14 +166,7 @@ export class WorkingCopies implements WorkingCopyPort {
       throw new PreparationFailedError('The start commit is not a full commit id.');
     }
     const remoteUrl = run.repository.remoteUrl;
-    if (remoteUrl.startsWith('-')) {
-      throw new PreparationFailedError("The Project's remote URL is not valid.");
-    }
-    if (!this.options.allowFileRemotes && !NETWORK_REMOTE.test(remoteUrl)) {
-      throw new PreparationFailedError(
-        "The Project's remote is a local path; only a development or test agent worker accepts one.",
-      );
-    }
+    this.assertAllowedRemote(remoteUrl);
     // The payload is validated already; this is the worker's own guard before any write.
     const environmentFile = run.environmentFile;
     if (environmentFile && environmentFilePathProblem(environmentFile.path) !== null) {
@@ -281,6 +285,8 @@ export class WorkingCopies implements WorkingCopyPort {
       repoDir: paths.repoDir,
       runBranch: run.runBranch,
       startCommit: run.startCommit.toLowerCase(),
+      // The merge of this part, if it already started, is counted as merged too.
+      diffBase: run.updateTip ?? run.mergedIntegrationCommit ?? run.startCommit.toLowerCase(),
       env: { COMPOSE_PROJECT_NAME: composeProjectName(run.runId) },
     };
   }
@@ -306,7 +312,7 @@ export class WorkingCopies implements WorkingCopyPort {
           '--no-show-signature',
           '--format=%H%x00%s%x00',
           `--max-count=${WORKING_COPY_COMMITS_MAX}`,
-          `${prepared.startCommit}..${branchRef}`,
+          `${diffBaseOf(prepared)}..${branchRef}`,
           '--',
         ],
         options,
@@ -442,6 +448,33 @@ export class WorkingCopies implements WorkingCopyPort {
       await writeFile(paths.runFile, `${JSON.stringify({ ...runFile, studioPaths }, null, 2)}\n`, {
         mode: 0o600,
       });
+    }
+  }
+
+  /**
+   * Brings the Project's cache up to date with its remote (Issue #147) and returns its path: the
+   * one place the worker fetches from the network. The same rules as at a Run's start: only an
+   * https or SSH remote (a development or test worker also takes a local one), a cache of another
+   * remote is rebuilt. Throws {@link PreparationFailedError} with a clear detail.
+   */
+  async refreshProjectCache(run: RunPayload, signal: AbortSignal): Promise<string> {
+    const remoteUrl = run.repository.remoteUrl;
+    this.assertAllowedRemote(remoteUrl);
+    const cacheDir = cacheDirectory(this.options.dataDir, run.projectId);
+    await assertRealDirectory(cachesDirectory(this.options.dataDir), true);
+    await this.refreshCache(cacheDir, remoteUrl, signal);
+    return cacheDir;
+  }
+
+  /** The Project's remote must be a URL Git may be asked to reach, never an option or a path. */
+  private assertAllowedRemote(remoteUrl: string): void {
+    if (remoteUrl.startsWith('-')) {
+      throw new PreparationFailedError("The Project's remote URL is not valid.");
+    }
+    if (!this.options.allowFileRemotes && !NETWORK_REMOTE.test(remoteUrl)) {
+      throw new PreparationFailedError(
+        "The Project's remote is a local path; only a development or test agent worker accepts one.",
+      );
     }
   }
 

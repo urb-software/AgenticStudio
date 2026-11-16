@@ -2,6 +2,7 @@ import type { RunPayload, RunStepResult } from '@agentic-studio/contracts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -144,6 +145,41 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     await subject.commit(prepared, run, result, signal());
     return subject.deliver(prepared, run, result, signal());
   }
+
+  // Review S4 of #154: `add --all` would mark a merge's conflicted files resolved, markers included.
+  it('refuses to commit while a merge is open, leaving its conflicts as they are', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'README.md': 'run side\n' }, 'Run change');
+    remote.commit('Integration change', { 'README.md': 'main side\n' });
+    inRepo(prepared, ['fetch', '--quiet', remote.url, 'main']);
+    expect(() => inRepo(prepared, ['merge', '--no-edit', 'FETCH_HEAD'])).toThrow();
+    const before = inRepo(prepared, ['rev-parse', 'HEAD']);
+
+    await expect(deliveries().commit(prepared, run, DONE, signal())).rejects.toThrow(
+      /merge is still open/,
+    );
+
+    expect(inRepo(prepared, ['rev-parse', 'HEAD'])).toBe(before);
+    expect(inRepo(prepared, ['diff', '--name-only', '--diff-filter=U'])).toBe('README.md');
+    expect(readFileSync(join(prepared.repoDir, 'README.md'), 'utf8')).toContain('<<<<<<<');
+  });
+
+  // Review R2-5 of #154: a conflict without an open merge (a cherry-pick, a revert) is refused too.
+  it('refuses to commit while any path is unmerged', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'README.md': 'run side\n' }, 'Run change');
+    const other = remote.commit('Integration change', { 'README.md': 'main side\n' });
+    inRepo(prepared, ['fetch', '--quiet', remote.url, 'main']);
+    expect(() => inRepo(prepared, ['cherry-pick', other])).toThrow();
+    expect(existsSync(join(prepared.repoDir, '.git', 'MERGE_HEAD'))).toBe(false);
+
+    await expect(deliveries().commit(prepared, run, DONE, signal())).rejects.toThrow(
+      /unresolved conflicts/,
+    );
+    expect(inRepo(prepared, ['diff', '--name-only', '--diff-filter=U'])).toBe('README.md');
+  });
 
   it("pushes the agent's commits on the Run branch and opens a draft pull request", async () => {
     const run = payload();

@@ -57,7 +57,7 @@ export const pullRequestCheckStateSchema = z.enum([
 export const failingChecksPreparationSchema = z.enum(['preparing', 'ready', 'failed']);
 
 /** What a Follow-up was prepared from (Issue #145). Pinned to the domain's list by a test. */
-export const followUpSourceSchema = z.enum(['pull_request_checks']);
+export const followUpSourceSchema = z.enum(['pull_request_checks', 'bring_up_to_date']);
 
 /** The agent's open question (Issue #103): plain text, never markup. */
 export const runQuestionResponseSchema = z
@@ -110,6 +110,12 @@ export const runMessageResponseSchema = z
       })
       .meta({ id: 'RunPartEnd' })
       .optional(),
+    /**
+     * With the source `bring_up_to_date` (Issue #147; `text` is then the operator's optional note,
+     * empty when there is none): the integration branch commit the Run branch has merged, once the
+     * agent worker reported it (absent when nothing was merged, or not yet).
+     */
+    mergedCommit: z.string().optional(),
     /** A question's offered options, when it offered any (review M2 of #127). */
     options: z.array(z.string()).optional(),
     /** The option a question recommended, when it recommended one. */
@@ -117,6 +123,8 @@ export const runMessageResponseSchema = z
     /**
      * With `follow_up` only (Issue #145): what the text was prepared from, when it was prepared
      * (the operator reviewed and may have edited it); absent for one written from scratch.
+     * Issue #147: `bring_up_to_date` is the request to merge the integration branch into the Run
+     * branch.
      */
     source: followUpSourceSchema.optional(),
     at: z.iso.datetime(),
@@ -389,6 +397,7 @@ export function toRunResponse(
           text: string;
           at: Date;
           source?: z.infer<typeof followUpSourceSchema>;
+          mergedCommit?: string;
         }
       | {
           kind: 'part_end';
@@ -528,7 +537,12 @@ export function toRunResponse(
                 kind: message.kind,
                 text: message.text,
                 ...(message.kind === 'follow_up' && message.source !== undefined
-                  ? { source: message.source }
+                  ? {
+                      source: message.source,
+                      ...(message.mergedCommit === undefined
+                        ? {}
+                        : { mergedCommit: message.mergedCommit }),
+                    }
                   : {}),
                 at: message.at.toISOString(),
               },
