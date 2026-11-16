@@ -119,7 +119,20 @@ export type RunStepTotalsOutput = {
 
 export type RunFollowUpEligibilityOutput = {
     allowed: boolean;
-    reason?: 'not_finished' | 'follow_up_queued' | 'working_copy_removed' | 'no_session' | 'step_total_reached' | 'provider_unavailable' | 'worker_unavailable';
+    reason?: 'not_finished' | 'follow_up_queued' | 'pull_request_merged' | 'pull_request_closed' | 'pull_request_missing' | 'working_copy_removed' | 'no_session' | 'step_total_reached' | 'provider_unavailable' | 'worker_unavailable';
+};
+
+export type RunPullRequestOutput = {
+    url: string;
+    number: number;
+    state?: 'draft' | 'open' | 'merged' | 'closed' | 'missing';
+    behindBy?: number;
+    aheadBy?: number;
+    mergeable?: boolean;
+    refreshedAt?: string;
+    refreshError?: string;
+    retryAt?: string;
+    refreshing?: true;
 };
 
 export type RunQuestionOutput = {
@@ -176,10 +189,7 @@ export type RunOutput = {
         reason: string;
     };
     delivery?: 'none' | 'delivered' | 'failed';
-    pullRequest?: {
-        url: string;
-        number: number;
-    };
+    pullRequest?: RunPullRequestOutput;
     deliveryRetryRequested?: true;
     resumable?: true;
     failingChecks?: Array<string>;
@@ -200,6 +210,10 @@ export type AnswerRunRequest = {
 
 export type FollowUpRunRequest = {
     text: string;
+};
+
+export type RefreshPullRequestRequest = {
+    onOpen?: boolean;
 };
 
 export type RunEventOutput = {
@@ -1038,6 +1052,42 @@ export type FollowUpRunResponses = {
 };
 
 export type FollowUpRunResponse = FollowUpRunResponses[keyof FollowUpRunResponses];
+
+export type RefreshRunPullRequestData = {
+    body?: RefreshPullRequestRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/pull-request/refresh';
+};
+
+export type RefreshRunPullRequestErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run has no pull request (urn:agentic-studio:problem:pull-request-not-refreshable)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RefreshRunPullRequestError = RefreshRunPullRequestErrors[keyof RefreshRunPullRequestErrors];
+
+export type RefreshRunPullRequestResponses = {
+    202: RunOutput;
+};
+
+export type RefreshRunPullRequestResponse = RefreshRunPullRequestResponses[keyof RefreshRunPullRequestResponses];
 
 export type ListRunEventsData = {
     body?: never;

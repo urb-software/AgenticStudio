@@ -50,8 +50,11 @@ export class FollowUpRunEndpoint {
       );
     }
     try {
-      const { run, followUp } = await this.handler.execute(runId, parsed.data.text);
-      return toRunResponse(run, followUp);
+      const { run, followUp, workerConnected } = await this.handler.execute(
+        runId,
+        parsed.data.text,
+      );
+      return toRunResponse(run, followUp, workerConnected);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof FollowUpNotAllowedError) throw followUpNotAllowed(error.reason);

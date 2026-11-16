@@ -1,6 +1,10 @@
 import {
   ANSWER_MAX_LENGTH as WORKER_ANSWER_MAX_LENGTH,
   FOLLOW_UP_MAX_LENGTH as WORKER_FOLLOW_UP_MAX_LENGTH,
+  LOOKUP_KINDS as WORKER_LOOKUP_KINDS,
+  LOOKUP_CLAIM_MAX as WORKER_LOOKUP_CLAIM_MAX,
+  LOOKUP_RETRY_AFTER_MAX_SECONDS as WORKER_LOOKUP_RETRY_AFTER_MAX_SECONDS,
+  PULL_REQUEST_STATES as WORKER_PULL_REQUEST_STATES,
   RESUME_REASONS as WORKER_RESUME_REASONS,
   RUN_EVENT_KINDS as WORKER_EVENT_KINDS,
   PROVIDERS as WORKER_PROVIDERS,
@@ -15,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { runEventKindSchema } from '../../../contracts/http/run-event-response.js';
 import {
   followUpRefusalSchema,
+  pullRequestStateSchema,
   runCancelledBySchema,
   runDeliverySchema,
   runFailureCodeSchema,
@@ -26,6 +31,7 @@ import {
   FOLLOW_UP_MAX_LENGTH,
   FOLLOW_UP_REFUSALS,
   PROVIDERS,
+  PULL_REQUEST_STATES,
   RESUME_REASONS,
   RUN_CANCELLED_BY,
   RUN_DELIVERIES,
@@ -34,6 +40,11 @@ import {
   TASK_MAX_LENGTH,
 } from '../../../domain/entities/run.js';
 import { RUN_EVENT_KINDS } from '../../../domain/entities/run-event.js';
+import {
+  LOOKUP_CLAIM_LIMIT,
+  LOOKUP_KINDS,
+  LOOKUP_RETRY_AFTER_MAX_SECONDS,
+} from '../../../domain/entities/run-lookup.js';
 
 // contracts/http may not import the domain (backend.md §2), and the shared worker protocol
 // cannot import the API, so both carry their own lists; this pins them to the domain's.
@@ -47,6 +58,17 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(runDeliverySchema.options).toEqual([...RUN_DELIVERIES]);
     // Issue #141.
     expect(followUpRefusalSchema.options).toEqual([...FOLLOW_UP_REFUSALS]);
+    // Issue #142.
+    expect(pullRequestStateSchema.options).toEqual([...PULL_REQUEST_STATES]);
+  });
+
+  it('worker protocol: the same pull request states and lookup kinds and limits (Issue #142)', () => {
+    expect([...WORKER_PULL_REQUEST_STATES]).toEqual([...PULL_REQUEST_STATES]);
+    expect([...WORKER_LOOKUP_KINDS]).toEqual([...LOOKUP_KINDS]);
+    expect(WORKER_LOOKUP_CLAIM_MAX).toBe(LOOKUP_CLAIM_LIMIT);
+    expect(WORKER_LOOKUP_RETRY_AFTER_MAX_SECONDS).toBeGreaterThanOrEqual(
+      LOOKUP_RETRY_AFTER_MAX_SECONDS,
+    );
   });
 
   it('worker protocol: the same states, providers, failure codes and Task limit', () => {

@@ -5,6 +5,7 @@ import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_DIFF_REPOSITORY } from './domain/repositories/run-diff-repository.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
+import { RUN_LOOKUP_REPOSITORY } from './domain/repositories/run-lookup-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
 import { AnswerRunEndpoint } from './features/answer-run/endpoint.js';
 import { AnswerRunHandler } from './features/answer-run/handler.js';
@@ -13,6 +14,8 @@ import { CancelRunEndpoint } from './features/cancel-run/endpoint.js';
 import { CancelRunHandler } from './features/cancel-run/handler.js';
 import { AppendRunEventsEndpoint } from './features/append-run-events/endpoint.js';
 import { AppendRunEventsHandler } from './features/append-run-events/handler.js';
+import { ClaimLookupsEndpoint } from './features/claim-lookups/endpoint.js';
+import { ClaimLookupsHandler } from './features/claim-lookups/handler.js';
 import { ClaimRunEndpoint } from './features/claim-run/endpoint.js';
 import { ClaimRunHandler } from './features/claim-run/handler.js';
 import { GetRunEndpoint } from './features/get-run/endpoint.js';
@@ -34,6 +37,10 @@ import { ListProjectRunsHandler } from './features/list-project-runs/handler.js'
 import { ListRunsEndpoint } from './features/list-runs/endpoint.js';
 import { ListRunsHandler } from './features/list-runs/handler.js';
 import { RecordHeartbeatEndpoint } from './features/record-heartbeat/endpoint.js';
+import { RefreshPullRequestEndpoint } from './features/refresh-pull-request/endpoint.js';
+import { RefreshPullRequestHandler } from './features/refresh-pull-request/handler.js';
+import { ReportLookupResultEndpoint } from './features/report-lookup-result/endpoint.js';
+import { ReportLookupResultHandler } from './features/report-lookup-result/handler.js';
 import { RecordHeartbeatHandler } from './features/record-heartbeat/handler.js';
 import { ReportRunDiffEndpoint } from './features/report-run-diff/endpoint.js';
 import { ReportRunDiffHandler } from './features/report-run-diff/handler.js';
@@ -69,6 +76,7 @@ import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunDiffRepository } from './infrastructure/repositories/prisma-run-diff-repository.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
+import { PrismaRunLookupRepository } from './infrastructure/repositories/prisma-run-lookup-repository.js';
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
 import { CLOCK, type Clock } from './ports/clock.js';
@@ -103,7 +111,7 @@ const LOG_STREAMS_PER_SESSION = 5;
 const LOG_STREAMS_TOTAL = 50;
 
 /**
- * `executions` business module (Issues #96, #99, #100, #103, #144): the operator starts, reads,
+ * `executions` business module (Issues #96, #99, #100, #103, #142, #144): the operator starts, reads,
  * cancels and answers Runs; the agent
  * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
  * only), including each Run's log, which the operator reads in pages or live. A claimed Run gets
@@ -131,7 +139,10 @@ export class ExecutionsModule {
         AnswerRunEndpoint,
         ResumeRunEndpoint,
         FollowUpRunEndpoint,
+        RefreshPullRequestEndpoint,
         ClaimRunEndpoint,
+        ClaimLookupsEndpoint,
+        ReportLookupResultEndpoint,
         ReportRunStateEndpoint,
         ReportRunStepEndpoint,
         RecordHeartbeatEndpoint,
@@ -149,6 +160,7 @@ export class ExecutionsModule {
         { provide: RUN_REPOSITORY, useClass: PrismaRunRepository },
         { provide: RUN_LOG_REPOSITORY, useClass: PrismaRunLogRepository },
         { provide: RUN_DIFF_REPOSITORY, useClass: PrismaRunDiffRepository },
+        { provide: RUN_LOOKUP_REPOSITORY, useClass: PrismaRunLookupRepository },
         { provide: RUN_LOG_SIGNAL, useClass: InProcessRunLogSignal },
         { provide: OPERATOR_SESSIONS, useClass: PlatformOperatorSessions },
         options.secretValues
@@ -187,7 +199,10 @@ export class ExecutionsModule {
         AnswerRunHandler,
         ResumeRunHandler,
         FollowUpRunHandler,
+        RefreshPullRequestHandler,
         ClaimRunHandler,
+        ClaimLookupsHandler,
+        ReportLookupResultHandler,
         ReportRunStateHandler,
         ReportRunStepHandler,
         RecordHeartbeatHandler,

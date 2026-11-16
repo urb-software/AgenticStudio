@@ -939,3 +939,106 @@ export type WorkerStatusRequest = z.infer<typeof workerStatusRequestSchema>;
 
 /** What a worker reports about itself: the status request without the worker id. */
 export type WorkerStatusReport = Omit<WorkerStatusRequest, 'workerId'>;
+
+/**
+ * Lookups (Issue #142): questions Studio has for the Git host that only the agent worker can
+ * answer, through the Agent account. Studio records a request; any connected worker claims it
+ * (it needs no Working copy), reads what the kind asks for and reports the result. The kinds
+ * start with the pull request's state; later stories (Pull request checks, Review comments)
+ * add theirs next to it. Reads only: no lookup changes anything on the Git host or starts an
+ * agent CLI.
+ */
+export const LOOKUP_KINDS = ['pull_request_state'] as const;
+export const lookupKindSchema = z.enum(LOOKUP_KINDS);
+export type LookupKind = z.infer<typeof lookupKindSchema>;
+
+/** Most lookups one claim hands out. */
+export const LOOKUP_CLAIM_MAX = 5;
+
+/**
+ * Where a Run's pull request stands on the Git host: `draft` and `open` are open (a draft is
+ * not ready for review); `merged` and `closed` are over; `missing` means the pull request, or
+ * the Run branch it came from, no longer exists.
+ */
+export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
+export const pullRequestStateSchema = z.enum(PULL_REQUEST_STATES);
+export type PullRequestStateName = z.infer<typeof pullRequestStateSchema>;
+
+/**
+ * The result of a `pull_request_state` lookup: the state, how many commits the Run branch is
+ * behind and ahead of the integration branch (not for `missing`), and whether the Git host says
+ * the pull request can be merged without conflicts (left out while the host has not worked it
+ * out yet, and for a merged or closed one).
+ */
+export const pullRequestStateResultSchema = z.strictObject({
+  state: pullRequestStateSchema,
+  behindBy: z.int().min(0).max(PG_INT_MAX).optional(),
+  aheadBy: z.int().min(0).max(PG_INT_MAX).optional(),
+  mergeable: z.boolean().optional(),
+});
+export type PullRequestStateResult = z.infer<typeof pullRequestStateResultSchema>;
+
+/**
+ * One claimed lookup (`POST /api/worker/lookups/claim` answer, an array; empty when none is
+ * waiting): what the worker needs to answer a `pull_request_state` lookup, nothing else. The
+ * repository is the remote as the operator connected it (never a credential); the worker
+ * checks it names a GitHub repository, and that the pull request is the Run's own, before it
+ * reads anything.
+ */
+export const lookupPayloadSchema = z.strictObject({
+  id: z.uuid(),
+  kind: lookupKindSchema,
+  runId: z.uuid(),
+  repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
+  pullRequestNumber: z.int().positive().max(PG_INT_MAX),
+  /** The Run branch the pull request must come from. */
+  runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
+  /** The integration branch the Run branch is compared with. */
+  integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
+});
+export type LookupPayload = z.infer<typeof lookupPayloadSchema>;
+
+/** `POST /api/worker/lookups/claim` body. */
+export const claimLookupsRequestSchema = z.strictObject({ workerId: workerIdSchema });
+export type ClaimLookupsRequest = z.infer<typeof claimLookupsRequestSchema>;
+
+export const claimLookupsResponseSchema = z.array(lookupPayloadSchema).max(LOOKUP_CLAIM_MAX);
+export type ClaimLookupsResponse = z.infer<typeof claimLookupsResponseSchema>;
+
+/** Longest error text a worker gives for a failed lookup, in characters. */
+export const LOOKUP_ERROR_MAX_LENGTH = 500;
+
+/** Longest wait a worker may ask for before a rate-limited lookup is tried again, in seconds. */
+export const LOOKUP_RETRY_AFTER_MAX_SECONDS = 24 * 60 * 60;
+
+/**
+ * Why a lookup failed: `scope_mismatch` (the worker refused it: not a GitHub repository, or
+ * not the Run's own pull request; never retried), `rate_limited` (the Git host asked to wait;
+ * retried after `retryAfterSeconds`) or `failed` (anything else: not configured, not reachable,
+ * the host refused it; not retried by itself).
+ */
+export const LOOKUP_ERROR_CODES = ['scope_mismatch', 'rate_limited', 'failed'] as const;
+export const lookupErrorCodeSchema = z.enum(LOOKUP_ERROR_CODES);
+export type LookupErrorCode = z.infer<typeof lookupErrorCodeSchema>;
+
+/**
+ * `POST /api/worker/lookups/:id/result` body: the result of the lookup's kind, or why it
+ * failed (text for the operator, never a token or a path). Closed; Studio checks the kind is
+ * the claimed lookup's.
+ */
+export const lookupResultRequestSchema = z.discriminatedUnion('ok', [
+  z.strictObject({
+    workerId: workerIdSchema,
+    ok: z.literal(true),
+    kind: z.literal('pull_request_state'),
+    result: pullRequestStateResultSchema,
+  }),
+  z.strictObject({
+    workerId: workerIdSchema,
+    ok: z.literal(false),
+    code: lookupErrorCodeSchema,
+    error: z.string().min(1).max(LOOKUP_ERROR_MAX_LENGTH),
+    retryAfterSeconds: z.int().min(1).max(LOOKUP_RETRY_AFTER_MAX_SECONDS).optional(),
+  }),
+]);
+export type LookupResultRequest = z.infer<typeof lookupResultRequestSchema>;

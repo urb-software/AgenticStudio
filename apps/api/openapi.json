@@ -1414,6 +1414,87 @@
         ]
       }
     },
+    "/api/runs/{runId}/pull-request/refresh": {
+      "post": {
+        "operationId": "refreshRunPullRequest",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshPullRequestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run has no pull request (urn:agentic-studio:problem:pull-request-not-refreshable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request body (field errors)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/runs/{runId}/events": {
       "get": {
         "operationId": "listRunEvents",
@@ -2236,6 +2317,9 @@
             "enum": [
               "not_finished",
               "follow_up_queued",
+              "pull_request_merged",
+              "pull_request_closed",
+              "pull_request_missing",
               "working_copy_removed",
               "no_session",
               "step_total_reached",
@@ -2246,6 +2330,65 @@
         },
         "required": [
           "allowed"
+        ],
+        "additionalProperties": false
+      },
+      "RunPullRequest_Output": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "open",
+              "merged",
+              "closed",
+              "missing"
+            ]
+          },
+          "behindBy": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "aheadBy": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "mergeable": {
+            "type": "boolean"
+          },
+          "refreshedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "refreshError": {
+            "type": "string"
+          },
+          "retryAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "refreshing": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "url",
+          "number"
         ],
         "additionalProperties": false
       },
@@ -2518,23 +2661,7 @@
             ]
           },
           "pullRequest": {
-            "type": "object",
-            "properties": {
-              "url": {
-                "type": "string",
-                "format": "uri"
-              },
-              "number": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "url",
-              "number"
-            ],
-            "additionalProperties": false
+            "$ref": "#/components/schemas/RunPullRequest_Output"
           },
           "deliveryRetryRequested": {
             "type": "boolean",
@@ -2627,6 +2754,15 @@
         "required": [
           "text"
         ],
+        "additionalProperties": false
+      },
+      "RefreshPullRequestRequest": {
+        "type": "object",
+        "properties": {
+          "onOpen": {
+            "type": "boolean"
+          }
+        },
         "additionalProperties": false
       },
       "RunEvent_Output": {

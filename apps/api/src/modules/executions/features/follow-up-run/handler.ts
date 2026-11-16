@@ -11,7 +11,11 @@ import {
   RunNotFoundError,
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
-import { followUpContext } from '../../domain/services/follow-up-context.js';
+import {
+  RUN_LOOKUP_REPOSITORY,
+  type RunLookupRepository,
+} from '../../domain/repositories/run-lookup-repository.js';
+import { anyWorkerConnected, followUpContext } from '../../domain/services/follow-up-context.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
@@ -33,15 +37,31 @@ export class FollowUpRunHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_STATUS_STORE) private readonly workers: WorkerStatusStore,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
+    @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
   ) {}
 
-  async execute(runId: string, text: string): Promise<{ run: Run; followUp: FollowUpEligibility }> {
+  async execute(
+    runId: string,
+    text: string,
+  ): Promise<{ run: Run; followUp: FollowUpEligibility; workerConnected: boolean }> {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
     const before = this.eligibility(run);
     if (!before.allowed) throw new FollowUpNotAllowedError(before.reason);
     const queued = await this.runs.queueFollowUp(run.id, text, this.clock.now());
-    if (queued) return { run: queued, followUp: this.eligibility(queued) };
+    if (queued) {
+      // Issue #142: the pull request state is read again with every Follow-up (the agent worker
+      // also checks it before it starts the agent); the page then shows the state it found.
+      await this.lookups
+        .request(queued.id, 'pull_request_state', this.clock.now())
+        .catch(() => undefined);
+      const refreshed = (await this.runs.findById(queued.id)) ?? queued;
+      return {
+        run: refreshed,
+        followUp: this.eligibility(refreshed),
+        workerConnected: anyWorkerConnected(this.workers, this.clock.now(), this.lease.seconds),
+      };
+    }
     // The Run changed in between (a second submission, a claim): report why, as it is now.
     const current = await this.runs.findById(run.id);
     const after = current ? this.eligibility(current) : before;

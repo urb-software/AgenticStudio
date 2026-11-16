@@ -23,3 +23,16 @@ export function followUpContext(
   );
   return { workerAvailable, providerAvailable: provider?.available === true };
 }
+
+/**
+ * Whether any agent worker has reported within the lease (Issue #142): lookups need no Working
+ * copy, so any connected worker can carry one out.
+ */
+export function anyWorkerConnected(
+  workers: { latest(): RecordedWorkerStatus | undefined },
+  now: Date,
+  leaseSeconds: number,
+): boolean {
+  const latest = workers.latest();
+  return latest !== undefined && now.getTime() - latest.reportedAt.getTime() <= leaseSeconds * 1000;
+}

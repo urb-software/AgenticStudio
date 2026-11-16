@@ -25,6 +25,7 @@ import {
   type RunFailureCode,
   type RunMessage,
   partEndOf,
+  type PullRequestState,
   type RunPartEnd,
   type RunState,
   type RunWorkingCopy,
@@ -87,6 +88,14 @@ const LIST_FIELDS = {
   limitMaxTotalSteps: true,
   pushedCommit: true,
   workingCopyRemovedAt: true,
+  prState: true,
+  prBehindBy: true,
+  prAheadBy: true,
+  prMergeable: true,
+  prRefreshedAt: true,
+  prRefreshError: true,
+  prRetryAt: true,
+  prRefreshRequestedAt: true,
   // Issue #141: the Run step total, counted with the Run.
   _count: { select: { steps: true } },
 } as const;
@@ -151,6 +160,14 @@ interface RunRow {
   limitMaxTotalSteps: number;
   pushedCommit: string | null;
   workingCopyRemovedAt: Date | null;
+  prState: string | null;
+  prBehindBy: number | null;
+  prAheadBy: number | null;
+  prMergeable: boolean | null;
+  prRefreshedAt: Date | null;
+  prRefreshError: string | null;
+  prRetryAt: Date | null;
+  prRefreshRequestedAt: Date | null;
   _count: { steps: number };
   /** Absent when a list read the Run (Issue #103). */
   messages?: {
@@ -319,6 +336,17 @@ function toRun(row: RunRow): Run {
     stepsBeforePart: row.stepsBeforePart,
     pushedCommit: row.pushedCommit,
     workingCopyRemovedAt: row.workingCopyRemovedAt,
+    pullRequestStatus: {
+      // The CHECK constraint fixes the state's values.
+      state: row.prState as PullRequestState | null,
+      behindBy: row.prBehindBy,
+      aheadBy: row.prAheadBy,
+      mergeable: row.prMergeable,
+      refreshedAt: row.prRefreshedAt,
+      refreshError: row.prRefreshError,
+      retryAt: row.prRetryAt,
+      refreshRequestedAt: row.prRefreshRequestedAt,
+    },
   };
 }
 
