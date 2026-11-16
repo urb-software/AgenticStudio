@@ -80,7 +80,11 @@ function Mergeable({ pullRequest }: { pullRequest: PullRequest }) {
 function BringUpToDate({ run, pullRequest }: { run: RunOutput; pullRequest: PullRequest }) {
   const [open, setOpen] = useState(false);
   const behindBy = pullRequest.behindBy ?? 0;
-  if (behindBy <= 0 || run.followUp?.allowed !== true) return null;
+  const offered = behindBy > 0 && run.followUp?.allowed === true;
+  // Once the request is sent the Run is queued and the offer goes away. The confirm stays
+  // mounted (so its own close still runs) and is never open without the offer: it does not come
+  // back when the Run is finished again.
+  if (!offered && open) setOpen(false);
   const conflicts =
     pullRequest.mergeable === false
       ? 'GitHub reports conflicts with the integration branch.'
@@ -88,21 +92,25 @@ function BringUpToDate({ run, pullRequest }: { run: RunOutput; pullRequest: Pull
         ? 'GitHub reports no conflicts.'
         : 'GitHub has not said whether there are conflicts.';
   return (
-    <div
-      data-slot="run-bring-up-to-date"
-      className="flex min-w-0 flex-col gap-2 border-t border-border pt-3"
-    >
-      <p className="m-0 text-body">
-        The Run branch is {plural(behindBy, 'commit', 'commits')} behind the integration branch.{' '}
-        {conflicts}
-      </p>
-      <div>
-        <Button icon={GitMergeIcon} onClick={() => setOpen(true)}>
-          Bring up to date
-        </Button>
-      </div>
-      <BringUpToDateDialog run={run} open={open} onOpenChange={setOpen} />
-    </div>
+    <>
+      {offered ? (
+        <div
+          data-slot="run-bring-up-to-date"
+          className="flex min-w-0 flex-col gap-2 border-t border-border pt-3"
+        >
+          <p className="m-0 text-body">
+            The Run branch is {plural(behindBy, 'commit', 'commits')} behind the integration branch.{' '}
+            {conflicts}
+          </p>
+          <div>
+            <Button icon={GitMergeIcon} onClick={() => setOpen(true)}>
+              Bring up to date
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <BringUpToDateDialog run={run} open={open && offered} onOpenChange={setOpen} />
+    </>
   );
 }
 

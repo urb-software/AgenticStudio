@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { RunDetail } from '..';
@@ -121,6 +121,34 @@ describe('Run page: Bring up to date (Issue #147)', () => {
     const conversation = screen.getByRole('list', { name: 'Conversation' });
     expect(conversation.textContent).toContain('You · Follow-up 1 · Bring up to date');
     expect(conversation.textContent).toContain('Prefer main.');
+  });
+
+  it('does not bring the confirm back when the Run is finished again after the update', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const run = behind();
+      const api = fakeRunsApi([run]);
+      renderRun(run.id);
+      await heading();
+      await userEvent.click(within(card()).getByRole('button', { name: 'Bring up to date' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Bring up to date' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Bring up to date' }));
+      expect(await screen.findByText('Update requested.')).toBeTruthy();
+
+      // The worker merged, delivered and finished: the Run is final again, still read as behind.
+      api.update(run.id, {
+        state: 'succeeded',
+        followUp: { allowed: true },
+        finishedAt: '2026-11-16T12:40:00.000Z',
+      });
+      await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+      expect(await within(card()).findByRole('button', { name: 'Bring up to date' })).toBeTruthy();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByRole('list', { name: 'Conversation' })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sends no note when there is none, and the conversation says so', async () => {
