@@ -35,8 +35,9 @@ entries() {
   local provider source dest rest
   while read -r provider source dest rest; do
     case "$provider" in '' | '#'*) continue ;; esac
-    [ -z "$rest" ] && [[ "$source" =~ ^[A-Za-z0-9._-]+$ ]] && [[ "$dest" == /* ]] && [[ "$dest" != *..* ]] ||
+    if [ -n "$rest" ] || ! [[ "$source" =~ ^[A-Za-z0-9._-]+$ ]] || [[ "$dest" != /* ]] || [[ "$dest" == *..* ]]; then
       die "malformed line in $MANIFEST."
+    fi
     printf '%s %s\n' "$source" "$dest"
   done <"$MANIFEST" | sort -u
 }
@@ -48,9 +49,8 @@ install_files() {
   install -m 0600 /dev/null "$STATE"
   local source dest dir missing
   while read -r source dest; do
-    if [ -e "$dest" ] || [ -L "$dest" ]; then
-      [ ! -L "$dest" ] && cmp -s "$GUARDRAILS/$source" "$dest" ||
-        die "$dest exists and is not Studio's copy; not replacing it."
+    if [ -L "$dest" ] || { [ -e "$dest" ] && ! cmp -s "$GUARDRAILS/$source" "$dest"; }; then
+      die "$dest exists and is not Studio's copy; not replacing it."
     fi
   done < <(entries)
   while read -r source dest; do
@@ -71,7 +71,7 @@ install_files() {
   done < <(entries)
   if [ ! -e "$NODE" ]; then
     local node="${SMOKE_NODE_BIN:-$(command -v node || true)}"
-    [ -n "$node" ] && [ -x "$node" ] || die "no Node.js to copy to $NODE (set SMOKE_NODE_BIN)."
+    if [ -z "$node" ] || [ ! -x "$node" ]; then die "no Node.js to copy to $NODE (set SMOKE_NODE_BIN)."; fi
     install -o root -g root -m 0755 "$(readlink -f "$node")" "$NODE"
     record node "$NODE"
   fi

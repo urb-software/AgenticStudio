@@ -240,7 +240,8 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     const { argv, config, stdinText } = calls()[0]!;
     // The configuration the CLI read at its start: Studio's, with this Working copy untrusted.
     expect(config).toContain(`[projects."${repoDir}"]\ntrust_level = "untrusted"\n`);
-    expect(config).toContain('network_access = true');
+    // Since #134 the settings are managed (/etc/codex/managed_config.toml); only trust entries here.
+    expect(config).not.toContain('network_access');
     expect(config).not.toMatch(
       /hostile|evil|danger-full-access|on-request|HOSTILE_MARKER|"trusted"/,
     );

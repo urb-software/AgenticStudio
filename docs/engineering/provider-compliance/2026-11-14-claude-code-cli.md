@@ -8,6 +8,7 @@
 - **Next review date:** 2027-02-14
 - **Records prepared on:** 2026-11-14
 - **Revised 2026-11-16 (Issue #105):** Mode gains `--append-system-prompt-file` and `--json-schema` (operator decision, under "Mode"); the `--setting-sources user` finding of ADR 0002 is added to the technical findings (6). The decision itself is unchanged.
+- **Note 2026-11-16 (Issue #134):** where Studio's hooks and permission rules come from changed (technical finding 7); the Mode's options are unchanged. The decision itself is unchanged.
 
 This record reports what Anthropic's published pages say on the date read. It is not legal advice. Accepting the remaining ambiguity is the operator's decision, recorded under "Operator decision" below. `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it; this record changes no runtime configuration.
 
@@ -226,6 +227,8 @@ claude -p "<operator answer>" --resume <session-id> <same options>
 4. Since v2.1.302 a `claude -p` run starts in Manual mode when nothing sets a permission mode, and a call that needs approval is denied unless something approves it (S6).
 5. With `ANTHROPIC_API_KEY` present, `-p` always uses it (S5), and the run is billed to the key (S10). S5's precedence list also ranks `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper` and `CLAUDE_CODE_OAUTH_TOKEN` above the `/login` subscription credentials, so the subscription worker's environment and settings must contain none of them.
 6. **What `--setting-sources user` excludes (added 2026-11-16 from [ADR 0002](../../architecture/adr/0002-agent-run-isolation.md#claude-code-finding-2026-11-15)).** Found in the refinement of the run stories, 2026-11-15: with `--setting-sources user`, Claude Code does not load the project's `CLAUDE.md`, rules, skills, commands and subagents, in addition to its settings files and `.mcp.json`. **Consequence:** the agent worker passes the text of the repository's `CLAUDE.md` and `AGENTS.md` itself, through `--append-system-prompt-file` (Mode above); the repository's skills and subagents are not available (a recorded follow-up).
+
+7. **Note (2026-11-16, Issue #134): Studio's guardrails are managed settings.** Configuration location only; the command and its options are exactly the Mode above. Studio's hooks and permission rules are no longer passed through `--settings`: the server setup installs them root-owned as Claude Code's managed settings (`/etc/claude-code/managed-settings.json`, with `allowManagedHooksOnly` and `allowManagedPermissionRulesOnly`), and the hook runs a root-owned guard script with a root-owned Node.js. The docs ([Settings](https://code.claude.com/docs/en/settings), [Deploy managed settings](https://code.claude.com/docs/en/managed-settings), read 2026-11-16) say managed settings rank above `--settings` and every settings file and load whatever `--setting-sources` says. `--settings` still points at a per-Run file, now `{}`; `--allowedTools` still carries Studio's allow rules (ignored by the CLI under `allowManagedPermissionRulesOnly`). Authentication is unaffected. Details: [Security](../security.md) §2.
 
 ## Controlled headless execution test
 

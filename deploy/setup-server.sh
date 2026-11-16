@@ -552,9 +552,10 @@ step_guardrails() {
   local provider source dest rest count=0 parent dirs
   while read -r provider source dest rest; do
     case "$provider" in '' | '#'*) continue ;; esac
-    [ -z "$rest" ] && [[ "$source" =~ ^[A-Za-z0-9._-]+$ ]] && [[ "$dest" == /* ]] && [[ "$dest" != *..* ]] ||
+    if [ -n "$rest" ] || ! [[ "$source" =~ ^[A-Za-z0-9._-]+$ ]] || [[ "$dest" != /* ]] || [[ "$dest" == *..* ]]; then
       die "malformed line in $manifest: $provider $source $dest $rest"
-    [ -f "$dir/$source" ] && [ ! -L "$dir/$source" ] || die "$dir/$source is missing."
+    fi
+    if [ ! -f "$dir/$source" ] || [ -L "$dir/$source" ]; then die "$dir/$source is missing."; fi
     # Every directory from the first one below a system directory down to the file's own.
     dirs=()
     parent="$(dirname "$dest")"
