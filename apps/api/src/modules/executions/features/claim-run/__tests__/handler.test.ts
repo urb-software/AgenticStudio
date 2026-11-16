@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/entities/run-environment-file.js';
+import { InMemoryRunDiffRepository } from '../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
 import { InMemoryRunLogRepository } from '../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
@@ -27,6 +28,7 @@ describe('ClaimRunHandler', () => {
   // Each project's current Environment file (Issue #104); test values only.
   let files: Map<string, EnvironmentFile>;
   let filesFail: Error | undefined;
+  let diffs: InMemoryRunDiffRepository;
 
   const queue = (projectId: string) =>
     runs.add({
@@ -47,6 +49,7 @@ describe('ClaimRunHandler', () => {
     released = [];
     files = new Map();
     filesFail = undefined;
+    diffs = new InMemoryRunDiffRepository(runs);
     const environmentFiles = {
       forProject: (projectId: string) =>
         filesFail ? Promise.reject(filesFail) : Promise.resolve(files.get(projectId) ?? null),
@@ -62,6 +65,7 @@ describe('ClaimRunHandler', () => {
         releaseFor: (runId) => Promise.resolve(void released.push(runId)),
         releaseFinal: () => Promise.resolve(),
       },
+      diffs,
     );
   });
 
@@ -237,6 +241,21 @@ describe('ClaimRunHandler', () => {
         completedSteps: 1,
         nextSeq: 6,
       });
+    });
+
+    it("hands a retry back where the Run's diffs stand (Issue #144, review S-1 of #149)", async () => {
+      const run = await failedDelivery(A);
+      const state = {
+        resultTree: 'b'.repeat(40),
+        resultCommit: 'c'.repeat(40),
+        previousTree: 'd'.repeat(40),
+        previousCommit: 'e'.repeat(40),
+        pushedCommit: 'f'.repeat(40),
+      };
+      diffs.states.set(run.id, state);
+      await runs.requestDeliveryRetry(run.id);
+
+      expect(await handler.execute(WORKER)).toMatchObject({ id: run.id, diffState: state });
     });
 
     it('hands a retry only to the worker that started the Run, which has its Working copy (review R4)', async () => {
@@ -609,6 +628,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
         },
         releaseFinal: () => Promise.resolve(),
       },
+      new InMemoryRunDiffRepository(runs),
     );
   });
 

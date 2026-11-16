@@ -1,9 +1,10 @@
 import type { DynamicModule, INestApplication, NestApplicationOptions, Type } from '@nestjs/common';
-import { WORKER_REQUEST_MAX_BYTES } from '@agentic-studio/contracts';
+import { RUN_DIFF_REQUEST_MAX_BYTES, WORKER_REQUEST_MAX_BYTES } from '@agentic-studio/contracts';
 import { NestFactory } from '@nestjs/core';
 import type { IncomingMessage } from 'node:http';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
+import { verifyWorkerToken } from './platform/auth/worker-token.js';
 import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
 
 /**
@@ -13,6 +14,8 @@ import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
  */
 const LARGE_BODY_ROUTE =
   /^\/api\/(?:worker\/runs\/[^/]+\/(?:steps|state)|projects\/[^/]+\/environment-file)$/;
+/** A Run's diff report (Issue #144): two diffs of up to `RUN_DIFF_MAX_BYTES` each. */
+const RUN_DIFF_ROUTE = /^\/api\/worker\/runs\/[^/]+\/diff$/;
 /** What the JSON body parser treats as JSON (`application/json` and `+json` types). */
 const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i;
 
@@ -48,6 +51,17 @@ export async function buildApp(
     type: (request: IncomingMessage) =>
       LARGE_BODY_ROUTE.test(request.url?.split('?')[0] ?? '') &&
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? ''),
+  });
+  // The worker's diff report (Issue #144): up to RUN_DIFF_REQUEST_MAX_BYTES, since the
+  // protocol caps each of its two diffs (RUN_DIFF_MAX_BYTES). Only on this route and only with
+  // the worker token: any other request there gets the 100 KiB parser below.
+  const { workerToken } = app.get<AppConfig>(APP_CONFIG);
+  app.useBodyParser('json', {
+    limit: RUN_DIFF_REQUEST_MAX_BYTES,
+    type: (request: IncomingMessage) =>
+      RUN_DIFF_ROUTE.test(request.url?.split('?')[0] ?? '') &&
+      JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
+      verifyWorkerToken(workerToken, request.headers.authorization),
   });
   // Every other route: 100 KiB, Express's default, made explicit.
   app.useBodyParser('json', { limit: '100kb' });

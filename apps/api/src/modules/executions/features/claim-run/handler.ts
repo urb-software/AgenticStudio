@@ -1,5 +1,10 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { RunDiffState } from '../../domain/entities/run-diff.js';
+import {
+  RUN_DIFF_REPOSITORY,
+  type RunDiffRepository,
+} from '../../domain/repositories/run-diff-repository.js';
 import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/index.js';
 import {
   RUN_ENVIRONMENT_FILES,
@@ -89,6 +94,8 @@ export interface ClaimedRun extends Run {
   studioPaths: string[];
   completedSteps: number;
   nextSeq: number;
+  /** With a resume or delivery claim: where the Run's diffs stand (Issue #144), if reported. */
+  diffState?: RunDiffState | null;
 }
 
 /** The Studio-placed paths of a Run: its Environment file's, when it has one. */
@@ -121,6 +128,7 @@ export class ClaimRunHandler {
     @Inject(RUN_ENVIRONMENT_FILES) private readonly environmentFiles: RunEnvironmentFiles,
     @Inject(SECRET_STORE) private readonly secrets: SecretStore,
     @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
+    @Inject(RUN_DIFF_REPOSITORY) private readonly diffs: RunDiffRepository,
   ) {}
 
   async execute(workerId: string): Promise<ClaimedRun | null> {
@@ -258,13 +266,19 @@ export class ClaimRunHandler {
     return SNAPSHOT_FAILED;
   }
 
-  /** How many Run steps the Run has taken and the seq after its stored log (Issue #103). */
-  private async progress(runId: string): Promise<{ completedSteps: number; nextSeq: number }> {
-    const [steps, lastSeq] = await Promise.all([
+  /**
+   * How many Run steps the Run has taken and the seq after its stored log (Issue #103), and where
+   * its diffs stand (Issue #144, review S-1 of #149).
+   */
+  private async progress(
+    runId: string,
+  ): Promise<{ completedSteps: number; nextSeq: number; diffState: RunDiffState | null }> {
+    const [steps, lastSeq, diffState] = await Promise.all([
       this.runs.listSteps(runId),
       this.logs.lastSeq(runId),
+      this.diffs.findState(runId),
     ]);
-    return { completedSteps: steps.length, nextSeq: lastSeq + 1 };
+    return { completedSteps: steps.length, nextSeq: lastSeq + 1, diffState };
   }
 
   private async fail(run: Run, workerId: string, failure: RunFailure, now: Date): Promise<void> {

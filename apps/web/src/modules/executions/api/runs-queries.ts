@@ -6,6 +6,7 @@ import {
   api,
   type FollowUpRunRequest,
   ApiError,
+  type RunDiffOutput,
   type RunOutput,
   type RunsSummaryOutput,
   type RunStepListOutput,
@@ -287,4 +288,47 @@ export function useRunSteps(runId: string) {
 export function useRefreshRunSteps(runId: string) {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: runStepsKey(runId) });
+}
+
+/** A Run's diff of one scope (Issue #144), and one file of it. */
+const runDiffKey = (runId: string, scope: RunDiffOutput['scope']) =>
+  ['runs', 'diff', runId, scope] as const;
+const runDiffFileKey = (runId: string, scope: RunDiffOutput['scope'], path: string) =>
+  ['runs', 'diff', runId, scope, 'file', path] as const;
+
+/**
+ * A Run's diff (Issue #144): read while the Changes tab shows it, and again while the Run is
+ * active (a new result replaces it), like the Run itself. A 404 means no result yet (the client
+ * never retries a 4xx).
+ */
+export function useRunDiff(run: RunOutput, scope: RunDiffOutput['scope']) {
+  return useQuery({
+    queryKey: runDiffKey(run.id, scope),
+    queryFn: () => api.getRunDiff(run.id, scope),
+    refetchInterval: pollIntervalFor([run]),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * One file of a Run's diff with its patch (Issue #144), loaded only once the file is expanded
+ * (`enabled`), so a large diff loads per file.
+ */
+export function useRunDiffFile(
+  runId: string,
+  scope: RunDiffOutput['scope'],
+  path: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: runDiffFileKey(runId, scope, path),
+    queryFn: () => api.getRunDiffFile(runId, scope, path),
+    enabled,
+  });
+}
+
+/** Reads the open files of a Run's diff again, e.g. after the diff itself changed. */
+export function useRefreshRunDiffFiles(runId: string, scope: RunDiffOutput['scope']) {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: [...runDiffKey(runId, scope), 'file'] });
 }

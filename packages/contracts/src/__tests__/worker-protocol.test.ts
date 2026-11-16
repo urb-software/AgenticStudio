@@ -15,6 +15,14 @@ import {
   environmentFilePathProblem,
   jsonByteLength,
   RUN_STEP_RESULT_MAX_BYTES,
+  RUN_DIFF_FILE_PATCH_MAX_BYTES,
+  RUN_DIFF_FILE_STATUSES,
+  RUN_DIFF_FILES_MAX,
+  RUN_DIFF_MAX_BYTES,
+  RUN_DIFF_PATCH_MAX_BYTES,
+  RUN_DIFF_REQUEST_MAX_BYTES,
+  RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
+  reportRunDiffRequestSchema,
   heartbeatRequestSchema,
   heartbeatResponseSchema,
   RUN_FAILURE_CODES,
@@ -82,6 +90,22 @@ describe('run payload (claim response)', () => {
     ).toBe(true);
     expect(withKind('resume')).toBe(false);
     expect(withKind(undefined)).toBe(false);
+  });
+
+  it('hands back the diff state with a resume or delivery claim, never with a start (Issue #144)', () => {
+    const diffState = {
+      resultTree: 'b'.repeat(40),
+      resultCommit: 'c'.repeat(40),
+      previousTree: 'd'.repeat(40),
+      previousCommit: 'a'.repeat(40),
+    };
+    const deliver = { ...payload, kind: 'deliver', runBranch: 'agent/x-r0b8e5c2d', nextSeq: 1 };
+    expect(runPayloadSchema.safeParse({ ...deliver, diffState }).success).toBe(true);
+    expect(runPayloadSchema.safeParse({ ...payload, diffState }).success).toBe(false);
+    expect(
+      runPayloadSchema.safeParse({ ...deliver, diffState: { ...diffState, resultTree: 'x' } })
+        .success,
+    ).toBe(false);
   });
 
   describe('a resume claim (Issue #103)', () => {
@@ -1039,5 +1063,105 @@ describe('the pushed commit of a failed delivery (Issue #141, review S2)', () =>
       report({ state: 'failed', failure: { code: 'agent_failed', detail: 'x' }, pushedCommit }),
     ).toBe(false);
     expect(report({ state: 'cancelled', pushedCommit })).toBe(false);
+  });
+});
+
+describe('a Run diff report (Issue #144)', () => {
+  const file = {
+    path: 'src/app.ts',
+    status: 'modified',
+    additions: 2,
+    deletions: 1,
+    patch: 'diff --git a/src/app.ts b/src/app.ts\n@@ -1 +1,2 @@\n-a\n+b\n+c\n',
+  };
+  const diff = {
+    baseCommit: 'a'.repeat(40),
+    includesUnpushed: true,
+    truncated: false,
+    files: [file],
+  };
+  const state = {
+    resultTree: 'b'.repeat(40),
+    resultCommit: 'c'.repeat(40),
+    previousTree: 'd'.repeat(40),
+    previousCommit: 'a'.repeat(40),
+  };
+  const parse = (body: object) =>
+    reportRunDiffRequestSchema.safeParse({
+      workerId: WORKER_ID,
+      ...('unavailable' in body ? {} : { state }),
+      ...body,
+    }).success;
+
+  it('carries both diffs, the whole Run and since the previous result', () => {
+    expect(parse({ run: diff, last: diff })).toBe(true);
+    expect(parse({ run: diff })).toBe(false);
+    expect(parse({ last: diff })).toBe(false);
+  });
+
+  it('carries where the diffs stand: full object ids only (review S-1 of #149)', () => {
+    expect(
+      parse({ run: diff, last: diff, state: { ...state, pushedCommit: 'e'.repeat(64) } }),
+    ).toBe(true);
+    expect(parse({ run: diff, last: diff, state: undefined })).toBe(false);
+    expect(parse({ run: diff, last: diff, state: { ...state, resultTree: 'HEAD' } })).toBe(false);
+    expect(parse({ run: diff, last: diff, state: { ...state, pushedCommit: 'abc' } })).toBe(false);
+    expect(parse({ unavailable: 'failed', state })).toBe(false);
+  });
+
+  it('or the reason the diff could not be computed, never both', () => {
+    expect(parse({ unavailable: 'git write-tree failed' })).toBe(true);
+    expect(parse({ unavailable: '' })).toBe(false);
+    expect(parse({ unavailable: 'x'.repeat(RUN_DIFF_UNAVAILABLE_MAX_LENGTH + 1) })).toBe(false);
+    expect(parse({ run: diff, last: diff, unavailable: 'both' })).toBe(false);
+    expect(parse({})).toBe(false);
+  });
+
+  it('lists each file with its status and counts; a rename names its previous path', () => {
+    const files = (entry: object) => parse({ run: { ...diff, files: [entry] }, last: diff });
+    for (const status of RUN_DIFF_FILE_STATUSES.filter((s) => s !== 'renamed')) {
+      expect(files({ ...file, status })).toBe(true);
+    }
+    expect(files({ ...file, status: 'renamed', previousPath: 'src/old.ts' })).toBe(true);
+    expect(files({ ...file, status: 'renamed' })).toBe(false);
+    expect(files({ ...file, previousPath: 'src/old.ts' })).toBe(false);
+    expect(files({ ...file, status: 'copied' })).toBe(false);
+    expect(files({ ...file, additions: -1 })).toBe(false);
+  });
+
+  it('carries no content for a binary file or one over the per-file limit', () => {
+    const files = (entry: object) => parse({ run: { ...diff, files: [entry] }, last: diff });
+    const { patch, ...counted } = file;
+    void patch;
+    expect(files({ ...counted, binary: true })).toBe(true);
+    expect(files({ ...counted, tooLarge: true })).toBe(true);
+    expect(files({ ...file, binary: true })).toBe(false);
+    expect(files({ ...file, tooLarge: true })).toBe(false);
+    expect(files({ ...file, patch: 'x'.repeat(RUN_DIFF_FILE_PATCH_MAX_BYTES + 1) })).toBe(false);
+  });
+
+  it('keeps every limit: at most the listed files, unique paths, the total patch size', () => {
+    const many = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({ ...file, path: `f${i}`, patch: undefined }));
+    expect(parse({ run: { ...diff, files: many(RUN_DIFF_FILES_MAX) }, last: diff })).toBe(true);
+    expect(parse({ run: { ...diff, files: many(RUN_DIFF_FILES_MAX + 1) }, last: diff })).toBe(
+      false,
+    );
+    expect(parse({ run: { ...diff, files: [file, file] }, last: diff })).toBe(false);
+    const big = 'x'.repeat(RUN_DIFF_FILE_PATCH_MAX_BYTES - 10);
+    const overTotal = Array.from(
+      { length: Math.ceil(RUN_DIFF_PATCH_MAX_BYTES / RUN_DIFF_FILE_PATCH_MAX_BYTES) + 1 },
+      (_, i) => ({ ...file, path: `f${i}`, patch: big }),
+    );
+    expect(parse({ run: { ...diff, files: overTotal }, last: diff })).toBe(false);
+  });
+
+  it('starts from a full commit id', () => {
+    expect(parse({ run: { ...diff, baseCommit: 'abc' }, last: diff })).toBe(false);
+  });
+
+  it('fits its route body limit, which is larger than every other worker route', () => {
+    expect(RUN_DIFF_REQUEST_MAX_BYTES).toBeGreaterThan(2 * RUN_DIFF_MAX_BYTES);
+    expect(RUN_DIFF_REQUEST_MAX_BYTES).toBeGreaterThan(WORKER_REQUEST_MAX_BYTES);
   });
 });

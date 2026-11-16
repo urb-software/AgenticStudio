@@ -63,6 +63,10 @@ _Avoid_: Transcript, console, output (for the whole log)
 One entry of a Run log: an agent message, a command, its output, the start or end of a Run step, or a notice about the log itself (e.g. "log truncated").
 _Avoid_: Line, log line (an event can span lines)
 
+**Run diff**:
+What a Run changed in its Working copy, uncommitted changes included, computed by the agent worker after every Run step's result: "whole run" (since the start commit) and "since previous result". Studio keeps the latest of each, redacted, and shows them on the Run page's Changes tab.
+_Avoid_: Patch (one file's part of it), changeset, PR diff (the pull request is GitHub's)
+
 **Working copy**:
 A Run's own clone of the Repository, on its Run branch. It is not the Project's Clone.
 _Avoid_: Worktree, workspace, checkout

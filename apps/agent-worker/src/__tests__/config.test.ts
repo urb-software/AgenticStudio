@@ -48,7 +48,27 @@ describe('loadWorkerConfig', () => {
       claudeMaxTurns: 200,
       codexSandbox: 'workspace-write',
       agentGitHub: { apiUrl: 'https://api.github.com' },
+      diffLimits: { filePatchBytes: 256 * 1024, patchBytes: 2048 * 1024, files: 1000 },
     });
+  });
+
+  it("reads the diff limits (Issue #144), never above the worker protocol's own", () => {
+    expect(
+      loadWorkerConfig({
+        ...env,
+        STUDIO_WORKER_DIFF_FILE_MAX_KIB: '64',
+        STUDIO_WORKER_DIFF_MAX_KIB: '512',
+        STUDIO_WORKER_DIFF_FILES_MAX: '50',
+      }).diffLimits,
+    ).toEqual({ filePatchBytes: 64 * 1024, patchBytes: 512 * 1024, files: 50 });
+    for (const [name, value] of [
+      ['STUDIO_WORKER_DIFF_FILE_MAX_KIB', '513'],
+      ['STUDIO_WORKER_DIFF_MAX_KIB', '4097'],
+      ['STUDIO_WORKER_DIFF_FILES_MAX', '1001'],
+      ['STUDIO_WORKER_DIFF_FILES_MAX', '0'],
+    ] as const) {
+      expect(() => loadWorkerConfig({ ...env, [name]: value })).toThrow(name);
+    }
   });
 
   it("reads the Agent account's GitHub token and API URL from the worker's own env (Issue #102)", () => {

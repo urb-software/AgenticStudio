@@ -666,9 +666,44 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   ).toBeVisible();
   await expectInBothThemes(page, pill);
 
+  // Issue #144: a Run that changes two files (one committed, one left uncommitted, both
+  // delivered). Its Changes tab lists both with their counts and shows a file's diff; on a
+  // phone the file list is a step before the diff. Scanned in both themes at this viewport.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Change two files [fake:two-files]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Change two files [fake:two-files]');
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  const changedFiles = main.getByRole('navigation', { name: 'Changed files' });
+  const notesDiff = main.getByRole('region', { name: 'Diff of FAKE_NOTES.md' });
+  const openChanges = async () => {
+    await main.getByRole('tab', { name: 'Changes' }).click();
+    await expect(main.getByText('2 files changed')).toBeVisible();
+    if (testInfo.project.name === 'phone') {
+      await changedFiles.getByRole('button', { name: /^FAKE_NOTES\.md/ }).click();
+    }
+    await expect(notesDiff).toContainText('Notes left by the fake runner.');
+  };
+  await openChanges();
+  await expect(main.getByText('Every change here is pushed')).toBeVisible();
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+    await openChanges();
+    await expectNoHorizontalScroll(page);
+    await expectNoAxeViolations(page);
+  }
+  if (testInfo.project.name === 'phone') {
+    await main.getByRole('button', { name: 'All files' }).click();
+    await expect(changedFiles.getByRole('button', { name: /^FAKE_CHANGE\.md/ })).toBeVisible();
+  } else {
+    await expect(changedFiles.getByRole('button', { name: /^FAKE_CHANGE\.md/ })).toBeVisible();
+  }
+
   // Run again, prefilled; this time the fake agent fails and the page shows the reason.
   await main.getByRole('button', { name: 'Run again' }).click();
-  await expect(dialog.getByLabel('Task')).toHaveValue('Change a file [fake:checks-failed]');
+  await expect(dialog.getByLabel('Task')).toHaveValue('Change two files [fake:two-files]');
   await dialog.getByLabel('Task').fill('Break on purpose [fake:fail]');
   await dialog.getByRole('button', { name: 'Start run' }).click();
   await expect(heading).toHaveText('Break on purpose [fake:fail]');
@@ -724,18 +759,18 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(page).toHaveURL(/\/executions$/);
   const list = main.getByRole('list', { name: 'Runs' });
   const rows = list.getByRole('listitem').filter({ hasText: projectName });
-  // Eight Runs, including the cancelled one (#100) and the Environment file print (#104).
-  await expect(rows).toHaveCount(8);
+  // Nine Runs, including the cancelled one (#100), the Environment file print (#104) and the
+  // two-file change (#144).
+  await expect(rows).toHaveCount(9);
   await expect(rows.nth(0)).toContainText('Waiting for you');
   await expect(rows.nth(1)).toContainText('Cancelled');
   await expect(rows.nth(2)).toContainText('Failed');
+  // The delivered Runs carry their pull request markers (Issues #102, #144).
   await expect(rows.nth(3)).toContainText('Succeeded');
-  // The delivered Run carries its pull request marker (Issue #102).
-  await expect(rows.nth(3)).toContainText('Pull request #1');
+  await expect(rows.nth(3)).toContainText(/Pull request #\d+/);
   await expect(rows.nth(4)).toContainText('Succeeded');
-  await expect(rows.nth(5)).toContainText('Succeeded');
-  await expect(rows.nth(6)).toContainText('Succeeded');
-  await expect(rows.nth(7)).toContainText('Succeeded');
+  await expect(rows.nth(4)).toContainText('Pull request #1');
+  for (const index of [5, 6, 7, 8]) await expect(rows.nth(index)).toContainText('Succeeded');
   // At this viewport, in both themes: no sideways scroll, no axe violations (Issue #115).
   await expectInBothThemes(page, rows.nth(0));
 
@@ -788,7 +823,7 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   // The lists show that the Run has had a Follow-up.
   await breadcrumb.getByRole('link', { name: 'Executions' }).click();
   await expect(page).toHaveURL(/\/executions$/);
-  await expect(rows).toHaveCount(8);
+  await expect(rows).toHaveCount(9);
   await expect(deliveredRow).toContainText('1 Follow-up');
   await expect(deliveredRow).toContainText('Pull request #1');
 });

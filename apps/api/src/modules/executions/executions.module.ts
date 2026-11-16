@@ -3,6 +3,7 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { AuthModule } from '../../platform/auth/auth.module.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
+import { RUN_DIFF_REPOSITORY } from './domain/repositories/run-diff-repository.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
 import { AnswerRunEndpoint } from './features/answer-run/endpoint.js';
@@ -18,6 +19,8 @@ import { GetRunEndpoint } from './features/get-run/endpoint.js';
 import { GetRunsSummaryEndpoint } from './features/get-runs-summary/endpoint.js';
 import { GetRunsSummaryHandler } from './features/get-runs-summary/handler.js';
 import { GetRunHandler } from './features/get-run/handler.js';
+import { GetRunDiffEndpoint } from './features/get-run-diff/endpoint.js';
+import { GetRunDiffHandler } from './features/get-run-diff/handler.js';
 import { ListRunEventsEndpoint } from './features/list-run-events/endpoint.js';
 import { ListRunEventsHandler } from './features/list-run-events/handler.js';
 import { ListRunStepsEndpoint } from './features/list-run-steps/endpoint.js';
@@ -32,6 +35,8 @@ import { ListRunsEndpoint } from './features/list-runs/endpoint.js';
 import { ListRunsHandler } from './features/list-runs/handler.js';
 import { RecordHeartbeatEndpoint } from './features/record-heartbeat/endpoint.js';
 import { RecordHeartbeatHandler } from './features/record-heartbeat/handler.js';
+import { ReportRunDiffEndpoint } from './features/report-run-diff/endpoint.js';
+import { ReportRunDiffHandler } from './features/report-run-diff/handler.js';
 import { ReportRunStateEndpoint } from './features/report-run-state/endpoint.js';
 import { ReportRunStateHandler } from './features/report-run-state/handler.js';
 import { ReportRunStepEndpoint } from './features/report-run-step/endpoint.js';
@@ -62,6 +67,7 @@ import {
 } from './ports/environment-file-snapshots.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
+import { PrismaRunDiffRepository } from './infrastructure/repositories/prisma-run-diff-repository.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
@@ -97,7 +103,7 @@ const LOG_STREAMS_PER_SESSION = 5;
 const LOG_STREAMS_TOTAL = 50;
 
 /**
- * `executions` business module (Issues #96, #99, #100, #103): the operator starts, reads,
+ * `executions` business module (Issues #96, #99, #100, #103, #144): the operator starts, reads,
  * cancels and answers Runs; the agent
  * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
  * only), including each Run's log, which the operator reads in pages or live. A claimed Run gets
@@ -133,6 +139,8 @@ export class ExecutionsModule {
         ListRunEventsEndpoint,
         StreamRunEventsEndpoint,
         ListRunStepsEndpoint,
+        GetRunDiffEndpoint,
+        ReportRunDiffEndpoint,
         GetRunStatesEndpoint,
         ReportWorkerStatusEndpoint,
         ListProvidersEndpoint,
@@ -140,6 +148,7 @@ export class ExecutionsModule {
       providers: [
         { provide: RUN_REPOSITORY, useClass: PrismaRunRepository },
         { provide: RUN_LOG_REPOSITORY, useClass: PrismaRunLogRepository },
+        { provide: RUN_DIFF_REPOSITORY, useClass: PrismaRunDiffRepository },
         { provide: RUN_LOG_SIGNAL, useClass: InProcessRunLogSignal },
         { provide: OPERATOR_SESSIONS, useClass: PlatformOperatorSessions },
         options.secretValues
@@ -187,6 +196,8 @@ export class ExecutionsModule {
         StreamRunEventsHandler,
         LogStreamSlots,
         ListRunStepsHandler,
+        GetRunDiffHandler,
+        ReportRunDiffHandler,
         GetRunStatesHandler,
         ReportWorkerStatusHandler,
         ListProvidersHandler,

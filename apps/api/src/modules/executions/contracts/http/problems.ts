@@ -38,6 +38,10 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
   /** 409: the Run cannot take a Follow-up now (Issue #141); the detail says why. */
   followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
+  /** 404: the Run has no diff yet: no Run step reported a result (Issue #144). */
+  runDiffNotFound: 'urn:agentic-studio:problem:run-diff-not-found',
+  /** 404: the Run's diff lists no file at this path (Issue #144). */
+  runDiffFileNotFound: 'urn:agentic-studio:problem:run-diff-file-not-found',
 } as const;
 
 /** Why a Run cannot take a Follow-up, for the operator (Issue #141; keyed by the domain's codes). */
@@ -64,6 +68,24 @@ export function followUpNotAllowed(
     type: EXECUTIONS_PROBLEM_TYPES.followUpNotAllowed,
     title: 'Follow-up not possible',
     detail: FOLLOW_UP_REFUSAL_DETAILS[reason],
+  });
+}
+
+/** 404: no Run step of the Run has reported a result, so it has no diff yet (Issue #144). */
+export function runDiffNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: EXECUTIONS_PROBLEM_TYPES.runDiffNotFound,
+    title: 'No diff yet',
+    detail: 'The run has not reported a result yet, so there is no diff.',
+  });
+}
+
+/** 404: the Run's diff of that scope lists no file at the path (Issue #144). */
+export function runDiffFileNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: EXECUTIONS_PROBLEM_TYPES.runDiffFileNotFound,
+    title: 'File not in the diff',
+    detail: "The run's diff lists no file at this path.",
   });
 }
 

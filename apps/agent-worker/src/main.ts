@@ -8,6 +8,7 @@ import { GitRunner } from './git.js';
 import { terminateLeftovers } from './leftovers.js';
 import { ManagedGuardrails } from './managed-guardrails.js';
 import { RETENTION_INTERVAL_MS, Retention } from './retention.js';
+import { RunDiffs } from './run-diff.js';
 import { DockerRunResources } from './run-resources.js';
 import { ProviderGate } from './provider-gate.js';
 import { RunnerDispatcher } from './runner-dispatcher.js';
@@ -137,6 +138,8 @@ const worker = new AgentWorker({
     github: config.agentGitHub,
     logger,
   }),
+  // Issue #144: the Run's diffs, within the configured limits.
+  diffs: new RunDiffs({ dataDir: config.dataDir, git, limits: config.diffLimits, logger }),
   pollMs: config.pollMs,
   heartbeatMs: config.heartbeatMs,
   killGraceMs: config.killGraceMs,

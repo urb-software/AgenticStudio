@@ -52,6 +52,9 @@ export class ClaimRunEndpoint {
       completedSteps: run.completedSteps,
       // Issue #141: each part of the Run (the first, or a Follow-up) gets its own allowance.
       stepsBeforePart: run.stepsBeforePart,
+      // Issue #144: where the Run's diffs stand, back to the worker that resumes or delivers it.
+      // The pushed commit has one source of truth, the Run's (#141): the diff state carries it.
+      ...(run.diffState ? { diffState: withRunPushedCommit(run.diffState, run.pushedCommit) } : {}),
     });
   }
 }
@@ -83,4 +86,17 @@ function kindOf(run: ClaimedRun) {
     };
   }
   return { kind: 'start' as const };
+}
+
+/**
+ * The diff state with the Run's pushed commit (#141 and #144 merged): Studio records the pushed
+ * commit on the Run, and the diff's "includes unpushed" is derived from that same value.
+ */
+function withRunPushedCommit(
+  state: NonNullable<ClaimedRun['diffState']>,
+  pushedCommit: string | null,
+): NonNullable<ClaimedRun['diffState']> {
+  const { pushedCommit: _stored, ...rest } = state;
+  void _stored;
+  return pushedCommit === null ? rest : { ...rest, pushedCommit };
 }

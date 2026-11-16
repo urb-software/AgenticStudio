@@ -141,6 +141,7 @@ Enabling a provider is a separate operator action ([Security](security.md) §2),
 Backups are kept **off the server** (ADR 0002), so that a compromised or wiped server can be rebuilt.
 
 - **Database.** As root, `agentic-studio-compose exec -T postgres pg_dump -U studio -d agentic_studio -Fc > agentic-studio-<date>.dump`, then copy the dump off the server and delete the local copy. The stored secrets in it are encrypted: **a backup is useless for them without the master key**.
+- **Source code in the database.** Since Issue #144 the database also holds each Run's latest diffs: excerpts of the managed repositories' source (the changed lines with some context), redacted like the Run log and bounded by the agent worker's diff limits (`STUDIO_WORKER_DIFF_*` in its `.env`: by default 256 KiB per file and 2 MiB per diff, two diffs per Run). They stay until the Run is deleted with its project. Treat database backups like the repositories themselves: keep them where only the operator can read them.
 - **Master key.** `STUDIO_SECRETS_KEY` is backed up once, separately from the database backups (for example in the operator's password manager), never next to them.
 - **Configuration.** The rest of `/etc/agentic-studio/.env` can be recreated; the operator password hash and the worker token can be generated again.
 - **Not backed up.** Clones and Working copies are recreated from the Git hosts; the agent side's CLI logins and the Agent account token are issued again.
