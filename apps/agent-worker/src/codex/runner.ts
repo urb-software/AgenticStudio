@@ -33,11 +33,26 @@ import {
   type VersionCheck,
 } from './cli-options.js';
 import { prepareCodexHome } from './codex-home.js';
+import {
+  presentUserLevelFiles,
+  type UserLevelFiles,
+  userLevelFilesProblem,
+} from '../user-level-files.js';
 import { codexInstallProblem } from './install-check.js';
 import { CODEX_RESULT_JSON_SCHEMA } from './result-schema.js';
 import { CodexStream, type ResultSource } from './stream.js';
 
 const PROVIDER: Provider = 'codex';
+
+/**
+ * Codex's user-level instruction and skill files (review C2 of #133), relative to the home
+ * directory. `~/.codex/skills/.system` holds the skills bundled with the CLI, which the CLI
+ * itself installs there at sign-in; it is allowed as a real directory.
+ */
+export const CODEX_USER_LEVEL_FILES: UserLevelFiles = {
+  absent: ['.codex/AGENTS.md', '.codex/AGENTS.override.md'],
+  empty: [{ path: '.codex/skills', allowed: ['.system'] }, { path: '.agents/skills' }],
+};
 
 /** Most of the CLI's error output kept for the log of a failed step. */
 const STDERR_MAX = 2000;
@@ -92,6 +107,12 @@ export class CodexRunner implements Runner {
         "Codex needs the agent user's home directory (HOME) on the agent worker.",
       );
     }
+    // Review C2 of #133: user-level instructions and skills load in every Run; refuse them.
+    const userFiles = userLevelFilesProblem(
+      'Codex',
+      await presentUserLevelFiles(home, CODEX_USER_LEVEL_FILES),
+    );
+    if (userFiles !== null) throw new AgentFailedError(userFiles);
     yield { type: 'notice', text: sandboxNotice(this.options.sandbox) };
     await prepareCodexHome(
       {

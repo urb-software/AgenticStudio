@@ -86,4 +86,40 @@ describe("the agent user's Claude Code settings", () => {
       'Claude Code user settings contain mcpServers; the operator must review them.',
     );
   });
+
+  it('refuses user-level instructions, agents, commands and skills, naming them only (review C2 of #133)', async () => {
+    mkdirSync(join(home, '.claude', 'agents'));
+    mkdirSync(join(home, '.claude', 'skills', 'synced'), { recursive: true });
+    mkdirSync(join(home, '.claude', 'skills', '.trash'));
+    // The CLI's own entries (account-synced skills, its bin) are allowed.
+    expect(await userSettingsProblem(home)).toBeNull();
+
+    writeFileSync(join(home, '.claude', 'CLAUDE.md'), 'test-only-instructions');
+    mkdirSync(join(home, '.claude', 'skills', 'evil'));
+    writeFileSync(join(home, '.claude', 'commands'), 'not a directory');
+    mkdirSync(join(home, '.claude', 'agents', 'helper.md'));
+
+    const problem = await userSettingsProblem(home);
+    expect(problem).toBe(
+      'Claude Code user-level instruction or skill files present: ~/.claude/CLAUDE.md, ' +
+        '~/.claude/agents/helper.md, ~/.claude/commands, ~/.claude/skills/evil; the operator ' +
+        'must review them.',
+    );
+    expect(problem).not.toContain('test-only-instructions');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a symbolic link in place of an allowed CLI entry',
+    async () => {
+      const elsewhere = join(home, 'elsewhere');
+      mkdirSync(elsewhere);
+      mkdirSync(join(home, '.claude', 'skills'));
+      symlinkSync(elsewhere, join(home, '.claude', 'skills', 'synced'));
+
+      expect(await userSettingsProblem(home)).toBe(
+        'Claude Code user-level instruction or skill files present: ~/.claude/skills/synced; ' +
+          'the operator must review them.',
+      );
+    },
+  );
 });

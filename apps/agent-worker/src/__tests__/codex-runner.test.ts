@@ -323,6 +323,26 @@ describe('CodexRunner at the spawn boundary', () => {
     );
   });
 
+  it('refuses a step while user-level instructions or skills are present, starting nothing (review C2 of #133)', async () => {
+    mkdirSync(join(home, '.codex', 'skills', '.system'), { recursive: true });
+    replaying('success');
+    // The CLI's own bundled skills are allowed.
+    await drain(runner().start(input('x')));
+    spawn.mockReset();
+
+    writeFileSync(join(home, '.codex', 'AGENTS.md'), 'test-only-instructions');
+    mkdirSync(join(home, '.codex', 'skills', 'evil'));
+    mkdirSync(join(home, '.agents', 'skills', 'other'), { recursive: true });
+
+    const step = drain(runner().start(input('x')));
+    await expect(step).rejects.toThrow(
+      'Codex user-level instruction or skill files present: ~/.codex/AGENTS.md, ' +
+        '~/.codex/skills/evil, ~/.agents/skills/other; the operator must review them.',
+    );
+    await expect(step).rejects.not.toThrow(/test-only-instructions/);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it('refuses a step without the agent user home, starting nothing', async () => {
     const env: Record<string, string | undefined> = { ...workerEnv(), HOME: undefined };
 
