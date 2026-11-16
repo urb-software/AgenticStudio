@@ -8,8 +8,12 @@ type RunState = RunOutput['state'];
  * alone decides a Run's state.
  */
 
-/** Under way without the operator: queued ones count too (on their way, only not started yet). */
-export const ACTIVE_STATES: readonly RunState[] = ['queued', 'preparing', 'running'];
+/**
+ * Active, i.e. under way without the operator: queued ones count too (on their way, only not
+ * started yet). The API's `UNDER_WAY_RUN_STATES`; not its `ACTIVE_RUN_STATES`, which are the
+ * states that hold a concurrency place.
+ */
+export const UNDER_WAY_STATES: readonly RunState[] = ['queued', 'preparing', 'running'];
 
 /** Waiting for the operator: the Run moves on only when they act. */
 export const WAITING_STATES: readonly RunState[] = ['waiting_for_operator'];

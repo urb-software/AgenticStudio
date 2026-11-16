@@ -111,6 +111,10 @@ export interface LogViewerHandle {
 
 type LogViewerProps = {
   ref?: React.Ref<LogViewerHandle>;
+  /**
+   * The rows, in order. To append, pass a new array that starts with the same row objects:
+   * only the new rows are then laid out (Issue #115); anything else is laid out afresh.
+   */
   rows: readonly LogRow[];
   /** Names the log for assistive technology (`role="log"`). */
   label: string;

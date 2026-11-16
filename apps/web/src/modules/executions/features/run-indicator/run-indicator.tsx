@@ -5,10 +5,8 @@ import { cn } from '@/shared/lib/utils';
 import type { RunsSummaryOutput } from '../../../../platform/api';
 import { useRunsSummary } from '../../api/runs-queries';
 
-type Counts = RunsSummaryOutput;
-
 /** "2 running · 1 waiting for you": the non-zero parts, in that order. */
-function textOf({ running, waiting }: Counts): string {
+function textOf({ running, waiting }: RunsSummaryOutput): string {
   return [
     running > 0 ? `${running} running` : undefined,
     waiting > 0 ? `${waiting} waiting for you` : undefined,
@@ -26,7 +24,7 @@ function textOf({ running, waiting }: Counts): string {
  */
 export function RunIndicator() {
   const { data } = useRunsSummary();
-  const counts: Counts = data ?? { running: 0, waiting: 0 };
+  const counts: RunsSummaryOutput = data ?? { running: 0, waiting: 0 };
   const total = counts.running + counts.waiting;
   if (total === 0) return null;
   const text = textOf(counts);

@@ -75,13 +75,16 @@ function turnRows(index: number, turn: { question: string; answer?: string }): L
 
 type Turn = ReturnType<typeof questionsAndAnswers>[number];
 
+/** The key of an event's `line`-th row: stable across appends. */
+const rowKey = (event: RunEventOutput, line: number | 'cut') => `${event.seq}:${line}`;
+
 /** The key of the row that starts Run step `index` (its `step_started` marker), if it is loaded. */
 export function stepStartRowKey(
   events: readonly RunEventOutput[],
   index: number,
 ): string | undefined {
   const event = events.find((e) => e.kind === 'step_started' && e.stepIndex === index);
-  return event ? `${event.seq}:0` : undefined;
+  return event ? rowKey(event, 0) : undefined;
 }
 
 /** Which turn follows which `needs_input` step: the n-th such step asked the n-th question. */
@@ -111,11 +114,11 @@ function eventRows(
   const tone = KIND_TONE[event.kind];
   lines(event.text).forEach((line, i) => {
     const text = event.kind === 'command' ? `${i === 0 ? '$' : ' '} ${line}` : line;
-    rows.push({ key: `${event.seq}:${i}`, text, tone: toneOf(event, tone) });
+    rows.push({ key: rowKey(event, i), text, tone: toneOf(event, tone) });
   });
   if (event.truncated) {
     rows.push({
-      key: `${event.seq}:cut`,
+      key: rowKey(event, 'cut'),
       text: '… (cut: longer than an entry may be)',
       tone: 'dim',
     });

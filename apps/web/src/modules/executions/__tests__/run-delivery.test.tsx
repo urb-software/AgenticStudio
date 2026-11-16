@@ -74,6 +74,24 @@ describe('Run page: delivery (Issue #102)', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('names a pull request outside github.com as text in the cancelled-delivery banner too', async () => {
+    const run = aRun({
+      state: 'cancelled',
+      delivery: 'delivered',
+      pullRequest: { url: 'https://evil.test/acme/shop/pull/7', number: 7 },
+      cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+    });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    const banner = screen
+      .getByText('Cancelled during its delivery: a draft pull request was opened.')
+      .closest('[data-slot="banner"]');
+    expect(within(banner as HTMLElement).getByText(/Pull request #7/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Pull request/ })).toBeNull();
+  });
+
   it('says "No changes" when nothing was pushed for a succeeded Run', async () => {
     const run = aRun({ state: 'succeeded', runBranch: BRANCH, delivery: 'none' });
     fakeRunsApi([run]);

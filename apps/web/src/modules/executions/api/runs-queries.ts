@@ -10,7 +10,7 @@ import {
   type RunStepListOutput,
   type StartRunRequest,
 } from '../../../platform/api';
-import { ACTIVE_STATES, WAITING_STATES } from '../components/run-states';
+import { UNDER_WAY_STATES, WAITING_STATES } from '../components/run-states';
 
 /** How often a moving Run is read again while the page is visible. */
 const ACTIVE_POLL_MS = 2_000;
@@ -24,7 +24,7 @@ const WAITING_POLL_MS = 10_000;
 function pollIntervalFor(runs: readonly RunOutput[] | undefined): number | false {
   if (!runs) return false;
   // A requested delivery retry (Issue #102) moves on without the operator too.
-  if (runs.some((run) => ACTIVE_STATES.includes(run.state) || run.deliveryRetryRequested)) {
+  if (runs.some((run) => UNDER_WAY_STATES.includes(run.state) || run.deliveryRetryRequested)) {
     return ACTIVE_POLL_MS;
   }
   if (runs.some((run) => WAITING_STATES.includes(run.state))) return WAITING_POLL_MS;
