@@ -8,7 +8,7 @@
 -- ('pull_request_state', 'failing_check_logs') after deleting the review_comments rows.
 
 -- AlterTable
-ALTER TABLE "run_lookups" ADD COLUMN     "scope" VARCHAR(16),
+ALTER TABLE "run_lookups" ADD COLUMN     "scope" VARCHAR(24),
 ADD COLUMN     "since" TIMESTAMPTZ(6);
 
 ALTER TABLE "run_lookups" DROP CONSTRAINT "run_lookups_kind_check";
@@ -46,7 +46,7 @@ ALTER TABLE "run_messages" ADD CONSTRAINT "run_messages_source_detail_check"
 -- CreateTable
 CREATE TABLE "run_review_comment_sets" (
     "run_id" UUID NOT NULL,
-    "scope" VARCHAR(16) NOT NULL,
+    "scope" VARCHAR(24) NOT NULL,
     "comments" JSONB NOT NULL,
     "truncated" BOOLEAN NOT NULL,
     "loaded_at" TIMESTAMPTZ(6) NOT NULL,

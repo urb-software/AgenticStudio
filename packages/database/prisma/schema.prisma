@@ -383,7 +383,7 @@ model RunReviewCommentSet {
   runId     String   @id @map("run_id") @db.Uuid
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
   /// since_last_result | unresolved.
-  scope     String   @db.VarChar(16)
+  scope     String   @db.VarChar(24)
   comments  Json
   /// More comments existed, or a text was cut to its limit.
   truncated Boolean
@@ -416,7 +416,7 @@ model RunLookup {
   retryAt     DateTime? @map("retry_at") @db.Timestamptz(6)
   /// review_comments only (Issue #146): since_last_result | unresolved, and for the first the time
   /// after which a comment counts as new (the end of the Run's latest part).
-  scope       String?   @db.VarChar(16)
+  scope       String?   @db.VarChar(24)
   since       DateTime? @db.Timestamptz(6)
 
   @@index([status, requestedAt], map: "run_lookups_status_requested_at_idx")
