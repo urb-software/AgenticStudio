@@ -5,6 +5,7 @@ import type {
   RunDeliveryOutcome,
   RunFailure,
   RunLimits,
+  RunQuestion,
   RunState,
   RunWorkingCopy,
 } from '../entities/run.js';
@@ -80,6 +81,10 @@ export interface RunStepRecord {
   result: unknown;
   /** The step's number as the worker reports it (review of #121); the next one when absent. */
   index?: number;
+  /** A `needs_input` step's question (Issue #103): stored as the Run's next message. */
+  question?: RunQuestion;
+  /** The agent session the step reported (Issue #103): becomes the Run's session reference. */
+  sessionRef?: string;
 }
 
 /** A stored Run step: its number, kind, report time and the result as stored JSON. */
@@ -108,10 +113,13 @@ export interface RunRepository {
   /** The Run with this id, or `null`. */
   findById(id: string): Promise<Run | null>;
 
-  /** Every Run, newest first: by creation time, then by id. */
+  /**
+   * Every Run, newest first: by creation time, then by id. Lists leave the conversation out
+   * (`messages` is empty; Issue #103): `findById` reads it.
+   */
   listNewestFirst(): Promise<Run[]>;
 
-  /** A project's Runs, newest first: by creation time, then by id. */
+  /** A project's Runs, newest first: by creation time, then by id; without their messages. */
   listByProjectNewestFirst(projectId: string): Promise<Run[]>;
 
   /**
@@ -119,9 +127,12 @@ export interface RunRepository {
    * `preparing`, started and heartbeat at `now`; or a `failed` one whose delivery retry was
    * requested, that no worker holds and that `workerId` itself started (it alone has the
    * Working copy; Issue #102, review R4 of #122) → held by `workerId` (heartbeat at `now`),
-   * still `failed`. Eligible: its project has no active or held Run and fewer than `MAX_ACTIVE_RUNS`
-   * are active or held across the server. Serialized against concurrent claims, so they cannot
-   * exceed the limits. `null` when nothing is eligible.
+   * still `failed`. A resumable `queued` Run (answered, with a session reference; Issue #103)
+   * goes only to the worker that started it, like a delivery retry, and keeps its first start
+   * time. Eligible: its project has no other active or held Run and fewer than `MAX_ACTIVE_RUNS`
+   * others are active or held across the server; a resumable Run keeps its place while it waits
+   * for its worker. Serialized against concurrent claims, so they cannot exceed the limits.
+   * `null` when nothing is eligible.
    */
   claimNext(workerId: string, now: Date): Promise<Run | null>;
 
@@ -161,7 +172,7 @@ export interface RunRepository {
    */
   requestCancel(runId: string, now: Date): Promise<Run | null>;
 
-  /** Every Run waiting for the operator (Issue #100: the long-wait sweep). */
+  /** Every Run waiting for the operator (Issue #100: the long-wait sweep); without messages. */
   listWaiting(): Promise<Run[]>;
 
   /**
@@ -201,13 +212,30 @@ export interface RunRepository {
    */
   finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null>;
 
+  /**
+   * Stores the operator's answer to the open question of a `waiting_for_operator` Run (Issue
+   * #103) and queues the Run again, in one transaction. `null` if the Run is not waiting with an
+   * open question (any more): a second answer, or one after a cancel, changes nothing.
+   */
+  answer(runId: string, text: string, now: Date): Promise<Run | null>;
+
+  /** Resumable Runs no worker claimed yet, with the worker that started each (Issue #103). */
+  listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;
+
+  /**
+   * Gives up a resumable Run whose worker is gone (Issue #103): if it is still resumable, →
+   * `failed` with `failure`, finished at `now`. False if the condition failed.
+   */
+  abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean>;
+
   /** The states of the Runs with these ids (valid UUIDs); ids that name no Run are left out. */
   findStates(ids: readonly string[]): Promise<RunStateView[]>;
 
   /**
    * Stores a Run step of a `running` Run held by `workerId`, numbered 1, 2, … in report
    * order, and makes `workingCopy` the Run's latest Working copy state and `failingChecks` its
-   * failing checks (Issue #102), in one transaction. A step beyond the Run's `maxSteps` is not
+   * failing checks (Issue #102), in one transaction. A step's question becomes the Run's next
+   * message and its session reference the Run's (Issue #103), in the same transaction. A step beyond the Run's `maxSteps` is not
    * stored: the Run fails with `stepLimitFailure`, released and finished at `now` (Issue #100).
    */
   appendStep(

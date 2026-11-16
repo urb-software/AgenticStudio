@@ -1,6 +1,7 @@
 import { runStepResultSchema, type RunnerEvent, type RunPayload } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
-import { FakeRunner, fakeScenarioOf } from '../fake-runner.js';
+import { AGENT_DEFINITION } from '../agent-definition/index.js';
+import { FakeRunner, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
 import { AgentFailedError, drainRunStep } from '../runner.js';
 
 // Issue #96: the fake runner's scripted outcomes, through the runner interface.
@@ -29,6 +30,7 @@ async function start(task: string, signal = new AbortController().signal, slowMs
       workspace,
       signal,
       processes,
+      agentDefinition: AGENT_DEFINITION,
     }),
     (event) => events.push(event),
   );
@@ -40,6 +42,8 @@ describe('fakeScenarioOf', () => {
     ['Add a feature', 'success'],
     ['[fake:fail] Add a feature', 'fail'],
     ['Please [fake:question]', 'question'],
+    ['[fake:question-twice]', 'question-twice'],
+    ['[fake:lost-session]', 'lost-session'],
     ['[fake:slow]', 'slow'],
     ['[fake:crash]', 'crash'],
     ['[fake:commit] Add a file', 'commit'],
@@ -66,12 +70,17 @@ describe('FakeRunner', () => {
     });
   });
 
-  it('asks a question with a needs_input result', async () => {
+  it('asks a question with options and a recommendation, in a session of its own (Issue #103)', async () => {
     const { result } = await start('[fake:question]');
 
     expect(runStepResultSchema.parse(result)).toMatchObject({
       outcome: 'needs_input',
-      question: expect.any(String),
+      question: {
+        text: expect.any(String),
+        options: expect.arrayContaining([expect.any(String)]),
+        recommendation: expect.any(String),
+      },
+      sessionRef: fakeSessionRef(run('x').runId),
     });
   });
 
@@ -122,17 +131,54 @@ describe('FakeRunner', () => {
     expect((await pending).result.outcome).toBe('done');
   });
 
-  it('resumes with a done result', async () => {
-    const result = await drainRunStep(
-      new FakeRunner().resume({
-        run: run('x'),
-        workspace,
-        answer: 'Option A',
-        signal: new AbortController().signal,
-        processes,
-      }),
-      () => undefined,
-    );
-    expect(result.outcome).toBe('done');
+  // Issue #103: what a runner must do on resume, proven with the fake runner.
+  describe('resume (Issue #103)', () => {
+    const resume = (task: string, sessionRef: string, completedSteps = 1, answer = 'Option A') => {
+      const events: RunnerEvent[] = [];
+      return drainRunStep(
+        new FakeRunner().resume({
+          run: { ...run(task), completedSteps },
+          workspace,
+          answer,
+          sessionRef,
+          signal: new AbortController().signal,
+          processes,
+          agentDefinition: AGENT_DEFINITION,
+        }),
+        (event) => events.push(event),
+      ).then((result) => ({ result, events }));
+    };
+    const SESSION = fakeSessionRef(run('x').runId);
+
+    it('continues the same session with the answer, to a done result', async () => {
+      const { result, events } = await resume('[fake:question]', SESSION);
+
+      expect(result.outcome).toBe('done');
+      expect(events.map((event) => event.text)).toContain('answer received: Option A');
+    });
+
+    it('refuses a session it did not start, as the agent (the provider has no such session)', async () => {
+      await expect(resume('[fake:question]', 'another-session')).rejects.toBeInstanceOf(
+        AgentFailedError,
+      );
+    });
+
+    it('asks again on the first resume of question-twice, then finishes on the next', async () => {
+      const first = await resume('[fake:question-twice]', SESSION, 1);
+      expect(runStepResultSchema.parse(first.result)).toMatchObject({
+        outcome: 'needs_input',
+        sessionRef: SESSION,
+      });
+      expect((await resume('[fake:question-twice]', SESSION, 2)).result.outcome).toBe('done');
+    });
+
+    it('cannot resume a lost session: the provider refuses it', async () => {
+      const { result } = await start('[fake:lost-session]');
+      expect(result.outcome).toBe('needs_input');
+
+      const refused = await resume('[fake:lost-session]', SESSION).catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(AgentFailedError);
+      expect((refused as Error).message).toMatch(/session/);
+    });
   });
 });

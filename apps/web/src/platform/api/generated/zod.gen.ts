@@ -120,6 +120,23 @@ export const zRunLimitsOutput = z.object({
     waitingDays: z.int().gte(1).lte(9007199254740991)
 });
 
+export const zRunQuestionOutput = z.object({
+    text: z.string(),
+    options: z.array(z.string()).optional(),
+    recommendation: z.string().optional()
+});
+
+export const zRunMessageOutput = z.object({
+    role: z.enum(['operator', 'agent']),
+    kind: z.enum([
+        'task',
+        'question',
+        'answer'
+    ]),
+    text: z.string(),
+    at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+});
+
 export const zRunOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
@@ -175,10 +192,16 @@ export const zRunOutput = z.object({
         number: z.int().gt(0).lte(9007199254740991)
     }).optional(),
     deliveryRetryRequested: z.literal(true).optional(),
-    failingChecks: z.array(z.string()).optional()
+    failingChecks: z.array(z.string()).optional(),
+    question: zRunQuestionOutput.optional(),
+    messages: z.array(zRunMessageOutput).optional()
 });
 
 export const zRunListOutput = z.array(zRunOutput);
+
+export const zAnswerRunRequest = z.object({
+    text: z.string().min(1).max(10000)
+});
 
 export const zRunEventOutput = z.object({
     seq: z.int().gte(1).lte(9007199254740991),
@@ -365,6 +388,14 @@ export const zRetryRunDeliveryPath = z.object({
 });
 
 export const zRetryRunDeliveryResponse = zRunOutput;
+
+export const zAnswerRunBody = zAnswerRunRequest;
+
+export const zAnswerRunPath = z.object({
+    runId: z.string()
+});
+
+export const zAnswerRunResponse = zRunOutput;
 
 export const zListRunEventsPath = z.object({
     runId: z.string()

@@ -1,4 +1,5 @@
 import type { RunnerEvent, RunPayload, RunStepResult } from '@agentic-studio/contracts';
+import type { AgentDefinition } from './agent-definition/index.js';
 import type { ProcessGroupRegistry } from './spawn-boundary.js';
 
 /**
@@ -28,11 +29,25 @@ export interface StartRunStepInput {
   signal: AbortSignal;
   /** Where the step's process groups are registered; `spawnProviderCli` does it (Issue #100). */
   processes: ProcessGroupRegistry;
+  /**
+   * The built-in agent definition (Issue #103): a real runner gives it to its agent with the
+   * Task (it says when to ask the operator and what the structured result is).
+   */
+  agentDefinition: AgentDefinition;
 }
 
+/**
+ * A resumed Run step (Issue #103). A runner must continue exactly the session `sessionRef`
+ * names (the one its earlier step reported) in the same Working copy, with `answer` as the
+ * agent's next message, so the agent keeps its earlier context. A session the provider no
+ * longer has, or refuses, is an {@link AgentFailedError} with the reason; the runner never
+ * starts a new session instead.
+ */
 export interface ResumeRunStepInput extends StartRunStepInput {
   /** The operator's answer to the agent's question. */
   answer: string;
+  /** The agent session to continue, as the runner reported it with the question. */
+  sessionRef: string;
 }
 
 /**
@@ -43,7 +58,7 @@ export interface ResumeRunStepInput extends StartRunStepInput {
 export interface Runner {
   /** The first Run step of a Run. */
   start(input: StartRunStepInput): RunStep;
-  /** A Run step that resumes the Run with the operator's answer (used from #103). */
+  /** A Run step that resumes the Run's agent session with the operator's answer (#103). */
   resume(input: ResumeRunStepInput): RunStep;
 }
 

@@ -17,6 +17,8 @@ export const FAKE_SCENARIOS = [
   'success',
   'fail',
   'question',
+  'question-twice',
+  'lost-session',
   'slow',
   'crash',
   'commit',
@@ -50,6 +52,21 @@ export interface FakeRunnerOptions {
   git?: GitRunner;
 }
 
+/** The fake agent's session reference for a Run (Issue #103): deterministic, per Run. */
+export function fakeSessionRef(runId: string): string {
+  return `fake-session-${runId}`;
+}
+
+/** The fake agent's question (Issue #103), with options and a recommendation. */
+function asking(runId: string, text: string): RunStepResult {
+  return {
+    outcome: 'needs_input',
+    summary: 'The fake agent needs a decision.',
+    question: { text, options: ['Option A', 'Option B'], recommendation: 'Option A' },
+    sessionRef: fakeSessionRef(runId),
+  };
+}
+
 /** The file the `commit` and `dirty` scenarios write in the Working copy. */
 export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
 
@@ -67,7 +84,10 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  * - `dirty` (Issue #98): like `success`, leaving one new file uncommitted.
  * - `checks-failed` (Issue #102): like `commit`, but the agent reports a failing check.
  * - `fail`: the agent fails ({@link AgentFailedError}).
- * - `question`: a `needs_input` result with a question.
+ * - `question` (Issue #103): a `needs_input` result with a question, two options and a
+ *   recommendation, in the session {@link fakeSessionRef}; resumed, it succeeds.
+ * - `question-twice`: like `question`, and the first resume asks a second question.
+ * - `lost-session`: like `question`, but the session is gone when it is resumed (agent_failed).
  * - `slow`: prints a numbered line every `slowLineMs` for `slowMs` and one wide line,
  *   then succeeds; stops when aborted (the live-log smoke follows it, Issue #99).
  * - `secret` (Issue #99): prints a token-shaped string (redaction is proven end to end), then
@@ -79,8 +99,9 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  *   up on it after the grace period (the hard path).
  * - `long` (Issue #100): like `slow`, but for `longMs` (ten minutes): a Run to cancel.
  * - `crash`: the runner itself breaks (a plain error).
- * `resume` always succeeds. Each step streams an agent message, a command and its output, like
- * a real agent.
+ * `resume` checks that it continues the Run's own session and got an answer (else it fails as
+ * the agent, like a provider without that session), then succeeds. It ignores the agent
+ * definition. Each step streams an agent message, a command and its output, like a real agent.
  */
 export class FakeRunner implements Runner {
   private readonly slowMs: number;
@@ -105,11 +126,9 @@ export class FakeRunner implements Runner {
       case 'crash':
         throw new Error('The fake runner crashed.');
       case 'question':
-        return {
-          outcome: 'needs_input',
-          summary: 'The fake agent needs a decision.',
-          question: 'Which option should the fake agent take?',
-        };
+      case 'question-twice':
+      case 'lost-session':
+        return asking(run.runId, 'Which option should the fake agent take?');
       case 'slow': {
         yield { type: 'command', text: 'fake-work --slowly' };
         const started = Date.now();
@@ -184,9 +203,21 @@ export class FakeRunner implements Runner {
     await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake change'], options);
   }
 
-  async *resume({ signal }: ResumeRunStepInput): RunStep {
+  async *resume({ run, signal, answer, sessionRef }: ResumeRunStepInput): RunStep {
+    const scenario = fakeScenarioOf(run.task);
     yield { type: 'message', text: 'fake runner: resume' };
     signal.throwIfAborted();
+    if (scenario === 'lost-session' || sessionRef !== fakeSessionRef(run.runId)) {
+      throw new AgentFailedError(
+        'The fake agent cannot resume: the provider has no such session (its transcript is missing).',
+      );
+    }
+    if (answer.trim() === '') throw new AgentFailedError('The fake agent got no answer.');
+    yield { type: 'output', text: `answer received: ${answer}` };
+    // The first resume of question-twice (its second Run step) asks again.
+    if (scenario === 'question-twice' && run.completedSteps === 1) {
+      return asking(run.runId, 'And which variant of it?');
+    }
     return done();
   }
 }

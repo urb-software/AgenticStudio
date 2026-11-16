@@ -158,10 +158,26 @@ export const STUDIO_PATHS_MAX = 50;
 /**
  * What a claim hands out (Issue #102): a Run to `start` (prepare, run its first step, deliver),
  * or a `failed` Run with `delivery_failed` whose delivery the operator asked to retry: the
- * worker then only `deliver`s it from the Working copy it still has.
+ * worker then only `deliver`s it from the Working copy it still has. Issue #103: a Run the
+ * operator answered is handed out to `resume`: the worker continues the same agent session in
+ * the Working copy it kept, with the answer as the next Run step.
  */
-export const RUN_PAYLOAD_KINDS = ['start', 'deliver'] as const;
+export const RUN_PAYLOAD_KINDS = ['start', 'deliver', 'resume'] as const;
 export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
+
+/** Longest session reference a runner reports (Issue #103), e.g. the CLI's session id. */
+export const SESSION_REF_MAX_LENGTH = 256;
+
+/** Longest operator answer to an agent's question, in characters (Issue #103). */
+export const ANSWER_MAX_LENGTH = 10_000;
+
+/** Longest question text, most options, longest option and recommendation (Issue #103). */
+export const QUESTION_TEXT_MAX_LENGTH = 4000;
+export const QUESTION_OPTIONS_MAX = 6;
+export const QUESTION_OPTION_MAX_LENGTH = 200;
+
+/** An opaque reference to the agent's session, as the runner reported it (Issue #103). */
+const sessionRefSchema = z.string().min(1).max(SESSION_REF_MAX_LENGTH);
 
 /**
  * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
@@ -191,11 +207,21 @@ export const runPayloadSchema = z
      */
     studioPaths: z.array(z.string().min(1).max(STUDIO_PATH_MAX_LENGTH)).max(STUDIO_PATHS_MAX),
     /**
-     * With `deliver` only: the Run branch Studio recorded from the worker's step report. A
-     * delivery retry pushes exactly this branch, never one named beside the Working copy (review
-     * R1 of #122).
+     * With `deliver` and `resume` only: the Run branch Studio recorded from the worker's step
+     * report. A delivery retry pushes exactly this branch, never one named beside the Working
+     * copy (review R1 of #122); a resumed Run delivers it the same way (Issue #103).
      */
     runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH).optional(),
+    /** With `resume` only (Issue #103): the agent session to continue, as the runner reported it. */
+    sessionRef: sessionRefSchema.optional(),
+    /** With `resume` only: the operator's answer to the agent's question. */
+    answer: z.string().min(1).max(ANSWER_MAX_LENGTH).optional(),
+    /**
+     * With `resume` and `deliver`: the seq of the Run's next event, one past the last Studio
+     * stored, so the worker's events are not dropped as duplicates (Issue #99 note on #103). A
+     * start claim has none: its log starts at 1.
+     */
+    nextSeq: z.int().min(1).max(2_147_483_647).optional(),
     /**
      * With `start` only: the Project's Environment file as it was when the Run was claimed
      * (Issue #104), only for the worker that claimed the Run; its path is in `studioPaths`.
@@ -210,10 +236,21 @@ export const runPayloadSchema = z
      */
     completedSteps: z.int().min(0),
   })
-  .refine((payload) => (payload.kind === 'deliver') === (payload.runBranch !== undefined), {
+  .refine((payload) => (payload.kind !== 'start') === (payload.runBranch !== undefined), {
     path: ['runBranch'],
-    message: 'A delivery claim carries the recorded Run branch, a start claim none.',
+    message: 'A delivery or resume claim carries the recorded Run branch, a start claim none.',
   })
+  .refine(
+    (payload) =>
+      [payload.sessionRef, payload.answer].every(
+        (field) => (field !== undefined) === (payload.kind === 'resume'),
+      ) && (payload.nextSeq !== undefined) === (payload.kind !== 'start'),
+    {
+      path: ['kind'],
+      message:
+        'A resume claim carries the session reference and the answer, a resume or delivery claim the next seq; a start claim none of them.',
+    },
+  )
   .refine(
     (payload) =>
       payload.environmentFile === undefined ||
@@ -290,15 +327,33 @@ export function jsonByteLength(value: unknown): number {
 }
 
 /**
+ * The agent's question to the operator (Issue #103): its text, the options it offers (at most
+ * six) and the one it recommends. All of it is the agent's text: shown as plain text only.
+ */
+export const runQuestionSchema = z.strictObject({
+  text: z.string().min(1).max(QUESTION_TEXT_MAX_LENGTH),
+  options: z
+    .array(z.string().min(1).max(QUESTION_OPTION_MAX_LENGTH))
+    .min(1)
+    .max(QUESTION_OPTIONS_MAX)
+    .optional(),
+  recommendation: z.string().min(1).max(QUESTION_OPTION_MAX_LENGTH).optional(),
+});
+export type RunQuestion = z.infer<typeof runQuestionSchema>;
+
+/**
  * The structured result a Run step ends with: `done`, or `needs_input` with the agent's
- * question (it pauses the Run until the operator answers). Each field has its own limit, and
- * the whole result at most {@link RUN_STEP_RESULT_MAX_BYTES}.
+ * question (it pauses the Run until the operator answers) and the reference of the agent's
+ * session, which the answer resumes (Issue #103). Each field has its own limit, and the whole
+ * result at most {@link RUN_STEP_RESULT_MAX_BYTES}.
  */
 export const runStepResultSchema = z
   .strictObject({
     outcome: z.enum(['done', 'needs_input']),
     summary: z.string().max(20_000),
-    question: z.string().min(1).max(20_000).optional(),
+    question: runQuestionSchema.optional(),
+    /** The agent session the step ran in (Issue #103); required with `needs_input`. */
+    sessionRef: sessionRefSchema.optional(),
     pullRequest: z
       .strictObject({ title: z.string().min(1).max(256), body: z.string().max(65_536) })
       .optional(),
@@ -307,6 +362,10 @@ export const runStepResultSchema = z
   .refine((result) => result.outcome !== 'needs_input' || result.question !== undefined, {
     path: ['question'],
     message: 'A needs_input result carries the question.',
+  })
+  .refine((result) => result.outcome !== 'needs_input' || result.sessionRef !== undefined, {
+    path: ['sessionRef'],
+    message: 'A needs_input result carries the session reference its answer resumes.',
   })
   .refine((result) => jsonByteLength(result) <= RUN_STEP_RESULT_MAX_BYTES, {
     message: `The result is larger than ${RUN_STEP_RESULT_MAX_BYTES} bytes as JSON.`,

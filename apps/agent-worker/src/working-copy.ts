@@ -64,7 +64,17 @@ export interface WorkingCopyPort {
   prepare(run: RunPayload, signal: AbortSignal): Promise<PreparedRun>;
   /** The Working copy's state after a Run step, for the step report. */
   report(prepared: PreparedRun, signal: AbortSignal): Promise<WorkingCopyReport>;
+  /**
+   * For a resume (Issue #103): the Run's kept Working copy, unchanged since its question, on
+   * the Run branch Studio recorded. Throws {@link PreparationFailedError} ("Working copy no
+   * longer exists — run again") when it is gone.
+   */
+  locate(run: RunPayload): Promise<PreparedRun>;
 }
+
+/** Why a resume cannot go on (Issue #103): its Working copy was removed. */
+export const RESUME_NO_WORKING_COPY =
+  'Working copy no longer exists — run again: retention or a clean-up removed it.';
 
 /** The Working copy could not be prepared; `detail` is safe to show (no credential, no path). */
 export class PreparationFailedError extends Error {
@@ -218,6 +228,38 @@ export class WorkingCopies implements WorkingCopyPort {
       runBranch,
       startCommit,
       env: { COMPOSE_PROJECT_NAME: compose },
+    };
+  }
+
+  async locate(run: RunPayload): Promise<PreparedRun> {
+    // The Run branch and start commit come from Studio, never from `run.json`, which the agent
+    // could rewrite (as for a delivery retry, review R1 of #122).
+    if (run.kind !== 'resume' || run.runBranch === undefined) {
+      throw new PreparationFailedError('Studio sent no recorded Run branch for this resume.');
+    }
+    const paths = runDirectories(this.options.dataDir, run.runId);
+    const runFile = await readRunFile(paths.runFile);
+    const repo = await stat(paths.repoDir).then(
+      (stats) => stats.isDirectory(),
+      () => false,
+    );
+    if (!runFile || runFile.runId !== run.runId || runFile.projectId !== run.projectId || !repo) {
+      throw new PreparationFailedError(RESUME_NO_WORKING_COPY);
+    }
+    // The agent continues exactly where it stopped: on the Run branch Studio recorded.
+    if (!(await onBranch(this.options.git, paths.repoDir, run.runBranch, this.options.dataDir))) {
+      throw new PreparationFailedError(
+        `The Working copy is not on its Run branch ${run.runBranch}, so the run cannot resume ` +
+          'there — run again.',
+      );
+    }
+    return {
+      runId: run.runId,
+      runDir: paths.runDir,
+      repoDir: paths.repoDir,
+      runBranch: run.runBranch,
+      startCommit: run.startCommit.toLowerCase(),
+      env: { COMPOSE_PROJECT_NAME: composeProjectName(run.runId) },
     };
   }
 
@@ -458,6 +500,28 @@ function shorten(subject: string): string {
   if (subject.length <= COMMIT_SUBJECT_MAX_LENGTH) return subject;
   const cut = subject.slice(0, COMMIT_SUBJECT_MAX_LENGTH);
   return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
+/**
+ * Whether the Working copy at `repoDir` has the Run branch checked out (`HEAD` is
+ * `refs/heads/<runBranch>`); false when it cannot be read (Issue #103 decision: resume and
+ * delivery retries check it before they go on).
+ */
+export async function onBranch(
+  git: GitRunner,
+  repoDir: string,
+  runBranch: string,
+  ceiling: string,
+): Promise<boolean> {
+  const head = await git
+    .run(['symbolic-ref', '--quiet', 'HEAD'], {
+      cwd: repoDir,
+      timeoutMs: GIT_TIMEOUTS.local,
+      ceiling,
+    })
+    .then((ref) => ref.trim())
+    .catch(() => '');
+  return head === `refs/heads/${runBranch}`;
 }
 
 /** Reads a Run's `run.json`; `null` when it is missing or not what the worker writes. */

@@ -36,6 +36,27 @@ export const runCancelledBySchema = z.enum(['operator', 'system']);
 /** How a Run was delivered (Issue #102): `none` is "No changes". */
 export const runDeliverySchema = z.enum(['none', 'delivered', 'failed']);
 
+/** The agent's open question (Issue #103): plain text, never markup. */
+export const runQuestionResponseSchema = z
+  .object({
+    text: z.string(),
+    /** The options the agent offers, when it offers any (at most six). */
+    options: z.array(z.string()).optional(),
+    /** The option the agent recommends, when it recommends one. */
+    recommendation: z.string().optional(),
+  })
+  .meta({ id: 'RunQuestion' });
+
+/** One turn of the Run's conversation (Issue #103): the Task, a question or an answer. */
+export const runMessageResponseSchema = z
+  .object({
+    role: z.enum(['operator', 'agent']),
+    kind: z.enum(['task', 'question', 'answer']),
+    text: z.string(),
+    at: z.iso.datetime(),
+  })
+  .meta({ id: 'RunMessage' });
+
 export const runResponseSchema = z
   .object({
     id: z.uuid(),
@@ -90,6 +111,14 @@ export const runResponseSchema = z
     deliveryRetryRequested: z.literal(true).optional(),
     /** The checks the agent reported failed in the latest Run step, when there are any. */
     failingChecks: z.array(z.string()).optional(),
+    /** Present exactly while the Run waits for the operator's answer to it (Issue #103). */
+    question: runQuestionResponseSchema.optional(),
+    /**
+     * The conversation, in order (Issue #103): the Task, then each question of the agent and
+     * each answer of the operator. Everything the agent wrote is plain text. In single-Run
+     * answers only (`GET /api/runs/:runId` and the commands); lists leave it and `question` out.
+     */
+    messages: z.array(runMessageResponseSchema).optional(),
   })
   .meta({ id: 'Run' });
 
@@ -126,7 +155,17 @@ export function toRunResponse(run: {
   pullRequest: { url: string; number: number } | null;
   deliveryRequested: boolean;
   failingChecks: string[];
+  messages: (
+    | {
+        kind: 'question';
+        question: { text: string; options?: string[]; recommendation?: string };
+        at: Date;
+      }
+    | { kind: 'answer'; text: string; at: Date }
+  )[];
 }): RunResponse {
+  const last = run.messages.at(-1);
+  const open = run.state === 'waiting_for_operator' && last?.kind === 'question' ? last : null;
   return {
     id: run.id,
     projectId: run.projectId,
@@ -161,5 +200,45 @@ export function toRunResponse(run: {
       : {}),
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
     ...(run.failingChecks.length > 0 ? { failingChecks: [...run.failingChecks] } : {}),
+    ...(open
+      ? {
+          question: {
+            text: open.question.text,
+            ...(open.question.options ? { options: [...open.question.options] } : {}),
+            ...(open.question.recommendation === undefined
+              ? {}
+              : { recommendation: open.question.recommendation }),
+          },
+        }
+      : {}),
+    messages: [
+      { role: 'operator', kind: 'task', text: run.task, at: run.createdAt.toISOString() },
+      ...run.messages.map((message) =>
+        message.kind === 'question'
+          ? {
+              role: 'agent' as const,
+              kind: 'question' as const,
+              text: message.question.text,
+              at: message.at.toISOString(),
+            }
+          : {
+              role: 'operator' as const,
+              kind: 'answer' as const,
+              text: message.text,
+              at: message.at.toISOString(),
+            },
+      ),
+    ],
   };
+}
+
+/**
+ * A Run in a list (Issue #103, coordinator decision): the Run without its conversation
+ * (`messages`) and open question, which only the single-Run answers carry.
+ */
+export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResponse {
+  const { messages: _messages, question: _question, ...item } = toRunResponse(run);
+  void _messages;
+  void _question;
+  return item;
 }

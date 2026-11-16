@@ -1,14 +1,16 @@
 import { type RunPayload, runPayloadSchema } from '@agentic-studio/contracts';
 import { Body, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
 import { WorkerController } from '../../../../platform/auth/worker-route.js';
-import { ClaimRunHandler } from './handler.js';
+import { resumeAnswer } from '../../domain/entities/run.js';
+import { type ClaimedRun, ClaimRunHandler } from './handler.js';
 import { ClaimRunRequestDto } from './schema.js';
 
 /**
  * `POST /api/worker/runs/claim` (Issue #96), worker token only: 200 with the Run payload, or
  * 204 when no Run is eligible. The payload carries what a Run needs and nothing else, and
- * whether the worker starts the Run or only retries its delivery (Issue #102). The Project's
- * Environment file (Issue #104) is the one secret value in it, in a start claim only.
+ * whether the worker starts the Run, only retries its delivery (Issue #102) or resumes it with
+ * the operator's answer (Issue #103). The Project's Environment file (Issue #104) is the one
+ * secret value in it, in a start claim only.
  */
 @WorkerController('runs')
 export class ClaimRunEndpoint {
@@ -39,15 +41,34 @@ export class ClaimRunEndpoint {
       // Issue #104: the snapshot, to the claiming worker only, when it starts the Run; never logged.
       ...(run.environmentFile ? { environmentFile: run.environmentFile } : {}),
       // Issue #102: a failed Run handed out again is a delivery retry, nothing else; it pushes
-      // exactly the Run branch Studio recorded (review R1 of #122).
-      ...(run.state === 'failed'
-        ? { kind: 'deliver', runBranch: run.workingCopy?.runBranch }
-        : { kind: 'start' }),
+      // exactly the Run branch Studio recorded (review R1 of #122). Issue #103: an answered Run
+      // resumes its agent session with the answer, its events continuing after the stored log.
+      ...kindOf(run),
       // The worker enforces these (Issue #100); the waiting period is Studio's own.
       limits: { stepMinutes: run.limits.stepMinutes, maxSteps: run.limits.maxSteps },
-      // A start claim hands out a queued Run, which has taken no Run step yet (resumed Runs:
-      // #103); a delivery retry starts none.
-      completedSteps: run.state === 'failed' ? 1 : 0,
+      completedSteps: run.completedSteps,
     });
   }
+}
+
+/** The kind of a claim and the fields that go with it. */
+function kindOf(run: ClaimedRun) {
+  if (run.state === 'failed') {
+    return {
+      kind: 'deliver' as const,
+      runBranch: run.workingCopy?.runBranch,
+      nextSeq: run.nextSeq,
+    };
+  }
+  const answer = resumeAnswer(run);
+  if (answer !== null && run.sessionRef !== null) {
+    return {
+      kind: 'resume' as const,
+      runBranch: run.workingCopy?.runBranch,
+      sessionRef: run.sessionRef,
+      answer,
+      nextSeq: run.nextSeq,
+    };
+  }
+  return { kind: 'start' as const };
 }

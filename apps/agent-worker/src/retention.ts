@@ -54,7 +54,8 @@ interface Finished {
  * state is; the worker asks it for the Runs it has directories for. Then:
  * - a directory without a known Run (unknown id, or not a Run id at all) is removed;
  * - the Working copy of a Run that is not final (queued, preparing, running, waiting for the
- *   operator) is never removed, nor the one the worker is carrying;
+ *   operator) is never removed, nor the one the worker is carrying; this keeps a waiting Run's
+ *   Working copy and an answered one queued to resume its session (Issue #103);
  * - a final Run's Working copy is removed once it finished more than `retentionDays` ago,
  *   and beyond the newest `maxPerProject` finished ones of its Project.
  * Removing a Working copy first removes the Run's containers, networks and volumes; if that

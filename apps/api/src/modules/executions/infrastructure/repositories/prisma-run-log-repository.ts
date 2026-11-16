@@ -66,6 +66,11 @@ export class PrismaRunLogRepository implements RunLogRepository {
     });
   }
 
+  async lastSeq(runId: string): Promise<number> {
+    const { _max } = await this.db.runEvent.aggregate({ where: { runId }, _max: { seq: true } });
+    return _max.seq ?? 0;
+  }
+
   async listAfter(runId: string, after: number, limit: number): Promise<RunEvent[]> {
     const rows = await this.db.runEvent.findMany({
       where: { runId, seq: { gt: after } },

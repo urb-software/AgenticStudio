@@ -6,7 +6,11 @@ import {
   type RunEnvironmentFiles,
 } from '../../../projects/contracts/index.js';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/entities/run-environment-file.js';
-import type { Run, RunFailure } from '../../domain/entities/run.js';
+import { resumeAnswer, type Run, type RunFailure } from '../../domain/entities/run.js';
+import {
+  RUN_LOG_REPOSITORY,
+  type RunLogRepository,
+} from '../../domain/repositories/run-log-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { cancelLongWaitingRuns } from '../../domain/services/long-waiting-runs.js';
 import { failLostWorkers } from '../../domain/services/lost-workers.js';
@@ -48,13 +52,25 @@ const ENVIRONMENT_FILE_UNAVAILABLE: RunFailure = {
     'if it keeps failing, set the Environment file again.',
 };
 
+/** A resume with nothing recorded to resume in (Issue #103). */
+const NOT_RESUMABLE: RunFailure = {
+  code: 'preparation_failed',
+  detail:
+    'Working copy no longer exists — run again: Studio has no recorded Working copy, repository ' +
+    'remote or integration branch for this run.',
+};
+
 /**
  * A claimed Run and what goes to the claiming worker with it: the Project's Environment file
  * as it was at the claim (Issue #104), or `null` when the Project has none or the claim is a
- * delivery retry (the file is already in the Working copy then).
+ * delivery retry or a resume (the file is already in the Working copy then); how many Run steps
+ * it has taken and the seq of its next event (Issue #103: a resumed step continues after the
+ * stored log).
  */
 export interface ClaimedRun extends Run {
   environmentFile: EnvironmentFile | null;
+  completedSteps: number;
+  nextSeq: number;
 }
 
 /** The snapshot could not be taken; the Run was failed. */
@@ -67,7 +83,9 @@ const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
  * requested is handed out too, for the delivery only (Issue #102). Issue #104: when a Run is
  * started, the Project's Environment file is copied into a Run-scoped secret (the Run's
  * snapshot: log redaction uses it, and later changes to the file affect only later Runs) and
- * handed to the claiming worker only; the Run records its path.
+ * handed to the claiming worker only; the Run records its path. Issue #103: an answered Run is
+ * handed out to resume its agent session, only to the worker that started it; it keeps the
+ * snapshot it took at its start (no new one, and no content in the claim).
  */
 @Injectable()
 export class ClaimRunHandler {
@@ -75,6 +93,7 @@ export class ClaimRunHandler {
 
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(RUN_LOG_REPOSITORY) private readonly logs: RunLogRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RUN_ENVIRONMENT_FILES) private readonly environmentFiles: RunEnvironmentFiles,
@@ -97,7 +116,8 @@ export class ClaimRunHandler {
         // Run branch there is nothing to deliver; it fails again at once and is released
         // (review R5 of #122).
         if (run.remoteUrl !== '' && run.integrationBranch !== '' && run.workingCopy) {
-          return { ...run, environmentFile: null };
+          // Its events continue after the stored log (coordinator decision on #103).
+          return { ...run, environmentFile: null, ...(await this.progress(run.id)) };
         }
         await this.runs.finishDeliveryRetry({
           runId: run.id,
@@ -113,7 +133,16 @@ export class ClaimRunHandler {
       // A Run from before Issue #98 whose project had no Repository has no remote to prepare
       // from (nor an integration branch, Issue #102): it fails with preparation_failed here
       // instead of reaching a worker (review S6).
-      if (run.remoteUrl === '' || run.integrationBranch === '') {
+      const reachable = run.remoteUrl !== '' && run.integrationBranch !== '';
+      if (resumeAnswer(run) !== null) {
+        // Issue #103: the resumed step continues the Run's step numbers and its log's seqs.
+        if (reachable && run.workingCopy) {
+          return { ...run, environmentFile: null, ...(await this.progress(run.id)) };
+        }
+        await this.fail(run, workerId, NOT_RESUMABLE, now);
+        continue;
+      }
+      if (!reachable) {
         await this.fail(run, workerId, NO_REMOTE, now);
         continue;
       }
@@ -124,6 +153,8 @@ export class ClaimRunHandler {
         environmentFileSupplied: environmentFile !== null,
         environmentFilePath: environmentFile?.path ?? null,
         environmentFile,
+        completedSteps: 0,
+        nextSeq: 1,
       };
     }
   }
@@ -157,6 +188,15 @@ export class ClaimRunHandler {
     if (secretRef !== undefined) await this.secrets.delete(secretRef).catch(() => undefined);
     await this.fail(run, workerId, ENVIRONMENT_FILE_UNAVAILABLE, now);
     return SNAPSHOT_FAILED;
+  }
+
+  /** How many Run steps the Run has taken and the seq after its stored log (Issue #103). */
+  private async progress(runId: string): Promise<{ completedSteps: number; nextSeq: number }> {
+    const [steps, lastSeq] = await Promise.all([
+      this.runs.listSteps(runId),
+      this.logs.lastSeq(runId),
+    ]);
+    return { completedSteps: steps.length, nextSeq: lastSeq + 1 };
   }
 
   private async fail(run: Run, workerId: string, failure: RunFailure, now: Date): Promise<void> {
