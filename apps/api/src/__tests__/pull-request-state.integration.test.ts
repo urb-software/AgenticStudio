@@ -80,6 +80,15 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
     kind: 'pull_request_state',
     result,
   });
+  /** The worker's status report, as it sends one with every poll (Issue #101). */
+  const connectWorker = async () => {
+    const status = await asWorker('status', {
+      workerId: W1,
+      runner: 'cli',
+      providers: { claude_code: true, codex: true },
+    });
+    expect(status.status).toBe(204);
+  };
   const followUp = (runId: string) =>
     http()
       .post(`/api/runs/${runId}/follow-up`)
@@ -110,9 +119,8 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       workerId: W1,
       index: 1,
       kind: 'start',
-      result: { outcome: 'done', summary: 'Done.' },
+      result: { outcome: 'done', summary: 'Done.', sessionRef: 'session-1' },
       workingCopy: WORKING_COPY,
-      sessionRef: 'session-1',
     });
     expect(stepped.status).toBe(204);
     const ended = await asWorker(`runs/${runId}/state`, {
@@ -161,12 +169,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
     await db().$executeRaw`TRUNCATE TABLE run_lease_renewals`;
     clock.current = new Date();
-    const status = await asWorker('status', {
-      workerId: W1,
-      runner: 'cli',
-      providers: { claude_code: true, codex: true },
-    });
-    expect(status.status).toBe(204);
+    await connectWorker();
   });
 
   describe('refresh', () => {
@@ -207,6 +210,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
 
     it('asks at most once a minute when the Run page opens, and any time for the Refresh action', async () => {
       const runId = await deliveredRun();
+      await refresh(runId);
       await readAs({ state: 'draft', behindBy: 0, aheadBy: 1 });
 
       advance(30);
@@ -216,6 +220,8 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       expect((await claimLookups()).status).toBe(204);
 
       advance(31);
+      // The worker reports itself with every poll: it is still connected a minute later.
+      await connectWorker();
       expect((await refresh(runId, { onOpen: true })).body.pullRequest.refreshing).toBe(true);
       await readAs({ state: 'draft' });
 
