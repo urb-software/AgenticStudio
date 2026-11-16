@@ -4,7 +4,7 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type { PullRequestState } from '../../domain/entities/run.js';
+import { isPullRequestEnded, type PullRequestState } from '../../domain/entities/run.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
@@ -18,6 +18,17 @@ import type {
 } from '../../domain/repositories/run-lookup-repository.js';
 
 const OPEN = ['requested', 'claimed'];
+
+/**
+ * The `pr_ended_at` assignment of a Run whose pull request was read as `state` (Issue #143): the
+ * first time it is read as merged, closed or missing is kept (the retention period counts from
+ * it); reading it open or draft again (a reopened pull request) clears it.
+ */
+function prEndedAtAssignment(state: PullRequestState, now: Date): Prisma.Sql {
+  return isPullRequestEnded(state)
+    ? Prisma.sql`pr_ended_at = COALESCE(pr_ended_at, ${now}::timestamptz)`
+    : Prisma.sql`pr_ended_at = NULL`;
+}
 
 /**
  * PostgreSQL adapter of {@link RunLookupRepository} (Issue #142): one `run_lookups` row per
@@ -131,19 +142,18 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       // A Run's state is what the latest answer says; the counts and the merge verdict are
       // cleared when the answer has none (a merged, closed or missing pull request).
-      await tx.run.updateMany({
-        where: { id: lookup.runId, pullRequestNumber: { not: null } },
-        data: {
-          prState: result.state,
-          prBehindBy: result.behindBy ?? null,
-          prAheadBy: result.aheadBy ?? null,
-          prMergeable: result.mergeable ?? null,
-          prRefreshedAt: now,
-          prRefreshError: null,
-          prRetryAt: null,
-          prRefreshRequestedAt: null,
-        },
-      });
+      await tx.$executeRaw`
+        UPDATE runs SET
+          pr_state = ${result.state},
+          pr_behind_by = ${result.behindBy ?? null}::int,
+          pr_ahead_by = ${result.aheadBy ?? null}::int,
+          pr_mergeable = ${result.mergeable ?? null}::boolean,
+          pr_refreshed_at = ${now}::timestamptz,
+          pr_refresh_error = NULL,
+          pr_retry_at = NULL,
+          pr_refresh_requested_at = NULL,
+          ${prEndedAtAssignment(result.state, now)}
+        WHERE id = ${lookup.runId}::uuid AND pull_request_number IS NOT NULL`;
       return 'stored';
     });
   }
@@ -196,10 +206,14 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
   }
 
   async recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
-    await this.db.run.updateMany({
-      where: { id: runId, pullRequestNumber: { not: null } },
-      data: { prState: state, prRefreshedAt: now, prRefreshError: null, prRetryAt: null },
-    });
+    await this.db.$executeRaw`
+      UPDATE runs SET
+        pr_state = ${state},
+        pr_refreshed_at = ${now}::timestamptz,
+        pr_refresh_error = NULL,
+        pr_retry_at = NULL,
+        ${prEndedAtAssignment(state, now)}
+      WHERE id = ${runId}::uuid AND pull_request_number IS NOT NULL`;
   }
 
   async deleteFinishedBefore(before: Date): Promise<number> {

@@ -60,7 +60,9 @@ export interface RunDiffFileView extends RunDiffFileSummary {
 /**
  * Where a Run's diffs stand (review S-1 of #149): the snapshot tree and commit of the latest
  * result and of the one before it, and the Run branch tip the worker last pushed. Studio keeps
- * it for the worker and hands it back with a resume or delivery claim; object ids only.
+ * it for the worker and hands it back with a resume or delivery claim; object ids only. Issue
+ * #143: Studio stores the pushed commit once, on the Run (`Run.pushedCommit`); the claim fills
+ * `pushedCommit` from there, and what a worker sends with its diff state is not stored.
  */
 export interface RunDiffState {
   resultTree: string;

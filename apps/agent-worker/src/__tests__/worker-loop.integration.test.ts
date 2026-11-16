@@ -270,6 +270,9 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
         STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
         STUDIO_DATA_DIR: dataDir,
         STUDIO_WORKER_TOKEN: WORKER_TOKEN,
+        // Issue #143: Studio decides the retention; a Run finished without a pull request is
+        // removable at once, so the sweep below has something to remove.
+        STUDIO_RETENTION_DAYS: '0',
       },
     });
     api.stdout!.setEncoding('utf8').on('data', (chunk: string) => (apiOutput += chunk));
@@ -508,14 +511,20 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     mkdirSync(join(workerDataDir, 'runs', leftover, 'repo'), { recursive: true });
     const cleaned: string[] = [];
     const api = new StudioApi({ apiUrl, token: WORKER_TOKEN, workerId: randomUUID() });
+    // The finished Run's draft pull request was merged two days ago: past its 24 hours.
+    await db.run.updateMany({
+      where: { id: finished, pullRequestNumber: { not: null } },
+      data: {
+        prState: 'merged',
+        prRefreshedAt: new Date(),
+        prEndedAt: new Date(Date.now() - 2 * 24 * 60 * 60_000),
+      },
+    });
 
     await new Retention({
       dataDir: workerDataDir,
       runStates: (runIds) => api.runStates(runIds),
       resources: { cleanUp: async (name) => void cleaned.push(name) },
-      retentionDays: 0,
-      maxPerProject: 10,
-      now: () => new Date(Date.now() + 1000),
       carrying: () => undefined,
       logger,
     }).sweep();

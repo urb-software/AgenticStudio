@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type {
+  AgentWorkerOutput,
   ProblemDetails,
   ProjectOutput,
   ProviderAvailabilityOutput,
@@ -21,6 +22,7 @@ type Route =
   | 'retryDelivery'
   | 'resume'
   | 'providers'
+  | 'agentWorker'
   | 'events'
   | 'steps'
   | 'stream'
@@ -47,6 +49,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/retry-delivery$/, () => 'retryDelivery'],
   [/^\/api\/runs\/([^/]+)\/resume$/, () => 'resume'],
   [/^\/api\/providers()$/, () => 'providers'],
+  [/^\/api\/agent-worker()$/, () => 'agentWorker'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
   [/^\/api\/runs\/([^/]+)\/follow-up$/, () => 'followUp'],
@@ -142,6 +145,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     retryDelivery: [],
     resume: [],
     providers: [],
+    agentWorker: [],
     cancel: [],
     answer: [],
     followUp: [],
@@ -154,6 +158,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     diffFile: [],
   };
   const calls: { route: Route; body?: unknown; query?: URLSearchParams }[] = [];
+  /** What `GET /api/agent-worker` answers (Issue #143): no worker connected by default. */
+  let agentWorker: AgentWorkerOutput = { connected: false };
   /** Each Run's stored log and step results, as the API would hold them. */
   const logs = new Map<string, RunEventOutput[]>();
   const stepResults = new Map<string, RunStepOutput[]>();
@@ -247,6 +253,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         });
       case 'providers':
         return json(200, BOTH_AVAILABLE);
+      case 'agentWorker':
+        return json(200, agentWorker);
       case 'run': {
         const run = runs.find((candidate) => candidate.id === id);
         return run ? json(200, run) : json(404, problem(404, 'Run not found'));
@@ -477,6 +485,10 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     /** Sets a Run's stored diff of a scope (Issue #144). */
     setDiff(runId: string, scope: RunDiffOutput['scope'], diff: FakeDiff) {
       diffs.set(runId, { ...diffs.get(runId), [scope]: diff });
+    },
+    /** Sets what the agent worker's status answers (Issue #143). */
+    setAgentWorker(status: AgentWorkerOutput) {
+      agentWorker = status;
     },
     /** The live log connections opened so far, in order. */
     streams: () => [...streams],

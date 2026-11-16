@@ -5,6 +5,8 @@ import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in
 import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../domain/services/provider-availability.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
+import { runView } from '../../../domain/services/follow-up-context.js';
+import type { RetentionPolicy } from '../../../ports/retention-policy.js';
 import { FollowUpRunHandler } from '../handler.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
@@ -32,6 +34,13 @@ const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
 const T0 = new Date('2026-11-16T12:00:00.000Z');
 const T1 = new Date('2026-11-16T12:30:00.000Z');
 const LEASE = { seconds: 60 };
+const RETENTION: RetentionPolicy = {
+  days: 7,
+  maxPerProject: 10,
+  openPullRequestIdleDays: 30,
+  hoursAfterPullRequestEnd: 24,
+};
+const DAY = 24 * 60 * 60_000;
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',
   commits: [{ id: 'a'.repeat(40), subject: 'First' }],
@@ -103,7 +112,7 @@ describe('FollowUpRunHandler', () => {
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
     lookups = new InMemoryRunLookupRepository(runs);
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups);
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
     connect();
   });
 
@@ -223,7 +232,7 @@ describe('FollowUpRunHandler', () => {
   it('refuses while the agent worker holding the Working copy is gone, or the Provider is off', async () => {
     const run = await finished('succeeded');
     workers = new InMemoryWorkerStatusStore();
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups);
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
     connect(OTHER_WORKER);
     await expect(handler.execute(run.id, 'x')).rejects.toEqual(
       new FollowUpNotAllowedError('worker_unavailable'),
@@ -358,6 +367,91 @@ describe('FollowUpRunHandler', () => {
     expect((await runs.findById(run.id))!.failure).toEqual({
       code: 'step_limit',
       detail: 'The Follow-up reached its limit of 10 run steps; no further step was started.',
+    });
+  });
+  // Issue #143: the Run page says until when the Run stays open to Follow-ups.
+  describe('until when a Run is open to Follow-ups (Issue #143)', () => {
+    const view = (run: Run, at = T1) => runView(run, workers, at, LEASE.seconds, RETENTION);
+
+    it('says the Run with a pull request is open until 30 days after its last activity', async () => {
+      const run = await finished('succeeded');
+
+      expect(view(run).followUp).toEqual({
+        allowed: true,
+        openUntil: new Date(run.lastActivityAt.getTime() + 30 * DAY),
+      });
+    });
+
+    it('moves the date when the Run has activity: a Run step, an Answer, a Follow-up', async () => {
+      const run = await finished('succeeded');
+      const before = view(run).followUp.openUntil!;
+
+      await runs.queueFollowUp(run.id, 'More.', new Date(T1.getTime() + 5 * DAY));
+      const queued = (await runs.findById(run.id))!;
+
+      expect(queued.lastActivityAt).toEqual(new Date(T1.getTime() + 5 * DAY));
+      expect(queued.lastActivityAt.getTime()).toBeGreaterThan(run.lastActivityAt.getTime());
+      expect(new Date(queued.lastActivityAt.getTime() + 30 * DAY).getTime()).toBeGreaterThan(
+        before.getTime(),
+      );
+    });
+
+    it('counts a Run without a pull request seven days from when it finished', async () => {
+      const run = await finished('failed');
+
+      expect(view(run).followUp).toEqual({
+        allowed: true,
+        openUntil: new Date(run.finishedAt!.getTime() + 7 * DAY),
+      });
+    });
+
+    it('says removal is pending instead of a date that has passed', async () => {
+      const run = await finished('succeeded');
+      const later = new Date(run.lastActivityAt.getTime() + 31 * DAY);
+      connect(WORKER, later);
+
+      const { followUp } = view(run, later);
+
+      expect(followUp).toEqual({ allowed: true, removalPending: true });
+    });
+
+    it('says removal is pending for a Run the per-Project limit removes', async () => {
+      const run = await finished('failed');
+
+      const { followUp } = runView(run, workers, T1, LEASE.seconds, RETENTION, true);
+
+      expect(followUp).toEqual({ allowed: true, removalPending: true });
+    });
+
+    it('also gives the date while only the worker or the Provider is missing', async () => {
+      const run = await finished('succeeded');
+      workers = new InMemoryWorkerStatusStore();
+      connect(OTHER_WORKER);
+
+      expect(view(run).followUp).toMatchObject({
+        allowed: false,
+        reason: 'worker_unavailable',
+        openUntil: expect.any(Date),
+      });
+    });
+
+    it('gives no date once the pull request ended, the Working copy is gone, or the Run is not finished', async () => {
+      const merged = await finished('succeeded');
+      runs.runs.find((run) => run.id === merged.id)!.pullRequestStatus = {
+        ...merged.pullRequestStatus,
+        state: 'merged',
+        endedAt: T0,
+      };
+      const removed = await finished('succeeded');
+      runs.runs.find((run) => run.id === removed.id)!.workingCopyRemovedAt = T0;
+      const queued = await runs.add(newRun(OTHER_PROJECT));
+
+      for (const run of [merged, removed, queued]) {
+        const current = (await runs.findById(run.id))!;
+        const { followUp } = view(current);
+        expect(followUp.allowed).toBe(false);
+        expect(followUp).not.toHaveProperty('openUntil');
+      }
     });
   });
 });

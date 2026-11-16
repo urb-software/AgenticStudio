@@ -86,4 +86,81 @@ describe('Executions page', () => {
     const [row] = await rows();
     expect(within(row!).getByText('Unknown project')).toBeTruthy();
   });
+  // Issue #143: the agent side's disk.
+  describe('agent worker disk', () => {
+    const GIB = 1024 ** 3;
+    const disk = {
+      workingCopiesBytes: 3.2 * GIB,
+      cachesBytes: 1.5 * GIB,
+      keptRuns: 4,
+      freeBytes: 42 * GIB,
+      totalBytes: 100 * GIB,
+      minFreeBytes: 10 * GIB,
+      low: false,
+    };
+
+    it('shows what the Working copies and caches take, the Runs kept and the free space', async () => {
+      const api = fakeRunsApi([aRun()]);
+      api.setAgentWorker({ connected: true, disk });
+      const { container } = renderExecutions();
+
+      const section = await screen.findByRole('region', { name: 'Agent worker disk' });
+      expect(within(section).getByText('Working copies').nextSibling?.textContent).toBe('3.2 GiB');
+      expect(within(section).getByText('Caches').nextSibling?.textContent).toBe('1.5 GiB');
+      expect(within(section).getByText('Runs kept').nextSibling?.textContent).toBe('4');
+      expect(within(section).getByText('Free').nextSibling?.textContent).toBe('42 GiB of 100 GiB');
+      expect(screen.queryByText("The agent worker's disk is nearly full")).toBeNull();
+      expect(await rows()).toHaveLength(1);
+      await expect(container).toHaveNoAxeViolations();
+    });
+
+    it('warns when the free space is below the threshold, and says what that means', async () => {
+      const api = fakeRunsApi([aRun()]);
+      api.setAgentWorker({
+        connected: true,
+        disk: { ...disk, freeBytes: 6.5 * GIB, low: true },
+      });
+      const { container } = renderExecutions();
+
+      const warning = (await screen.findByText("The agent worker's disk is nearly full")).closest(
+        '[data-slot="banner"]',
+      )!;
+      expect(warning.getAttribute('role')).toBe('status');
+      expect(warning.textContent).toContain('6.5 GiB are free, below the 10 GiB it keeps free');
+      expect(warning.textContent).toContain('New runs are not prepared');
+      await expect(container).toHaveNoAxeViolations();
+    });
+
+    it('says the sizes are lower bounds when some files could not be read', async () => {
+      const api = fakeRunsApi([aRun()]);
+      api.setAgentWorker({ connected: true, disk: { ...disk, partial: true } });
+      renderExecutions();
+
+      const section = await screen.findByRole('region', { name: 'Agent worker disk' });
+      expect(within(section).getByText('Working copies').nextSibling?.textContent).toBe(
+        'at least 3.2 GiB',
+      );
+      expect(section.textContent).toContain('sizes are lower bounds');
+    });
+
+    it('shows nothing while no worker is connected or it has not measured its disk yet', async () => {
+      const api = fakeRunsApi([aRun()]);
+      renderExecutions();
+      await rows();
+      expect(screen.queryByRole('region', { name: 'Agent worker disk' })).toBeNull();
+
+      api.setAgentWorker({ connected: true });
+      expect(screen.queryByRole('region', { name: 'Agent worker disk' })).toBeNull();
+    });
+
+    it('still lists the Runs when the worker status cannot be read', async () => {
+      const api = fakeRunsApi([aRun({ task: 'Add pagination' })]);
+      api.respondNext('agentWorker', 503, problem(503, 'Service Unavailable'));
+      renderExecutions();
+
+      expect((await rows())[0]!.textContent).toContain('Add pagination');
+      expect(screen.queryByRole('region', { name: 'Agent worker disk' })).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
 });

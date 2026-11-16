@@ -10,6 +10,7 @@ import {
 } from '@agentic-studio/contracts';
 import { appendFile, lstat, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
+import { LowFreeSpaceError } from './disk.js';
 import {
   GIT_TIMEOUTS,
   GitCommandError,
@@ -114,6 +115,12 @@ export interface WorkingCopiesOptions {
    */
   allowFileRemotes: boolean;
   logger: WorkingCopyLogger;
+  /**
+   * Issue #143: checked before a new Run's Working copy is made; throws {@link LowFreeSpaceError}
+   * when the disk is short, so the Run fails with `preparation_failed` instead of filling it.
+   * A resume (a Follow-up, an Answer) and a delivery use the Working copy they have: not checked.
+   */
+  freeSpace?: { assertEnoughFreeSpace(): Promise<void> };
 }
 
 /** An https or SSH remote (URL or scp-like `user@host:path`); anything else is local. */
@@ -164,6 +171,13 @@ export class WorkingCopies implements WorkingCopyPort {
     const environmentFile = run.environmentFile;
     if (environmentFile && environmentFilePathProblem(environmentFile.path) !== null) {
       throw new PreparationFailedError('The Environment file path is not a safe relative path.');
+    }
+
+    try {
+      await this.options.freeSpace?.assertEnoughFreeSpace();
+    } catch (error) {
+      if (error instanceof LowFreeSpaceError) throw new PreparationFailedError(error.detail);
+      throw error;
     }
 
     await assertRealDirectory(cachesDirectory(dataDir), true);
@@ -332,12 +346,15 @@ export class WorkingCopies implements WorkingCopyPort {
    * overwritten), or when any part of it is a symlink or not a directory (repository content
    * is untrusted: nothing is written outside the Working copy). Missing parent directories are
    * created inside the Working copy; the file itself is created new, never written through.
+   * Issue #143 (carried from the review of #141): a Follow-up's rewrite also refuses a path the
+   * Run branch's current commit tracks (`runBranch`), which the agent may have added since.
    */
   private async placeEnvironmentFile(
     repoDir: string,
     startCommit: string,
     file: EnvironmentFile,
     signal: AbortSignal,
+    runBranch?: string,
   ): Promise<void> {
     const options = {
       cwd: repoDir,
@@ -346,13 +363,17 @@ export class WorkingCopies implements WorkingCopyPort {
       ceiling: this.options.dataDir,
     };
     // `<commit>:<path>` names a tracked file or directory at that path, taken literally.
-    const tracked = await this.options.git
-      .run(['rev-parse', '--verify', '--quiet', `${startCommit}:${file.path}`], options)
-      .then(() => true)
-      .catch((error: unknown) => {
-        if (error instanceof GitCommandError && error.reason === 'exit') return false;
-        throw error;
-      });
+    const trackedAt = (revision: string) =>
+      this.options.git
+        .run(['rev-parse', '--verify', '--quiet', `${revision}:${file.path}`], options)
+        .then(() => true)
+        .catch((error: unknown) => {
+          if (error instanceof GitCommandError && error.reason === 'exit') return false;
+          throw error;
+        });
+    const tracked =
+      (await trackedAt(startCommit)) ||
+      (runBranch !== undefined && (await trackedAt(`refs/heads/${runBranch}`)));
     if (tracked) {
       throw new PreparationFailedError('Environment file path is tracked in the repository');
     }
@@ -408,7 +429,13 @@ export class WorkingCopies implements WorkingCopyPort {
       await removeStudioFile(paths.repoDir, path);
     }
     if (!file) return;
-    await this.placeEnvironmentFile(paths.repoDir, run.startCommit.toLowerCase(), file, signal);
+    await this.placeEnvironmentFile(
+      paths.repoDir,
+      run.startCommit.toLowerCase(),
+      file,
+      signal,
+      run.runBranch,
+    );
     const exclude = posix.join(paths.repoDir, '.git', 'info', 'exclude');
     const listed = await readFile(exclude, 'utf8').catch(() => '');
     if (!listed.includes(STUDIO_EXCLUDE_SECTION.trim())) {

@@ -1,9 +1,11 @@
+import { AgentSessions } from './agent-sessions.js';
 import { ClaudeCodeRunner, probeClaudeCode } from './claude-code/runner.js';
 import { prepareCodexHome } from './codex/codex-home.js';
 import { CodexRunner, probeCodex } from './codex/runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
 import { BranchUpdates } from './branch-update.js';
 import { Deliveries } from './delivery.js';
+import { DiskMonitor } from './disk.js';
 import { FakeRunner } from './fake-runner.js';
 import { GitRunner } from './git.js';
 import { terminateLeftovers } from './leftovers.js';
@@ -111,9 +113,17 @@ const api = new StudioApi({
   timeoutMs: config.requestTimeoutMs,
 });
 const resources = new DockerRunResources(undefined, logger);
+// Issue #143: the disk figures for the status report and the free-space guard of new Runs.
+const disk = new DiskMonitor({
+  dataDir: config.dataDir,
+  minFreeBytes: config.minFreeBytes,
+  now: () => new Date(),
+  logger,
+});
 const workingCopies = new WorkingCopies({
   dataDir: config.dataDir,
   git,
+  freeSpace: disk,
   agentGitName: config.agentGitName,
   agentGitEmail: config.agentGitEmail,
   // A local (file) remote only for a development or test worker (coordinator decision, #98).
@@ -130,6 +140,7 @@ const worker = new AgentWorker({
     providers: gate.snapshot(),
     ...(Object.keys(reasons).length > 0 ? { providerReasons: { ...reasons } } : {}),
   },
+  disk,
   workingCopies,
   // Issue #147: the integration branch merged into a Run branch on the operator's request.
   branchUpdates: new BranchUpdates({
@@ -185,9 +196,10 @@ const retention = new Retention({
   dataDir: config.dataDir,
   runStates: (runIds, signal, removedRunIds) => api.runStates(runIds, signal, removedRunIds),
   resources,
-  retentionDays: config.retentionDays,
-  maxPerProject: config.retentionMaxPerProject,
-  now: () => new Date(),
+  // Issue #143: the provider CLIs' session files of a removed Working copy go with it.
+  ...(process.env.HOME?.startsWith('/') && process.env.HOME !== '/'
+    ? { sessions: new AgentSessions(process.env.HOME, logger) }
+    : {}),
   carrying: () => worker.carrying,
   logger,
 });

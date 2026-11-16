@@ -14,6 +14,7 @@ import { InMemoryRunLookupRepository } from '../../../domain/repositories/__test
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../domain/services/provider-availability.js';
+import type { RetentionPolicy } from '../../../ports/retention-policy.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FollowUpRunHandler } from '../../follow-up-run/handler.js';
 
@@ -41,6 +42,12 @@ const T0 = new Date('2026-11-16T12:00:00.000Z');
 const T1 = new Date('2026-11-16T12:30:00.000Z');
 const T2 = new Date('2026-11-16T12:45:00.000Z');
 const LEASE = { seconds: 60 };
+const RETENTION: RetentionPolicy = {
+  days: 7,
+  maxPerProject: 10,
+  openPullRequestIdleDays: 30,
+  hoursAfterPullRequestEnd: 24,
+};
 const MERGED = 'b'.repeat(40);
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',
@@ -123,7 +130,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
     lookups = new InMemoryRunLookupRepository(runs);
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups);
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
     connect();
   });
 

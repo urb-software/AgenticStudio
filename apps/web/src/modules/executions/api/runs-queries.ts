@@ -73,6 +73,9 @@ const PROJECTS_KEY = ['runs', 'projects'] as const;
 /** Provider availability for one opening of the New run dialog. */
 const providersKey = (opening: number) => ['runs', 'providers', opening] as const;
 
+/** The agent side's connection and disk figures (Issue #143). */
+const AGENT_WORKER_KEY = ['runs', 'agent-worker'] as const;
+
 /** One Run. */
 const runKey = (runId: string) => ['runs', 'run', runId] as const;
 
@@ -103,6 +106,23 @@ export function useAllRuns() {
     queryKey: ALL_RUNS_KEY,
     queryFn: api.listRuns,
     refetchInterval: (query) => pollIntervalFor(query.state.data),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** How often the agent worker's disk figures are read again while the page is visible. */
+const AGENT_WORKER_POLL_MS = 30_000;
+
+/**
+ * Whether an agent worker is connected and its disk figures (Issue #143), for the Executions
+ * page. The worker measures at most every ten minutes, so a slow poll is enough; the page works
+ * without it (a failed read shows nothing).
+ */
+export function useAgentWorker() {
+  return useQuery({
+    queryKey: AGENT_WORKER_KEY,
+    queryFn: api.getAgentWorker,
+    refetchInterval: AGENT_WORKER_POLL_MS,
     refetchIntervalInBackground: false,
   });
 }
