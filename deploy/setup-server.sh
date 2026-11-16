@@ -201,8 +201,7 @@ step_preflight() {
   # point the agent user's services, rootless Docker included, at another user's directories.
   local global
   global="$(grep -Eo '^[[:space:]]*(export[[:space:]]+)?(XDG_[A-Z_]+|DOCKER_HOST|DOCKER_CONFIG)=' /etc/environment 2>/dev/null |
-    sed -E 's/^[[:space:]]*(export[[:space:]]+)?//; s/=$//' | tr '
-' ' ' || true)"
+    sed -E 's/^[[:space:]]*(export[[:space:]]+)?//; s/=$//' | tr '\n' ' ' || true)"
   [ -z "$global" ] || die "/etc/environment sets per-user variables for every user (${global% }); remove those lines and run the script again."
 
   if grep -qi microsoft /proc/version 2>/dev/null; then
