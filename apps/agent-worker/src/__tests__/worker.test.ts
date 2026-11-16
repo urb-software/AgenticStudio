@@ -17,6 +17,7 @@ import {
   UsageLimitError,
 } from '../runner.js';
 import { ProviderDisabledError } from '../provider-gate.js';
+import { type ComputedRunDiff, type RunDiffPort, RunDiffUnavailableError } from '../run-diff.js';
 import { StudioApiError } from '../studio-api.js';
 import { AgentWorker, SHUTDOWN_FAILURE, type WorkerApi } from '../worker.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from '../working-copy.js';
@@ -153,6 +154,43 @@ class FakeDeliveries implements DeliveryPort {
   }
 }
 
+/** Issue #144: a diff with one file, as the fake computes it (the real one: run-diff.linux.test.ts). */
+const DIFF = {
+  baseCommit: 'a'.repeat(40),
+  includesUnpushed: true,
+  truncated: false,
+  files: [{ path: 'src/app.ts', status: 'modified' as const, additions: 1, deletions: 0 }],
+};
+
+/** Issue #144: a recording fake of the diffs. */
+class FakeRunDiffs implements RunDiffPort {
+  readonly calls: [string, string, boolean?][] = [];
+  failure: Error | undefined;
+  async compute(
+    prepared: PreparedRun,
+    _run: RunPayload,
+    _signal: AbortSignal,
+    options: { refresh?: boolean } = {},
+  ): Promise<ComputedRunDiff> {
+    this.calls.push(['compute', prepared.runId, options.refresh ?? false]);
+    if (this.failure) throw this.failure;
+    return {
+      report: { run: DIFF, last: DIFF },
+      tree: 'e'.repeat(40),
+      head: 'c'.repeat(40),
+      headTree: 'e'.repeat(40),
+      startCommit: 'a'.repeat(40),
+    };
+  }
+  async pushed(prepared: PreparedRun, computed: ComputedRunDiff) {
+    this.calls.push(['pushed', prepared.runId]);
+    return {
+      run: { ...computed.report.run, includesUnpushed: false },
+      last: { ...computed.report.last, includesUnpushed: false },
+    };
+  }
+}
+
 class RecordingApi implements WorkerApi {
   readonly calls: [string, string, unknown?][] = [];
   claims = 0;
@@ -224,7 +262,18 @@ class RecordingApi implements WorkerApi {
     if (this.eventsError) throw this.eventsError;
     this.calls.push(['events', runId, events]);
   }
+  async reportDiff(runId: string, report: unknown) {
+    if (this.studioDown) throw this.studioDown;
+    this.calls.push(['diff', runId, report]);
+  }
+  /** The state and step reports; the diffs (Issue #144) have their own tests. */
   reports() {
+    return this.calls.filter(
+      ([kind]) => kind !== 'heartbeat' && kind !== 'status' && kind !== 'events' && kind !== 'diff',
+    );
+  }
+  /** The state, step and diff reports, in the order Studio got them. */
+  reportsWithDiffs() {
     return this.calls.filter(
       ([kind]) => kind !== 'heartbeat' && kind !== 'status' && kind !== 'events',
     );
@@ -266,6 +315,7 @@ interface Extras {
   killGraceMs?: number;
   minuteMs?: number;
   gate?: { assertEnabled(provider: string): void };
+  diffs?: RunDiffPort;
 }
 
 function startWorker(
@@ -288,6 +338,7 @@ function startWorker(
     workingCopies,
     resources: extras.resources ?? new FakeResources(),
     deliveries,
+    diffs: extras.diffs ?? new FakeRunDiffs(),
     pollMs: 5,
     heartbeatMs: 10,
     killGraceMs: extras.killGraceMs ?? 50,
@@ -422,6 +473,117 @@ describe('AgentWorker', () => {
     expect(api.reports().at(-1)?.[2]).toMatchObject({
       state: 'failed',
       failure: { code: 'delivery_failed', detail: expect.stringContaining('shut down') },
+    });
+  });
+
+  describe("the Run's diffs (Issue #144)", () => {
+    const kinds = (api: RecordingApi) =>
+      api
+        .reportsWithDiffs()
+        .map(([kind, , report]) => (kind === 'state' ? (report as { state: string }).state : kind));
+    const diffsSent = (api: RecordingApi) =>
+      api.calls.filter(([kind]) => kind === 'diff').map(([, , report]) => report);
+
+    it('reports them after the step result and, once the delivery pushed, again as pushed', async () => {
+      const run = payload('Add a feature');
+      const api = new RecordingApi([run]);
+      const diffs = new FakeRunDiffs();
+      startWorker(api, undefined, undefined, new FakeDeliveries(), { diffs });
+
+      await until(() => api.reports().length === 3);
+
+      expect(kinds(api)).toEqual(['running', 'step', 'diff', 'diff', 'succeeded']);
+      expect(diffsSent(api)).toEqual([
+        { run: DIFF, last: DIFF },
+        {
+          run: { ...DIFF, includesUnpushed: false },
+          last: { ...DIFF, includesUnpushed: false },
+        },
+      ]);
+      expect(diffs.calls).toEqual([
+        ['compute', run.runId, false],
+        ['pushed', run.runId],
+      ]);
+    });
+
+    it('reports them once when nothing was pushed', async () => {
+      const api = new RecordingApi([payload('Add a feature')]);
+      const deliveries = new FakeDeliveries();
+      deliveries.delivery = { outcome: 'none' };
+      startWorker(api, undefined, undefined, deliveries);
+
+      await until(() => api.reports().length === 3);
+
+      expect(kinds(api)).toEqual(['running', 'step', 'diff', 'succeeded']);
+    });
+
+    it('reports them after a question, before the Run waits for the operator', async () => {
+      const api = new RecordingApi([payload('[fake:question]')]);
+      startWorker(api);
+
+      await until(() => api.reports().length === 3);
+
+      expect(kinds(api)).toEqual(['running', 'step', 'diff', 'waiting_for_operator']);
+    });
+
+    it('reports why they could not be computed, and the Run goes on', async () => {
+      const api = new RecordingApi([payload('Add a feature')]);
+      const diffs = new FakeRunDiffs();
+      diffs.failure = new RunDiffUnavailableError(
+        'The changes could not be computed (git write-tree exited with code 128).',
+      );
+      startWorker(api, undefined, undefined, new FakeDeliveries(), { diffs });
+
+      await until(() => api.reports().length === 3);
+
+      expect(kinds(api)).toEqual(['running', 'step', 'diff', 'succeeded']);
+      expect(diffsSent(api)).toEqual([
+        { unavailable: 'The changes could not be computed (git write-tree exited with code 128).' },
+      ]);
+    });
+
+    it('never sends the text of an unexpected error', async () => {
+      const api = new RecordingApi([payload('Add a feature')]);
+      const diffs = new FakeRunDiffs();
+      diffs.failure = new Error('EACCES: /data/runs/secret-path');
+      startWorker(api, undefined, undefined, new FakeDeliveries(), { diffs });
+
+      await until(() => api.reports().length === 3);
+
+      expect(diffsSent(api)).toEqual([
+        { unavailable: 'The changes could not be computed. The agent worker log has the details.' },
+      ]);
+    });
+
+    it('reports nothing for a step that ended without a result', async () => {
+      const api = new RecordingApi([payload('[fake:fail]')]);
+      const diffs = new FakeRunDiffs();
+      startWorker(api, undefined, undefined, new FakeDeliveries(), { diffs });
+
+      await until(() => api.reports().length === 2);
+
+      expect(kinds(api)).toEqual(['running', 'failed']);
+      expect(diffs.calls).toEqual([]);
+    });
+
+    it('a delivery retry that pushed reports them again, refreshed, before its outcome', async () => {
+      const run = {
+        ...payload('Add a feature'),
+        kind: 'deliver' as const,
+        runBranch: REPORT.runBranch,
+        nextSeq: 7,
+      };
+      const api = new RecordingApi([run]);
+      const diffs = new FakeRunDiffs();
+      startWorker(api, undefined, new FakeWorkingCopies(), new FakeDeliveries(), { diffs });
+
+      await until(() => api.reports().length === 1);
+
+      expect(kinds(api)).toEqual(['diff', 'succeeded']);
+      expect(diffs.calls).toEqual([
+        ['compute', run.runId, true],
+        ['pushed', run.runId],
+      ]);
     });
   });
 

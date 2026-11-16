@@ -91,6 +91,13 @@ export interface GitOptions {
    * rewrite, a proxy, a credential helper) applies. For the token-carrying HTTPS push (#102).
    */
   userConfig?: false;
+  /**
+   * `GIT_INDEX_FILE`: an absolute path to a temporary index for this one command (Issue #144:
+   * the diff stages the Working copy into its own index, never the real one).
+   */
+  indexFile?: string;
+  /** Most standard output kept (default: the process runner's 4 MiB); the rest is dropped. */
+  maxStdout?: number;
 }
 
 export interface GitRunnerOptions {
@@ -162,10 +169,12 @@ export class GitRunner {
         SSH_ASKPASS_REQUIRE: 'never',
         ...(options.ceiling ? { GIT_CEILING_DIRECTORIES: options.ceiling } : {}),
         ...(options.userConfig === false ? { GIT_CONFIG_GLOBAL: '/dev/null' } : {}),
+        ...(options.indexFile ? { GIT_INDEX_FILE: options.indexFile } : {}),
         ...configEnvironment(options.config ?? []),
       },
       timeoutMs: options.timeoutMs,
       signal: options.signal,
+      ...(options.maxStdout === undefined ? {} : { maxStdout: options.maxStdout }),
     });
     const stderr = maskCredentials(result.stderr);
     switch (result.interrupted) {

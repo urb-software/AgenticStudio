@@ -254,6 +254,44 @@ export const zRunStepListOutput = z.object({
     steps: z.array(zRunStepOutput)
 });
 
+export const zRunDiffFileSummaryOutput = z.object({
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    additions: z.int().gte(0).lte(9007199254740991),
+    deletions: z.int().gte(0).lte(9007199254740991),
+    binary: z.literal(true).optional(),
+    tooLarge: z.literal(true).optional()
+});
+
+export const zRunDiffOutput = z.object({
+    scope: z.enum(['run', 'last']),
+    baseCommit: z.string().optional(),
+    includesUnpushed: z.boolean(),
+    truncated: z.boolean(),
+    files: z.array(zRunDiffFileSummaryOutput),
+    unavailableReason: z.string().optional()
+});
+
+export const zRunDiffFileOutput = z.object({
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    patch: z.string().optional(),
+    tooLarge: z.literal(true).optional(),
+    binary: z.literal(true).optional()
+});
+
 export const zProviderAvailabilityOutput = z.object({
     id: z.enum(['claude_code', 'codex']),
     name: z.string(),
@@ -446,5 +484,26 @@ export const zListRunStepsPath = z.object({
 });
 
 export const zListRunStepsResponse = zRunStepListOutput;
+
+export const zGetRunDiffPath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunDiffQuery = z.object({
+    scope: z.enum(['run', 'last'])
+});
+
+export const zGetRunDiffResponse = zRunDiffOutput;
+
+export const zGetRunDiffFilePath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunDiffFileQuery = z.object({
+    scope: z.enum(['run', 'last']),
+    path: z.string().min(1).max(4096)
+});
+
+export const zGetRunDiffFileResponse = zRunDiffFileOutput;
 
 export const zListProvidersResponse = zProviderListOutput;

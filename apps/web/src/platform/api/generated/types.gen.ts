@@ -208,6 +208,34 @@ export type RunStepListOutput = {
     steps: Array<RunStepOutput>;
 };
 
+export type RunDiffFileSummaryOutput = {
+    path: string;
+    previousPath?: string;
+    status: 'added' | 'modified' | 'deleted' | 'renamed';
+    additions: number;
+    deletions: number;
+    binary?: true;
+    tooLarge?: true;
+};
+
+export type RunDiffOutput = {
+    scope: 'run' | 'last';
+    baseCommit?: string;
+    includesUnpushed: boolean;
+    truncated: boolean;
+    files: Array<RunDiffFileSummaryOutput>;
+    unavailableReason?: string;
+};
+
+export type RunDiffFileOutput = {
+    path: string;
+    previousPath?: string;
+    status: 'added' | 'modified' | 'deleted' | 'renamed';
+    patch?: string;
+    tooLarge?: true;
+    binary?: true;
+};
+
 export type ProviderAvailabilityOutput = {
     id: 'claude_code' | 'codex';
     name: string;
@@ -1058,6 +1086,75 @@ export type ListRunStepsResponses = {
 };
 
 export type ListRunStepsResponse = ListRunStepsResponses[keyof ListRunStepsResponses];
+
+export type GetRunDiffData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query: {
+        scope: 'run' | 'last';
+    };
+    url: '/api/runs/{runId}/diff';
+};
+
+export type GetRunDiffErrors = {
+    /**
+     * Invalid scope
+     */
+    400: ProblemDetails;
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found) or no diff yet (urn:agentic-studio:problem:run-diff-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunDiffError = GetRunDiffErrors[keyof GetRunDiffErrors];
+
+export type GetRunDiffResponses = {
+    200: RunDiffOutput;
+};
+
+export type GetRunDiffResponse = GetRunDiffResponses[keyof GetRunDiffResponses];
+
+export type GetRunDiffFileData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query: {
+        scope: 'run' | 'last';
+        path: string;
+    };
+    url: '/api/runs/{runId}/diff/file';
+};
+
+export type GetRunDiffFileErrors = {
+    /**
+     * Invalid scope or path
+     */
+    400: ProblemDetails;
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found) or file not in the diff (urn:agentic-studio:problem:run-diff-file-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunDiffFileError = GetRunDiffFileErrors[keyof GetRunDiffFileErrors];
+
+export type GetRunDiffFileResponses = {
+    200: RunDiffFileOutput;
+};
+
+export type GetRunDiffFileResponse = GetRunDiffFileResponses[keyof GetRunDiffFileResponses];
 
 export type ListProvidersData = {
     body?: never;

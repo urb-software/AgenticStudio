@@ -34,7 +34,29 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
   /** 409: the Run's project or the server has no free place to resume it in (Issue #105). */
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
+  /** 404: the Run has no diff yet: no Run step reported a result (Issue #144). */
+  runDiffNotFound: 'urn:agentic-studio:problem:run-diff-not-found',
+  /** 404: the Run's diff lists no file at this path (Issue #144). */
+  runDiffFileNotFound: 'urn:agentic-studio:problem:run-diff-file-not-found',
 } as const;
+
+/** 404: no Run step of the Run has reported a result, so it has no diff yet (Issue #144). */
+export function runDiffNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: EXECUTIONS_PROBLEM_TYPES.runDiffNotFound,
+    title: 'No diff yet',
+    detail: 'The run has not reported a result yet, so there is no diff.',
+  });
+}
+
+/** 404: the Run's diff of that scope lists no file at the path (Issue #144). */
+export function runDiffFileNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: EXECUTIONS_PROBLEM_TYPES.runDiffFileNotFound,
+    title: 'File not in the diff',
+    detail: "The run's diff lists no file at this path.",
+  });
+}
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
 export function projectNotFound(): ProblemException {

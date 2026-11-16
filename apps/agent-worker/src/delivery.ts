@@ -398,34 +398,8 @@ export class Deliveries implements DeliveryPort {
     }
   }
 
-  /**
-   * Pathspecs of a Run's Studio-placed files. Studio's own list (the claim payload, review R3 of
-   * #122) always applies; what lies beside the Working copy, which the agent can write, can only
-   * add to it: the paths recorded in the Run file (exactly), and the patterns listed under
-   * Studio's section of the Working copy's `.git/info/exclude` (to the end of the file),
-   * matched as Git matches them there: a leading `/` anchors a pattern at the top, one without
-   * a `/` matches at any depth, and globs work.
-   */
-  private async studioPathspecs(prepared: PreparedRun, run: RunPayload): Promise<string[]> {
-    const paths = runDirectories(this.options.dataDir, prepared.runId);
-    const recorded = [
-      ...run.studioPaths,
-      ...((await readRunFile(paths.runFile))?.studioPaths ?? []),
-    ]
-      .map((path) => path.replace(/^\/+/, ''))
-      .filter(isRelativePath)
-      .map((path) => `:(literal)${path}`);
-    const exclude = await readFile(
-      posix.join(prepared.repoDir, '.git', 'info', 'exclude'),
-      'utf8',
-    ).catch(() => '');
-    const lines = exclude.split('\n').map((line) => line.trim());
-    const start = lines.indexOf(STUDIO_EXCLUDE_SECTION.trim());
-    const listed = (start === -1 ? [] : lines.slice(start + 1))
-      .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'))
-      .map(excludePathspec)
-      .filter((spec): spec is string => spec !== null);
-    return [...new Set([...recorded, ...listed])];
+  private studioPathspecs(prepared: PreparedRun, run: RunPayload): Promise<string[]> {
+    return studioPathspecs(this.options.dataDir, prepared, run);
   }
 
   private local(prepared: PreparedRun, signal: AbortSignal): GitOptions {
@@ -449,6 +423,37 @@ export class Deliveries implements DeliveryPort {
       );
     }
   }
+}
+
+/**
+ * Pathspecs of a Run's Studio-placed files. Studio's own list (the claim payload, review R3 of
+ * #122) always applies; what lies beside the Working copy, which the agent can write, can only
+ * add to it: the paths recorded in the Run file (exactly), and the patterns listed under
+ * Studio's section of the Working copy's `.git/info/exclude` (to the end of the file),
+ * matched as Git matches them there: a leading `/` anchors a pattern at the top, one without
+ * a `/` matches at any depth, and globs work. Shared with the Run's diffs (Issue #144).
+ */
+export async function studioPathspecs(
+  dataDir: string,
+  prepared: PreparedRun,
+  run: RunPayload,
+): Promise<string[]> {
+  const paths = runDirectories(dataDir, prepared.runId);
+  const recorded = [...run.studioPaths, ...((await readRunFile(paths.runFile))?.studioPaths ?? [])]
+    .map((path) => path.replace(/^\/+/, ''))
+    .filter(isRelativePath)
+    .map((path) => `:(literal)${path}`);
+  const exclude = await readFile(
+    posix.join(prepared.repoDir, '.git', 'info', 'exclude'),
+    'utf8',
+  ).catch(() => '');
+  const lines = exclude.split('\n').map((line) => line.trim());
+  const start = lines.indexOf(STUDIO_EXCLUDE_SECTION.trim());
+  const listed = (start === -1 ? [] : lines.slice(start + 1))
+    .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'))
+    .map(excludePathspec)
+    .filter((spec): spec is string => spec !== null);
+  return [...new Set([...recorded, ...listed])];
 }
 
 function defaultPullRequests(github: { token: string; apiUrl: string }): PullRequestClient {

@@ -14,6 +14,8 @@ import { AGENT_DEFINITION } from './agent-definition/index.js';
 import { DeliveryFailedError, type DeliveryPort } from './delivery.js';
 import { ProviderDisabledError } from './provider-gate.js';
 import { type Backoff, ReportOutbox } from './report-outbox.js';
+import type { ComputedRunDiff, RunDiffPort, RunDiffReport } from './run-diff.js';
+import { RunDiffUnavailableError } from './run-diff.js';
 import { RunLog } from './run-log.js';
 import { composeProjectName, STEP_PROCESSES_FILE } from './run-layout.js';
 import type { RunResources } from './run-resources.js';
@@ -31,7 +33,13 @@ export interface WorkerLogger {
 /** The worker routes the loop uses ({@link StudioApi} in production). */
 export type WorkerApi = Pick<
   StudioApi,
-  'claim' | 'reportState' | 'reportStep' | 'heartbeat' | 'reportStatus' | 'appendEvents'
+  | 'claim'
+  | 'reportState'
+  | 'reportStep'
+  | 'heartbeat'
+  | 'reportStatus'
+  | 'appendEvents'
+  | 'reportDiff'
 >;
 
 /** The process groups of one Run step ({@link StepProcesses} in production). */
@@ -50,6 +58,8 @@ export interface AgentWorkerOptions {
   workingCopies: WorkingCopyPort;
   /** Commits, pushes and opens the draft pull request of a `done` Run (Issue #102). */
   deliveries: DeliveryPort;
+  /** Computes the Run's diffs after every Run step that reports a result (Issue #144). */
+  diffs: RunDiffPort;
   /** Removes a stopped Run's containers through its Compose project (Issue #100). */
   resources: RunResources;
   /**
@@ -154,6 +164,10 @@ export class StepLimitError extends Error {
  * resumes the agent session Studio names with the answer, as the Run's next step: numbered after
  * the steps it took, its events after the seqs Studio stored. The provider gate and the step
  * limit are checked first, as for every step.
+ *
+ * Issue #144: after every step result the Run's diffs are computed from the Working copy and
+ * reported right after the step report (or why they could not be computed); once a delivery
+ * pushed the Run branch, they are reported again, saying their changes are pushed.
  */
 export class AgentWorker {
   private stopping = false;
@@ -323,6 +337,10 @@ export class AgentWorker {
           signal,
         ),
       );
+      // Issue #144: the Run's diffs after every result, before the Run moves on (Studio takes
+      // them only while this worker holds the Run).
+      const diff = await this.computeDiff(run, prepared, abort.signal);
+      outbox.send('diff', (signal) => api.reportDiff(run.runId, diff.report, signal));
       if (result.outcome === 'needs_input') {
         outbox.send('waiting_for_operator', (signal) =>
           api.reportState(run.runId, { state: 'waiting_for_operator' }, signal),
@@ -340,6 +358,9 @@ export class AgentWorker {
           deliveryAbort.signal,
         );
         deliveryAbort.signal.throwIfAborted();
+        if (delivery.outcome === 'delivered' && diff.computed) {
+          await this.reportPushedDiff(run, prepared, diff.computed, outbox, deliveryAbort.signal);
+        }
         if (abort.signal.aborted) {
           // Cancelled while the delivery ran: the Run ends cancelled with what was delivered,
           // so a pushed branch or an opened pull request is never left without a trace.
@@ -405,6 +426,14 @@ export class AgentWorker {
     await deliveries.commit(prepared, run, result, signal);
     const delivery = await deliveries.deliver(prepared, run, result, signal);
     signal.throwIfAborted();
+    // Issue #144: the stored diffs say whether their changes are pushed; a retry that pushed
+    // them reports them again. A diff that cannot be read now keeps the stored one.
+    if (delivery.outcome === 'delivered') {
+      const diff = await this.computeDiff(run, prepared, signal, true);
+      if (diff.computed) {
+        await this.reportPushedDiff(run, prepared, diff.computed, outbox, signal);
+      }
+    }
     const workingCopy = await workingCopies.report(prepared, signal);
     outbox.send('succeeded', (reportSignal) =>
       api.reportState(run.runId, { state: 'succeeded', delivery, workingCopy }, reportSignal),
@@ -412,6 +441,56 @@ export class AgentWorker {
     await outbox.drain();
     if (outbox.lost) logger.error(`Run ${run.runId} is no longer held by this worker.`);
     else logger.info(`Run ${run.runId} delivered on retry: ${delivery.outcome}.`);
+  }
+
+  /**
+   * The Run's diffs (Issue #144), or, when they cannot be computed, a report that says why. An
+   * abort is not a failure of the diff: it goes on to stop the Run.
+   */
+  private async computeDiff(
+    run: RunPayload,
+    prepared: PreparedRun,
+    signal: AbortSignal,
+    refresh = false,
+  ): Promise<{ computed?: ComputedRunDiff; report: RunDiffReport }> {
+    try {
+      const computed = await this.options.diffs.compute(prepared, run, signal, { refresh });
+      return { computed, report: computed.report };
+    } catch (error) {
+      signal.throwIfAborted();
+      const detail =
+        error instanceof RunDiffUnavailableError
+          ? error.detail
+          : 'The changes could not be computed. The agent worker log has the details.';
+      if (!(error instanceof RunDiffUnavailableError)) {
+        this.options.logger.error(
+          `Computing the diff of run ${run.runId} failed: ${describe(error)}`,
+        );
+      }
+      return { report: { unavailable: detail } };
+    }
+  }
+
+  /** After a push: the same diffs, now saying their changes are pushed (Issue #144). */
+  private async reportPushedDiff(
+    run: RunPayload,
+    prepared: PreparedRun,
+    computed: ComputedRunDiff,
+    outbox: ReportOutbox,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      const report = await this.options.diffs.pushed(prepared, computed, signal);
+      outbox.send('diff', (reportSignal) =>
+        this.options.api.reportDiff(run.runId, report, reportSignal),
+      );
+    } catch (error) {
+      signal.throwIfAborted();
+      // The stored diffs stay; they only still say "not pushed".
+      this.options.logger.error(
+        `Recording the pushed diff of run ${run.runId} failed: ${describe(error)}`,
+      );
+    }
   }
 
   /**

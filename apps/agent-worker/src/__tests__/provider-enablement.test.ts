@@ -11,6 +11,7 @@ import type { DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
+import { type RunDiffPort, RunDiffUnavailableError } from '../run-diff.js';
 import { RunnerDispatcher } from '../runner-dispatcher.js';
 import { type ProviderCli, spawnProviderCli } from '../spawn-boundary.js';
 import { AgentWorker, type WorkerApi } from '../worker.js';
@@ -88,6 +89,16 @@ const deliveries: DeliveryPort = {
   },
 };
 
+/** Issue #144: diffs are not what this suite is about (run-diff.linux.test.ts). */
+const diffs: RunDiffPort = {
+  compute: async () => {
+    throw new RunDiffUnavailableError('not computed in this suite');
+  },
+  pushed: async () => {
+    throw new Error('not used');
+  },
+};
+
 const DONE: RunStepResult = { outcome: 'done', summary: 'done' };
 
 /** The spawn boundary's inputs with the default binaries (`claude`, `codex`). */
@@ -128,6 +139,7 @@ class OneRunApi implements WorkerApi {
   async reportStatus() {}
   async appendEvents() {}
   async reportStep() {}
+  async reportDiff() {}
   async heartbeat() {
     return { cancelRequested: false };
   }
@@ -163,6 +175,7 @@ async function carry(
     workingCopies,
     resources: { cleanUp: async () => undefined },
     deliveries,
+    diffs,
     pollMs: 5,
     heartbeatMs: 60_000,
     killGraceMs: 100,

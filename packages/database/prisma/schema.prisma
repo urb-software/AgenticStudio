@@ -228,6 +228,7 @@ model Run {
   steps                   RunStep[]
   events                  RunEvent[]
   messages                RunMessage[]
+  diffs                   RunDiff[]
 
   /// Serves the newest-first list of all Runs.
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "runs_created_at_id_idx")
@@ -296,6 +297,44 @@ model RunEvent {
 
   @@id([runId, seq], map: "run_events_pkey")
   @@map("run_events")
+}
+
+/// A Run's latest diff of one scope (Issue #144): `run` (from the start commit) or `last` (since
+/// the previous result), as the agent worker reported it after a Run step's result. Replaced by
+/// the next report; kept after the Working copy is removed.
+model RunDiff {
+  runId             String        @map("run_id") @db.Uuid
+  run               Run           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// run | last.
+  scope             String        @db.VarChar(8)
+  /// The commit the diff starts from; null exactly when the diff could not be computed.
+  baseCommit        String?       @map("base_commit") @db.VarChar(64)
+  /// Whether the diff includes changes that were not pushed.
+  includesUnpushed  Boolean       @default(false) @map("includes_unpushed")
+  /// A limit left content or files out.
+  truncated         Boolean       @default(false)
+  /// The file list `[{ path, previousPath?, status, additions, deletions, binary?, tooLarge?,
+  /// hasPatch }]`, in Git's order; the patches are in run_diff_files.
+  files             Json
+  /// Why the diff could not be computed (the worker's words, redacted); null otherwise.
+  unavailableReason String?       @map("unavailable_reason") @db.VarChar(500)
+  reportedAt        DateTime      @map("reported_at") @db.Timestamptz(6)
+  patches           RunDiffFile[]
+
+  @@id([runId, scope], map: "run_diffs_pkey")
+  @@map("run_diffs")
+}
+
+/// One file's patch in a Run's diff (Issue #144): Git's unified diff text, redacted like the log.
+model RunDiffFile {
+  runId String  @map("run_id") @db.Uuid
+  scope String  @db.VarChar(8)
+  diff  RunDiff @relation(fields: [runId, scope], references: [runId, scope], onDelete: Cascade)
+  path  String  @db.VarChar(4096)
+  patch String
+
+  @@id([runId, scope, path], map: "run_diff_files_pkey")
+  @@map("run_diff_files")
 }
 
 /// When the API last renewed the leases of held Runs at start (review of #121): at most once per
