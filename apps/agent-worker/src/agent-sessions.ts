@@ -1,5 +1,5 @@
 import type { Provider } from '@agentic-studio/contracts';
-import { lstat, readdir, rm } from 'node:fs/promises';
+import { lstat, readdir, realpath, rm } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { isUuid } from './run-layout.js';
 
@@ -42,7 +42,10 @@ const CODEX_SESSION_FILE = /^rollout-[0-9T:_-]+-([0-9a-f-]{36})\.jsonl$/i;
  * file is no error.
  */
 export class AgentSessions implements AgentSessionFiles {
-  constructor(private readonly home: string) {
+  constructor(
+    private readonly home: string,
+    private readonly logger: { error(message: string): void } = { error: () => undefined },
+  ) {
     if (!posix.isAbsolute(home) || home === '/') throw new Error('The home directory is not safe.');
   }
 
@@ -55,10 +58,12 @@ export class AgentSessions implements AgentSessionFiles {
 
   private async removeClaudeProject(repoDir: string): Promise<void> {
     if (!posix.isAbsolute(repoDir)) return;
+    // Claude Code names the directory after the real path of its working directory.
+    const realRepoDir = await realpath(repoDir).catch(() => repoDir);
     const projects = posix.join(this.home, '.claude', 'projects');
     if (!(await isRealDirectory(posix.dirname(projects)))) return;
     if (!(await isRealDirectory(projects))) return;
-    const target = posix.join(projects, claudeProjectDirectoryName(repoDir));
+    const target = posix.join(projects, claudeProjectDirectoryName(realRepoDir));
     if (posix.dirname(target) !== projects || !(await exists(target))) return;
     // A symlink here is removed itself; `rm` never follows it.
     await rm(target, { recursive: true, force: true });
@@ -73,7 +78,7 @@ export class AgentSessions implements AgentSessionFiles {
     for (const pattern of [/^\d{4}$/, /^\d{2}$/, /^\d{2}$/]) {
       const next: string[] = [];
       for (const dir of level) {
-        for (const name of await readNames(dir)) {
+        for (const name of await this.readNames(dir)) {
           const path = posix.join(dir, name);
           if (pattern.test(name) && (await isRealDirectory(path))) next.push(path);
         }
@@ -81,13 +86,25 @@ export class AgentSessions implements AgentSessionFiles {
       level = next;
     }
     for (const dir of level) {
-      for (const name of await readNames(dir)) {
+      for (const name of await this.readNames(dir)) {
         const match = CODEX_SESSION_FILE.exec(name);
         if (match?.[1]?.toLowerCase() !== id) continue;
         const path = posix.join(dir, name);
         const stats = await lstat(path).catch(() => null);
         if (stats && !stats.isDirectory()) await rm(path, { force: true });
       }
+    }
+  }
+
+  /** The names in a directory; one the agent made unreadable is logged and skipped. */
+  private async readNames(dir: string): Promise<string[]> {
+    try {
+      return await readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        this.logger.error(`Skipping a Codex session directory it could not read: ${String(error)}`);
+      }
+      return [];
     }
   }
 }
@@ -99,11 +116,4 @@ async function isRealDirectory(path: string): Promise<boolean> {
 
 async function exists(path: string): Promise<boolean> {
   return (await lstat(path).catch(() => null)) !== null;
-}
-
-async function readNames(dir: string): Promise<string[]> {
-  return readdir(dir).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  });
 }

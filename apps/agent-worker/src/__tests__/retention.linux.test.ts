@@ -135,7 +135,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     );
   });
 
-  it('removes the agent session files of the Working copy with it, and keeps it when that fails', async () => {
+  it('removes the agent session files of the Working copy with it, and removes it anyway when that fails', async () => {
     const removable = run('succeeded', 'removable');
     const session = { provider: 'codex' as const, ref: randomUUID() };
     states.set(removable, { ...states.get(removable)!, session });
@@ -149,13 +149,15 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     };
 
     await retention({ sessions }).sweep();
-    expect(left()).toEqual([removable]);
+    expect(left()).toEqual([]);
 
     failing = false;
+    const again = run('succeeded', 'removable');
+    states.set(again, { ...states.get(again)!, session });
     await retention({ sessions }).sweep();
 
     expect(left()).toEqual([]);
-    expect(calls).toEqual([{ repoDir: join(runsDir, removable, 'repo'), session }]);
+    expect(calls).toEqual([{ repoDir: join(runsDir, again, 'repo'), session }]);
   });
 
   it('removes no session files of a Run that is kept', async () => {

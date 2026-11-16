@@ -187,7 +187,7 @@ const retention = new Retention({
   resources,
   // Issue #143: the provider CLIs' session files of a removed Working copy go with it.
   ...(process.env.HOME?.startsWith('/') && process.env.HOME !== '/'
-    ? { sessions: new AgentSessions(process.env.HOME) }
+    ? { sessions: new AgentSessions(process.env.HOME, logger) }
     : {}),
   carrying: () => worker.carrying,
   logger,

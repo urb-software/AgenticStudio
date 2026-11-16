@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -86,6 +87,44 @@ describe.skipIf(process.platform !== 'linux')('AgentSessions', () => {
 
     expect(existsSync(file)).toBe(true);
   });
+
+  it('names the Claude Code directory after the real path of a Working copy reached through a link', async () => {
+    const real = join(home, 'data', 'runs', 'x', 'repo');
+    mkdirSync(real, { recursive: true });
+    const linked = join(home, 'link');
+    symlinkSync(join(home, 'data'), linked);
+    const viaLink = join(linked, 'runs', 'x', 'repo');
+    mkdirSync(claudeProject(real), { recursive: true });
+    mkdirSync(claudeProject(viaLink), { recursive: true });
+
+    await sessions.remove(viaLink);
+
+    expect(existsSync(claudeProject(real))).toBe(false);
+    expect(existsSync(claudeProject(viaLink))).toBe(true);
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'skips a session directory it cannot read, logging it, and still removes the file elsewhere',
+    async () => {
+      const id = randomUUID();
+      const locked = join(home, '.codex', 'sessions', '2026', '11', '15');
+      mkdirSync(locked, { recursive: true });
+      chmodSync(locked, 0o000);
+      const file = codexSession(id, '2026/11/16');
+      const errors: string[] = [];
+      try {
+        await new AgentSessions(home, { error: (m) => errors.push(m) }).remove(repoDir, {
+          provider: 'codex',
+          ref: id,
+        });
+      } finally {
+        chmodSync(locked, 0o700);
+      }
+
+      expect(existsSync(file)).toBe(false);
+      expect(errors.join()).toContain('could not read');
+    },
+  );
 
   it('does nothing when the CLIs left no files', async () => {
     await expect(
