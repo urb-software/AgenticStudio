@@ -1131,7 +1131,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           finishedAt: clock.current.toISOString(),
           cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
         });
-        expect((await getRun(run.id)).body).toEqual(cancelled.body);
+        // Issue #141: the Run page also says whether a Follow-up is possible.
+        expect((await getRun(run.id)).body).toEqual({
+          ...cancelled.body,
+          followUp: { allowed: false, reason: 'no_session' },
+        });
         expect((await claim()).status).toBe(204);
       });
 

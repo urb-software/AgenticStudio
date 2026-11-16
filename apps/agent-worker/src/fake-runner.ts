@@ -121,7 +121,19 @@ export class FakeRunner implements Runner {
     this.git = options.git ?? new GitRunner();
   }
 
-  async *start({ run, workspace, signal }: StartRunStepInput): RunStep {
+  /**
+   * Like a real runner (Issue #141), every result names the agent session the step ran in, so a
+   * finished Run can take a Follow-up.
+   */
+  async *start(input: StartRunStepInput): RunStep {
+    return withSession(input.run.runId, yield* this.startStep(input));
+  }
+
+  async *resume(input: ResumeRunStepInput): RunStep {
+    return withSession(input.run.runId, yield* this.resumeStep(input));
+  }
+
+  private async *startStep({ run, workspace, signal }: StartRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
     yield { type: 'message', text: `fake runner: ${scenario}` };
     return yield* this.play(scenario, run, workspace, signal, false);
@@ -250,7 +262,7 @@ export class FakeRunner implements Runner {
     );
   }
 
-  async *resume({
+  private async *resumeStep({
     run,
     workspace,
     signal,
@@ -283,6 +295,11 @@ export class FakeRunner implements Runner {
     }
     return done();
   }
+}
+
+/** The result with the fake agent's session reference (Issue #141). */
+function withSession(runId: string, result: RunStepResult): RunStepResult {
+  return { ...result, sessionRef: fakeSessionRef(runId) };
 }
 
 function done(): RunStepResult {
