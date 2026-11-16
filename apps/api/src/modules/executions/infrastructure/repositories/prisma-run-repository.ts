@@ -24,9 +24,10 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
+  type FollowUpSource,
   partEndOf,
   restoreEarlierResult,
-  type BringUpSource,
+  type RunPullRequestChecks,
   type PullRequestState,
   type RunPartEnd,
   type RunState,
@@ -100,6 +101,11 @@ const LIST_FIELDS = {
   prRetryAt: true,
   prRefreshRequestedAt: true,
   prLastAttemptAt: true,
+  prChecks: true,
+  prPrepareRequestedAt: true,
+  prPrepareError: true,
+  // Issue #145: whether a prepared Follow-up waits for the operator.
+  preparedFollowUp: { select: { runId: true } },
   prEndedAt: true,
   lastActivityAt: true,
   // Issue #141: the Run step total, counted with the Run.
@@ -179,6 +185,10 @@ interface RunRow {
   prRetryAt: Date | null;
   prRefreshRequestedAt: Date | null;
   prLastAttemptAt: Date | null;
+  prChecks: Prisma.JsonValue;
+  prPrepareRequestedAt: Date | null;
+  prPrepareError: string | null;
+  preparedFollowUp: { runId: string } | null;
   prEndedAt: Date | null;
   lastActivityAt: Date;
   _count: { steps: number };
@@ -205,18 +215,17 @@ const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
   if (row.kind === 'follow_up') {
-    // The CHECK constraint fixes the source (Issue #147).
-    return row.source === 'bring_up_to_date'
-      ? {
-          kind: 'follow_up',
-          text: row.text,
-          at: row.at,
-          source: 'bring_up_to_date',
-          ...(row.mergedCommit === null ? {} : { mergedCommit: row.mergedCommit }),
-          ...(row.updateBase === null ? {} : { updateBase: row.updateBase }),
-          ...(row.updateTip === null ? {} : { updateTip: row.updateTip }),
-        }
-      : { kind: 'follow_up', text: row.text, at: row.at };
+    // The CHECK constraint fixes the source (Issues #145, #147).
+    return {
+      kind: 'follow_up',
+      text: row.text,
+      at: row.at,
+      ...(row.source === null ? {} : { source: row.source as FollowUpSource }),
+      // Issue #147: what a bring-up-to-date request records besides its note.
+      ...(row.mergedCommit === null ? {} : { mergedCommit: row.mergedCommit }),
+      ...(row.updateBase === null ? {} : { updateBase: row.updateBase }),
+      ...(row.updateTip === null ? {} : { updateTip: row.updateTip }),
+    };
   }
   if (row.kind === 'part_end') {
     // The CHECK constraints fix the state, the code and the delivery (review S1 of #150).
@@ -377,6 +386,11 @@ function toRun(row: RunRow): Run {
       retryAt: row.prRetryAt,
       refreshRequestedAt: row.prRefreshRequestedAt,
       lastAttemptAt: row.prLastAttemptAt,
+      // Written by the lookups from a validated worker result (Issue #145).
+      checks: row.prChecks as RunPullRequestChecks | null,
+      prepareRequestedAt: row.prPrepareRequestedAt,
+      prepareError: row.prPrepareError,
+      preparedFollowUp: row.preparedFollowUp !== null,
       endedAt: row.prEndedAt,
     },
     lastActivityAt: row.lastActivityAt,
@@ -784,7 +798,7 @@ export class PrismaRunRepository implements RunRepository {
     runId: string,
     text: string,
     now: Date,
-    source?: BringUpSource,
+    source?: FollowUpSource,
   ): Promise<Run | null> {
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the conditions, the message and the state change hold together, so a
@@ -834,6 +848,10 @@ export class PrismaRunRepository implements RunRepository {
           ...(source === undefined ? {} : { source }),
         },
       });
+      // Issue #145: what was prepared has been sent (as the operator left it).
+      if (source !== undefined) {
+        await tx.runPreparedFollowUp.deleteMany({ where: { runId, source } });
+      }
       // Back to the queue: the earlier result is cleared (the Run's state reflects its latest
       // result), its pull request stays (the same one is updated), and the new part gets its
       // own Run step allowance.

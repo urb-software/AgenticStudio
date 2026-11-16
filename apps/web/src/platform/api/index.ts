@@ -17,6 +17,7 @@ import type {
   ProjectDetailOutput,
   ProjectListOutput,
   ProjectOutput,
+  PreparedFollowUpOutput,
   ProviderListOutput,
   RefreshPullRequestRequest,
   RepositoryOutput,
@@ -56,6 +57,8 @@ export type {
   ProjectDetailOutput,
   ProjectListOutput,
   ProjectOutput,
+  PreparedFollowUpCheckOutput,
+  PreparedFollowUpOutput,
   ProviderAvailabilityOutput,
   ProviderListOutput,
   RefreshPullRequestRequest,
@@ -284,6 +287,19 @@ export const api = {
    */
   refreshRunPullRequest: (runId: string, body?: RefreshPullRequestRequest): Promise<RunOutput> =>
     unwrap(sdk.refreshRunPullRequest({ path: { runId }, ...(body ? { body } : {}) })),
+  /**
+   * Asks the agent worker to read the logs of the pull request's failing checks (Issue #145; 202:
+   * the Run, with `pullRequest.failingChecksPreparation` preparing). Nothing is sent to an agent.
+   */
+  prepareRunFailingChecks: (runId: string): Promise<RunOutput> =>
+    unwrap(sdk.prepareRunFailingChecks({ path: { runId } })),
+  /** The Follow-up prepared from the failing checks, for review (Issue #145); 404 when none. */
+  getRunPreparedFollowUp: (runId: string): Promise<PreparedFollowUpOutput> =>
+    unwrap(sdk.getRunPreparedFollowUp({ path: { runId } })),
+  /** Discards the prepared Follow-up without sending it (Issue #145; 204). */
+  discardRunPreparedFollowUp: async (runId: string): Promise<void> => {
+    await unwrap(sdk.discardRunPreparedFollowUp({ path: { runId } }));
+  },
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),

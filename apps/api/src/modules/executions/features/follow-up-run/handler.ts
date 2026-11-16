@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  type BringUpSource,
   followUpEligibility,
   type FollowUpEligibility,
   FollowUpNotAllowedError,
+  type FollowUpSource,
   isRunId,
   type Run,
 } from '../../domain/entities/run.js';
@@ -34,10 +34,12 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
  * back to `queued`; the agent worker that holds its Working copy then claims it, under the
  * concurrency limits, and resumes the same agent session with the Follow-up as the next Run
  * step. The store re-checks the conditions under a row lock, so a second submission is refused.
- * The text is the operator's input: stored as given (the endpoint trims and bounds it). Returns
- * the queued Run and its eligibility now. Issue #147: `source` marks a request to bring the Run
- * branch up to date, which is a Follow-up in every other respect (its `text` is the operator's
- * note, possibly empty). Throws {@link RunNotFoundError} or
+ * The text is the operator's input: stored as given (the endpoint trims and bounds it), with its
+ * `source` when it was prepared from failing checks (Issue #145: the prepared draft is then
+ * removed in the same step). Issue #147: the source `bring_up_to_date` marks a request to bring
+ * the Run branch up to date, which is a Follow-up in every other respect (its text is the
+ * operator's note, possibly empty). Returns the queued Run and its eligibility now. Throws
+ * {@link RunNotFoundError} or
  * {@link FollowUpNotAllowedError}.
  */
 @Injectable()
@@ -56,7 +58,7 @@ export class FollowUpRunHandler {
   async execute(
     runId: string,
     text: string,
-    source?: BringUpSource,
+    source?: FollowUpSource,
   ): Promise<{ run: Run; followUp: FollowUpView; workerConnected: boolean }> {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();

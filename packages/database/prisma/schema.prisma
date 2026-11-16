@@ -260,6 +260,18 @@ model Run {
   /// When a lookup of the Run's pull request was last requested (review S1 of #152): the page-open
   /// throttle and the daily refresh count from the last attempt, whether or not it succeeded.
   prLastAttemptAt         DateTime?    @map("pr_last_attempt_at") @db.Timestamptz(6)
+  /// Issue #145: the Pull request checks of the pull request's latest commit as the last state
+  /// lookup read them: `{"commit": "<sha>", "checks": [{name, state, durationSeconds?, url}]}`, or
+  /// `{"unavailable": true}` when the Git host refused to tell. Null until read, and for a pull
+  /// request that is merged, closed or missing.
+  prChecks                Json?        @map("pr_checks")
+  /// Issue #145: set while a failing-check-logs lookup of the Run waits for a worker or is being
+  /// answered ("Send failing checks to the agent" was asked, the draft is not ready).
+  prPrepareRequestedAt    DateTime?    @map("pr_prepare_requested_at") @db.Timestamptz(6)
+  /// Issue #145: why the latest preparation failed (the worker's words, redacted); cleared when
+  /// a new one is requested or succeeds.
+  prPrepareError          String?      @map("pr_prepare_error") @db.VarChar(500)
+  preparedFollowUp        RunPreparedFollowUp?
   /// Issue #143: when a lookup first reported the pull request merged, closed or missing; cleared
   /// when a later one reports it open or draft again. Set only with such a pr_state.
   prEndedAt               DateTime?    @map("pr_ended_at") @db.Timestamptz(6)
@@ -322,18 +334,38 @@ model RunMessage {
   endFailureCode String?  @map("end_failure_code") @db.VarChar(32)
   /// With part_end only: that part's delivery (none | delivered | failed), when it had one.
   endDelivery    String?  @map("end_delivery") @db.VarChar(16)
-  /// With follow_up only (Issue #147): `bring_up_to_date`, a request to merge the integration
-  /// branch into the Run branch; its text is then the operator's optional note (may be empty).
-  source         String?  @db.VarChar(24)
-  /// With a source only: the integration branch commit the Run branch has merged, once reported.
+  /// With follow_up only (Issue #145): what the Follow-up was prepared from (pull_request_checks);
+  /// null for one the operator wrote from scratch.
+  source         String?  @db.VarChar(32)
+  /// With a bring-up-to-date source (Issue #147): the integration branch commit the Run branch has
+  /// merged, set once the part succeeded.
   mergedCommit   String?  @map("merged_commit") @db.VarChar(64)
-  /// With a source only: the Run branch's commit just before the merge started, and the integration
+  /// With that source: the Run branch's commit just before the merge started, and the integration
   /// branch commit being merged (reported when it started; Studio hands them back with the claim).
   updateBase     String?  @map("update_base") @db.VarChar(64)
   updateTip      String?  @map("update_tip") @db.VarChar(64)
 
   @@id([runId, seq], map: "run_messages_pkey")
   @@map("run_messages")
+}
+
+/// The Follow-up Studio prepared for the operator to review (Issue #145): at most one per Run, the
+/// latest preparation replaces the earlier one. It is never sent by itself: sending is the normal
+/// Follow-up, with the text the operator left in the preview, after which the draft is removed.
+/// Shared with the story that prepares one from review comments (`source` tells them apart).
+model RunPreparedFollowUp {
+  runId     String   @id @map("run_id") @db.Uuid
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// pull_request_checks (later stories add sources).
+  source    String   @db.VarChar(32)
+  /// The prepared text (redacted, at most the Follow-up's length).
+  text      String
+  /// What the text was built from, `[{name, url, logAvailable, section}]`: the parts the
+  /// operator can leave out.
+  items     Json
+  createdAt DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+
+  @@map("run_prepared_follow_ups")
 }
 
 /// A question for the Git host that only an agent worker can answer (Issue #142), e.g. the state
@@ -343,7 +375,7 @@ model RunLookup {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   runId       String    @map("run_id") @db.Uuid
   run         Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
-  /// pull_request_state (later stories add kinds).
+  /// pull_request_state | failing_check_logs (later stories add kinds).
   kind        String    @db.VarChar(32)
   /// requested | claimed | done | failed.
   status      String    @db.VarChar(16)

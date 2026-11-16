@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NO_PULL_REQUEST_STATUS, type RunPullRequestStatus } from '../run.js';
 import {
   canRefreshPullRequest,
+  hasFailedPullRequestCheck,
   STORED_RETRY_DELAY_MAX_SECONDS,
   pageRefreshDue,
   retryDelaySeconds,
@@ -64,5 +65,35 @@ describe('canRefreshPullRequest', () => {
     expect(canRefreshPullRequest({ pullRequest, workingCopy })).toBe(true);
     expect(canRefreshPullRequest({ pullRequest: null, workingCopy })).toBe(false);
     expect(canRefreshPullRequest({ pullRequest, workingCopy: null })).toBe(false);
+  });
+});
+
+// Issue #145: only a known failed check can be handed to the agent.
+describe('hasFailedPullRequestCheck', () => {
+  const check = (state: 'passed' | 'failed' | 'running') => ({
+    name: 'build',
+    state,
+    url: 'https://ci.test/1',
+  });
+
+  it('is true when a stored check failed', () => {
+    expect(
+      hasFailedPullRequestCheck(
+        status({ checks: { commit: 'c'.repeat(40), checks: [check('passed'), check('failed')] } }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is false with no checks read, none failed, none listed or none told', () => {
+    expect(hasFailedPullRequestCheck(status({}))).toBe(false);
+    expect(
+      hasFailedPullRequestCheck(
+        status({ checks: { commit: 'c'.repeat(40), checks: [check('passed'), check('running')] } }),
+      ),
+    ).toBe(false);
+    expect(
+      hasFailedPullRequestCheck(status({ checks: { commit: 'c'.repeat(40), checks: [] } })),
+    ).toBe(false);
+    expect(hasFailedPullRequestCheck(status({ checks: { unavailable: true } }))).toBe(false);
   });
 });

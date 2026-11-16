@@ -16,6 +16,10 @@ const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestSt
   refreshError: null,
   retryAt: null,
   refreshRequestedAt: null,
+  checks: null,
+  prepareRequestedAt: null,
+  prepareError: null,
+  preparedFollowUp: false,
 };
 
 // Issue #103: the conversation and the open question in the operator API.
@@ -314,6 +318,86 @@ describe('Run response: pull request state (Issue #142)', () => {
     expect(
       toRunResponse(withPullRequest({ state: 'open' }), undefined, false).pullRequest?.refreshError,
     ).toBeUndefined();
+  });
+
+  // Issue #145: Pull request checks and the preparation of failing ones.
+  describe('Pull request checks', () => {
+    const COMMIT = 'c'.repeat(40);
+    const checks = [
+      { name: 'build', state: 'passed' as const, durationSeconds: 61, url: 'https://ci.test/1' },
+      { name: 'lint', state: 'failed' as const, url: 'https://ci.test/2' },
+    ];
+    const read = (status: Parameters<typeof withPullRequest>[0], pushedCommit: string | null) =>
+      runResponseSchema.parse(toRunResponse({ ...withPullRequest(status), pushedCommit }))
+        .pullRequest!;
+
+    it('lists the checks with their commit, and nothing before they were read', () => {
+      expect(read({}, null)).not.toHaveProperty('checks');
+      expect(read({ state: 'open', checks: { commit: COMMIT, checks } }, COMMIT)).toMatchObject({
+        checksCommit: COMMIT,
+        checks,
+      });
+      expect(read({ state: 'open', checks: { commit: COMMIT, checks: [] } }, COMMIT)).toMatchObject(
+        { checksCommit: COMMIT, checks: [] },
+      );
+    });
+
+    it('says when GitHub would not tell the checks', () => {
+      const card = read({ state: 'open', checks: { unavailable: true } }, COMMIT);
+
+      expect(card.checksUnavailable).toBe(true);
+      expect(card).not.toHaveProperty('checks');
+    });
+
+    it("says when the checks belong to another commit than the Run's latest pushed one", () => {
+      const status = { state: 'open' as const, checks: { commit: COMMIT, checks } };
+
+      expect(read(status, COMMIT.toUpperCase())).not.toHaveProperty('checksOtherCommit');
+      expect(read(status, 'd'.repeat(40)).checksOtherCommit).toBe(true);
+      // No pushed commit known: nothing to compare with, nothing claimed.
+      expect(read(status, null)).not.toHaveProperty('checksOtherCommit');
+    });
+
+    it('shows where the preparation of the failing checks stands', () => {
+      const failed = { name: 'lint', state: 'failed' as const, url: 'https://ci.test/2' };
+      const base = { state: 'open' as const, checks: { commit: COMMIT, checks: [failed] } };
+
+      expect(read(base, COMMIT)).not.toHaveProperty('failingChecksPreparation');
+      expect(
+        read({ ...base, prepareRequestedAt: REFRESHED }, COMMIT).failingChecksPreparation,
+      ).toEqual({ state: 'preparing' });
+      expect(read({ ...base, preparedFollowUp: true }, COMMIT).failingChecksPreparation).toEqual({
+        state: 'ready',
+      });
+      expect(
+        read({ ...base, prepareError: 'The log is gone.' }, COMMIT).failingChecksPreparation,
+      ).toEqual({ state: 'failed', error: 'The log is gone.' });
+    });
+
+    it('says no agent worker is connected instead of preparing for ever', () => {
+      const waiting = { ...withPullRequest({ state: 'open', prepareRequestedAt: REFRESHED }) };
+
+      expect(
+        toRunResponse(waiting, undefined, false).pullRequest?.failingChecksPreparation,
+      ).toEqual({ state: 'failed', error: expect.stringContaining('not connected') });
+      expect(toRunResponse(waiting, undefined, true).pullRequest?.failingChecksPreparation).toEqual(
+        { state: 'preparing' },
+      );
+    });
+
+    it('marks a Follow-up message that was prepared from checks', () => {
+      const answer = toRunResponse({
+        ...withPullRequest({}),
+        messages: [
+          { kind: 'follow_up', text: 'Fix it.', at: REFRESHED, source: 'pull_request_checks' },
+          { kind: 'follow_up', text: 'Also this.', at: REFRESHED },
+        ],
+      });
+
+      const [, prepared, written] = answer.messages!;
+      expect(prepared).toMatchObject({ kind: 'follow_up', source: 'pull_request_checks' });
+      expect(written).not.toHaveProperty('source');
+    });
   });
 
   it('shows the state in a list too, and leaves a Run without a pull request alone', () => {

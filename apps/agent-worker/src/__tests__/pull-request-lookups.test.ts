@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   type BranchPosition,
+  type CheckReport,
+  type JobLogOutcome,
   type PullRequestDetails,
   type PullRequestNumber,
   PullRequestFailedError,
@@ -19,6 +21,7 @@ import { type LookupApi, PullRequestLookups } from '../pull-request-lookups.js';
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const BRANCH = 'agent/add-a-feature-r0b8e5c2d';
 const AGENT = 'agent-bot';
+const HEAD_SHA = 'c'.repeat(40);
 const abort = new AbortController().signal;
 
 const lookup = (overrides: Partial<LookupPayload> = {}): LookupPayload => ({
@@ -41,6 +44,7 @@ const details = (overrides: Partial<PullRequestDetails> = {}): PullRequestDetail
   mergeable: true,
   headRef: BRANCH,
   headRepository: 'acme/shop',
+  headSha: HEAD_SHA,
   author: AGENT,
   ...overrides,
 });
@@ -52,7 +56,25 @@ class FakeReader implements PullRequestReader {
   branch: BranchPosition | null | Error = { behindBy: 2, aheadBy: 3 };
   viewerLogin: string | Error = AGENT;
   branchPresent = false;
+  checkReports: CheckReport[] | Error = [];
+  jobLogs = new Map<number, JobLogOutcome | Error>();
 
+  async checks(repository: { owner: string; repo: string }, sha: string): Promise<CheckReport[]> {
+    this.calls.push(`checks ${repository.owner}/${repository.repo} ${sha}`);
+    if (this.checkReports instanceof Error) throw this.checkReports;
+    return this.checkReports;
+  }
+  async jobLog(
+    repository: { owner: string; repo: string },
+    jobId: number,
+    _signal?: AbortSignal,
+  ): Promise<JobLogOutcome> {
+    void _signal;
+    this.calls.push(`log ${repository.owner}/${repository.repo} ${jobId}`);
+    const log = this.jobLogs.get(jobId) ?? { unavailable: 'The log has expired.' };
+    if (log instanceof Error) throw log;
+    return log;
+  }
   async details(pull: PullRequestNumber): Promise<PullRequestDetails> {
     this.calls.push(`details ${pull.owner}/${pull.repo}#${pull.number}`);
     if (this.pullRequest instanceof Error) throw this.pullRequest;
@@ -125,12 +147,20 @@ describe('PullRequestLookups', () => {
       expect(await answerOf()).toEqual({
         ok: true,
         kind: 'pull_request_state',
-        result: { state: 'open', behindBy: 2, aheadBy: 3, mergeable: true },
+        result: {
+          state: 'open',
+          behindBy: 2,
+          aheadBy: 3,
+          mergeable: true,
+          checksCommit: HEAD_SHA,
+          checks: [],
+        },
       });
       expect(reader.calls).toEqual([
         'details acme/shop#7',
         'viewer',
         `position acme/shop dev...${BRANCH}`,
+        `checks acme/shop ${HEAD_SHA}`,
       ]);
     });
 
@@ -147,7 +177,13 @@ describe('PullRequestLookups', () => {
 
       const answer = (await answerOf()) as { result: object };
 
-      expect(answer.result).toEqual({ state: 'open', behindBy: 2, aheadBy: 3 });
+      expect(answer.result).toEqual({
+        state: 'open',
+        behindBy: 2,
+        aheadBy: 3,
+        checksCommit: HEAD_SHA,
+        checks: [],
+      });
     });
 
     it('reports a merged pull request, whatever happened to its branch', async () => {
@@ -168,7 +204,11 @@ describe('PullRequestLookups', () => {
       expect(await answerOf()).toMatchObject({
         result: { state: 'closed', behindBy: 2, aheadBy: 3 },
       });
-      expect(((await answerOf()) as { result: object }).result).not.toHaveProperty('mergeable');
+      const closed = ((await answerOf()) as { result: object }).result;
+      expect(closed).not.toHaveProperty('mergeable');
+      // A closed pull request has no checks worth showing, and none are read.
+      expect(closed).not.toHaveProperty('checks');
+      expect(reader.calls.some((call) => call.startsWith('checks'))).toBe(false);
     });
 
     it('reports a pull request that no longer exists as missing', async () => {
@@ -250,10 +290,286 @@ describe('PullRequestLookups', () => {
       expect(reader.calls.some((call) => call.startsWith('position'))).toBe(false);
     });
 
-    it('never sends a write request: it only has the three reads', async () => {
+    it('never sends a write request: it only has the reads of a lookup', async () => {
       await answerOf();
 
-      expect(reader.calls.every((call) => /^(details|position|viewer)/.test(call))).toBe(true);
+      expect(reader.calls.every((call) => /^(details|position|viewer|checks)/.test(call))).toBe(
+        true,
+      );
+    });
+  });
+
+  describe('pull request checks (Issue #145)', () => {
+    const check = (overrides: Partial<CheckReport> = {}): CheckReport => ({
+      name: 'build',
+      state: 'passed',
+      durationSeconds: 61,
+      url: 'https://github.com/acme/shop/runs/1',
+      ...overrides,
+    });
+
+    it('reports the checks of the pull request latest commit with the state', async () => {
+      reader.checkReports = [
+        check(),
+        check({ name: 'lint', state: 'failed', jobId: 9, summary: 'not in the list' }),
+        check({ name: 'e2e', state: 'running', durationSeconds: undefined }),
+      ];
+
+      const answer = (await answerOf()) as { result: { checks: object[] } };
+
+      expect(answer).toMatchObject({
+        ok: true,
+        result: {
+          state: 'open',
+          checksCommit: HEAD_SHA,
+          checks: [
+            { name: 'build', state: 'passed', durationSeconds: 61, url: expect.any(String) },
+            { name: 'lint', state: 'failed', durationSeconds: 61, url: expect.any(String) },
+            { name: 'e2e', state: 'running', url: expect.any(String) },
+          ],
+        },
+      });
+      // Only what the card shows leaves the worker: no job id, no summary.
+      expect(answer.result.checks[1]).not.toHaveProperty('jobId');
+      expect(answer.result.checks[1]).not.toHaveProperty('summary');
+    });
+
+    it('says the checks are unavailable when GitHub refuses them, keeping the state', async () => {
+      reader.checkReports = new PullRequestFailedError('GitHub answered 403', 403);
+
+      expect(await answerOf()).toEqual({
+        ok: true,
+        kind: 'pull_request_state',
+        result: {
+          state: 'open',
+          behindBy: 2,
+          aheadBy: 3,
+          mergeable: true,
+          checksUnavailable: true,
+        },
+      });
+    });
+
+    it('fails the lookup, to be tried later, when the checks hit a rate limit', async () => {
+      reader.checkReports = new PullRequestFailedError('GitHub answered 429', 429, 90);
+
+      expect(await answerOf()).toMatchObject({
+        ok: false,
+        code: 'rate_limited',
+        retryAfterSeconds: 90,
+      });
+    });
+
+    describe('the logs of the failed checks', () => {
+      const answerForLogs = async () => {
+        queue.push(lookup({ kind: 'failing_check_logs' }));
+        await lookups().serve(abort);
+        return reported.at(-1)?.[1] as {
+          ok: boolean;
+          result: {
+            commit: string;
+            checks: { name: string; logAvailable: boolean; excerpt?: string; note?: string }[];
+          };
+        };
+      };
+
+      it('reads the end of the log of each failed Actions check, and nothing for the others', async () => {
+        reader.checkReports = [
+          check({ name: 'build' }),
+          check({ name: 'unit tests', state: 'failed', jobId: 11 }),
+          check({ name: 'lint', state: 'failed', jobId: 12 }),
+          check({ name: 'running', state: 'running', jobId: 13 }),
+        ];
+        reader.jobLogs.set(11, { log: 'one\ntwo\nthree\n' });
+        reader.jobLogs.set(12, { log: 'x\n' });
+
+        const answer = await answerForLogs();
+
+        expect(answer.result).toEqual({
+          commit: HEAD_SHA,
+          checks: [
+            {
+              name: 'unit tests',
+              url: expect.any(String),
+              logAvailable: true,
+              excerpt: 'one\ntwo\nthree',
+            },
+            { name: 'lint', url: expect.any(String), logAvailable: true, excerpt: 'x' },
+          ],
+        });
+        expect(reader.calls.filter((call) => call.startsWith('log'))).toEqual([
+          'log acme/shop 11',
+          'log acme/shop 12',
+        ]);
+      });
+
+      it('keeps the last 200 lines and at most 16 KiB, without timestamps or colour codes', async () => {
+        const escape = String.fromCharCode(27);
+        const lines = Array.from(
+          { length: 500 },
+          (_, index) =>
+            `2026-11-16T10:00:00.1234567Z ${escape}[31mline ${index}${escape}[0m ${'x'.repeat(100)}`,
+        );
+        reader.checkReports = [check({ name: 'unit tests', state: 'failed', jobId: 11 })];
+        reader.jobLogs.set(11, { log: lines.join('\n') });
+
+        const excerpt = (await answerForLogs()).result.checks[0]!.excerpt!;
+
+        expect(excerpt.length).toBeLessThanOrEqual(16 * 1024);
+        expect(excerpt).toContain('line 499');
+        expect(excerpt).not.toContain('line 0 ');
+        expect(excerpt).not.toContain('2026-11-16T');
+        expect(excerpt).not.toContain(escape);
+        expect(excerpt.split('\n').length).toBeLessThanOrEqual(200);
+      });
+
+      it('stops reading logs once all excerpts together reach 64 KiB, listing the rest as unavailable', async () => {
+        const big = Array.from({ length: 200 }, (_, index) => `${index} ${'y'.repeat(95)}`).join(
+          '\n',
+        );
+        reader.checkReports = Array.from({ length: 6 }, (_, index) =>
+          check({ name: `job ${index}`, state: 'failed', jobId: 20 + index }),
+        );
+        for (let index = 0; index < 6; index += 1) reader.jobLogs.set(20 + index, { log: big });
+
+        const { checks } = (await answerForLogs()).result;
+
+        const total = checks.reduce((sum, entry) => sum + (entry.excerpt?.length ?? 0), 0);
+        expect(total).toBeLessThanOrEqual(64 * 1024);
+        expect(checks).toHaveLength(6);
+        expect(checks.at(-1)).toMatchObject({
+          logAvailable: false,
+          note: expect.stringContaining('size limit'),
+        });
+      });
+
+      it('still lists a check whose log is unavailable, with the reason and its own summary', async () => {
+        reader.checkReports = [
+          check({ name: 'unit tests', state: 'failed', jobId: 11 }),
+          check({ name: 'deploy preview', state: 'failed', summary: 'Build exceeded the quota' }),
+        ];
+        reader.jobLogs.set(11, { unavailable: 'The log has expired.' });
+
+        const { checks } = (await answerForLogs()).result;
+
+        expect(checks).toEqual([
+          {
+            name: 'unit tests',
+            url: expect.any(String),
+            logAvailable: false,
+            note: 'Log unavailable: The log has expired.',
+          },
+          {
+            name: 'deploy preview',
+            url: expect.any(String),
+            logAvailable: false,
+            note: expect.stringMatching(/does not run on GitHub Actions.*Build exceeded the quota/),
+          },
+        ]);
+      });
+
+      it('keeps the other logs when one log cannot be read (a 5xx, an error of the download)', async () => {
+        reader.checkReports = [
+          check({ name: 'unit tests', state: 'failed', jobId: 11 }),
+          check({ name: 'lint', state: 'failed', jobId: 12 }),
+        ];
+        reader.jobLogs.set(11, new PullRequestFailedError('GitHub answered 500', 500));
+        reader.jobLogs.set(12, { log: 'x problems\n' });
+
+        const { checks } = (await answerForLogs()).result;
+
+        expect(checks).toEqual([
+          expect.objectContaining({
+            name: 'unit tests',
+            logAvailable: false,
+            note: expect.stringContaining('Log unavailable'),
+          }),
+          expect.objectContaining({ name: 'lint', logAvailable: true, excerpt: 'x problems' }),
+        ]);
+      });
+
+      it('stops reading logs after its time budget, listing the rest as unavailable', async () => {
+        reader.checkReports = [
+          check({ name: 'a', state: 'failed', jobId: 11 }),
+          check({ name: 'b', state: 'failed', jobId: 12 }),
+        ];
+        reader.jobLogs.set(11, { log: 'a failed\n' });
+        // The first log takes longer than the whole budget.
+        const slow = reader.jobLog.bind(reader);
+        reader.jobLog = async (
+          repository: { owner: string; repo: string },
+          jobId: number,
+          signal?: AbortSignal,
+        ) => {
+          if (jobId === 11) await new Promise((resolve) => setTimeout(resolve, 60));
+          return slow(repository, jobId, signal);
+        };
+        queue.push(lookup({ kind: 'failing_check_logs' }));
+        await new PullRequestLookups({
+          api,
+          github: { token: 'test-token-value', apiUrl: 'https://api.example.test' },
+          allowFileRemotes: false,
+          logsBudgetMs: 30,
+          reader: () => reader,
+          logger: { info: () => undefined, error: () => undefined },
+        }).serve(abort);
+
+        const answer = reported.at(-1)?.[1] as {
+          result: { checks: { name: string; logAvailable: boolean; note?: string }[] };
+        };
+        expect(answer.result.checks[1]).toMatchObject({
+          name: 'b',
+          logAvailable: false,
+          note: expect.stringContaining('time limit'),
+        });
+      });
+
+      it('caps an excerpt at 16 KiB and the total at 64 KiB in bytes, not characters', async () => {
+        const line = `${'\u00e9'.repeat(50)}\n`;
+        reader.checkReports = Array.from({ length: 6 }, (_, index) =>
+          check({ name: `job ${index}`, state: 'failed', jobId: 30 + index }),
+        );
+        for (let index = 0; index < 6; index += 1) {
+          reader.jobLogs.set(30 + index, { log: line.repeat(190) });
+        }
+
+        const { checks } = (await answerForLogs()).result;
+
+        const sizes = checks.map((entry) => Buffer.byteLength(entry.excerpt ?? '', 'utf8'));
+        expect(Math.max(...sizes)).toBeLessThanOrEqual(16 * 1024);
+        expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(64 * 1024);
+        expect(sizes[0]).toBeGreaterThan(9_000);
+      });
+
+      it('refuses when the pull request is no longer open, reading no log', async () => {
+        reader.pullRequest = details({ state: 'closed', merged: true });
+
+        expect(await answerForLogs()).toMatchObject({
+          ok: false,
+          code: 'failed',
+          error: expect.stringContaining('not open'),
+        });
+        expect(reader.calls.some((call) => call.startsWith('log'))).toBe(false);
+      });
+
+      it('reads nothing for a pull request that is not the Runs own', async () => {
+        reader.pullRequest = details({ author: 'someone-else' });
+        reader.checkReports = [check({ name: 'unit tests', state: 'failed', jobId: 11 })];
+
+        expect(await answerForLogs()).toMatchObject({ ok: false, code: 'scope_mismatch' });
+        expect(reader.calls.some((call) => /^(checks|log)/.test(call))).toBe(false);
+      });
+
+      it('fails the lookup, to be tried later, when a log hits a rate limit', async () => {
+        reader.checkReports = [check({ name: 'unit tests', state: 'failed', jobId: 11 })];
+        reader.jobLogs.set(11, new PullRequestFailedError('GitHub answered 429', 429, 30));
+
+        expect(await answerForLogs()).toMatchObject({
+          ok: false,
+          code: 'rate_limited',
+          retryAfterSeconds: 30,
+        });
+      });
     });
   });
 
@@ -374,6 +690,8 @@ describe('PullRequestLookups', () => {
           viewer: async () => AGENT,
           position: async () => null,
           branchExists: async () => true,
+          checks: async () => [],
+          jobLog: async () => ({ unavailable: 'n/a' }),
         }),
         logger: { info: () => undefined, error: () => undefined },
       });

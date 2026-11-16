@@ -1,18 +1,30 @@
 import {
+  type FailingCheckLogsResult,
   type LookupErrorCode,
   type LookupPayload,
+  type PullRequestCheck,
   type PullRequestStateName,
   type PullRequestStateResult,
   type RunPayload,
 } from '@agentic-studio/contracts';
+import { excerptAllowance, logExcerpt } from './check-logs.js';
+
 import {
+  type CheckReport,
   GitHubPullRequests,
   parseGitHubRemote,
   PullRequestFailedError,
+  type PullRequestDetails,
   type PullRequestReader,
 } from './github.js';
 import { isRunBranchOf } from './run-branch.js';
 import type { StudioApi } from './studio-api.js';
+
+/**
+ * How long one preparation may take in all, counted from the start of the lookup: it stays below
+ * the lookup's lease of two minutes, so no other worker is handed it while this one still reads.
+ */
+const LOGS_BUDGET_MS = 90_000;
 
 /**
  * Pull request lookups (Issue #142): the agent worker answers Studio's questions about a Run's
@@ -24,6 +36,11 @@ import type { StudioApi } from './studio-api.js';
  * have named for this Run (`agent/…-r<run id>`), and the pull request must come from exactly
  * that branch of that repository and have been opened by the Agent account. Anything else is
  * rejected as `scope_mismatch`, and nothing beyond that one pull request is read.
+ *
+ * Issue #145: a `pull_request_state` lookup of a draft or open pull request also reads the checks
+ * of its latest commit, and a `failing_check_logs` lookup reads the end of the log of each failed
+ * check. Both are reads through the same scope check; a log is untrusted text that is only
+ * capped and cleaned of control characters here (Studio redacts it before it is stored).
  */
 
 /** What a lookup needs to know about the Run's pull request. */
@@ -54,6 +71,8 @@ export interface PullRequestLookupsOptions {
   api: LookupApi;
   /** The Agent account on GitHub: its token (when configured) and the REST API's base URL. */
   github: { token?: string; apiUrl: string };
+  /** How long one preparation may read logs (default 90 s, below the lookup's lease). */
+  logsBudgetMs?: number;
   /** A development or test worker: `file://` fixture remotes name a repository too. */
   allowFileRemotes: boolean;
   /** Builds the reader (default: {@link GitHubPullRequests}). */
@@ -110,6 +129,7 @@ export class PullRequestLookups implements LookupService {
       const result = await this.read(
         followUpTarget(run, run.pullRequestNumber, run.runBranch),
         signal,
+        false,
       );
       return result.state;
     } catch (error) {
@@ -127,8 +147,12 @@ export class PullRequestLookups implements LookupService {
     signal: AbortSignal,
   ): Promise<Parameters<LookupApi['reportLookup']>[1] | null> {
     try {
-      const result = await this.read(lookupTarget(lookup), signal);
-      return { ok: true, kind: lookup.kind, result };
+      if (lookup.kind === 'failing_check_logs') {
+        const result = await this.readFailingCheckLogs(lookupTarget(lookup), signal);
+        return { ok: true, kind: 'failing_check_logs', result };
+      }
+      const result = await this.read(lookupTarget(lookup), signal, true);
+      return { ok: true, kind: 'pull_request_state', result };
     } catch (error) {
       if (signal.aborted) return null;
       if (error instanceof LookupRefusal) {
@@ -152,11 +176,23 @@ export class PullRequestLookups implements LookupService {
     }
   }
 
-  /** Reads the Run's pull request, after the scope check; throws {@link LookupRefusal}. */
-  private async read(
+  /**
+   * Opens the Run's pull request after the scope check: the reader, the repository, the pull
+   * request and its details, or `missing` when GitHub no longer has it. Throws
+   * {@link LookupRefusal}.
+   */
+  private async openScope(
     target: PullRequestTarget,
     signal: AbortSignal,
-  ): Promise<PullRequestStateResult> {
+  ): Promise<
+    | { missing: true }
+    | {
+        missing?: undefined;
+        reader: PullRequestReader;
+        repository: { owner: string; repo: string };
+        details: PullRequestDetails;
+      }
+  > {
     const repository = parseGitHubRemote(target.remoteUrl, this.options.allowFileRemotes);
     if (!repository) {
       throw new LookupRefusal(
@@ -181,29 +217,45 @@ export class PullRequestLookups implements LookupService {
       repo: repository.repo,
       number: target.pullRequestNumber,
     };
+    let details;
     try {
-      let details;
-      try {
-        details = await reader.details(pull, signal);
-      } catch (error) {
-        // The pull request no longer exists.
-        if (error instanceof PullRequestFailedError && error.status === 404) {
-          return { state: 'missing' };
-        }
-        throw error;
+      details = await reader.details(pull, signal);
+    } catch (error) {
+      // The pull request no longer exists.
+      if (error instanceof PullRequestFailedError && error.status === 404) {
+        return { missing: true };
       }
-      const fullName = `${repository.owner}/${repository.repo}`.toLowerCase();
-      const login = await this.agentLogin(reader, signal);
-      if (
-        details.headRef !== target.runBranch ||
-        details.headRepository?.toLowerCase() !== fullName ||
-        details.author?.toLowerCase() !== login.toLowerCase()
-      ) {
-        throw new LookupRefusal(
-          'scope_mismatch',
-          "That is not the run's own pull request (its branch or author differs), so nothing more was read.",
-        );
-      }
+      throw error;
+    }
+    const fullName = `${repository.owner}/${repository.repo}`.toLowerCase();
+    const login = await this.agentLogin(reader, signal);
+    if (
+      details.headRef !== target.runBranch ||
+      details.headRepository?.toLowerCase() !== fullName ||
+      details.author?.toLowerCase() !== login.toLowerCase()
+    ) {
+      throw new LookupRefusal(
+        'scope_mismatch',
+        "That is not the run's own pull request (its branch or author differs), so nothing more was read.",
+      );
+    }
+    return { reader, repository, details };
+  }
+
+  /**
+   * Reads the Run's pull request, after the scope check; throws {@link LookupRefusal}. With
+   * `withChecks` (Issue #145) a draft or open pull request also gets the checks of its latest
+   * commit.
+   */
+  private async read(
+    target: PullRequestTarget,
+    signal: AbortSignal,
+    withChecks: boolean,
+  ): Promise<PullRequestStateResult> {
+    try {
+      const scope = await this.openScope(target, signal);
+      if (scope.missing) return { state: 'missing' };
+      const { reader, repository, details } = scope;
       // Merged is merged, whether or not its branch was deleted afterwards.
       if (details.merged) return { state: 'merged' };
       const position = await reader.position(
@@ -232,19 +284,138 @@ export class PullRequestLookups implements LookupService {
         ...(state !== 'closed' && details.mergeable !== null
           ? { mergeable: details.mergeable }
           : {}),
+        ...(withChecks && state !== 'closed'
+          ? await this.readChecks(reader, repository, details, signal)
+          : {}),
       };
     } catch (error) {
-      if (error instanceof PullRequestFailedError) {
-        throw new LookupRefusal(
-          error.retryAfterSeconds === undefined ? 'failed' : 'rate_limited',
-          error.retryAfterSeconds === undefined
-            ? error.message
-            : `GitHub asked to wait (${error.retryAfterSeconds} seconds) before the pull request is read again.`,
-          error.retryAfterSeconds,
-        );
+      throw refusalOf(error);
+    }
+  }
+
+  /**
+   * The checks of the pull request's latest commit (Issue #145). When GitHub refuses to tell
+   * (the Agent account lacks the permission), the answer says so instead of failing the lookup:
+   * the pull request's state is still worth having.
+   */
+  private async readChecks(
+    reader: PullRequestReader,
+    repository: { owner: string; repo: string },
+    details: PullRequestDetails,
+    signal: AbortSignal,
+  ): Promise<Pick<PullRequestStateResult, 'checks' | 'checksCommit' | 'checksUnavailable'>> {
+    try {
+      const reports = await reader.checks(
+        repository,
+        details.headSha,
+        `${details.url}/checks`,
+        signal,
+      );
+      const checks: PullRequestCheck[] = reports.map(
+        ({ name, state, durationSeconds, url }): PullRequestCheck => ({
+          name,
+          state,
+          ...(durationSeconds === undefined ? {} : { durationSeconds }),
+          url,
+        }),
+      );
+      return { checksCommit: details.headSha, checks };
+    } catch (error) {
+      if (
+        error instanceof PullRequestFailedError &&
+        error.retryAfterSeconds === undefined &&
+        (error.status === 403 || error.status === 404)
+      ) {
+        return { checksUnavailable: true };
       }
       throw error;
     }
+  }
+
+  /**
+   * The failed checks of the pull request's latest commit with the end of each job's log
+   * (Issue #145), after the scope check; throws {@link LookupRefusal}. A log that cannot be
+   * read leaves the check in the answer with the reason.
+   */
+  private async readFailingCheckLogs(
+    target: PullRequestTarget,
+    signal: AbortSignal,
+  ): Promise<FailingCheckLogsResult> {
+    const deadline = Date.now() + (this.options.logsBudgetMs ?? LOGS_BUDGET_MS);
+    try {
+      const scope = await this.openScope(target, signal);
+      if (scope.missing || scope.details.merged || scope.details.state === 'closed') {
+        throw new LookupRefusal(
+          'failed',
+          'The pull request is not open any more, so its failing checks were not read.',
+        );
+      }
+      const { reader, repository, details } = scope;
+      const reports = await reader.checks(
+        repository,
+        details.headSha,
+        `${details.url}/checks`,
+        signal,
+      );
+      const failed = reports.filter((report) => report.state === 'failed');
+      const checks: FailingCheckLogsResult['checks'] = [];
+      let used = 0;
+      for (const report of failed) {
+        const entry = await this.failedCheck(reader, repository, report, used, signal, deadline);
+        used += Buffer.byteLength(entry.excerpt ?? '', 'utf8');
+        checks.push(entry);
+      }
+      return { commit: details.headSha, checks };
+    } catch (error) {
+      throw refusalOf(error);
+    }
+  }
+
+  private async failedCheck(
+    reader: PullRequestReader,
+    repository: { owner: string; repo: string },
+    report: CheckReport,
+    used: number,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<FailingCheckLogsResult['checks'][number]> {
+    const base = { name: report.name, url: report.url };
+    const summary = report.summary ? ` The check's summary: ${report.summary}` : '';
+    const unavailable = (reason: string) => ({
+      ...base,
+      logAvailable: false,
+      note: `Log unavailable: ${reason}${summary}`.slice(0, 500),
+    });
+    if (report.jobId === undefined) {
+      return unavailable('this check does not run on GitHub Actions.');
+    }
+    const allowance = excerptAllowance(used);
+    if (allowance === 0) return unavailable('the size limit for all logs was reached.');
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return unavailable('the time limit for reading logs was reached.');
+    let outcome;
+    try {
+      outcome = await reader.jobLog(
+        repository,
+        report.jobId,
+        AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
+      );
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // A rate limit is the whole lookup's to wait out; anything else costs this log only.
+      if (error instanceof PullRequestFailedError && error.retryAfterSeconds !== undefined) {
+        throw error;
+      }
+      return unavailable(
+        error instanceof PullRequestFailedError
+          ? 'GitHub could not give the log.'
+          : 'the time limit for reading logs was reached.',
+      );
+    }
+    if ('unavailable' in outcome) return unavailable(outcome.unavailable);
+    const excerpt = logExcerpt(outcome.log, allowance);
+    if (excerpt === undefined) return unavailable('the log is empty.');
+    return { ...base, logAvailable: true, excerpt };
   }
 
   private agentLogin(reader: PullRequestReader, signal: AbortSignal): Promise<string> {
@@ -287,4 +458,16 @@ function defaultReader(github: { token: string; apiUrl: string }): PullRequestRe
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** A refusal from the Git host as the lookup's own; anything else as it is. */
+function refusalOf(error: unknown): unknown {
+  if (!(error instanceof PullRequestFailedError)) return error;
+  return new LookupRefusal(
+    error.retryAfterSeconds === undefined ? 'failed' : 'rate_limited',
+    error.retryAfterSeconds === undefined
+      ? error.message
+      : `GitHub asked to wait (${error.retryAfterSeconds} seconds) before the pull request is read again.`,
+    error.retryAfterSeconds,
+  );
 }

@@ -3,10 +3,10 @@ import {
   ACTIVE_RUN_STATES,
   canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
+  type FollowUpSource,
   isFinal,
   partEndOf,
   restoreEarlierResult,
-  type BringUpSource,
   MAX_ACTIVE_RUNS,
   NO_PULL_REQUEST_STATUS,
   type Run,
@@ -18,6 +18,7 @@ import {
   stepLimitFailure,
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
+import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
@@ -443,11 +444,14 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve({ status: 'resumed', run: this.view(run) });
   }
 
+  /** Issue #145: the prepared Follow-ups, by Run id (shared with the lookup and prepared stores). */
+  readonly prepared = new Map<string, PreparedFollowUp>();
+
   queueFollowUp(
     runId: string,
     text: string,
     now: Date,
-    source?: BringUpSource,
+    source?: FollowUpSource,
   ): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (
@@ -464,11 +468,15 @@ export class InMemoryRunRepository implements RunRepository {
       return Promise.resolve(null);
     }
     run.messages.push({ kind: 'part_end', ...partEndOf(run)!, at: now });
-    run.messages.push(
-      source === undefined
-        ? { kind: 'follow_up', text, at: now }
-        : { kind: 'follow_up', text, at: now, source },
-    );
+    run.messages.push({
+      kind: 'follow_up',
+      text,
+      at: now,
+      ...(source === undefined ? {} : { source }),
+    });
+    if (source !== undefined && this.prepared.get(runId)?.source === source) {
+      this.prepared.delete(runId);
+    }
     Object.assign(run, {
       state: 'queued',
       lastActivityAt: now,

@@ -7,6 +7,10 @@ import {
   lookupPayloadSchema,
   lookupResultRequestSchema,
   pullRequestStateResultSchema,
+  failingCheckLogsResultSchema,
+  FAILING_CHECK_EXCERPT_MAX_LENGTH,
+  FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH,
+  PULL_REQUEST_CHECKS_MAX,
   FOLLOW_UP_MAX_LENGTH,
   RESUME_REASONS,
   runDeliverySchema,
@@ -1337,6 +1341,144 @@ describe('lookups', () => {
         retryAfterSeconds: 0,
       }).success,
     ).toBe(false);
+  });
+  // Issue #145: Pull request checks with the state, and the logs of the failed ones.
+  describe('Pull request checks', () => {
+    const COMMIT = 'c'.repeat(40);
+    const check = { name: 'build', state: 'failed', durationSeconds: 61, url: 'https://ci.test/1' };
+
+    it('a draft or open pull request carries its checks with their commit', () => {
+      for (const state of ['draft', 'open']) {
+        expect(
+          pullRequestStateResultSchema.safeParse({
+            state,
+            checksCommit: COMMIT,
+            checks: [check, { ...check, state: 'queued', durationSeconds: undefined }],
+          }).success,
+        ).toBe(true);
+      }
+      expect(
+        pullRequestStateResultSchema.safeParse({ state: 'open', checksCommit: COMMIT, checks: [] })
+          .success,
+      ).toBe(true);
+      expect(
+        pullRequestStateResultSchema.safeParse({ state: 'open', checksUnavailable: true }).success,
+      ).toBe(true);
+    });
+
+    it('checks come with their commit, not with the unavailable marker, and not for an ended pull request', () => {
+      const parse = (result: object) => pullRequestStateResultSchema.safeParse(result).success;
+      expect(parse({ state: 'open', checks: [check] })).toBe(false);
+      expect(parse({ state: 'open', checksCommit: COMMIT })).toBe(false);
+      expect(
+        parse({ state: 'open', checksCommit: COMMIT, checks: [], checksUnavailable: true }),
+      ).toBe(false);
+      for (const state of ['merged', 'closed', 'missing']) {
+        expect(parse({ state, checksCommit: COMMIT, checks: [] })).toBe(false);
+        expect(parse({ state, checksUnavailable: true })).toBe(false);
+      }
+    });
+
+    it('a check has a name, a known state, a whole non-negative duration and a web link', () => {
+      const parse = (patch: object) =>
+        pullRequestStateResultSchema.safeParse({
+          state: 'open',
+          checksCommit: COMMIT,
+          checks: [{ ...check, ...patch }],
+        }).success;
+      expect(parse({})).toBe(true);
+      expect(parse({ name: '' })).toBe(false);
+      expect(parse({ state: 'pending' })).toBe(false);
+      expect(parse({ durationSeconds: -1 })).toBe(false);
+      expect(parse({ durationSeconds: 1.5 })).toBe(false);
+      expect(parse({ url: 'javascript:alert(1)' })).toBe(false);
+      expect(parse({ url: 'not a link' })).toBe(false);
+      expect(parse({ url: 'https://user:token@ci.test/x' })).toBe(false);
+      expect(parse({ extra: 1 })).toBe(false);
+    });
+
+    it(`carries at most ${PULL_REQUEST_CHECKS_MAX} checks`, () => {
+      const parse = (count: number) =>
+        pullRequestStateResultSchema.safeParse({
+          state: 'open',
+          checksCommit: COMMIT,
+          checks: Array(count).fill(check),
+        }).success;
+      expect(parse(PULL_REQUEST_CHECKS_MAX)).toBe(true);
+      expect(parse(PULL_REQUEST_CHECKS_MAX + 1)).toBe(false);
+    });
+
+    describe('the logs of failed checks', () => {
+      const entry = {
+        name: 'unit tests',
+        url: 'https://ci.test/1',
+        logAvailable: true,
+        excerpt: 'FAIL a.test.ts',
+      };
+      const parse = (checks: object[]) =>
+        failingCheckLogsResultSchema.safeParse({ commit: COMMIT, checks }).success;
+
+      it('lists each failed check with its excerpt, or why there is none', () => {
+        expect(parse([entry])).toBe(true);
+        expect(
+          parse([{ name: 'deploy', url: 'https://ci.test/2', logAvailable: false, note: 'Gone.' }]),
+        ).toBe(true);
+        expect(parse([])).toBe(true);
+      });
+
+      it('has an excerpt exactly when the log was available', () => {
+        expect(parse([{ ...entry, logAvailable: false }])).toBe(false);
+        expect(parse([{ name: 'x', url: 'https://ci.test/2', logAvailable: true }])).toBe(false);
+      });
+
+      it('caps one excerpt at 16 KiB and all of them together at 64 KiB', () => {
+        const big = (length: number) => ({ ...entry, excerpt: 'x'.repeat(length) });
+        expect(parse([big(FAILING_CHECK_EXCERPT_MAX_LENGTH)])).toBe(true);
+        expect(parse([big(FAILING_CHECK_EXCERPT_MAX_LENGTH + 1)])).toBe(false);
+        const full = FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH / FAILING_CHECK_EXCERPT_MAX_LENGTH;
+        expect(parse(Array(full).fill(big(FAILING_CHECK_EXCERPT_MAX_LENGTH)))).toBe(true);
+        expect(parse([...Array(full).fill(big(FAILING_CHECK_EXCERPT_MAX_LENGTH)), big(1)])).toBe(
+          false,
+        );
+      });
+
+      it('counts the caps in UTF-8 bytes, not characters', () => {
+        // 9 000 two-byte characters are 18 000 bytes: over the 16 KiB cap.
+        expect(parse([{ ...entry, excerpt: 'é'.repeat(9_000) }])).toBe(false);
+        expect(parse([{ ...entry, excerpt: 'é'.repeat(8_192) }])).toBe(true);
+      });
+
+      it('is answered with the kind failing_check_logs only', () => {
+        const answer = {
+          workerId: WORKER_ID,
+          ok: true,
+          kind: 'failing_check_logs',
+          result: { commit: COMMIT, checks: [entry] },
+        };
+        expect(lookupResultRequestSchema.safeParse(answer).success).toBe(true);
+        expect(
+          lookupResultRequestSchema.safeParse({ ...answer, kind: 'pull_request_state' }).success,
+        ).toBe(false);
+        expect(
+          lookupResultRequestSchema.safeParse({
+            ...answer,
+            kind: 'pull_request_state',
+            result: { state: 'open' },
+          }).success,
+        ).toBe(true);
+        expect(
+          lookupPayloadSchema.safeParse({
+            id: LOOKUP_ID,
+            kind: 'failing_check_logs',
+            runId: RUN_ID,
+            repository: { remoteUrl: 'https://github.com/acme/shop.git' },
+            pullRequestNumber: 7,
+            runBranch: 'agent/add-store-r0b8e5c2d',
+            integrationBranch: 'dev',
+          }).success,
+        ).toBe(true);
+      });
+    });
   });
 });
 

@@ -11,6 +11,11 @@
 // does on GitHub (`POST /__control/pulls/<owner>/<repo>/<number>`, no token: the stub listens on
 // loopback and holds nothing real).
 //
+// Issue #145: the reads for a pull request's checks (`GET /commits/<sha>/check-runs` and `/status`)
+// and the log of an Actions job (`GET /actions/jobs/<id>/logs`, a 302 to a download that takes no
+// token, as GitHub does), and the same control endpoint sets what they answer (`checkRuns`,
+// `statuses`, `jobLogs`, `headSha`).
+//
 // Like GitHub, it checks what the smoke must prove end to end (Issue #115): every call carries
 // the Agent token (`Authorization: Bearer $STUB_GITHUB_TOKEN`, else 401), and a new pull
 // request is a draft against the integration branch (`draft: true`, `base` =
@@ -33,6 +38,12 @@ if (!token || !base) {
 const AGENT_LOGIN = 'studio-agent';
 
 const pulls = [];
+
+/** Issue #145: what the checks routes answer, as GitHub words them; set through the control endpoint. */
+let checkRuns = [];
+let statuses = [];
+/** Job id (string) to the text of its log. */
+let jobLogs = {};
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://stub');
@@ -59,6 +70,10 @@ const server = createServer((request, response) => {
         if (body.merged) pr.state = 'closed';
       }
       if (typeof body.draft === 'boolean') pr.draft = body.draft;
+      if (typeof body.headSha === 'string') pr.headSha = body.headSha;
+      if (Array.isArray(body.checkRuns)) checkRuns = body.checkRuns;
+      if (Array.isArray(body.statuses)) statuses = body.statuses;
+      if (body.jobLogs && typeof body.jobLogs === 'object') jobLogs = body.jobLogs;
       if (Number.isInteger(body.behindBy)) pr.behindBy = body.behindBy;
       if (Number.isInteger(body.aheadBy)) pr.aheadBy = body.aheadBy;
       console.log(
@@ -72,11 +87,31 @@ const server = createServer((request, response) => {
   const match = /^\/repos\/([^/]+)\/([^/]+)\/pulls(?:\/(\d+))?$/.exec(url.pathname);
   const compare = /^\/repos\/([^/]+)\/([^/]+)\/compare\/(.+)\.\.\.(.+)$/.exec(url.pathname);
   const branches = /^\/repos\/([^/]+)\/([^/]+)\/branches\/(.+)$/.test(url.pathname);
-  if (!match && !compare && !branches && url.pathname !== '/user')
+  const checksRoute = /^\/repos\/([^/]+)\/([^/]+)\/commits\/[^/]+\/(check-runs|status)$/.exec(
+    url.pathname,
+  );
+  const logRoute = /^\/repos\/([^/]+)\/([^/]+)\/actions\/jobs\/(\d+)\/logs$/.exec(url.pathname);
+  // The download a log redirects to takes no token (it is a signed address on GitHub).
+  const download = /^\/__logs\/(\d+)$/.exec(url.pathname);
+  if (download && request.method === 'GET') {
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    return response.end(jobLogs[download[1]] ?? '');
+  }
+  if (!match && !compare && !branches && !checksRoute && !logRoute && url.pathname !== '/user')
     return send(404, { message: 'Not Found' });
   if (request.headers.authorization !== `Bearer ${token}`) {
     console.log(`[stub-github] refused ${request.method} ${url.pathname}: not the Agent token`);
     return send(401, { message: 'Bad credentials' });
+  }
+  if (checksRoute && request.method === 'GET') {
+    return checksRoute[3] === 'check-runs'
+      ? send(200, { total_count: checkRuns.length, check_runs: checkRuns })
+      : send(200, { state: 'pending', statuses });
+  }
+  if (logRoute && request.method === 'GET') {
+    if (!(logRoute[3] in jobLogs)) return send(404, { message: 'Not Found' });
+    response.writeHead(302, { Location: `http://${request.headers.host}/__logs/${logRoute[3]}` });
+    return response.end();
   }
   // Issue #142: the Agent account itself, and a branch's position against the base.
   if (url.pathname === '/user' && request.method === 'GET') {
@@ -118,7 +153,11 @@ const server = createServer((request, response) => {
       merged: pr.merged,
       draft: pr.draft,
       mergeable: true,
-      head: { ref: pr.branch, repo: { full_name: `${owner}/${repo}` } },
+      head: {
+        ref: pr.branch,
+        sha: pr.headSha ?? 'c'.repeat(40),
+        repo: { full_name: `${owner}/${repo}` },
+      },
       base: { ref: base },
       user: { login: AGENT_LOGIN },
       title: pr.title,

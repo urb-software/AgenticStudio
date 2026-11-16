@@ -251,7 +251,14 @@ export function RunConversation({
         <Message
           key={`${i}-${message.kind}`}
           message={message}
-          label={`You · Follow-up ${followUps}${bringUp ? ' · Bring up to date' : ''}`}
+          label={`You · Follow-up ${followUps}${
+            // Issue #145: where a prepared Follow-up came from; Issue #147: a bring-up request.
+            bringUp
+              ? ' · Bring up to date'
+              : message.source === 'pull_request_checks'
+                ? ' · prepared from Pull request checks'
+                : ''
+          }`}
         >
           {bringUp ? (
             <>
