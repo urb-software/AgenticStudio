@@ -215,6 +215,23 @@ describe('FakeRunner', () => {
       });
     });
 
+    describe('a bring-up-to-date request (Issue #147)', () => {
+      it('plays the scenario the instruction names, success by default, in the same session', async () => {
+        const { result, events } = await resume(
+          'Add a feature',
+          SESSION,
+          1,
+          'The merge commit exists.',
+          'bring_up_to_date',
+        );
+        expect(result.outcome).toBe('done');
+        expect(events.map((event) => event.text)).toContain('bring-up received: success');
+        await expect(
+          resume('Add a feature', SESSION, 1, 'Note: [fake:fail] Break', 'bring_up_to_date'),
+        ).rejects.toBeInstanceOf(AgentFailedError);
+      });
+    });
+
     it('cannot resume a lost session: the provider refuses it', async () => {
       const { result } = await start('[fake:lost-session]');
       expect(result.outcome).toBe('needs_input');

@@ -149,6 +149,10 @@ export function claudePrompt(kind: 'task' | ResumeReason, text: string): string 
   if (kind === 'task') return `The operator's Task:\n\n${text}`;
   // Issue #141: a Follow-up is a further instruction to the finished Task, not an answer.
   if (kind === 'follow_up') return `The operator's Follow-up:\n\n${text}`;
+  // Issue #147: the worker's own instruction after it merged the integration branch.
+  if (kind === 'bring_up_to_date') {
+    return `Studio's instruction to bring the branch up to date:\n\n${text}`;
+  }
   return `The operator's answer:\n\n${text}`;
 }
 

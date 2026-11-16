@@ -71,6 +71,8 @@ import {
 } from './features/request-daily-pull-request-refreshes/handler.js';
 import { RetryDeliveryEndpoint } from './features/retry-delivery/endpoint.js';
 import { RetryDeliveryHandler } from './features/retry-delivery/handler.js';
+import { BringUpToDateEndpoint } from './features/bring-up-to-date/endpoint.js';
+import { BringUpToDateHandler } from './features/bring-up-to-date/handler.js';
 import { FollowUpRunEndpoint } from './features/follow-up-run/endpoint.js';
 import { FollowUpRunHandler } from './features/follow-up-run/handler.js';
 import { ResumeRunEndpoint } from './features/resume-run/endpoint.js';
@@ -168,6 +170,7 @@ export class ExecutionsModule {
         AnswerRunEndpoint,
         ResumeRunEndpoint,
         FollowUpRunEndpoint,
+        BringUpToDateEndpoint,
         RefreshPullRequestEndpoint,
         PrepareFailingChecksEndpoint,
         GetPreparedFollowUpEndpoint,
@@ -246,6 +249,7 @@ export class ExecutionsModule {
         AnswerRunHandler,
         ResumeRunHandler,
         FollowUpRunHandler,
+        BringUpToDateHandler,
         RefreshPullRequestHandler,
         PrepareFailingChecksHandler,
         GetPreparedFollowUpHandler,

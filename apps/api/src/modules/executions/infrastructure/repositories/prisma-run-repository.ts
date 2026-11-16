@@ -27,6 +27,7 @@ import {
   type FollowUpComments,
   type FollowUpSource,
   partEndOf,
+  restoreEarlierResult,
   type RunPullRequestChecks,
   type PullRequestState,
   type RunPartEnd,
@@ -128,6 +129,9 @@ const RUN_FIELDS = {
       source: true,
       sourceCount: true,
       sourceAuthors: true,
+      mergedCommit: true,
+      updateBase: true,
+      updateTip: true,
     },
     orderBy: { seq: 'asc' },
   },
@@ -204,6 +208,9 @@ interface RunRow {
     source: string | null;
     sourceCount: number | null;
     sourceAuthors: string[];
+    mergedCommit: string | null;
+    updateBase: string | null;
+    updateTip: string | null;
   }[];
 }
 
@@ -213,7 +220,7 @@ const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
   if (row.kind === 'follow_up') {
-    // The CHECK constraint fixes the source (Issue #145).
+    // The CHECK constraint fixes the source (Issues #145, #147).
     return {
       kind: 'follow_up',
       text: row.text,
@@ -222,6 +229,10 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
       ...(row.sourceCount === null
         ? {}
         : { sourceComments: { count: row.sourceCount, authors: row.sourceAuthors } }),
+      // Issue #147: what a bring-up-to-date request records besides its note.
+      ...(row.mergedCommit === null ? {} : { mergedCommit: row.mergedCommit }),
+      ...(row.updateBase === null ? {} : { updateBase: row.updateBase }),
+      ...(row.updateTip === null ? {} : { updateTip: row.updateTip }),
     };
   }
   if (row.kind === 'part_end') {
@@ -876,6 +887,123 @@ export class PrismaRunRepository implements RunRepository {
           cancelRequestedAt: null,
           delivery: null,
           waitingSince: null,
+          stepStartedAt: null,
+        },
+        select: RUN_FIELDS,
+      });
+      return toRun(row);
+    });
+  }
+
+  async recordUpdateStart(
+    runId: string,
+    workerId: string,
+    start: { baseCommit: string; integrationCommit: string },
+  ): Promise<boolean> {
+    return this.db.$transaction(async (tx) => {
+      const held = await tx.run.count({ where: { id: runId, claimedBy: workerId } });
+      if (held === 0) return false;
+      const entry = await tx.runMessage.findFirst({
+        where: { runId, kind: 'follow_up' },
+        orderBy: { seq: 'desc' },
+        select: { seq: true, source: true, updateTip: true },
+      });
+      if (!entry || entry.source !== 'bring_up_to_date' || entry.updateTip !== null) {
+        return false;
+      }
+      await tx.runMessage.update({
+        where: { runId_seq: { runId, seq: entry.seq } },
+        data: { updateBase: start.baseCommit, updateTip: start.integrationCommit },
+      });
+      return true;
+    });
+  }
+
+  async recordMergedCommit(runId: string): Promise<boolean> {
+    return this.db.$transaction(async (tx) => {
+      const entry = await tx.runMessage.findFirst({
+        where: { runId, kind: 'follow_up' },
+        orderBy: { seq: 'desc' },
+        select: { seq: true, source: true, updateTip: true, mergedCommit: true },
+      });
+      if (
+        !entry ||
+        entry.source !== 'bring_up_to_date' ||
+        entry.updateTip === null ||
+        entry.mergedCommit !== null
+      ) {
+        return false;
+      }
+      await tx.runMessage.update({
+        where: { runId_seq: { runId, seq: entry.seq } },
+        data: { mergedCommit: entry.updateTip },
+      });
+      return true;
+    });
+  }
+
+  async finishBringUpToDate(
+    runId: string,
+    workerId: string,
+    detail: string,
+    now: Date,
+  ): Promise<Run | null> {
+    return this.db.$transaction(async (tx) => {
+      // Locks the Run row: the condition and the return to the earlier result hold together.
+      const [held] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM runs
+        WHERE id = ${runId}::uuid AND claimed_by = ${workerId}
+          AND state IN ('preparing', 'running')
+        FOR UPDATE`;
+      if (!held) return null;
+      const entry = await tx.runMessage.findFirst({
+        where: { runId, kind: 'follow_up' },
+        orderBy: { seq: 'desc' },
+        select: { seq: true, source: true },
+      });
+      if (!entry || entry.source !== 'bring_up_to_date') return null;
+      const before = await tx.runMessage.findUnique({
+        where: { runId_seq: { runId, seq: entry.seq - 1 } },
+      });
+      if (before?.kind !== 'part_end' || before.endState === null) return null;
+      const ended = before.endState as RunPartEnd['state'];
+      const last = await tx.runMessage.findFirst({
+        where: { runId },
+        orderBy: { seq: 'desc' },
+        select: { seq: true },
+      });
+      // Nothing was changed: the Run is as it was, and its conversation says so.
+      await tx.runMessage.create({
+        data: {
+          runId,
+          seq: (last?.seq ?? 0) + 1,
+          kind: 'part_end',
+          text: detail,
+          endState: before.endState,
+          endFailureCode: before.endFailureCode,
+          endDelivery: before.endDelivery,
+          at: now,
+        },
+      });
+      const earlier = restoreEarlierResult({
+        state: ended,
+        failureCode: before.endFailureCode as RunFailureCode | null,
+        delivery: before.endDelivery as RunDeliveryState | null,
+        detail: before.text,
+      });
+      const row = await tx.run.update({
+        where: { id: runId },
+        data: {
+          state: earlier.state,
+          failureCode: earlier.failure?.code ?? null,
+          failureDetail: earlier.failure?.detail ?? null,
+          cancelledBy: earlier.cancellation?.by ?? null,
+          cancelReason: earlier.cancellation?.reason ?? null,
+          delivery: earlier.delivery,
+          claimedBy: null,
+          heartbeatAt: null,
+          releasedBy: workerId,
+          finishedAt: now,
           stepStartedAt: null,
         },
         select: RUN_FIELDS,

@@ -8,6 +8,7 @@ import * as sdk from './generated';
 import type {
   AgentWorkerOutput,
   AnswerRunRequest,
+  BringUpToDateRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -37,6 +38,7 @@ import type {
 } from './generated';
 import { client } from './generated/client.gen';
 import {
+  zBringUpToDateRequest,
   zConnectRepositoryRequest,
   zRunEventOutput,
   zCreateProjectRequest,
@@ -47,6 +49,7 @@ export type {
   AgentWorkerDiskOutput,
   AgentWorkerOutput,
   AnswerRunRequest,
+  BringUpToDateRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -97,6 +100,9 @@ export const connectRepositoryRequestHint = zConnectRepositoryRequest;
 
 /** Generated hint for the New run form; the API trims the Task and its 422 field errors are final. */
 export const startRunRequestHint = zStartRunRequest;
+
+/** The bring-up-to-date note's rules as a client-side hint (Issue #147); the API stays authoritative. */
+export const bringUpToDateRequestHint = zBringUpToDateRequest;
 
 client.setConfig({ credentials: 'same-origin' });
 
@@ -271,6 +277,13 @@ export const api = {
    */
   followUpRun: (runId: string, body: FollowUpRunRequest): Promise<RunOutput> =>
     unwrap(sdk.followUpRun({ path: { runId }, body })),
+  /**
+   * Asks for a finished Run's branch to be brought up to date with the integration branch (Issue
+   * #147; 202: the Run, `queued` as a Follow-up of that source). The note is optional. A Run that
+   * cannot take a Follow-up answers 409 saying why; a too long note 422.
+   */
+  bringUpToDateRun: (runId: string, body: BringUpToDateRequest): Promise<RunOutput> =>
+    unwrap(sdk.bringUpToDateRun({ path: { runId }, body })),
   /**
    * Asks for the state of a Run's pull request to be read again (Issue #142; 202: the Run, with
    * `pullRequest.refreshing` while an agent worker reads it). `onOpen` is the Run page's own

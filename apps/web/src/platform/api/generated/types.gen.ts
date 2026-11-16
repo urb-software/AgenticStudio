@@ -165,9 +165,10 @@ export type RunMessageOutput = {
     kind: 'task' | 'question' | 'answer' | 'follow_up' | 'part_end';
     text: string;
     end?: RunPartEndOutput;
+    mergedCommit?: string;
     options?: Array<string>;
     recommendation?: string;
-    source?: 'pull_request_checks' | 'review_comments';
+    source?: 'pull_request_checks' | 'bring_up_to_date' | 'review_comments';
     sourceCount?: number;
     sourceAuthors?: Array<string>;
     at: string;
@@ -232,8 +233,12 @@ export type AnswerRunRequest = {
 
 export type FollowUpRunRequest = {
     text: string;
-    source?: 'pull_request_checks' | 'review_comments';
+    source?: 'pull_request_checks' | 'bring_up_to_date' | 'review_comments';
     reviewCommentIds?: Array<string>;
+};
+
+export type BringUpToDateRequest = {
+    note?: string;
 };
 
 export type RefreshPullRequestRequest = {
@@ -248,7 +253,7 @@ export type PreparedFollowUpCheckOutput = {
 };
 
 export type PreparedFollowUpOutput = {
-    source: 'pull_request_checks' | 'review_comments';
+    source: 'pull_request_checks' | 'bring_up_to_date' | 'review_comments';
     text: string;
     checks: Array<PreparedFollowUpCheckOutput>;
 };
@@ -1133,6 +1138,42 @@ export type FollowUpRunResponses = {
 };
 
 export type FollowUpRunResponse = FollowUpRunResponses[keyof FollowUpRunResponses];
+
+export type BringUpToDateRunData = {
+    body?: BringUpToDateRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/bring-up-to-date';
+};
+
+export type BringUpToDateRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run cannot take a Follow-up now (urn:agentic-studio:problem:follow-up-not-allowed)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type BringUpToDateRunError = BringUpToDateRunErrors[keyof BringUpToDateRunErrors];
+
+export type BringUpToDateRunResponses = {
+    202: RunOutput;
+};
+
+export type BringUpToDateRunResponse = BringUpToDateRunResponses[keyof BringUpToDateRunResponses];
 
 export type RefreshRunPullRequestData = {
     body?: RefreshPullRequestRequest;

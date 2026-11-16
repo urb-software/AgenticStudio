@@ -257,9 +257,14 @@ export const ANSWER_MAX_LENGTH = 10_000;
 /**
  * What a Follow-up was prepared from (Issue #145): the text came from the failing Pull request
  * checks, or (Issue #146) from the pull request's Review comments, which the operator reviewed
- * and may have edited. A Follow-up written from scratch has no source.
+ * and may have edited; (Issue #147) `bring_up_to_date` is the request to merge the integration
+ * branch into the Run branch. A Follow-up written from scratch has no source.
  */
-export const FOLLOW_UP_SOURCES = ['pull_request_checks', 'review_comments'] as const;
+export const FOLLOW_UP_SOURCES = [
+  'pull_request_checks',
+  'bring_up_to_date',
+  'review_comments',
+] as const;
 export type FollowUpSource = (typeof FOLLOW_UP_SOURCES)[number];
 
 /** What a Follow-up prepared from Review comments records: how many, and their authors (Issue #146). */
@@ -289,15 +294,28 @@ export interface RunQuestion {
 export type RunMessage =
   | { kind: 'question'; question: RunQuestion; at: Date }
   | { kind: 'answer'; text: string; at: Date }
-  | {
+  | ({
       kind: 'follow_up';
       text: string;
       at: Date;
       source?: FollowUpSource;
       /** With source review_comments (Issue #146): how many comments, and whose. */
       sourceComments?: FollowUpComments;
-    }
+    } & BringUpDetails)
   | ({ kind: 'part_end'; at: Date } & RunPartEnd);
+
+/**
+ * What a bring-up-to-date Follow-up (`source: 'bring_up_to_date'`, Issue #147) records besides its
+ * text, which is then the operator's optional note (empty when there is none). `mergedCommit` is
+ * the integration branch commit the Run branch has merged, set once the part succeeded.
+ */
+export interface BringUpDetails {
+  mergedCommit?: string;
+  /** The Run branch's commit just before the merge started (reported when it started). */
+  updateBase?: string;
+  /** The integration branch commit being merged (reported when the merge started). */
+  updateTip?: string;
+}
 
 /**
  * How a part of the Run (its first part, or a Follow-up) ended (review S1 of #150): recorded
@@ -504,11 +522,91 @@ export const OPERATOR_CANCELLATION_BRANCH_PUSHED: RunCancellation = {
     'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
 };
 
+/** What every cancellation by the operator starts with (the reasons above). */
+export const OPERATOR_CANCELLATION_PREFIX = 'Cancelled by the operator';
+
 /** The cancellation recorded when the operator cancels a Run (Issue #100). */
 export const OPERATOR_CANCELLATION: RunCancellation = {
   by: 'operator',
-  reason: 'Cancelled by the operator.',
+  reason: `${OPERATOR_CANCELLATION_PREFIX}.`,
 };
+
+/**
+ * A Run's result as it was before a part that changed nothing (Issue #147): the state, failure,
+ * cancellation and delivery its `part_end` recorded, which the Follow-up cleared. The cancel's
+ * author is told from its reason, which only this module words.
+ */
+export function restoreEarlierResult(end: RunPartEnd): {
+  state: RunPartEnd['state'];
+  failure: RunFailure | null;
+  cancellation: RunCancellation | null;
+  delivery: RunDeliveryState | null;
+} {
+  return {
+    state: end.state,
+    failure:
+      end.state === 'failed' && end.failureCode
+        ? { code: end.failureCode, detail: end.detail }
+        : null,
+    cancellation:
+      end.state === 'cancelled'
+        ? {
+            by: end.detail.startsWith(OPERATOR_CANCELLATION_PREFIX) ? 'operator' : 'system',
+            reason: end.detail,
+          }
+        : null,
+    delivery: end.delivery,
+  };
+}
+
+/** The integration branch commit the Run branch last merged (Issue #147), if it ever did. */
+export function latestMergedCommit(run: Pick<Run, 'messages'>): string | undefined {
+  for (let index = run.messages.length - 1; index >= 0; index--) {
+    const message = run.messages[index]!;
+    if (message.kind === 'follow_up' && message.mergedCommit !== undefined) {
+      return message.mergedCommit;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A bring-up-to-date merge the part before the current one began and that never succeeded (review
+ * R2-1 of #154): the Follow-up right before the current part, a bring-up request with the commit before its merge and
+ * no merged commit. Its merge commit may still be in the Working copy (cancelled while waiting, a
+ * lost worker); the next part resets the Run branch to `baseCommit` first, unless something past it
+ * was pushed. `undefined` when there is none.
+ */
+export function pendingUpdate(
+  run: Pick<Run, 'messages' | 'pushedCommit'>,
+): { baseCommit: string; pushedCommit?: string } | undefined {
+  // Only the part right before the current one: once that part reset the branch (or any later part
+  // built on it), the base is not offered again, so nothing a later part did is ever undone.
+  const followUps = run.messages.flatMap((message, index) =>
+    message.kind === 'follow_up' ? [index] : [],
+  );
+  const lastIndex = followUps.at(-2) ?? -1;
+  if (lastIndex === -1) return undefined;
+  const entry = run.messages[lastIndex];
+  if (entry?.kind !== 'follow_up' || entry.source !== 'bring_up_to_date') return undefined;
+  if (entry.updateBase === undefined || entry.mergedCommit !== undefined) return undefined;
+  return {
+    baseCommit: entry.updateBase,
+    ...(run.pushedCommit === null ? {} : { pushedCommit: run.pushedCommit }),
+  };
+}
+
+/** The latest Follow-up's merge start when the current part is a bring-up request (Issue #147). */
+export function currentUpdateStart(
+  run: Pick<Run, 'messages'>,
+): { updateBase?: string; updateTip?: string } | undefined {
+  const last = run.messages.findLast((message) => message.kind === 'follow_up');
+  if (last?.kind !== 'follow_up' || last.source !== 'bring_up_to_date') return undefined;
+  return {
+    ...(last.updateBase === undefined ? {} : { updateBase: last.updateBase }),
+    ...(last.updateTip === undefined ? {} : { updateTip: last.updateTip }),
+  };
+}
 
 /**
  * The long-wait rule (Issue #100): a Run waiting for the operator longer than its
@@ -548,7 +646,7 @@ export function stepLimitFailure(maxSteps: number, inFollowUp = false): RunFailu
 }
 
 /** Why a resumed Run step continues the agent session (Issue #141; the worker protocol's list). */
-export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up'] as const;
+export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up', 'bring_up_to_date'] as const;
 export type ResumeReason = (typeof RESUME_REASONS)[number];
 
 /**
@@ -565,7 +663,14 @@ export function resumeMessage(
   const last = run.messages.at(-1);
   if (run.sessionRef === null || last === undefined) return null;
   if (last.kind === 'question' || last.kind === 'part_end') return null;
-  if (last.kind === 'follow_up') return { text: last.text, reason: 'follow_up' };
+  if (last.kind === 'follow_up') {
+    return last.source === 'bring_up_to_date'
+      ? {
+          text: last.text === '' ? BRING_UP_TO_DATE_DEFAULT_TEXT : last.text,
+          reason: 'bring_up_to_date',
+        }
+      : { text: last.text, reason: 'follow_up' };
+  }
   const before = run.messages.at(-2);
   return { text: last.text, reason: before?.kind === 'question' ? 'answer' : 'usage_limit' };
 }
@@ -579,7 +684,27 @@ export function takesNewEnvironmentFile(
   run: Pick<Run, 'followUpCount'>,
   reason: ResumeReason,
 ): boolean {
-  return reason === 'follow_up' || (reason === 'usage_limit' && run.followUpCount > 0);
+  return (
+    reason === 'follow_up' ||
+    reason === 'bring_up_to_date' ||
+    (reason === 'usage_limit' && run.followUpCount > 0)
+  );
+}
+
+/**
+ * What the claim hands the worker as the text of a bring-up-to-date request that has no note
+ * (Issue #147): the worker words the instruction to the agent itself, with the merge's outcome.
+ * The same text as the worker protocol's (the domain does not import the contracts package).
+ */
+export const BRING_UP_TO_DATE_DEFAULT_TEXT = 'Bring the Run branch up to date.';
+
+/**
+ * Whether the Run's current part is a request to bring the Run branch up to date (Issue #147):
+ * its latest Follow-up has that source. The part goes on through questions and the usage limit.
+ */
+export function inBringUpToDate(run: Pick<Run, 'messages'>): boolean {
+  const lastFollowUp = run.messages.findLast((message) => message.kind === 'follow_up');
+  return lastFollowUp?.kind === 'follow_up' && lastFollowUp.source === 'bring_up_to_date';
 }
 
 /**

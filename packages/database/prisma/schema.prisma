@@ -340,6 +340,13 @@ model RunMessage {
   /// With follow_up only (Issue #145): what the Follow-up was prepared from (pull_request_checks);
   /// null for one the operator wrote from scratch.
   source         String?  @db.VarChar(32)
+  /// With a bring-up-to-date source (Issue #147): the integration branch commit the Run branch has
+  /// merged, set once the part succeeded.
+  mergedCommit   String?  @map("merged_commit") @db.VarChar(64)
+  /// With that source: the Run branch's commit just before the merge started, and the integration
+  /// branch commit being merged (reported when it started; Studio hands them back with the claim).
+  updateBase     String?  @map("update_base") @db.VarChar(64)
+  updateTip      String?  @map("update_tip") @db.VarChar(64)
   /// With source review_comments only (Issue #146): how many Review comments the Follow-up was
   /// prepared from, and the logins of their authors (distinct, at most 20).
   sourceCount    Int?     @map("source_count")

@@ -575,4 +575,124 @@ describe('ReportRunStateHandler', () => {
       expect(released).toEqual([run.id]);
     });
   });
+  // Issue #147: a bring-up-to-date request is a Follow-up the worker reports on.
+  describe('a bring-up-to-date request (Issue #147)', () => {
+    const MERGED = 'b'.repeat(40);
+    const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+
+    /** The Run delivered, then claimed again by WORKER for a request to bring it up to date. */
+    async function requested() {
+      await report({ state: 'running' });
+      await runs.appendStep(
+        run.id,
+        WORKER,
+        { kind: 'start', result: { outcome: 'done', summary: 'Done.' }, sessionRef: 's-1' },
+        { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false },
+        [],
+        T0,
+      );
+      await report({
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+      });
+      await runs.queueFollowUp(run.id, 'Mind the config.', T1, 'bring_up_to_date');
+      expect((await runs.claimNext(WORKER, T1))?.id).toBe(run.id);
+    }
+
+    const entry = () =>
+      runs.runs
+        .find((candidate) => candidate.id === run.id)!
+        .messages.findLast((message) => message.kind === 'follow_up');
+
+    const START = { baseCommit: 'a'.repeat(40), integrationCommit: MERGED };
+
+    it('records where the merge started, and the merged commit once the part succeeded', async () => {
+      await requested();
+
+      await report({ state: 'running', bringUpToDateStarted: START });
+
+      expect(entry()).toMatchObject({
+        source: 'bring_up_to_date',
+        updateBase: START.baseCommit,
+        updateTip: MERGED,
+      });
+      // Nothing is merged for the page until the part succeeded and delivered.
+      expect(entry()).not.toHaveProperty('mergedCommit');
+      await report({ state: 'succeeded', delivery: { outcome: 'none' } });
+      expect(entry()).toMatchObject({ mergedCommit: MERGED });
+    });
+
+    it('records no merged commit for a part that failed', async () => {
+      await requested();
+      await report({ state: 'running', bringUpToDateStarted: START });
+
+      await report({ state: 'failed', failure: { code: 'agent_failed', detail: 'It broke.' } });
+
+      expect(entry()).not.toHaveProperty('mergedCommit');
+    });
+
+    it('records no merge start for a worker that does not hold the Run', async () => {
+      await requested();
+
+      await expect(
+        report({ workerId: OTHER_WORKER, state: 'running', bringUpToDateStarted: START }),
+      ).rejects.toBeInstanceOf(RunNotHeldError);
+      expect(entry()).not.toHaveProperty('updateTip');
+    });
+
+    it('returns the Run to its earlier result when the branch was already up to date', async () => {
+      await requested();
+
+      const restored = await report({ state: 'succeeded', unchanged: true });
+
+      expect(restored).toMatchObject({
+        state: 'succeeded',
+        claimedBy: null,
+        delivery: 'delivered',
+        pullRequest: PULL_REQUEST,
+      });
+      expect(restored.messages.at(-1)).toMatchObject({
+        kind: 'part_end',
+        state: 'succeeded',
+        detail: expect.stringContaining('already has everything dev has'),
+      });
+      expect(notified).toContain(run.id);
+      // The worker's retry of the same report changes nothing.
+      expect(await report({ state: 'succeeded', unchanged: true })).toMatchObject({
+        state: 'succeeded',
+      });
+      expect(restored.messages).toHaveLength((await runs.findById(run.id))!.messages.length);
+    });
+
+    it('shows why nothing changed when the worker says so, as the conversation entry', async () => {
+      await requested();
+
+      const restored = await report({
+        state: 'succeeded',
+        unchanged: true,
+        unchangedDetail: 'The integration branch dev could not be fetched. Nothing was changed.',
+      });
+
+      expect(restored).toMatchObject({ state: 'succeeded', delivery: 'delivered' });
+      expect(restored.messages.at(-1)).toMatchObject({
+        kind: 'part_end',
+        detail: 'The integration branch dev could not be fetched. Nothing was changed.',
+      });
+    });
+
+    it('refuses the report from a worker that does not hold the Run, or for a plain Follow-up', async () => {
+      await requested();
+      await expect(
+        report({ workerId: OTHER_WORKER, state: 'succeeded', unchanged: true }),
+      ).rejects.toBeInstanceOf(RunNotHeldError);
+
+      // A Follow-up that is not a bring-up request has no earlier result to return to.
+      await runs.finishBringUpToDate(run.id, WORKER, 'x', T1);
+      await runs.queueFollowUp(run.id, 'Plain.', T1);
+      await runs.claimNext(WORKER, T1);
+      await expect(report({ state: 'succeeded', unchanged: true })).rejects.toBeInstanceOf(
+        IllegalRunTransitionError,
+      );
+    });
+  });
 });

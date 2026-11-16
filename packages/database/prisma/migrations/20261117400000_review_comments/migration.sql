@@ -4,7 +4,7 @@
 -- it is sent) and what a Follow-up prepared from them records (how many comments, whose).
 -- Rollback (only once no load is wanted): drop table run_review_comment_sets, the source_count and
 -- source_authors columns of run_messages and the scope and since columns of run_lookups; restore
--- run_messages_source_check to ('pull_request_checks') and run_lookups_kind_check to
+-- run_messages_source_check as created in 20261117300000_bring_up_to_date and run_lookups_kind_check to
 -- ('pull_request_state', 'failing_check_logs') after deleting the review_comments rows.
 
 -- AlterTable
@@ -29,7 +29,10 @@ ADD COLUMN     "source_count" INTEGER;
 
 ALTER TABLE "run_messages" DROP CONSTRAINT "run_messages_source_check";
 ALTER TABLE "run_messages" ADD CONSTRAINT "run_messages_source_check"
-    CHECK ("source" IS NULL OR ("kind" = 'follow_up' AND "source" IN ('pull_request_checks', 'review_comments')));
+    CHECK (("source" IS NULL OR ("kind" = 'follow_up'
+             AND "source" IN ('pull_request_checks', 'bring_up_to_date', 'review_comments')))
+       AND (("merged_commit" IS NULL AND "update_base" IS NULL AND "update_tip" IS NULL)
+            OR "source" = 'bring_up_to_date'));
 
 -- The comment count and authors belong to a Follow-up prepared from review comments only.
 ALTER TABLE "run_messages" ADD CONSTRAINT "run_messages_source_detail_check"

@@ -31,6 +31,7 @@ type Route =
   | 'cancel'
   | 'answer'
   | 'followUp'
+  | 'bringUp'
   | 'refresh'
   | 'prepare'
   | 'prepared'
@@ -59,6 +60,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
   [/^\/api\/runs\/([^/]+)\/follow-up$/, () => 'followUp'],
+  [/^\/api\/runs\/([^/]+)\/bring-up-to-date$/, () => 'bringUp'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/refresh$/, () => 'refresh'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepare$/, () => 'prepare'],
   [
@@ -161,6 +163,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     cancel: [],
     answer: [],
     followUp: [],
+    bringUp: [],
     refresh: [],
     prepare: [],
     prepared: [],
@@ -242,7 +245,11 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const route = routeOf(request.method);
     const id = match![1];
     const body: unknown =
-      route === 'start' || route === 'answer' || route === 'followUp' || route === 'loadComments'
+      route === 'start' ||
+      route === 'answer' ||
+      route === 'followUp' ||
+      route === 'bringUp' ||
+      route === 'loadComments'
         ? await request.json()
         : route === 'refresh'
           ? ((await request.json().catch(() => undefined)) as unknown)
@@ -375,6 +382,42 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
                     sourceAuthors: [...new Set(chosen.map((comment) => comment.author))],
                   }
                 : {}),
+              at: new Date().toISOString(),
+            },
+          ],
+        };
+        runs[index] = queued;
+        return json(202, queued);
+      }
+      case 'bringUp': {
+        // Issue #147: a Follow-up of its own source; the note is optional.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        const run = runs[index];
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (!run.followUp?.allowed) {
+          return json(
+            409,
+            problem(409, 'Follow-up not possible', 'The run cannot take a Follow-up now.'),
+          );
+        }
+        const { note } = (body ?? {}) as { note?: string };
+        const { failure: _failure, finishedAt: _finishedAt, delivery: _delivery, ...rest } = run;
+        void _failure;
+        void _finishedAt;
+        void _delivery;
+        const queued: RunOutput = {
+          ...rest,
+          state: 'queued',
+          followUps: run.followUps + 1,
+          steps: { used: run.steps.used, usedInPart: 0 },
+          followUp: { allowed: false, reason: 'follow_up_queued' },
+          messages: [
+            ...(run.messages ?? []),
+            {
+              role: 'operator',
+              kind: 'follow_up',
+              text: note ?? '',
+              source: 'bring_up_to_date',
               at: new Date().toISOString(),
             },
           ],

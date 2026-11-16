@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type AnswerRunRequest,
   api,
+  type BringUpToDateRequest,
   type FollowUpRunRequest,
   type LoadReviewCommentsRequest,
   ApiError,
@@ -247,6 +248,28 @@ export function useFollowUpRun(runId: string) {
       queryClient.removeQueries({ queryKey: preparedFollowUpKey(run.id) });
       // Issue #146: and the loaded Review comments it was prepared from.
       queryClient.removeQueries({ queryKey: reviewCommentsKey(run.id) });
+      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
+    },
+    onError: async (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: runKey(runId) });
+      }
+    },
+  });
+}
+
+/**
+ * Asks for the Run's branch to be brought up to date (Issue #147): the Run, queued as a Follow-up
+ * of that source, replaces the cached Run, so the page polls it again; every Run list is read
+ * again. A 409 (the Run cannot take a Follow-up now) reads the Run again at once, so the page says
+ * why.
+ */
+export function useBringUpToDateRun(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: BringUpToDateRequest) => api.bringUpToDateRun(runId, request),
+    onSuccess: async (run: RunOutput) => {
+      queryClient.setQueryData(runKey(run.id), run);
       await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
     },
     onError: async (error: unknown) => {

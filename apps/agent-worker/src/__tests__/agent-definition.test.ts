@@ -32,6 +32,13 @@ describe('built-in agent definition', () => {
     expect(text).toMatch(/assumptions.*pull request description/is);
   });
 
+  it('tells the agent how to carry on after Studio merged the integration branch (Issue #147)', () => {
+    expect(text).toMatch(/merge the integration branch into the\s+Run branch/i);
+    expect(text).toMatch(/remove every conflict marker/i);
+    expect(text).toMatch(/Never abort the merge, rebase, reset,\s+rewrite history or push/i);
+    expect(text).toMatch(/Studio completes the merge/i);
+  });
+
   it('asks through the result only: no interactive ask tool, and the step ends after asking', () => {
     expect(text).toMatch(/do not use any interactive tool that asks the user/i);
     expect(text).toMatch(/end the step/i);

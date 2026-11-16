@@ -236,9 +236,14 @@ export const zRunMessageOutput = z.object({
     ]),
     text: z.string(),
     end: zRunPartEndOutput.optional(),
+    mergedCommit: z.string().optional(),
     options: z.array(z.string()).optional(),
     recommendation: z.string().optional(),
-    source: z.enum(['pull_request_checks', 'review_comments']).optional(),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]).optional(),
     sourceCount: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
     sourceAuthors: z.array(z.string()).optional(),
     at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
@@ -319,8 +324,16 @@ export const zAnswerRunRequest = z.object({
 
 export const zFollowUpRunRequest = z.object({
     text: z.string().min(1).max(10000),
-    source: z.enum(['pull_request_checks', 'review_comments']).optional(),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]).optional(),
     reviewCommentIds: z.array(z.string().min(1).max(40)).min(1).max(100).optional()
+});
+
+export const zBringUpToDateRequest = z.object({
+    note: z.string().max(10000).optional()
 });
 
 export const zRefreshPullRequestRequest = z.object({
@@ -335,7 +348,11 @@ export const zPreparedFollowUpCheckOutput = z.object({
 });
 
 export const zPreparedFollowUpOutput = z.object({
-    source: z.enum(['pull_request_checks', 'review_comments']),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]),
     text: z.string(),
     checks: z.array(zPreparedFollowUpCheckOutput)
 });
@@ -639,6 +656,14 @@ export const zFollowUpRunPath = z.object({
 });
 
 export const zFollowUpRunResponse = zRunOutput;
+
+export const zBringUpToDateRunBody = zBringUpToDateRequest;
+
+export const zBringUpToDateRunPath = z.object({
+    runId: z.string()
+});
+
+export const zBringUpToDateRunResponse = zRunOutput;
 
 export const zRefreshRunPullRequestBody = zRefreshPullRequestRequest;
 

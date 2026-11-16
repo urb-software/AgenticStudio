@@ -51,6 +51,10 @@ The operator's instruction that starts a Run.
 The operator's further instruction to a finished Run: the agent continues the same agent session and the Run delivers to the same pull request. It is not an Answer: a Follow-up reopens a finished Run.
 _Avoid_: New task, re-run, continuation
 
+**Bring up to date**:
+The operator's request to merge the Integration branch into a Run's branch, so that its pull request stops being behind and may stop conflicting. It is a Follow-up of its own source (same eligibility, step allowance and concurrency limits, same agent session): the agent worker fetches the Integration branch, merges it with a merge commit (never a rebase, never a force-push), and resumes the agent to resolve any conflicts and to run the project's checks. A part that does not end well (conflicts unresolved, the agent fails, a timeout or a cancel) is undone: the merge is aborted, the Run branch goes back to its commit before the request, and nothing is pushed. When the branch already has everything, or the Integration branch cannot be fetched, nothing changes, no agent starts, and the Run keeps its earlier result with the reason in its conversation.
+_Avoid_: Rebase, sync, update branch
+
 **Prepared Follow-up**:
 The text Studio builds for the operator to review before it becomes a Follow-up, for example from the failing Pull request checks: the operator can leave parts out, edit it freely, and send or discard it. It is never sent by itself, and a Run has at most one; a sent one is stored as a Follow-up marked with its source.
 _Avoid_: Draft Follow-up, automatic Follow-up

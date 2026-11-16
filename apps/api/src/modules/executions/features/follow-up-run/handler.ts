@@ -53,12 +53,13 @@ export class ReviewCommentsNotLoadedError extends Error {
  * step. The store re-checks the conditions under a row lock, so a second submission is refused.
  * The text is the operator's input: stored as given (the endpoint trims and bounds it), with its
  * `source` when it was prepared from failing checks (Issue #145: the prepared draft is then
- * removed in the same step). Returns
- * the queued Run and its eligibility now. Issue #146: a Follow-up from `review_comments` names
- * the selected comments, which must all be in the Run's loaded set (its text is the operator's);
- * the Follow-up records how many there are and their authors, and the loaded set is removed with
- * it. Throws {@link RunNotFoundError}, {@link FollowUpNotAllowedError} or
- * {@link ReviewCommentsNotLoadedError}.
+ * removed in the same step). Issue #147: the source `bring_up_to_date` marks a request to bring
+ * the Run branch up to date, which is a Follow-up in every other respect (its text is the
+ * operator's note, possibly empty). Returns the queued Run and its eligibility now. Issue #146: a
+ * Follow-up from `review_comments` names the selected comments, which must all be in the Run's
+ * loaded set (its text is the operator's); the Follow-up records how many there are and their
+ * authors, and the loaded set is removed with it. Throws {@link RunNotFoundError},
+ * {@link FollowUpNotAllowedError} or {@link ReviewCommentsNotLoadedError}.
  */
 @Injectable()
 export class FollowUpRunHandler {
