@@ -94,6 +94,43 @@ export function isPullRequestEnded(state: PullRequestState | null): boolean {
 }
 
 /**
+ * How a Pull request check stands (Issue #145). The worker protocol's list is pinned to this one
+ * by a test.
+ */
+export const PULL_REQUEST_CHECK_STATES = [
+  'queued',
+  'running',
+  'passed',
+  'failed',
+  'skipped',
+  'cancelled',
+] as const;
+export type PullRequestCheckState = (typeof PULL_REQUEST_CHECK_STATES)[number];
+
+/** A Pull request check as the Git host reports it (Issue #145). */
+export interface PullRequestCheck {
+  name: string;
+  state: PullRequestCheckState;
+  durationSeconds?: number;
+  url: string;
+}
+
+/**
+ * The Pull request checks of the pull request's latest commit as the last state lookup read them
+ * (Issue #145); `unavailable` when the Git host refused to tell them (the Agent account lacks the
+ * permission). An empty list means none are configured or reported for that commit.
+ */
+export type RunPullRequestChecks =
+  { unavailable: true } | { unavailable?: false; commit: string; checks: PullRequestCheck[] };
+
+/**
+ * Where the preparation of a Follow-up from failing checks stands (Issue #145): the worker is
+ * reading the logs (`preparing`), a draft waits for the operator (`ready`) or the reading failed
+ * (`failed`, with the reason in {@link RunPullRequestStatus.prepareError}).
+ */
+export type FailingChecksPreparation = 'preparing' | 'ready' | 'failed';
+
+/**
  * What Studio knows about the Run's pull request (Issue #142), from the lookups the agent worker
  * answered through the Agent account; Studio itself never reads the Git host. `state` is `null`
  * until the first lookup succeeded, and is kept when a later one fails (`refreshError` then says
@@ -116,6 +153,14 @@ export interface RunPullRequestStatus {
   refreshRequestedAt: Date | null;
   /** When a lookup was last requested, whether or not it succeeded (review S1 of #152). */
   lastAttemptAt: Date | null;
+  /** Issue #145: the Pull request checks of the latest commit; `null` until read. */
+  checks: RunPullRequestChecks | null;
+  /** Issue #145: set while a preparation of failing checks waits for a worker or is answered. */
+  prepareRequestedAt: Date | null;
+  /** Issue #145: why the latest preparation failed; cleared by a new request or a success. */
+  prepareError: string | null;
+  /** Issue #145: whether a prepared Follow-up waits for the operator's review. */
+  preparedFollowUp: boolean;
   /**
    * Issue #143: when a lookup first read the pull request as merged, closed or missing; `null`
    * while it is not over (a reopened one is cleared). Working copy retention counts from it.
@@ -134,6 +179,10 @@ export const NO_PULL_REQUEST_STATUS: RunPullRequestStatus = {
   retryAt: null,
   refreshRequestedAt: null,
   lastAttemptAt: null,
+  checks: null,
+  prepareRequestedAt: null,
+  prepareError: null,
+  preparedFollowUp: false,
   endedAt: null,
 };
 
@@ -205,6 +254,14 @@ export type RunDeliveryOutcome =
 /** Longest operator answer to an agent's question, in characters (Issue #103). */
 export const ANSWER_MAX_LENGTH = 10_000;
 
+/**
+ * What a Follow-up was prepared from (Issue #145): the text came from the failing Pull request
+ * checks, which the operator reviewed and may have edited. A Follow-up written from scratch has
+ * no source.
+ */
+export const FOLLOW_UP_SOURCES = ['pull_request_checks'] as const;
+export type FollowUpSource = (typeof FOLLOW_UP_SOURCES)[number];
+
 /** Longest Follow-up, in characters (Issue #141). */
 export const FOLLOW_UP_MAX_LENGTH = 10_000;
 
@@ -226,7 +283,7 @@ export interface RunQuestion {
 export type RunMessage =
   | { kind: 'question'; question: RunQuestion; at: Date }
   | { kind: 'answer'; text: string; at: Date }
-  | { kind: 'follow_up'; text: string; at: Date }
+  | { kind: 'follow_up'; text: string; at: Date; source?: FollowUpSource }
   | ({ kind: 'part_end'; at: Date } & RunPartEnd);
 
 /**

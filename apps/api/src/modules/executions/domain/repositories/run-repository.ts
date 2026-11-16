@@ -1,4 +1,5 @@
 import type {
+  FollowUpSource,
   Provider,
   PullRequestState,
   Run,
@@ -293,9 +294,16 @@ export interface RunRepository {
    * `queued` (its earlier result cleared, its pull request kept), with a new Run step allowance
    * from the steps it has taken. It is resumed like an answered Run by the worker that holds its
    * Working copy, but holds no place while it waits: the claim starts it under the concurrency
-   * limits. `null` if a condition failed (nothing changed).
+   * limits. With a `source` (Issue #145: the text was prepared from it) the message says so and
+   * the Run's prepared Follow-up of that source is removed in the same transaction. `null` if a
+   * condition failed (nothing changed).
    */
-  queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null>;
+  queueFollowUp(
+    runId: string,
+    text: string,
+    now: Date,
+    source?: FollowUpSource,
+  ): Promise<Run | null>;
 
   /**
    * Records that `workerId`'s retention removed the Working copies of these Runs (Issue #141):

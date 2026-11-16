@@ -51,6 +51,10 @@ The operator's instruction that starts a Run.
 The operator's further instruction to a finished Run: the agent continues the same agent session and the Run delivers to the same pull request. It is not an Answer: a Follow-up reopens a finished Run.
 _Avoid_: New task, re-run, continuation
 
+**Prepared Follow-up**:
+The text Studio builds for the operator to review before it becomes a Follow-up, for example from the failing Pull request checks: the operator can leave parts out, edit it freely, and send or discard it. It is never sent by itself, and a Run has at most one; a sent one is stored as a Follow-up marked with its source.
+_Avoid_: Draft Follow-up, automatic Follow-up
+
 **Run step**:
 One non-interactive execution of the agent CLI within a Run. A Run consists of one or more Run steps.
 _Avoid_: Turn, step (unqualified), iteration

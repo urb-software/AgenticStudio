@@ -21,6 +21,8 @@ export interface StubPullRequest {
   author?: string;
   /** Issue #142: `owner/repo` of the head branch (default: the pull request's own repository). */
   headRepository?: string | null;
+  /** Issue #145: the pull request's latest commit (default: forty `c`). */
+  headSha?: string;
   title?: string;
   body?: string;
 }
@@ -57,6 +59,15 @@ export interface StubGitHub {
    * once (a rate limit, or any refusal).
    */
   refuseNextRead: { status: number; headers?: Record<string, string> } | undefined;
+  /** Issue #145: the check runs `GET /commits/:sha/check-runs` answers, as GitHub words them. */
+  checkRuns: Record<string, unknown>[];
+  /** Issue #145: the commit statuses `GET /commits/:sha/status` answers. */
+  statuses: Record<string, unknown>[];
+  /**
+   * Issue #145: what `GET /actions/jobs/:id/logs` does for a job: redirect to a download of
+   * `text` (as GitHub does), or answer a refusal status.
+   */
+  jobLogs: Map<number, { text: string } | { status: number }>;
   /** The `html_url` of a pull request (default: its github.com URL). */
   htmlUrl: (pr: StubPullRequest) => string;
   close(): Promise<void>;
@@ -80,6 +91,9 @@ export async function startStubGitHub(): Promise<StubGitHub> {
     position: { behindBy: 0, aheadBy: 1 },
     missingBranches: [],
     refuseNextRead: undefined,
+    checkRuns: [],
+    statuses: [],
+    jobLogs: new Map(),
     htmlUrl: (pr) => `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.number}`,
   };
   const view = (pr: StubPullRequest) => ({ number: pr.number, html_url: stub.htmlUrl(pr) });
@@ -101,6 +115,27 @@ export async function startStubGitHub(): Promise<StubGitHub> {
         const refusal = stub.refuseNextRead;
         stub.refuseNextRead = undefined;
         return send(refusal.status, { message: 'Refused by the stub' }, refusal.headers);
+      }
+      // Issue #145: checks of a commit, and a job's log (a redirect to a download, as GitHub does).
+      if (/^\/repos\/[^/]+\/[^/]+\/commits\/[^/]+\/check-runs$/.test(url.pathname)) {
+        return send(200, { total_count: stub.checkRuns.length, check_runs: stub.checkRuns });
+      }
+      if (/^\/repos\/[^/]+\/[^/]+\/commits\/[^/]+\/status$/.test(url.pathname)) {
+        return send(200, { state: 'pending', statuses: stub.statuses });
+      }
+      const jobLog = /^\/repos\/[^/]+\/[^/]+\/actions\/jobs\/(\d+)\/logs$/.exec(url.pathname);
+      if (jobLog) {
+        const job = stub.jobLogs.get(Number(jobLog[1]));
+        if (!job) return send(404, { message: 'Not Found' });
+        if ('status' in job) return send(job.status, { message: 'Refused by the stub' });
+        response.writeHead(302, { Location: `http://${request.headers.host}/__logs/${jobLog[1]}` });
+        return response.end();
+      }
+      const download = /^\/__logs\/(\d+)$/.exec(url.pathname);
+      if (download) {
+        const job = stub.jobLogs.get(Number(download[1]));
+        response.writeHead(200, { 'Content-Type': 'text/plain' });
+        return response.end(job && 'text' in job ? job.text : '');
       }
       // Issue #142: the Agent account itself, and a branch's position against the base.
       if (url.pathname === '/user') return send(200, { login: stub.viewer });
@@ -140,6 +175,7 @@ export async function startStubGitHub(): Promise<StubGitHub> {
               pr.headRepository === null
                 ? null
                 : { full_name: pr.headRepository ?? `${pr.owner}/${pr.repo}` },
+            sha: pr.headSha ?? 'c'.repeat(40),
           },
           user: { login: pr.author ?? stub.viewer },
           title: pr.title ?? '',

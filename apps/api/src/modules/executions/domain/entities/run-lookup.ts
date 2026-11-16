@@ -1,12 +1,13 @@
-import type { PullRequestState, Run } from './run.js';
+import type { PullRequestCheck, PullRequestState, Run } from './run.js';
 
 /**
  * Lookups (Issue #142): Studio's questions for the Git host that only an agent worker can
  * answer, through the Agent account; Studio itself never reads the Git host. The kinds start
- * with the pull request's state; later stories add theirs. The worker protocol's lists are
- * pinned to these by a test.
+ * with the pull request's state, which since Issue #145 includes its Pull request checks, and
+ * the logs of the failed ones; later stories add theirs. The worker protocol's lists are pinned
+ * to these by a test.
  */
-export const LOOKUP_KINDS = ['pull_request_state'] as const;
+export const LOOKUP_KINDS = ['pull_request_state', 'failing_check_logs'] as const;
 export type LookupKind = (typeof LOOKUP_KINDS)[number];
 
 /** A lookup is open while it waits for a worker (`requested`) or is being answered (`claimed`). */
@@ -51,6 +52,26 @@ export interface PullRequestStateResult {
   behindBy?: number;
   aheadBy?: number;
   mergeable?: boolean;
+  /** Issue #145: the checks of the latest commit `checksCommit`, for a draft or open pull request. */
+  checksCommit?: string;
+  checks?: PullRequestCheck[];
+  /** Issue #145: the Git host refused to tell the checks. */
+  checksUnavailable?: true;
+}
+
+/** One failed check with the end of its log, as a worker read it (Issue #145). */
+export interface FailedCheckLog {
+  name: string;
+  url: string;
+  logAvailable: boolean;
+  excerpt?: string;
+  note?: string;
+}
+
+/** What a worker read for a `failing_check_logs` lookup (Issue #145). */
+export interface FailingCheckLogsResult {
+  commit: string;
+  checks: FailedCheckLog[];
 }
 
 export type LookupFailureCode = 'scope_mismatch' | 'rate_limited' | 'failed';
@@ -68,6 +89,12 @@ export interface LookupFailure {
  */
 export function canRefreshPullRequest(run: Pick<Run, 'pullRequest' | 'workingCopy'>): boolean {
   return run.pullRequest !== null && run.workingCopy !== null;
+}
+
+/** Whether the Run's stored Pull request checks include a failed one (Issue #145). */
+export function hasFailedPullRequestCheck(run: Pick<Run, 'pullRequestStatus'>): boolean {
+  const checks = run.pullRequestStatus.checks;
+  return checks !== null && !checks.unavailable && checks.checks.some((c) => c.state === 'failed');
 }
 
 /**

@@ -26,3 +26,23 @@ export function isGitHubPullRequestUrl(url: string): boolean {
 export function pullRequestFilesUrl(pullRequestUrl: string): string | null {
   return isGitHubPullRequestUrl(pullRequestUrl) ? `${pullRequestUrl}/files` : null;
 }
+
+/**
+ * Whether `url` is a page on github.com over https, without credentials or port (Issue #145): the
+ * only links a Pull request check gets. A check from another CI system may link anywhere; that
+ * address is not made a link on the Run page.
+ */
+export function isGitHubUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === 'https:' &&
+      parsed.hostname === 'github.com' &&
+      parsed.port === '' &&
+      parsed.username === '' &&
+      parsed.password === ''
+    );
+  } catch {
+    return false;
+  }
+}

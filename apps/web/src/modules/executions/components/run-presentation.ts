@@ -41,6 +41,94 @@ export const PULL_REQUEST_STATE_VIEW: Record<
   missing: { pill: 'failed', label: 'Missing' },
 };
 
+type PullRequestChecks = NonNullable<NonNullable<RunOutput['pullRequest']>['checks']>;
+export type PullRequestCheckState = PullRequestChecks[number]['state'];
+
+/**
+ * How a Pull request check's state looks (Issue #145): the pill colour and the word. Colours
+ * follow the run states' meaning without amber: queued and skipped are quiet, running is under
+ * way, passed is done, failed is red and cancelled is an outline. The word always says it too.
+ */
+export const PULL_REQUEST_CHECK_VIEW: Record<
+  PullRequestCheckState,
+  { pill: PillStatus; label: string }
+> = {
+  queued: { pill: 'queued', label: 'Queued' },
+  running: { pill: 'running', label: 'Running' },
+  passed: { pill: 'succeeded', label: 'Passed' },
+  failed: { pill: 'failed', label: 'Failed' },
+  skipped: { pill: 'cancelled', label: 'Skipped' },
+  cancelled: { pill: 'cancelled', label: 'Cancelled' },
+};
+
+/** The overall picture of a pull request's checks (Issue #145). */
+export interface ChecksSummary {
+  /** The summary line, e.g. "1 of 12 checks failed". */
+  text: string;
+  /** The marker next to the pull request state in the lists: only a result is marked. */
+  marker: 'failed' | 'passed' | 'pending' | 'none';
+  failed: number;
+  /** Queued or running: the page refreshes the checks while any is. */
+  unfinished: number;
+}
+
+const checksWord = (count: number) => `${count} ${count === 1 ? 'check' : 'checks'}`;
+
+/** The summary line and list marker of a list of checks, from their states alone (no extra call). */
+export function summarizeChecks(checks: PullRequestChecks): ChecksSummary {
+  const total = checks.length;
+  const count = (state: PullRequestCheckState) =>
+    checks.filter((check) => check.state === state).length;
+  const failed = count('failed');
+  const running = count('running');
+  const queued = count('queued');
+  const unfinished = running + queued;
+  const cancelled = count('cancelled');
+  if (total === 0) return { text: 'No checks', marker: 'none', failed, unfinished };
+  if (failed > 0) {
+    return {
+      text:
+        `${failed} of ${checksWord(total)} failed` +
+        (unfinished > 0 ? `, ${unfinished} not finished` : ''),
+      marker: 'failed',
+      failed,
+      unfinished,
+    };
+  }
+  if (queued === total) {
+    return { text: 'Checks have not started yet', marker: 'pending', failed, unfinished };
+  }
+  if (unfinished > 0) {
+    return {
+      text: `${unfinished} of ${checksWord(total)} still running or waiting`,
+      marker: 'pending',
+      failed,
+      unfinished,
+    };
+  }
+  if (cancelled > 0) {
+    return {
+      text: `${cancelled} of ${checksWord(total)} cancelled`,
+      marker: 'none',
+      failed,
+      unfinished,
+    };
+  }
+  const passed = count('passed');
+  const skipped = count('skipped');
+  const text =
+    skipped === 0
+      ? total === 1
+        ? 'The check passed'
+        : `All ${total} checks passed`
+      : passed === 0
+        ? total === 1
+          ? 'The check was skipped'
+          : `All ${total} checks were skipped`
+        : `${passed} ${passed === 1 ? 'check' : 'checks'} passed, ${skipped} skipped`;
+  return { text, marker: passed > 0 ? 'passed' : 'none', failed, unfinished };
+}
+
 export const PROVIDER_LABEL: Record<Provider, string> = {
   claude_code: 'Claude Code',
   codex: 'Codex',

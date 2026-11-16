@@ -101,6 +101,37 @@ describe('ReportRunStateHandler', () => {
     expect(stored.pullRequestStatus).toMatchObject({ state: 'merged', refreshedAt: T1 });
   });
 
+  // Review N1 of #152: what an ended pull request cannot have is cleared with the state.
+  it.each([
+    ['merged', { behindBy: null, aheadBy: null, mergeable: null, checks: null }],
+    ['missing', { behindBy: null, aheadBy: null, mergeable: null, checks: null }],
+    ['closed', { behindBy: 2, aheadBy: 3, mergeable: null, checks: null }],
+  ] as const)(
+    'clears what a %s pull request cannot have when its state was read before a refused Follow-up',
+    async (state, expected) => {
+      const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
+      stored.pullRequest = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+      stored.pullRequestStatus = {
+        ...stored.pullRequestStatus,
+        state: 'open',
+        behindBy: 2,
+        aheadBy: 3,
+        mergeable: true,
+        refreshedAt: T0,
+        checks: { commit: 'c'.repeat(40), checks: [] },
+      };
+      await report({ state: 'running' });
+
+      await report({
+        state: 'failed',
+        failure: { code: 'preparation_failed', detail: 'The pull request #7 is not open.' },
+        pullRequestState: state,
+      });
+
+      expect(stored.pullRequestStatus).toMatchObject({ state, ...expected });
+    },
+  );
+
   it('records no pull request state with any other failure', async () => {
     runs.runs.find((candidate) => candidate.id === run.id)!.pullRequest = {
       url: 'https://github.com/acme/shop/pull/7',

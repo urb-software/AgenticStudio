@@ -11,7 +11,12 @@ import type { RunOutput } from '../../../../platform/api';
 import { useRefreshPullRequest } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
 import { isGitHubPullRequestUrl } from '../../components/github-links';
-import { PULL_REQUEST_STATE_VIEW } from '../../components/run-presentation';
+import { PULL_REQUEST_STATE_VIEW, summarizeChecks } from '../../components/run-presentation';
+import { RunFailingChecks } from './run-failing-checks';
+import { RunPullRequestChecks } from './run-pull-request-checks';
+
+/** While a check is queued or running, the page reads the checks again this often (Issue #145). */
+const CHECKS_REFRESH_MS = 30_000;
 
 /** The request "Refresh" makes (generated `refreshRunPullRequest`), shown when it fails. */
 const REFRESH_REQUEST = 'POST /api/runs/{runId}/pull-request/refresh';
@@ -89,7 +94,11 @@ function Refreshed({ iso }: { iso: string | undefined }) {
  * last read. The state comes from the agent worker, through the Agent account, so it is
  * refreshed on request: once when the page opens (the API holds that to once a minute per Run)
  * and with "Refresh". While a refresh is under way the card says so; when one failed, or no
- * agent worker is connected, it says that and keeps the last known state.
+ * agent worker is connected, it says that and keeps the last known state. Issue #145: the card
+ * also lists the Pull request checks of the pull request's latest commit and offers to send the
+ * failing ones to the agent; while any check is queued or running and the page is visible, it
+ * refreshes them every 30 seconds (its own floor, apart from the once-a-minute limit of the
+ * on-open request).
  */
 export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullRequest: PullRequest }) {
   const titleId = useId();
@@ -104,6 +113,24 @@ export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullReque
   }, [run.id, mutate]);
 
   const refreshing = refresh.isPending || pullRequest.refreshing === true;
+  const unfinished = pullRequest.checks
+    ? summarizeChecks(pullRequest.checks).unfinished > 0
+    : false;
+  // The page's own periodic refresh while a check has not finished: only while it is visible, and
+  // never on top of one already under way.
+  const latest = useRef({ refreshing, retryAt: pullRequest.retryAt });
+  useEffect(() => {
+    latest.current = { refreshing, retryAt: pullRequest.retryAt };
+  });
+  useEffect(() => {
+    if (!unfinished) return;
+    const timer = setInterval(() => {
+      const { refreshing: underWay, retryAt: waitUntil } = latest.current;
+      const waiting = waitUntil !== undefined && Date.parse(waitUntil) > Date.now();
+      if (document.visibilityState === 'visible' && !underWay && !waiting) mutate(undefined);
+    }, CHECKS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [unfinished, mutate]);
   const view = pullRequest.state ? PULL_REQUEST_STATE_VIEW[pullRequest.state] : undefined;
   const checked = pullRequest.state !== undefined;
   const retryAt = pullRequest.retryAt ? new Date(pullRequest.retryAt) : undefined;
@@ -180,6 +207,8 @@ export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullReque
             gone, or the Agent account cannot see it.
           </p>
         ) : null}
+        <RunPullRequestChecks pullRequest={pullRequest} />
+        <RunFailingChecks run={run} pullRequest={pullRequest} />
       </CardContent>
     </Card>
   );

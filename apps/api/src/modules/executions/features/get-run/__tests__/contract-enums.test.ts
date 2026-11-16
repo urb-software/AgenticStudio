@@ -4,6 +4,7 @@ import {
   LOOKUP_KINDS as WORKER_LOOKUP_KINDS,
   LOOKUP_CLAIM_MAX as WORKER_LOOKUP_CLAIM_MAX,
   LOOKUP_RETRY_AFTER_MAX_SECONDS as WORKER_LOOKUP_RETRY_AFTER_MAX_SECONDS,
+  PULL_REQUEST_CHECK_STATES as WORKER_PULL_REQUEST_CHECK_STATES,
   PULL_REQUEST_STATES as WORKER_PULL_REQUEST_STATES,
   RESUME_REASONS as WORKER_RESUME_REASONS,
   RUN_EVENT_KINDS as WORKER_EVENT_KINDS,
@@ -19,6 +20,8 @@ import { describe, expect, it } from 'vitest';
 import { runEventKindSchema } from '../../../contracts/http/run-event-response.js';
 import {
   followUpRefusalSchema,
+  followUpSourceSchema,
+  pullRequestCheckStateSchema,
   pullRequestStateSchema,
   runCancelledBySchema,
   runDeliverySchema,
@@ -30,7 +33,9 @@ import {
   ANSWER_MAX_LENGTH,
   FOLLOW_UP_MAX_LENGTH,
   FOLLOW_UP_REFUSALS,
+  FOLLOW_UP_SOURCES,
   PROVIDERS,
+  PULL_REQUEST_CHECK_STATES,
   PULL_REQUEST_STATES,
   RESUME_REASONS,
   RUN_CANCELLED_BY,
@@ -60,6 +65,13 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(followUpRefusalSchema.options).toEqual([...FOLLOW_UP_REFUSALS]);
     // Issue #142.
     expect(pullRequestStateSchema.options).toEqual([...PULL_REQUEST_STATES]);
+    // Issue #145.
+    expect(pullRequestCheckStateSchema.options).toEqual([...PULL_REQUEST_CHECK_STATES]);
+    expect(followUpSourceSchema.options).toEqual([...FOLLOW_UP_SOURCES]);
+  });
+
+  it('worker protocol: the same Pull request check states (Issue #145)', () => {
+    expect([...WORKER_PULL_REQUEST_CHECK_STATES]).toEqual([...PULL_REQUEST_CHECK_STATES]);
   });
 
   it('worker protocol: the same pull request states and lookup kinds and limits (Issue #142)', () => {

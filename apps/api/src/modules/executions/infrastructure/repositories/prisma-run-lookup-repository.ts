@@ -4,7 +4,12 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import { isPullRequestEnded, type PullRequestState } from '../../domain/entities/run.js';
+import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
+import {
+  isPullRequestEnded,
+  type PullRequestState,
+  type RunPullRequestChecks,
+} from '../../domain/entities/run.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
@@ -58,7 +63,7 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       await tx.run.update({
         where: { id: runId },
-        data: { prRefreshRequestedAt: now, prLastAttemptAt: now },
+        data: requestedColumns(kind, now),
       });
       return 'requested';
     });
@@ -152,8 +157,56 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
           pr_refresh_error = NULL,
           pr_retry_at = NULL,
           pr_refresh_requested_at = NULL,
+          pr_checks = ${checksJson(result)}::jsonb,
           ${prEndedAtAssignment(result.state, now)}
         WHERE id = ${lookup.runId}::uuid AND pull_request_number IS NOT NULL`;
+      return 'stored';
+    });
+  }
+
+  async completeFailingCheckLogs(
+    lookupId: string,
+    workerId: string,
+    draft: PreparedFollowUp,
+    now: Date,
+  ): Promise<LookupAnswerOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const lookup = await tx.runLookup.findUnique({ where: { id: lookupId } });
+      if (!lookup || lookup.claimedBy !== workerId) return 'not_held';
+      if (lookup.status === 'done') return 'duplicate';
+      if (lookup.status !== 'claimed') return 'not_held';
+      await tx.runLookup.update({
+        where: { id: lookupId },
+        data: {
+          status: 'done',
+          finishedAt: now,
+          // The text is kept in the prepared Follow-up only, not twice.
+          result: { items: draft.items.length },
+          error: null,
+          retryAt: null,
+        },
+      });
+      // The latest preparation replaces the earlier one.
+      await tx.runPreparedFollowUp.upsert({
+        where: { runId: lookup.runId },
+        create: {
+          runId: lookup.runId,
+          source: draft.source,
+          text: draft.text,
+          items: draft.items as unknown as Prisma.InputJsonValue,
+          createdAt: now,
+        },
+        update: {
+          source: draft.source,
+          text: draft.text,
+          items: draft.items as unknown as Prisma.InputJsonValue,
+          createdAt: now,
+        },
+      });
+      await tx.run.updateMany({
+        where: { id: lookup.runId },
+        data: { prPrepareRequestedAt: null, prPrepareError: null },
+      });
       return 'stored';
     });
   }
@@ -186,32 +239,33 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       await tx.run.updateMany({
         where: { id: lookup.runId },
-        data: {
-          prRefreshError: error,
-          prRetryAt: retryAt,
-          // Still being refreshed while the lookup waits for its retry.
-          prRefreshRequestedAt: retryAt === null ? null : lookup.requestedAt,
-        },
+        data: failedColumns(lookup.kind as LookupKind, error, retryAt, lookup.requestedAt),
       });
       return 'stored';
     });
   }
 
-  async findKind(lookupId: string): Promise<LookupKind | null> {
+  async findRef(lookupId: string): Promise<{ kind: LookupKind; runId: string } | null> {
     const lookup = await this.db.runLookup.findUnique({
       where: { id: lookupId },
-      select: { kind: true },
+      select: { kind: true, runId: true },
     });
-    return lookup === null ? null : (lookup.kind as LookupKind);
+    return lookup === null ? null : { kind: lookup.kind as LookupKind, runId: lookup.runId };
   }
 
   async recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
+    // Review N1 of #152: what an ended pull request cannot have is cleared with the state (a closed
+    // one keeps its branch position); nothing is cleared for a draft or open one.
     await this.db.$executeRaw`
       UPDATE runs SET
         pr_state = ${state},
         pr_refreshed_at = ${now}::timestamptz,
         pr_refresh_error = NULL,
         pr_retry_at = NULL,
+        pr_behind_by = CASE WHEN ${state} IN ('merged', 'missing') THEN NULL ELSE pr_behind_by END,
+        pr_ahead_by = CASE WHEN ${state} IN ('merged', 'missing') THEN NULL ELSE pr_ahead_by END,
+        pr_mergeable = CASE WHEN ${state} IN ('merged', 'missing', 'closed') THEN NULL ELSE pr_mergeable END,
+        pr_checks = CASE WHEN ${state} IN ('merged', 'missing', 'closed') THEN NULL ELSE pr_checks END,
         ${prEndedAtAssignment(state, now)}
       WHERE id = ${runId}::uuid AND pull_request_number IS NOT NULL`;
   }
@@ -248,4 +302,46 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     });
     return rows.map((row) => row.id);
   }
+}
+
+/**
+ * The `pr_checks` value for a state result (Issue #145), as JSON text for a `::jsonb` cast: the
+ * checks and their commit, the marker that the Git host would not tell, or `null` when the
+ * result has no checks.
+ */
+function checksJson(result: PullRequestStateResult): string | null {
+  const value: RunPullRequestChecks | null =
+    result.checksUnavailable === true
+      ? { unavailable: true }
+      : result.checks !== undefined && result.checksCommit !== undefined
+        ? { commit: result.checksCommit, checks: result.checks }
+        : null;
+  return value === null ? null : JSON.stringify(value);
+}
+
+/**
+ * The Run's columns a new request of `kind` sets (Issue #145: reading the failing checks' logs is
+ * not a refresh of the state: it only marks the Run as preparing, and leaves the page-open
+ * throttle alone).
+ */
+function requestedColumns(kind: LookupKind, now: Date): Prisma.RunUpdateInput {
+  return kind === 'failing_check_logs'
+    ? { prPrepareRequestedAt: now, prPrepareError: null }
+    : { prRefreshRequestedAt: now, prLastAttemptAt: now };
+}
+
+/**
+ * The Run's columns a failed lookup of `kind` sets: the error, and with a retry (`retryAt`) the
+ * Run stays refreshing or preparing until it.
+ */
+function failedColumns(
+  kind: LookupKind,
+  error: string,
+  retryAt: Date | null,
+  requestedAt: Date,
+): Prisma.RunUpdateManyMutationInput {
+  const waiting = retryAt === null ? null : requestedAt;
+  return kind === 'failing_check_logs'
+    ? { prPrepareError: error, prPrepareRequestedAt: waiting }
+    : { prRefreshError: error, prRetryAt: retryAt, prRefreshRequestedAt: waiting };
 }

@@ -243,7 +243,12 @@ export function RunConversation({
         <Message
           key={`${i}-${message.kind}`}
           message={message}
-          label={`You · Follow-up ${followUps}`}
+          label={
+            // Issue #145: where a prepared Follow-up came from.
+            message.source === 'pull_request_checks'
+              ? `You · Follow-up ${followUps} · prepared from Pull request checks`
+              : `You · Follow-up ${followUps}`
+          }
         />,
       );
       return;

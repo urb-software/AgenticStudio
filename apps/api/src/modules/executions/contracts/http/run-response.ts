@@ -43,6 +43,22 @@ export const runDeliverySchema = z.enum(['none', 'delivered', 'failed']);
  */
 export const pullRequestStateSchema = z.enum(['draft', 'open', 'merged', 'closed', 'missing']);
 
+/** How a Pull request check stands (Issue #145). Pinned to the domain's list by a test. */
+export const pullRequestCheckStateSchema = z.enum([
+  'queued',
+  'running',
+  'passed',
+  'failed',
+  'skipped',
+  'cancelled',
+]);
+
+/** Where the preparation of a Follow-up from failing checks stands (Issue #145). */
+export const failingChecksPreparationSchema = z.enum(['preparing', 'ready', 'failed']);
+
+/** What a Follow-up was prepared from (Issue #145). Pinned to the domain's list by a test. */
+export const followUpSourceSchema = z.enum(['pull_request_checks']);
+
 /** The agent's open question (Issue #103): plain text, never markup. */
 export const runQuestionResponseSchema = z
   .object({
@@ -98,6 +114,11 @@ export const runMessageResponseSchema = z
     options: z.array(z.string()).optional(),
     /** The option a question recommended, when it recommended one. */
     recommendation: z.string().optional(),
+    /**
+     * With `follow_up` only (Issue #145): what the text was prepared from, when it was prepared
+     * (the operator reviewed and may have edited it); absent for one written from scratch.
+     */
+    source: followUpSourceSchema.optional(),
     at: z.iso.datetime(),
   })
   .meta({ id: 'RunMessage' });
@@ -223,6 +244,48 @@ export const runResponseSchema = z
         retryAt: z.iso.datetime().optional(),
         /** Present (true) while a refresh waits for an agent worker or is being carried out. */
         refreshing: z.literal(true).optional(),
+        /**
+         * Issue #145: the Pull request checks of the pull request's latest commit
+         * (`checksCommit`) as GitHub reported them at `refreshedAt`: name, state, duration and a
+         * link to the check. An empty list means none are configured or reported for that commit.
+         * Absent until a lookup read them, and for a pull request that is not open.
+         */
+        checks: z
+          .array(
+            z
+              .object({
+                name: z.string(),
+                state: pullRequestCheckStateSchema,
+                durationSeconds: z.int().min(0).optional(),
+                url: z.url(),
+              })
+              .meta({ id: 'RunPullRequestCheck' }),
+          )
+          .optional(),
+        /** Issue #145: the pull request's latest commit the checks belong to. */
+        checksCommit: z.string().optional(),
+        /**
+         * Issue #145: present (true) when GitHub refused to tell the checks (the Agent account
+         * lacks the permission); the state is shown without them.
+         */
+        checksUnavailable: z.literal(true).optional(),
+        /**
+         * Issue #145: present (true) when the checks belong to another commit than the Run's
+         * latest pushed one: someone else pushed to the Run branch.
+         */
+        checksOtherCommit: z.literal(true).optional(),
+        /**
+         * Issue #145: the preparation of a Follow-up from the failing checks: `preparing` while
+         * the agent worker reads their logs, `ready` when the draft waits for review (read it with
+         * `GET …/failing-checks/prepared`), `failed` with `error` when it could not be read.
+         */
+        failingChecksPreparation: z
+          .object({
+            state: failingChecksPreparationSchema,
+            error: z.string().optional(),
+          })
+          .meta({ id: 'FailingChecksPreparation' })
+          .optional(),
       })
       .meta({ id: 'RunPullRequest' })
       .optional(),
@@ -293,6 +356,24 @@ export function toRunResponse(
       refreshError: string | null;
       retryAt: Date | null;
       refreshRequestedAt: Date | null;
+      checks:
+        | (
+            | { unavailable: true }
+            | {
+                unavailable?: false;
+                commit: string;
+                checks: {
+                  name: string;
+                  state: z.infer<typeof pullRequestCheckStateSchema>;
+                  durationSeconds?: number;
+                  url: string;
+                }[];
+              }
+          )
+        | null;
+      prepareRequestedAt: Date | null;
+      prepareError: string | null;
+      preparedFollowUp: boolean;
     };
     failingChecks: string[];
     sessionRef: string | null;
@@ -302,7 +383,13 @@ export function toRunResponse(
           question: { text: string; options?: string[]; recommendation?: string };
           at: Date;
         }
-      | { kind: 'answer' | 'follow_up'; text: string; at: Date }
+      | { kind: 'answer'; text: string; at: Date }
+      | {
+          kind: 'follow_up';
+          text: string;
+          at: Date;
+          source?: z.infer<typeof followUpSourceSchema>;
+        }
       | {
           kind: 'part_end';
           state: 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
@@ -385,6 +472,7 @@ export function toRunResponse(
             run.pullRequest,
             run.pullRequestStatus,
             workerConnected,
+            run.pushedCommit,
           ),
         }
       : {}),
@@ -439,6 +527,9 @@ export function toRunResponse(
                 role: 'operator' as const,
                 kind: message.kind,
                 text: message.text,
+                ...(message.kind === 'follow_up' && message.source !== undefined
+                  ? { source: message.source }
+                  : {}),
                 at: message.at.toISOString(),
               },
       ),
@@ -450,10 +541,15 @@ export function toRunResponse(
 export const NO_WORKER_FOR_REFRESH =
   'The agent worker is not connected, so the pull request state could not be refreshed.';
 
+/** What a preparation that waits for an agent worker says while none is connected (Issue #145). */
+const NO_WORKER_FOR_PREPARATION =
+  'The agent worker is not connected, so the logs of the failing checks could not be read.';
+
 function toPullRequestResponse(
   pullRequest: { url: string; number: number },
   status: Parameters<typeof toRunResponse>[0]['pullRequestStatus'],
   workerConnected: boolean | undefined,
+  pushedCommit: string | null,
 ): NonNullable<RunResponse['pullRequest']> {
   const waiting = status.refreshRequestedAt !== null;
   const noWorker = waiting && workerConnected === false;
@@ -469,7 +565,52 @@ function toPullRequestResponse(
     ...(error ? { refreshError: error } : {}),
     ...(status.retryAt ? { retryAt: status.retryAt.toISOString() } : {}),
     ...(waiting && !noWorker ? { refreshing: true as const } : {}),
+    ...checksResponse(status.checks, pushedCommit),
+    ...preparationResponse(status, workerConnected),
   };
+}
+
+/** The checks of the pull request card (Issue #145), and whether another commit than the Run's. */
+function checksResponse(
+  checks: Parameters<typeof toRunResponse>[0]['pullRequestStatus']['checks'],
+  pushedCommit: string | null,
+) {
+  if (checks === null) return {};
+  if (checks.unavailable) return { checksUnavailable: true as const };
+  return {
+    checksCommit: checks.commit,
+    checks: checks.checks.map(({ name, state, durationSeconds, url }) => ({
+      name,
+      state,
+      ...(durationSeconds === undefined ? {} : { durationSeconds }),
+      url,
+    })),
+    ...(pushedCommit !== null && pushedCommit.toLowerCase() !== checks.commit.toLowerCase()
+      ? { checksOtherCommit: true as const }
+      : {}),
+  };
+}
+
+/** Where the preparation of a Follow-up from failing checks stands (Issue #145). */
+function preparationResponse(
+  status: Parameters<typeof toRunResponse>[0]['pullRequestStatus'],
+  workerConnected: boolean | undefined,
+) {
+  if (status.prepareRequestedAt !== null) {
+    // Without a connected agent worker nobody reads the logs: say so instead of waiting for ever.
+    return workerConnected === false
+      ? {
+          failingChecksPreparation: {
+            state: 'failed' as const,
+            error: NO_WORKER_FOR_PREPARATION,
+          },
+        }
+      : { failingChecksPreparation: { state: 'preparing' as const } };
+  }
+  if (status.prepareError !== null) {
+    return { failingChecksPreparation: { state: 'failed' as const, error: status.prepareError } };
+  }
+  return status.preparedFollowUp ? { failingChecksPreparation: { state: 'ready' as const } } : {};
 }
 
 /**

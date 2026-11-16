@@ -24,7 +24,9 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
+  type FollowUpSource,
   partEndOf,
+  type RunPullRequestChecks,
   type PullRequestState,
   type RunPartEnd,
   type RunState,
@@ -98,6 +100,11 @@ const LIST_FIELDS = {
   prRetryAt: true,
   prRefreshRequestedAt: true,
   prLastAttemptAt: true,
+  prChecks: true,
+  prPrepareRequestedAt: true,
+  prPrepareError: true,
+  // Issue #145: whether a prepared Follow-up waits for the operator.
+  preparedFollowUp: { select: { runId: true } },
   prEndedAt: true,
   lastActivityAt: true,
   // Issue #141: the Run step total, counted with the Run.
@@ -117,6 +124,7 @@ const RUN_FIELDS = {
       endState: true,
       endFailureCode: true,
       endDelivery: true,
+      source: true,
     },
     orderBy: { seq: 'asc' },
   },
@@ -173,6 +181,10 @@ interface RunRow {
   prRetryAt: Date | null;
   prRefreshRequestedAt: Date | null;
   prLastAttemptAt: Date | null;
+  prChecks: Prisma.JsonValue;
+  prPrepareRequestedAt: Date | null;
+  prPrepareError: string | null;
+  preparedFollowUp: { runId: string } | null;
   prEndedAt: Date | null;
   lastActivityAt: Date;
   _count: { steps: number };
@@ -186,6 +198,7 @@ interface RunRow {
     endState: string | null;
     endFailureCode: string | null;
     endDelivery: string | null;
+    source: string | null;
   }[];
 }
 
@@ -194,7 +207,15 @@ const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
 /** A message row as a Run's message (Issue #103); the CHECK constraint fixes the kinds. */
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
-  if (row.kind === 'follow_up') return { kind: 'follow_up', text: row.text, at: row.at };
+  if (row.kind === 'follow_up') {
+    // The CHECK constraint fixes the source (Issue #145).
+    return {
+      kind: 'follow_up',
+      text: row.text,
+      at: row.at,
+      ...(row.source === null ? {} : { source: row.source as FollowUpSource }),
+    };
+  }
   if (row.kind === 'part_end') {
     // The CHECK constraints fix the state, the code and the delivery (review S1 of #150).
     return {
@@ -354,6 +375,11 @@ function toRun(row: RunRow): Run {
       retryAt: row.prRetryAt,
       refreshRequestedAt: row.prRefreshRequestedAt,
       lastAttemptAt: row.prLastAttemptAt,
+      // Written by the lookups from a validated worker result (Issue #145).
+      checks: row.prChecks as RunPullRequestChecks | null,
+      prepareRequestedAt: row.prPrepareRequestedAt,
+      prepareError: row.prPrepareError,
+      preparedFollowUp: row.preparedFollowUp !== null,
       endedAt: row.prEndedAt,
     },
     lastActivityAt: row.lastActivityAt,
@@ -757,7 +783,12 @@ export class PrismaRunRepository implements RunRepository {
     return { status: 'resumed', run: toRun(row) };
   }
 
-  async queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null> {
+  async queueFollowUp(
+    runId: string,
+    text: string,
+    now: Date,
+    source?: FollowUpSource,
+  ): Promise<Run | null> {
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the conditions, the message and the state change hold together, so a
       // second submission, a claim or a delivery retry in between leaves this one refused.
@@ -797,8 +828,19 @@ export class PrismaRunRepository implements RunRepository {
         },
       });
       await tx.runMessage.create({
-        data: { runId, seq: seq + 1, kind: 'follow_up', text, at: now },
+        data: {
+          runId,
+          seq: seq + 1,
+          kind: 'follow_up',
+          text,
+          at: now,
+          ...(source === undefined ? {} : { source }),
+        },
       });
+      // Issue #145: what was prepared has been sent (as the operator left it).
+      if (source !== undefined) {
+        await tx.runPreparedFollowUp.deleteMany({ where: { runId, source } });
+      }
       // Back to the queue: the earlier result is cleared (the Run's state reflects its latest
       // result), its pull request stays (the same one is updated), and the new part gets its
       // own Run step allowance.

@@ -1,4 +1,10 @@
-import { type PullRequestRef, pullRequestRefSchema } from '@agentic-studio/contracts';
+import {
+  PULL_REQUEST_CHECK_NAME_MAX_LENGTH,
+  PULL_REQUEST_CHECKS_MAX,
+  type PullRequestCheckState,
+  type PullRequestRef,
+  pullRequestRefSchema,
+} from '@agentic-studio/contracts';
 import { z } from 'zod';
 
 /**
@@ -141,8 +147,27 @@ export interface PullRequestDetails extends PullRequestRef {
   headRef: string;
   /** `owner/repo` of the head branch, `null` when its repository is gone. */
   headRepository: string | null;
+  /** The pull request's latest commit (Issue #145). */
+  headSha: string;
   author: string | null;
 }
+
+/**
+ * One check of a commit as the Git host reports it (Issue #145), from a check run or a commit
+ * status. `jobId` is set for a GitHub Actions job, whose log can be read; `summary` is the
+ * check's own short text, when it has one.
+ */
+export interface CheckReport {
+  name: string;
+  state: PullRequestCheckState;
+  durationSeconds?: number;
+  url: string;
+  jobId?: number;
+  summary?: string;
+}
+
+/** What reading one job log gave (Issue #145): its last lines, or why there is none. */
+export type JobLogOutcome = { log: string } | { unavailable: string };
 
 /** A Run branch's position against the integration branch (Issue #142). */
 export interface BranchPosition {
@@ -175,6 +200,25 @@ export interface PullRequestReader {
   ): Promise<boolean>;
   /** The login of the Agent account (the token's own user). */
   viewer(signal: AbortSignal): Promise<string>;
+  /**
+   * The checks of a commit (Issue #145): its check runs and combined statuses, at most
+   * {@link PULL_REQUEST_CHECKS_MAX}. `fallbackUrl` is the link of a check that has none of its own.
+   */
+  checks(
+    repository: { owner: string; repo: string },
+    sha: string,
+    fallbackUrl: string,
+    signal: AbortSignal,
+  ): Promise<CheckReport[]>;
+  /**
+   * The end of a GitHub Actions job's log (Issue #145), plain text; `unavailable` says why when
+   * GitHub does not give it (no permission, expired, too large).
+   */
+  jobLog(
+    repository: { owner: string; repo: string },
+    jobId: number,
+    signal: AbortSignal,
+  ): Promise<JobLogOutcome>;
 }
 
 const pullRequestAnswer = z.object({ number: z.number(), html_url: z.string() });
@@ -187,6 +231,7 @@ const pullRequestDetailsAnswer = pullRequestAnswer.extend({
   mergeable: z.boolean().nullable().optional(),
   head: z.object({
     ref: z.string(),
+    sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i),
     repo: z.object({ full_name: z.string() }).nullable().optional(),
   }),
   user: z.object({ login: z.string() }).nullable().optional(),
@@ -195,6 +240,91 @@ const pullRequestDetailsAnswer = pullRequestAnswer.extend({
 const compareAnswer = z.object({ ahead_by: z.int().min(0), behind_by: z.int().min(0) });
 
 const viewerAnswer = z.object({ login: z.string().min(1) });
+
+const checkRunsAnswer = z.object({
+  check_runs: z.array(
+    z.object({
+      id: z.number(),
+      name: z.string(),
+      status: z.string(),
+      conclusion: z.string().nullable().optional(),
+      started_at: z.string().nullable().optional(),
+      completed_at: z.string().nullable().optional(),
+      html_url: z.string().nullable().optional(),
+      details_url: z.string().nullable().optional(),
+      app: z.object({ slug: z.string().nullable().optional() }).nullable().optional(),
+      output: z.object({ summary: z.string().nullable().optional() }).nullable().optional(),
+    }),
+  ),
+});
+
+const commitStatusAnswer = z.object({
+  statuses: z.array(
+    z.object({
+      context: z.string(),
+      state: z.string(),
+      description: z.string().nullable().optional(),
+      target_url: z.string().nullable().optional(),
+    }),
+  ),
+});
+
+/** Most check results one commit is asked for in one call. */
+const CHECKS_PAGE_SIZE = 100;
+
+/** A job log is read as a stream and only its end kept; a log beyond this is "too large". */
+const JOB_LOG_MAX_BYTES = 64 * 1024 * 1024;
+
+/** How much of a job log's end is kept while it streams, before the lines are chosen. */
+const JOB_LOG_TAIL_BYTES = 256 * 1024;
+
+/** The first of these that is a web link; anything else is not shown to the operator. */
+function webLink(...candidates: (string | null | undefined)[]): string | undefined {
+  for (const candidate of candidates) {
+    if (!candidate || candidate.length > 2048) continue;
+    try {
+      const url = new URL(candidate);
+      // Never a link with credentials in it.
+      if (
+        (url.protocol === 'https:' || url.protocol === 'http:') &&
+        !url.username &&
+        !url.password
+      ) {
+        return url.href;
+      }
+    } catch {
+      // Not a link.
+    }
+  }
+  return undefined;
+}
+
+/** How a check run stands, from GitHub's status and conclusion. */
+function checkRunState(
+  status: string,
+  conclusion: string | null | undefined,
+): PullRequestCheckState {
+  if (status === 'in_progress') return 'running';
+  if (status !== 'completed') return 'queued';
+  switch (conclusion) {
+    case 'success':
+      return 'passed';
+    case 'cancelled':
+      return 'cancelled';
+    case 'skipped':
+    case 'neutral':
+    case 'stale':
+      return 'skipped';
+    default:
+      // failure, timed_out, action_required, startup_failure, or none given.
+      return 'failed';
+  }
+}
+
+function summaryText(text: string | null | undefined): string | undefined {
+  const trimmed = text?.trim();
+  return trimmed ? trimmed.slice(0, 300) : undefined;
+}
 
 const pullRequestStateAnswer = pullRequestAnswer.extend({
   state: z.enum(['open', 'closed']),
@@ -272,6 +402,7 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
       mergeable: parsed.data.mergeable ?? null,
       headRef: parsed.data.head.ref,
       headRepository: parsed.data.head.repo?.full_name ?? null,
+      headSha: parsed.data.head.sha.toLowerCase(),
       author: parsed.data.user?.login ?? null,
     };
   }
@@ -323,6 +454,170 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     return parsed.data.login;
   }
 
+  async checks(
+    repository: { owner: string; repo: string },
+    sha: string,
+    fallbackUrl: string,
+    signal: AbortSignal,
+  ): Promise<CheckReport[]> {
+    const base =
+      `repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}` +
+      `/commits/${encodeURIComponent(sha)}`;
+    const runsAnswer = checkRunsAnswer.safeParse(
+      await this.call(
+        'GET',
+        `${base}/check-runs?per_page=${CHECKS_PAGE_SIZE}`,
+        undefined,
+        repository,
+        signal,
+        'read',
+      ),
+    );
+    if (!runsAnswer.success) throw this.invalidAnswer();
+    const statusAnswer = commitStatusAnswer.safeParse(
+      await this.call(
+        'GET',
+        `${base}/status?per_page=${CHECKS_PAGE_SIZE}`,
+        undefined,
+        repository,
+        signal,
+        'read',
+      ),
+    );
+    if (!statusAnswer.success) throw this.invalidAnswer();
+    const reports: CheckReport[] = [];
+    for (const run of runsAnswer.data.check_runs) {
+      const started = run.started_at ? Date.parse(run.started_at) : Number.NaN;
+      const ended = run.completed_at ? Date.parse(run.completed_at) : Number.NaN;
+      const summary = summaryText(run.output?.summary);
+      reports.push({
+        name: run.name.slice(0, PULL_REQUEST_CHECK_NAME_MAX_LENGTH) || 'check',
+        state: checkRunState(run.status, run.conclusion),
+        ...(Number.isFinite(started) && Number.isFinite(ended) && ended >= started
+          ? { durationSeconds: Math.round((ended - started) / 1000) }
+          : {}),
+        url: webLink(run.html_url, run.details_url) ?? fallbackUrl,
+        ...(run.app?.slug === 'github-actions' && Number.isSafeInteger(run.id) && run.id > 0
+          ? { jobId: run.id }
+          : {}),
+        ...(summary ? { summary } : {}),
+      });
+    }
+    for (const status of statusAnswer.data.statuses) {
+      const summary = summaryText(status.description);
+      reports.push({
+        name: status.context.slice(0, PULL_REQUEST_CHECK_NAME_MAX_LENGTH) || 'status',
+        state:
+          status.state === 'success' ? 'passed' : status.state === 'pending' ? 'running' : 'failed',
+        url: webLink(status.target_url) ?? fallbackUrl,
+        ...(summary ? { summary } : {}),
+      });
+    }
+    return reports.slice(0, PULL_REQUEST_CHECKS_MAX);
+  }
+
+  async jobLog(
+    repository: { owner: string; repo: string },
+    jobId: number,
+    signal: AbortSignal,
+  ): Promise<JobLogOutcome> {
+    const path =
+      `repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}` +
+      `/actions/jobs/${jobId}/logs`;
+    let response: Response;
+    try {
+      response = await this.send('GET', path, undefined, repository, signal, 'read', 'manual');
+      // GitHub answers with a redirect to the log's download address, which needs no token and
+      // never gets it. Only an https address, or one of the API's own origin, is followed.
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel().catch(() => undefined);
+        const location = response.headers.get('location');
+        const target = location ? this.logAddress(location) : undefined;
+        if (!target) return { unavailable: 'GitHub gave no usable address for the log.' };
+        response = await this.download(target, signal);
+      }
+    } catch (error) {
+      if (
+        error instanceof PullRequestFailedError &&
+        (error.status === 404 || error.status === 410 || error.status === 403) &&
+        error.retryAfterSeconds === undefined
+      ) {
+        return {
+          unavailable:
+            error.status === 410
+              ? 'The log has expired.'
+              : 'The Agent account cannot read the log, or it was removed.',
+        };
+      }
+      throw error;
+    }
+    const body = response.body;
+    if (!body) return { unavailable: 'The log is empty.' };
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let kept = 0;
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > JOB_LOG_MAX_BYTES) {
+          await reader.cancel().catch(() => undefined);
+          return { unavailable: 'The log is too large to read.' };
+        }
+        chunks.push(value);
+        kept += value.byteLength;
+        // Only the end is wanted: drop whole chunks that can no longer reach it.
+        while (chunks.length > 1 && kept - chunks[0]!.byteLength >= JOB_LOG_TAIL_BYTES) {
+          kept -= chunks.shift()!.byteLength;
+        }
+      }
+    } catch (error) {
+      if (signal.aborted) throw error;
+      return { unavailable: 'The log could not be read to the end.' };
+    }
+    const bytes = Buffer.concat(chunks);
+    return {
+      log: bytes.subarray(Math.max(0, bytes.length - JOB_LOG_TAIL_BYTES)).toString('utf8'),
+    };
+  }
+
+  /** The address of a log download from a redirect, or `undefined` when it must not be followed. */
+  private logAddress(location: string): URL | undefined {
+    try {
+      const target = new URL(location, `${this.options.apiUrl}/`);
+      const sameOrigin = target.origin === new URL(this.options.apiUrl).origin;
+      return target.protocol === 'https:' || (sameOrigin && target.protocol === 'http:')
+        ? target
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Downloads a log from its redirect address: no credentials, no further redirect. */
+  private async download(target: URL, signal: AbortSignal): Promise<Response> {
+    const call = this.options.fetch ?? fetch;
+    let response: Response;
+    try {
+      response = await call(target, {
+        method: 'GET',
+        headers: { 'User-Agent': 'agentic-studio-agent-worker' },
+        redirect: 'error',
+        signal: AbortSignal.any([AbortSignal.timeout(GITHUB_TIMEOUT_MS), signal]),
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      throw new PullRequestFailedError('The log could not be downloaded.', 404);
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new PullRequestFailedError('The log could not be downloaded.', response.status);
+    }
+    return response;
+  }
+
   async update(
     pull: PullRequestNumber & { title: string; body?: string },
     signal: AbortSignal,
@@ -363,6 +658,22 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     signal: AbortSignal,
     action: 'open' | 'read' | 'update' | 'identify' = 'open',
   ): Promise<unknown> {
+    const response = await this.send(method, path, body, target, signal, action);
+    return response.json().catch(() => {
+      throw this.invalidAnswer();
+    });
+  }
+
+  /** One call to the API; throws {@link PullRequestFailedError} unless GitHub answered 2xx. */
+  private async send(
+    method: 'GET' | 'POST' | 'PATCH',
+    path: string,
+    body: object | undefined,
+    target: (Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>) | undefined,
+    signal: AbortSignal,
+    action: 'open' | 'read' | 'update' | 'identify',
+    redirect: 'error' | 'manual' = 'error',
+  ): Promise<Response> {
     const call = this.options.fetch ?? fetch;
     let response: Response;
     try {
@@ -376,7 +687,7 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
           ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
-        redirect: 'error',
+        redirect,
         signal: AbortSignal.any([AbortSignal.timeout(GITHUB_TIMEOUT_MS), signal]),
       });
     } catch (error) {
@@ -386,6 +697,7 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
           'worker and STUDIO_AGENT_GITHUB_API_URL, then retry the delivery.',
       );
     }
+    if (redirect === 'manual' && response.status >= 300 && response.status < 400) return response;
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       throw new PullRequestFailedError(
@@ -394,9 +706,7 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
         rateLimitWait(response),
       );
     }
-    return response.json().catch(() => {
-      throw this.invalidAnswer();
-    });
+    return response;
   }
 }
 

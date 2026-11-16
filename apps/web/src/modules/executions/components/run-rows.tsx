@@ -1,6 +1,6 @@
 'use client';
 
-import { GitPullRequestIcon } from 'lucide-react';
+import { CircleCheckIcon, CircleXIcon, GitPullRequestIcon } from 'lucide-react';
 import Link from 'next/link';
 import { StatusPill } from '@/shared/components/status-pill';
 import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
@@ -9,8 +9,35 @@ import {
   PROVIDER_LABEL,
   PULL_REQUEST_STATE_VIEW,
   RUN_STATE_VIEW,
+  summarizeChecks,
   taskSummary,
 } from './run-presentation';
+
+/**
+ * The pass or fail marker next to a pull request's state (Issue #145), from the stored summary of
+ * its Pull request checks: only a result is marked (a failed check, or all finished and passed),
+ * and only while the pull request is open. The word is there as well as the icon.
+ */
+function ChecksMarker({ pullRequest }: { pullRequest: NonNullable<RunOutput['pullRequest']> }) {
+  const open = pullRequest.state === 'draft' || pullRequest.state === 'open';
+  if (!open || !pullRequest.checks || pullRequest.checks.length === 0) return null;
+  const { marker } = summarizeChecks(pullRequest.checks);
+  if (marker !== 'failed' && marker !== 'passed') return null;
+  const Icon = marker === 'failed' ? CircleXIcon : CircleCheckIcon;
+  return (
+    <span
+      data-slot="checks-marker"
+      className={`inline-flex items-center gap-1 font-sans text-small ${
+        marker === 'failed' ? 'text-run-failed' : 'text-run-succeeded'
+      }`}
+    >
+      <span aria-hidden="true">· </span>
+      <span className="sr-only">, </span>
+      <Icon aria-hidden="true" className="size-3.5" />
+      {marker === 'failed' ? 'Checks failed' : 'Checks passed'}
+    </span>
+  );
+}
 
 type RunRowsProps = {
   runs: readonly RunOutput[];
@@ -65,6 +92,7 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
                       {PULL_REQUEST_STATE_VIEW[run.pullRequest.state].label}
                     </span>
                   ) : null}
+                  <ChecksMarker pullRequest={run.pullRequest} />
                 </span>
               ) : null}
               {run.followUps > 0 ? (
