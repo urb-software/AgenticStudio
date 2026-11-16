@@ -263,16 +263,16 @@ export const zRunDiffFileSummaryOutput = z.object({
         'deleted',
         'renamed'
     ]),
-    additions: z.int().gte(0).lte(9007199254740991),
-    deletions: z.int().gte(0).lte(9007199254740991),
+    tooLarge: z.literal(true).optional(),
     binary: z.literal(true).optional(),
-    tooLarge: z.literal(true).optional()
+    additions: z.int().gte(0).lte(9007199254740991),
+    deletions: z.int().gte(0).lte(9007199254740991)
 });
 
 export const zRunDiffOutput = z.object({
     scope: z.enum(['run', 'last']),
     baseCommit: z.string().optional(),
-    includesUnpushed: z.boolean(),
+    includesUnpushed: z.boolean().optional(),
     truncated: z.boolean(),
     files: z.array(zRunDiffFileSummaryOutput),
     unavailableReason: z.string().optional()

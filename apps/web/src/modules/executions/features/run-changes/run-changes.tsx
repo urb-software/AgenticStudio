@@ -200,12 +200,15 @@ function Summary({ diff, scope }: { diff: RunDiffOutput; scope: Scope }) {
             </code>
           </span>
         ) : null}
-        <span className="inline-flex items-center gap-1.5">
-          <CloudUploadIcon aria-hidden="true" className="size-3.5 flex-none" />
-          {diff.includesUnpushed
-            ? 'Includes changes that are not pushed'
-            : 'Every change here is pushed'}
-        </span>
+        {/* Only a computed diff knows whether it is pushed (review S-3 of #149). */}
+        {diff.includesUnpushed !== undefined ? (
+          <span className="inline-flex items-center gap-1.5">
+            <CloudUploadIcon aria-hidden="true" className="size-3.5 flex-none" />
+            {diff.includesUnpushed
+              ? 'Includes changes that are not pushed'
+              : 'Every change here is pushed'}
+          </span>
+        ) : null}
       </p>
     </div>
   );
@@ -223,7 +226,7 @@ function ChangedFiles({ run, scope, diff }: { run: RunOutput; scope: Scope; diff
   const [selected, setSelected] = useState<string | null>(null);
   const sections = useRef(new Map<string, HTMLElement>());
   // A link to the file in the pull request only when every change shown there is pushed.
-  const pullRequest = !diff.includesUnpushed ? run.pullRequest : undefined;
+  const pullRequest = diff.includesUnpushed === false ? run.pullRequest : undefined;
 
   const toggle = (path: string) =>
     setExpanded((current) => {

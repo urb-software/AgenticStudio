@@ -6,6 +6,7 @@ import { Button } from '@/shared/ui/button';
 import type { RunOutput } from '../../../../platform/api';
 import { useProjectRuns, useRetryDelivery } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
+import { isGitHubPullRequestUrl } from '../../components/github-links';
 
 /** The request "Retry delivery" makes (generated `retryRunDelivery`), shown when it fails. */
 const RETRY_REQUEST = 'POST /api/runs/{runId}/retry-delivery';
@@ -18,28 +19,9 @@ function Mono({ children }: { children: string }) {
   return <code className="font-mono text-code break-all">{children}</code>;
 }
 
-/**
- * Whether `url` is a page on github.com over https (Issue #115). The worker protocol only
- * accepts such URLs; this keeps any other host from ever becoming a link on the Run page.
- */
-function isGitHubUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return (
-      parsed.protocol === 'https:' &&
-      parsed.hostname === 'github.com' &&
-      parsed.port === '' &&
-      parsed.username === '' &&
-      parsed.password === ''
-    );
-  } catch {
-    return false;
-  }
-}
-
 /** The Run's draft pull request on GitHub, opened in a new tab; as text if not on github.com. */
 function PullRequestLink({ pullRequest }: { pullRequest: { url: string; number: number } }) {
-  if (!isGitHubUrl(pullRequest.url)) {
+  if (!isGitHubPullRequestUrl(pullRequest.url)) {
     return (
       <span className="inline-flex items-center gap-1">
         <GitPullRequestIcon aria-hidden="true" className="size-3.5" />

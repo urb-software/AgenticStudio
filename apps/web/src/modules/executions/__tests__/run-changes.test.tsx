@@ -266,6 +266,8 @@ describe('Run page: Changes tab', () => {
 
     expect(await screen.findByText('No changes')).toBeTruthy();
     expect(screen.getByText('The run has not changed any files.')).toBeTruthy();
+    // Nothing to say about pushing when nothing changed (review S-3 of #149).
+    expect(screen.queryByText(/pushed/)).toBeNull();
     await expect(container).toHaveNoAxeViolations();
   });
 
@@ -287,7 +289,6 @@ describe('Run page: Changes tab', () => {
       {},
       {
         run: {
-          includesUnpushed: false,
           truncated: false,
           files: [],
           unavailableReason: 'The changes could not be computed (git add exited with code 128).',
@@ -300,6 +301,7 @@ describe('Run page: Changes tab', () => {
     expect(
       within(alert).getByText('The changes could not be computed (git add exited with code 128).'),
     ).toBeTruthy();
+    expect(screen.queryByText(/pushed/)).toBeNull();
     await expect(container).toHaveNoAxeViolations();
   });
 

@@ -1,17 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-
-/** A pull request's page on github.com, exactly as the worker protocol accepts it (Issue #115). */
-const GITHUB_PULL_REQUEST = /^https:\/\/github\.com\/[^/?#@:]+\/[^/?#@:]+\/pull\/[1-9]\d*$/;
-
-/**
- * The pull request's "Files changed" page (`…/pull/<n>/files`, github.com only), or `null` for
- * any other URL, so no other host ever becomes a link on the Run page.
- */
-export function pullRequestFilesUrl(pullRequestUrl: string): string | null {
-  return GITHUB_PULL_REQUEST.test(pullRequestUrl) ? `${pullRequestUrl}/files` : null;
-}
+import { pullRequestFilesUrl } from '../../components/github-links';
 
 /** GitHub's anchor of a file on that page: `diff-` and the SHA-256 of its path, in hex. */
 async function fileAnchor(path: string): Promise<string | null> {

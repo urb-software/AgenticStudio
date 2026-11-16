@@ -212,16 +212,16 @@ export type RunDiffFileSummaryOutput = {
     path: string;
     previousPath?: string;
     status: 'added' | 'modified' | 'deleted' | 'renamed';
+    tooLarge?: true;
+    binary?: true;
     additions: number;
     deletions: number;
-    binary?: true;
-    tooLarge?: true;
 };
 
 export type RunDiffOutput = {
     scope: 'run' | 'last';
     baseCommit?: string;
-    includesUnpushed: boolean;
+    includesUnpushed?: boolean;
     truncated: boolean;
     files: Array<RunDiffFileSummaryOutput>;
     unavailableReason?: string;

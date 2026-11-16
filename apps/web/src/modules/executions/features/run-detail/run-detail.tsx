@@ -17,7 +17,7 @@ import { flushSync } from 'react-dom';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { StatusPill } from '@/shared/components/status-pill';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/tabs';
+import { TabPanel, Tabs } from '@/shared/components/tabs';
 import { formatDuration } from '@/shared/lib/duration';
 import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
@@ -42,6 +42,12 @@ import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunDelivery } from './run-delivery';
 import { ResumeRun } from './run-resume';
+
+/** The Run page's tabs (Issue #144): its log and what it changed. */
+const RUN_TABS = [
+  { value: 'log', label: 'Log' },
+  { value: 'changes', label: 'Changes' },
+];
 
 /** The request the page makes (generated `getRun`), shown verbatim when it fails. */
 const RUN_REQUEST = 'GET /api/runs/{runId}';
@@ -423,18 +429,19 @@ export function RunDetail({ runId }: { runId: string }) {
         </Card>
       </div>
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value === 'changes' ? 'changes' : 'log')}>
-        <TabsList aria-label="Run">
-          <TabsTrigger value="log">Log</TabsTrigger>
-          <TabsTrigger value="changes">Changes</TabsTrigger>
-        </TabsList>
+      <Tabs
+        items={RUN_TABS}
+        label="Run"
+        value={tab}
+        onChange={(value) => setTab(value === 'changes' ? 'changes' : 'log')}
+      >
         {/* Kept mounted while hidden: the live log keeps its stream and its place. */}
-        <TabsContent value="log" forceMount className="data-[state=inactive]:hidden">
+        <TabPanel value="log" forceMount>
           <RunLog key={run.id} ref={log} run={run} />
-        </TabsContent>
-        <TabsContent value="changes">
+        </TabPanel>
+        <TabPanel value="changes">
           <RunChanges key={run.id} run={run} />
-        </TabsContent>
+        </TabPanel>
       </Tabs>
     </div>
   );
