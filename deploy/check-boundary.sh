@@ -15,7 +15,7 @@
 # Must work: rootless Docker (a container with resource limits, a Compose stack), the worker
 # routes with the worker token; that token reaches nothing else on the API. Also: not WSL with
 # interop or automount, cgroup v2 with limits on the agent user's slice.
-# shellcheck disable=SC2317 # check_* functions are called by name from main
+# shellcheck disable=SC2016,SC2317 # single-quoted text run by another shell; check_* called by name
 set -uo pipefail
 
 # --- Configuration (placeholders; override through the environment) ---------------------------

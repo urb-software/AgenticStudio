@@ -134,7 +134,7 @@ done
 expect_line "SKIP api on request" "$out" '^SKIP  api '
 expect_line "last line is the result" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
 
-ONLY_LOCAL=(--skip rootless,cgroup,api)
+ONLY_LOCAL=(--skip 'rootless,cgroup,api')
 section "Each check fails when its rule is broken"
 chmod 0755 /etc/agentic-studio && chmod 0644 /etc/agentic-studio/.env
 out="$(check_as_agent "${ONLY_LOCAL[@]}")"
@@ -189,7 +189,7 @@ stub() {
   STUB_PID=$!
   sleep 1
 }
-ONLY_API=(--skip identity,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless)
+ONLY_API=(--skip 'identity,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless')
 stub 0
 out="$(check_as_agent "${ONLY_API[@]}")"
 printf '%s\n' "$out" | sed 's/^/      | /'

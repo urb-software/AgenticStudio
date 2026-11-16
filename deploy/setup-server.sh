@@ -194,8 +194,9 @@ step_preflight() {
     die "unsupported distribution '${id:-unknown} ${version:-}': only Ubuntu 24.04 LTS is supported."
   fi
   case "$(uname -m)" in x86_64 | aarch64) ;; *) die "unsupported architecture $(uname -m)." ;; esac
-  [[ "$AGENT_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] && [ "$AGENT_USER" != root ] ||
+  if ! [[ "$AGENT_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || [ "$AGENT_USER" = root ]; then
     die "AGENT_USER '$AGENT_USER' is not a valid ordinary user name."
+  fi
   if grep -qi microsoft /proc/version 2>/dev/null; then
     log "WARNING: this looks like WSL. WSL with default settings is not an isolation boundary (ADR 0002); the target is native Linux."
   fi
