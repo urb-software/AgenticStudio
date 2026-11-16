@@ -30,6 +30,10 @@ WORKER_CODE_DIR="${WORKER_CODE_DIR:-/opt/agentic-studio-worker}"
 # Node.js for the agent worker: the official binary tarball, checked against SHASUMS256.txt.
 NODE_VERSION="${NODE_VERSION:-24.22.1}"
 NODE_DIST_URL="${NODE_DIST_URL:-https://nodejs.org/dist}"
+# SHA-256 of the official tarballs of NODE_VERSION, pinned here (from the release's
+# SHASUMS256.txt). Changing NODE_VERSION needs both values changed with it.
+NODE_SHA256_X64="${NODE_SHA256_X64:-6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6}"
+NODE_SHA256_ARM64="${NODE_SHA256_ARM64:-dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e}"
 # Studio's container network (equal to compose.server.yaml and studio.env.example). The agent
 # user may reach only the API's container port on it; everything else there is rejected.
 STUDIO_NETWORK_SUBNET="${STUDIO_NETWORK_SUBNET:-172.31.250.0/24}"
@@ -87,7 +91,7 @@ preflight  Checks: root, Ubuntu 24.04, a root-only checkout, and the agent user 
 packages   Base packages (${BASE_PACKAGES[*]}), Docker's official apt repository
            (/etc/apt/keyrings/docker.asc, /etc/apt/sources.list.d/docker.sources, key fingerprint
            checked) and ${DOCKER_PACKAGES[*]}; enables the system Docker daemon.
-node       Node.js ${NODE_VERSION} into /usr/local (root-owned), checksum verified; corepack enabled.
+node       Node.js ${NODE_VERSION} into /usr/local (root-owned), pinned SHA-256 verified; corepack enabled.
 user       Creates the agent user '${AGENT_USER}' (home directory, own group, no password, no sudo)
            with a subordinate uid/gid range; checks it again afterwards.
 layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.env.example),
@@ -98,7 +102,8 @@ layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.e
 worker     The agent worker's code from this checkout's HEAD into ${WORKER_CODE_DIR} (root-owned,
            world-readable, not writable by the agent user), installed and built there.
 firewall   /usr/local/sbin/agentic-studio-agent-firewall and agentic-studio-agent-firewall.service:
-           rejects the agent user's traffic to ${STUDIO_NETWORK_SUBNET} except TCP ${STUDIO_AGENT_ALLOWED_PORTS}.
+           rejects the agent user's traffic to ${STUDIO_NETWORK_SUBNET} except TCP ${STUDIO_AGENT_ALLOWED_PORTS};
+           a verify timer, and a drop-in binding user@<uid>.service to the firewall (fail closed).
 limits     /etc/systemd/system/user-<uid>.slice.d/50-agentic-studio.conf (MemoryMax=${AGENT_MEMORY_MAX},
            TasksMax=${AGENT_TASKS_MAX}, CPUWeight=${AGENT_CPU_WEIGHT}), cgroup delegation for user managers,
            and a disk quota where available.
@@ -178,9 +183,12 @@ ensure_root_dir() {
   changed "$dir (root:root $mode)"
 }
 
+# Starts the agent user's manager if it is down (for example stopped with its firewall); its
+# drop-in starts the firewall first. Then waits for its bus.
 wait_for_user_bus() {
   local uid
   uid="$(agent_uid)"
+  systemctl start "user@$uid.service"
   for _ in $(seq 1 30); do
     [ -S "/run/user/$uid/bus" ] && return 0
     sleep 1
@@ -221,6 +229,14 @@ step_preflight() {
   local writable
   writable="$(find "$REPO_DIR" -xdev \( ! -user root -o -perm /022 \) ! -type l -print -quit 2>/dev/null || true)"
   [ -z "$writable" ] || die "the checkout $REPO_DIR must be owned by root and writable by root only (found: $writable). Clone it as root, e.g. into /usr/local/src/agentic-studio."
+  # Its parents too: whoever can write one could swap the checkout between the check and the build.
+  local dir="$REPO_DIR"
+  while [ "$dir" != / ]; do
+    dir="$(dirname "$dir")"
+    if [ "$(stat -c %U "$dir")" != root ] || [ $((8#$(stat -c %a "$dir") & 8#022)) -ne 0 ]; then
+      die "$dir (a parent of the checkout) must be owned by root and writable by root only."
+    fi
+  done
   step_log "ok"
 }
 
@@ -287,14 +303,17 @@ step_node() {
   if [ "$current" = "v$NODE_VERSION" ]; then
     step_log "unchanged (Node.js $current)"
   else
-    local arch tarball tmp
-    case "$(uname -m)" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; esac
+    local arch tarball tmp expected
+    case "$(uname -m)" in
+      x86_64) arch=x64 expected="$NODE_SHA256_X64" ;;
+      aarch64) arch=arm64 expected="$NODE_SHA256_ARM64" ;;
+    esac
+    [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || die "no pinned SHA-256 for Node.js $NODE_VERSION ($arch)."
     tarball="node-v${NODE_VERSION}-linux-${arch}.tar.xz"
     tmp="$(mktemp -d)"
     curl -fsSL "$NODE_DIST_URL/v$NODE_VERSION/$tarball" -o "$tmp/$tarball"
-    curl -fsSL "$NODE_DIST_URL/v$NODE_VERSION/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt"
-    (cd "$tmp" && grep -E "^[0-9a-f]{64}  ${tarball//./\\.}\$" SHASUMS256.txt | sha256sum -c --status -) ||
-      die "checksum of $tarball does not match SHASUMS256.txt."
+    printf '%s  %s\n' "$expected" "$tmp/$tarball" | sha256sum -c --status - ||
+      die "$tarball does not match its pinned SHA-256 (NODE_SHA256_${arch^^})."
     tar -xJf "$tmp/$tarball" -C /usr/local --strip-components=1 --no-same-owner \
       --wildcards "node-v${NODE_VERSION}-linux-${arch}/"{bin,include,lib,share}
     rm -rf "$tmp"
@@ -441,33 +460,49 @@ step_firewall() {
 #!/usr/bin/env bash
 # Keeps the agent user (uid $uid) away from Studio's container network $STUDIO_NETWORK_SUBNET:
 # only TCP $STUDIO_AGENT_ALLOWED_PORTS (the API) is allowed there; PostgreSQL, Redis and anything
-# else are rejected. Installed by deploy/setup-server.sh; run by agentic-studio-agent-firewall.service.
+# else are rejected. Installed by deploy/setup-server.sh; run by agentic-studio-agent-firewall.service
+# (apply, which fails unless the rules are verified in place) and its verify timer.
 set -euo pipefail
+verify() {
+  iptables -w -C OUTPUT -m owner --uid-owner $uid -j $FIREWALL_CHAIN &&
+    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -m multiport --dports $STUDIO_AGENT_ALLOWED_PORTS -j RETURN &&
+    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset &&
+    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -j REJECT
+}
 case "\${1:-apply}" in
   apply)
-    iptables -w -N $FIREWALL_CHAIN 2>/dev/null || true
-    iptables -w -F $FIREWALL_CHAIN
-    iptables -w -A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -m multiport --dports $STUDIO_AGENT_ALLOWED_PORTS -j RETURN
-    iptables -w -A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset
-    iptables -w -A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -j REJECT
+    # The chain is replaced atomically, so a re-apply never leaves it empty.
+    iptables-restore -w --noflush <<RULES
+*filter
+:$FIREWALL_CHAIN - [0:0]
+-A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -m multiport --dports $STUDIO_AGENT_ALLOWED_PORTS -j RETURN
+-A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset
+-A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -j REJECT
+COMMIT
+RULES
     iptables -w -C OUTPUT -m owner --uid-owner $uid -j $FIREWALL_CHAIN 2>/dev/null ||
       iptables -w -I OUTPUT 1 -m owner --uid-owner $uid -j $FIREWALL_CHAIN
+    verify || { echo "agent firewall rules are not in place" >&2; exit 1; }
+    ;;
+  verify)
+    verify 2>/dev/null || { echo "agent firewall rules are missing" >&2; exit 1; }
     ;;
   remove)
     while iptables -w -D OUTPUT -m owner --uid-owner $uid -j $FIREWALL_CHAIN 2>/dev/null; do :; done
     iptables -w -F $FIREWALL_CHAIN 2>/dev/null || true
     iptables -w -X $FIREWALL_CHAIN 2>/dev/null || true
     ;;
-  *) echo "usage: \$0 apply|remove" >&2; exit 2 ;;
+  *) echo "usage: \$0 apply|verify|remove" >&2; exit 2 ;;
 esac
 EOF
-  local unit_changed=0
-  install_content /etc/systemd/system/agentic-studio-agent-firewall.service 644 <<EOF && unit_changed=1
+  local reload=0
+  install_content /etc/systemd/system/agentic-studio-agent-firewall.service 644 <<EOF && reload=1
 [Unit]
 Description=Keep the agent user away from Studio's container network
 Documentation=file://$WORKER_CODE_DIR/docs/engineering/deployment.md
 After=network-pre.target
-# Before any user manager (the agent user's lingering one included) starts.
+# Before any user manager (the agent user's lingering one included) starts; that manager
+# requires and is bound to this unit (user@$uid.service.d/60-agentic-studio-firewall.conf).
 Before=systemd-user-sessions.service network.target
 
 [Service]
@@ -479,12 +514,51 @@ ExecStop=/usr/local/sbin/agentic-studio-agent-firewall remove
 [Install]
 WantedBy=multi-user.target
 EOF
-  [ "$unit_changed" = 0 ] || systemctl daemon-reload
-  systemctl enable --quiet agentic-studio-agent-firewall.service
-  # Re-applying is idempotent and picks up a changed rule set.
-  /usr/local/sbin/agentic-studio-agent-firewall apply
-  systemctl start agentic-studio-agent-firewall.service
-  step_log "ok (agent user -> $STUDIO_NETWORK_SUBNET rejected except TCP $STUDIO_AGENT_ALLOWED_PORTS)"
+  # Rules flushed later by another tool: the timer stops the firewall unit, which stops the
+  # agent side with it (fail closed). Starting user@<uid>.service or re-running the setup
+  # restores both.
+  install_content /etc/systemd/system/agentic-studio-agent-firewall-verify.service 644 <<'EOF' && reload=1
+[Unit]
+Description=Stop the agent side when its firewall rules are missing
+After=agentic-studio-agent-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '/usr/local/sbin/agentic-studio-agent-firewall verify || systemctl stop agentic-studio-agent-firewall.service'
+EOF
+  install_content /etc/systemd/system/agentic-studio-agent-firewall-verify.timer 644 <<'EOF' && reload=1
+[Unit]
+Description=Check the agent firewall rules every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
+EOF
+  # The agent user's manager (its services, rootless Docker and the worker) never runs without
+  # the firewall: starting it starts the firewall first, and stopping or failing the firewall
+  # stops it.
+  install -d -m 0755 "/etc/systemd/system/user@$uid.service.d"
+  install_content "/etc/systemd/system/user@$uid.service.d/60-agentic-studio-firewall.conf" 644 <<'EOF' && reload=1
+# Installed by deploy/setup-server.sh: the agent side runs only with its firewall.
+[Unit]
+Requires=agentic-studio-agent-firewall.service
+BindsTo=agentic-studio-agent-firewall.service
+After=agentic-studio-agent-firewall.service
+EOF
+  [ "$reload" = 0 ] || systemctl daemon-reload
+  systemctl enable --quiet agentic-studio-agent-firewall.service agentic-studio-agent-firewall-verify.timer
+  # Re-applying is idempotent (atomic) and picks up a changed rule set.
+  if systemctl is-active --quiet agentic-studio-agent-firewall.service; then
+    /usr/local/sbin/agentic-studio-agent-firewall apply
+  else
+    systemctl start agentic-studio-agent-firewall.service
+  fi
+  systemctl start agentic-studio-agent-firewall-verify.timer
+  step_log "ok (agent user -> $STUDIO_NETWORK_SUBNET rejected except TCP $STUDIO_AGENT_ALLOWED_PORTS; the agent side is bound to it)"
 }
 
 step_rootless() {
@@ -606,7 +680,8 @@ Done: $CHANGES change(s).
 
 The script wrote no secret. Remaining manual steps (docs/engineering/deployment.md, "Manual steps"):
   1. As root, fill in $STUDIO_CONFIG_DIR/.env (root, 0600):
-       POSTGRES_PASSWORD and DATABASE_URL (database), STUDIO_OPERATOR_PASSWORD_HASH (operator
+       POSTGRES_PASSWORD and DATABASE_URL (database), REDIS_PASSWORD and REDIS_URL (Redis),
+       STUDIO_OPERATOR_PASSWORD_HASH (operator
        password hash), STUDIO_SECRETS_KEY (secret store master key; back it up off the server),
        STUDIO_WORKER_TOKEN (worker token), STUDIO_ORIGIN.
   2. As the agent user, fill in $home/.config/agentic-studio-worker/.env (0600):

@@ -79,6 +79,7 @@ as_agent docker info --format 'rootless daemon: {{json .SecurityOptions}} cgroup
 
 section "Studio's PostgreSQL and Redis from the server Compose file"
 sed -i "s|^POSTGRES_PASSWORD=$|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" /etc/agentic-studio/.env
+sed -i "s|^REDIS_PASSWORD=$|REDIS_PASSWORD=$(openssl rand -hex 16)|" /etc/agentic-studio/.env
 if agentic-studio-compose up -d --wait; then ok "postgres and redis are up"; else not_ok "the stack did not start"; fi
 agentic-studio-compose ps | sed 's/^/      | /'
 expect_false "no host port for PostgreSQL" bash -c "ss -ltnH | grep -q ':5432 '"
@@ -87,14 +88,33 @@ expect_false "no host port for Redis" bash -c "ss -ltnH | grep -q ':6379 '"
 # comes from the boundary, not from a stopped service.
 expect_true "root reaches PostgreSQL at its container address" timeout 3 bash -c 'exec 3<>/dev/tcp/172.31.250.10/5432'
 expect_true "root reaches Redis at its container address" timeout 3 bash -c 'exec 3<>/dev/tcp/172.31.250.11/6379'
+reply="$(timeout 5 bash -c 'exec 3<>/dev/tcp/172.31.250.11/6379; printf "PING\r\n" >&3; read -r -t 3 line <&3; printf "%s" "$line"')"
+expect_line "Redis refuses an unauthenticated command" "$reply" 'NOAUTH'
+expect_true "Redis answers with its password" \
+  agentic-studio-compose exec -T redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping | grep -q PONG'
+sed -n 's/^REDIS_PASSWORD=//p' /etc/agentic-studio/.env >/root/redis-password.test
+expect_false "the Redis password is on no host command line" \
+  bash -c "grep -qF -f /root/redis-password.test /proc/[0-9]*/cmdline"
+rm -f /root/redis-password.test
+
+# No Studio images yet: a stand-in for the API's public health route on the published API port
+# is the positive control (the real API answers there once the images exist, #130).
+health_stub() {
+  /usr/local/bin/node -e "require('node:http').createServer((q, r) => {
+    r.writeHead(q.url === '/api/health' ? 200 : 404); r.end(); }).listen(3001, '127.0.0.1')" &
+  HEALTH_PID=$!
+  sleep 1
+}
 
 section "Boundary checks as the agent user"
+health_stub
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip api 2>&1)"
 status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -eq 0 ]; then ok "boundary checks pass (API group skipped)"; else not_ok "boundary checks failed (exit $status)"; fi
 for name in not-root not-in-docker-group studio-config-unreadable studio-data-unreadable secrets-unreachable \
-  system-docker-unreachable sudo-needs-password studio-postgres-unreachable studio-redis-unreachable no-wsl-escape \
+  system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-stack-running \
+  studio-postgres-unreachable studio-redis-unreachable no-wsl-escape \
   cgroup-v2 agent-user-limits rootless-docker rootless-container-limits rootless-compose; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
@@ -113,6 +133,49 @@ expect_line "no firewall rule -> FAIL studio-postgres-unreachable" "$out" '^FAIL
 /usr/local/sbin/agentic-studio-agent-firewall apply
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip rootless,api 2>&1)"
 expect_line "firewall rule back -> PASS studio-postgres-unreachable" "$out" '^PASS  studio-postgres-unreachable '
+
+kill "$HEALTH_PID"
+wait "$HEALTH_PID" 2>/dev/null
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip rootless,api 2>&1)"
+expect_line "Studio not answering -> FAIL studio-stack-running" "$out" '^FAIL  studio-stack-running '
+expect_line "... and the run fails" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
+
+section "The agent side never runs without its firewall"
+agent_side_down() {
+  ! systemctl is-active --quiet "user@$uid.service" && ! pgrep -u agent >/dev/null
+}
+wait_for() {
+  local _
+  for _ in $(seq 1 30); do "$@" && return 0; sleep 1; done
+  return 1
+}
+agent_side_up() {
+  systemctl is-active --quiet "user@$uid.service" && as_agent systemctl --user is-active --quiet docker.service
+}
+
+systemctl stop agentic-studio-agent-firewall.service
+expect_true "firewall stopped -> the agent user's manager and every agent process stop" wait_for agent_side_down
+
+firewall=/usr/local/sbin/agentic-studio-agent-firewall
+cp -p "$firewall" "$firewall.test-backup"
+printf '#!/bin/sh\nexit 1\n' >"$firewall"
+expect_false "firewall failing -> the agent user's manager cannot start" systemctl start "user@$uid.service"
+expect_true "... and nothing of the agent side runs" agent_side_down
+mv "$firewall.test-backup" "$firewall"
+
+expect_true "starting the agent side starts its firewall first" systemctl start "user@$uid.service"
+expect_true "... the firewall is active" systemctl is-active --quiet agentic-studio-agent-firewall.service
+expect_true "... rootless Docker is back" wait_for agent_side_up
+
+# Rules flushed behind systemd's back: the verify timer's service stops the agent side.
+"$firewall" remove
+systemctl start agentic-studio-agent-firewall-verify.service
+expect_false "rules missing -> the verify run stops the firewall unit" \
+  systemctl is-active --quiet agentic-studio-agent-firewall.service
+expect_true "... and the agent side with it" wait_for agent_side_down
+expect_true "the verify timer is active" systemctl is-active --quiet agentic-studio-agent-firewall-verify.timer
+systemctl start "user@$uid.service"
+expect_true "restarting the agent side restores the rules" "$firewall" verify
 
 agentic-studio-compose down -v >/dev/null 2>&1
 finish

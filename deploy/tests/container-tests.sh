@@ -134,12 +134,15 @@ status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -eq 1 ]; then ok "fails overall here (rootless Docker and slice limits need systemd)"; else not_ok "exit $status, expected 1"; fi
 for name in not-root not-in-docker-group studio-config-unreadable studio-data-unreadable secrets-unreachable \
-  system-docker-unreachable sudo-needs-password studio-postgres-unreachable studio-redis-unreachable no-wsl-escape; do
+  system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-postgres-unreachable \
+  studio-redis-unreachable no-wsl-escape; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
 for name in rootless-docker agent-user-limits; do
   expect_line "FAIL $name without systemd" "$out" "^FAIL  $name "
 done
+expect_line "no Studio running -> FAIL studio-stack-running (positive control)" "$out" '^FAIL  studio-stack-running '
+
 expect_line "SKIP api on request" "$out" '^SKIP  api '
 expect_line "last line is the result" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
 
@@ -189,6 +192,7 @@ as_agent sed -i "s|^STUDIO_WORKER_TOKEN=.*|STUDIO_WORKER_TOKEN=$TEST_TOKEN|" /ho
 stub() {
   STUB_TOKEN="$TEST_TOKEN" STUB_LEAKY="$1" node -e "
     require('node:http').createServer((req, res) => {
+      if (req.url === '/api/health') { res.writeHead(200); return res.end('{"status":"ok"}'); }
       const auth = req.headers.authorization === 'Bearer ' + process.env.STUB_TOKEN;
       const worker = req.url.startsWith('/api/worker/');
       const allowed = auth && (worker || process.env.STUB_LEAKY === '1');
@@ -200,6 +204,8 @@ stub() {
 }
 ONLY_API=(--skip 'identity,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless')
 stub 0
+out="$(check_as_agent --skip 'identity,studio-files,docker-socket,sudo,host,cgroup,rootless,api')"
+expect_line "Studio answering -> PASS studio-stack-running" "$out" '^PASS  studio-stack-running '
 out="$(check_as_agent "${ONLY_API[@]}")"
 printf '%s\n' "$out" | sed 's/^/      | /'
 expect_line "PASS worker-token-works" "$out" '^PASS  worker-token-works '

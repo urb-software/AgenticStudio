@@ -1,6 +1,6 @@
 # Studio's side of the server (Issue #107, docs/engineering/deployment.md): PostgreSQL and Redis
 # under the system Docker daemon. Neither publishes a host port; only Studio's own containers on
-# the `studio` network reach them. The setup script installs this file root-only as
+# the `studio` network reach them, and Redis requires a password. The setup script installs this file root-only as
 # /opt/agentic-studio/compose.yaml; values come from the root-only /etc/agentic-studio/.env.
 #
 # The network has a fixed subnet and the two services fixed addresses so the setup script's
@@ -31,13 +31,21 @@ services:
   redis:
     image: redis:8.10.3-alpine
     restart: unless-stopped
+    # The password reaches Redis through a config file inside the container, never a command
+    # line visible on the host.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in /etc/agentic-studio/.env}
+    command:
+      - sh
+      - -c
+      - printf 'requirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/redis.conf && exec docker-entrypoint.sh redis-server /tmp/redis.conf
     volumes:
       - redis-data:/data
     networks:
       studio:
         ipv4_address: ${STUDIO_REDIS_ADDRESS:-172.31.250.11}
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
       interval: 5s
       timeout: 5s
       retries: 10

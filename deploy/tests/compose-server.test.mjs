@@ -36,6 +36,7 @@ function envFile(values) {
 
 const TEST_ENV = {
   POSTGRES_PASSWORD: 'test-only-not-a-secret',
+  REDIS_PASSWORD: 'test-only-redis-placeholder',
   STUDIO_API_IMAGE: 'registry.example.invalid/studio-api:test',
   STUDIO_WEB_IMAGE: 'registry.example.invalid/studio-web:test',
 };
@@ -120,8 +121,18 @@ describe(
       assert.equal(services.api.environment.STUDIO_SECRETS_KEY, 'test-only-placeholder');
     });
 
-    it('refuses to render without the database password', () => {
-      assert.throws(() => render([base], {}), /POSTGRES_PASSWORD/);
+    it('refuses to render without the database or the Redis password', () => {
+      assert.throws(() => render([base], { REDIS_PASSWORD: 'x' }), /POSTGRES_PASSWORD/);
+      assert.throws(() => render([base], { POSTGRES_PASSWORD: 'x' }), /REDIS_PASSWORD/);
+    });
+
+    it('gives Redis its password through the environment, never on its command line', () => {
+      const { redis } = render([base]).services;
+      assert.equal(redis.environment.REDIS_PASSWORD, TEST_ENV.REDIS_PASSWORD);
+      const command = redis.command.join(' ');
+      assert.match(command, /requirepass/);
+      assert.ok(!command.includes(TEST_ENV.REDIS_PASSWORD), command);
+      assert.ok(!redis.healthcheck.test.join(' ').includes(TEST_ENV.REDIS_PASSWORD));
     });
   },
 );

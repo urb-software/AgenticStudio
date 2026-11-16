@@ -23,6 +23,7 @@ STUDIO_CONFIG_DIR="${STUDIO_CONFIG_DIR:-/etc/agentic-studio}"
 STUDIO_STATE_DIR="${STUDIO_STATE_DIR:-/var/lib/agentic-studio}"
 STUDIO_COMPOSE_DIR="${STUDIO_COMPOSE_DIR:-/opt/agentic-studio}"
 SYSTEM_DOCKER_SOCKET="${SYSTEM_DOCKER_SOCKET:-/var/run/docker.sock}"
+SYSTEM_CONTAINERD_SOCKET="${SYSTEM_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}"
 SYSTEM_DOCKER_DATA="${SYSTEM_DOCKER_DATA:-/var/lib/docker}"
 # Studio's PostgreSQL and Redis (equal to compose.server.yaml and studio.env.example).
 STUDIO_POSTGRES_ADDRESS="${STUDIO_POSTGRES_ADDRESS:-172.31.250.10}"
@@ -41,7 +42,7 @@ SKIPPED=0
 WORK_DIR=""
 
 # Variables that must never reach the agent side (the worker refuses to start with them).
-STUDIO_ONLY_VARS=(DATABASE_URL REDIS_URL STUDIO_SECRETS_KEY STUDIO_OPERATOR_PASSWORD_HASH POSTGRES_PASSWORD)
+STUDIO_ONLY_VARS=(DATABASE_URL REDIS_URL REDIS_PASSWORD STUDIO_SECRETS_KEY STUDIO_OPERATOR_PASSWORD_HASH POSTGRES_PASSWORD)
 
 pass() {
   PASSED=$((PASSED + 1))
@@ -162,6 +163,14 @@ check_docker_socket() {
   else
     pass system-docker-unreachable "$SYSTEM_DOCKER_SOCKET does not exist here"
   fi
+  # The system containerd is root-equivalent too; connecting to a socket needs write access.
+  if [ -S "$SYSTEM_CONTAINERD_SOCKET" ] && [ -w "$SYSTEM_CONTAINERD_SOCKET" ]; then
+    fail system-containerd-unreachable "$SYSTEM_CONTAINERD_SOCKET is writable by $(id -un)"
+  elif [ -e "$SYSTEM_CONTAINERD_SOCKET" ]; then
+    pass system-containerd-unreachable "$SYSTEM_CONTAINERD_SOCKET refused"
+  else
+    pass system-containerd-unreachable "$SYSTEM_CONTAINERD_SOCKET does not exist here"
+  fi
 }
 
 check_sudo() {
@@ -175,6 +184,17 @@ check_sudo() {
 }
 
 check_studio_network() {
+  # Positive control: Studio must be up, or the refusals below prove nothing. Its health route
+  # (public, through the published API port) answers 200 only while Redis is reachable for it.
+  local api health
+  api="$(worker_env_value STUDIO_API_URL || true)"
+  api="${api%/}"
+  health="$( [ -n "$api" ] && curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$api/api/health" 2>/dev/null)"
+  if [ "$health" = 200 ]; then
+    pass studio-stack-running "$api/api/health answered 200"
+  else
+    fail studio-stack-running "Studio's API health did not answer 200 (${health:-no answer} from ${api:-no STUDIO_API_URL}): start Studio, or the database and Redis refusals prove nothing"
+  fi
   local target reached=()
   for target in "127.0.0.1:5432" "$STUDIO_POSTGRES_ADDRESS:5432"; do
     can_connect "${target%:*}" "${target##*:}" && reached+=("$target")
