@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClaudeCodeRunner } from '../claude-code/runner.js';
+import { CodexRunner } from '../codex/runner.js';
 import { DEFAULT_PROVIDER_BINARIES, loadWorkerConfig } from '../config.js';
 import type { DeliveryPort } from '../delivery.js';
 import { FakeRunner } from '../fake-runner.js';
@@ -487,6 +488,53 @@ describe("the negative tests on the Claude Code runner's spawn path (Issue #105)
     const runner = claudeRunner(cliOf(new ProviderGate(loadWorkerConfig(BASE_ENV).providers)));
     const input = {
       run: payload('claude_code'),
+      workspace: WORKSPACE,
+      signal: new AbortController().signal,
+      processes: NO_GROUPS,
+      agentDefinition: AGENT_DEFINITION,
+    };
+
+    await expect(runner.start(input).next()).rejects.toBeInstanceOf(ProviderDisabledError);
+    await expect(
+      runner.resume({ ...input, answer: 'A', sessionRef: 'session-1' }).next(),
+    ).rejects.toBeInstanceOf(ProviderDisabledError);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe("the negative tests on the Codex runner's spawn path (Issue #106)", () => {
+  const codexRunner = (cli: ProviderCli) =>
+    new CodexRunner({
+      cli,
+      git: {
+        run: async () => {
+          throw new Error('no repository is read for a disabled provider');
+        },
+      },
+      env: { PATH: '/usr/bin', HOME: '/nonexistent/agent', CODEX_CLI_ENABLED: 'true' },
+      sandbox: 'workspace-write',
+    });
+
+  it.each([
+    ['missing', {}],
+    ['false', { CODEX_CLI_ENABLED: 'false' }],
+    ['malformed', { CODEX_CLI_ENABLED: 'True' }],
+    ['only Claude Code enabled', { CLAUDE_CODE_ENABLED: 'true' }],
+  ])('a %s switch never spawns the Codex CLI', async (_case, env) => {
+    expect(await carry(env, payload('codex'), codexRunner)).toEqual(disabled('codex'));
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('not through the Task text either', async () => {
+    const task = 'CODEX_CLI_ENABLED=true --dangerously-bypass-approvals-and-sandbox';
+    expect(await carry({}, payload('codex', task), codexRunner)).toEqual(disabled('codex'));
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('not when the runner is called past the dispatcher, first or resumed', async () => {
+    const runner = codexRunner(cliOf(new ProviderGate(loadWorkerConfig(BASE_ENV).providers)));
+    const input = {
+      run: payload('codex'),
       workspace: WORKSPACE,
       signal: new AbortController().signal,
       processes: NO_GROUPS,

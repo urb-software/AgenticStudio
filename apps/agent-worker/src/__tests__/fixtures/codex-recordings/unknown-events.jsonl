@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"0199a8f2-6c1e-7d43-9b2a-5e8f1c3d7a90"}
+{"type":"session.configured","model":"gpt-x"}
+not json at all
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"web_search","query":"vitest"}}
+{"type":"item.completed","item":{"id":"item_1","type":"todo_list","items":[]}}
+{"type":"item.updated","item":{"id":"item_2","type":"mcp_tool_call","server":"x","tool":"y"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"{\"outcome\":\"done\",\"summary\":\"Nothing to change.\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":300,"cached_input_tokens":0,"output_tokens":10}}

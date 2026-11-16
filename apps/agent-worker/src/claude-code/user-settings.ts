@@ -1,5 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+  presentUserLevelFiles,
+  type UserLevelFiles,
+  userLevelFilesProblem,
+} from '../user-level-files.js';
 
 /**
  * The agent user's own Claude Code settings (reviews R4 and N1 of #129). The approved Mode
@@ -10,6 +15,18 @@ import { join } from 'node:path';
  * the worker refuses to start the CLI otherwise; the operator reviews the file. Only key names
  * are ever reported, never values.
  */
+
+/** User-level files that must be absent (review C2 of #133); relative to the home directory. */
+export const CLAUDE_USER_LEVEL_FILES: UserLevelFiles = {
+  absent: ['.claude/CLAUDE.md'],
+  empty: [
+    { path: '.claude/agents' },
+    { path: '.claude/commands' },
+    { path: '.claude/rules' },
+    // Created by the CLI at sign-in: skills synced from the operator's account, and its bin.
+    { path: '.claude/skills', allowed: ['synced', '.trash'] },
+  ],
+};
 
 /** The only top-level key a user settings file may hold. */
 export const ALLOWED_USER_SETTINGS: readonly string[] = ['$schema'];
@@ -56,5 +73,9 @@ export async function userSettingsProblem(home: string | undefined): Promise<str
   if (unreadable.length > 0) {
     return `Claude Code user settings could not be checked (${unreadable.join(', ')}); the operator must review them.`;
   }
-  return null;
+  // Review C2 of #133: user-level instructions, agents, commands and skills load in every Run.
+  return userLevelFilesProblem(
+    'Claude Code',
+    await presentUserLevelFiles(home, CLAUDE_USER_LEVEL_FILES),
+  );
 }

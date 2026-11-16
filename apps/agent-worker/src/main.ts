@@ -1,5 +1,6 @@
 import { ClaudeCodeRunner, probeClaudeCode } from './claude-code/runner.js';
-import { MissingCliRunner } from './cli-runner.js';
+import { prepareCodexHome } from './codex/codex-home.js';
+import { CodexRunner, probeCodex } from './codex/runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
 import { Deliveries } from './delivery.js';
 import { FakeRunner } from './fake-runner.js';
@@ -37,13 +38,21 @@ const switches = new ProviderGate(config.providers);
 // Issue #105: a switched-on Claude Code whose CLI is missing or of an unsupported version is
 // unavailable (with the reason) for the life of the process. The check starts `claude
 // --version` through the spawn boundary, so only when the switch is on and the CLI is used.
-const unavailable: { claude_code?: string } = {};
+// Issue #106: the same for Codex, which must also be a complete standalone install.
+const unavailable: { claude_code?: string; codex?: string } = {};
 if (config.runner === 'cli' && switches.isEnabled('claude_code')) {
   const check = await probeClaudeCode(
     { gate: switches, binaries: config.providerBinaries },
     process.env,
   );
   if (!check.ok) unavailable.claude_code = check.reason;
+}
+if (config.runner === 'cli' && switches.isEnabled('codex')) {
+  const check = await probeCodex(
+    { gate: switches, binaries: config.providerBinaries },
+    process.env,
+  );
+  if (!check.ok) unavailable.codex = check.reason;
 }
 const gate = new ProviderGate(config.providers, unavailable);
 const cli = { gate, binaries: config.providerBinaries };
@@ -63,7 +72,13 @@ const runner = new RunnerDispatcher(
           env: process.env,
           maxTurns: config.claudeMaxTurns,
         }),
-        codex: new MissingCliRunner('codex'),
+        codex: new CodexRunner({
+          cli,
+          git,
+          env: process.env,
+          sandbox: config.codexSandbox,
+          dataDir: config.dataDir,
+        }),
       },
 );
 const reasons = gate.reasons();
@@ -145,10 +160,18 @@ const retention = new Retention({
 });
 const retentionAbort = new AbortController();
 let sweeping: Promise<void> | undefined;
+// Issue #106: a removed Working copy's untrusted entry leaves Studio's Codex configuration with it.
+const codexInUse = config.runner === 'cli' && gate.isEnabled('codex');
 const sweep = () => {
   sweeping ??= retention
     .sweep(retentionAbort.signal)
-    .then(() => undefined)
+    .then(async (outcome) => {
+      const home = process.env.HOME;
+      if (!codexInUse || outcome.removed.length === 0 || !home || !home.startsWith('/')) return;
+      await prepareCodexHome({ home, dataDir: config.dataDir }).catch((error: unknown) => {
+        logger.error(`Rewriting Studio's Codex configuration failed: ${(error as Error).message}`);
+      });
+    })
     .catch((error: unknown) => {
       if (!retentionAbort.signal.aborted) {
         logger.error(`Working copy retention failed: ${(error as Error).message}`);

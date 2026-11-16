@@ -76,6 +76,7 @@ export function resolveImport(from: string, path: string): { path: string } | { 
 async function collect(
   files: RepositoryFiles,
   notices: string[],
+  roots: readonly string[],
 ): Promise<{ path: string; importedBy?: string; text: string }[]> {
   const collected: { path: string; importedBy?: string; text: string }[] = [];
   const seen = new Set<string>();
@@ -105,21 +106,23 @@ async function collect(
       }
     }
   };
-  for (const path of PROJECT_INSTRUCTION_FILES) await visit(path, 0);
+  for (const path of roots) await visit(path, 0);
   return collected;
 }
 
 /**
  * Builds the instructions file. `marker` is a random code per step: only lines carrying it
- * delimit a block, so a repository cannot fake the end of its own block.
+ * delimit a block, so a repository cannot fake the end of its own block. `roots` are the
+ * repository's instruction files to read (Codex: `AGENTS.md` only, Issue #106).
  */
 export async function buildInstructions(
   definition: AgentDefinition,
   files: RepositoryFiles,
   marker: string,
+  roots: readonly string[] = PROJECT_INSTRUCTION_FILES,
 ): Promise<Instructions> {
   const notices: string[] = [];
-  const collected = await collect(files, notices);
+  const collected = await collect(files, notices, roots);
   let text = definition.text.trimEnd() + '\n';
   if (collected.length === 0) return { text, notices };
   text +=

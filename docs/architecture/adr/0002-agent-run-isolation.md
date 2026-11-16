@@ -34,7 +34,8 @@ Operator decisions in the refinement of the run stories, 2026-11-15.
 - **Providers.** Both Claude Code and Codex are in scope of Epic #84; Codex follows Claude Code.
 - **Configuration found in a project's repository.** Nothing from the repository that executes code or changes permissions is loaded: no hooks, no MCP servers, no settings files. The text of the repository's instruction files (`CLAUDE.md`, `AGENTS.md`) is used:
   - For Claude Code, the agent worker injects that text, because the option that excludes project settings also excludes project instructions, skills and subagents (see [Claude Code finding](#claude-code-finding-2026-11-15)).
-  - For Codex, the working copy is marked untrusted, which loads `AGENTS.md` and skips project configuration.
+  - For Codex, the working copy is marked untrusted, which skips project configuration. **Correction (controlled smoke of #106, 2026-11-16):** Codex 0.169.0 skips an untrusted project's `AGENTS.md` too, so the agent worker injects its text, as for Claude Code. The intent of this decision is unchanged.
+  - **Known limitation (controlled smoke of #106, 2026-11-16):** for Codex, the repository's skills are still offered to the agent in an untrusted project, and Codex documents no setting that disables project skills; their text reaches the agent as untrusted input, like `AGENTS.md`.
   - Imports inside instruction files are followed only within the working copy.
   - **Known limitation and follow-up:** the repository's own skills and subagents are not available to Claude Code in the first version.
 - **Environment files.** Studio supplies one Environment file per project, holding test values only; the agent can read it.
