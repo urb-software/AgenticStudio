@@ -23,7 +23,8 @@ type Route =
   | 'steps'
   | 'stream'
   | 'cancel'
-  | 'answer';
+  | 'answer'
+  | 'followUp';
 
 interface ScriptedResponse {
   status: number;
@@ -42,6 +43,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/providers()$/, () => 'providers'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
+  [/^\/api\/runs\/([^/]+)\/follow-up$/, () => 'followUp'],
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
   [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
   [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
@@ -91,7 +93,10 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
     startCommit: SHA,
     createdAt,
     environmentFileSupplied: false,
-    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
+    // Issue #141: no Run step and no Follow-up yet.
+    steps: { used: 0, usedInPart: 0 },
+    followUps: 0,
     // Issue #103: the conversation starts with the Task.
     messages: [{ role: 'operator', kind: 'task', text: task, at: createdAt }],
     ...overrides,
@@ -124,6 +129,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     providers: [],
     cancel: [],
     answer: [],
+    followUp: [],
     events: [],
     steps: [],
     stream: [],
@@ -189,7 +195,9 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const route = routeOf(request.method);
     const id = match![1];
     const body: unknown =
-      route === 'start' || route === 'answer' ? await request.json() : undefined;
+      route === 'start' || route === 'answer' || route === 'followUp'
+        ? await request.json()
+        : undefined;
     calls.push({ route, body, query: searchParams });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
@@ -271,6 +279,36 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         };
         runs[index] = answered;
         return json(202, answered);
+      }
+      case 'followUp': {
+        // Issue #141: the API's rules, in short.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        const run = runs[index];
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (!run.followUp?.allowed) {
+          return json(
+            409,
+            problem(409, 'Follow-up not possible', 'The run cannot take a Follow-up now.'),
+          );
+        }
+        const { text } = body as { text: string };
+        const { failure: _failure, finishedAt: _finishedAt, delivery: _delivery, ...rest } = run;
+        void _failure;
+        void _finishedAt;
+        void _delivery;
+        const queued: RunOutput = {
+          ...rest,
+          state: 'queued',
+          followUps: run.followUps + 1,
+          steps: { used: run.steps.used, usedInPart: 0 },
+          followUp: { allowed: false, reason: 'follow_up_queued' },
+          messages: [
+            ...(run.messages ?? []),
+            { role: 'operator', kind: 'follow_up', text, at: new Date().toISOString() },
+          ],
+        };
+        runs[index] = queued;
+        return json(202, queued);
       }
       case 'retryDelivery': {
         const index = runs.findIndex((candidate) => candidate.id === id);

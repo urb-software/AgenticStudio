@@ -109,6 +109,17 @@ export type RunLimitsOutput = {
     stepMinutes: number;
     maxSteps: number;
     waitingDays: number;
+    maxTotalSteps: number;
+};
+
+export type RunStepTotalsOutput = {
+    used: number;
+    usedInPart: number;
+};
+
+export type RunFollowUpEligibilityOutput = {
+    allowed: boolean;
+    reason?: 'not_finished' | 'follow_up_queued' | 'working_copy_removed' | 'no_session' | 'step_total_reached' | 'provider_unavailable' | 'worker_unavailable';
 };
 
 export type RunQuestionOutput = {
@@ -119,7 +130,7 @@ export type RunQuestionOutput = {
 
 export type RunMessageOutput = {
     role: 'operator' | 'agent';
-    kind: 'task' | 'question' | 'answer';
+    kind: 'task' | 'question' | 'answer' | 'follow_up';
     text: string;
     options?: Array<string>;
     recommendation?: string;
@@ -144,10 +155,14 @@ export type RunOutput = {
     commits?: Array<{
         id: string;
         subject: string;
+        pushed: boolean;
     }>;
     hasUncommittedChanges?: boolean;
     environmentFileSupplied: boolean;
     limits: RunLimitsOutput;
+    steps: RunStepTotalsOutput;
+    followUps: number;
+    followUp?: RunFollowUpEligibilityOutput;
     cancelRequestedAt?: string;
     cancellation?: {
         by: 'operator' | 'system';
@@ -173,6 +188,10 @@ export type RunsSummaryOutput = {
 };
 
 export type AnswerRunRequest = {
+    text: string;
+};
+
+export type FollowUpRunRequest = {
     text: string;
 };
 
@@ -948,6 +967,42 @@ export type ResumeRunResponses = {
 };
 
 export type ResumeRunResponse = ResumeRunResponses[keyof ResumeRunResponses];
+
+export type FollowUpRunData = {
+    body: FollowUpRunRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/follow-up';
+};
+
+export type FollowUpRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run cannot take a Follow-up now (urn:agentic-studio:problem:follow-up-not-allowed)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type FollowUpRunError = FollowUpRunErrors[keyof FollowUpRunErrors];
+
+export type FollowUpRunResponses = {
+    202: RunOutput;
+};
+
+export type FollowUpRunResponse = FollowUpRunResponses[keyof FollowUpRunResponses];
 
 export type ListRunEventsData = {
     body?: never;

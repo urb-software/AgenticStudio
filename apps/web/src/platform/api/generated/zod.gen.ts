@@ -117,7 +117,26 @@ export const zStartRunRequest = z.object({
 export const zRunLimitsOutput = z.object({
     stepMinutes: z.int().gte(1).lte(9007199254740991),
     maxSteps: z.int().gte(1).lte(9007199254740991),
-    waitingDays: z.int().gte(1).lte(9007199254740991)
+    waitingDays: z.int().gte(1).lte(9007199254740991),
+    maxTotalSteps: z.int().gte(1).lte(9007199254740991)
+});
+
+export const zRunStepTotalsOutput = z.object({
+    used: z.int().gte(0).lte(9007199254740991),
+    usedInPart: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zRunFollowUpEligibilityOutput = z.object({
+    allowed: z.boolean(),
+    reason: z.enum([
+        'not_finished',
+        'follow_up_queued',
+        'working_copy_removed',
+        'no_session',
+        'step_total_reached',
+        'provider_unavailable',
+        'worker_unavailable'
+    ]).optional()
 });
 
 export const zRunQuestionOutput = z.object({
@@ -131,7 +150,8 @@ export const zRunMessageOutput = z.object({
     kind: z.enum([
         'task',
         'question',
-        'answer'
+        'answer',
+        'follow_up'
     ]),
     text: z.string(),
     options: z.array(z.string()).optional(),
@@ -174,11 +194,15 @@ export const zRunOutput = z.object({
     runBranch: z.string().optional(),
     commits: z.array(z.object({
         id: z.string(),
-        subject: z.string()
+        subject: z.string(),
+        pushed: z.boolean()
     })).optional(),
     hasUncommittedChanges: z.boolean().optional(),
     environmentFileSupplied: z.boolean(),
     limits: zRunLimitsOutput,
+    steps: zRunStepTotalsOutput,
+    followUps: z.int().gte(0).lte(9007199254740991),
+    followUp: zRunFollowUpEligibilityOutput.optional(),
     cancelRequestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
     cancellation: z.object({
         by: z.enum(['operator', 'system']),
@@ -208,6 +232,10 @@ export const zRunsSummaryOutput = z.object({
 });
 
 export const zAnswerRunRequest = z.object({
+    text: z.string().min(1).max(10000)
+});
+
+export const zFollowUpRunRequest = z.object({
     text: z.string().min(1).max(10000)
 });
 
@@ -412,6 +440,14 @@ export const zResumeRunPath = z.object({
 });
 
 export const zResumeRunResponse = zRunOutput;
+
+export const zFollowUpRunBody = zFollowUpRunRequest;
+
+export const zFollowUpRunPath = z.object({
+    runId: z.string()
+});
+
+export const zFollowUpRunResponse = zRunOutput;
 
 export const zListRunEventsPath = z.object({
     runId: z.string()

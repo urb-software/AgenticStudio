@@ -19,7 +19,8 @@ type RunRowsProps = {
 
 /**
  * Runs as rows: the state pill, the start of the Task (the link to the Run page), the Provider,
- * a pull request marker when the Run was delivered (Issue #102), the project when the list
+ * a pull request marker when the Run was delivered (Issue #102), how many Follow-ups it had
+ * (Issue #141), the project when the list
  * spans projects, and how long ago it was created. One line per Run from tablet up; on phones
  * each Run is a stacked block, so the page never scrolls sideways.
  */
@@ -51,6 +52,12 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
                 <span className="inline-flex items-center gap-1 font-mono text-code">
                   <GitPullRequestIcon aria-hidden="true" className="size-3.5" />
                   <span className="sr-only">Pull request </span>#{run.pullRequest.number}
+                </span>
+              ) : null}
+              {run.followUps > 0 ? (
+                // Issue #141: the Run has had Follow-ups.
+                <span>
+                  {run.followUps} {run.followUps === 1 ? 'Follow-up' : 'Follow-ups'}
                 </span>
               ) : null}
               {projectNames ? (

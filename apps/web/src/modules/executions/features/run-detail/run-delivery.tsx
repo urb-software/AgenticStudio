@@ -3,9 +3,11 @@
 import { ExternalLinkIcon, GitBranchIcon, GitPullRequestIcon, RotateCwIcon } from 'lucide-react';
 import { Banner } from '@/shared/components/banner';
 import { Button } from '@/shared/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import type { RunOutput } from '../../../../platform/api';
 import { useProjectRuns, useRetryDelivery } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
+import { FINAL_STATES } from '../../components/run-states';
 
 /** The request "Retry delivery" makes (generated `retryRunDelivery`), shown when it fails. */
 const RETRY_REQUEST = 'POST /api/runs/{runId}/retry-delivery';
@@ -145,8 +147,26 @@ function RetryDelivery({ run }: { run: RunOutput }) {
  */
 export function RunDelivery({ run }: { run: RunOutput }) {
   const deliveryFailed = run.failure?.code === 'delivery_failed';
+  // Issue #141: the Run's one pull request, kept from an earlier delivery while a Follow-up
+  // works on the Run, or after a Follow-up that ended without delivering.
+  const keptPullRequest = run.delivery !== 'delivered' ? run.pullRequest : undefined;
   return (
     <>
+      {keptPullRequest && FINAL_STATES.includes(run.state) ? (
+        <Banner tone="info" icon={GitPullRequestIcon} title="This Follow-up pushed nothing.">
+          <PullRequestLink pullRequest={keptPullRequest} /> from an earlier delivery stays as it
+          was; the Follow-up&apos;s commits stay in the working copy.
+        </Banner>
+      ) : null}
+      {keptPullRequest && !FINAL_STATES.includes(run.state) ? (
+        <Banner
+          tone="info"
+          icon={GitPullRequestIcon}
+          title="The Follow-up updates the draft pull request when it is done."
+        >
+          <PullRequestLink pullRequest={keptPullRequest} /> on GitHub.
+        </Banner>
+      ) : null}
       {run.state === 'cancelled' && run.delivery === 'delivered' && run.pullRequest ? (
         <Banner
           tone="warning"
@@ -168,7 +188,7 @@ export function RunDelivery({ run }: { run: RunOutput }) {
           .
         </Banner>
       ) : null}
-      {run.delivery === 'none' && run.state === 'succeeded' ? (
+      {run.delivery === 'none' && run.state === 'succeeded' && !run.pullRequest ? (
         <Banner tone="info" title="No changes.">
           The agent changed nothing, so nothing was pushed and no pull request was opened.
         </Banner>
@@ -176,12 +196,56 @@ export function RunDelivery({ run }: { run: RunOutput }) {
       {run.state === 'succeeded' || deliveryFailed ? <FailingChecks run={run} /> : null}
       {deliveryFailed ? <RetryDelivery run={run} /> : null}
       {run.delivery === 'delivered' || deliveryFailed ? <FirstDeliveryReminder run={run} /> : null}
-      {NOT_DELIVERED.includes(run.state) && !deliveryFailed && !run.delivery && run.runBranch ? (
+      {NOT_DELIVERED.includes(run.state) &&
+      !deliveryFailed &&
+      !run.delivery &&
+      !run.pullRequest &&
+      run.runBranch ? (
         <Banner tone="info" icon={GitBranchIcon} title="Nothing was pushed.">
           The Run branch <Mono>{run.runBranch}</Mono> stays in the Working copy on the agent worker
           until retention removes it.
         </Banner>
       ) : null}
     </>
+  );
+}
+
+/** A commit's short id, as Git shows it. */
+const shortId = (id: string) => id.slice(0, 7);
+
+/**
+ * The Run branch's commits (Issue #141), oldest first: each says whether it is on the remote
+ * Run branch (pushed) or exists only in the working copy on the agent worker. Plain text: the
+ * subjects are the agent's.
+ */
+export function RunCommits({ run }: { run: RunOutput }) {
+  const commits = run.commits ?? [];
+  if (commits.length === 0) return null;
+  return (
+    <Card aria-labelledby="run-commits-title">
+      <CardHeader>
+        <CardTitle id="run-commits-title">Commits</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Commits">
+          {commits.map((commit) => (
+            <li
+              key={commit.id}
+              className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 text-small"
+            >
+              <code className="font-mono text-code text-text-muted" title={commit.id}>
+                {shortId(commit.id)}
+              </code>
+              <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">
+                {commit.subject}
+              </span>
+              <span className="text-caption font-medium text-text-dim">
+                {commit.pushed ? 'Pushed' : 'Only in the working copy'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

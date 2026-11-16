@@ -14,7 +14,7 @@ import {
   type RunOutput,
   type RunQuestionOutput,
 } from '../../../../platform/api';
-import { useAnswerRun } from '../../api/runs-queries';
+import { useAnswerRun, useRunSteps } from '../../api/runs-queries';
 
 /** Longest answer the API takes, in characters (the API's limit is authoritative). */
 const ANSWER_MAX_LENGTH = 10_000;
@@ -23,6 +23,7 @@ const KIND_LABEL: Record<RunMessageOutput['kind'], string> = {
   task: 'Task',
   question: 'Question',
   answer: 'Answer',
+  follow_up: 'Follow-up',
 };
 
 const ROLE_LABEL: Record<RunMessageOutput['role'], string> = {
@@ -63,7 +64,17 @@ function RecommendedMark() {
 }
 
 /** One turn of the conversation: who, what kind, when, and the text as plain text. */
-function Message({ message }: { message: RunMessageOutput }) {
+function Message({
+  message,
+  label,
+}: {
+  message: Pick<RunMessageOutput, 'role' | 'text' | 'at' | 'options' | 'recommendation'> & {
+    kind?: RunMessageOutput['kind'];
+  };
+  /** Who and what kind, e.g. "You · Follow-up 2"; by default from the message's role and kind. */
+  label?: string;
+}) {
+  label ??= `${ROLE_LABEL[message.role]} · ${KIND_LABEL[message.kind ?? 'answer']}`;
   const agent = message.role === 'agent';
   return (
     <li
@@ -74,9 +85,7 @@ function Message({ message }: { message: RunMessageOutput }) {
       )}
     >
       <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-caption text-text-dim">
-        <span className="font-medium text-text-muted">
-          {ROLE_LABEL[message.role]} · {KIND_LABEL[message.kind]}
-        </span>
+        <span className="font-medium text-text-muted">{label}</span>
         <time dateTime={message.at} className="tabular-nums">
           {formatExactTime(new Date(message.at))}
         </time>
@@ -118,29 +127,85 @@ function StepDivider({
   );
 }
 
+/** Where a Follow-up begins a new part of the Run (Issue #141); the part before it has ended. */
+function FollowUpDivider({ number }: { number: number }) {
+  return (
+    <li className="flex items-center gap-2 pt-1 text-caption font-semibold text-text-muted">
+      <span aria-hidden="true" className="h-px flex-1 bg-border-strong" />
+      <span>Follow-up {number} begins</span>
+      <span aria-hidden="true" className="h-px flex-1 bg-border-strong" />
+    </li>
+  );
+}
+
 /**
  * The Run's conversation (Issue #103): the Task, each question of the agent and each answer of
  * the operator, in order, with the Run step that ran between them (its log is in the Log card).
- * The question is the end of Run step n; the answer resumes the session as step n + 1.
+ * Issue #141: each Follow-up begins a new part, marked by a divider, and each part's result
+ * (the summary of a step that ended `done`) stays visible as the agent's turn where it ended.
+ * The step numbers come from the stored step results: the k-th question ends the k-th step
+ * that asked; results are placed by the time they were reported. Until those are loaded, a
+ * question's step is counted from the questions before it.
  */
 export function RunConversation({
+  runId,
   messages,
   onShowStep,
 }: {
+  runId: string;
   messages: readonly RunMessageOutput[];
   /** Shows Run step `index` in the log; false when it cannot (the link then goes to the log). */
   onShowStep?: (index: number) => boolean;
 }) {
-  let step = 0;
+  const { data: steps } = useRunSteps(runId);
+  const ordered = steps ? [...steps.values()].sort((a, b) => a.index - b.index) : [];
+  const asked = ordered.filter((step) => step.outcome === 'needs_input');
+  const done = ordered.filter((step) => step.outcome === 'done');
   const items: ReactNode[] = [];
+  let questions = 0;
+  let followUps = 0;
+  let results = 0;
+  const pushResult = (step: (typeof done)[number]) => {
+    items.push(
+      <StepDivider key={`step-${step.index}`} index={step.index} onShowStep={onShowStep} />,
+    );
+    items.push(
+      <Message
+        key={`result-${step.index}`}
+        message={{ role: 'agent', text: step.summary, at: step.reportedAt }}
+        label="Agent · Result"
+      />,
+    );
+  };
   messages.forEach((message, i) => {
-    // A question ends a Run step: it ran after the Task or the previous answer.
+    // Results reported before this turn come first (the Task always leads).
+    if (message.kind !== 'task') {
+      while (results < done.length && done[results]!.reportedAt <= message.at) {
+        pushResult(done[results]!);
+        results += 1;
+      }
+    }
+    // A question ends a Run step: it ran after the Task, an answer or a Follow-up.
     if (message.kind === 'question') {
-      step += 1;
-      items.push(<StepDivider key={`step-${step}`} index={step} onShowStep={onShowStep} />);
+      questions += 1;
+      const index = asked[questions - 1]?.index ?? questions;
+      items.push(<StepDivider key={`step-${index}`} index={index} onShowStep={onShowStep} />);
+    }
+    if (message.kind === 'follow_up') {
+      followUps += 1;
+      items.push(<FollowUpDivider key={`follow-up-${followUps}`} number={followUps} />);
+      items.push(
+        <Message
+          key={`${i}-${message.kind}`}
+          message={message}
+          label={`You · Follow-up ${followUps}`}
+        />,
+      );
+      return;
     }
     items.push(<Message key={`${i}-${message.kind}`} message={message} />);
   });
+  for (; results < done.length; results += 1) pushResult(done[results]!);
   return (
     <Card aria-labelledby="run-conversation-title">
       <CardHeader>

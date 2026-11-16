@@ -34,7 +34,7 @@ describe('Run page: delivery (Issue #102)', () => {
     const run = aRun({
       state: 'succeeded',
       runBranch: BRANCH,
-      commits: [{ id: 'c'.repeat(40), subject: 'Add pagination' }],
+      commits: [{ id: 'c'.repeat(40), subject: 'Add pagination', pushed: true }],
       hasUncommittedChanges: false,
       delivery: 'delivered',
       pullRequest: PULL_REQUEST,
