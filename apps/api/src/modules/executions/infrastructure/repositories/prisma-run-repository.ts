@@ -653,8 +653,11 @@ export class PrismaRunRepository implements RunRepository {
           AND session_ref IS NOT NULL AND run_branch IS NOT NULL
           AND cancel_requested_at IS NULL
           -- A supplied Environment file's snapshot must still be there: the resumed step's log
-          -- is redacted with it (Issue #104). Past the retention period it is gone.
-          AND (NOT environment_file_supplied OR environment_file_secret_id IS NOT NULL)
+          -- is redacted with it (Issue #104). Past the retention period it is gone. A Run in a
+          -- Follow-up works without it already (Issue #141, coordinator decision 5), so its
+          -- usage-limit resume does not need it either.
+          AND (NOT environment_file_supplied OR environment_file_secret_id IS NOT NULL
+               OR follow_up_count > 0)
         FOR UPDATE`;
     if (!run) return { status: 'not_resumable' };
     // Places held as for a claim: an active state, a failed Run held for a delivery retry, or

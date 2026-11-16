@@ -247,7 +247,8 @@ export interface RunRepository {
   /**
    * Resumes a Run stopped at the usage limit (Issue #105), in one transaction: if it is still
    * `failed` with `usage_limit`, a session reference, a Working copy, no cancel request and,
-   * when it was given an Environment file, still its snapshot (the resumed step's redaction),
+   * when it was given an Environment file, still its snapshot (the resumed step's redaction;
+   * not needed in a Follow-up, Issue #141, which works without it already),
    * `text` is stored as the operator's answer and the Run goes back to `queued` (failure and
    * finish time cleared), to be resumed like an answered Run by the worker that started it.
    * A queued Run with a session reference holds its project's place and one of the server's

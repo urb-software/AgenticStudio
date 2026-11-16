@@ -382,7 +382,7 @@ export class InMemoryRunRepository implements RunRepository {
     if (
       !run ||
       !canResumeAfterUsageLimit(run) ||
-      (run.environmentFileSupplied && run.environmentFileSecret === null)
+      (run.environmentFileSupplied && run.environmentFileSecret === null && run.followUpCount === 0)
     ) {
       return Promise.resolve({ status: 'not_resumable' });
     }
