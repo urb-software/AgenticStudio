@@ -104,9 +104,10 @@ export const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000b2';
 /**
  * A fake of the executions operator API behind `fetch` (`GET|POST /api/projects/:id/runs`,
  * `GET /api/runs`, `GET /api/runs/summary`, `GET /api/runs/:runId`, `GET /api/providers`, and
- * `GET /api/projects(/:id)` for project names), so the generated client, the wrapper and TanStack Query run for real. `runs` is the server's
- * state, newest first; tests change a Run's state (as the agent worker would) and script error
- * responses. It keeps the contract (201 with a `queued` Run) without the API's rules.
+ * `GET /api/projects(/:id)` for project names), so the generated client, the wrapper and
+ * TanStack Query run for real. `runs` is the server's state, newest first; tests change a Run's
+ * state (as the agent worker would) and script error responses. It keeps the contract (201 with
+ * a `queued` Run) without the API's rules.
  */
 export function fakeRunsApi(initial: RunOutput[] = []) {
   const runs = [...initial];

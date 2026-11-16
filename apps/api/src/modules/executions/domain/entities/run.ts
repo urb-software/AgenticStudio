@@ -297,7 +297,6 @@ export class RunAlreadyFinishedError extends Error {
   }
 }
 
-/** The cancellation recorded when the operator cancels a Run (Issue #100). */
 /**
  * The cancellation recorded when the operator's cancel arrived during the delivery, after the
  * Run branch was pushed but before a pull request was opened (review of #124).
@@ -308,6 +307,7 @@ export const OPERATOR_CANCELLATION_BRANCH_PUSHED: RunCancellation = {
     'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
 };
 
+/** The cancellation recorded when the operator cancels a Run (Issue #100). */
 export const OPERATOR_CANCELLATION: RunCancellation = {
   by: 'operator',
   reason: 'Cancelled by the operator.',
