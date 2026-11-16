@@ -13,6 +13,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { AGENT_DEFINITION } from './agent-definition/index.js';
 import { DeliveryFailedError, type DeliveryPort } from './delivery.js';
 import { ProviderDisabledError } from './provider-gate.js';
+import type { LookupService } from './pull-request-lookups.js';
 import { type Backoff, ReportOutbox } from './report-outbox.js';
 import type { ComputedRunDiff, RunDiffPort, RunDiffReport } from './run-diff.js';
 import { RunDiffUnavailableError } from './run-diff.js';
@@ -62,6 +63,12 @@ export interface AgentWorkerOptions {
   diffs: RunDiffPort;
   /** Removes a stopped Run's containers through its Compose project (Issue #100). */
   resources: RunResources;
+  /**
+   * Answers Studio's pull request lookups (Issue #142) in a loop of its own, whatever the worker
+   * is carrying, and reads the pull request before a Follow-up starts. Without it the worker
+   * serves no lookups and starts every Follow-up.
+   */
+  lookups?: LookupService;
   /**
    * Reported to Studio before every claim and with every heartbeat (Issue #101), so Studio
    * knows which providers this worker enables. Fixed for the life of the process.
@@ -186,9 +193,9 @@ export class AgentWorker {
     return this.currentRunId;
   }
 
-  /** Starts the loop; resolves when it has stopped. */
+  /** Starts the loop (and the lookup loop, Issue #142); resolves when both have stopped. */
   run(): Promise<void> {
-    this.loop ??= this.poll();
+    this.loop ??= Promise.all([this.poll(), this.pollLookups()]).then(() => undefined);
     return this.loop;
   }
 
@@ -215,6 +222,25 @@ export class AgentWorker {
       } else {
         await this.pause(pollMs);
       }
+    }
+  }
+
+  /**
+   * Issue #142: Studio's lookups (the state of a Run's pull request) are answered independently
+   * of any Run this worker carries, so a long Run step does not hold them up. It starts no agent
+   * and changes nothing on the Git host. A failed claim is logged and tried again after the pause.
+   */
+  private async pollLookups(): Promise<void> {
+    const { lookups, logger, pollMs } = this.options;
+    if (!lookups) return;
+    while (!this.stopping) {
+      let handled = 0;
+      try {
+        handled = await lookups.serve(this.shutdown.signal);
+      } catch (error) {
+        if (!this.stopping) logger.error(`Serving lookups failed: ${describe(error)}`);
+      }
+      if (handled === 0) await this.pause(pollMs);
     }
   }
 
@@ -288,6 +314,20 @@ export class AgentWorker {
       // Issue #141: each part of the Run (the first, or one Follow-up) gets its own allowance.
       if (run.completedSteps + 1 > (run.stepsBeforePart ?? 0) + run.limits.maxSteps) {
         throw new StepLimitError(run.limits.maxSteps);
+      }
+      // Issue #142: a Follow-up to a pull request that was merged, closed or deleted meanwhile
+      // does not start the agent; the state is read right now, before anything else is done.
+      if (run.resumeReason === 'follow_up' && this.options.lookups) {
+        const state = await this.options.lookups.followUpState(run, abort.signal);
+        abort.signal.throwIfAborted();
+        if (state === 'merged' || state === 'closed' || state === 'missing') {
+          log.push(
+            stepIndex,
+            'notice',
+            `Follow-up ${run.followUpNumber} not started: the pull request is ${state === 'missing' ? 'gone' : state}`,
+          );
+          throw new PullRequestEndedError(state, run.pullRequestNumber);
+        }
       }
       // A resumed Run continues in the Working copy it kept (Issue #103).
       prepared =
@@ -788,6 +828,7 @@ function followUpEnded(run: RunPayload, stepIndex: number, log: RunLog, outcome:
 /** The failure a Run step's error is reported with. */
 function failureOf(error: unknown): RunFailure {
   if (error instanceof PreparationFailedError) return failure('preparation_failed', error.detail);
+  if (error instanceof PullRequestEndedError) return failure('preparation_failed', error.message);
   if (error instanceof ProviderDisabledError) return failure('provider_disabled', error.message);
   if (error instanceof StepLimitError) return failure('step_limit', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
@@ -809,6 +850,22 @@ function rejectOnAbort(signal: AbortSignal): Promise<never> {
     if (signal.aborted) reject(signal.reason as Error);
     else signal.addEventListener('abort', () => reject(signal.reason as Error), { once: true });
   });
+}
+
+/**
+ * The pull request a Follow-up would update is over (Issue #142): the Run ends as failed with
+ * this detail before any agent CLI starts.
+ */
+class PullRequestEndedError extends Error {
+  constructor(state: 'merged' | 'closed' | 'missing', number: number | undefined) {
+    const pull = number === undefined ? 'The pull request' : `The pull request #${number}`;
+    super(
+      state === 'missing'
+        ? `${pull} or the Run branch no longer exists on GitHub, so the Follow-up was not started. Start a new run for further changes.`
+        : `${pull} was ${state} on GitHub, so the Follow-up was not started. Start a new run for further changes.`,
+    );
+    this.name = 'PullRequestEndedError';
+  }
 }
 
 class InvalidResultError extends Error {

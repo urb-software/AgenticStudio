@@ -69,6 +69,11 @@ async function stubStudio(
         response.writeHead(200, { 'Content-Type': 'application/json' }).end('[]');
         return;
       }
+      if (path === '/api/worker/lookups/claim') {
+        // Issue #142: the worker asks for pull request lookups on its own; none is waiting.
+        response.writeHead(204).end();
+        return;
+      }
       if (path === '/api/worker/runs/claim') {
         if (claimed) {
           response.writeHead(204).end();

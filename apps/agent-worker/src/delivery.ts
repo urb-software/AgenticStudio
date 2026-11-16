@@ -22,6 +22,7 @@ import {
   type PullRequestClient,
   PullRequestFailedError,
 } from './github.js';
+import { isRunBranchOf } from './run-branch.js';
 import { composeProjectName, runDirectories } from './run-layout.js';
 import { studioPathspecs } from './studio-paths.js';
 import { onBranch, type PreparedRun, readRunFile } from './working-copy.js';
@@ -513,15 +514,6 @@ function defaultPullRequests(github: { token: string; apiUrl: string }): PullReq
 /** `x-access-token:<token>` for HTTP Basic: what GitHub accepts for Git over HTTPS. */
 function basicCredentials(token: string): string {
   return Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
-}
-
-/** `agent/<slug>-r<first 8 hex digits of the Run id>` of this Run, and not its integration branch. */
-function isRunBranchOf(branch: string, run: RunPayload): boolean {
-  const id8 = run.runId.toLowerCase().slice(0, 8);
-  return (
-    new RegExp(`^agent/[a-z0-9]+(?:-[a-z0-9]+)*-r${id8}$`).test(branch) &&
-    branch !== run.integrationBranch
-  );
 }
 
 function firstLine(text: string): string {

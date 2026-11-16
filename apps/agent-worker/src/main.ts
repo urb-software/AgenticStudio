@@ -11,6 +11,7 @@ import { RETENTION_INTERVAL_MS, Retention } from './retention.js';
 import { RunDiffs } from './run-diff.js';
 import { DockerRunResources } from './run-resources.js';
 import { ProviderGate } from './provider-gate.js';
+import { PullRequestLookups } from './pull-request-lookups.js';
 import { RunnerDispatcher } from './runner-dispatcher.js';
 import { StudioApi } from './studio-api.js';
 import { AgentWorker, type WorkerLogger } from './worker.js';
@@ -136,6 +137,13 @@ const worker = new AgentWorker({
     agentGitEmail: config.agentGitEmail,
     allowFileRemotes: config.environment !== 'production',
     github: config.agentGitHub,
+    logger,
+  }),
+  // Issue #142: the state of a Run's pull request, read through the Agent account (reads only).
+  lookups: new PullRequestLookups({
+    api,
+    github: config.agentGitHub,
+    allowFileRemotes: config.environment !== 'production',
     logger,
   }),
   // Issue #144: the Run's diffs, within the configured limits.

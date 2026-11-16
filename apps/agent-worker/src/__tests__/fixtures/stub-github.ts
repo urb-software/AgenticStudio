@@ -13,6 +13,14 @@ export interface StubPullRequest {
   /** Issue #141: `closed` (and `merged`) leaves it out of the open pull requests of its branch. */
   state?: 'open' | 'closed';
   merged?: boolean;
+  /** Issue #142: a draft pull request (default: not a draft). */
+  draft?: boolean;
+  /** Issue #142: GitHub's merge verdict (default `null`: not worked out yet). */
+  mergeable?: boolean | null;
+  /** Issue #142: who opened it (default: the stub's Agent account). */
+  author?: string;
+  /** Issue #142: `owner/repo` of the head branch (default: the pull request's own repository). */
+  headRepository?: string | null;
   title?: string;
   body?: string;
 }
@@ -38,6 +46,17 @@ export interface StubGitHub {
   failCreate: number | undefined;
   /** When set, updating a pull request answers this status (once per value set; Issue #141). */
   failUpdate: number | undefined;
+  /** Issue #142: the login of the Agent account (`GET /user`). */
+  viewer: string;
+  /** Issue #142: what `GET /compare/...` answers (default: 0 behind, 1 ahead). */
+  position: { behindBy: number; aheadBy: number };
+  /** Issue #142: head branches that no longer exist (compare answers 404). */
+  missingBranches: string[];
+  /**
+   * Issue #142: when set, the next read (`GET`) is refused with this status and these headers,
+   * once (a rate limit, or any refusal).
+   */
+  refuseNextRead: { status: number; headers?: Record<string, string> } | undefined;
   /** The `html_url` of a pull request (default: its github.com URL). */
   htmlUrl: (pr: StubPullRequest) => string;
   close(): Promise<void>;
@@ -57,6 +76,10 @@ export async function startStubGitHub(): Promise<StubGitHub> {
     updated: [],
     failCreate: undefined,
     failUpdate: undefined,
+    viewer: 'agent-bot',
+    position: { behindBy: 0, aheadBy: 1 },
+    missingBranches: [],
+    refuseNextRead: undefined,
     htmlUrl: (pr) => `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.number}`,
   };
   const view = (pr: StubPullRequest) => ({ number: pr.number, html_url: stub.htmlUrl(pr) });
@@ -70,10 +93,23 @@ export async function startStubGitHub(): Promise<StubGitHub> {
         authorization: request.headers.authorization,
       });
       const match = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(url.pathname);
-      const send = (status: number, body: unknown) => {
-        response.writeHead(status, { 'Content-Type': 'application/json' });
+      const send = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+        response.writeHead(status, { 'Content-Type': 'application/json', ...headers });
         response.end(JSON.stringify(body));
       };
+      if (request.method === 'GET' && stub.refuseNextRead) {
+        const refusal = stub.refuseNextRead;
+        stub.refuseNextRead = undefined;
+        return send(refusal.status, { message: 'Refused by the stub' }, refusal.headers);
+      }
+      // Issue #142: the Agent account itself, and a branch's position against the base.
+      if (url.pathname === '/user') return send(200, { login: stub.viewer });
+      const compare = /^\/repos\/([^/]+)\/([^/]+)\/compare\/(.+)\.\.\.(.+)$/.exec(url.pathname);
+      if (compare) {
+        const head = decodeURIComponent(compare[4] as string);
+        if (stub.missingBranches.includes(head)) return send(404, { message: 'Not Found' });
+        return send(200, { ahead_by: stub.position.aheadBy, behind_by: stub.position.behindBy });
+      }
       // Issue #141: one pull request by number: read it (GET) or change its title and body.
       const single = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(url.pathname);
       if (single) {
@@ -89,6 +125,16 @@ export async function startStubGitHub(): Promise<StubGitHub> {
           ...view(pr),
           state: pr.state ?? 'open',
           merged: pr.merged ?? false,
+          draft: pr.draft ?? false,
+          mergeable: pr.mergeable ?? null,
+          head: {
+            ref: pr.head,
+            repo:
+              pr.headRepository === null
+                ? null
+                : { full_name: pr.headRepository ?? `${pr.owner}/${pr.repo}` },
+          },
+          user: { login: pr.author ?? stub.viewer },
           title: pr.title ?? '',
           body: pr.body ?? '',
         });
