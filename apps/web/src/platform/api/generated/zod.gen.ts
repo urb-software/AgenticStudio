@@ -139,7 +139,8 @@ export const zRunFollowUpEligibilityOutput = z.object({
         'step_total_reached',
         'provider_unavailable',
         'worker_unavailable'
-    ]).optional()
+    ]).optional(),
+    openUntil: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional()
 });
 
 export const zRunPullRequestOutput = z.object({
@@ -382,6 +383,21 @@ export const zProviderAvailabilityOutput = z.object({
 
 export const zProviderListOutput = z.array(zProviderAvailabilityOutput);
 
+export const zAgentWorkerDiskOutput = z.object({
+    workingCopiesBytes: z.int().gte(0).lte(9007199254740991),
+    cachesBytes: z.int().gte(0).lte(9007199254740991),
+    keptRuns: z.int().gte(0).lte(9007199254740991),
+    freeBytes: z.int().gte(0).lte(9007199254740991),
+    totalBytes: z.int().gte(0).lte(9007199254740991),
+    minFreeBytes: z.int().gte(0).lte(9007199254740991),
+    low: z.boolean()
+});
+
+export const zAgentWorkerOutput = z.object({
+    connected: z.boolean(),
+    disk: zAgentWorkerDiskOutput.optional()
+});
+
 export const zProblemDetails = z.object({
     type: z.string(),
     title: z.string(),
@@ -604,3 +620,5 @@ export const zGetRunDiffFileQuery = z.object({
 export const zGetRunDiffFileResponse = zRunDiffFileOutput;
 
 export const zListProvidersResponse = zProviderListOutput;
+
+export const zGetAgentWorkerResponse = zAgentWorkerOutput;
