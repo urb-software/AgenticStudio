@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import type {
   PreparedFollowUpOutput,
+  ReviewCommentsOutput,
   AgentWorkerOutput,
   ProblemDetails,
   ProjectOutput,
@@ -34,6 +35,8 @@ type Route =
   | 'prepare'
   | 'prepared'
   | 'discardPrepared'
+  | 'loadComments'
+  | 'comments'
   | 'diff'
   | 'diffFile';
 
@@ -62,6 +65,8 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
     /^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepared$/,
     (method) => (method === 'DELETE' ? 'discardPrepared' : 'prepared'),
   ],
+  [/^\/api\/runs\/([^/]+)\/pull-request\/review-comments\/load$/, () => 'loadComments'],
+  [/^\/api\/runs\/([^/]+)\/pull-request\/review-comments$/, () => 'comments'],
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
   [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
   [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
@@ -160,6 +165,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     prepare: [],
     prepared: [],
     discardPrepared: [],
+    loadComments: [],
+    comments: [],
     events: [],
     steps: [],
     stream: [],
@@ -175,6 +182,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
   const streams: FakeStream[] = [];
   /** Each Run's prepared Follow-up of its failing checks (Issue #145). */
   const prepared = new Map<string, PreparedFollowUpOutput>();
+  /** Each Run's loaded Review comments (Issue #146); a load only marks the set as loading. */
+  const reviewComments = new Map<string, ReviewCommentsOutput>();
   /** Each Run's stored diffs by scope (Issue #144). */
   const diffs = new Map<string, Partial<Record<RunDiffOutput['scope'], FakeDiff>>>();
 
@@ -233,7 +242,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const route = routeOf(request.method);
     const id = match![1];
     const body: unknown =
-      route === 'start' || route === 'answer' || route === 'followUp'
+      route === 'start' || route === 'answer' || route === 'followUp' || route === 'loadComments'
         ? await request.json()
         : route === 'refresh'
           ? ((await request.json().catch(() => undefined)) as unknown)
@@ -333,8 +342,16 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
             problem(409, 'Follow-up not possible', 'The run cannot take a Follow-up now.'),
           );
         }
-        const { text, source } = body as { text: string; source?: 'pull_request_checks' };
+        const { text, source, reviewCommentIds } = body as {
+          text: string;
+          source?: 'pull_request_checks' | 'review_comments';
+          reviewCommentIds?: string[];
+        };
         prepared.delete(run.id);
+        const chosen = (reviewComments.get(run.id)?.comments ?? []).filter((comment) =>
+          reviewCommentIds?.includes(comment.id),
+        );
+        if (source === 'review_comments') reviewComments.delete(run.id);
         const { failure: _failure, finishedAt: _finishedAt, delivery: _delivery, ...rest } = run;
         void _failure;
         void _finishedAt;
@@ -352,6 +369,12 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
               kind: 'follow_up',
               text,
               ...(source ? { source } : {}),
+              ...(source === 'review_comments'
+                ? {
+                    sourceCount: chosen.length,
+                    sourceAuthors: [...new Set(chosen.map((comment) => comment.author))],
+                  }
+                : {}),
               at: new Date().toISOString(),
             },
           ],
@@ -376,6 +399,29 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         if (!run) return json(404, problem(404, 'Run not found'));
         if (!run.pullRequest) return json(409, problem(409, 'No pull request to read'));
         return json(202, run);
+      }
+      case 'loadComments': {
+        // Issue #146: the API only records a request; the set comes back marked as loading. Tests
+        // move it on with `setReviewComments`, as the agent worker's answer would.
+        const run = runs.find((candidate) => candidate.id === id);
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (!run.pullRequest) return json(409, problem(409, 'No pull request to read'));
+        const current = reviewComments.get(id!) ?? {
+          comments: [],
+          truncated: false,
+          loading: false,
+        };
+        const loading = { ...current, loading: true };
+        reviewComments.set(id!, loading);
+        return json(202, loading);
+      }
+      case 'comments': {
+        const run = runs.find((candidate) => candidate.id === id);
+        if (!run) return json(404, problem(404, 'Run not found'));
+        return json(
+          200,
+          reviewComments.get(id!) ?? { comments: [], truncated: false, loading: false },
+        );
       }
       case 'prepared': {
         const draft = prepared.get(id!);
@@ -489,6 +535,12 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     setPrepared(runId: string, draft: PreparedFollowUpOutput) {
       prepared.set(runId, draft);
     },
+    /** Sets a Run's loaded Review comments, as the server would answer them (Issue #146). */
+    setReviewComments(runId: string, set: ReviewCommentsOutput) {
+      reviewComments.set(runId, set);
+    },
+    /** The Run's loaded Review comments on the server, if any. */
+    reviewComments: (runId: string) => reviewComments.get(runId),
     /** Whether the Run still has a prepared Follow-up on the server. */
     hasPrepared: (runId: string) => prepared.has(runId),
     /** Sets what the agent worker's status answers (Issue #143). */

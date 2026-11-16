@@ -5,6 +5,7 @@ import {
   type AnswerRunRequest,
   api,
   type FollowUpRunRequest,
+  type LoadReviewCommentsRequest,
   ApiError,
   type RefreshPullRequestRequest,
   type RunDiffOutput,
@@ -244,6 +245,8 @@ export function useFollowUpRun(runId: string) {
       queryClient.setQueryData(runKey(run.id), run);
       // Issue #145: a sent Follow-up removes the prepared one.
       queryClient.removeQueries({ queryKey: preparedFollowUpKey(run.id) });
+      // Issue #146: and the loaded Review comments it was prepared from.
+      queryClient.removeQueries({ queryKey: reviewCommentsKey(run.id) });
       await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
     },
     onError: async (error: unknown) => {
@@ -266,6 +269,46 @@ export function useRefreshPullRequest(runId: string) {
     mutationFn: (request?: RefreshPullRequestRequest) => api.refreshRunPullRequest(runId, request),
     onSuccess: (run: RunOutput) => {
       queryClient.setQueryData(runKey(run.id), run);
+    },
+  });
+}
+
+/** The Review comments loaded for the Run (Issue #146). */
+const reviewCommentsKey = (runId: string) => ['review-comments', runId] as const;
+
+/**
+ * The Run's loaded Review comments and the state of the latest load (Issue #146). Followed every
+ * two seconds while a load is under way (and the tab is visible); otherwise read when the page
+ * opens or gets focus, which never changes what the operator is looking at: the page keys its
+ * selection to the load it belongs to.
+ */
+export function useReviewComments(runId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: reviewCommentsKey(runId),
+    queryFn: () => api.getRunReviewComments(runId),
+    enabled,
+    refetchInterval: (query) => (query.state.data?.loading ? ACTIVE_POLL_MS : false),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * "Load review comments" (Issue #146): asks the agent worker to read the pull request's comments.
+ * The 202 answer (the set as it is now, marked as loading) replaces the cached one, so the page
+ * follows the load. Nothing is sent to an agent.
+ */
+export function useLoadReviewComments(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: LoadReviewCommentsRequest) => api.loadRunReviewComments(runId, request),
+    onSuccess: (comments) => {
+      queryClient.setQueryData(reviewCommentsKey(runId), comments);
+    },
+    // The Run changed (its pull request is gone): read it at once, so the page says so.
+    onError: async (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: runKey(runId) });
+      }
     },
   });
 }

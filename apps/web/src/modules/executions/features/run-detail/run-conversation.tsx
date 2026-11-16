@@ -28,6 +28,17 @@ const KIND_LABEL: Record<RunMessageOutput['kind'], string> = {
   part_end: 'Part ended',
 };
 
+/** "3 comments by octocat and stranger": how many Review comments a Follow-up came from, and whose. */
+function reviewCommentsWords(message: RunMessageOutput): string {
+  const count = message.sourceCount ?? 0;
+  const authors = message.sourceAuthors ?? [];
+  const by =
+    authors.length <= 1
+      ? (authors[0] ?? 'unknown')
+      : `${authors.slice(0, -1).join(', ')} and ${authors.at(-1)}`;
+  return `${count} ${count === 1 ? 'comment' : 'comments'} by ${by}`;
+}
+
 const ROLE_LABEL: Record<RunMessageOutput['role'], string> = {
   operator: 'You',
   agent: 'Agent',
@@ -244,10 +255,12 @@ export function RunConversation({
           key={`${i}-${message.kind}`}
           message={message}
           label={
-            // Issue #145: where a prepared Follow-up came from.
+            // Issues #145 and #146: where a prepared Follow-up came from.
             message.source === 'pull_request_checks'
               ? `You · Follow-up ${followUps} · prepared from Pull request checks`
-              : `You · Follow-up ${followUps}`
+              : message.source === 'review_comments'
+                ? `You · Follow-up ${followUps} · prepared from Review comments (${reviewCommentsWords(message)})`
+                : `You · Follow-up ${followUps}`
           }
         />,
       );

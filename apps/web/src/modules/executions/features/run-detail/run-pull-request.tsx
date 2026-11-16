@@ -13,6 +13,7 @@ import { failedRequest } from '../../components/failed-request';
 import { isGitHubPullRequestUrl } from '../../components/github-links';
 import { PULL_REQUEST_STATE_VIEW, summarizeChecks } from '../../components/run-presentation';
 import { RunFailingChecks } from './run-failing-checks';
+import { RunReviewComments } from './run-review-comments';
 import { RunPullRequestChecks } from './run-pull-request-checks';
 
 /** While a check is queued or running, the page reads the checks again this often (Issue #145). */
@@ -98,7 +99,8 @@ function Refreshed({ iso }: { iso: string | undefined }) {
  * also lists the Pull request checks of the pull request's latest commit and offers to send the
  * failing ones to the agent; while any check is queued or running and the page is visible, it
  * refreshes them every 30 seconds (its own floor, apart from the once-a-minute limit of the
- * on-open request).
+ * on-open request). Issue #146: it also offers to load the pull request's Review comments as
+ * input for a Follow-up while the Run can take one.
  */
 export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullRequest: PullRequest }) {
   const titleId = useId();
@@ -209,6 +211,7 @@ export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullReque
         ) : null}
         <RunPullRequestChecks pullRequest={pullRequest} />
         <RunFailingChecks run={run} pullRequest={pullRequest} />
+        <RunReviewComments run={run} />
       </CardContent>
     </Card>
   );
