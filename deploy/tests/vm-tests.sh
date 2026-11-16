@@ -2,7 +2,7 @@
 # The whole setup on a throwaway Ubuntu 24.04 VM with systemd and cgroup v2 (CI job
 # deploy:server, on the GitHub runner, which is discarded afterwards). Never run it on a machine
 # you keep: it installs packages, creates the agent user and changes the firewall.
-#   sudo bash deploy/tests/vm-tests.sh
+#   sudo DEPLOY_VM_TESTS=yes bash deploy/tests/vm-tests.sh
 # Runs the setup twice (the second run must change nothing), starts Studio's PostgreSQL and
 # Redis from the server Compose file, then runs the boundary checks as the agent user. The API
 # group is skipped: Studio has no production images yet (the container tests cover the API checks
@@ -18,7 +18,7 @@ SETUP="$REPO/deploy/setup-server.sh"
   echo "run as root on a throwaway VM" >&2
   exit 2
 }
-[ -n "${GITHUB_ACTIONS:-}" ] || [ "${DEPLOY_VM_TESTS:-}" = yes ] || {
+[ "${DEPLOY_VM_TESTS:-}" = yes ] || {
   echo "refusing: set DEPLOY_VM_TESTS=yes to confirm this is a throwaway VM" >&2
   exit 2
 }

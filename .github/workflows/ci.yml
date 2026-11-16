@@ -301,7 +301,7 @@ jobs:
       # root, then the boundary checks run as the agent user (API checks skipped: no Studio
       # images yet). The VM is discarded after the job.
       - name: Full setup twice and boundary checks on the runner VM
-        run: sudo bash deploy/tests/vm-tests.sh
+        run: sudo DEPLOY_VM_TESTS=yes bash deploy/tests/vm-tests.sh
 
   ci-required:
     name: ci:required
