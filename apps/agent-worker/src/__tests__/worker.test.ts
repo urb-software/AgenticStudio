@@ -7,9 +7,15 @@ import type {
 } from '@agentic-studio/contracts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  type BranchUpdatePort,
+  type BranchUpdateStart,
+  MergeIncompleteError,
+} from '../branch-update.js';
 import { DeliveryFailedError, type DeliveryPort } from '../delivery.js';
 import { FakeRunner, fakeSessionRef } from '../fake-runner.js';
 import {
+  AgentFailedError,
   type ResumeRunStepInput,
   type Runner,
   type RunStep,
@@ -202,6 +208,32 @@ class FakeRunDiffs implements RunDiffPort {
 }
 
 /** Issue #142: a fake of the lookups: what the pull request state is, and how often it was served. */
+/** Issue #147: a recording fake of the branch update (the real one: branch-update.linux.test.ts). */
+class FakeBranchUpdates implements BranchUpdatePort {
+  readonly calls: string[] = [];
+  /** What starting the update finds. */
+  start_: BranchUpdateStart = { outcome: 'merged', commit: 'd'.repeat(40) };
+  /** Thrown by starting the update (a fetch that failed). */
+  startFailure: Error | undefined;
+  /** What completing an open merge returns; `null`: no merge was open. */
+  completion: { mergedCommit: string } | null = null;
+  completeFailure: Error | undefined;
+  async start(prepared: PreparedRun): Promise<BranchUpdateStart> {
+    this.calls.push(`start ${prepared.runId}`);
+    if (this.startFailure) throw this.startFailure;
+    return this.start_;
+  }
+  async complete(prepared: PreparedRun) {
+    this.calls.push(`complete ${prepared.runId}`);
+    if (this.completeFailure) throw this.completeFailure;
+    return this.completion;
+  }
+  async abort(prepared: PreparedRun) {
+    this.calls.push(`abort ${prepared.runId}`);
+    return true;
+  }
+}
+
 class FakeLookups implements LookupService {
   served = 0;
   readonly asked: string[] = [];
@@ -350,6 +382,7 @@ interface Extras {
   gate?: { assertEnabled(provider: string): void };
   diffs?: RunDiffPort;
   lookups?: LookupService;
+  branchUpdates?: BranchUpdatePort;
 }
 
 function startWorker(
@@ -372,6 +405,7 @@ function startWorker(
     workingCopies,
     resources: extras.resources ?? new FakeResources(),
     deliveries,
+    branchUpdates: extras.branchUpdates ?? new FakeBranchUpdates(),
     diffs: extras.diffs ?? new FakeRunDiffs(),
     ...(extras.lookups ? { lookups: extras.lookups } : {}),
     pollMs: 5,
@@ -1636,6 +1670,273 @@ describe('AgentWorker', () => {
         failure: { code: 'step_limit' },
       });
       expect(workingCopies.located).toEqual([]);
+    });
+
+    // Issue #147: a request to bring the Run branch up to date merges the integration branch first.
+    describe('bringing the branch up to date (Issue #147)', () => {
+      const bringUpPayload = (note: string, overrides: Partial<RunPayload> = {}): RunPayload => ({
+        ...resumePayload('Add a feature', 3),
+        answer: note,
+        resumeReason: 'bring_up_to_date',
+        followUpNumber: 2,
+        bringUpToDate: true,
+        stepsBeforePart: 3,
+        pullRequestNumber: 7,
+        ...overrides,
+      });
+      const MERGED = 'd'.repeat(40);
+      const notices = (api: RecordingApi) =>
+        api
+          .events()
+          .filter((event) => event.kind === 'notice')
+          .map((event) => event.text);
+      const stateReports = (api: RecordingApi) =>
+        api
+          .reports()
+          .filter((report) => report[0] === 'state')
+          .map((report) => report[2]);
+
+      class Recorder implements Runner {
+        readonly resumed: ResumeRunStepInput[] = [];
+        // eslint-disable-next-line require-yield
+        async *start(): RunStep {
+          throw new Error('not used');
+        }
+        async *resume(input: ResumeRunStepInput): RunStep {
+          this.resumed.push(input);
+          yield { type: 'message', text: 'resumed' };
+          return { outcome: 'done', summary: 'Checked.' };
+        }
+      }
+
+      it("merges first, then resumes the agent with the worker's instruction and the note", async () => {
+        const run = bringUpPayload('Keep our config.');
+        const api = new RecordingApi([run]);
+        const runner = new Recorder();
+        const updates = new FakeBranchUpdates();
+        const deliveries = new FakeDeliveries();
+        startWorker(api, runner, undefined, deliveries, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(runner.resumed[0]).toMatchObject({ reason: 'bring_up_to_date' });
+        const told = runner.resumed[0]?.answer ?? '';
+        expect(told).toContain('nothing conflicted');
+        expect(told).toContain("The operator's note:\n\nKeep our config.");
+        expect(told).toContain('`dev` (commit ddddddd)');
+        expect(updates.calls).toEqual([`start ${run.runId}`, `complete ${run.runId}`]);
+        // The merged commit is on the running report; the result goes to the same pull request.
+        expect(stateReports(api)[0]).toEqual({ state: 'running', mergedCommit: MERGED });
+        expect(stateReports(api)[1]).toMatchObject({
+          state: 'succeeded',
+          delivery: expect.objectContaining({ outcome: 'delivered' }),
+          mergedCommit: MERGED,
+        });
+        expect(deliveries.calls.map((call) => call[0])).toEqual(['commit', 'deliver']);
+        expect(notices(api)).toEqual([
+          'Follow-up 2 started: bring the branch up to date with dev',
+          'Merged dev (commit ddddddd) without conflicts',
+          'Follow-up 2 ended: done',
+        ]);
+      });
+
+      it('leaves the default text out of the instruction when there is no note', async () => {
+        const run = bringUpPayload('Bring the Run branch up to date.');
+        const api = new RecordingApi([run]);
+        const runner = new Recorder();
+        startWorker(api, runner);
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(runner.resumed[0]?.answer).not.toContain("operator's note");
+      });
+
+      it('lists the conflicted files for the agent and completes the merge the agent left open', async () => {
+        const run = bringUpPayload('Prefer theirs.');
+        const api = new RecordingApi([run]);
+        const runner = new Recorder();
+        const updates = new FakeBranchUpdates();
+        updates.start_ = {
+          outcome: 'conflicts',
+          commit: MERGED,
+          files: ['src/a.ts', 'README.md'],
+          moreFiles: 3,
+        };
+        updates.completion = { mergedCommit: MERGED };
+        startWorker(api, runner, undefined, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        const told = runner.resumed[0]?.answer ?? '';
+        expect(told).toContain('- src/a.ts\n- README.md\n- and 3 more');
+        expect(told).toContain("The operator's note:\n\nPrefer theirs.");
+        // No commit on the running report: the merge is not complete until the end of the part.
+        expect(stateReports(api)[0]).toEqual({ state: 'running' });
+        expect(stateReports(api)[1]).toMatchObject({ state: 'succeeded', mergedCommit: MERGED });
+        expect(updates.calls).toEqual([`start ${run.runId}`, `complete ${run.runId}`]);
+      });
+
+      it('starts no agent, pushes nothing and reports a branch that was already up to date', async () => {
+        const run = bringUpPayload('x');
+        const api = new RecordingApi([run]);
+        const runner = new Recorder();
+        const updates = new FakeBranchUpdates();
+        updates.start_ = { outcome: 'already_up_to_date', commit: MERGED };
+        const deliveries = new FakeDeliveries();
+        startWorker(api, runner, undefined, deliveries, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 1);
+
+        expect(stateReports(api)).toEqual([{ state: 'succeeded', alreadyUpToDate: true }]);
+        expect(runner.resumed).toEqual([]);
+        expect(deliveries.calls).toEqual([]);
+        expect(api.reports().some((report) => report[0] === 'step')).toBe(false);
+        expect(notices(api)).toEqual([
+          'Follow-up 2 started: bring the branch up to date with dev',
+          'The Run branch already has dev (commit ddddddd): nothing was changed',
+          'Follow-up 2 ended: already up to date',
+        ]);
+      });
+
+      it('fails as preparation_failed when the integration branch cannot be fetched, starting no agent', async () => {
+        const run = bringUpPayload('x');
+        const api = new RecordingApi([run]);
+        const runner = new Recorder();
+        const updates = new FakeBranchUpdates();
+        updates.startFailure = new PreparationFailedError(
+          'The integration branch dev could not be fetched.',
+        );
+        startWorker(api, runner, undefined, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 1);
+
+        expect(stateReports(api)[0]).toMatchObject({
+          state: 'failed',
+          failure: { code: 'preparation_failed', detail: expect.stringContaining('dev') },
+        });
+        expect(runner.resumed).toEqual([]);
+      });
+
+      it('aborts the merge and fails the Run when the agent leaves conflicts, pushing nothing', async () => {
+        const run = bringUpPayload('x');
+        const api = new RecordingApi([run]);
+        const updates = new FakeBranchUpdates();
+        updates.start_ = { outcome: 'conflicts', commit: MERGED, files: ['a.ts'], moreFiles: 0 };
+        updates.completeFailure = new MergeIncompleteError(['a.ts']);
+        const deliveries = new FakeDeliveries();
+        startWorker(api, new Recorder(), undefined, deliveries, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(updates.calls).toEqual([
+          `start ${run.runId}`,
+          `complete ${run.runId}`,
+          `abort ${run.runId}`,
+        ]);
+        expect(stateReports(api)[1]).toMatchObject({
+          state: 'failed',
+          failure: {
+            code: 'agent_failed',
+            detail: expect.stringContaining('merge conflicts (a.ts)'),
+          },
+        });
+        expect(deliveries.calls).toEqual([]);
+      });
+
+      it('aborts a merge still open when the agent fails or the step is stopped', async () => {
+        const failing = bringUpPayload('x');
+        const api = new RecordingApi([failing]);
+        const runner: Runner = {
+          // eslint-disable-next-line require-yield
+          async *start(): RunStep {
+            throw new Error('not used');
+          },
+          // eslint-disable-next-line require-yield
+          async *resume(): RunStep {
+            throw new AgentFailedError('The agent crashed.');
+          },
+        };
+        const updates = new FakeBranchUpdates();
+        startWorker(api, runner, undefined, { branchUpdates: updates });
+        await until(() => stateReports(api).length === 2);
+        expect(updates.calls).toEqual([`start ${failing.runId}`, `abort ${failing.runId}`]);
+        await worker?.stop();
+
+        const cancelled = bringUpPayload('x', { runId: payload('x', 2).runId });
+        const slow = new RecordingApi([cancelled]);
+        slow.cancelRequested = true;
+        const stopped = new FakeBranchUpdates();
+        const hanging: Runner = {
+          // eslint-disable-next-line require-yield
+          async *start(): RunStep {
+            throw new Error('not used');
+          },
+          // eslint-disable-next-line require-yield
+          async *resume(input: ResumeRunStepInput): RunStep {
+            await new Promise((_resolve, reject) =>
+              input.signal.addEventListener('abort', () => reject(input.signal.reason)),
+            );
+            return { outcome: 'done', summary: 'never' };
+          },
+        };
+        startWorker(slow, hanging, undefined, { branchUpdates: stopped });
+        await until(() =>
+          stateReports(slow).some((report) => (report as { state?: string }).state === 'cancelled'),
+        );
+        expect(stopped.calls).toContain(`abort ${cancelled.runId}`);
+      });
+
+      it('keeps the merge open when the usage limit pauses the part', async () => {
+        const run = bringUpPayload('x');
+        const api = new RecordingApi([run]);
+        const updates = new FakeBranchUpdates();
+        const limited: Runner = {
+          // eslint-disable-next-line require-yield
+          async *start(): RunStep {
+            throw new Error('not used');
+          },
+          // eslint-disable-next-line require-yield
+          async *resume(input: ResumeRunStepInput): RunStep {
+            throw new UsageLimitError('The usage limit was reached.', input.sessionRef);
+          },
+        };
+        startWorker(api, limited, undefined, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(updates.calls).toEqual([`start ${run.runId}`]);
+        expect(stateReports(api)[1]).toMatchObject({
+          state: 'failed',
+          failure: { code: 'usage_limit' },
+        });
+      });
+
+      it('completes a merge left open when a later resume inside the part ends done, without a second start', async () => {
+        const run = bringUpPayload('Option A', { resumeReason: 'answer' });
+        const api = new RecordingApi([run]);
+        const updates = new FakeBranchUpdates();
+        updates.completion = { mergedCommit: MERGED };
+        startWorker(api, new Recorder(), undefined, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(updates.calls).toEqual([`complete ${run.runId}`]);
+        expect(stateReports(api)[1]).toMatchObject({ state: 'succeeded', mergedCommit: MERGED });
+      });
+
+      it('does not touch the branch for a plain Follow-up', async () => {
+        const run = bringUpPayload('More', {
+          resumeReason: 'follow_up',
+          bringUpToDate: undefined,
+        });
+        const api = new RecordingApi([run]);
+        const updates = new FakeBranchUpdates();
+        startWorker(api, new Recorder(), undefined, { branchUpdates: updates });
+
+        await until(() => stateReports(api).length === 2);
+
+        expect(updates.calls).toEqual([]);
+      });
     });
 
     // Issue #141: a Follow-up continues the session of a finished Run as a new part of it.

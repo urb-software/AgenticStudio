@@ -418,6 +418,28 @@ export class WorkingCopies implements WorkingCopyPort {
     }
   }
 
+  /**
+   * Brings the Project's cache up to date with its remote (Issue #147) and returns its path: the
+   * one place the worker fetches from the network. The same rules as at a Run's start: only an
+   * https or SSH remote (a development or test worker also takes a local one), a cache of another
+   * remote is rebuilt. Throws {@link PreparationFailedError} with a clear detail.
+   */
+  async refreshProjectCache(run: RunPayload, signal: AbortSignal): Promise<string> {
+    const remoteUrl = run.repository.remoteUrl;
+    if (remoteUrl.startsWith('-')) {
+      throw new PreparationFailedError("The Project's remote URL is not valid.");
+    }
+    if (!this.options.allowFileRemotes && !NETWORK_REMOTE.test(remoteUrl)) {
+      throw new PreparationFailedError(
+        "The Project's remote is a local path; only a development or test agent worker accepts one.",
+      );
+    }
+    const cacheDir = cacheDirectory(this.options.dataDir, run.projectId);
+    await assertRealDirectory(cachesDirectory(this.options.dataDir), true);
+    await this.refreshCache(cacheDir, remoteUrl, signal);
+    return cacheDir;
+  }
+
   /** Transports for talking to the Project's remote. */
   private get remoteTransports(): readonly GitTransport[] {
     return this.options.allowFileRemotes ? WORKER_GIT_TRANSPORTS : REMOTE_GIT_TRANSPORTS;

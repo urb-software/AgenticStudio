@@ -1,4 +1,5 @@
 import {
+  BRING_UP_TO_DATE_DEFAULT_TEXT,
   FAILURE_DETAIL_MAX_LENGTH,
   type Provider,
   type RunFailure,
@@ -11,6 +12,11 @@ import {
 import { posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AGENT_DEFINITION } from './agent-definition/index.js';
+import {
+  type BranchUpdatePort,
+  bringUpToDateInstruction,
+  MergeIncompleteError,
+} from './branch-update.js';
 import { DeliveryFailedError, type DeliveryPort } from './delivery.js';
 import { ProviderDisabledError } from './provider-gate.js';
 import type { LookupService } from './pull-request-lookups.js';
@@ -59,6 +65,8 @@ export interface AgentWorkerOptions {
   workingCopies: WorkingCopyPort;
   /** Commits, pushes and opens the draft pull request of a `done` Run (Issue #102). */
   deliveries: DeliveryPort;
+  /** Merges the integration branch into a Run branch when the operator asks (Issue #147). */
+  branchUpdates: BranchUpdatePort;
   /** Computes the Run's diffs after every Run step that reports a result (Issue #144). */
   diffs: RunDiffPort;
   /** Removes a stopped Run's containers through its Compose project (Issue #100). */
@@ -269,6 +277,12 @@ export class AgentWorker {
     let processes: StepProcessGroups | undefined;
     /** Whether the end of the Follow-up the Run works on was logged already (Issue #141). */
     let followUpMarked = false;
+    /** Issue #147: the integration branch commit the Run branch has merged, once it is known. */
+    let mergedCommit: string | undefined;
+    /** Issue #147: the commit whose merge stopped on conflicts in this claim, until it is done. */
+    let conflictedCommit: string | undefined;
+    /** Issue #147: what the agent is told after the merge started, in place of the note. */
+    let instruction: string | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
     // The Run's events go to Studio as they happen (Issue #99); a resumed Run's and a delivery
     // retry's continue after the seqs Studio stored (Issue #103).
@@ -317,7 +331,10 @@ export class AgentWorker {
       }
       // Issue #142: a Follow-up to a pull request that was merged, closed or deleted meanwhile
       // does not start the agent; the state is read right now, before anything else is done.
-      if (run.resumeReason === 'follow_up' && this.options.lookups) {
+      if (
+        (run.resumeReason === 'follow_up' || run.resumeReason === 'bring_up_to_date') &&
+        this.options.lookups
+      ) {
         const state = await this.options.lookups.followUpState(run, abort.signal);
         abort.signal.throwIfAborted();
         if (isEndedPullRequest(state)) {
@@ -335,13 +352,67 @@ export class AgentWorker {
           ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
-      if (run.resumeReason === 'follow_up') {
+      if (run.resumeReason === 'bring_up_to_date') {
+        log.push(
+          stepIndex,
+          'notice',
+          `Follow-up ${run.followUpNumber} started: bring the branch up to date with ${run.integrationBranch}`,
+        );
+        const update = await this.options.branchUpdates.start(prepared, run, abort.signal);
+        abort.signal.throwIfAborted();
+        if (update.outcome === 'already_up_to_date') {
+          // Nothing to merge: no agent starts, nothing is pushed, the Run returns to its earlier
+          // result (Issue #147).
+          log.push(
+            stepIndex,
+            'notice',
+            `The Run branch already has ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}): nothing was changed`,
+          );
+          followUpEnded(run, stepIndex, log, 'already up to date');
+          followUpMarked = true;
+          await this.closeLog(log);
+          abort.signal.throwIfAborted();
+          outbox.send('up_to_date', (signal) =>
+            api.reportState(run.runId, { state: 'succeeded', alreadyUpToDate: true }, signal),
+          );
+          await outbox.drain();
+          if (outbox.lost) logger.error(`Run ${run.runId} is no longer held by this worker.`);
+          else logger.info(`Run ${run.runId} reported: already up to date.`);
+          return;
+        }
+        if (update.outcome === 'merged') {
+          mergedCommit = update.commit;
+          log.push(
+            stepIndex,
+            'notice',
+            `Merged ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}) without conflicts`,
+          );
+        } else {
+          conflictedCommit = update.commit;
+          log.push(
+            stepIndex,
+            'notice',
+            `Merging ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}) conflicts in ${update.files.length + update.moreFiles} file(s)`,
+          );
+        }
+        instruction = bringUpToDateInstruction({
+          integrationBranch: run.integrationBranch,
+          start: update,
+          note: run.answer === BRING_UP_TO_DATE_DEFAULT_TEXT ? '' : (run.answer ?? ''),
+        });
+      } else if (run.resumeReason === 'follow_up') {
         log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} started`);
       } else if (run.resumeReason === 'usage_limit' && run.followUpNumber !== undefined) {
         // Review S7 of #150: the Follow-up the usage limit paused goes on.
         log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} resumed`);
       }
-      outbox.send('running', (signal) => api.reportState(run.runId, { state: 'running' }, signal));
+      outbox.send('running', (signal) =>
+        api.reportState(
+          run.runId,
+          { state: 'running', ...(mergedCommit === undefined ? {} : { mergedCommit }) },
+          signal,
+        ),
+      );
       processes = this.processesFor(prepared);
       const limit = setTimeout(
         () => {
@@ -353,11 +424,33 @@ export class AgentWorker {
       );
       let result: RunStepResult;
       try {
-        result = await this.executeStep(run, stepIndex, prepared, processes, abort.signal, log);
+        result = await this.executeStep(
+          run,
+          stepIndex,
+          prepared,
+          processes,
+          abort.signal,
+          log,
+          instruction,
+        );
       } finally {
         clearTimeout(limit);
       }
       abort.signal.throwIfAborted();
+      // Issue #147: a merge the agent left open (it resolved the conflicts but could not, or did
+      // not, commit) is completed here; one it did not resolve is aborted by the error below.
+      if (result.outcome === 'done' && run.bringUpToDate === true) {
+        const completed = await this.options.branchUpdates.complete(
+          prepared,
+          run,
+          abort.signal,
+          conflictedCommit,
+        );
+        if (completed) {
+          mergedCommit = completed.mergedCommit;
+          log.push(stepIndex, 'notice', 'The merge was completed');
+        }
+      }
       if (result.outcome === 'done') {
         followUpEnded(run, stepIndex, log, 'done');
         followUpMarked = true;
@@ -424,7 +517,15 @@ export class AgentWorker {
           );
         } else {
           outbox.send('succeeded', (signal) =>
-            api.reportState(run.runId, { state: 'succeeded', delivery }, signal),
+            api.reportState(
+              run.runId,
+              {
+                state: 'succeeded',
+                delivery,
+                ...(mergedCommit === undefined ? {} : { mergedCommit }),
+              },
+              signal,
+            ),
           );
         }
       }
@@ -462,10 +563,22 @@ export class AgentWorker {
         }
       }
       if (reason !== 'lost') await this.closeLog(log);
+      // Issue #147: a merge still open when the part does not end well is aborted, so the Working
+      // copy returns to where it was; only the usage limit, which resumes the session, keeps it.
+      if (
+        run.bringUpToDate === true &&
+        prepared &&
+        !(error instanceof UsageLimitError && reason === undefined)
+      ) {
+        if (await this.options.branchUpdates.abort(prepared)) {
+          logger.info(`Run ${run.runId}: the open merge was aborted.`);
+        }
+      }
       await this.finish(run, error, reason, {
         prepared,
         stepStarted: processes !== undefined,
         outbox,
+        mergedCommit,
       });
     } finally {
       log.dispose();
@@ -601,6 +714,7 @@ export class AgentWorker {
     processes: StepProcessGroups,
     signal: AbortSignal,
     log: RunLog,
+    instruction?: string,
   ): Promise<RunStepResult> {
     const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
     // The Environment file is in the Working copy (Issue #104); its content goes to the runner
@@ -620,7 +734,8 @@ export class AgentWorker {
         ? this.options.runner.resume({
             ...input,
             sessionRef: run.sessionRef,
-            answer: run.answer,
+            // Issue #147: after a bring-up-to-date merge the agent gets the worker's instruction.
+            answer: instruction ?? run.answer,
             reason: run.resumeReason ?? 'answer',
           })
         : this.options.runner.start(input);
@@ -658,7 +773,12 @@ export class AgentWorker {
     run: RunPayload,
     error: unknown,
     reason: StopReason | undefined,
-    context: { prepared: PreparedRun | undefined; stepStarted: boolean; outbox: ReportOutbox },
+    context: {
+      prepared: PreparedRun | undefined;
+      stepStarted: boolean;
+      outbox: ReportOutbox;
+      mergedCommit?: string;
+    },
   ): Promise<void> {
     const { api, logger } = this.options;
     const { prepared, outbox } = context;
@@ -690,6 +810,10 @@ export class AgentWorker {
             // Review S2 of #150: what the delivery pushed before it failed.
             ...(error instanceof DeliveryFailedError && error.pushedCommit !== undefined
               ? { pushedCommit: error.pushedCommit }
+              : {}),
+            // Issue #147: the merge is in the Run branch even though its delivery failed.
+            ...(context.mergedCommit !== undefined && run.kind !== 'deliver'
+              ? { mergedCommit: context.mergedCommit }
               : {}),
           },
           signal,
@@ -835,6 +959,8 @@ function failureOf(error: unknown): RunFailure {
   if (error instanceof ProviderDisabledError) return failure('provider_disabled', error.message);
   if (error instanceof StepLimitError) return failure('step_limit', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
+  // Issue #147: the agent ended without resolving the conflicts; the merge was aborted.
+  if (error instanceof MergeIncompleteError) return failure('agent_failed', error.message);
   if (error instanceof UsageLimitError) return failure('usage_limit', error.message);
   if (error instanceof InvalidResultError) return INVALID_RESULT_FAILURE;
   // A refused commit of a done step (Issue #102).

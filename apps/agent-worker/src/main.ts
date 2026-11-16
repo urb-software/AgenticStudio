@@ -2,6 +2,7 @@ import { ClaudeCodeRunner, probeClaudeCode } from './claude-code/runner.js';
 import { prepareCodexHome } from './codex/codex-home.js';
 import { CodexRunner, probeCodex } from './codex/runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
+import { BranchUpdates } from './branch-update.js';
 import { Deliveries } from './delivery.js';
 import { FakeRunner } from './fake-runner.js';
 import { GitRunner } from './git.js';
@@ -110,6 +111,15 @@ const api = new StudioApi({
   timeoutMs: config.requestTimeoutMs,
 });
 const resources = new DockerRunResources(undefined, logger);
+const workingCopies = new WorkingCopies({
+  dataDir: config.dataDir,
+  git,
+  agentGitName: config.agentGitName,
+  agentGitEmail: config.agentGitEmail,
+  // A local (file) remote only for a development or test worker (coordinator decision, #98).
+  allowFileRemotes: config.environment !== 'production',
+  logger,
+});
 const worker = new AgentWorker({
   api,
   runner,
@@ -120,13 +130,14 @@ const worker = new AgentWorker({
     providers: gate.snapshot(),
     ...(Object.keys(reasons).length > 0 ? { providerReasons: { ...reasons } } : {}),
   },
-  workingCopies: new WorkingCopies({
+  workingCopies,
+  // Issue #147: the integration branch merged into a Run branch on the operator's request.
+  branchUpdates: new BranchUpdates({
     dataDir: config.dataDir,
     git,
+    workingCopies,
     agentGitName: config.agentGitName,
     agentGitEmail: config.agentGitEmail,
-    // A local (file) remote only for a development or test worker (coordinator decision, #98).
-    allowFileRemotes: config.environment !== 'production',
     logger,
   }),
   // Issue #102: the Agent account's token stays on the agent side (the worker's own .env).
