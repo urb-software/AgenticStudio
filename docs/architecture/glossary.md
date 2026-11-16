@@ -71,7 +71,7 @@ _Avoid_: Worktree, workspace, checkout
 The branch in a Working copy that holds a Run's commits.
 
 **Run limits**:
-The limits a Run gets from Studio's configuration when it starts: the longest a Run step may work, the most Run steps the Run, or a Follow-up, may take, and the longest it may wait for the operator. A Run step over its time limit ends the Run as timed out; one more Run step than allowed ends it as failed; a Run waiting too long is cancelled by Studio.
+The limits a Run gets from Studio's configuration when it starts: the longest a Run step may work, the most Run steps the Run or a Follow-up may take, the most Run steps the Run may take in total before it accepts no more Follow-ups, and the longest it may wait for the operator. A Run step over its time limit ends the Run as timed out; one more Run step than allowed ends it as failed; a Run waiting too long is cancelled by Studio.
 _Avoid_: Quota, timeout (unqualified)
 
 **Question**:
