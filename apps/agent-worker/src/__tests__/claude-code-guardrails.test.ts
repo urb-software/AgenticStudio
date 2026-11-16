@@ -42,6 +42,8 @@ describe("Studio's managed Claude Code settings", () => {
     expect(settings.allowManagedPermissionRulesOnly).toBe(true);
     expect(settings.permissions.disableBypassPermissionsMode).toBe('disable');
     expect(settings.enableAllProjectMcpServers).toBe(false);
+    // Native lock on the file tools, whatever the hook's environment (review H1 of #136).
+    expect(settings.permissions.blockWritesOutsideWorkingDirectories).toBe(true);
   });
 
   it('runs the root-owned guard script with the root-owned Node.js, by absolute paths', async () => {
@@ -54,7 +56,22 @@ describe("Studio's managed Claude Code settings", () => {
     expect(settings.hooks.PreToolUse).toEqual([
       {
         matcher: 'Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Glob|Grep',
-        hooks: [{ type: 'command', command: `/usr/local/bin/node ${guard?.path}`, timeout: 10 }],
+        hooks: [
+          {
+            type: 'command',
+            // Exec form, no shell; a cleared environment (review H1 of #136).
+            command: '/usr/bin/env',
+            args: [
+              '-i',
+              'PATH=/usr/local/bin:/usr/bin:/bin',
+              'CLAUDE_PROJECT_DIR=${CLAUDE_PROJECT_DIR}',
+              '/usr/local/bin/node',
+              guard?.path,
+            ],
+            timeout: 10,
+            onFailure: 'block',
+          },
+        ],
       },
     ]);
   });
@@ -80,11 +97,8 @@ describe("Studio's managed Claude Code settings", () => {
 });
 
 describe("Studio's PreToolUse hook", () => {
-  const env = {
-    CLAUDE_PROJECT_DIR: '/data/runs/r1/repo',
-    TMPDIR: '/data/runs/r1/tmp',
-    HOME: '/home/agent',
-  };
+  // The step's temporary directory is /data/runs/r1/tmp: beside the Working copy.
+  const env = { projectDir: '/data/runs/r1/repo', home: '/home/agent' };
   const bash = (command: string) => decide({ tool_name: 'Bash', tool_input: { command } }, env);
   const tool = (name: string, input: Record<string, unknown>) =>
     decide({ tool_name: name, tool_input: input }, env);
@@ -177,7 +191,7 @@ describe("Studio's PreToolUse hook", () => {
 describe("Studio's PreToolUse hook run by Codex (Issue #134)", () => {
   // Codex gives no CLAUDE_PROJECT_DIR: the session's working directory (the Working copy) is
   // `cwd` in the hook input. File edits are `apply_patch` with the patch as `command`.
-  const env = { TMPDIR: '/data/runs/r1/tmp', HOME: '/home/agent' };
+  const env = { home: '/home/agent' };
   const codex = (tool_name: string, command: string) =>
     decide({ tool_name, tool_input: { command }, cwd: '/data/runs/r1/repo' }, env);
   const patch = (...headers: string[]) =>

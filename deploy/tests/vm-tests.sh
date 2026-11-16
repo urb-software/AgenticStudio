@@ -251,6 +251,14 @@ out="$(bash "$SETUP" --only guardrails 2>&1)"
 expect_line "the guardrails step reinstalls it" "$out" '^\[guardrails\] changed: /etc/claude-code/managed-settings\.json'
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_GUARDRAILS[@]}" 2>&1)"
 expect_line "reinstalled -> PASS managed-guardrails" "$out" '^PASS  managed-guardrails '
+# Review L1 of #136: a drop-in the CLI would merge into the managed policy is caught.
+mkdir /etc/claude-code/managed-settings.d
+echo '{"permissions":{"allow":["Bash(sudo:*)"]}}' >/etc/claude-code/managed-settings.d/50-foreign.json
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_GUARDRAILS[@]}" 2>&1)"
+expect_line "a managed-settings.d drop-in -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*managed-settings\.d must not exist'
+rm -rf /etc/claude-code/managed-settings.d
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_GUARDRAILS[@]}" 2>&1)"
+expect_line "removed -> PASS managed-guardrails" "$out" '^PASS  managed-guardrails '
 
 section "Breaking the boundary is caught"
 usermod -aG docker agent

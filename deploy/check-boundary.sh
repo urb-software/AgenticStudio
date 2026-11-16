@@ -307,6 +307,21 @@ check_cgroup() {
   fi
 }
 
+# The first directory from $1 up to / that is not root-owned or is writable by group or others
+# (printed), or nothing.
+not_root_only_dir() {
+  local up="$1"
+  while :; do
+    if [ -L "$up" ] || [ "$(stat -c %U "$up" 2>/dev/null)" != root ] ||
+      [ $((8#$(stat -c %a "$up" 2>/dev/null || echo 777) & 8#022)) -ne 0 ]; then
+      printf '%s' "$up"
+      return
+    fi
+    [ "$up" != / ] || return
+    up="$(dirname "$up")"
+  done
+}
+
 check_guardrails() {
   # Issue #134: the provider CLIs' managed configuration and Studio's guard script, installed by
   # the setup's guardrails step from the worker's guardrails folder (managed-files.txt).
@@ -317,11 +332,16 @@ check_guardrails() {
     fail managed-guardrails-locked "not run: no managed-files.txt"
     return
   fi
-  local _provider source dest _rest problems=() writable=() count=0 parent
+  local _provider source dest _rest problems=() writable=() count=0 parent bad program
   while read -r _provider source dest _rest; do
     case "$_provider" in '' | '#'*) continue ;; esac
-    count=$((count + 1))
     parent="$(dirname "$dest")"
+    if [ "$source" = absent ]; then
+      # A managed input the CLI would merge into Studio's policy (review L1 of #136).
+      if [ -e "$dest" ] || [ -L "$dest" ]; then problems+=("$dest must not exist"); fi
+      continue
+    fi
+    count=$((count + 1))
     if [ -L "$dest" ]; then
       problems+=("$dest is a symbolic link")
     elif [ ! -f "$dest" ]; then
@@ -332,31 +352,25 @@ check_guardrails() {
       problems+=("$dest differs from the worker's $source (SHA-256)")
     fi
     # The file's directory and every one above it: whoever could write one could swap the files.
-    local up="$parent"
-    while :; do
-      if [ -L "$up" ] || [ "$(stat -c %U "$up" 2>/dev/null)" != root ] ||
-        [ $((8#$(stat -c %a "$up" 2>/dev/null || echo 777) & 8#022)) -ne 0 ]; then
-        problems+=("$up is not a root-only directory")
-        break
-      fi
-      [ "$up" != / ] || break
-      up="$(dirname "$up")"
-    done
+    bad="$(not_root_only_dir "$parent")"
+    [ -z "$bad" ] || problems+=("$bad is not a root-only directory")
     { [ -w "$dest" ] || [ -w "$parent" ]; } && writable+=("$dest")
   done <"$manifest"
-  # The managed hooks' interpreter (the setup's node step): a hook that cannot start blocks nothing.
-  local node=/usr/local/bin/node
-  if [ -L "$node" ] || [ ! -f "$node" ] || [ "$(stat -c %U "$node")" != root ] ||
-    [ $((8#$(stat -c %a "$node") & 8#022)) -ne 0 ]; then
-    problems+=("$node is not a root-owned file only root can change")
-  fi
-  [ ! -w "$node" ] || writable+=("$node")
+  # The managed hooks' launcher (env -i) and interpreter (the setup's node step): they run the
+  # guard, and a hook that cannot start blocks nothing.
+  for program in /usr/bin/env /usr/local/bin/node; do
+    if [ -L "$program" ] || [ ! -f "$program" ] || [ "$(stat -c %U "$program")" != root ] ||
+      [ $((8#$(stat -c %a "$program") & 8#022)) -ne 0 ] || [ -n "$(not_root_only_dir "$(dirname "$program")")" ]; then
+      problems+=("$program is not a root-owned file only root can change")
+    fi
+    [ ! -w "$program" ] || writable+=("$program")
+  done
   if [ "$count" -eq 0 ]; then
     fail managed-guardrails "$manifest lists no file"
   elif [ "${#problems[@]}" -gt 0 ]; then
     fail managed-guardrails "${problems[*]:0:4}"
   else
-    pass managed-guardrails "$count managed-files.txt entries: root:root 0644, equal to the worker's copies"
+    pass managed-guardrails "$count managed-files.txt entries: root:root 0644, equal to the worker's copies; no other managed input"
   fi
   if [ "${#writable[@]}" -gt 0 ]; then
     fail managed-guardrails-locked "$(id -un) can write or replace: ${writable[*]:0:4}"

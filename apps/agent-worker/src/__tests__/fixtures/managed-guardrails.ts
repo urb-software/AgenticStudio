@@ -1,10 +1,15 @@
 import { chmod, copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
-import { GUARDRAILS_DIR, HOOK_INTERPRETER, readManagedFiles } from '../../managed-guardrails.js';
+import {
+  GUARDRAILS_DIR,
+  HOOK_INTERPRETER,
+  HOOK_LAUNCHER,
+  readManagedFiles,
+} from '../../managed-guardrails.js';
 
 /**
  * Installs Studio's managed guardrail files under `root` the way the server setup does (files
- * 0644, directories 0755), plus a stand-in for the hooks' interpreter (0755), all owned by the
+ * 0644, directories 0755), plus stand-ins for the hooks' launcher and interpreter (0755), all owned by the
  * test's own user (Issue #134). Returns `root`.
  */
 export async function installManagedGuardrails(root: string): Promise<string> {
@@ -21,10 +26,12 @@ export async function installManagedGuardrails(root: string): Promise<string> {
     await copyFile(join(GUARDRAILS_DIR, file.source), target);
     await chmod(target, 0o644);
   }
-  const node = join(root, HOOK_INTERPRETER);
-  await directory(posix.dirname(node));
-  await writeFile(node, '#!/bin/sh\n');
-  await chmod(node, 0o755);
+  for (const program of [HOOK_LAUNCHER, HOOK_INTERPRETER]) {
+    const target = join(root, program);
+    await directory(posix.dirname(target));
+    await writeFile(target, '#!/bin/sh\n');
+    await chmod(target, 0o755);
+  }
   await chmod(root, 0o755);
   return root;
 }

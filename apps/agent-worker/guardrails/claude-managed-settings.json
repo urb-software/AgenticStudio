@@ -2,6 +2,13 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "allowManagedHooksOnly": true,
   "allowManagedPermissionRulesOnly": true,
+  "env": {
+    "LD_PRELOAD": "",
+    "LD_LIBRARY_PATH": "",
+    "LD_AUDIT": "",
+    "NODE_OPTIONS": "",
+    "NODE_PATH": ""
+  },
   "permissions": {
     "allow": [
       "Read",
@@ -106,6 +113,7 @@
       "Edit(~/.gitconfig)",
       "Edit(//etc/**)"
     ],
+    "blockWritesOutsideWorkingDirectories": true,
     "disableBypassPermissionsMode": "disable"
   },
   "enableAllProjectMcpServers": false,
@@ -116,8 +124,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/local/bin/node /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs",
-            "timeout": 10
+            "command": "/usr/bin/env",
+            "args": [
+              "-i",
+              "PATH=/usr/local/bin:/usr/bin:/bin",
+              "CLAUDE_PROJECT_DIR=${CLAUDE_PROJECT_DIR}",
+              "/usr/local/bin/node",
+              "/usr/local/lib/agentic-studio/guardrails/claude-guard.mjs"
+            ],
+            "timeout": 10,
+            "onFailure": "block"
           }
         ]
       }

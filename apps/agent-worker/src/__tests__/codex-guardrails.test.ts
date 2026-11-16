@@ -53,10 +53,11 @@ describe("Studio's managed Codex configuration (managed_config.toml)", () => {
     ]);
   });
 
-  it('turns app integrations off and defines no trust entries, hooks, MCP servers or sandbox override', () => {
+  it('defines no feature flags, trust entries, hooks, MCP servers or sandbox override', () => {
     const body = settings(managed);
 
-    expect(body).toMatch(/\[features\]\napps = false/);
+    // Feature flags are enforced from requirements.toml (review L3 of #136).
+    expect(body).not.toMatch(/\[features\]/);
     expect(body).not.toMatch(
       /projects|mcp_servers|danger-full-access|sandbox_mode|approval_policy|trusted|\[hooks/,
     );
@@ -74,9 +75,9 @@ describe("Studio's Codex requirements (requirements.toml)", () => {
     });
   });
 
-  it('lets only managed hooks run and keeps hooks on', () => {
+  it('lets only managed hooks run, keeps hooks on and app integrations off', () => {
     expect(body).toMatch(/^allow_managed_hooks_only = true$/m);
-    expect(body).toMatch(/\[features\]\nhooks = true\n/);
+    expect(body).toMatch(/\[features\]\nhooks = true\napps = false\n/);
   });
 
   it("runs Studio's root-owned guard script with the root-owned Node.js, by absolute paths", async () => {
@@ -87,7 +88,10 @@ describe("Studio's Codex requirements (requirements.toml)", () => {
     expect(guard?.path).toBe('/usr/local/lib/agentic-studio/guardrails/claude-guard.mjs');
     expect(body).toContain('managed_dir = "/usr/local/lib/agentic-studio/guardrails"\n');
     expect(body).toContain('[[hooks.PreToolUse]]\nmatcher = "^(Bash|apply_patch)$"\n');
-    expect(body).toContain(`command = "/usr/local/bin/node ${guard?.path}"\n`);
+    // A cleared environment (review H1 of #136).
+    expect(body).toContain(
+      `command = "/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin /usr/local/bin/node ${guard?.path}"\n`,
+    );
     expect([...body.matchAll(/^command = /gm)]).toHaveLength(1);
   });
 

@@ -7,9 +7,11 @@
 // root, and remove them afterwards (scripts/smoke-guardrails.sh):
 //
 //   pnpm run build:packages && pnpm --filter @agentic-studio/agent-worker run build
-//   sudo SMOKE_NODE_BIN="$(command -v node)" bash apps/agent-worker/scripts/smoke-guardrails.sh install
+//   # as root: a root-owned copy of the same commit, and install from it (review M1 of #136)
+//   sudo SMOKE_NODE_BIN="$(command -v node)" bash \
+//     /usr/local/src/agentic-studio-smoke/apps/agent-worker/scripts/smoke-guardrails.sh install
 //   CODEX_CLI_ENABLED=true node apps/agent-worker/scripts/smoke-codex.mjs
-//   sudo bash apps/agent-worker/scripts/smoke-guardrails.sh remove
+//   sudo bash /usr/local/src/agentic-studio-smoke/apps/agent-worker/scripts/smoke-guardrails.sh remove
 //
 // Studio owns the agent user's Codex configuration: like every Codex Run step, this script
 // rewrites ~/.codex/config.toml and ~/.codex/rules/ and removes ~/.codex/hooks.json (it never reads the
@@ -98,7 +100,8 @@ const managed = await new ManagedGuardrails().problem('codex');
 line(`managed guardrails: ${managed === null ? 'in place' : `FAILED: ${managed}`}`);
 if (managed !== null) {
   line(
-    'smoke: install them first: sudo bash apps/agent-worker/scripts/smoke-guardrails.sh install',
+    'smoke: install them first, as root, from a root-owned copy of this commit ' +
+      '(apps/agent-worker/scripts/smoke-guardrails.sh install).',
   );
   process.exit(1);
 }

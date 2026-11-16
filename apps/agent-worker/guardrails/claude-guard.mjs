@@ -7,12 +7,16 @@
 //
 // The server setup installs this file root-owned as
 // /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs (managed-files.txt); the CLIs'
-// managed configuration runs it with /usr/local/bin/node (claude-managed-settings.json,
-// codex-requirements.toml), so nothing from the repository or the agent user's files is ever
-// executed as Studio's hook. The CLI passes the tool call as JSON on standard input; exit code 2
-// blocks the call and shows the reason to the agent, exit code 0 leaves it to the permission
-// rules. Codex sends shell commands as `Bash` and file edits as `apply_patch` (the patch in
-// `command`), and the session's working directory as `cwd`.
+// managed configuration runs it as `/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin
+// [CLAUDE_PROJECT_DIR=<project>] /usr/local/bin/node <this file>` (claude-managed-settings.json,
+// codex-requirements.toml): a cleared environment, so nothing the agent puts into the session's
+// environment (NODE_OPTIONS, TMPDIR, HOME, ...) reaches this process (Issue #134, review H1). It
+// never reads HOME or TMPDIR: the home directory comes from the passwd entry, and the step's
+// temporary directory is the `tmp` folder beside the Working copy (the Run's layout,
+// `<run>/repo` and `<run>/tmp`). The CLI passes the tool call as JSON on standard input; exit
+// code 2 blocks the call and shows the reason to the agent, exit code 0 leaves it to the
+// permission rules. Codex sends shell commands as `Bash` and file edits as `apply_patch` (the
+// patch in `command`), and the session's working directory as `cwd`.
 //
 // It blocks:
 // - privilege escalation (sudo, su, doas, pkexec) and `git push` (the worker delivers, #102);
@@ -23,6 +27,7 @@
 // - reading the CLIs' logins and other credentials in the agent user's home directory.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { posix } from 'node:path';
+import { userInfo } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 const PRIVILEGED = new Set(['sudo', 'su', 'doas', 'pkexec']);
@@ -160,13 +165,19 @@ function commandText(words) {
 
 /**
  * Whether Studio's guardrails block a tool call: the reason, or `null` to leave it to the
- * permission rules. `env` gives `CLAUDE_PROJECT_DIR` (the Working copy; Codex: the input's
- * `cwd`), `TMPDIR` (the Run step's temporary directory) and `HOME`.
+ * permission rules. `context.projectDir` is the Working copy (Claude Code's project directory;
+ * Codex: the input's `cwd`), `context.home` the agent user's home directory (from its passwd
+ * entry). The step's temporary directory is the `tmp` folder beside the Working copy.
  */
-export function decide(input, env) {
+export function decide(input, context) {
   const tool = input?.tool_name;
   const toolInput = input?.tool_input ?? {};
-  const where = { project: env.CLAUDE_PROJECT_DIR || input?.cwd, home: env.HOME, tmp: env.TMPDIR };
+  const project = context.projectDir || input?.cwd;
+  const where = {
+    project,
+    home: context.home,
+    tmp: project ? posix.join(posix.dirname(posix.resolve(project)), 'tmp') : undefined,
+  };
   const command = Array.isArray(toolInput.command)
     ? commandText(toolInput.command.filter((word) => typeof word === 'string'))
     : toolInput.command;
@@ -197,7 +208,11 @@ function main() {
     process.stderr.write("Blocked by Studio's guardrails: the tool call could not be read.\n");
     process.exit(2);
   }
-  const reason = decide(input, process.env);
+  // Never HOME or TMPDIR from the environment (review H1 of #136).
+  const reason = decide(input, {
+    projectDir: process.env.CLAUDE_PROJECT_DIR,
+    home: userInfo().homedir,
+  });
   if (reason !== null) {
     process.stderr.write(`Blocked by Studio's guardrails: ${reason}.\n`);
     process.exit(2);

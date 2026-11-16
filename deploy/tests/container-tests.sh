@@ -223,6 +223,16 @@ rm -f /etc/claude-code/managed-settings.json
 out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
 expect_line "missing managed settings -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*managed-settings\.json missing'
 expect_true "the guardrails step reinstalls it" guardrails_reinstalled
+# Review L1 of #136: managed inputs the CLIs would merge into Studio's policy must be absent.
+for extra in /etc/codex/config.toml /etc/claude-code/managed-mcp.json /etc/claude-code/managed-settings.d; do
+  if [ "$extra" = /etc/claude-code/managed-settings.d ]; then mkdir "$extra"; else echo '{}' >"$extra"; fi
+  out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+  expect_line "present $extra -> FAIL managed-guardrails" "$out" "^FAIL  managed-guardrails .*$extra must not exist"
+  expect_fail "the guardrails step refuses while $extra exists" "$extra exists" bash "$SETUP" --only guardrails
+  rm -rf "$extra"
+done
+out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+expect_line "removed again -> PASS managed-guardrails" "$out" '^PASS  managed-guardrails '
 
 chmod 0755 /etc/agentic-studio && chmod 0644 /etc/agentic-studio/.env
 out="$(check_as_agent "${ONLY_LOCAL[@]}")"

@@ -140,19 +140,48 @@ describe.skipIf(process.platform !== 'linux')("Studio's managed guardrails", () 
     expect(await check().problem('codex')).toBe(`managed guardrails missing or changed: ${path}`);
   });
 
-  it.each<Provider>(['claude_code', 'codex'])(
-    '%s: refuses a hook interpreter that is missing, a symbolic link or writable by others',
-    async (provider) => {
-      const node = installed('/usr/local/bin/node');
-      const expected = 'managed guardrails missing or changed: /usr/local/bin/node';
-      chmodSync(node, 0o775);
+  it.each<[Provider, string]>([
+    ['claude_code', '/usr/local/bin/node'],
+    ['codex', '/usr/local/bin/node'],
+    ['claude_code', '/usr/bin/env'],
+    ['codex', '/usr/bin/env'],
+  ])(
+    '%s: refuses a hook program (%s) that is missing, a symbolic link or writable by others',
+    async (provider, program) => {
+      const path = installed(program);
+      const expected = `managed guardrails missing or changed: ${program}`;
+      chmodSync(path, 0o775);
       expect(await check().problem(provider)).toBe(expected);
-      unlinkSync(node);
+      unlinkSync(path);
       expect(await check().problem(provider)).toBe(expected);
-      symlinkSync(process.execPath, node);
+      symlinkSync(process.execPath, path);
       expect(await check().problem(provider)).toBe(expected);
     },
   );
+
+  // Review L1 of #136: managed inputs the CLI would merge into Studio's policy.
+  it.each<[Provider, string, 'file' | 'directory']>([
+    ['claude_code', '/etc/claude-code/managed-settings.d', 'directory'],
+    ['claude_code', '/etc/claude-code/managed-mcp.json', 'file'],
+    ['codex', '/etc/codex/config.toml', 'file'],
+  ])('%s: refuses a present %s', async (provider, path, kind) => {
+    if (kind === 'directory') mkdirSync(installed(path));
+    else writeFileSync(installed(path), '{}');
+
+    expect(await check().problem(provider)).toBe(
+      `managed guardrails missing or changed: ${path} must not exist`,
+    );
+    // Only for its own provider.
+    expect(await check().problem(provider === 'codex' ? 'claude_code' : 'codex')).toBeNull();
+  });
+
+  it('refuses a symbolic link where a managed input must be absent', async () => {
+    symlinkSync('/nonexistent', installed('/etc/codex/config.toml'));
+
+    expect(await check().problem('codex')).toBe(
+      'managed guardrails missing or changed: /etc/codex/config.toml must not exist',
+    );
+  });
 
   it('checks only the files of the provider asked about', async () => {
     unlinkSync(installed('/etc/codex/requirements.toml'));

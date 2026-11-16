@@ -8,12 +8,17 @@
 # trusted by policy (no per-hook trust, unlike a user-level hook: compliance record, finding 212).
 allow_managed_hooks_only = true
 
-# Hooks stay on even if a user configuration turns them off.
+# Hooks stay on even if a user configuration turns them off; app (connector) integrations stay
+# off (no MCP servers or connectors in the first version). Pinned here, not in
+# managed_config.toml, because requirements are enforced while managed_config.toml only sets
+# defaults applied at start.
 [features]
 hooks = true
+apps = false
 
 # Studio's PreToolUse hook: the same guard script as Claude Code's, run by the root-owned Node.js
-# from the root-owned guardrails folder (both installed by the server setup).
+# from the root-owned guardrails folder (both installed by the server setup), with a cleared
+# environment (`env -i`): nothing of the session's environment reaches the guard.
 [hooks]
 managed_dir = "/usr/local/lib/agentic-studio/guardrails"
 
@@ -22,7 +27,7 @@ matcher = "^(Bash|apply_patch)$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "/usr/local/bin/node /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs"
+command = "/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin /usr/local/bin/node /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs"
 timeout = 10
 
 # Studio's command rules, enforced: the same rules as codex-studio.rules, which the worker also

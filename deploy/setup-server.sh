@@ -117,6 +117,8 @@ guardrails Studio's managed guardrails for Claude Code and Codex, from the worke
            (${WORKER_CODE_DIR}/apps/agent-worker/guardrails, its managed-files.txt): root:root, files 0644,
            directories 0755 (/etc/claude-code/managed-settings.json, /etc/codex/managed_config.toml,
            /etc/codex/requirements.toml, /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs).
+           Refuses while /etc/claude-code/managed-settings.d, /etc/claude-code/managed-mcp.json or
+           /etc/codex/config.toml exists (the CLIs would merge them into the policy).
 firewall   /usr/local/sbin/agentic-studio-agent-firewall and agentic-studio-agent-firewall.service:
            rejects the agent user's traffic to ${STUDIO_NETWORK_SUBNET} except the reverse proxy's worker
            port (${STUDIO_PROXY_ADDRESS}:${STUDIO_PROXY_WORKER_PORT});
@@ -555,6 +557,14 @@ step_guardrails() {
     if [ -n "$rest" ] || ! [[ "$source" =~ ^[A-Za-z0-9._-]+$ ]] || [[ "$dest" != /* ]] || [[ "$dest" == *..* ]]; then
       die "malformed line in $manifest: $provider $source $dest $rest"
     fi
+    if [ "$source" = absent ]; then
+      # A managed input the CLI would merge into Studio's policy (review L1 of #136). Not Studio's:
+      # the operator removes it after looking at it.
+      if [ -e "$dest" ] || [ -L "$dest" ]; then
+        die "$dest exists: the provider CLI would merge it into Studio's managed guardrails. Review and remove it, then run the step again."
+      fi
+      continue
+    fi
     if [ ! -f "$dir/$source" ] || [ -L "$dir/$source" ]; then die "$dir/$source is missing."; fi
     # Every directory from the first one below a system directory down to the file's own.
     dirs=()
@@ -569,7 +579,7 @@ step_guardrails() {
     count=$((count + 1))
   done <"$manifest"
   [ "$count" -gt 0 ] || die "$manifest lists no file."
-  step_log "ok ($count managed-files.txt entries in place, root:root 0644; run by /usr/local/bin/node from the node step)"
+  step_log "ok ($count managed-files.txt entries in place, root:root 0644; run by /usr/bin/env -i and /usr/local/bin/node)"
 }
 
 step_firewall() {

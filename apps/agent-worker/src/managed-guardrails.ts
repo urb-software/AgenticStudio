@@ -27,7 +27,17 @@ export const GUARDRAILS_DIR = fileURLToPath(new URL('../guardrails/', import.met
  */
 export const HOOK_INTERPRETER = '/usr/local/bin/node';
 
-/** The manifest in the guardrails folder: `<provider> <file> <installed path>` per line. */
+/**
+ * The launcher the managed hooks start the interpreter with, `env -i` and a fixed PATH, so
+ * nothing of the session's environment reaches the guard (review H1 of #136). Root-owned (the
+ * operating system's coreutils).
+ */
+export const HOOK_LAUNCHER = '/usr/bin/env';
+
+/**
+ * The manifest in the guardrails folder: `<provider> <file> <installed path>` per line, or
+ * `<provider> absent <path>` for a managed input of the CLI that must not exist (review L1).
+ */
 export const MANAGED_FILES_MANIFEST = 'managed-files.txt';
 
 export interface ManagedFile {
@@ -38,10 +48,27 @@ export interface ManagedFile {
   path: string;
 }
 
+/** A managed input of a provider CLI that must not exist (it would add to Studio's policy). */
+export interface AbsentPath {
+  provider: Provider;
+  path: string;
+}
+
 const PROVIDER_NAMES: readonly string[] = ['claude_code', 'codex'];
 
-/** Reads the manifest. Throws on a malformed line: the worker must not guess. */
+/** The installed files of the manifest. Throws on a malformed line: the worker must not guess. */
 export async function readManagedFiles(dir = GUARDRAILS_DIR): Promise<ManagedFile[]> {
+  return (await readManifest(dir)).filter((entry) => entry.source !== 'absent');
+}
+
+/** The paths the manifest requires to be absent. */
+export async function readAbsentPaths(dir = GUARDRAILS_DIR): Promise<AbsentPath[]> {
+  return (await readManifest(dir))
+    .filter((entry) => entry.source === 'absent')
+    .map(({ provider, path }) => ({ provider, path }));
+}
+
+async function readManifest(dir: string): Promise<ManagedFile[]> {
   const text = await readFile(join(dir, MANAGED_FILES_MANIFEST), 'utf8');
   const files: ManagedFile[] = [];
   for (const raw of text.split('\n')) {
@@ -110,16 +137,35 @@ export class ManagedGuardrails implements ManagedGuardrailsCheck {
       if (file.provider !== provider) continue;
       if (!(await this.intact(file))) return `managed guardrails missing or changed: ${file.path}`;
     }
-    // The managed hooks' interpreter (installed by the setup's node step): a hook that cannot
-    // start does not block anything, so it must be there and root's too.
-    const node = posix.join(this.root, HOOK_INTERPRETER);
-    if (
-      !(await this.rootOnlyPath(posix.dirname(node))) ||
-      !(await this.ownedByRoot(node, 'file'))
-    ) {
-      return `managed guardrails missing or changed: ${HOOK_INTERPRETER}`;
+    // Other managed inputs the CLI would merge into Studio's policy (review L1 of #136).
+    for (const { provider: owner, path } of await readAbsentPaths(this.dir)) {
+      if (owner !== provider) continue;
+      if (!(await this.absent(posix.join(this.root, path)))) {
+        return `managed guardrails missing or changed: ${path} must not exist`;
+      }
+    }
+    // The managed hooks' launcher and interpreter: they run the guard, so they must be root's
+    // too (the interpreter comes from the setup's node step).
+    for (const program of [HOOK_LAUNCHER, HOOK_INTERPRETER]) {
+      const installed = posix.join(this.root, program);
+      if (
+        !(await this.rootOnlyPath(posix.dirname(installed))) ||
+        !(await this.ownedByRoot(installed, 'file'))
+      ) {
+        return `managed guardrails missing or changed: ${program}`;
+      }
     }
     return null;
+  }
+
+  /** Nothing at all at `path` (an unreadable parent counts as present: it cannot be checked). */
+  private async absent(path: string): Promise<boolean> {
+    try {
+      await lstat(path);
+      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'ENOENT';
+    }
   }
 
   /** Root-owned, not writable by others: a file, or (for its directory) a directory. */

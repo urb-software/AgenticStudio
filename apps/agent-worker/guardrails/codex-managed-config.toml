@@ -3,11 +3,14 @@
 # SECURITY BOUNDARY: the boundary is the operating-system user with its rootless Docker daemon
 # (ADR 0002, docs/engineering/security.md §2).
 #
-# Codex applies the managed layer above the user's ~/.codex/config.toml and above `-c` overrides
-# at start, so nothing the agent user writes there changes these values. The agent worker checks
-# this file (owner, mode, SHA-256 against its own copy) before every Codex Run step. Studio's hook
-# and command rules are in codex-requirements.toml; the per-Working-copy trust entries stay in the
-# user configuration the worker writes (codex-config.toml).
+# MANAGED DEFAULTS, NOT REQUIREMENTS (review L3 of #136): Codex applies this layer above the
+# user's ~/.codex/config.toml and above `-c` overrides when it starts, so every Run step (a new
+# `codex exec`) starts with these values whatever the agent user wrote there; the docs say a user
+# can still change them during a run, which `codex exec` offers no way to do. Requirements cannot
+# carry these keys in the supported versions; what they can carry is in codex-requirements.toml
+# (hook, rules, feature flags). The agent worker checks this file (owner, mode, SHA-256 against
+# its own copy) before every Codex Run step. The per-Working-copy trust entries stay in the user
+# configuration the worker writes (codex-config.toml).
 
 # ADR 0002 (trial of 2026-11-15): the workspace-write sandbox is kept, with network access on,
 # so the agent reaches the agent user's rootless Docker daemon and can install dependencies.
@@ -37,7 +40,4 @@ include_only = [
   "COMPOSE_PROJECT_NAME",
 ]
 
-# App (connector) integrations are off: no MCP servers or connectors in the first version. The
-# hooks flag is pinned on in codex-requirements.toml (Studio's managed hook).
-[features]
-apps = false
+# Feature flags (apps off, hooks on) are pinned in codex-requirements.toml.
