@@ -88,6 +88,30 @@ describe('RefreshPullRequestHandler', () => {
     expect(lookups.lookups).toHaveLength(1);
   });
 
+  it('does not ask again on opening within a minute of a lookup that failed (review S1 of #152)', async () => {
+    connect();
+    const run = await deliveredRun(runs);
+    await handler.execute(run.id, { onOpen: true });
+    const [claimed] = await lookups.claim(WORKER, now, 5, 120);
+    await lookups.fail(claimed!.id, WORKER, 'GitHub could not be reached.', null, now);
+
+    now = new Date(T0.getTime() + 59_000);
+    await handler.execute(run.id, { onOpen: true });
+    expect(lookups.lookups).toHaveLength(1);
+
+    now = minutes(1);
+    await handler.execute(run.id, { onOpen: true });
+    expect(lookups.lookups).toHaveLength(2);
+  });
+
+  it('records one request when it is asked many times at once', async () => {
+    const run = await deliveredRun(runs);
+
+    await Promise.all(Array.from({ length: 5 }, () => handler.execute(run.id, { onOpen: false })));
+
+    expect(lookups.lookups).toHaveLength(1);
+  });
+
   it('asks on opening for a Run whose state was never read', async () => {
     const run = await deliveredRun(runs);
 

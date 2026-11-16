@@ -1680,7 +1680,7 @@ describe('AgentWorker', () => {
         it.each([
           ['merged', 'was merged on GitHub'],
           ['closed', 'was closed on GitHub'],
-          ['missing', 'no longer exists on GitHub'],
+          ['missing', 'was not found on GitHub'],
         ] as const)(
           'does not start the agent for a pull request that is %s: the Run fails with the reason',
           async (state, words) => {
@@ -1704,8 +1704,10 @@ describe('AgentWorker', () => {
                 detail: expect.stringContaining(words),
               },
             });
+            // Review S4 of #152: the failure report carries the state it read.
+            expect(api.reports()[0]?.[2]).toMatchObject({ pullRequestState: state });
             expect(notices(api)).toEqual([
-              `Follow-up 2 not started: the pull request is ${state === 'missing' ? 'gone' : state}`,
+              `Follow-up 2 not started: the pull request is ${state === 'missing' ? 'not found' : state}`,
               'Follow-up 2 ended: failed',
             ]);
           },

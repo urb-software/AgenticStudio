@@ -241,6 +241,43 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       expect(run.body.pullRequest.refreshError).toMatch(/agent worker is not connected/);
     });
 
+    it('records one lookup when many refreshes arrive at once (review S6 of #152)', async () => {
+      const runId = await deliveredRun();
+
+      const answers = await Promise.all(Array.from({ length: 6 }, () => refresh(runId)));
+
+      expect(answers.every((answer) => answer.status === 202)).toBe(true);
+      const count = await db().$queryRaw<{ count: bigint }[]>`
+        SELECT count(*) FROM run_lookups WHERE run_id = ${runId}::uuid`;
+      expect(Number(count[0]!.count)).toBe(1);
+    });
+
+    it('does not ask again on opening within a minute of a failed lookup, and does after it (review S1 of #152)', async () => {
+      const runId = await deliveredRun();
+      await refresh(runId, { onOpen: true });
+      const id = (await claimLookups()).body[0].id as string;
+      await answer(id, {
+        workerId: W1,
+        ok: false,
+        code: 'failed',
+        error: 'GitHub could not be reached.',
+      });
+      const lookupCount = async () => {
+        const rows = await db().$queryRaw<{ count: bigint }[]>`
+          SELECT count(*) FROM run_lookups WHERE run_id = ${runId}::uuid`;
+        return Number(rows[0]!.count);
+      };
+
+      advance(30);
+      await refresh(runId, { onOpen: true });
+      await refresh(runId, { onOpen: true });
+      expect(await lookupCount()).toBe(1);
+
+      advance(31);
+      await refresh(runId, { onOpen: true });
+      expect(await lookupCount()).toBe(2);
+    });
+
     it('answers 409 for a Run without a pull request, 404 for an unknown Run', async () => {
       const runId = await deliveredRun({ delivered: false });
 
@@ -521,6 +558,31 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       // Ask again: still one lookup per Run.
       await tick();
       expect(await openLookups()).toHaveLength(3);
+    });
+
+    it('asks a Run whose lookups keep failing once a day, and removes lookups finished over a week ago', async () => {
+      const failing = await deliveredRun();
+      await refresh(failing);
+      const id = (await claimLookups()).body[0].id as string;
+      await answer(id, {
+        workerId: W1,
+        ok: false,
+        code: 'failed',
+        error: 'GitHub could not be reached.',
+      });
+
+      await tick();
+      expect(await openLookups()).toEqual([]);
+
+      advance(25 * 3600);
+      await tick();
+      expect(await openLookups()).toEqual([failing]);
+
+      advance(8 * 24 * 3600);
+      await tick();
+      const finished = await db().$queryRaw<{ count: bigint }[]>`
+        SELECT count(*) FROM run_lookups WHERE status IN ('done', 'failed')`;
+      expect(Number(finished[0]!.count)).toBe(0);
     });
 
     it('lets a worker carry the requests out with reads only, and starts no Run', async () => {

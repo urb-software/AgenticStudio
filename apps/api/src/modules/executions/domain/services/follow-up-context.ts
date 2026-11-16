@@ -1,4 +1,4 @@
-import type { Run } from '../entities/run.js';
+import { followUpEligibility, type FollowUpEligibility, type Run } from '../entities/run.js';
 import { providerAvailability, type RecordedWorkerStatus } from './provider-availability.js';
 
 /**
@@ -35,4 +35,22 @@ export function anyWorkerConnected(
 ): boolean {
   const latest = workers.latest();
   return latest !== undefined && now.getTime() - latest.reportedAt.getTime() <= leaseSeconds * 1000;
+}
+
+/**
+ * What the single-Run answers (the Run page, the refresh and the Follow-up command) add to a Run:
+ * whether it can take a Follow-up now, and whether any agent worker is connected (Issues #141,
+ * #142).
+ */
+export function runView(
+  run: Run,
+  workers: Parameters<typeof followUpContext>[1],
+  now: Date,
+  leaseSeconds: number,
+): { run: Run; followUp: FollowUpEligibility; workerConnected: boolean } {
+  return {
+    run,
+    followUp: followUpEligibility(run, followUpContext(run, workers, now, leaseSeconds)),
+    workerConnected: anyWorkerConnected(workers, now, leaseSeconds),
+  };
 }

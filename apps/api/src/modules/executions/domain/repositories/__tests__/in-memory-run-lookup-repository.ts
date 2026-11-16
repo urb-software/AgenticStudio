@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { PullRequestState } from '../../entities/run.js';
 import type {
   ClaimedLookup,
   LookupKind,
@@ -20,6 +21,7 @@ export interface FakeLookup {
   claimedBy: string | null;
   claimedAt: Date | null;
   retryAt: Date | null;
+  finishedAt: Date | null;
   error: string | null;
 }
 
@@ -62,9 +64,14 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
       claimedBy: null,
       claimedAt: null,
       retryAt: null,
+      finishedAt: null,
       error: null,
     });
-    run.pullRequestStatus = { ...run.pullRequestStatus, refreshRequestedAt: now };
+    run.pullRequestStatus = {
+      ...run.pullRequestStatus,
+      refreshRequestedAt: now,
+      lastAttemptAt: now,
+    };
     return Promise.resolve('requested');
   }
 
@@ -125,6 +132,7 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     if (lookup.status === 'done') return Promise.resolve('duplicate');
     if (lookup.status !== 'claimed') return Promise.resolve('not_held');
     lookup.status = 'done';
+    lookup.finishedAt = now;
     lookup.error = null;
     const run = this.run(lookup.runId);
     if (run) {
@@ -137,6 +145,7 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
         refreshError: null,
         retryAt: null,
         refreshRequestedAt: null,
+        lastAttemptAt: run.pullRequestStatus.lastAttemptAt,
       };
     }
     return Promise.resolve('stored');
@@ -150,13 +159,17 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     now: Date,
   ): Promise<LookupAnswerOutcome> {
     const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
-    if (!lookup || lookup.claimedBy !== workerId) return Promise.resolve('not_held');
+    if (!lookup) return Promise.resolve('not_held');
+    if (lookup.status === 'requested' && lookup.retryAt !== null && lookup.error === error) {
+      return Promise.resolve('duplicate');
+    }
+    if (lookup.claimedBy !== workerId) return Promise.resolve('not_held');
     if (lookup.status === 'failed') return Promise.resolve('duplicate');
     if (lookup.status !== 'claimed') return Promise.resolve('not_held');
     const retryAt =
       retryInSeconds === null ? null : new Date(now.getTime() + retryInSeconds * 1000);
     lookup.error = error;
-    if (retryAt === null) lookup.status = 'failed';
+    if (retryAt === null) Object.assign(lookup, { status: 'failed', finishedAt: now });
     else Object.assign(lookup, { status: 'requested', claimedBy: null, claimedAt: null, retryAt });
     const run = this.run(lookup.runId);
     if (run) {
@@ -174,20 +187,43 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     return Promise.resolve(this.lookups.find((lookup) => lookup.id === lookupId)?.kind ?? null);
   }
 
-  listDueForDailyRefresh(refreshedBefore: Date, limit: number): Promise<string[]> {
+  recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
+    const run = this.run(runId);
+    if (run?.pullRequest) {
+      run.pullRequestStatus = {
+        ...run.pullRequestStatus,
+        state,
+        refreshedAt: now,
+        refreshError: null,
+        retryAt: null,
+      };
+    }
+    return Promise.resolve();
+  }
+
+  deleteFinishedBefore(before: Date): Promise<number> {
+    const kept = this.lookups.filter(
+      (lookup) => !(lookup.finishedAt !== null && lookup.finishedAt < before),
+    );
+    const removed = this.lookups.length - kept.length;
+    this.lookups.splice(0, this.lookups.length, ...kept);
+    return Promise.resolve(removed);
+  }
+
+  listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]> {
     return Promise.resolve(
       this.runs.runs
-        .filter(
-          (run) =>
+        .filter((run) => {
+          const status = run.pullRequestStatus;
+          const attempt = status.lastAttemptAt ?? status.refreshedAt;
+          return (
             run.pullRequest !== null &&
             run.workingCopy !== null &&
-            run.pullRequestStatus.refreshRequestedAt === null &&
-            (run.pullRequestStatus.state === null ||
-              run.pullRequestStatus.state === 'draft' ||
-              run.pullRequestStatus.state === 'open') &&
-            (run.pullRequestStatus.refreshedAt === null ||
-              run.pullRequestStatus.refreshedAt < refreshedBefore),
-        )
+            status.refreshRequestedAt === null &&
+            (status.state === null || status.state === 'draft' || status.state === 'open') &&
+            (attempt === null || attempt < attemptedBefore)
+          );
+        })
         .slice(0, limit)
         .map((run) => run.id),
     );

@@ -31,7 +31,7 @@ function refusalText(run: RunOutput, reason: Refusal): { text: string; runAgain:
       };
     case 'pull_request_missing':
       return {
-        text: 'The pull request or its run branch no longer exists on GitHub.',
+        text: 'The pull request or its run branch was not found on GitHub: it may be gone, or the Agent account cannot see it.',
         runAgain: true,
       };
     case 'working_copy_removed':

@@ -104,6 +104,13 @@ export async function startStubGitHub(): Promise<StubGitHub> {
       }
       // Issue #142: the Agent account itself, and a branch's position against the base.
       if (url.pathname === '/user') return send(200, { login: stub.viewer });
+      const branchRoute = /^\/repos\/([^/]+)\/([^/]+)\/branches\/(.+)$/.exec(url.pathname);
+      if (branchRoute) {
+        const name = decodeURIComponent(branchRoute[3] as string);
+        return stub.missingBranches.includes(name)
+          ? send(404, { message: 'Not Found' })
+          : send(200, { name });
+      }
       const compare = /^\/repos\/([^/]+)\/([^/]+)\/compare\/(.+)\.\.\.(.+)$/.exec(url.pathname);
       if (compare) {
         const head = decodeURIComponent(compare[4] as string);

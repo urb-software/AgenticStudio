@@ -59,7 +59,7 @@ const FOLLOW_UP_REFUSAL_DETAILS: Record<z.infer<typeof followUpRefusalSchema>, s
   pull_request_closed:
     "The run's pull request was closed on GitHub. Reopen it there and refresh its state, or start a new run instead.",
   pull_request_missing:
-    "The run's pull request or its run branch no longer exists on GitHub. Start a new run instead.",
+    "The run's pull request or its run branch was not found on GitHub: it may be gone, or the Agent account cannot see it. Start a new run instead.",
   not_finished:
     'The run is still working or waiting for you. Send a Follow-up once it has finished.',
   follow_up_queued: 'A Follow-up is already queued for this run. Wait until it has finished.',

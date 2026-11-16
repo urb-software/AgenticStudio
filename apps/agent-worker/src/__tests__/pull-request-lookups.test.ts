@@ -51,6 +51,7 @@ class FakeReader implements PullRequestReader {
   pullRequest: PullRequestDetails | Error = details();
   branch: BranchPosition | null | Error = { behindBy: 2, aheadBy: 3 };
   viewerLogin: string | Error = AGENT;
+  branchPresent = false;
 
   async details(pull: PullRequestNumber): Promise<PullRequestDetails> {
     this.calls.push(`details ${pull.owner}/${pull.repo}#${pull.number}`);
@@ -65,6 +66,10 @@ class FakeReader implements PullRequestReader {
     this.calls.push(`position ${repository.owner}/${repository.repo} ${base}...${head}`);
     if (this.branch instanceof Error) throw this.branch;
     return this.branch;
+  }
+  async branchExists(): Promise<boolean> {
+    this.calls.push('branch');
+    return this.branchPresent;
   }
   async viewer(): Promise<string> {
     this.calls.push('viewer');
@@ -173,6 +178,17 @@ describe('PullRequestLookups', () => {
         ok: true,
         kind: 'pull_request_state',
         result: { state: 'missing' },
+      });
+    });
+
+    it('reports a failure, not a missing pull request, when only the comparison answered 404 (review S3 of #152)', async () => {
+      reader.branch = null;
+      reader.branchPresent = true;
+
+      expect(await answerOf()).toMatchObject({
+        ok: false,
+        code: 'failed',
+        error: expect.stringContaining('integration branch'),
       });
     });
 
@@ -357,6 +373,7 @@ describe('PullRequestLookups', () => {
           },
           viewer: async () => AGENT,
           position: async () => null,
+          branchExists: async () => true,
         }),
         logger: { info: () => undefined, error: () => undefined },
       });

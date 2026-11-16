@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NO_PULL_REQUEST_STATUS, type RunPullRequestStatus } from '../run.js';
 import {
   canRefreshPullRequest,
-  LOOKUP_RETRY_AFTER_MAX_SECONDS,
+  STORED_RETRY_DELAY_MAX_SECONDS,
   pageRefreshDue,
   retryDelaySeconds,
 } from '../run-lookup.js';
@@ -25,6 +25,19 @@ describe('pageRefreshDue', () => {
     expect(pageRefreshDue(status({ state: 'open', refreshedAt: ago(59) }), NOW)).toBe(false);
   });
 
+  it('counts from the last attempt: a failed lookup is not repeated on every open (review S1 of #152)', () => {
+    const failed = { refreshError: 'GitHub could not be reached.', lastAttemptAt: ago(30) };
+    expect(pageRefreshDue(status(failed), NOW)).toBe(false);
+    expect(pageRefreshDue(status({ ...failed, lastAttemptAt: ago(60) }), NOW)).toBe(true);
+    // An old success does not make a recent failed attempt due.
+    expect(
+      pageRefreshDue(
+        status({ state: 'open', refreshedAt: ago(3600), lastAttemptAt: ago(10) }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
   it('is not due while a refresh is under way, or a rate limit asks to wait', () => {
     expect(pageRefreshDue(status({ refreshRequestedAt: ago(5) }), NOW)).toBe(false);
     expect(pageRefreshDue(status({ retryAt: later(30) }), NOW)).toBe(false);
@@ -38,7 +51,7 @@ describe('retryDelaySeconds', () => {
     expect(retryDelaySeconds({ code: 'rate_limited', error: 'x' })).toBe(60);
     expect(
       retryDelaySeconds({ code: 'rate_limited', error: 'x', retryAfterSeconds: 999_999 }),
-    ).toBe(LOOKUP_RETRY_AFTER_MAX_SECONDS);
+    ).toBe(STORED_RETRY_DELAY_MAX_SECONDS);
     expect(retryDelaySeconds({ code: 'failed', error: 'x' })).toBeNull();
     expect(retryDelaySeconds({ code: 'scope_mismatch', error: 'x' })).toBeNull();
   });

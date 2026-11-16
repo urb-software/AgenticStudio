@@ -96,6 +96,7 @@ const LIST_FIELDS = {
   prRefreshError: true,
   prRetryAt: true,
   prRefreshRequestedAt: true,
+  prLastAttemptAt: true,
   // Issue #141: the Run step total, counted with the Run.
   _count: { select: { steps: true } },
 } as const;
@@ -168,6 +169,7 @@ interface RunRow {
   prRefreshError: string | null;
   prRetryAt: Date | null;
   prRefreshRequestedAt: Date | null;
+  prLastAttemptAt: Date | null;
   _count: { steps: number };
   /** Absent when a list read the Run (Issue #103). */
   messages?: {
@@ -346,6 +348,7 @@ function toRun(row: RunRow): Run {
       refreshError: row.prRefreshError,
       retryAt: row.prRetryAt,
       refreshRequestedAt: row.prRefreshRequestedAt,
+      lastAttemptAt: row.prLastAttemptAt,
     },
   };
 }

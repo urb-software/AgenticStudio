@@ -176,7 +176,8 @@ export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullReque
         </dl>
         {pullRequest.state === 'missing' ? (
           <p className="m-0 text-small text-text-muted">
-            The pull request, or the Run branch it came from, no longer exists on GitHub.
+            The pull request, or the Run branch it came from, was not found on GitHub: it may be
+            gone, or the Agent account cannot see it.
           </p>
         ) : null}
       </CardContent>

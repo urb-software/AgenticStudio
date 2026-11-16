@@ -17,19 +17,22 @@ export type LookupStatus = (typeof LOOKUP_STATUSES)[number];
 export const LOOKUP_LEASE_SECONDS = 120;
 
 /** Most lookups one claim hands out. */
-export const LOOKUP_CLAIM_LIMIT = 5;
+export const LOOKUP_CLAIM_MAX = 5;
 
 /** Opening the Run page requests a refresh only if the state is older than this. */
 export const PAGE_REFRESH_MIN_AGE_SECONDS = 60;
 
-/** The daily refresh looks again at a state older than this. */
+/** The daily refresh looks again at a Run whose last lookup was requested longer ago than this. */
 export const DAILY_REFRESH_AGE_HOURS = 24;
+
+/** Finished lookups are removed after this many days (review S10 of #152). */
+export const FINISHED_LOOKUPS_KEPT_DAYS = 7;
 
 /** Most Runs one pass of the daily refresh requests; the rest follow at the next pass. */
 export const DAILY_REFRESH_BATCH = 200;
 
-/** Longest a rate-limited lookup waits before it is tried again, whatever the Git host says. */
-export const LOOKUP_RETRY_AFTER_MAX_SECONDS = 60 * 60;
+/** Longest a rate-limited lookup waits before it is tried again, whatever the Git host asks. */
+export const STORED_RETRY_DELAY_MAX_SECONDS = 60 * 60;
 
 /** A lookup a worker claimed: what it needs to answer, nothing more. */
 export interface ClaimedLookup {
@@ -69,18 +72,20 @@ export function canRefreshPullRequest(run: Pick<Run, 'pullRequest' | 'workingCop
 
 /**
  * Whether opening the Run page should request a refresh (Issue #142): never more often than
- * once a minute per Run, and not while a lookup is open or a rate limit asks to wait.
+ * once a minute per Run (from the last attempt, successful or not), and not while a lookup is open or a rate limit asks to wait.
  */
 export function pageRefreshDue(run: Pick<Run, 'pullRequestStatus'>, now: Date): boolean {
   const status = run.pullRequestStatus;
   if (status.refreshRequestedAt !== null) return false;
   if (status.retryAt !== null && status.retryAt.getTime() > now.getTime()) return false;
-  if (status.refreshedAt === null) return true;
-  return now.getTime() - status.refreshedAt.getTime() >= PAGE_REFRESH_MIN_AGE_SECONDS * 1000;
+  // Counted from the last attempt, so a lookup that keeps failing is not repeated on every open.
+  const lastAttempt = status.lastAttemptAt ?? status.refreshedAt;
+  if (lastAttempt === null) return true;
+  return now.getTime() - lastAttempt.getTime() >= PAGE_REFRESH_MIN_AGE_SECONDS * 1000;
 }
 
 /** How long to wait before a rate-limited lookup is tried again, bounded. */
 export function retryDelaySeconds(failure: LookupFailure): number | null {
   if (failure.code !== 'rate_limited') return null;
-  return Math.min(Math.max(failure.retryAfterSeconds ?? 60, 1), LOOKUP_RETRY_AFTER_MAX_SECONDS);
+  return Math.min(Math.max(failure.retryAfterSeconds ?? 60, 1), STORED_RETRY_DELAY_MAX_SECONDS);
 }

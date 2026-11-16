@@ -4,6 +4,7 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
+import type { PullRequestState } from '../../domain/entities/run.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
@@ -44,7 +45,10 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       await tx.runLookup.create({
         data: { runId, kind, status: 'requested', requestedAt: now },
       });
-      await tx.run.update({ where: { id: runId }, data: { prRefreshRequestedAt: now } });
+      await tx.run.update({
+        where: { id: runId },
+        data: { prRefreshRequestedAt: now, prLastAttemptAt: now },
+      });
       return 'requested';
     });
   }
@@ -153,7 +157,12 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
   ): Promise<LookupAnswerOutcome> {
     return this.db.$transaction(async (tx) => {
       const lookup = await tx.runLookup.findUnique({ where: { id: lookupId } });
-      if (!lookup || lookup.claimedBy !== workerId) return 'not_held';
+      if (!lookup) return 'not_held';
+      // A re-sent rate-limit answer (the lookup waits for its retry with this very error).
+      if (lookup.status === 'requested' && lookup.retryAt !== null && lookup.error === error) {
+        return 'duplicate';
+      }
+      if (lookup.claimedBy !== workerId) return 'not_held';
       if (lookup.status === 'failed') return 'duplicate';
       if (lookup.status !== 'claimed') return 'not_held';
       const retryAt =
@@ -186,7 +195,21 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     return lookup === null ? null : (lookup.kind as LookupKind);
   }
 
-  async listDueForDailyRefresh(refreshedBefore: Date, limit: number): Promise<string[]> {
+  async recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
+    await this.db.run.updateMany({
+      where: { id: runId, pullRequestNumber: { not: null } },
+      data: { prState: state, prRefreshedAt: now, prRefreshError: null, prRetryAt: null },
+    });
+  }
+
+  async deleteFinishedBefore(before: Date): Promise<number> {
+    const { count } = await this.db.runLookup.deleteMany({
+      where: { status: { in: ['done', 'failed'] }, finishedAt: { lt: before } },
+    });
+    return count;
+  }
+
+  async listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]> {
     const rows = await this.db.run.findMany({
       where: {
         pullRequestNumber: { not: null },
@@ -194,10 +217,18 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
         prRefreshRequestedAt: null,
         AND: [
           { OR: [{ prState: null }, { prState: { in: ['draft', 'open'] } }] },
-          { OR: [{ prRefreshedAt: null }, { prRefreshedAt: { lt: refreshedBefore } }] },
+          {
+            OR: [
+              { prLastAttemptAt: { lt: attemptedBefore } },
+              {
+                prLastAttemptAt: null,
+                OR: [{ prRefreshedAt: null }, { prRefreshedAt: { lt: attemptedBefore } }],
+              },
+            ],
+          },
         ],
       },
-      orderBy: [{ prRefreshedAt: { sort: 'asc', nulls: 'first' } }, { id: 'asc' }],
+      orderBy: [{ prLastAttemptAt: { sort: 'asc', nulls: 'first' } }, { id: 'asc' }],
       select: { id: true },
       take: limit,
     });

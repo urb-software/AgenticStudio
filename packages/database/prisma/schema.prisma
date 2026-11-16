@@ -257,6 +257,9 @@ model Run {
   prRetryAt               DateTime?    @map("pr_retry_at") @db.Timestamptz(6)
   /// Set while a pull request lookup of the Run waits for a worker or is being answered.
   prRefreshRequestedAt    DateTime?    @map("pr_refresh_requested_at") @db.Timestamptz(6)
+  /// When a lookup of the Run's pull request was last requested (review S1 of #152): the page-open
+  /// throttle and the daily refresh count from the last attempt, whether or not it succeeded.
+  prLastAttemptAt         DateTime?    @map("pr_last_attempt_at") @db.Timestamptz(6)
   steps                   RunStep[]
   events                  RunEvent[]
   messages                RunMessage[]

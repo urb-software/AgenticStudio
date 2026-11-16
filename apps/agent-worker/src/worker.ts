@@ -320,11 +320,11 @@ export class AgentWorker {
       if (run.resumeReason === 'follow_up' && this.options.lookups) {
         const state = await this.options.lookups.followUpState(run, abort.signal);
         abort.signal.throwIfAborted();
-        if (state === 'merged' || state === 'closed' || state === 'missing') {
+        if (isEndedPullRequest(state)) {
           log.push(
             stepIndex,
             'notice',
-            `Follow-up ${run.followUpNumber} not started: the pull request is ${state === 'missing' ? 'gone' : state}`,
+            `Follow-up ${run.followUpNumber} not started: the pull request is ${state === 'missing' ? 'not found' : state}`,
           );
           throw new PullRequestEndedError(state, run.pullRequestNumber);
         }
@@ -746,11 +746,14 @@ export class AgentWorker {
     if (failure === UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
-    // Issue #105: the session a Run stopped at the usage limit resumes later.
+    // Issue #105: the session a Run stopped at the usage limit resumes later. Issue #142: the
+    // pull request state a refused Follow-up read, so Studio shows it at once.
     const session =
       error instanceof UsageLimitError && error.sessionRef !== undefined
         ? { sessionRef: error.sessionRef }
-        : {};
+        : error instanceof PullRequestEndedError
+          ? { pullRequestState: error.state }
+          : {};
     outbox.send('failed', (signal) =>
       api.reportState(
         run.runId,
@@ -852,16 +855,27 @@ function rejectOnAbort(signal: AbortSignal): Promise<never> {
   });
 }
 
+/** The pull request states in which a Follow-up has nothing left to update (Issue #142). */
+const ENDED_PULL_REQUEST_STATES = ['merged', 'closed', 'missing'] as const;
+type EndedPullRequestState = (typeof ENDED_PULL_REQUEST_STATES)[number];
+
+function isEndedPullRequest(state: string): state is EndedPullRequestState {
+  return (ENDED_PULL_REQUEST_STATES as readonly string[]).includes(state);
+}
+
 /**
  * The pull request a Follow-up would update is over (Issue #142): the Run ends as failed with
  * this detail before any agent CLI starts.
  */
 class PullRequestEndedError extends Error {
-  constructor(state: 'merged' | 'closed' | 'missing', number: number | undefined) {
+  constructor(
+    readonly state: EndedPullRequestState,
+    number: number | undefined,
+  ) {
     const pull = number === undefined ? 'The pull request' : `The pull request #${number}`;
     super(
       state === 'missing'
-        ? `${pull} or the Run branch no longer exists on GitHub, so the Follow-up was not started. Start a new run for further changes.`
+        ? `${pull} or the Run branch was not found on GitHub (it may be gone, or the Agent account cannot see it), so the Follow-up was not started. Start a new run for further changes.`
         : `${pull} was ${state} on GitHub, so the Follow-up was not started. Start a new run for further changes.`,
     );
     this.name = 'PullRequestEndedError';

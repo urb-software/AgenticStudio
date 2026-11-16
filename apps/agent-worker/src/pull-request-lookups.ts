@@ -108,13 +108,7 @@ export class PullRequestLookups implements LookupService {
     if (run.pullRequestNumber === undefined || run.runBranch === undefined) return 'unknown';
     try {
       const result = await this.read(
-        {
-          remoteUrl: run.repository.remoteUrl,
-          pullRequestNumber: run.pullRequestNumber,
-          runBranch: run.runBranch,
-          runId: run.runId,
-          integrationBranch: run.integrationBranch,
-        },
+        followUpTarget(run, run.pullRequestNumber, run.runBranch),
         signal,
       );
       return result.state;
@@ -133,16 +127,7 @@ export class PullRequestLookups implements LookupService {
     signal: AbortSignal,
   ): Promise<Parameters<LookupApi['reportLookup']>[1] | null> {
     try {
-      const result = await this.read(
-        {
-          remoteUrl: lookup.repository.remoteUrl,
-          pullRequestNumber: lookup.pullRequestNumber,
-          runBranch: lookup.runBranch,
-          runId: lookup.runId,
-          integrationBranch: lookup.integrationBranch,
-        },
-        signal,
-      );
+      const result = await this.read(lookupTarget(lookup), signal);
       return { ok: true, kind: lookup.kind, result };
     } catch (error) {
       if (signal.aborted) return null;
@@ -227,8 +212,17 @@ export class PullRequestLookups implements LookupService {
         target.runBranch,
         signal,
       );
-      // The Run branch was deleted on the Git host.
-      if (position === null) return { state: 'missing' };
+      if (position === null) {
+        // A 404 also answers a missing integration branch: only a Run branch that is really gone
+        // is a missing pull request (review S3 of #152).
+        if (await reader.branchExists(repository, target.runBranch, signal)) {
+          throw new LookupRefusal(
+            'failed',
+            'GitHub could not compare the Run branch with the integration branch. Check that the integration branch still exists.',
+          );
+        }
+        return { state: 'missing' };
+      }
       const state: PullRequestStateName =
         details.state === 'closed' ? 'closed' : details.draft ? 'draft' : 'open';
       return {
@@ -261,6 +255,30 @@ export class PullRequestLookups implements LookupService {
     });
     return login;
   }
+}
+
+function lookupTarget(lookup: LookupPayload): PullRequestTarget {
+  return {
+    remoteUrl: lookup.repository.remoteUrl,
+    pullRequestNumber: lookup.pullRequestNumber,
+    runBranch: lookup.runBranch,
+    runId: lookup.runId,
+    integrationBranch: lookup.integrationBranch,
+  };
+}
+
+function followUpTarget(
+  run: RunPayload,
+  pullRequestNumber: number,
+  runBranch: string,
+): PullRequestTarget {
+  return {
+    remoteUrl: run.repository.remoteUrl,
+    pullRequestNumber,
+    runBranch,
+    runId: run.runId,
+    integrationBranch: run.integrationBranch,
+  };
 }
 
 function defaultReader(github: { token: string; apiUrl: string }): PullRequestReader {

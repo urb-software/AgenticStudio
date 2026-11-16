@@ -248,6 +248,15 @@ describe('GitHubPullRequests', () => {
       expect(await client().position(repository, 'dev', branch, signal())).toBeNull();
     });
 
+    it('tells whether a branch exists (review S3 of #152)', async () => {
+      const repository = { owner: 'acme', repo: 'shop' };
+
+      expect(await client().branchExists(repository, branch, signal())).toBe(true);
+      expect(stub.requests.at(-1)?.path).toBe(`/repos/acme/shop/branches/${branch}`);
+      stub.missingBranches.push(branch);
+      expect(await client().branchExists(repository, branch, signal())).toBe(false);
+    });
+
     it('reads who the Agent account is', async () => {
       expect(await client().viewer(signal())).toBe('agent-bot');
       expect(stub.requests.at(-1)).toMatchObject({

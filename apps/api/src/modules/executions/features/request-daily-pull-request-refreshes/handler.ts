@@ -6,7 +6,11 @@ import {
   type OnApplicationShutdown,
 } from '@nestjs/common';
 import { redactSecrets } from '../../../../platform/http/redact.js';
-import { DAILY_REFRESH_AGE_HOURS, DAILY_REFRESH_BATCH } from '../../domain/entities/run-lookup.js';
+import {
+  DAILY_REFRESH_AGE_HOURS,
+  DAILY_REFRESH_BATCH,
+  FINISHED_LOOKUPS_KEPT_DAYS,
+} from '../../domain/entities/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
@@ -19,12 +23,12 @@ import {
 
 /**
  * Command (Issue #142): the daily refresh. Records a pull request lookup for every Run that has a
- * pull request which is draft, open or of unknown state and was last read more than a day ago (or
+ * pull request which is draft, open or of unknown state and was last asked about more than a day ago (or
  * never), so a pull request merged or closed on GitHub is noticed even if nobody opens its Run.
  * It only records requests: an agent worker carries them out with read access through the Agent
  * account, and no agent CLI is started. A merged, closed or missing pull request is not asked
- * about again here; the Run page's own refresh finds it if it is reopened. Returns how many
- * requests it recorded.
+ * about again here; the Run page's own refresh finds it if it is reopened. It also removes finished lookups older
+ * than a week. Returns how many requests it recorded.
  */
 @Injectable()
 export class RequestDailyPullRequestRefreshesHandler {
@@ -36,6 +40,10 @@ export class RequestDailyPullRequestRefreshesHandler {
   async execute(): Promise<number> {
     const now = this.clock.now();
     const staleBefore = new Date(now.getTime() - DAILY_REFRESH_AGE_HOURS * 60 * 60 * 1000);
+    // Finished lookups are not kept for ever (review S10 of #152).
+    await this.lookups.deleteFinishedBefore(
+      new Date(now.getTime() - FINISHED_LOOKUPS_KEPT_DAYS * 24 * 60 * 60 * 1000),
+    );
     let requested = 0;
     for (const runId of await this.lookups.listDueForDailyRefresh(
       staleBefore,

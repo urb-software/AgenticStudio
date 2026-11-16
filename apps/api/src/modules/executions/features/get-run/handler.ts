@@ -1,16 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  followUpEligibility,
-  type FollowUpEligibility,
-  isRunId,
-  type Run,
-} from '../../domain/entities/run.js';
+import { type FollowUpEligibility, isRunId, type Run } from '../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
   type RunRepository,
 } from '../../domain/repositories/run-repository.js';
-import { anyWorkerConnected, followUpContext } from '../../domain/services/follow-up-context.js';
+import { runView } from '../../domain/services/follow-up-context.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
@@ -33,12 +28,6 @@ export class GetRunHandler {
   ): Promise<{ run: Run; followUp: FollowUpEligibility; workerConnected: boolean }> {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
-    const now = this.clock.now();
-    const context = followUpContext(run, this.workers, now, this.lease.seconds);
-    return {
-      run,
-      followUp: followUpEligibility(run, context),
-      workerConnected: anyWorkerConnected(this.workers, now, this.lease.seconds),
-    };
+    return runView(run, this.workers, this.clock.now(), this.lease.seconds);
   }
 }

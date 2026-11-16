@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   type ClaimedLookup,
-  LOOKUP_CLAIM_LIMIT,
+  LOOKUP_CLAIM_MAX,
   LOOKUP_LEASE_SECONDS,
 } from '../../domain/entities/run-lookup.js';
 import {
@@ -23,6 +23,6 @@ export class ClaimLookupsHandler {
   ) {}
 
   execute(workerId: string): Promise<ClaimedLookup[]> {
-    return this.lookups.claim(workerId, this.clock.now(), LOOKUP_CLAIM_LIMIT, LOOKUP_LEASE_SECONDS);
+    return this.lookups.claim(workerId, this.clock.now(), LOOKUP_CLAIM_MAX, LOOKUP_LEASE_SECONDS);
   }
 }

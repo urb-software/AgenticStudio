@@ -164,6 +164,15 @@ export interface PullRequestReader {
     head: string,
     signal: AbortSignal,
   ): Promise<BranchPosition | null>;
+  /**
+   * Whether the branch still exists (review S3 of #152: told apart from a missing integration
+   * branch when a comparison answers 404).
+   */
+  branchExists(
+    repository: { owner: string; repo: string },
+    branch: string,
+    signal: AbortSignal,
+  ): Promise<boolean>;
   /** The login of the Agent account (the token's own user). */
   viewer(signal: AbortSignal): Promise<string>;
 }
@@ -290,15 +299,25 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     return { behindBy: parsed.data.behind_by, aheadBy: parsed.data.ahead_by };
   }
 
+  async branchExists(
+    repository: { owner: string; repo: string },
+    branch: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const path =
+      `repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}` +
+      `/branches/${branch.split('/').map(encodeURIComponent).join('/')}`;
+    try {
+      await this.call('GET', path, undefined, repository, signal, 'read');
+      return true;
+    } catch (error) {
+      if (error instanceof PullRequestFailedError && error.status === 404) return false;
+      throw error;
+    }
+  }
+
   async viewer(signal: AbortSignal): Promise<string> {
-    const answer = await this.call(
-      'GET',
-      'user',
-      undefined,
-      { owner: '', repo: '' },
-      signal,
-      'identify',
-    );
+    const answer = await this.call('GET', 'user', undefined, undefined, signal, 'identify');
     const parsed = viewerAnswer.safeParse(answer);
     if (!parsed.success) throw this.invalidAnswer();
     return parsed.data.login;
@@ -340,7 +359,7 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     method: 'GET' | 'POST' | 'PATCH',
     path: string,
     body: object | undefined,
-    target: Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>,
+    target: (Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>) | undefined,
     signal: AbortSignal,
     action: 'open' | 'read' | 'update' | 'identify' = 'open',
   ): Promise<unknown> {
@@ -406,16 +425,16 @@ function rateLimitWait(response: Response, now = Date.now()): number | undefined
 /** What a refusal from GitHub means for the operator. */
 function refusal(
   status: number,
-  target: Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>,
+  target: (Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>) | undefined,
   action: 'open' | 'read' | 'update' | 'identify',
 ): string {
-  const name = `${target.owner}/${target.repo}`;
-  if (action === 'identify') {
+  if (target === undefined || action === 'identify') {
     return (
       `Reading the Agent account failed: GitHub answered ${status}. Check ` +
       'STUDIO_AGENT_GITHUB_TOKEN on the agent worker.'
     );
   }
+  const name = `${target.owner}/${target.repo}`;
   const what = {
     open: 'Opening the pull request',
     read: "Reading the run's pull request",

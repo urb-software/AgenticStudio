@@ -1219,6 +1219,34 @@ describe('lookups', () => {
     expect(pullRequestStateResultSchema.safeParse({ state: 'open', extra: 1 }).success).toBe(false);
   });
 
+  it('a merged or missing pull request carries no branch position or verdict, a closed one no verdict', () => {
+    for (const state of ['merged', 'missing']) {
+      expect(pullRequestStateResultSchema.safeParse({ state, behindBy: 0 }).success).toBe(false);
+      expect(pullRequestStateResultSchema.safeParse({ state, mergeable: true }).success).toBe(
+        false,
+      );
+    }
+    expect(
+      pullRequestStateResultSchema.safeParse({ state: 'closed', behindBy: 1, aheadBy: 1 }).success,
+    ).toBe(true);
+    expect(
+      pullRequestStateResultSchema.safeParse({ state: 'closed', mergeable: true }).success,
+    ).toBe(false);
+  });
+
+  it('a failure report may carry the pull request state only with preparation_failed', () => {
+    const failed = (code: string, pullRequestState?: string) =>
+      reportRunStateRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        state: 'failed',
+        failure: { code, detail: 'x' },
+        ...(pullRequestState ? { pullRequestState } : {}),
+      }).success;
+    expect(failed('preparation_failed', 'merged')).toBe(true);
+    expect(failed('agent_failed', 'merged')).toBe(false);
+    expect(failed('preparation_failed', 'ready')).toBe(false);
+  });
+
   it('an answer is a result of the lookup kind, or a failure with a code and a message', () => {
     expect(
       lookupResultRequestSchema.safeParse({

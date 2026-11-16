@@ -75,6 +75,48 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     expect(lookups.lookups).toHaveLength(before);
   });
 
+  it('asks a Run whose lookups keep failing once a day, not at every pass (review S2 of #152)', async () => {
+    const failing = await readRun(null, null);
+    const stored = runs.runs.find((candidate) => candidate.id === failing)!;
+    stored.pullRequestStatus = {
+      ...stored.pullRequestStatus,
+      refreshError: 'GitHub could not be reached.',
+      lastAttemptAt: new Date(now.getTime() - 2 * HOUR),
+    };
+
+    expect(await handler.execute()).toBe(0);
+
+    stored.pullRequestStatus = {
+      ...stored.pullRequestStatus,
+      lastAttemptAt: new Date(now.getTime() - 25 * HOUR),
+    };
+    expect(await handler.execute()).toBe(1);
+  });
+
+  it('removes finished lookups older than a week and keeps the rest (review S10 of #152)', async () => {
+    const run = await readRun('open', 1);
+    const at = (days: number) => new Date(now.getTime() - days * 24 * HOUR);
+    const entry = {
+      runId: run,
+      kind: 'pull_request_state' as const,
+      requestedAt: at(9),
+      claimedBy: null,
+      claimedAt: null,
+      retryAt: null,
+      error: null,
+    };
+    lookups.lookups.push(
+      { ...entry, id: 'old-done', status: 'done', finishedAt: at(8) },
+      { ...entry, id: 'old-failed', status: 'failed', finishedAt: at(7.5) },
+      { ...entry, id: 'recent-done', status: 'done', finishedAt: at(6) },
+      { ...entry, id: 'open', status: 'requested', finishedAt: null },
+    );
+
+    await handler.execute();
+
+    expect(lookups.lookups.map((lookup) => lookup.id)).toEqual(['recent-done', 'open']);
+  });
+
   it('asks once for a Run, however often it runs', async () => {
     await readRun('open', 30);
 

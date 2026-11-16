@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  LOOKUP_CLAIM_LIMIT,
+  LOOKUP_CLAIM_MAX,
   LOOKUP_LEASE_SECONDS,
   type PullRequestStateResult,
 } from '../../../domain/entities/run-lookup.js';
@@ -63,12 +63,12 @@ describe('lookups: claim and result', () => {
   });
 
   it('hands out at most five lookups at a time', async () => {
-    for (let index = 0; index < LOOKUP_CLAIM_LIMIT + 2; index++) {
+    for (let index = 0; index < LOOKUP_CLAIM_MAX + 2; index++) {
       const run = await deliveredRun(runs);
       await lookups.request(run.id, 'pull_request_state', T0);
     }
 
-    expect(await claims.execute(WORKER)).toHaveLength(LOOKUP_CLAIM_LIMIT);
+    expect(await claims.execute(WORKER)).toHaveLength(LOOKUP_CLAIM_MAX);
     expect(await claims.execute(WORKER)).toHaveLength(2);
   });
 
@@ -106,6 +106,7 @@ describe('lookups: claim and result', () => {
       refreshError: null,
       retryAt: null,
       refreshRequestedAt: null,
+      lastAttemptAt: T0,
     });
   });
 

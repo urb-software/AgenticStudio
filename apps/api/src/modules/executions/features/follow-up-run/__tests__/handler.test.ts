@@ -291,6 +291,16 @@ describe('FollowUpRunHandler', () => {
     expect(queued.pullRequestStatus.refreshRequestedAt).toEqual(T1);
   });
 
+  it('still accepts the Follow-up when asking for the pull request state fails (review S6 of #152)', async () => {
+    const run = await finished('succeeded');
+    lookups.request = () => Promise.reject(new Error('The database is busy'));
+
+    const { run: queued } = await handler.execute(run.id, 'Go on.');
+
+    expect(queued.state).toBe('queued');
+    expect(queued.followUpQueued).toBe(true);
+  });
+
   it('answers not found for an unknown Run or an id that is not a UUID', async () => {
     await expect(handler.execute(UNKNOWN_RUN, 'x')).rejects.toBeInstanceOf(RunNotFoundError);
     await expect(handler.execute('nope', 'x')).rejects.toBeInstanceOf(RunNotFoundError);

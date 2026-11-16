@@ -39,7 +39,7 @@ export const runDeliverySchema = z.enum(['none', 'delivered', 'failed']);
 /**
  * Where a Run's pull request stands on the Git host (Issue #142): a second list next to the
  * domain's, pinned to it by a test. `draft` and `open` are open; `missing` is a pull request or
- * Run branch that no longer exists.
+ * Run branch that was not found (gone, or not visible to the Agent account).
  */
 export const pullRequestStateSchema = z.enum(['draft', 'open', 'merged', 'closed', 'missing']);
 
@@ -360,7 +360,15 @@ export function toRunResponse(
       ? { cancellation: { by: run.cancellation.by, reason: run.cancellation.reason } }
       : {}),
     ...(run.delivery ? { delivery: run.delivery } : {}),
-    ...(run.pullRequest ? { pullRequest: toPullRequestResponse(run, workerConnected) } : {}),
+    ...(run.pullRequest
+      ? {
+          pullRequest: toPullRequestResponse(
+            run.pullRequest,
+            run.pullRequestStatus,
+            workerConnected,
+          ),
+        }
+      : {}),
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
     // The domain's canResumeAfterUsageLimit, on the plain shape (Issue #105).
     ...(run.state === 'failed' &&
@@ -424,18 +432,16 @@ export const NO_WORKER_FOR_REFRESH =
   'The agent worker is not connected, so the pull request state could not be refreshed.';
 
 function toPullRequestResponse(
-  run: Pick<Parameters<typeof toRunResponse>[0], 'pullRequestStatus'> & {
-    pullRequest: { url: string; number: number } | null;
-  },
+  pullRequest: { url: string; number: number },
+  status: Parameters<typeof toRunResponse>[0]['pullRequestStatus'],
   workerConnected: boolean | undefined,
 ): NonNullable<RunResponse['pullRequest']> {
-  const status = run.pullRequestStatus;
   const waiting = status.refreshRequestedAt !== null;
   const noWorker = waiting && workerConnected === false;
   const error = status.refreshError ?? (noWorker ? NO_WORKER_FOR_REFRESH : null);
   return {
-    url: run.pullRequest!.url,
-    number: run.pullRequest!.number,
+    url: pullRequest.url,
+    number: pullRequest.number,
     ...(status.state ? { state: status.state } : {}),
     ...(status.behindBy === null ? {} : { behindBy: status.behindBy }),
     ...(status.aheadBy === null ? {} : { aheadBy: status.aheadBy }),

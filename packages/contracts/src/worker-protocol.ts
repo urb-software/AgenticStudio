@@ -567,6 +567,15 @@ export const runDeliverySchema = z.discriminatedUnion('outcome', [
 export type RunDelivery = z.infer<typeof runDeliverySchema>;
 
 /**
+ * Where a Run's pull request stands on the Git host: `draft` and `open` are open (a draft is
+ * not ready for review); `merged` and `closed` are over; `missing` means the pull request, or
+ * the Run branch it came from, no longer exists.
+ */
+export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
+export const pullRequestStateSchema = z.enum(PULL_REQUEST_STATES);
+export type PullRequestStateName = z.infer<typeof pullRequestStateSchema>;
+
+/**
  * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
  * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
  * commits of a step that failed or crashed are recorded too. A delivery outcome comes exactly
@@ -592,6 +601,12 @@ export const reportRunStateRequestSchema = z
      * knows which commits are pushed.
      */
     pushedCommit: commitIdSchema.optional(),
+    /**
+     * With `failed` / `preparation_failed` only (Issue #142): the state of the Run's pull request
+     * the worker read right before it refused to start a Follow-up (merged, closed or gone), so
+     * Studio shows it without waiting for a lookup.
+     */
+    pullRequestState: pullRequestStateSchema.optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
@@ -623,6 +638,14 @@ export const reportRunStateRequestSchema = z
     path: ['sessionRef'],
     message: 'A session reference comes only with the failure usage_limit (Issue #105).',
   })
+  .refine(
+    (report) =>
+      report.pullRequestState === undefined || report.failure?.code === 'preparation_failed',
+    {
+      path: ['pullRequestState'],
+      message: 'A pull request state on its own comes only with the failure preparation_failed.',
+    },
+  )
   .refine(
     (report) => report.pushedCommit === undefined || report.failure?.code === 'delivery_failed',
     {
@@ -956,26 +979,33 @@ export type LookupKind = z.infer<typeof lookupKindSchema>;
 export const LOOKUP_CLAIM_MAX = 5;
 
 /**
- * Where a Run's pull request stands on the Git host: `draft` and `open` are open (a draft is
- * not ready for review); `merged` and `closed` are over; `missing` means the pull request, or
- * the Run branch it came from, no longer exists.
- */
-export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
-export const pullRequestStateSchema = z.enum(PULL_REQUEST_STATES);
-export type PullRequestStateName = z.infer<typeof pullRequestStateSchema>;
-
-/**
  * The result of a `pull_request_state` lookup: the state, how many commits the Run branch is
  * behind and ahead of the integration branch (not for `missing`), and whether the Git host says
  * the pull request can be merged without conflicts (left out while the host has not worked it
  * out yet, and for a merged or closed one).
  */
-export const pullRequestStateResultSchema = z.strictObject({
-  state: pullRequestStateSchema,
-  behindBy: z.int().min(0).max(PG_INT_MAX).optional(),
-  aheadBy: z.int().min(0).max(PG_INT_MAX).optional(),
-  mergeable: z.boolean().optional(),
-});
+export const pullRequestStateResultSchema = z
+  .strictObject({
+    state: pullRequestStateSchema,
+    behindBy: z.int().min(0).max(PG_INT_MAX).optional(),
+    aheadBy: z.int().min(0).max(PG_INT_MAX).optional(),
+    mergeable: z.boolean().optional(),
+  })
+  .refine(
+    (result) =>
+      (result.state !== 'merged' && result.state !== 'missing') ||
+      (result.behindBy === undefined &&
+        result.aheadBy === undefined &&
+        result.mergeable === undefined),
+    {
+      path: ['state'],
+      message: 'A merged or missing pull request has no branch position and no merge verdict.',
+    },
+  )
+  .refine((result) => result.state !== 'closed' || result.mergeable === undefined, {
+    path: ['mergeable'],
+    message: 'A closed pull request has no merge verdict.',
+  });
 export type PullRequestStateResult = z.infer<typeof pullRequestStateResultSchema>;
 
 /**

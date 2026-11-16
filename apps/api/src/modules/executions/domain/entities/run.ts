@@ -81,12 +81,12 @@ export const TASK_MAX_LENGTH = 20_000;
 export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
 export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
 
-/** States in which a Follow-up has no pull request left to update. */
-export const PULL_REQUEST_ENDED_STATES = [
-  'merged',
-  'closed',
-  'missing',
-] as const satisfies readonly PullRequestState[];
+/** The Follow-up refusal for each state in which no pull request is left to update. */
+export const PULL_REQUEST_ENDED_REFUSALS = {
+  merged: 'pull_request_merged',
+  closed: 'pull_request_closed',
+  missing: 'pull_request_missing',
+} as const satisfies Partial<Record<PullRequestState, FollowUpRefusal>>;
 
 /**
  * What Studio knows about the Run's pull request (Issue #142), from the lookups the agent worker
@@ -109,6 +109,8 @@ export interface RunPullRequestStatus {
   retryAt: Date | null;
   /** Set while a lookup waits for an agent worker or is being answered. */
   refreshRequestedAt: Date | null;
+  /** When a lookup was last requested, whether or not it succeeded (review S1 of #152). */
+  lastAttemptAt: Date | null;
 }
 
 /** No lookup yet: what a Run starts with. */
@@ -121,6 +123,7 @@ export const NO_PULL_REQUEST_STATUS: RunPullRequestStatus = {
   refreshError: null,
   retryAt: null,
   refreshRequestedAt: null,
+  lastAttemptAt: null,
 };
 
 /** One commit on a Run branch: its id and subject line. */
@@ -507,7 +510,7 @@ export function isResumable(run: Pick<Run, 'state' | 'sessionRef' | 'messages'>)
  * queued, its Working copy was removed (or it never reported one), it has no agent session, it
  * reached its Run step total, its Provider is unavailable, or the agent worker that holds its
  * Working copy is not connected. Issue #142: or its pull request, as last read, was merged or
- * closed, or no longer exists (`pull_request_missing`, also a deleted Run branch); a pull request
+ * closed, or was not found (`pull_request_missing`: gone, or not visible to the Agent account); a pull request
  * of unknown state does not stop it.
  */
 export const FOLLOW_UP_REFUSALS = [
@@ -558,9 +561,11 @@ export function followUpEligibility(
   // Issue #142: nothing to update once the pull request is over; a reopened one is open again
   // at the next lookup.
   const pullRequest = run.pullRequestStatus.state;
-  if (pullRequest === 'merged') return refuse('pull_request_merged');
-  if (pullRequest === 'closed') return refuse('pull_request_closed');
-  if (pullRequest === 'missing') return refuse('pull_request_missing');
+  if (pullRequest !== null && pullRequest in PULL_REQUEST_ENDED_REFUSALS) {
+    return refuse(
+      PULL_REQUEST_ENDED_REFUSALS[pullRequest as keyof typeof PULL_REQUEST_ENDED_REFUSALS],
+    );
+  }
   if (run.sessionRef === null) return refuse('no_session');
   if (run.workingCopy === null || run.workingCopyRemovedAt !== null) {
     return refuse('working_copy_removed');

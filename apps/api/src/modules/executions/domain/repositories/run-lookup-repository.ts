@@ -1,3 +1,4 @@
+import type { PullRequestState } from '../entities/run.js';
 import type { ClaimedLookup, LookupKind, PullRequestStateResult } from '../entities/run-lookup.js';
 
 /** DI token for the {@link RunLookupRepository} adapter. */
@@ -67,13 +68,24 @@ export interface RunLookupRepository {
     now: Date,
   ): Promise<LookupAnswerOutcome>;
 
+  /**
+   * Records the state of the Run's pull request a worker read on its own (review S4 of #152: right
+   * before it refused a Follow-up): the state and its read time replace the Run's, the error is
+   * cleared; the branch position is left as it was. A Run without a pull request is left alone.
+   */
+  recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void>;
+
+  /** Removes lookups that finished (done or failed) before `before`; returns how many. */
+  deleteFinishedBefore(before: Date): Promise<number>;
+
   /** The kind of a lookup, or `null` when there is none with this id. */
   findKind(lookupId: string): Promise<LookupKind | null>;
 
   /**
-   * Ids of Runs with a pull request whose state is `draft`, `open` or unknown, last read before
-   * `refreshedBefore` (or never) and not being refreshed, oldest read first (Issue #142: the
-   * daily refresh).
+   * Ids of Runs with a pull request whose state is `draft`, `open` or unknown, whose last lookup
+   * was requested before `attemptedBefore` (or never; a read before it counts when no attempt is
+   * recorded) and that are not being refreshed, oldest attempt first (Issue #142: the daily
+   * refresh; review S2 of #152: counted from the attempt, not from the last success).
    */
-  listDueForDailyRefresh(refreshedBefore: Date, limit: number): Promise<string[]>;
+  listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]>;
 }

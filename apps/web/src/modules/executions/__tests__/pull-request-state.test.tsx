@@ -243,7 +243,7 @@ describe('Run page: Follow-up by pull request state (Issue #142)', () => {
   it.each([
     ['pull_request_merged', 'The pull request was merged on GitHub'],
     ['pull_request_closed', 'The pull request was closed on GitHub'],
-    ['pull_request_missing', 'no longer exists on GitHub'],
+    ['pull_request_missing', 'was not found on GitHub'],
   ] as const)(
     'replaces the Follow-up form with the reason (%s) and offers "Run again"',
     async (reason, words) => {
