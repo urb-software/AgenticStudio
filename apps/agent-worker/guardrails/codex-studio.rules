@@ -1,7 +1,10 @@
 # Studio's command rules for Codex (Issue #106). GUARDRAILS, NOT THE SECURITY BOUNDARY (ADR 0002,
 # docs/engineering/security.md §2). The agent worker writes this file as the only file in
 # $HOME/.codex/rules/ before every Codex Run step, removing anything else there: a rule another
-# file added (an `allow` runs a command outside the sandbox) never takes effect.
+# file added (an `allow` runs a command outside the sandbox) never takes effect. Since #134 the
+# same rules are also enforced from the root-owned /etc/codex/requirements.toml
+# (codex-requirements.toml), which the agent user cannot change; keep both in step (a test
+# compares them).
 # Only `forbidden` decisions: a Run never waits for an approval (approval_policy="never").
 
 prefix_rule(

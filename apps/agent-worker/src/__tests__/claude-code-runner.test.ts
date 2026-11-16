@@ -94,8 +94,13 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
   let gitCalls: string[][];
   const repoFiles: Record<string, string> = {};
 
+  // Issue #134: the managed guardrails check, as a fake here (the real files are root-owned).
+  let managedProblem: string | null;
   const runner = (gate = new ProviderGate({ claude_code: true, codex: false })) =>
     new ClaudeCodeRunner({
+      managed: {
+        problem: async (provider) => (provider === 'claude_code' ? managedProblem : null),
+      },
       cli: { gate, binaries: DEFAULT_PROVIDER_BINARIES },
       git: {
         run: async (args) => {
@@ -107,7 +112,6 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
       },
       env: WORKER_ENV,
       maxTurns: 200,
-      guardrails: { nodePath: '/usr/bin/node' },
       marker: () => 'feedc0de',
     });
 
@@ -132,6 +136,7 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
 
   beforeEach(() => {
     runDir = mkdtempSync(join(tmpdir(), 'studio-claude-run-'));
+    managedProblem = null;
     gitCalls = [];
     groups = [];
     for (const key of Object.keys(repoFiles)) delete repoFiles[key];
@@ -244,9 +249,10 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     });
     // Read at the start commit from Git, never from the Working copy's files.
     expect(gitCalls[0]).toEqual(['cat-file', 'blob', `${'a'.repeat(40)}:CLAUDE.md`]);
-    const settings = JSON.parse(readFileSync(join(runDir, 'claude-settings.json'), 'utf8'));
-    expect(settings.permissions).toEqual((await readGuardrailSettings()).permissions);
-    expect(existsSync(join(runDir, 'claude-guard.mjs'))).toBe(true);
+    // Issue #134: the guardrails are the root-owned managed settings; the per-Run file is empty
+    // and no guard script is copied anywhere the agent can write.
+    expect(readFileSync(join(runDir, 'claude-settings.json'), 'utf8')).toBe('{}\n');
+    expect(existsSync(join(runDir, 'claude-guard.mjs'))).toBe(false);
     expect(existsSync(join(runDir, 'tmp'))).toBe(true);
     expect(existsSync(join(runDir, 'repo'))).toBe(false);
   });
@@ -329,6 +335,21 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     await expect(step).rejects.not.toThrow(/test-only-value/);
     expect(spawn).not.toHaveBeenCalled();
     expect(existsSync(join(runDir, 'instructions.md'))).toBe(false);
+  });
+
+  it('refuses a step, starting and writing nothing, while the managed guardrails are missing or changed (Issue #134)', async () => {
+    managedProblem =
+      'managed guardrails missing or changed: /etc/claude-code/managed-settings.json';
+
+    const step = drain(runner().start(input('x')));
+
+    await expect(step).rejects.toThrow(
+      'Claude Code: managed guardrails missing or changed: /etc/claude-code/managed-settings.json. ' +
+        "The operator reinstalls them with the server setup's guardrails step",
+    );
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(runDir, 'instructions.md'))).toBe(false);
+    expect(existsSync(join(runDir, 'claude-settings.json'))).toBe(false);
   });
 
   it('starts nothing and writes nothing when Claude Code is switched off', async () => {

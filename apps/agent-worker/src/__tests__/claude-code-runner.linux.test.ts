@@ -1,5 +1,13 @@
 import type { RunPayload, RunnerEvent } from '@agentic-studio/contracts';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,9 +15,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_DEFINITION, AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 import { readGuardrailSettings } from '../claude-code/guardrails.js';
 import { ClaudeCodeRunner, probeClaudeCode } from '../claude-code/runner.js';
+import { ManagedGuardrails } from '../managed-guardrails.js';
 import { GitRunner } from '../git.js';
 import { ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
+import { installManagedGuardrails } from './fixtures/managed-guardrails.js';
 import { StepProcesses } from '../step-processes.js';
 import { git, isolatedGitEnv } from './fixtures/git-fixture.js';
 
@@ -64,6 +74,8 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
       git: new GitRunner(),
       env: workerEnv(),
       maxTurns: 50,
+      // Issue #134: the real check, on managed files installed under the test's root.
+      managed: new ManagedGuardrails({ root: join(root, 'managed'), ownerUid: process.getuid!() }),
     });
   const payload = (task: string): RunPayload => ({
     runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
@@ -104,8 +116,9 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     return { events, result };
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), 'studio-claude-stub-'));
+    await installManagedGuardrails(join(root, 'managed'));
     mkdirSync(join(root, 'home'));
     runDir = join(root, 'run');
     repoDir = join(runDir, 'repo');
@@ -212,10 +225,9 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     expect(argv.join('\n')).not.toMatch(/\.claude\/|\.mcp\.json|hostile|evil/i);
     expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('user');
     expect(argv).toContain('--strict-mcp-config');
-    // Settings: Studio's guardrails, exactly.
+    // Settings: empty per Run (Issue #134: Studio's guardrails are the managed settings).
     const settings = JSON.parse(readFileSync(join(runDir, 'claude-settings.json'), 'utf8'));
-    expect(settings.permissions).toEqual((await readGuardrailSettings()).permissions);
-    expect(JSON.stringify(settings)).not.toMatch(/pwned|hostile|bypassPermissions|apiKeyHelper/);
+    expect(settings).toEqual({});
     // Instructions: the text of CLAUDE.md, AGENTS.md and the inside import, nothing else.
     const instructions = readFileSync(join(runDir, 'instructions.md'), 'utf8');
     expect(instructions).toContain('Project rule: use pnpm.');
@@ -234,6 +246,17 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
       type: 'notice',
       text: 'Skipped the import @../escape.md in CLAUDE.md: outside the repository.',
     });
+  });
+
+  it('refuses a step, starting nothing, when the managed guard script was changed (Issue #134)', async () => {
+    const guard = join(root, 'managed', 'usr/local/lib/agentic-studio/guardrails/claude-guard.mjs');
+    writeFileSync(guard, 'process.exit(0);', { flag: 'a' });
+
+    await expect(drain(runner().start(input('x')))).rejects.toThrow(
+      'Claude Code: managed guardrails missing or changed: ' +
+        '/usr/local/lib/agentic-studio/guardrails/claude-guard.mjs.',
+    );
+    expect(existsSync(join(runDir, 'claude-stub-calls.ndjson'))).toBe(false);
   });
 
   it('reads the instruction files at the start commit, not as the agent left them', async () => {

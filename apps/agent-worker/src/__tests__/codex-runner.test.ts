@@ -99,11 +99,14 @@ describe('CodexRunner at the spawn boundary', () => {
     STUDIO_AGENT_GITHUB_TOKEN: 'test-only-agent-token',
     CODEX_CLI_ENABLED: 'true',
   });
+  // Issue #134: the managed guardrails check, as a fake here (the real files are root-owned).
+  let managedProblem: string | null;
   const runner = (
     gate = new ProviderGate({ claude_code: false, codex: true }),
     env: Record<string, string | undefined> = workerEnv(),
   ) =>
     new CodexRunner({
+      managed: { problem: async (provider) => (provider === 'codex' ? managedProblem : null) },
       cli: { gate, binaries: DEFAULT_PROVIDER_BINARIES },
       git: {
         run: async (args) => {
@@ -146,6 +149,7 @@ describe('CodexRunner at the spawn boundary', () => {
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'studio-codex-run-'));
+    managedProblem = null;
     runDir = join(root, 'run');
     home = join(root, 'home');
     mkdirSync(join(runDir, 'repo'), { recursive: true });
@@ -209,8 +213,9 @@ describe('CodexRunner at the spawn boundary', () => {
       type: 'notice',
       text: "Codex sandbox: workspace-write, network on (set by the agent worker's configuration).",
     });
-    // Studio's configuration was in place, with this Working copy untrusted, before the CLI started.
-    expect(configAtSpawn).toContain('network_access = true');
+    // Studio's user configuration was in place, with this Working copy untrusted, before the CLI
+    // started (its settings are managed since #134).
+    expect(configAtSpawn).toContain('Since #134');
     expect(configAtSpawn).toMatch(/\[projects\.".*repo"\]\ntrust_level = "untrusted"/);
     expect(result).toEqual({
       outcome: 'done',
@@ -385,6 +390,21 @@ describe('CodexRunner at the spawn boundary', () => {
     );
     await expect(step).rejects.not.toThrow(/test-only-instructions/);
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('refuses a step, starting and writing nothing, while the managed guardrails are missing or changed (Issue #134)', async () => {
+    managedProblem = 'managed guardrails missing or changed: /etc/codex/requirements.toml';
+
+    const step = drain(runner().start(input('x')));
+
+    await expect(step).rejects.toBeInstanceOf(AgentFailedError);
+    await expect(step).rejects.toThrow(
+      'Codex: managed guardrails missing or changed: /etc/codex/requirements.toml. The operator ' +
+        "reinstalls them with the server setup's guardrails step",
+    );
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(home, '.codex', 'config.toml'))).toBe(false);
+    expect(existsSync(join(runDir, 'codex'))).toBe(false);
   });
 
   it('refuses a step without the agent user home, starting nothing', async () => {

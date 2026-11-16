@@ -1,47 +1,17 @@
-# Studio's Codex configuration for the agent user (Issue #106). GUARDRAILS, NOT THE SECURITY
-# BOUNDARY: the boundary is the operating-system user with its rootless Docker daemon (ADR 0002,
-# docs/engineering/security.md §2).
+# Studio's user-level Codex configuration for the agent user (Issues #106, #134). GUARDRAILS, NOT
+# THE SECURITY BOUNDARY: the boundary is the operating-system user with its rootless Docker daemon
+# (ADR 0002, docs/engineering/security.md §2).
 #
-# Studio owns the agent user's Codex configuration: before every Codex Run step the agent worker
-# writes the whole of $HOME/.codex/config.toml from this file, overwriting any edits, and appends
-# one `[projects."<path>"] trust_level = "untrusted"` entry for every existing Working copy (the
-# command-line override is ignored by the CLI: compliance record, technical finding 3). An
-# untrusted project loads none of its `.codex/` configuration, hooks or rules; in 0.169.0 the CLI
-# skips its AGENTS.md too, so the worker puts that text into the prompt itself.
-# Do not add a [projects] table here; the worker refuses a template that has one.
-
-# ADR 0002 (trial of 2026-11-15): the workspace-write sandbox is kept, with network access on,
-# so the agent reaches the agent user's rootless Docker daemon and can install dependencies.
-# The sandbox mode itself is on the command line (`--sandbox workspace-write`).
-[sandbox_workspace_write]
-network_access = true
-
-# Compliance record, finding 4: commands the agent runs get only these variables (the Codex
-# process itself already has only the worker's allowlist), and names containing KEY, SECRET or
-# TOKEN are filtered out (`ignore_default_excludes = false`). Not `inherit = "core"`: the
-# rootless Docker daemon needs DOCKER_HOST / XDG_RUNTIME_DIR and the Run's COMPOSE_PROJECT_NAME.
-[shell_environment_policy]
-inherit = "all"
-ignore_default_excludes = false
-include_only = [
-  "PATH",
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "LANG",
-  "LC_ALL",
-  "TZ",
-  "XDG_RUNTIME_DIR",
-  "DOCKER_HOST",
-  "TERM",
-  "TMPDIR",
-  "COMPOSE_PROJECT_NAME",
-]
-
-# Studio's guardrails for Codex are its command rules only: there is no Studio hook (a user-level
-# hook needs a trust the CLI keeps against its hash, so it would not run unattended), the worker
-# removes ~/.codex/hooks.json before every step, and an untrusted project's hooks are skipped.
-# The hooks feature flag is left at the CLI's default (coordinator decision after the smoke of
-# #133). App (connector) integrations are off: no MCP servers or connectors in the first version.
-[features]
-apps = false
+# Before every Codex Run step the agent worker writes the whole of $HOME/.codex/config.toml from
+# this file, overwriting any edits, and appends one `[projects."<path>"] trust_level =
+# "untrusted"` entry for every existing Working copy (the command-line override is ignored by the
+# CLI: compliance record, technical finding 3). An untrusted project loads none of its `.codex/`
+# configuration, hooks or rules; in 0.169.0 the CLI skips its AGENTS.md too, so the worker puts
+# that text into the prompt itself.
+#
+# Since #134 Studio's settings are managed: the sandbox network, the command environment and the
+# feature flags are in /etc/codex/managed_config.toml (codex-managed-config.toml), the hook and
+# the enforced command rules in /etc/codex/requirements.toml (codex-requirements.toml), both
+# root-owned and checked by the worker before every step. Only the per-Working-copy trust entries
+# stay here. Do not add a [projects] or [hooks] table here; the worker refuses a template that has
+# one.

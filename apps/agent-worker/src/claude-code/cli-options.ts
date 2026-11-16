@@ -92,7 +92,7 @@ export interface ClaudeArgumentsInput {
   prompt: string;
   /** Studio's allowed tool rules (from its guardrail settings file). */
   allowedTools: readonly string[];
-  /** Studio's guardrail settings in the Run's directory. */
+  /** The per-Run settings file in the Run's directory (`{}` since #134: the guardrails are managed). */
   settingsFile: string;
   /** The agent definition and the repository's instruction text, in the Run's directory. */
   instructionsFile: string;
@@ -152,7 +152,6 @@ export function claudePrompt(kind: 'task' | 'answer', text: string): string {
 export function claudeStepFiles(runDir: string) {
   return {
     settingsFile: posix.join(runDir, 'claude-settings.json'),
-    guardScript: posix.join(runDir, 'claude-guard.mjs'),
     instructionsFile: posix.join(runDir, 'instructions.md'),
     tmpDir: posix.join(runDir, 'tmp'),
   };
