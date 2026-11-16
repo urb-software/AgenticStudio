@@ -607,16 +607,17 @@ describe('structured result of a Run step', () => {
 });
 
 describe('runner event', () => {
-  it('is an agent message, a command or output (Issue #99)', () => {
+  it('is an agent message, a command, output or a notice (Issues #99, #105)', () => {
     expect(runnerEventSchema.parse({ type: 'output', text: 'compiling' })).toEqual({
       type: 'output',
       text: 'compiling',
     });
-    for (const type of ['message', 'command', 'output']) {
+    for (const type of ['message', 'command', 'output', 'notice']) {
       expect(runnerEventSchema.safeParse({ type, text: 'x' }).success).toBe(true);
     }
     expect(runnerEventSchema.safeParse({ type: 'status', text: '' }).success).toBe(false);
-    expect(runnerEventSchema.safeParse({ type: 'notice', text: '' }).success).toBe(false);
+    // The step markers are the worker's own, never a runner's.
+    expect(runnerEventSchema.safeParse({ type: 'step_started', text: '' }).success).toBe(false);
   });
 });
 
@@ -786,8 +787,49 @@ describe('worker status report (Issue #101)', () => {
     ],
     ['an extra field', { ...report, environment: 'production' }],
     ['no worker id', { runner: 'cli', providers: report.providers }],
+    ['a reason for an unknown provider', { ...report, providerReasons: { gpt: 'x' } }],
+    ['an empty reason', { ...report, providerReasons: { claude_code: '' } }],
+    ['a reason that is too long', { ...report, providerReasons: { codex: 'x'.repeat(501) } }],
   ])('refuses %s', (_case, body) => {
     expect(workerStatusRequestSchema.safeParse(body).success).toBe(false);
+  });
+
+  it('carries why a switched-on provider is unavailable on the worker (Issue #105)', () => {
+    const withReason = {
+      ...report,
+      providerReasons: { claude_code: 'Claude Code 2.2.0 is not supported (>=2.1.325 <2.2.0).' },
+    };
+    expect(workerStatusRequestSchema.parse(withReason)).toEqual(withReason);
+    expect(workerStatusRequestSchema.safeParse({ ...report, providerReasons: {} }).success).toBe(
+      true,
+    );
+  });
+});
+
+describe('a Run that reached the usage limit (Issue #105)', () => {
+  const report = (body: object) =>
+    reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+  const usageLimit = { code: 'usage_limit', detail: 'The usage limit was reached.' };
+
+  it('may carry the agent session to resume later, with the failure usage_limit only', () => {
+    expect(report({ state: 'failed', failure: usageLimit, sessionRef: 'session-1' })).toBe(true);
+    expect(report({ state: 'failed', failure: usageLimit })).toBe(true);
+    expect(
+      report({
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: 'x' },
+        sessionRef: 'session-1',
+      }),
+    ).toBe(false);
+    expect(report({ state: 'running', sessionRef: 'session-1' })).toBe(false);
+    expect(report({ state: 'failed', failure: usageLimit, sessionRef: '' })).toBe(false);
+    expect(
+      report({
+        state: 'failed',
+        failure: usageLimit,
+        sessionRef: 's'.repeat(SESSION_REF_MAX_LENGTH + 1),
+      }),
+    ).toBe(false);
   });
 });
 

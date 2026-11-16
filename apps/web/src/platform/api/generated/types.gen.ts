@@ -159,6 +159,7 @@ export type RunOutput = {
         number: number;
     };
     deliveryRetryRequested?: true;
+    resumable?: true;
     failingChecks?: Array<string>;
     question?: RunQuestionOutput;
     messages?: Array<RunMessageOutput>;
@@ -888,6 +889,38 @@ export type AnswerRunResponses = {
 };
 
 export type AnswerRunResponse = AnswerRunResponses[keyof AnswerRunResponses];
+
+export type ResumeRunData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/resume';
+};
+
+export type ResumeRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run did not stop at the usage limit with a session (urn:agentic-studio:problem:run-not-resumable), or its project or the server has no free place (urn:agentic-studio:problem:resume-slot-taken)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ResumeRunError = ResumeRunErrors[keyof ResumeRunErrors];
+
+export type ResumeRunResponses = {
+    202: RunOutput;
+};
+
+export type ResumeRunResponse = ResumeRunResponses[keyof ResumeRunResponses];
 
 export type ListRunEventsData = {
     body?: never;

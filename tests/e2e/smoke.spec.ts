@@ -557,6 +557,9 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(envCard.getByText('.env', { exact: true })).toBeVisible();
   await expect(page.getByText(envValue)).toHaveCount(0);
   // At this viewport (390 or 1440 px), in both themes: no sideways scroll, no axe violations.
+  // Scanned once the toasts are gone: an earlier toast ("Project created") stacked behind the new
+  // one is mid-transition and part-transparent, which axe reads as low contrast.
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, { timeout: 15_000 });
   await expectInBothThemes(page, envCard.getByText('An environment file is set.'));
   expect(await page.content()).not.toContain(envValue);
 

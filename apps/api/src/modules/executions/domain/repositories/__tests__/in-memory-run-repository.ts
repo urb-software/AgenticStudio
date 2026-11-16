@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   ACTIVE_RUN_STATES,
+  canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
   isFinal,
   MAX_ACTIVE_RUNS,
@@ -17,6 +18,7 @@ import type {
   ClaimedRunChange,
   DeliveryRetryOutcome,
   NewRun,
+  ResumeAfterLimitOutcome,
   RunRepository,
   RunStateView,
   RunStepRecord,
@@ -160,6 +162,9 @@ export class InMemoryRunRepository implements RunRepository {
         ? deliveryFields(change.delivery)
         : {}),
       ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
+      ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
+        ? { sessionRef: change.sessionRef }
+        : {}),
     });
     return Promise.resolve(this.view(run));
   }
@@ -351,6 +356,27 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(this.view(run));
   }
 
+  resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<ResumeAfterLimitOutcome> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (
+      !run ||
+      !canResumeAfterUsageLimit(run) ||
+      (run.environmentFileSupplied && run.environmentFileSecret === null)
+    ) {
+      return Promise.resolve({ status: 'not_resumable' });
+    }
+    const others = this.runs.filter((other) => other.id !== run.id && holdsPlace(other));
+    if (others.some((other) => other.projectId === run.projectId)) {
+      return Promise.resolve({ status: 'slot_taken', scope: 'project' });
+    }
+    if (others.length >= MAX_ACTIVE_RUNS) {
+      return Promise.resolve({ status: 'slot_taken', scope: 'server' });
+    }
+    run.messages.push({ kind: 'answer', text, at: now });
+    Object.assign(run, { state: 'queued', failure: null, finishedAt: null });
+    return Promise.resolve({ status: 'resumed', run: this.view(run) });
+  }
+
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
     return Promise.resolve(
       this.runs
@@ -428,7 +454,7 @@ export class InMemoryRunRepository implements RunRepository {
   ): Promise<{ runId: string; secretRef: string }[]> {
     const retryable = (run: Run) =>
       run.state === 'failed' &&
-      run.failure?.code === 'delivery_failed' &&
+      (run.failure?.code === 'delivery_failed' || run.failure?.code === 'usage_limit') &&
       (run.deliveryRequested ||
         (run.finishedAt !== null && run.finishedAt >= retryableFinishedBefore));
     return Promise.resolve(

@@ -40,6 +40,8 @@ export interface ReportRunStateInput {
   workingCopy?: RunWorkingCopy | null;
   /** With `succeeded`: how the Run was delivered (Issue #102). */
   delivery?: RunDeliveryOutcome | null;
+  /** With `failed` / `usage_limit`: the agent session to resume later (Issue #105). */
+  sessionRef?: string | null;
 }
 
 /**
@@ -103,6 +105,7 @@ export class ReportRunStateHandler {
             : input.delivery?.outcome === 'none' && input.delivery.branchPushed
               ? OPERATOR_CANCELLATION_BRANCH_PUSHED
               : OPERATOR_CANCELLATION,
+        sessionRef: input.failure?.code === 'usage_limit' ? (input.sessionRef ?? null) : null,
         cancelRequested,
         now: this.clock.now(),
       });

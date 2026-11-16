@@ -17,7 +17,7 @@ import { type Backoff, ReportOutbox } from './report-outbox.js';
 import { RunLog } from './run-log.js';
 import { composeProjectName, STEP_PROCESSES_FILE } from './run-layout.js';
 import type { RunResources } from './run-resources.js';
-import { AgentFailedError, drainRunStep, type Runner } from './runner.js';
+import { AgentFailedError, drainRunStep, type Runner, UsageLimitError } from './runner.js';
 import { StepProcesses } from './step-processes.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from './working-copy.js';
@@ -579,8 +579,17 @@ export class AgentWorker {
     if (failure === UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
+    // Issue #105: the session a Run stopped at the usage limit resumes later.
+    const session =
+      error instanceof UsageLimitError && error.sessionRef !== undefined
+        ? { sessionRef: error.sessionRef }
+        : {};
     outbox.send('failed', (signal) =>
-      api.reportState(run.runId, { state: 'failed', failure, ...withWorkingCopy }, signal),
+      api.reportState(
+        run.runId,
+        { state: 'failed', failure, ...withWorkingCopy, ...session },
+        signal,
+      ),
     );
     await outbox.drain();
     logger.info(`Run ${run.runId} reported: failed (${failure.code}).`);
@@ -646,6 +655,7 @@ function failureOf(error: unknown): RunFailure {
   if (error instanceof ProviderDisabledError) return failure('provider_disabled', error.message);
   if (error instanceof StepLimitError) return failure('step_limit', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
+  if (error instanceof UsageLimitError) return failure('usage_limit', error.message);
   if (error instanceof InvalidResultError) return INVALID_RESULT_FAILURE;
   // A refused commit of a done step (Issue #102).
   if (error instanceof DeliveryFailedError) return failure('delivery_failed', error.detail);

@@ -1,4 +1,4 @@
-import { Prisma } from '@agentic-studio/database';
+import { isUniqueConstraintViolation, Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DATABASE_CLIENT,
@@ -31,6 +31,7 @@ import {
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
+  ResumeAfterLimitOutcome,
   DeliveryRetryOutcome,
   NewRun,
   RunRepository,
@@ -379,6 +380,10 @@ export class PrismaRunRepository implements RunRepository {
           ? deliveryColumns(change.delivery)
           : {}),
         ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
+        // Issue #105: the session a Run stopped at the usage limit resumes later.
+        ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
+          ? { sessionRef: change.sessionRef }
+          : {}),
       },
     });
     return count === 1 ? this.findById(change.runId) : null;
@@ -553,6 +558,72 @@ export class PrismaRunRepository implements RunRepository {
       });
       return toRun(row);
     });
+  }
+
+  async resumeAfterUsageLimit(
+    runId: string,
+    text: string,
+    now: Date,
+  ): Promise<ResumeAfterLimitOutcome> {
+    try {
+      return await this.db.$transaction(
+        (tx) => this.resumeInTransaction(tx, runId, text, now),
+        CLAIM_TRANSACTION,
+      );
+    } catch (error) {
+      // Backstop: the partial unique index on a project's active Run (Issue #103).
+      if (isUniqueConstraintViolation(error)) return { status: 'slot_taken', scope: 'project' };
+      throw error;
+    }
+  }
+
+  private async resumeInTransaction(
+    tx: Prisma.TransactionClient,
+    runId: string,
+    text: string,
+    now: Date,
+  ): Promise<ResumeAfterLimitOutcome> {
+    // Serialized with claims: the places counted below cannot change until commit.
+    await tx.$queryRaw`
+        SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
+    // Locks the Run row: the condition, the answer and the state change hold together, so a
+    // second click changes nothing.
+    const [run] = await tx.$queryRaw<{ id: string; project_id: string }[]>`
+        SELECT id, project_id FROM runs
+        WHERE id = ${runId}::uuid AND state = 'failed' AND failure_code = 'usage_limit'
+          AND session_ref IS NOT NULL AND run_branch IS NOT NULL
+          AND cancel_requested_at IS NULL
+          -- A supplied Environment file's snapshot must still be there: the resumed step's log
+          -- is redacted with it (Issue #104). Past the retention period it is gone.
+          AND (NOT environment_file_supplied OR environment_file_secret_id IS NOT NULL)
+        FOR UPDATE`;
+    if (!run) return { status: 'not_resumable' };
+    // Places held as for a claim: an active state, a failed Run held for a delivery retry, or
+    // a Run queued to resume.
+    const [places] = await tx.$queryRaw<{ project: number; server: number }[]>`
+        SELECT count(*) FILTER (WHERE a.project_id = ${run.project_id}::uuid)::int AS project,
+               count(*)::int AS server
+        FROM runs a
+        WHERE a.id <> ${runId}::uuid
+          AND (a.state IN (${ACTIVE})
+               OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
+               OR (a.state = 'queued' AND a.session_ref IS NOT NULL))`;
+    if ((places?.project ?? 0) > 0) return { status: 'slot_taken', scope: 'project' };
+    if ((places?.server ?? 0) >= MAX_ACTIVE_RUNS) return { status: 'slot_taken', scope: 'server' };
+    const last = await tx.runMessage.findFirst({
+      where: { runId },
+      orderBy: { seq: 'desc' },
+      select: { seq: true },
+    });
+    await tx.runMessage.create({
+      data: { runId, seq: (last?.seq ?? 0) + 1, kind: 'answer', text, at: now },
+    });
+    const row = await tx.run.update({
+      where: { id: runId },
+      data: { state: 'queued', failureCode: null, failureDetail: null, finishedAt: null },
+      select: RUN_FIELDS,
+    });
+    return { status: 'resumed', run: toRun(row) };
   }
 
   async listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
@@ -744,10 +815,11 @@ export class PrismaRunRepository implements RunRepository {
       where: {
         state: { in: [...FINAL_RUN_STATES] },
         environmentFileSecretId: { not: null },
-        // A failed delivery that can still be retried keeps its snapshot (Issue #104).
+        // A failed delivery that can still be retried keeps its snapshot (Issue #104), and so
+        // does a Run stopped at the usage limit, which can be resumed (Issue #105).
         NOT: {
           state: 'failed',
-          failureCode: 'delivery_failed',
+          failureCode: { in: ['delivery_failed', 'usage_limit'] },
           OR: [{ deliveryRequested: true }, { finishedAt: { gte: retryableFinishedBefore } }],
         },
       },

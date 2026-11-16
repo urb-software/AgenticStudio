@@ -44,4 +44,25 @@ describe('providerAvailability', () => {
       expect.objectContaining({ available: false, reason: 'No agent worker is connected' }),
     ]);
   });
+
+  it("shows the worker's reason for a switched-on provider it cannot run (Issue #105)", () => {
+    const reported = {
+      ...status({ claude_code: true, codex: false }),
+      providerReasons: {
+        claude_code: 'Claude Code 2.2.0 is not a supported version (>=2.1.325 <2.2.0).',
+        // A reason never turns a switched-off provider into anything else.
+        codex: 'not installed',
+      },
+    };
+
+    expect(providerAvailability(reported, NOW, LEASE)).toEqual([
+      {
+        id: 'claude_code',
+        name: 'Claude Code',
+        available: false,
+        reason: 'Claude Code 2.2.0 is not a supported version (>=2.1.325 <2.2.0).',
+      },
+      { id: 'codex', name: 'Codex', available: false, reason: 'Switched off on the agent worker' },
+    ]);
+  });
 });

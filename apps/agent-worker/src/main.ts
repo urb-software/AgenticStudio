@@ -1,3 +1,4 @@
+import { ClaudeCodeRunner, probeClaudeCode } from './claude-code/runner.js';
 import { MissingCliRunner } from './cli-runner.js';
 import { assertSupportedPlatform, loadWorkerConfig, type WorkerConfig } from './config.js';
 import { Deliveries } from './delivery.js';
@@ -32,7 +33,20 @@ try {
 }
 
 // The provider switches were read once, above; a change takes a restart (Issue #101).
-const gate = new ProviderGate(config.providers);
+const switches = new ProviderGate(config.providers);
+// Issue #105: a switched-on Claude Code whose CLI is missing or of an unsupported version is
+// unavailable (with the reason) for the life of the process. The check starts `claude
+// --version` through the spawn boundary, so only when the switch is on and the CLI is used.
+const unavailable: { claude_code?: string } = {};
+if (config.runner === 'cli' && switches.isEnabled('claude_code')) {
+  const check = await probeClaudeCode(
+    { gate: switches, binaries: config.providerBinaries },
+    process.env,
+  );
+  if (!check.ok) unavailable.claude_code = check.reason;
+}
+const gate = new ProviderGate(config.providers, unavailable);
+const cli = { gate, binaries: config.providerBinaries };
 // The agent user's own environment and Git configuration (its Git credentials live there).
 const git = new GitRunner();
 const fake = new FakeRunner({ git });
@@ -42,8 +56,17 @@ const runner = new RunnerDispatcher(
   gate,
   config.runner === 'fake'
     ? { claude_code: fake, codex: fake }
-    : { claude_code: new MissingCliRunner('claude_code'), codex: new MissingCliRunner('codex') },
+    : {
+        claude_code: new ClaudeCodeRunner({
+          cli,
+          git,
+          env: process.env,
+          maxTurns: config.claudeMaxTurns,
+        }),
+        codex: new MissingCliRunner('codex'),
+      },
 );
+const reasons = gate.reasons();
 
 // Kept in the data directory across restarts: a delivery retry goes to the worker that started
 // the Run, which holds its Working copy (Issue #102, review R4 of #122).
@@ -64,7 +87,11 @@ const worker = new AgentWorker({
   runner,
   gate,
   resources,
-  status: { runner: config.runner, providers: gate.snapshot() },
+  status: {
+    runner: config.runner,
+    providers: gate.snapshot(),
+    ...(Object.keys(reasons).length > 0 ? { providerReasons: { ...reasons } } : {}),
+  },
   workingCopies: new WorkingCopies({
     dataDir: config.dataDir,
     git,
@@ -146,11 +173,14 @@ process.on('SIGTERM', () => shutDown('SIGTERM'));
 process.on('SIGINT', () => shutDown('SIGINT'));
 
 const enabled = Object.entries(gate.snapshot())
-  .filter(([, on]) => on)
+  .filter(([provider, on]) => on && gate.isEnabled(provider as 'claude_code' | 'codex'))
   .map(([provider]) => provider);
 logger.info(
   `Runner mode ${config.runner} (${config.environment}); providers enabled: ` +
     `${enabled.length > 0 ? enabled.join(', ') : 'none'}.`,
 );
+for (const [provider, reason] of Object.entries(reasons)) {
+  logger.error(`Provider ${provider} is switched on but unavailable: ${reason}`);
+}
 logger.info(`Polling ${config.apiUrl} every ${config.pollMs} ms.`);
 await worker.run();

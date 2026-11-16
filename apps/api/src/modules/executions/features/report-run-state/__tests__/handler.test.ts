@@ -465,4 +465,42 @@ describe('ReportRunStateHandler', () => {
       },
     });
   });
+
+  describe('a Run stopped at the usage limit (Issue #105)', () => {
+    const WORKING_COPY = { runBranch: 'agent/x-r1', commits: [], hasUncommittedChanges: false };
+    const USAGE_LIMIT = { code: 'usage_limit' as const, detail: 'The usage limit was reached.' };
+
+    it('stores the session to resume and keeps the Environment file snapshot', async () => {
+      await report({ state: 'running' });
+
+      const failed = await report({
+        state: 'failed',
+        failure: USAGE_LIMIT,
+        workingCopy: WORKING_COPY,
+        sessionRef: 'session-7',
+      });
+
+      expect(failed).toMatchObject({
+        state: 'failed',
+        failure: USAGE_LIMIT,
+        sessionRef: 'session-7',
+        workingCopy: WORKING_COPY,
+      });
+      // A resumed step still reports text that needs the Run's redaction.
+      expect(released).toEqual([]);
+    });
+
+    it('ignores a session reference with any other failure', async () => {
+      await report({ state: 'running' });
+
+      const failed = await report({
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: 'x' },
+        sessionRef: 'session-7',
+      });
+
+      expect(failed.sessionRef).toBeNull();
+      expect(released).toEqual([run.id]);
+    });
+  });
 });

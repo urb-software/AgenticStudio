@@ -7,15 +7,19 @@
  */
 
 /**
- * Whether a final Run keeps its snapshot because its delivery can still be retried: `failed`
- * with `delivery_failed` (Issue #102). Kept until the Run is delivered, its retry is given up
- * (Working copy or worker gone), or the retention period ends.
+ * Whether a final Run keeps its snapshot because it can still go on: `failed` with
+ * `delivery_failed`, whose delivery can be retried (Issue #102), or with `usage_limit`, which
+ * the operator can resume (Issue #105). Kept until the Run ends otherwise, its retry or resume
+ * is given up (Working copy or worker gone), or the retention period ends.
  */
 export function keepsSnapshotForRetry(run: {
   state: string;
   failure: { code: string } | null;
 }): boolean {
-  return run.state === 'failed' && run.failure?.code === 'delivery_failed';
+  return (
+    run.state === 'failed' &&
+    (run.failure?.code === 'delivery_failed' || run.failure?.code === 'usage_limit')
+  );
 }
 
 /** The owner label of Run snapshots in the secret store (ADR 0001, Issue #76). */

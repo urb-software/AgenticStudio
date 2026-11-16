@@ -51,6 +51,8 @@ const PROBLEM = {
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
+  runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
+  resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
 };
 
 const BOTH_ENABLED = { claude_code: true, codex: true };
@@ -350,6 +352,29 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
       expectProblem(refused, 409, PROBLEM.providerUnavailable);
       expect(refused.body.detail).toBe(SWITCHED_OFF);
+    });
+
+    it("shows the worker's reason for a switched-on provider it cannot run (Issue #105)", async () => {
+      const project = await readyProject('Shop');
+      const reason = 'Claude Code 2.2.0 is not a supported version (supported: >=2.1.325 <2.2.0).';
+      const call = await http()
+        .post('/api/worker/status')
+        .set('Authorization', `Bearer ${WORKER_TOKEN}`)
+        .send({
+          workerId: W1,
+          runner: 'cli',
+          providers: BOTH_ENABLED,
+          providerReasons: { claude_code: reason },
+        });
+      expect(call.status).toBe(204);
+
+      expect((await providers()).body).toEqual([
+        { id: 'claude_code', name: 'Claude Code', available: false, reason },
+        { id: 'codex', name: 'Codex', available: true },
+      ]);
+      const refused = await startRun(project.id, { task: 'x', provider: 'claude_code' });
+      expectProblem(refused, 409, PROBLEM.providerUnavailable);
+      expect(refused.body.detail).toBe(reason);
     });
 
     it('counts a worker silent for longer than the lease as not connected', async () => {
@@ -1708,6 +1733,126 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           failure: { code: 'agent_failed', detail: 'The provider has no session session-1.' },
         });
         expect((await getRun(refused.id)).body.failure.code).toBe('agent_failed');
+      });
+    });
+
+    describe('resume after the usage limit (Issue #105)', () => {
+      const USAGE_LIMIT = {
+        code: 'usage_limit',
+        detail: 'The Claude Code usage limit was reached; it resets at 2026-11-16T17:00:00.000Z.',
+      };
+      const resume = (runId: string, origin: string | null = STUDIO_ORIGIN) => {
+        const call = http().post(`/api/runs/${runId}/resume`).set('Cookie', cookie);
+        if (origin !== null) call.set('Origin', origin);
+        return call.send();
+      };
+
+      /** W1 claims the queued Run; its first step stops at the usage limit. */
+      async function limitedRun(projectId: string, sessionRef: string | null = 'session-9') {
+        const run = await queuedRun(projectId);
+        expect((await claim()).body.kind).toBe('start');
+        await report(run.id, { state: 'running' });
+        const failed = await report(run.id, {
+          state: 'failed',
+          failure: USAGE_LIMIT,
+          workingCopy: WORKING_COPY,
+          ...(sessionRef ? { sessionRef } : {}),
+        });
+        expect(failed.status).toBe(204);
+        return run;
+      }
+
+      it('resumes the stopped session with "Continue where you stopped." on the same worker', async () => {
+        const project = await readyProject('Shop');
+        const run = await limitedRun(project.id);
+
+        const stopped = (await getRun(run.id)).body;
+        expect(stopped).toMatchObject({ state: 'failed', failure: USAGE_LIMIT, resumable: true });
+        // Internal: the session reference never reaches the operator API.
+        expect(JSON.stringify(stopped)).not.toContain('session-9');
+
+        const resumed = await resume(run.id);
+        expect(resumed.status).toBe(202);
+        expect(resumed.body).toMatchObject({ state: 'queued' });
+        expect(resumed.body).not.toHaveProperty('failure');
+        expect(resumed.body).not.toHaveProperty('resumable');
+        expect(resumed.body.messages.at(-1)).toMatchObject({
+          role: 'operator',
+          kind: 'answer',
+          text: 'Continue where you stopped.',
+        });
+        expectProblem(await resume(run.id), 409, PROBLEM.runNotResumable);
+
+        expect((await claim(W2)).status).toBe(204);
+        const claimed = await claim(W1);
+        expect(claimed.body).toMatchObject({
+          runId: run.id,
+          kind: 'resume',
+          sessionRef: 'session-9',
+          answer: 'Continue where you stopped.',
+          runBranch: WORKING_COPY.runBranch,
+          // The stopped step was never reported: the resumed one takes its number.
+          completedSteps: 0,
+        });
+        await report(run.id, { state: 'running' });
+        expect(
+          (
+            await worker(`${run.id}/steps`, {
+              workerId: W1,
+              index: 1,
+              kind: 'resume',
+              result: { outcome: 'done', summary: 'Done.' },
+              workingCopy: WORKING_COPY,
+            })
+          ).status,
+        ).toBe(204);
+        await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } });
+        expect((await getRun(run.id)).body.state).toBe('succeeded');
+      });
+
+      it("refuses with 409 while another Run holds the project's place (review R1 of #129)", async () => {
+        const project = await readyProject('Shop');
+        const run = await limitedRun(project.id);
+        // The project is free again: another Run starts and is claimed.
+        const other = await queuedRun(project.id, 'Another task');
+        expect((await claim()).body.runId).toBe(other.id);
+
+        const refused = await resume(run.id);
+        expectProblem(refused, 409, PROBLEM.resumeSlotTaken);
+        expect(refused.body.detail).toBe(
+          'Another run of this project is active. Resume this run when that run has ended.',
+        );
+        expect((await getRun(run.id)).body).toMatchObject({ state: 'failed', resumable: true });
+
+        await report(other.id, { state: 'running' });
+        await report(other.id, { state: 'failed', failure: { code: 'agent_failed', detail: 'x' } });
+        expect((await resume(run.id)).status).toBe(202);
+      });
+
+      it('refuses a Run without a session, another failure, and a foreign Origin', async () => {
+        const project = await readyProject('Shop');
+        const noSession = await limitedRun(project.id, null);
+        expect((await getRun(noSession.id)).body).not.toHaveProperty('resumable');
+        expectProblem(await resume(noSession.id), 409, PROBLEM.runNotResumable);
+
+        const other = await readyProject('Other');
+        const run = await queuedRun(other.id);
+        await claim();
+        await report(run.id, { state: 'running' });
+        // A session reference with any other failure is refused by the protocol.
+        expect(
+          (
+            await report(run.id, {
+              state: 'failed',
+              failure: { code: 'agent_failed', detail: 'x' },
+              sessionRef: 'session-9',
+            })
+          ).status,
+        ).toBe(400);
+        await report(run.id, { state: 'failed', failure: { code: 'agent_failed', detail: 'x' } });
+        expectProblem(await resume(run.id), 409, PROBLEM.runNotResumable);
+        expect((await resume(randomUUID())).status).toBe(404);
+        expect((await resume(noSession.id, 'https://evil.example.test')).status).toBe(403);
       });
     });
 

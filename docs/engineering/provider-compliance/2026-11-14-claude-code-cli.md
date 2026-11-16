@@ -7,6 +7,7 @@
 - **Decision date:** 2026-11-14
 - **Next review date:** 2027-02-14
 - **Records prepared on:** 2026-11-14
+- **Revised 2026-11-16 (Issue #105):** Mode gains `--append-system-prompt-file` and `--json-schema` (operator decision, under "Mode"); the `--setting-sources user` finding of ADR 0002 is added to the technical findings (6). The decision itself is unchanged.
 
 This record reports what Anthropic's published pages say on the date read. It is not legal advice. Accepting the remaining ambiguity is the operator's decision, recorded under "Operator decision" below. `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it; this record changes no runtime configuration.
 
@@ -192,11 +193,15 @@ claude -p "<task prompt>" \
   --setting-sources user \
   --settings <Studio guardrail settings file> \
   --strict-mcp-config \
-  --max-turns <n>
+  --max-turns <n> \
+  --append-system-prompt-file <Studio instructions file> \
+  --json-schema <structured result JSON Schema>
 
 # next step (operator's answer, or a follow-up)
 claude -p "<operator answer>" --resume <session-id> <same options>
 ```
+
+- **Revised 2026-11-16 (operator decision, Issue #105):** two options were added to the approved mode. `--append-system-prompt-file` passes Studio's instructions file (the built-in agent definition and the text of the repository's instruction files); `--json-schema` asks for the structured result in Studio's schema. Both are documented options of CLI 2.1.325 and change neither authentication nor permissions. The decision above is unchanged. The agent worker accepts CLI versions `>=2.1.325 <2.2.0`, checked when it starts.
 
 - `--output-format stream-json --verbose`: newline-delimited JSON events (S6). The event tables in S6 list a `session_id` field; S6 has no statement that every event carries it, so the headless test confirms where it appears. The run ends with a result event; exit code 0 on success, non-zero on failure (S6).
 - `--resume <session-id>`: continues a specific conversation (S6, S7).
@@ -220,6 +225,7 @@ claude -p "<operator answer>" --resume <session-id> <same options>
 3. **The built-in "ask the user" tool is unavailable when prompts are disabled.** S6: "With `--permission-prompts none`, Claude Code removes the tools that need an answer from a person, such as `AskUserQuestion`, so Claude can't call them." In `dontAsk` mode S6 also says `AskUserQuestion` is "denied even when an allow rule matches". **Consequence:** the "agent asks, run pauses, operator answers" flow cannot use `AskUserQuestion`. It needs another mechanism, for example the agent ending the step with a question in its result and the operator's answer sent with `--resume`, or a Studio-provided permission or MCP tool. To be decided in the worker story.
 4. Since v2.1.302 a `claude -p` run starts in Manual mode when nothing sets a permission mode, and a call that needs approval is denied unless something approves it (S6).
 5. With `ANTHROPIC_API_KEY` present, `-p` always uses it (S5), and the run is billed to the key (S10). S5's precedence list also ranks `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper` and `CLAUDE_CODE_OAUTH_TOKEN` above the `/login` subscription credentials, so the subscription worker's environment and settings must contain none of them.
+6. **What `--setting-sources user` excludes (added 2026-11-16 from [ADR 0002](../../architecture/adr/0002-agent-run-isolation.md#claude-code-finding-2026-11-15)).** Found in the refinement of the run stories, 2026-11-15: with `--setting-sources user`, Claude Code does not load the project's `CLAUDE.md`, rules, skills, commands and subagents, in addition to its settings files and `.mcp.json`. **Consequence:** the agent worker passes the text of the repository's `CLAUDE.md` and `AGENTS.md` itself, through `--append-system-prompt-file` (Mode above); the repository's skills and subagents are not available (a recorded follow-up).
 
 ## Controlled headless execution test
 

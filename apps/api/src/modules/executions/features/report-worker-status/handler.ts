@@ -20,6 +20,7 @@ export class ReportWorkerStatusHandler {
       workerId: report.workerId,
       runner: report.runner,
       providers: { ...report.providers },
+      ...(report.providerReasons ? { providerReasons: { ...report.providerReasons } } : {}),
       reportedAt: this.clock.now(),
     });
   }

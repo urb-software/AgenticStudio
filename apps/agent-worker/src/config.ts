@@ -93,6 +93,8 @@ const environmentSchema = z.object({
   // Issue #100: how long a stopped Run step's processes get after the interrupt (SIGINT)
   // before the worker kills their whole process group (SIGKILL).
   STUDIO_WORKER_KILL_GRACE_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
+  // Issue #105: the bound on agent turns per Claude Code Run step (`--max-turns`).
+  STUDIO_CLAUDE_MAX_TURNS: z.coerce.number().int().min(1).max(1000).default(200),
   // Issue #102: the Agent account's GitHub token, from the worker's own .env only (Studio stores
   // none). Printable ASCII without spaces, so it can never inject a header. Empty means unset.
   // Messages never echo it.
@@ -152,6 +154,8 @@ export interface WorkerConfig {
   retentionMaxPerProject: number;
   /** Grace between the interrupt and the kill of a stopped Run step's processes (Issue #100). */
   killGraceMs: number;
+  /** The bound on agent turns per Claude Code Run step (Issue #105). */
+  claudeMaxTurns: number;
   /** The Agent account on GitHub (Issue #102): its token (if configured) and the API base URL. */
   agentGitHub: AgentGitHubConfig;
 }
@@ -234,6 +238,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     retentionDays: result.data.STUDIO_WORKER_RETENTION_DAYS,
     retentionMaxPerProject: result.data.STUDIO_WORKER_RETENTION_MAX_PER_PROJECT,
     killGraceMs: result.data.STUDIO_WORKER_KILL_GRACE_SECONDS * 1000,
+    claudeMaxTurns: result.data.STUDIO_CLAUDE_MAX_TURNS,
     agentGitHub: {
       ...(githubToken ? { token: githubToken } : {}),
       apiUrl: githubApiUrl,

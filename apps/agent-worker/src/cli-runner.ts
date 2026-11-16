@@ -2,10 +2,10 @@ import { PROVIDER_NAMES, type Provider } from '@agentic-studio/contracts';
 import { AgentFailedError, type Runner, type RunStep } from './runner.js';
 
 /**
- * The `cli` runner mode's stand-in for a provider whose CLI runner does not exist yet (Claude
- * Code: #105, Codex: #106). It sits behind the dispatcher, so a disabled provider still fails
- * with `provider_disabled` first; an enabled one fails with a clear `agent_failed` and nothing
- * is started. Each real runner replaces it and starts its CLI through `spawnProviderCli`.
+ * The `cli` runner mode's stand-in for a provider whose CLI runner does not exist yet (Codex:
+ * #106; Claude Code has its runner since #105). It sits behind the dispatcher, so a disabled
+ * provider still fails with `provider_disabled` first; an enabled one fails with a clear
+ * `agent_failed` and nothing is started. Each real runner replaces it and starts its CLI through `spawnProviderCli`.
  */
 export class MissingCliRunner implements Runner {
   constructor(private readonly provider: Provider) {}
