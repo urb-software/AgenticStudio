@@ -846,11 +846,24 @@ export type RunStatesRequest = z.infer<typeof runStatesRequestSchema>;
  * and, in a final state, when it finished.
  */
 export const runStatesResponseSchema = z.array(
-  z.strictObject({
-    runId: z.uuid(),
-    state: runStateSchema,
-    finishedAt: z.iso.datetime().nullable(),
-  }),
+  z
+    .strictObject({
+      runId: z.uuid(),
+      state: runStateSchema,
+      finishedAt: z.iso.datetime().nullable(),
+      /**
+       * Issue #143: Studio decides how long a final Run's Working copy is kept, from the state it
+       * holds (the Run's pull request, its last activity, the per-Project limit). `keepUntil`:
+       * keep it at least until then. `removable`: remove it now. A Run that is not final has
+       * neither; a final one that has neither (an older Studio) is kept.
+       */
+      keepUntil: z.iso.datetime().optional(),
+      removable: z.literal(true).optional(),
+    })
+    .refine((entry) => entry.keepUntil === undefined || entry.removable === undefined, {
+      path: ['removable'],
+      message: 'A Run is either kept until a time or removable, not both.',
+    }),
 );
 export type RunStatesResponse = z.infer<typeof runStatesResponseSchema>;
 /**
@@ -938,6 +951,23 @@ export const PROVIDER_REASON_MAX_LENGTH = 500;
 const providerReasonSchema = z.string().min(1).max(PROVIDER_REASON_MAX_LENGTH);
 
 /**
+ * Issue #143: the disk the agent worker keeps Working copies and caches on, measured at most every
+ * ten minutes. Sizes are bytes of data (a file linked from two places counts once); `keptRuns` is
+ * how many Run directories the worker holds; `minFreeBytes` is the free space below which it
+ * prepares no new Run (`STUDIO_WORKER_MIN_FREE_GB`).
+ */
+const DISK_BYTES_MAX = Number.MAX_SAFE_INTEGER;
+export const workerDiskSchema = z.strictObject({
+  workingCopiesBytes: z.int().min(0).max(DISK_BYTES_MAX),
+  cachesBytes: z.int().min(0).max(DISK_BYTES_MAX),
+  keptRuns: z.int().min(0).max(PG_INT_MAX),
+  freeBytes: z.int().min(0).max(DISK_BYTES_MAX),
+  totalBytes: z.int().min(0).max(DISK_BYTES_MAX),
+  minFreeBytes: z.int().min(0).max(DISK_BYTES_MAX),
+});
+export type WorkerDisk = z.infer<typeof workerDiskSchema>;
+
+/**
  * `POST /api/worker/status` body (Issue #101): the worker's runner mode and which providers its
  * own configuration enables, sent when it starts and with every poll. It is a report for
  * display and for refusing hopeless starts; the worker's own check stays authoritative.
@@ -957,6 +987,8 @@ export const workerStatusRequestSchema = z.strictObject({
       codex: providerReasonSchema.optional(),
     } satisfies Record<Provider, z.ZodOptional<z.ZodString>>)
     .optional(),
+  /** Issue #143: left out until the worker has measured its disk. */
+  disk: workerDiskSchema.optional(),
 });
 export type WorkerStatusRequest = z.infer<typeof workerStatusRequestSchema>;
 
