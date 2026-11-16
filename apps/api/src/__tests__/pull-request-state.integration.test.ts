@@ -615,6 +615,8 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       const before = (await getRun(runId)).body.followUp.openUntil as string;
 
       advance(2 * 24 * 60 * 60);
+      // The worker reports again: its status goes stale after the lease.
+      await connectWorker();
       expect((await followUp(runId)).status).toBe(202);
 
       expect((await lastActivity(runId)).getTime()).toBe(clock.current.getTime());

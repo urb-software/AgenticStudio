@@ -708,6 +708,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         });
         runIds.push(run.id);
         advance(60);
+        // The worker's status goes stale after the lease; a Run starts only while it is fresh.
+        expect((await workerStatus()).status).toBe(204);
       }
       // The project's 11 Runs are runIds[0..10]; the oldest is the one over the limit.
       const response = await runStates(runIds);
