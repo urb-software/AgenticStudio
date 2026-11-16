@@ -91,7 +91,7 @@ section "Studio's side: root only"
 expect_stat /etc/agentic-studio root:root 700
 expect_stat /etc/agentic-studio/.env root:root 600
 expect_stat /var/lib/agentic-studio root:root 700
-expect_stat /var/lib/agentic-studio/data 10001:10001 700
+expect_true "/var/lib/agentic-studio/data is 10001:10001 700 (the API container's uid)" bash -c '[ "$(stat -c "%u:%g %a" /var/lib/agentic-studio/data)" = "10001:10001 700" ]'
 expect_stat /opt/agentic-studio root:root 700
 expect_stat /opt/agentic-studio/compose.yaml root:root 600
 expect_stat /opt/agentic-studio/compose.app.yaml root:root 600
