@@ -240,6 +240,11 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     now: Date,
   ): Promise<LookupAnswerOutcome> {
     return this.db.$transaction(async (tx) => {
+      const found = await tx.runLookup.findUnique({ where: { id: lookupId } });
+      if (!found || found.claimedBy !== workerId) return 'not_held';
+      // The Run's row lock first, like the Follow-up transaction (`queueFollowUp`), so a set that
+      // is checked and removed there is never replaced in between; then the lookup is read again.
+      await tx.$queryRaw`SELECT id FROM runs WHERE id = ${found.runId}::uuid FOR UPDATE`;
       const lookup = await tx.runLookup.findUnique({ where: { id: lookupId } });
       if (!lookup || lookup.claimedBy !== workerId) return 'not_held';
       if (lookup.status === 'done') return 'duplicate';

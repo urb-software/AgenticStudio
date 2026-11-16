@@ -76,6 +76,8 @@ export interface StubGitHub {
   issueComments: Record<string, unknown>[];
   /** Issue #146: the review threads the GraphQL query answers: resolved or not, comment ids. */
   reviewThreads: { isResolved: boolean; commentIds: number[]; moreComments?: boolean }[];
+  /** Issue #146: leave out the `Link` header of the comment listings (a proxy that drops it). */
+  omitLinkHeader: boolean;
   /** Issue #146: when set, the GraphQL query answers these errors (with status 200). */
   graphqlErrors: unknown[] | undefined;
   /** The `html_url` of a pull request (default: its github.com URL). */
@@ -109,6 +111,7 @@ export async function startStubGitHub(): Promise<StubGitHub> {
     issueComments: [],
     reviewThreads: [],
     graphqlErrors: undefined,
+    omitLinkHeader: false,
     htmlUrl: (pr) => `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.number}`,
   };
   const view = (pr: StubPullRequest) => ({ number: pr.number, html_url: stub.htmlUrl(pr) });
@@ -145,9 +148,15 @@ export async function startStubGitHub(): Promise<StubGitHub> {
         const size = Number(url.searchParams.get('per_page') ?? 30);
         const page = Number(url.searchParams.get('page') ?? 1);
         const last = Math.max(1, Math.ceil(list.length / size));
-        return send(200, list.slice((page - 1) * size, page * size), {
-          Link: `<http://${request.headers.host}${url.pathname}?per_page=${size}&page=${last}>; rel="last"`,
-        });
+        return send(
+          200,
+          list.slice((page - 1) * size, page * size),
+          stub.omitLinkHeader
+            ? {}
+            : {
+                Link: `<http://${request.headers.host}${url.pathname}?per_page=${size}&page=${last}>; rel="last"`,
+              },
+        );
       }
       if (request.method === 'POST' && url.pathname === '/graphql') {
         const body = await readJson(request);

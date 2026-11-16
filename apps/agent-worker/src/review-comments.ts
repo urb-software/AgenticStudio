@@ -113,8 +113,13 @@ export function buildReviewComments(
   const isNew = (createdAt: string) => since === undefined || Date.parse(createdAt) > since;
   const author = (login: string) => login.slice(0, REVIEW_COMMENT_AUTHOR_MAX_LENGTH) || 'ghost';
   const kept: ReviewComment[] = [];
+  // Pages of a listing are read one after another, so a comment written or removed meanwhile can
+  // show up twice: an id counts once.
+  const seen = new Set<string>();
   let cutAny = false;
   const keep = (built: { comment: ReviewComment; cut: boolean }) => {
+    if (seen.has(built.comment.id)) return;
+    seen.add(built.comment.id);
     cutAny ||= built.cut;
     kept.push(built.comment);
   };

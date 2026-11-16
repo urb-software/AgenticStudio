@@ -832,7 +832,8 @@ export class PrismaRunRepository implements RunRepository {
       );
       if (run.steps >= current.limits.maxTotalSteps) return null;
       // Issue #146: the selected comments must all be in the loaded set as it is now, under the
-      // same lock, so a load that completes meanwhile cannot be sent or dropped unseen.
+      // Run's row lock, which a load's completion also takes first (`completeReviewComments`), so a
+      // load that completes meanwhile cannot be sent or dropped unseen.
       let comments: FollowUpComments | undefined;
       if (typeof origin === 'object') {
         const stored = await tx.runReviewCommentSet.findUnique({ where: { runId } });

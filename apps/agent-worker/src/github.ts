@@ -782,6 +782,18 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     signal: AbortSignal,
   ): Promise<Listing<unknown>> {
     const first = await this.listingPage(path, 1, target, signal);
+    if (first.last === undefined) {
+      // No `Link` header (a proxy, or a host that does not send one): page forward while pages are
+      // full, up to the limit.
+      const items = [...first.items];
+      let full = first.items.length >= CHECKS_PAGE_SIZE;
+      for (let page = 2; full && page <= COMMENT_PAGES_MAX; page += 1) {
+        const next = await this.listingPage(path, page, target, signal);
+        items.push(...next.items);
+        full = next.items.length >= CHECKS_PAGE_SIZE;
+      }
+      return { items, more: full };
+    }
     if (first.last <= 1) return { items: first.items, more: false };
     const lowest = Math.max(2, first.last - COMMENT_PAGES_MAX + 1);
     const items = first.last <= COMMENT_PAGES_MAX ? [...first.items] : [];
@@ -797,7 +809,7 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     page: number,
     target: PullRequestNumber,
     signal: AbortSignal,
-  ): Promise<{ items: unknown[]; last: number }> {
+  ): Promise<{ items: unknown[]; last: number | undefined }> {
     const response = await this.send(
       'GET',
       `${path}?per_page=${CHECKS_PAGE_SIZE}&page=${page}`,
@@ -813,7 +825,7 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
     const link = /<[^>]*[?&]page=(\d+)[^>]*>;\s*rel="last"/.exec(
       response.headers.get('link') ?? '',
     );
-    return { items: answer, last: link ? Number(link[1]) : page };
+    return { items: answer, last: link ? Number(link[1]) : undefined };
   }
 
   async jobLog(

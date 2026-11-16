@@ -160,6 +160,18 @@ describe('buildReviewComments', () => {
     expect(reviewCommentsResultSchema.safeParse({ comments, truncated }).success).toBe(true);
   });
 
+  it('counts a comment that a listing gave twice once', () => {
+    const twice = conversation(7, 'Same comment.', at(2));
+
+    const { comments } = buildReviewComments(
+      sources({ conversation: [twice, conversation(8, 'Other.', at(3)), twice] }),
+      { scope: 'unresolved' },
+    );
+
+    expect(comments.map((comment) => comment.id)).toEqual(['conversation-7', 'conversation-8']);
+    expect(reviewCommentsResultSchema.safeParse({ comments, truncated: false }).success).toBe(true);
+  });
+
   it('filters by time for since_last_result only', () => {
     const list = sources({
       conversation: [conversation(1, 'old', at(1)), conversation(2, 'new', at(5))],

@@ -617,6 +617,40 @@ describe('GitHubPullRequests', () => {
       ).toHaveLength(11);
     });
 
+    it('keeps paging while pages are full when the host sends no Link header', async () => {
+      stub.omitLinkHeader = true;
+      stub.issueComments.push(
+        ...Array.from({ length: 250 }, (_, index) => ({
+          id: index + 1,
+          user: { login: 'octocat' },
+          body: 'x',
+          created_at: '2026-11-16T10:00:00Z',
+        })),
+      );
+
+      const { items, more } = await client().conversationComments(pull, signal());
+
+      expect(items).toHaveLength(250);
+      expect(more).toBe(false);
+    });
+
+    it('says more existed when pages are still full at the limit and no Link header came', async () => {
+      stub.omitLinkHeader = true;
+      stub.issueComments.push(
+        ...Array.from({ length: 1200 }, (_, index) => ({
+          id: index + 1,
+          user: { login: 'octocat' },
+          body: 'x',
+          created_at: '2026-11-16T10:00:00Z',
+        })),
+      );
+
+      const { items, more } = await client().conversationComments(pull, signal());
+
+      expect(items).toHaveLength(1000);
+      expect(more).toBe(true);
+    });
+
     it('collects the comments of resolved threads through a read-only GraphQL query, page by page', async () => {
       stub.reviewThreads.push(
         { isResolved: true, commentIds: [10, 11] },
