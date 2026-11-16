@@ -20,6 +20,7 @@ import type {
   RunEventPageOutput,
   RunListOutput,
   RunOutput,
+  RunsSummaryOutput,
   RunStepListOutput,
   SessionResponseOutput,
   SetEnvironmentFileRequest,
@@ -56,6 +57,7 @@ export type {
   RunMessageOutput,
   RunOutput,
   RunQuestionOutput,
+  RunsSummaryOutput,
   RunStepListOutput,
   RunStepOutput,
   SessionResponseOutput,
@@ -215,6 +217,7 @@ export const api = {
     unwrap(sdk.listProjectRuns({ path: { id: projectId } })),
   /** Every Run across all projects, newest first. */
   listRuns: (): Promise<RunListOutput> => unwrap(sdk.listRuns()),
+  getRunsSummary: (): Promise<RunsSummaryOutput> => unwrap(sdk.getRunsSummary()),
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
   /** Repeats only the delivery of a Run whose delivery failed (202: the Run, retry requested). */
   retryRunDelivery: (runId: string): Promise<RunOutput> =>

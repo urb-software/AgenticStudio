@@ -167,6 +167,11 @@ export type RunOutput = {
 
 export type RunListOutput = Array<RunOutput>;
 
+export type RunsSummaryOutput = {
+    running: number;
+    waiting: number;
+};
+
 export type AnswerRunRequest = {
     text: string;
 };
@@ -761,6 +766,28 @@ export type ListRunsResponses = {
 };
 
 export type ListRunsResponse = ListRunsResponses[keyof ListRunsResponses];
+
+export type GetRunsSummaryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/runs/summary';
+};
+
+export type GetRunsSummaryErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunsSummaryError = GetRunsSummaryErrors[keyof GetRunsSummaryErrors];
+
+export type GetRunsSummaryResponses = {
+    200: RunsSummaryOutput;
+};
+
+export type GetRunsSummaryResponse = GetRunsSummaryResponses[keyof GetRunsSummaryResponses];
 
 export type GetRunData = {
     body?: never;

@@ -986,6 +986,38 @@
         ]
       }
     },
+    "/api/runs/summary": {
+      "get": {
+        "operationId": "getRunsSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunsSummary_Output"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/runs/{runId}": {
       "get": {
         "operationId": "getRun",
@@ -2200,6 +2232,26 @@
         "items": {
           "$ref": "#/components/schemas/Run_Output"
         }
+      },
+      "RunsSummary_Output": {
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "waiting": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "running",
+          "waiting"
+        ],
+        "additionalProperties": false
       },
       "AnswerRunRequest": {
         "type": "object",

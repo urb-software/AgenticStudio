@@ -24,6 +24,16 @@ export const ACTIVE_RUN_STATES = [
   'waiting_for_operator',
 ] as const satisfies readonly RunState[];
 
+/**
+ * States in which a Run is under way without the operator (Issue #115): queued ones count too,
+ * they are on their way, only not started yet. The run indicator's "running".
+ */
+export const UNDER_WAY_RUN_STATES = [
+  'queued',
+  'preparing',
+  'running',
+] as const satisfies readonly RunState[];
+
 /** States an agent worker holds the Run in (it sends heartbeats); the lost-worker sweep's scope. */
 export const CLAIMED_RUN_STATES = ['preparing', 'running'] as const satisfies readonly RunState[];
 

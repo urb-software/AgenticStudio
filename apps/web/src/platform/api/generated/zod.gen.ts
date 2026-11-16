@@ -202,6 +202,11 @@ export const zRunOutput = z.object({
 
 export const zRunListOutput = z.array(zRunOutput);
 
+export const zRunsSummaryOutput = z.object({
+    running: z.int().gte(0).lte(9007199254740991),
+    waiting: z.int().gte(0).lte(9007199254740991)
+});
+
 export const zAnswerRunRequest = z.object({
     text: z.string().min(1).max(10000)
 });
@@ -373,6 +378,8 @@ export const zStartRunPath = z.object({
 export const zStartRunResponse = zRunOutput;
 
 export const zListRunsResponse = zRunListOutput;
+
+export const zGetRunsSummaryResponse = zRunsSummaryOutput;
 
 export const zGetRunPath = z.object({
     runId: z.string()

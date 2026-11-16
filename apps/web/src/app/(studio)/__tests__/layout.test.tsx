@@ -42,7 +42,9 @@ function fakeApi(extra: (pathname: string) => unknown = () => undefined) {
     'fetch',
     vi.fn(async (request: Request) => {
       const { pathname } = new URL(request.url);
-      const body = extra(pathname) ?? (pathname === '/api/runs' ? [] : { authenticated: true });
+      const body =
+        extra(pathname) ??
+        (pathname === '/api/runs/summary' ? { running: 0, waiting: 0 } : { authenticated: true });
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

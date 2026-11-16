@@ -13,7 +13,7 @@ import type {
   RunStepOutput,
 } from '../../../../platform/api';
 import { useRefreshRunSteps, useRunSteps } from '../../api/runs-queries';
-import { FINAL_STATES } from '../../components/run-presentation';
+import { FINAL_STATES } from '../../components/run-states';
 import { toLogRows } from './log-rows';
 import { type RunLogStatus, useRunLog } from './use-run-log';
 

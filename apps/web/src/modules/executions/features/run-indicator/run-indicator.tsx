@@ -2,20 +2,10 @@
 
 import Link from 'next/link';
 import { cn } from '@/shared/lib/utils';
-import type { RunOutput } from '../../../../platform/api';
-import { useAllRuns } from '../../api/runs-queries';
+import type { RunsSummaryOutput } from '../../../../platform/api';
+import { useRunsSummary } from '../../api/runs-queries';
 
-/** Runs under way: queued ones count too (they are on their way, only not started yet). */
-const UNDER_WAY: readonly RunOutput['state'][] = ['queued', 'preparing', 'running'];
-
-type Counts = { running: number; waiting: number };
-
-function countsOf(runs: readonly RunOutput[]): Counts {
-  return {
-    running: runs.filter((run) => UNDER_WAY.includes(run.state)).length,
-    waiting: runs.filter((run) => run.state === 'waiting_for_operator').length,
-  };
-}
+type Counts = RunsSummaryOutput;
 
 /** "2 running · 1 waiting for you": the non-zero parts, in that order. */
 function textOf({ running, waiting }: Counts): string {
@@ -31,11 +21,12 @@ function textOf({ running, waiting }: Counts): string {
  * The top bar's global run indicator (design-system Layout): shown while any Run is under way
  * or waiting for the operator, linking to the Executions page. A waiting Run makes it amber, the
  * operator's colour. On phones it shrinks to the total, with the full text for screen readers.
- * It reads the shared all-Runs query, which is polled only while a Run is active.
+ * It reads the Runs summary (two counts; Issue #115), polled only while a Run is active or
+ * waiting.
  */
 export function RunIndicator() {
-  const { data } = useAllRuns();
-  const counts = data ? countsOf(data) : { running: 0, waiting: 0 };
+  const { data } = useRunsSummary();
+  const counts: Counts = data ?? { running: 0, waiting: 0 };
   const total = counts.running + counts.waiting;
   if (total === 0) return null;
   const text = textOf(counts);

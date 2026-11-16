@@ -25,13 +25,13 @@ import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useProjectRuns, useRun, useRunProject } from '../../api/runs-queries';
 import {
   FAILURE_MESSAGE,
-  FINAL_STATES,
   PROVIDER_LABEL,
   queuedReason,
   RUN_STATE_VIEW,
   taskSummary,
 } from '../../components/run-presentation';
 import { failedRequest } from '../../components/failed-request';
+import { FINAL_STATES } from '../../components/run-states';
 import { StaleBanner } from '../../components/stale-banner';
 import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
