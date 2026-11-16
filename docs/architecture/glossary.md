@@ -67,6 +67,13 @@ _Avoid_: Line, log line (an event can span lines)
 What a Run changed in its Working copy, uncommitted changes included, computed by the agent worker after every Run step's result: "whole run" (since the start commit) and "since previous result". Studio keeps the latest of each, redacted, and shows them on the Run page's Changes tab.
 _Avoid_: Patch (one file's part of it), changeset, PR diff (the pull request is GitHub's)
 
+**Pull request state**:
+Where a Run's pull request stands on the Git host: draft, open, merged, closed or missing (the pull request or its Run branch no longer exists), with the Run branch's position behind and ahead of the Integration branch and whether the host reports it mergeable. Only the agent worker reads it, through the Agent account, when Studio asks (a Lookup); Studio keeps the last known state and when it was read. A Follow-up is refused for a merged, closed or missing pull request, and allowed while the state is unknown.
+_Avoid_: PR status, sync
+
+**Lookup**:
+Studio's request to the agent worker to read something from the Git host, such as a Run's Pull request state. Any connected agent worker answers it with read access only; it needs no Working copy and starts no agent.
+
 **Working copy**:
 A Run's own clone of the Repository, on its Run branch. It is not the Project's Clone.
 _Avoid_: Worktree, workspace, checkout
