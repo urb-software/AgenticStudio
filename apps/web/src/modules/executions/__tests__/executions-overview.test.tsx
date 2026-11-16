@@ -131,6 +131,18 @@ describe('Executions page', () => {
       await expect(container).toHaveNoAxeViolations();
     });
 
+    it('says the sizes are lower bounds when some files could not be read', async () => {
+      const api = fakeRunsApi([aRun()]);
+      api.setAgentWorker({ connected: true, disk: { ...disk, partial: true } });
+      renderExecutions();
+
+      const section = await screen.findByRole('region', { name: 'Agent worker disk' });
+      expect(within(section).getByText('Working copies').nextSibling?.textContent).toBe(
+        'at least 3.2 GiB',
+      );
+      expect(section.textContent).toContain('sizes are lower bounds');
+    });
+
     it('shows nothing while no worker is connected or it has not measured its disk yet', async () => {
       const api = fakeRunsApi([aRun()]);
       renderExecutions();

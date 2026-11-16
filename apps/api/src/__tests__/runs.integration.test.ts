@@ -694,31 +694,54 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expectProblem(await runStates(['../../etc']), 400);
     });
 
-    it('removes beyond the newest ten finished Runs of a project that have no pull request, and no other (Issue #143)', async () => {
+    it('removes beyond the newest ten finished Runs with a Working copy and no pull request, and no other (Issue #143)', async () => {
       const project = await readyProject('Shop');
       const other = await readyProject('Other');
-      const runIds: string[] = [];
-      // One Run at a time (one active Run per project), each finishing a minute after the last.
-      for (let n = 0; n < 12; n++) {
-        const run = await queuedRun(n === 11 ? other.id : project.id, `Task ${n}`);
+      const withCopy: string[] = [];
+      const fresh = async () => expect((await workerStatus()).status).toBe(204);
+      const finishWithCopy = async (projectId: string, delivery: object) => {
+        const run = await queuedRun(projectId, `Task ${withCopy.length}`);
+        await claim();
+        await report(run.id, { state: 'running' });
+        expect((await reportStep(run.id, { outcome: 'done', summary: 'Done.' })).status).toBe(204);
+        await report(run.id, { state: 'succeeded', delivery });
+        advance(60);
+        await fresh();
+        return run.id;
+      };
+      // One Run at a time (one active Run per project), each finishing a minute after the last:
+      // the project's oldest 11 have a Working copy and no pull request.
+      for (let n = 0; n < 11; n++)
+        withCopy.push(await finishWithCopy(project.id, { outcome: 'none' }));
+      // A Run with a pull request, newer than all of them, is neither counted nor removed.
+      const delivered = await finishWithCopy(project.id, {
+        outcome: 'delivered',
+        pullRequest: { url: 'https://github.com/acme/shop/pull/9', number: 9 },
+      });
+      const otherProject = await finishWithCopy(other.id, { outcome: 'none' });
+      // Newest of all: failed before any Working copy (refused by the free-space guard, say).
+      const never: string[] = [];
+      for (let n = 0; n < 3; n++) {
+        const run = await queuedRun(project.id, `Never ${n}`);
         await claim();
         await report(run.id, {
           state: 'failed',
           failure: { code: 'preparation_failed', detail: 'x' },
         });
-        runIds.push(run.id);
+        never.push(run.id);
         advance(60);
-        // The worker's status goes stale after the lease; a Run starts only while it is fresh.
-        expect((await workerStatus()).status).toBe(204);
+        await fresh();
       }
-      // The project's 11 Runs are runIds[0..10]; the oldest is the one over the limit.
-      const response = await runStates(runIds);
+
+      const response = await runStates([...withCopy, delivered, otherProject, ...never]);
 
       expect(response.status).toBe(200);
       const removable = (response.body as { runId: string; removable?: true }[])
         .filter((entry) => entry.removable)
         .map((entry) => entry.runId);
-      expect(removable).toEqual([runIds[0]]);
+      // Only the oldest of the 11: the Run with a pull request, the other project's Run and the
+      // Runs that never had a Working copy fill no place.
+      expect(removable).toEqual([withCopy[0]]);
     });
 
     describe('delivery (Issue #102)', () => {

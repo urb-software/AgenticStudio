@@ -1,4 +1,6 @@
+import type { WorkerDisk } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
+import { anyWorkerConnected } from '../../domain/services/follow-up-context.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
@@ -6,16 +8,8 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 /** What Studio shows of the agent side (Issue #143). */
 export interface AgentWorkerView {
   connected: boolean;
-  disk?: {
-    workingCopiesBytes: number;
-    cachesBytes: number;
-    keptRuns: number;
-    freeBytes: number;
-    totalBytes: number;
-    minFreeBytes: number;
-    /** Free space is below the threshold. */
-    low: boolean;
-  };
+  /** The worker's disk figures, with whether free space is below its threshold. */
+  disk?: WorkerDisk & { low: boolean };
 }
 
 /**
@@ -33,10 +27,8 @@ export class GetAgentWorkerHandler {
 
   execute(): AgentWorkerView {
     const latest = this.statuses.latest();
-    const connected =
-      latest !== undefined &&
-      this.clock.now().getTime() - latest.reportedAt.getTime() <= this.lease.seconds * 1000;
-    if (!connected || latest.disk === undefined) return { connected };
+    const connected = anyWorkerConnected(this.statuses, this.clock.now(), this.lease.seconds);
+    if (!connected || latest?.disk === undefined) return { connected };
     return {
       connected,
       disk: { ...latest.disk, low: latest.disk.freeBytes < latest.disk.minFreeBytes },

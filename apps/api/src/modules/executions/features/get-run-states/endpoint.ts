@@ -28,6 +28,7 @@ export class GetRunStatesEndpoint {
         finishedAt: run.finishedAt?.toISOString() ?? null,
         ...(run.keepUntil ? { keepUntil: run.keepUntil.toISOString() } : {}),
         ...(run.removable ? { removable: true } : {}),
+        ...(run.session ? { session: run.session } : {}),
       })),
     );
   }

@@ -1,3 +1,4 @@
+import { AgentSessions } from './agent-sessions.js';
 import { ClaudeCodeRunner, probeClaudeCode } from './claude-code/runner.js';
 import { prepareCodexHome } from './codex/codex-home.js';
 import { CodexRunner, probeCodex } from './codex/runner.js';
@@ -184,6 +185,10 @@ const retention = new Retention({
   dataDir: config.dataDir,
   runStates: (runIds, signal, removedRunIds) => api.runStates(runIds, signal, removedRunIds),
   resources,
+  // Issue #143: the provider CLIs' session files of a removed Working copy go with it.
+  ...(process.env.HOME?.startsWith('/') && process.env.HOME !== '/'
+    ? { sessions: new AgentSessions(process.env.HOME) }
+    : {}),
   carrying: () => worker.carrying,
   logger,
 });

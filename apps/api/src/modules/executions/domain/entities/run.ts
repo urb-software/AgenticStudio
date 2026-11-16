@@ -88,6 +88,11 @@ export const PULL_REQUEST_ENDED_REFUSALS = {
   missing: 'pull_request_missing',
 } as const satisfies Partial<Record<PullRequestState, FollowUpRefusal>>;
 
+/** Whether a pull request state is an end: merged, closed or not found (Issue #143). */
+export function isPullRequestEnded(state: PullRequestState | null): boolean {
+  return state !== null && state in PULL_REQUEST_ENDED_REFUSALS;
+}
+
 /**
  * What Studio knows about the Run's pull request (Issue #142), from the lookups the agent worker
  * answered through the Agent account; Studio itself never reads the Git host. `state` is `null`

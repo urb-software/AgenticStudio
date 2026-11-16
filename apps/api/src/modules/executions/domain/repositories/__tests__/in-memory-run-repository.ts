@@ -338,6 +338,8 @@ export class InMemoryRunRepository implements RunRepository {
         .map((run) => ({
           runId: run.id,
           projectId: run.projectId,
+          provider: run.provider,
+          sessionRef: run.sessionRef,
           state: run.state,
           finishedAt: run.finishedAt,
           hasPullRequest: run.pullRequest !== null,
@@ -355,6 +357,7 @@ export class InMemoryRunRepository implements RunRepository {
         isFinal(run.state) &&
         run.finishedAt !== null &&
         run.pullRequest === null &&
+        run.workingCopy !== null &&
         run.workingCopyRemovedAt === null
           ? [{ runId: run.id, projectId: run.projectId, finishedAt: run.finishedAt }]
           : [],

@@ -187,6 +187,20 @@ describe('Run page: Follow-up (Issue #141)', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('says removal is pending instead of a date, for a Run whose date passed or the limit removes', async () => {
+    const run = delivered({ followUp: { allowed: true, removalPending: true } });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    const section = screen.getByRole('region', { name: 'Send a Follow-up' });
+    expect(section.textContent).toContain('Removal pending');
+    expect(section.textContent).toContain('can no longer be continued');
+    expect(section.textContent).not.toContain('Open to Follow-ups until');
+    expect(section.querySelector('time')).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
   it('also says it while the Run only waits for its worker, and never once it is not open', async () => {
     const openUntil = '2026-12-14T09:30:00.000Z';
     const waiting = delivered({

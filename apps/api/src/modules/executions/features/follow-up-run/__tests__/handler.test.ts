@@ -405,6 +405,24 @@ describe('FollowUpRunHandler', () => {
       });
     });
 
+    it('says removal is pending instead of a date that has passed', async () => {
+      const run = await finished('succeeded');
+      const later = new Date(run.lastActivityAt.getTime() + 31 * DAY);
+      connect(WORKER, later);
+
+      const { followUp } = view(run, later);
+
+      expect(followUp).toEqual({ allowed: true, removalPending: true });
+    });
+
+    it('says removal is pending for a Run the per-Project limit removes', async () => {
+      const run = await finished('failed');
+
+      const { followUp } = runView(run, workers, T1, LEASE.seconds, RETENTION, true);
+
+      expect(followUp).toEqual({ allowed: true, removalPending: true });
+    });
+
     it('also gives the date while only the worker or the Provider is missing', async () => {
       const run = await finished('succeeded');
       workers = new InMemoryWorkerStatusStore();

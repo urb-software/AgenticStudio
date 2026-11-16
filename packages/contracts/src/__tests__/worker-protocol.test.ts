@@ -563,10 +563,14 @@ describe('worker requests', () => {
     };
     const remove = { runId: RUN_ID, state: 'failed', finishedAt, removable: true };
     expect(runStatesResponseSchema.parse([keep, remove])).toEqual([keep, remove]);
+    const session = { provider: 'codex', ref: 'a1b2c3d4-0000-4000-8000-000000000001' };
+    expect(runStatesResponseSchema.safeParse([{ ...remove, session }]).success).toBe(true);
     for (const bad of [
       { ...keep, removable: true },
       { ...keep, keepUntil: 'tomorrow' },
       { ...remove, removable: false },
+      { ...keep, session },
+      { ...remove, session: { provider: 'gpt', ref: 'x' } },
     ]) {
       expect(runStatesResponseSchema.safeParse([bad]).success).toBe(false);
     }

@@ -1,5 +1,26 @@
-import { isFinal, type PullRequestState, type RunState } from '../entities/run.js';
-import type { RetentionPolicy } from '../../ports/retention-policy.js';
+import {
+  isFinal,
+  isPullRequestEnded,
+  type PullRequestState,
+  type Run,
+  type RunState,
+} from '../entities/run.js';
+import type { RunRepository } from '../repositories/run-repository.js';
+
+/**
+ * How long a finished Run's Working copy is kept (Issue #143): the periods and limits of the
+ * `STUDIO_RETENTION_*` settings. Studio decides; the agent worker removes what Studio says.
+ */
+export interface RetentionPolicy {
+  /** A finished Run without a pull request keeps its Working copy this many days... */
+  days: number;
+  /** ...and at most this many such Runs per Project keep it. */
+  maxPerProject: number;
+  /** A Run with a pull request keeps it until this many days without activity... */
+  openPullRequestIdleDays: number;
+  /** ...or this many hours after the pull request was merged or closed, whichever is first. */
+  hoursAfterPullRequestEnd: number;
+}
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -39,11 +60,9 @@ export function keepUntil(facts: RetentionFacts, policy: RetentionPolicy): Date 
     return new Date(facts.finishedAt.getTime() + policy.days * DAY_MS);
   }
   const idleEnd = facts.lastActivityAt.getTime() + policy.openPullRequestIdleDays * DAY_MS;
-  const ended =
-    facts.pullRequestState === 'merged' ||
-    facts.pullRequestState === 'closed' ||
-    facts.pullRequestState === 'missing';
-  if (!ended || facts.pullRequestEndedAt === null) return new Date(idleEnd);
+  if (!isPullRequestEnded(facts.pullRequestState) || facts.pullRequestEndedAt === null) {
+    return new Date(idleEnd);
+  }
   return new Date(
     Math.min(
       idleEnd,
@@ -81,4 +100,30 @@ export function overLimit(runs: readonly LimitedRun[], maxPerProject: number): S
     for (const run of projectRuns.slice(maxPerProject)) over.add(run.runId);
   }
   return over;
+}
+
+/**
+ * Whether the per-Project limit removes this Run (Issue #143): it is a limited Run (see
+ * {@link isLimited}) outside the newest `maxPerProject` of its Project that still have a Working
+ * copy.
+ */
+export async function isOverLimit(
+  runs: Pick<RunRepository, 'findLimitedRuns'>,
+  run: Run,
+  policy: RetentionPolicy,
+): Promise<boolean> {
+  if (!isLimited(retentionFactsOf(run))) return false;
+  return overLimit(await runs.findLimitedRuns([run.projectId]), policy.maxPerProject).has(run.id);
+}
+
+/** The retention facts of a loaded Run. */
+export function retentionFactsOf(run: Run): RetentionFacts {
+  return {
+    state: run.state,
+    finishedAt: run.finishedAt,
+    hasPullRequest: run.pullRequest !== null,
+    pullRequestState: run.pullRequestStatus.state,
+    pullRequestEndedAt: run.pullRequestStatus.endedAt,
+    lastActivityAt: run.lastActivityAt,
+  };
 }

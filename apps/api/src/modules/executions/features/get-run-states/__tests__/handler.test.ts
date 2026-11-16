@@ -125,6 +125,8 @@ describe('GetRunStatesHandler', () => {
       const run = runs.runs.find((candidate) => candidate.id === created.id)!;
       Object.assign(run, {
         state: setup.state ?? 'succeeded',
+        workingCopy: { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
+        sessionRef: 'a1b2c3d4-0000-4000-8000-000000000001',
         finishedAt: ago(finishedAgo),
         lastActivityAt: ago(finishedAgo),
         ...(setup.pullRequest
@@ -255,6 +257,38 @@ describe('GetRunStatesHandler', () => {
         expect(answers.find((answer) => answer.runId === run)).toHaveProperty('keepUntil');
       }
       expect(answers.find((answer) => answer.runId === otherProject)).toHaveProperty('keepUntil');
+    });
+
+    it('does not count a Run that never had a Working copy toward the limit', async () => {
+      const kept: string[] = [];
+      for (let n = 0; n < 10; n += 1) kept.push(await finished(PROJECT, (n + 2) * HOUR));
+      // Cancelled while queued, or refused before its clone: the newest, with no Working copy.
+      for (let n = 0; n < 3; n += 1) {
+        const never = await finished(PROJECT, n * HOUR + 1);
+        runs.runs.find((candidate) => candidate.id === never)!.workingCopy = null;
+        kept.push(never);
+      }
+
+      const answers = await asking().execute(kept);
+
+      expect(answers.some((answer) => answer.removable)).toBe(false);
+    });
+
+    it('hands the agent session of a removable Run to the worker, and of no other', async () => {
+      const old = await finished(PROJECT, 8 * DAY);
+      const recent = await finished(PROJECT, DAY);
+
+      expect(await answerFor(old)).toMatchObject({
+        removable: true,
+        session: { provider: 'codex', ref: 'a1b2c3d4-0000-4000-8000-000000000001' },
+      });
+      expect(await answerFor(recent)).not.toHaveProperty('session');
+    });
+
+    it('treats a merged pull request without a recorded end as open (a legacy row)', async () => {
+      const run = await finished(PROJECT, 20 * DAY, { pullRequest: true, prState: 'merged' });
+
+      expect(await answerFor(run)).toMatchObject({ keepUntil: expect.any(Date) });
     });
 
     it('does not count a Run whose Working copy was already removed toward the limit', async () => {

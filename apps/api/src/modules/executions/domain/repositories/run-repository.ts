@@ -121,6 +121,9 @@ export interface StoredRunStep extends RunStepRecord {
 export interface RunStateView {
   runId: string;
   projectId: string;
+  provider: Provider;
+  /** The agent session of the Run (internal: only the agent worker is told). */
+  sessionRef: string | null;
   state: RunState;
   /** Set exactly in a final state. */
   finishedAt: Date | null;

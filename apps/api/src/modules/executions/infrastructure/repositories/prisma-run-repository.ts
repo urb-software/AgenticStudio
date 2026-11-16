@@ -875,6 +875,8 @@ export class PrismaRunRepository implements RunRepository {
       select: {
         id: true,
         projectId: true,
+        provider: true,
+        sessionRef: true,
         state: true,
         finishedAt: true,
         pullRequestNumber: true,
@@ -890,6 +892,8 @@ export class PrismaRunRepository implements RunRepository {
       return {
         runId: row.id,
         projectId: row.projectId,
+        provider: row.provider as Provider,
+        sessionRef: row.sessionRef,
         state: row.state,
         finishedAt: row.finishedAt,
         hasPullRequest: row.pullRequestNumber !== null,
@@ -909,6 +913,9 @@ export class PrismaRunRepository implements RunRepository {
         state: { in: [...FINAL_RUN_STATES] },
         finishedAt: { not: null },
         pullRequestNumber: null,
+        // Only Runs that have a Working copy (one the worker reported): a Run cancelled while
+        // queued, or refused before its clone, holds no place in the limit.
+        runBranch: { not: null },
         workingCopyRemovedAt: null,
       },
       select: { id: true, projectId: true, finishedAt: true },

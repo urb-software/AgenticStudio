@@ -8,6 +8,7 @@ import {
   runDirectories,
   runsDirectory,
 } from './run-layout.js';
+import type { AgentSession, AgentSessionFiles } from './agent-sessions.js';
 import type { RunResources } from './run-resources.js';
 
 /** How often the worker applies the retention rules (besides once at start). */
@@ -30,6 +31,11 @@ export interface RetentionOptions {
   ): Promise<RunStatesResponse>;
   /** Removes a Run's containers, networks and volumes. */
   resources: RunResources;
+  /**
+   * Removes the session files the provider CLIs keep for a Run's Working copy (Issue #143),
+   * after its containers and before its directory; without it none are removed.
+   */
+  sessions?: AgentSessionFiles;
   /** The Run the worker carries right now: its directory is never touched. */
   carrying: () => string | undefined;
   logger: { info(message: string): void; error(message: string): void };
@@ -55,7 +61,8 @@ export interface RetentionOutcome {
  * The Working copy of a Run that is not final (queued, preparing, running, waiting for the
  * operator) is never removed, nor the one the worker is carrying; a final Run without an answer
  * to remove is kept. Removing a Working copy first removes the Run's containers, networks and
- * volumes; if that fails, the directory is kept and the next pass tries again. If Studio cannot
+ * volumes, then the agent session files of its Working copy (Issue #143); if either fails, the
+ * directory is kept and the next pass tries again. If Studio cannot
  * be asked, no Working copy is removed (only entries that cannot be a Run directory at all).
  */
 export class Retention {
@@ -145,7 +152,7 @@ export class Retention {
       if (!state) {
         await this.remove(runId, 'unknown_run', outcome, signal);
       } else if (FINAL_STATES.has(state.state) && state.removable === true) {
-        await this.remove(runId, 'retention_ended', outcome, signal);
+        await this.remove(runId, 'retention_ended', outcome, signal, state.session);
       }
     }
     return outcome;
@@ -157,13 +164,23 @@ export class Retention {
     reason: RemovalReason,
     outcome: RetentionOutcome,
     signal?: AbortSignal,
+    session?: AgentSession,
   ): Promise<void> {
-    const { runDir } = runDirectories(this.options.dataDir, runId);
+    const { runDir, repoDir } = runDirectories(this.options.dataDir, runId);
     try {
       await this.options.resources.cleanUp(composeProjectName(runId), signal);
     } catch (error) {
       this.options.logger.error(
         `Keeping the Working copy of run ${runId}: removing its containers failed: ${String(error)}`,
+      );
+      return;
+    }
+    try {
+      // Only for a directory named like a Run (its path is then derived from the id).
+      if (isUuid(runId)) await this.options.sessions?.remove(repoDir, session);
+    } catch (error) {
+      this.options.logger.error(
+        `Keeping the Working copy of run ${runId}: removing its agent session files failed: ${String(error)}`,
       );
       return;
     }

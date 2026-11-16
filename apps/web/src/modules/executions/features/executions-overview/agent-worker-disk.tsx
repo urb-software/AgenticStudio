@@ -19,6 +19,8 @@ function Figure({ label, value }: { label: string; value: string }) {
 
 function DiskCard({ disk }: { disk: AgentWorkerDiskOutput }) {
   const titleId = useId();
+  // Some files could not be read while measuring: the byte figures are lower bounds.
+  const atLeast = (value: string) => (disk.partial ? `at least ${value}` : value);
   return (
     <section aria-labelledby={titleId} className="flex min-w-0 flex-col gap-3">
       {disk.low ? (
@@ -35,14 +37,19 @@ function DiskCard({ disk }: { disk: AgentWorkerDiskOutput }) {
           Agent worker disk
         </h2>
         <dl className="m-0 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Figure label="Working copies" value={formatBytes(disk.workingCopiesBytes)} />
-          <Figure label="Caches" value={formatBytes(disk.cachesBytes)} />
+          <Figure label="Working copies" value={atLeast(formatBytes(disk.workingCopiesBytes))} />
+          <Figure label="Caches" value={atLeast(formatBytes(disk.cachesBytes))} />
           <Figure label="Runs kept" value={String(disk.keptRuns)} />
           <Figure
             label="Free"
             value={`${formatBytes(disk.freeBytes)} of ${formatBytes(disk.totalBytes)}`}
           />
         </dl>
+        {disk.partial ? (
+          <p className="m-0 text-small text-text-muted">
+            Some files could not be read while measuring, so the sizes are lower bounds.
+          </p>
+        ) : null}
       </Card>
     </section>
   );

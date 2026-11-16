@@ -69,9 +69,19 @@ function refusalText(run: RunOutput, reason: Refusal): { text: string; runAgain:
 
 /**
  * "Open to Follow-ups until <date>" (Issue #143): when the Run's working copy and agent session
- * are kept until, moved by activity on the Run. Nothing when the page has no date.
+ * are kept until, moved by activity on the Run. Instead, "Removal pending" when the date has passed or the per-Project limit removes the Run.
+ * Nothing when the page has neither.
  */
-function OpenUntil({ openUntil }: { openUntil: string | undefined }) {
+function OpenUntil({ followUp }: { followUp: NonNullable<RunOutput['followUp']> }) {
+  const { openUntil } = followUp;
+  if (followUp.removalPending) {
+    return (
+      <p className="m-0 text-small text-text-muted">
+        Removal pending: the agent worker removes the working copy at its next sweep, within the
+        hour. After that the run can no longer be continued.
+      </p>
+    );
+  }
   if (openUntil === undefined) return null;
   return (
     <p className="m-0 text-small text-text-muted">
@@ -118,21 +128,21 @@ export function RunFollowUp({
           {text}
           {runAgain ? ' Use “Run again” to start a new run with the same Task.' : null}
         </p>
-        <OpenUntil openUntil={followUp.openUntil} />
+        <OpenUntil followUp={followUp} />
       </section>
     );
   }
-  return <FollowUpForm run={run} titleId={titleId} openUntil={followUp.openUntil} />;
+  return <FollowUpForm run={run} titleId={titleId} followUp={followUp} />;
 }
 
 function FollowUpForm({
   run,
   titleId,
-  openUntil,
+  followUp,
 }: {
   run: RunOutput;
   titleId: string;
-  openUntil: string | undefined;
+  followUp: NonNullable<RunOutput['followUp']>;
 }) {
   const [text, setText] = useState('');
   const [localError, setLocalError] = useState<string | undefined>();
@@ -179,7 +189,7 @@ function FollowUpForm({
         The same agent continues its session in the same working copy, with what it already knows,
         and updates the same pull request.
       </p>
-      <OpenUntil openUntil={openUntil} />
+      <OpenUntil followUp={followUp} />
       {refused ? (
         <Banner tone="danger" title={refused.problem?.title ?? 'Could not send the Follow-up.'}>
           {refused.problem?.detail ?? 'Try again.'}

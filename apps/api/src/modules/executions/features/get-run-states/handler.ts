@@ -4,11 +4,16 @@ import {
   type RunRepository,
   type RunStateView,
 } from '../../domain/repositories/run-repository.js';
+import type { Provider } from '../../domain/entities/run.js';
 import { isLimited, keepUntil, overLimit } from '../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 
-/** A Run's state with what the agent worker does with its Working copy (Issue #143). */
+/**
+ * A Run's state with what the agent worker does with its Working copy (Issue #143): the
+ * worker protocol's `RunStatesResponse` entry, with Dates (the endpoint serialises and validates
+ * it against that contract).
+ */
 export interface RunRetentionAnswer {
   runId: string;
   state: RunStateView['state'];
@@ -17,6 +22,8 @@ export interface RunRetentionAnswer {
   keepUntil?: Date;
   /** Set for a final Run whose Working copy is to be removed now. */
   removable?: true;
+  /** With `removable`: the Run's agent session, for removing its CLI session files. */
+  session?: { provider: Provider; ref: string };
 }
 
 /**
@@ -65,7 +72,14 @@ export class GetRunStatesHandler {
       const answer = { runId: view.runId, state: view.state, finishedAt: view.finishedAt };
       if (until === null) return answer;
       const removable = until.getTime() <= now.getTime() || over.has(view.runId);
-      return removable ? { ...answer, removable: true as const } : { ...answer, keepUntil: until };
+      if (!removable) return { ...answer, keepUntil: until };
+      return {
+        ...answer,
+        removable: true as const,
+        ...(view.sessionRef === null
+          ? {}
+          : { session: { provider: view.provider, ref: view.sessionRef } }),
+      };
     });
   }
 }

@@ -859,10 +859,21 @@ export const runStatesResponseSchema = z.array(
        */
       keepUntil: z.iso.datetime().optional(),
       removable: z.literal(true).optional(),
+      /**
+       * With `removable` only: the Run's agent session, so the worker removes the session files
+       * the provider's CLI keeps for it together with the Working copy. Never a credential.
+       */
+      session: z
+        .strictObject({ provider: providerSchema, ref: z.string().min(1).max(256) })
+        .optional(),
     })
     .refine((entry) => entry.keepUntil === undefined || entry.removable === undefined, {
       path: ['removable'],
       message: 'A Run is either kept until a time or removable, not both.',
+    })
+    .refine((entry) => entry.session === undefined || entry.removable === true, {
+      path: ['session'],
+      message: 'The agent session comes only with a removable Run.',
     }),
 );
 export type RunStatesResponse = z.infer<typeof runStatesResponseSchema>;
@@ -964,6 +975,8 @@ export const workerDiskSchema = z.strictObject({
   freeBytes: z.int().min(0).max(DISK_BYTES_MAX),
   totalBytes: z.int().min(0).max(DISK_BYTES_MAX),
   minFreeBytes: z.int().min(0).max(DISK_BYTES_MAX),
+  /** Some files could not be read while measuring: the byte figures are lower bounds. */
+  partial: z.literal(true).optional(),
 });
 export type WorkerDisk = z.infer<typeof workerDiskSchema>;
 

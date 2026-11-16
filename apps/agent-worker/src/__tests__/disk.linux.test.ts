@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -92,6 +100,45 @@ describe.skipIf(process.platform !== 'linux')('DiskMonitor', () => {
       rmSync(outside, { recursive: true, force: true });
     }
   });
+
+  it('measures nothing through a runs or cache directory that is a symlink', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'studio-disk-outside-'));
+    try {
+      writeFileSync(join(outside, 'big'), Buffer.alloc(100_000));
+      rmSync(join(dataDir, 'runs'), { recursive: true });
+      symlinkSync(outside, join(dataDir, 'runs'));
+      const disk = monitor();
+
+      disk.snapshot();
+      await disk.settled();
+
+      expect(disk.snapshot()).toMatchObject({ workingCopiesBytes: 0 });
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'skips what it cannot read, and says the figures are partial',
+    async () => {
+      const runId = runDirectory(1000);
+      const locked = join(dataDir, 'runs', runId, 'locked');
+      mkdirSync(locked);
+      writeFileSync(join(locked, 'hidden'), Buffer.alloc(5000));
+      chmodSync(locked, 0o000);
+      try {
+        const disk = monitor();
+
+        disk.snapshot();
+        await disk.settled();
+
+        expect(disk.snapshot()).toMatchObject({ workingCopiesBytes: 1000, partial: true });
+        expect(errors[0]).toContain('lower bounds');
+      } finally {
+        chmodSync(locked, 0o700);
+      }
+    },
+  );
 
   it('measures at most every ten minutes', async () => {
     const runId = runDirectory(1000);

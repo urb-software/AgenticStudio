@@ -108,9 +108,15 @@ export class DiskMonitor {
     const { dataDir } = this.options;
     const seen = new Set<string>();
     const runsDir = runsDirectory(dataDir);
-    const workingCopiesBytes = await treeBytes(runsDir, seen);
-    const cachesBytes = await treeBytes(cachesDirectory(dataDir), seen);
+    const skipped = { count: 0 };
+    const workingCopiesBytes = await treeBytes(runsDir, seen, skipped);
+    const cachesBytes = await treeBytes(cachesDirectory(dataDir), seen, skipped);
     const space = await (this.options.space ?? fileSystemSpace)(dataDir);
+    if (skipped.count > 0) {
+      this.options.logger.error(
+        `Measuring the disk skipped ${skipped.count} file(s) it could not read; the sizes are lower bounds.`,
+      );
+    }
     return {
       workingCopiesBytes,
       cachesBytes,
@@ -118,6 +124,7 @@ export class DiskMonitor {
       freeBytes: Math.min(space.freeBytes, Number.MAX_SAFE_INTEGER),
       totalBytes: Math.min(space.totalBytes, Number.MAX_SAFE_INTEGER),
       minFreeBytes: this.options.minFreeBytes,
+      ...(skipped.count > 0 ? { partial: true as const } : {}),
     };
   }
 }
@@ -134,11 +141,20 @@ async function countRuns(runsDir: string): Promise<number> {
 }
 
 /**
- * Bytes of data under `root`, links not followed. A file with several hard links (a clone made
- * with `--local` links the cache's objects) counts once across everything measured with the
- * same `seen` set. A file that vanishes while it is measured (a Run being removed) counts 0.
+ * Bytes of data under `root`, links not followed; a `root` that is a link or not a directory
+ * counts 0 (nothing outside the data directory is measured). A file with several hard links (a
+ * clone made with `--local` links the cache's objects) counts once across everything measured
+ * with the same `seen` set. A file that vanishes while it is measured (a Run being removed)
+ * counts 0; an entry that cannot be read (a permission error) is skipped and counted in
+ * `skipped`, so the figures say they are partial.
  */
-async function treeBytes(root: string, seen: Set<string>): Promise<number> {
+async function treeBytes(
+  root: string,
+  seen: Set<string>,
+  skipped: { count: number },
+): Promise<number> {
+  const rootStats = await lstat(root).catch(() => null);
+  if (!rootStats?.isDirectory() || rootStats.isSymbolicLink()) return 0;
   let total = 0;
   const pending = [root];
   while (pending.length > 0) {
@@ -147,8 +163,8 @@ async function treeBytes(root: string, seen: Set<string>): Promise<number> {
     try {
       names = await readdir(dir);
     } catch (error) {
-      if (isGone(error)) continue;
-      throw error;
+      if (!isGone(error)) skipped.count += 1;
+      continue;
     }
     for (const name of names) {
       const path = posix.join(dir, name);
@@ -156,8 +172,8 @@ async function treeBytes(root: string, seen: Set<string>): Promise<number> {
       try {
         stats = await lstat(path, { bigint: true });
       } catch (error) {
-        if (isGone(error)) continue;
-        throw error;
+        if (!isGone(error)) skipped.count += 1;
+        continue;
       }
       if (stats.isDirectory()) {
         pending.push(path);

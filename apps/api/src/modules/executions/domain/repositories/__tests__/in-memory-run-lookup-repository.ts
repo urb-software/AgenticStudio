@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PullRequestState } from '../../entities/run.js';
+import { isPullRequestEnded, type PullRequestState } from '../../entities/run.js';
 import type {
   ClaimedLookup,
   LookupKind,
@@ -27,7 +27,7 @@ export interface FakeLookup {
 
 /** The database adapter's `pr_ended_at` rule (Issue #143): first end kept, a reopen clears it. */
 function endedAt(state: PullRequestState, current: Date | null, now: Date): Date | null {
-  return state === 'merged' || state === 'closed' || state === 'missing' ? (current ?? now) : null;
+  return isPullRequestEnded(state) ? (current ?? now) : null;
 }
 
 /**

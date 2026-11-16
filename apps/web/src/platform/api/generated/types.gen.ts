@@ -121,6 +121,7 @@ export type RunFollowUpEligibilityOutput = {
     allowed: boolean;
     reason?: 'not_finished' | 'follow_up_queued' | 'pull_request_merged' | 'pull_request_closed' | 'pull_request_missing' | 'working_copy_removed' | 'no_session' | 'step_total_reached' | 'provider_unavailable' | 'worker_unavailable';
     openUntil?: string;
+    removalPending?: true;
 };
 
 export type RunPullRequestOutput = {
@@ -294,6 +295,7 @@ export type AgentWorkerDiskOutput = {
     totalBytes: number;
     minFreeBytes: number;
     low: boolean;
+    partial?: true;
 };
 
 export type AgentWorkerOutput = {

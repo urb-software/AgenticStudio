@@ -140,7 +140,8 @@ export const zRunFollowUpEligibilityOutput = z.object({
         'provider_unavailable',
         'worker_unavailable'
     ]).optional(),
-    openUntil: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional()
+    openUntil: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    removalPending: z.literal(true).optional()
 });
 
 export const zRunPullRequestOutput = z.object({
@@ -390,7 +391,8 @@ export const zAgentWorkerDiskOutput = z.object({
     freeBytes: z.int().gte(0).lte(9007199254740991),
     totalBytes: z.int().gte(0).lte(9007199254740991),
     minFreeBytes: z.int().gte(0).lte(9007199254740991),
-    low: z.boolean()
+    low: z.boolean(),
+    partial: z.literal(true).optional()
 });
 
 export const zAgentWorkerOutput = z.object({

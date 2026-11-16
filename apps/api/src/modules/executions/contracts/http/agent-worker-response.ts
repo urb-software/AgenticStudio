@@ -19,6 +19,8 @@ export const agentWorkerDiskSchema = z
     minFreeBytes: bytes,
     /** Free space is below `minFreeBytes`: no new Run is prepared until space is freed. */
     low: z.boolean(),
+    /** Some files could not be read while measuring: the byte figures are lower bounds. */
+    partial: z.literal(true).optional(),
   })
   .meta({ id: 'AgentWorkerDisk' });
 

@@ -4,7 +4,7 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type { PullRequestState } from '../../domain/entities/run.js';
+import { isPullRequestEnded, type PullRequestState } from '../../domain/entities/run.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
@@ -25,8 +25,7 @@ const OPEN = ['requested', 'claimed'];
  * it); reading it open or draft again (a reopened pull request) clears it.
  */
 function prEndedAtAssignment(state: PullRequestState, now: Date): Prisma.Sql {
-  const ended = state === 'merged' || state === 'closed' || state === 'missing';
-  return ended
+  return isPullRequestEnded(state)
     ? Prisma.sql`pr_ended_at = COALESCE(pr_ended_at, ${now}::timestamptz)`
     : Prisma.sql`pr_ended_at = NULL`;
 }
