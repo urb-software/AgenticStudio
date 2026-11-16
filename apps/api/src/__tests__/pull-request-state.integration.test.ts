@@ -54,6 +54,8 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
   };
   const W1 = randomUUID();
   const W2 = randomUUID();
+  /** One pass of the daily refresh, run by hand (the app hands it over instead of a timer). */
+  let dailyPass: () => Promise<void>;
 
   const db = () => app.get<DatabaseClient>(DATABASE_CLIENT);
   const http = () => request(app.getHttpServer());
@@ -144,7 +146,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
         workerLeaseSeconds: LEASE_SECONDS,
         runLimits: LIMITS,
       },
-      { executions: { clock } },
+      { executions: { clock, pullRequestRefresh: { manual: (pass) => (dailyPass = pass) } } },
     );
     cookie = await signIn(app);
   });
@@ -469,6 +471,66 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       const claimed = await claimLookups();
       expect(claimed.status).toBe(200);
       expect(claimed.body[0]).toMatchObject({ runId, pullRequestNumber: 7 });
+    });
+  });
+
+  describe('the daily refresh', () => {
+    const tick = () => dailyPass();
+    const openLookups = async () => {
+      const rows = await db().$queryRaw<{ run_id: string }[]>`
+        SELECT run_id FROM run_lookups WHERE status IN ('requested', 'claimed')`;
+      return rows.map((row) => row.run_id);
+    };
+    /** The Run's pull request was read as `state` more than a day ago. */
+    const readLongAgo = async (runId: string, state: string | null) => {
+      const readAt = state === null ? null : new Date(clock.current.getTime() - 25 * 3_600_000);
+      await db().$executeRaw`
+        UPDATE runs SET pr_state = ${state}, pr_refreshed_at = ${readAt}::timestamptz
+        WHERE id = ${runId}::uuid`;
+    };
+
+    it('asks only about Runs with an open or unknown pull request that was read over a day ago', async () => {
+      const unknown = await deliveredRun();
+      const open = await deliveredRun();
+      await readLongAgo(open, 'open');
+      const draft = await deliveredRun();
+      await readLongAgo(draft, 'draft');
+      const merged = await deliveredRun();
+      await readLongAgo(merged, 'merged');
+      const closed = await deliveredRun();
+      await readLongAgo(closed, 'closed');
+      const missing = await deliveredRun();
+      await readLongAgo(missing, 'missing');
+      const fresh = await deliveredRun();
+      await db().$executeRaw`
+        UPDATE runs SET pr_state = 'open', pr_refreshed_at = ${clock.current}::timestamptz
+        WHERE id = ${fresh}::uuid`;
+      const noPullRequest = await deliveredRun({ delivered: false });
+
+      await tick();
+
+      const asked = await openLookups();
+      expect(new Set(asked)).toEqual(new Set([unknown, open, draft]));
+      expect(asked).not.toContain(noPullRequest);
+      // Ask again: still one lookup per Run.
+      await tick();
+      expect(await openLookups()).toHaveLength(3);
+    });
+
+    it('lets a worker carry the requests out with reads only, and starts no Run', async () => {
+      const runId = await deliveredRun();
+      await tick();
+
+      const claimed = await claimLookups();
+      expect(claimed.status).toBe(200);
+      expect(claimed.body).toHaveLength(1);
+      expect(await answer(claimed.body[0].id, read({ state: 'merged' }))).toMatchObject({
+        status: 204,
+      });
+      const run = await getRun(runId);
+      expect(run.body).toMatchObject({ state: 'succeeded', pullRequest: { state: 'merged' } });
+      // Nothing was queued for an agent: no Run waits to be claimed.
+      expect((await asWorker('runs/claim', { workerId: W1 })).status).toBe(204);
     });
   });
 });

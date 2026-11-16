@@ -50,6 +50,11 @@ import { ReportRunStepEndpoint } from './features/report-run-step/endpoint.js';
 import { ReportRunStepHandler } from './features/report-run-step/handler.js';
 import { ReportWorkerStatusEndpoint } from './features/report-worker-status/endpoint.js';
 import { ReportWorkerStatusHandler } from './features/report-worker-status/handler.js';
+import {
+  DAILY_REFRESH_INTERVAL_MS,
+  DailyPullRequestRefreshSchedule,
+  RequestDailyPullRequestRefreshesHandler,
+} from './features/request-daily-pull-request-refreshes/handler.js';
 import { RetryDeliveryEndpoint } from './features/retry-delivery/endpoint.js';
 import { RetryDeliveryHandler } from './features/retry-delivery/handler.js';
 import { FollowUpRunEndpoint } from './features/follow-up-run/endpoint.js';
@@ -80,6 +85,10 @@ import { PrismaRunLookupRepository } from './infrastructure/repositories/prisma-
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
 import { CLOCK, type Clock } from './ports/clock.js';
+import {
+  PULL_REQUEST_REFRESH_SETTINGS,
+  type PullRequestRefreshSettings,
+} from './ports/pull-request-refresh-settings.js';
 import { RUN_LIMITS, type RunLimitsSetting } from './ports/run-limits.js';
 import { OPERATOR_SESSIONS } from './ports/operator-sessions.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './ports/run-log-settings.js';
@@ -99,6 +108,8 @@ export interface ExecutionsModuleOptions {
   /** Lower stream limits for tests (defaults: 5 per session, 50 in total). */
   logStreamLimits?: { perSession: number; total: number };
   secretValues?: RunSecretValues;
+  /** The daily pull request refresh (Issue #142): a test runs its passes by hand. */
+  pullRequestRefresh?: Pick<PullRequestRefreshSettings, 'manual'>;
 }
 
 const SYSTEM_CLOCK: Clock = { now: () => new Date() };
@@ -226,6 +237,15 @@ export class ExecutionsModule {
           inject: [APP_CONFIG],
         },
         LostWorkerSweepSchedule,
+        RequestDailyPullRequestRefreshesHandler,
+        {
+          provide: PULL_REQUEST_REFRESH_SETTINGS,
+          useValue: {
+            intervalMs: DAILY_REFRESH_INTERVAL_MS,
+            ...options.pullRequestRefresh,
+          } satisfies PullRequestRefreshSettings,
+        },
+        DailyPullRequestRefreshSchedule,
       ],
     };
   }
