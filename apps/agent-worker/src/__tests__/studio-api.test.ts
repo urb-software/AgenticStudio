@@ -62,6 +62,58 @@ describe('StudioApi', () => {
     expect(JSON.parse(String(calls[1]?.init.body))).not.toHaveProperty('removedRunIds');
   });
 
+  // Issue #142: lookups.
+  it('claims lookups (204: none) and validates what it is handed', async () => {
+    const lookup = {
+      id: 'c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f',
+      kind: 'pull_request_state',
+      runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
+      repository: { remoteUrl: 'https://github.com/acme/shop.git' },
+      pullRequestNumber: 7,
+      runBranch: 'agent/add-r0b8e5c2d',
+      integrationBranch: 'dev',
+    };
+    const { api, calls } = client(async () => Response.json([lookup]));
+
+    expect(await api.claimLookups()).toEqual([lookup]);
+    expect(calls[0]?.url).toBe('http://studio.test/api/worker/lookups/claim');
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ workerId: WORKER_ID });
+    const { api: none } = client(async () => new Response(null, { status: 204 }));
+    expect(await none.claimLookups()).toEqual([]);
+    const { api: invalid } = client(async () => Response.json([{ ...lookup, kind: 'checks' }]));
+    await expect(invalid.claimLookups()).rejects.toThrow();
+  });
+
+  it('reports a lookup result with the worker id and the lookup in the path', async () => {
+    const { api, calls } = client(async () => new Response(null, { status: 204 }));
+
+    await api.reportLookup('c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f', {
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'merged' },
+    });
+
+    expect(calls[0]?.url).toBe(
+      'http://studio.test/api/worker/lookups/c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f/result',
+    );
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      workerId: WORKER_ID,
+      ok: true,
+      kind: 'pull_request_state',
+      result: { state: 'merged' },
+    });
+    const { api: refused } = client(async () =>
+      Response.json({ type: 'urn:agentic-studio:problem:lookup-not-held' }, { status: 409 }),
+    );
+    await expect(
+      refused.reportLookup('c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f', {
+        ok: false,
+        code: 'failed',
+        error: 'x',
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
   it('sends the token as a Bearer credential and the worker id in the JSON body', async () => {
     const { api, calls } = client(async () => new Response(null, { status: 204 }));
 

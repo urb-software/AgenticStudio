@@ -372,6 +372,8 @@ async function main() {
       E2E_OPERATOR_PASSWORD: operatorPassword,
       E2E_API_PLATFORM: process.platform,
       E2E_FIXTURE_REPO_BASE: fixtureBase,
+      // Issue #142: the smoke changes a pull request's state on the stub of GitHub.
+      E2E_GITHUB_STUB_PORT: String(GITHUB_STUB_PORT),
       PLAYWRIGHT_JSON_OUTPUT_NAME: reportPath,
     },
   );

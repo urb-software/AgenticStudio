@@ -6,6 +6,7 @@ import {
   isFinal,
   partEndOf,
   MAX_ACTIVE_RUNS,
+  NO_PULL_REQUEST_STATUS,
   type Run,
   type RunCancellation,
   type RunDeliveryOutcome,
@@ -93,6 +94,7 @@ export class InMemoryRunRepository implements RunRepository {
       stepsBeforePart: 0,
       pushedCommit: null,
       workingCopyRemovedAt: null,
+      pullRequestStatus: NO_PULL_REQUEST_STATUS,
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));

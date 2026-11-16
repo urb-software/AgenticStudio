@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { runResponseSchema, toRunListItem, toRunResponse } from '../run-response.js';
+import {
+  NO_WORKER_FOR_REFRESH,
+  runResponseSchema,
+  toRunListItem,
+  toRunResponse,
+} from '../run-response.js';
+
+// contracts/http may not import the domain (backend.md §2): its own "nothing read yet".
+const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestStatus'] = {
+  state: null,
+  behindBy: null,
+  aheadBy: null,
+  mergeable: null,
+  refreshedAt: null,
+  refreshError: null,
+  retryAt: null,
+  refreshRequestedAt: null,
+};
 
 // Issue #103: the conversation and the open question in the operator API.
 const T0 = new Date('2026-11-15T12:00:00.000Z');
@@ -32,6 +49,7 @@ const run = {
   cancellation: null,
   delivery: null,
   pullRequest: null,
+  pullRequestStatus: NO_PULL_REQUEST_STATUS,
   deliveryRequested: false,
   failingChecks: [],
   environmentFileSupplied: false,
@@ -207,5 +225,87 @@ describe('Run response: Follow-ups (Issue #141)', () => {
       toRunResponse(followedUp, { allowed: false, reason: 'step_total_reached' }),
     );
     expect(refused.followUp).toEqual({ allowed: false, reason: 'step_total_reached' });
+  });
+});
+
+describe('Run response: pull request state (Issue #142)', () => {
+  const REFRESHED = new Date('2026-11-16T12:00:00.000Z');
+  const withPullRequest = (status: Partial<typeof NO_PULL_REQUEST_STATUS>) => ({
+    ...run,
+    pullRequest: { url: 'https://github.com/acme/shop/pull/7', number: 7 },
+    pullRequestStatus: { ...NO_PULL_REQUEST_STATUS, ...status },
+  });
+
+  it('carries only the number and link until a lookup succeeded', () => {
+    const response = runResponseSchema.parse(toRunResponse(withPullRequest({})));
+    expect(response.pullRequest).toEqual({
+      url: 'https://github.com/acme/shop/pull/7',
+      number: 7,
+    });
+  });
+
+  it('shows the state, the branch position, the merge verdict and when it was read', () => {
+    const response = runResponseSchema.parse(
+      toRunResponse(
+        withPullRequest({
+          state: 'draft',
+          behindBy: 2,
+          aheadBy: 3,
+          mergeable: false,
+          refreshedAt: REFRESHED,
+        }),
+      ),
+    );
+    expect(response.pullRequest).toEqual({
+      url: 'https://github.com/acme/shop/pull/7',
+      number: 7,
+      state: 'draft',
+      behindBy: 2,
+      aheadBy: 3,
+      mergeable: false,
+      refreshedAt: '2026-11-16T12:00:00.000Z',
+    });
+  });
+
+  it('keeps the last known state next to why the latest refresh failed, and when it retries', () => {
+    const retryAt = new Date('2026-11-16T12:05:00.000Z');
+    const response = runResponseSchema.parse(
+      toRunResponse(
+        withPullRequest({
+          state: 'open',
+          refreshedAt: REFRESHED,
+          refreshError: 'GitHub asked to wait.',
+          retryAt,
+          refreshRequestedAt: REFRESHED,
+        }),
+      ),
+    );
+    expect(response.pullRequest).toMatchObject({
+      state: 'open',
+      refreshError: 'GitHub asked to wait.',
+      retryAt: '2026-11-16T12:05:00.000Z',
+      refreshing: true,
+    });
+  });
+
+  it('says a waiting refresh is under way, or that no agent worker is connected to carry it out', () => {
+    const waiting = withPullRequest({ state: 'open', refreshRequestedAt: REFRESHED });
+    expect(toRunResponse(waiting).pullRequest?.refreshing).toBe(true);
+    expect(toRunResponse(waiting, undefined, true).pullRequest?.refreshing).toBe(true);
+    const noWorker = toRunResponse(waiting, undefined, false).pullRequest;
+    expect(noWorker?.refreshing).toBeUndefined();
+    expect(noWorker?.refreshError).toBe(NO_WORKER_FOR_REFRESH);
+    // Nothing is waiting: no worker needed, nothing said.
+    expect(
+      toRunResponse(withPullRequest({ state: 'open' }), undefined, false).pullRequest?.refreshError,
+    ).toBeUndefined();
+  });
+
+  it('shows the state in a list too, and leaves a Run without a pull request alone', () => {
+    expect(
+      toRunListItem(withPullRequest({ state: 'merged', refreshedAt: REFRESHED })).pullRequest
+        ?.state,
+    ).toBe('merged');
+    expect(toRunResponse(run).pullRequest).toBeUndefined();
   });
 });

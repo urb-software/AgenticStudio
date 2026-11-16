@@ -42,6 +42,7 @@ import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunCommits, RunDelivery } from './run-delivery';
 import { RunFollowUp } from './run-follow-up';
+import { RunPullRequest } from './run-pull-request';
 import { ResumeRun } from './run-resume';
 
 /** The Run page's tabs (Issue #144): its log and what it changed. */
@@ -320,7 +321,8 @@ export function RunTitle({ runId }: { runId: string }) {
  * agent's question and the answer form; once the agent asked, the Task leads the conversation
  * of questions and answers (Issue #103). A finished Run offers a Follow-up, or says why it cannot
  * take one; the conversation marks each Follow-up and keeps each part's result, the Details show
- * the Run step totals, and the commits say which are pushed (Issue #141). Below, two tabs: the
+ * the Run step totals, and the commits say which are pushed (Issue #141). A Run with a pull request shows its card: the
+ * state on GitHub, the branch position and when it was read (Issue #142). Below, two tabs: the
  * Run's log (Issue #99) and its Changes (Issue #144), what it changed in its Working copy.
  */
 export function RunDetail({ runId }: { runId: string }) {
@@ -408,6 +410,7 @@ export function RunDetail({ runId }: { runId: string }) {
       {run.resumable ? <ResumeRun run={run} /> : null}
       <Stopped run={run} />
       <RunDelivery run={run} />
+      {run.pullRequest ? <RunPullRequest run={run} pullRequest={run.pullRequest} /> : null}
       {FINAL_STATES.includes(run.state) && run.followUp ? (
         <RunFollowUp run={run} followUp={run.followUp} />
       ) : null}

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FollowUpNotAllowedError, type Run, type RunState } from '../../../domain/entities/run.js';
+import { InMemoryRunLookupRepository } from '../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../domain/services/provider-availability.js';
@@ -50,6 +51,7 @@ const newRun = (projectId = PROJECT, maxTotalSteps = 50) => ({
 describe('FollowUpRunHandler', () => {
   let runs: InMemoryRunRepository;
   let workers: InMemoryWorkerStatusStore;
+  let lookups: InMemoryRunLookupRepository;
   let handler: FollowUpRunHandler;
 
   /** The worker reports itself connected with both providers on, at `at`. */
@@ -100,7 +102,8 @@ describe('FollowUpRunHandler', () => {
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE);
+    lookups = new InMemoryRunLookupRepository(runs);
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups);
     connect();
   });
 
@@ -220,7 +223,7 @@ describe('FollowUpRunHandler', () => {
   it('refuses while the agent worker holding the Working copy is gone, or the Provider is off', async () => {
     const run = await finished('succeeded');
     workers = new InMemoryWorkerStatusStore();
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE);
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups);
     connect(OTHER_WORKER);
     await expect(handler.execute(run.id, 'x')).rejects.toEqual(
       new FollowUpNotAllowedError('worker_unavailable'),
@@ -230,6 +233,72 @@ describe('FollowUpRunHandler', () => {
     await expect(handler.execute(run.id, 'x')).rejects.toEqual(
       new FollowUpNotAllowedError('provider_unavailable'),
     );
+  });
+
+  // Issue #142: the Run's pull request, as last read.
+  const readAs = (run: Run, state: 'draft' | 'open' | 'merged' | 'closed' | 'missing' | null) => {
+    const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
+    stored.pullRequestStatus = {
+      ...stored.pullRequestStatus,
+      state,
+      refreshedAt: state === null ? null : T0,
+    };
+  };
+
+  it.each([
+    ['merged', 'pull_request_merged'],
+    ['closed', 'pull_request_closed'],
+    ['missing', 'pull_request_missing'],
+  ] as const)('refuses a Follow-up to a Run whose pull request is %s', async (state, reason) => {
+    const run = await finished('succeeded');
+    readAs(run, state);
+
+    await expect(handler.execute(run.id, 'Go on.')).rejects.toEqual(
+      new FollowUpNotAllowedError(reason),
+    );
+    expect((await runs.findById(run.id))?.state).toBe('succeeded');
+  });
+
+  it.each(['draft', 'open', null] as const)(
+    'takes a Follow-up when the pull request is %s (unknown included)',
+    async (state) => {
+      const run = await finished('succeeded');
+      readAs(run, state);
+
+      const { run: queued } = await handler.execute(run.id, 'Go on.');
+
+      expect(queued.state).toBe('queued');
+    },
+  );
+
+  it('takes a Follow-up again once the next refresh finds the pull request reopened', async () => {
+    const run = await finished('succeeded');
+    readAs(run, 'closed');
+    await expect(handler.execute(run.id, 'Go on.')).rejects.toBeInstanceOf(FollowUpNotAllowedError);
+
+    readAs(run, 'open');
+
+    expect((await handler.execute(run.id, 'Go on.')).run.state).toBe('queued');
+  });
+
+  it('asks for the pull request state to be read again when it accepts a Follow-up', async () => {
+    const run = await finished('succeeded');
+
+    const { run: queued } = await handler.execute(run.id, 'Go on.');
+
+    expect(lookups.lookups).toHaveLength(1);
+    expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'pull_request_state' });
+    expect(queued.pullRequestStatus.refreshRequestedAt).toEqual(T1);
+  });
+
+  it('still accepts the Follow-up when asking for the pull request state fails (review S6 of #152)', async () => {
+    const run = await finished('succeeded');
+    lookups.request = () => Promise.reject(new Error('The database is busy'));
+
+    const { run: queued } = await handler.execute(run.id, 'Go on.');
+
+    expect(queued.state).toBe('queued');
+    expect(queued.followUpQueued).toBe(true);
   });
 
   it('answers not found for an unknown Run or an id that is not a UUID', async () => {

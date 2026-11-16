@@ -27,6 +27,7 @@ type Route =
   | 'cancel'
   | 'answer'
   | 'followUp'
+  | 'refresh'
   | 'diff'
   | 'diffFile';
 
@@ -48,6 +49,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
   [/^\/api\/runs\/([^/]+)\/follow-up$/, () => 'followUp'],
+  [/^\/api\/runs\/([^/]+)\/pull-request\/refresh$/, () => 'refresh'],
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
   [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
   [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
@@ -141,6 +143,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     cancel: [],
     answer: [],
     followUp: [],
+    refresh: [],
     events: [],
     steps: [],
     stream: [],
@@ -212,7 +215,9 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const body: unknown =
       route === 'start' || route === 'answer' || route === 'followUp'
         ? await request.json()
-        : undefined;
+        : route === 'refresh'
+          ? ((await request.json().catch(() => undefined)) as unknown)
+          : undefined;
     calls.push({ route, body, query: searchParams });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
@@ -324,6 +329,16 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         };
         runs[index] = queued;
         return json(202, queued);
+      }
+      case 'refresh': {
+        // Issue #142: the API only records a request; the Run comes back as it is. Tests move
+        // the pull request on with `update`, as the agent worker's answer would.
+        const run = runs.find((candidate) => candidate.id === id);
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (!run.pullRequest) {
+          return json(409, problem(409, 'No pull request to refresh'));
+        }
+        return json(202, run);
       }
       case 'retryDelivery': {
         const index = runs.findIndex((candidate) => candidate.id === id);

@@ -83,9 +83,17 @@ export interface OpenedPullRequest extends PullRequestRef {
   reused: boolean;
 }
 
-/** The pull request could not be found or opened; `message` says what to check, never a token. */
+/**
+ * The pull request could not be found or opened; `message` says what to check, never a token.
+ * Issue #142: `status` is GitHub's answer when it refused, and `retryAfterSeconds` is set when
+ * the refusal is a rate limit (how long GitHub asks to wait).
+ */
 export class PullRequestFailedError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly retryAfterSeconds?: number,
+  ) {
     super(message);
     this.name = 'PullRequestFailedError';
   }
@@ -119,7 +127,74 @@ export interface PullRequestClient {
   ): Promise<void>;
 }
 
+/**
+ * A pull request as a lookup reads it (Issue #142): where it stands, whether GitHub says it can
+ * be merged, and the facts the lookup's scope check needs (which branch of which repository it
+ * comes from, and who opened it).
+ */
+export interface PullRequestDetails extends PullRequestRef {
+  state: 'open' | 'closed';
+  merged: boolean;
+  draft: boolean;
+  /** GitHub's verdict; `null` while it has not worked it out yet. */
+  mergeable: boolean | null;
+  headRef: string;
+  /** `owner/repo` of the head branch, `null` when its repository is gone. */
+  headRepository: string | null;
+  author: string | null;
+}
+
+/** A Run branch's position against the integration branch (Issue #142). */
+export interface BranchPosition {
+  behindBy: number;
+  aheadBy: number;
+}
+
+/**
+ * The reads a pull request lookup makes through the Agent account (Issue #142), all `GET`:
+ * the pull request, how far its branch is from the integration branch, and who the Agent
+ * account is. The client the delivery uses ({@link PullRequestClient}) does not need them.
+ */
+export interface PullRequestReader {
+  details(pull: PullRequestNumber, signal: AbortSignal): Promise<PullRequestDetails>;
+  /** The head branch against the base; `null` when the head branch no longer exists. */
+  position(
+    repository: { owner: string; repo: string },
+    base: string,
+    head: string,
+    signal: AbortSignal,
+  ): Promise<BranchPosition | null>;
+  /**
+   * Whether the branch still exists (review S3 of #152: told apart from a missing integration
+   * branch when a comparison answers 404).
+   */
+  branchExists(
+    repository: { owner: string; repo: string },
+    branch: string,
+    signal: AbortSignal,
+  ): Promise<boolean>;
+  /** The login of the Agent account (the token's own user). */
+  viewer(signal: AbortSignal): Promise<string>;
+}
+
 const pullRequestAnswer = z.object({ number: z.number(), html_url: z.string() });
+
+const pullRequestDetailsAnswer = pullRequestAnswer.extend({
+  state: z.enum(['open', 'closed']),
+  draft: z.boolean().optional(),
+  merged: z.boolean().optional(),
+  merged_at: z.string().nullable().optional(),
+  mergeable: z.boolean().nullable().optional(),
+  head: z.object({
+    ref: z.string(),
+    repo: z.object({ full_name: z.string() }).nullable().optional(),
+  }),
+  user: z.object({ login: z.string() }).nullable().optional(),
+});
+
+const compareAnswer = z.object({ ahead_by: z.int().min(0), behind_by: z.int().min(0) });
+
+const viewerAnswer = z.object({ login: z.string().min(1) });
 
 const pullRequestStateAnswer = pullRequestAnswer.extend({
   state: z.enum(['open', 'closed']),
@@ -135,7 +210,7 @@ const GITHUB_TIMEOUT_MS = 30_000;
  * opens a draft one against the integration branch. Delivery is safe to repeat: a second
  * delivery finds the first one's pull request.
  */
-export class GitHubPullRequests implements PullRequestClient {
+export class GitHubPullRequests implements PullRequestClient, PullRequestReader {
   constructor(
     private readonly options: {
       /** Base URL of the REST API, without a trailing slash. */
@@ -185,6 +260,69 @@ export class GitHubPullRequests implements PullRequestClient {
     };
   }
 
+  async details(pull: PullRequestNumber, signal: AbortSignal): Promise<PullRequestDetails> {
+    const answer = await this.call('GET', this.pullPath(pull), undefined, pull, signal, 'read');
+    const parsed = pullRequestDetailsAnswer.safeParse(answer);
+    if (!parsed.success || parsed.data.number !== pull.number) throw this.invalidAnswer();
+    return {
+      ...this.ref(parsed.data),
+      state: parsed.data.state,
+      merged: parsed.data.merged === true || Boolean(parsed.data.merged_at),
+      draft: parsed.data.draft === true,
+      mergeable: parsed.data.mergeable ?? null,
+      headRef: parsed.data.head.ref,
+      headRepository: parsed.data.head.repo?.full_name ?? null,
+      author: parsed.data.user?.login ?? null,
+    };
+  }
+
+  async position(
+    repository: { owner: string; repo: string },
+    base: string,
+    head: string,
+    signal: AbortSignal,
+  ): Promise<BranchPosition | null> {
+    const branch = (name: string) => name.split('/').map(encodeURIComponent).join('/');
+    const path =
+      `repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}` +
+      `/compare/${branch(base)}...${branch(head)}`;
+    let answer: unknown;
+    try {
+      answer = await this.call('GET', path, undefined, repository, signal, 'read');
+    } catch (error) {
+      // The head (or base) branch is gone.
+      if (error instanceof PullRequestFailedError && error.status === 404) return null;
+      throw error;
+    }
+    const parsed = compareAnswer.safeParse(answer);
+    if (!parsed.success) throw this.invalidAnswer();
+    return { behindBy: parsed.data.behind_by, aheadBy: parsed.data.ahead_by };
+  }
+
+  async branchExists(
+    repository: { owner: string; repo: string },
+    branch: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const path =
+      `repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}` +
+      `/branches/${branch.split('/').map(encodeURIComponent).join('/')}`;
+    try {
+      await this.call('GET', path, undefined, repository, signal, 'read');
+      return true;
+    } catch (error) {
+      if (error instanceof PullRequestFailedError && error.status === 404) return false;
+      throw error;
+    }
+  }
+
+  async viewer(signal: AbortSignal): Promise<string> {
+    const answer = await this.call('GET', 'user', undefined, undefined, signal, 'identify');
+    const parsed = viewerAnswer.safeParse(answer);
+    if (!parsed.success) throw this.invalidAnswer();
+    return parsed.data.login;
+  }
+
   async update(
     pull: PullRequestNumber & { title: string; body?: string },
     signal: AbortSignal,
@@ -221,9 +359,9 @@ export class GitHubPullRequests implements PullRequestClient {
     method: 'GET' | 'POST' | 'PATCH',
     path: string,
     body: object | undefined,
-    target: Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>,
+    target: (Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>) | undefined,
     signal: AbortSignal,
-    action: 'open' | 'read' | 'update' = 'open',
+    action: 'open' | 'read' | 'update' | 'identify' = 'open',
   ): Promise<unknown> {
     const call = this.options.fetch ?? fetch;
     let response: Response;
@@ -250,7 +388,11 @@ export class GitHubPullRequests implements PullRequestClient {
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new PullRequestFailedError(refusal(response.status, target, action));
+      throw new PullRequestFailedError(
+        refusal(response.status, target, action),
+        response.status,
+        rateLimitWait(response),
+      );
     }
     return response.json().catch(() => {
       throw this.invalidAnswer();
@@ -258,12 +400,40 @@ export class GitHubPullRequests implements PullRequestClient {
   }
 }
 
+/**
+ * How long GitHub asks to wait when it refused for a rate limit (Issue #142): a 429, or a 403
+ * that says so (`retry-after`, or `x-ratelimit-remaining: 0` until `x-ratelimit-reset`);
+ * `undefined` for any other refusal. At least one second.
+ */
+function rateLimitWait(response: Response, now = Date.now()): number | undefined {
+  const retryAfter = response.headers.get('retry-after');
+  const reset = response.headers.get('x-ratelimit-reset');
+  const limited =
+    response.status === 429 ||
+    (response.status === 403 &&
+      (retryAfter !== null || response.headers.get('x-ratelimit-remaining') === '0'));
+  if (!limited) return undefined;
+  if (retryAfter !== null && Number.isFinite(Number(retryAfter))) {
+    return Math.max(1, Math.ceil(Number(retryAfter)));
+  }
+  if (reset !== null && Number.isFinite(Number(reset))) {
+    return Math.max(1, Math.ceil(Number(reset) - now / 1000));
+  }
+  return 60;
+}
+
 /** What a refusal from GitHub means for the operator. */
 function refusal(
   status: number,
-  target: Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>,
-  action: 'open' | 'read' | 'update',
+  target: (Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>) | undefined,
+  action: 'open' | 'read' | 'update' | 'identify',
 ): string {
+  if (target === undefined || action === 'identify') {
+    return (
+      `Reading the Agent account failed: GitHub answered ${status}. Check ` +
+      'STUDIO_AGENT_GITHUB_TOKEN on the agent worker.'
+    );
+  }
   const name = `${target.owner}/${target.repo}`;
   const what = {
     open: 'Opening the pull request',

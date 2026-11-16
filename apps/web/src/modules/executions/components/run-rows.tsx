@@ -5,7 +5,12 @@ import Link from 'next/link';
 import { StatusPill } from '@/shared/components/status-pill';
 import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
 import type { RunOutput } from '../../../platform/api';
-import { PROVIDER_LABEL, RUN_STATE_VIEW, taskSummary } from './run-presentation';
+import {
+  PROVIDER_LABEL,
+  PULL_REQUEST_STATE_VIEW,
+  RUN_STATE_VIEW,
+  taskSummary,
+} from './run-presentation';
 
 type RunRowsProps = {
   runs: readonly RunOutput[];
@@ -52,6 +57,14 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
                 <span className="inline-flex items-center gap-1 font-mono text-code">
                   <GitPullRequestIcon aria-hidden="true" className="size-3.5" />
                   <span className="sr-only">Pull request </span>#{run.pullRequest.number}
+                  {run.pullRequest.state ? (
+                    // Issue #142: where the pull request stands, next to its marker.
+                    <span className="font-sans text-small text-text-muted">
+                      <span aria-hidden="true">· </span>
+                      <span className="sr-only">, </span>
+                      {PULL_REQUEST_STATE_VIEW[run.pullRequest.state].label}
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
               {run.followUps > 0 ? (

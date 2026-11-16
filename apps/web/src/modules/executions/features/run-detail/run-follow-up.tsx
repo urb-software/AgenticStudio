@@ -19,6 +19,21 @@ type Refusal = NonNullable<NonNullable<RunOutput['followUp']>['reason']>;
  */
 function refusalText(run: RunOutput, reason: Refusal): { text: string; runAgain: boolean } {
   switch (reason) {
+    case 'pull_request_merged':
+      return {
+        text: 'The pull request was merged on GitHub, so there is nothing left to update.',
+        runAgain: true,
+      };
+    case 'pull_request_closed':
+      return {
+        text: 'The pull request was closed on GitHub. If you reopen it there, refresh its state and the Follow-up is possible again.',
+        runAgain: true,
+      };
+    case 'pull_request_missing':
+      return {
+        text: 'The pull request or its run branch was not found on GitHub: it may be gone, or the Agent account cannot see it.',
+        runAgain: true,
+      };
     case 'working_copy_removed':
       return { text: 'The working copy was removed on the agent worker.', runAgain: true };
     case 'no_session':

@@ -240,11 +240,32 @@ model Run {
   pushedCommit            String?      @map("pushed_commit") @db.VarChar(64)
   /// Issue #141: when the agent worker reported that its retention removed the Working copy.
   workingCopyRemovedAt    DateTime?    @map("working_copy_removed_at") @db.Timestamptz(6)
+  /// Issue #142: where the Run's pull request stood when the agent worker last looked
+  /// (draft | open | merged | closed | missing); null until the first lookup succeeded. The last
+  /// known state is kept when a later lookup fails.
+  prState                 String?      @map("pr_state") @db.VarChar(16)
+  /// Commits the Run branch is behind / ahead of the integration branch, at that lookup.
+  prBehindBy              Int?         @map("pr_behind_by")
+  prAheadBy               Int?         @map("pr_ahead_by")
+  /// Whether the Git host said the pull request can be merged without conflicts, if it said.
+  prMergeable             Boolean?     @map("pr_mergeable")
+  /// When that state was read.
+  prRefreshedAt           DateTime?    @map("pr_refreshed_at") @db.Timestamptz(6)
+  /// Why the latest lookup failed (the worker's words, redacted); cleared by a success.
+  prRefreshError          String?      @map("pr_refresh_error") @db.VarChar(500)
+  /// A rate-limited lookup is tried again at this time; cleared by a success.
+  prRetryAt               DateTime?    @map("pr_retry_at") @db.Timestamptz(6)
+  /// Set while a pull request lookup of the Run waits for a worker or is being answered.
+  prRefreshRequestedAt    DateTime?    @map("pr_refresh_requested_at") @db.Timestamptz(6)
+  /// When a lookup of the Run's pull request was last requested (review S1 of #152): the page-open
+  /// throttle and the daily refresh count from the last attempt, whether or not it succeeded.
+  prLastAttemptAt         DateTime?    @map("pr_last_attempt_at") @db.Timestamptz(6)
   steps                   RunStep[]
   events                  RunEvent[]
   messages                RunMessage[]
   diffs                   RunDiff[]
   diffState               RunDiffState?
+  lookups                 RunLookup[]
 
   /// Serves the newest-first list of all Runs.
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "runs_created_at_id_idx")
@@ -298,6 +319,34 @@ model RunMessage {
 
   @@id([runId, seq], map: "run_messages_pkey")
   @@map("run_messages")
+}
+
+/// A question for the Git host that only an agent worker can answer (Issue #142), e.g. the state
+/// of the Run's pull request. Studio records the request, any connected worker claims it and
+/// reports the result. At most one open (requested or claimed) lookup per Run and kind.
+model RunLookup {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId       String    @map("run_id") @db.Uuid
+  run         Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// pull_request_state (later stories add kinds).
+  kind        String    @db.VarChar(32)
+  /// requested | claimed | done | failed.
+  status      String    @db.VarChar(16)
+  requestedAt DateTime  @default(dbgenerated("now()")) @map("requested_at") @db.Timestamptz(6)
+  /// The worker holding a claimed lookup, and since when (a lease of two minutes).
+  claimedBy   String?   @map("claimed_by") @db.Uuid
+  claimedAt   DateTime? @map("claimed_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  /// The worker's result as validated by the shared contract; set with done.
+  result      Json?
+  /// Why it failed (redacted); set with failed, and with a retry scheduled.
+  error       String?   @db.VarChar(500)
+  /// A requested lookup that was rate limited is not handed out before this time.
+  retryAt     DateTime? @map("retry_at") @db.Timestamptz(6)
+
+  @@index([status, requestedAt], map: "run_lookups_status_requested_at_idx")
+  @@index([runId], map: "run_lookups_run_id_idx")
+  @@map("run_lookups")
 }
 
 /// One event of a Run's log (Issue #99): the durable record; the live stream is built on it.

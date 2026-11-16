@@ -42,10 +42,24 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runDiffNotFound: 'urn:agentic-studio:problem:run-diff-not-found',
   /** 404: the Run's diff lists no file at this path (Issue #144). */
   runDiffFileNotFound: 'urn:agentic-studio:problem:run-diff-file-not-found',
+  /** 409: the Run has no pull request whose state could be refreshed (Issue #142). */
+  pullRequestNotRefreshable: 'urn:agentic-studio:problem:pull-request-not-refreshable',
+  /** 404 (worker routes): no lookup has this id (Issue #142). */
+  lookupNotFound: 'urn:agentic-studio:problem:lookup-not-found',
+  /** 409 (worker routes): the lookup is not claimed by the answering worker (Issue #142). */
+  lookupNotHeld: 'urn:agentic-studio:problem:lookup-not-held',
+  /** 409 (worker routes): the answer is of another kind than the lookup's (Issue #142). */
+  lookupKindMismatch: 'urn:agentic-studio:problem:lookup-kind-mismatch',
 } as const;
 
 /** Why a Run cannot take a Follow-up, for the operator (Issue #141; keyed by the domain's codes). */
 const FOLLOW_UP_REFUSAL_DETAILS: Record<z.infer<typeof followUpRefusalSchema>, string> = {
+  pull_request_merged:
+    "The run's pull request was merged on GitHub, so there is nothing left to update. Start a new run instead.",
+  pull_request_closed:
+    "The run's pull request was closed on GitHub. Reopen it there and refresh its state, or start a new run instead.",
+  pull_request_missing:
+    "The run's pull request or its run branch was not found on GitHub: it may be gone, or the Agent account cannot see it. Start a new run instead.",
   not_finished:
     'The run is still working or waiting for you. Send a Follow-up once it has finished.',
   follow_up_queued: 'A Follow-up is already queued for this run. Wait until it has finished.',
@@ -68,6 +82,42 @@ export function followUpNotAllowed(
     type: EXECUTIONS_PROBLEM_TYPES.followUpNotAllowed,
     title: 'Follow-up not possible',
     detail: FOLLOW_UP_REFUSAL_DETAILS[reason],
+  });
+}
+
+/** 409: the Run has no pull request to refresh the state of (Issue #142). */
+export function pullRequestNotRefreshable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.pullRequestNotRefreshable,
+    title: 'No pull request to refresh',
+    detail: 'The run has no pull request yet, so there is no state to refresh.',
+  });
+}
+
+/** 404 on a worker route: no lookup has this id (Issue #142). */
+export function lookupNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: EXECUTIONS_PROBLEM_TYPES.lookupNotFound,
+    title: 'Lookup not found',
+    detail: 'No lookup has this id.',
+  });
+}
+
+/** 409 on a worker route: this agent worker does not hold the lookup (any more). */
+export function lookupNotHeld(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.lookupNotHeld,
+    title: 'Lookup not held',
+    detail: 'This agent worker does not hold the lookup. Drop it.',
+  });
+}
+
+/** 409 on a worker route: the answer is not of the lookup's kind. */
+export function lookupKindMismatch(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.lookupKindMismatch,
+    title: 'Lookup kind mismatch',
+    detail: "The answer is not of the lookup's kind.",
   });
 }
 

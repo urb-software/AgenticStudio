@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { IllegalRunTransitionError, type Run } from '../../../domain/entities/run.js';
+import { InMemoryRunLookupRepository } from '../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError, RunNotHeldError } from '../../../domain/repositories/run-repository.js';
 import { ReportRunStateHandler, type ReportRunStateInput } from '../handler.js';
@@ -18,12 +19,14 @@ describe('ReportRunStateHandler', () => {
   let notified: string[];
   /** The Runs whose Environment file snapshot the handler released (Issue #104). */
   let released: string[];
+  let lookups: InMemoryRunLookupRepository;
 
   const report = (input: Partial<ReportRunStateInput>) =>
     handler.execute({ runId: run.id, workerId: WORKER, state: 'running', failure: null, ...input });
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
+    lookups = new InMemoryRunLookupRepository(runs);
     notified = [];
     released = [];
     handler = new ReportRunStateHandler(
@@ -35,6 +38,7 @@ describe('ReportRunStateHandler', () => {
         releaseFinal: () => Promise.resolve(),
       },
       { forRun: () => Promise.resolve(['test-only-known']) },
+      lookups,
     );
     await runs.add({
       projectId: PROJECT,
@@ -76,6 +80,43 @@ describe('ReportRunStateHandler', () => {
     await report({ state: 'succeeded', delivery: { outcome: 'none' } });
 
     expect(released).toEqual([run.id]);
+  });
+
+  // Review S4 of #152: the state the worker read before it refused a Follow-up is recorded.
+  it('records the pull request state a refused Follow-up read, with the failure', async () => {
+    runs.runs.find((candidate) => candidate.id === run.id)!.pullRequest = {
+      url: 'https://github.com/acme/shop/pull/7',
+      number: 7,
+    };
+    await report({ state: 'running' });
+
+    await report({
+      state: 'failed',
+      failure: { code: 'preparation_failed', detail: 'The pull request #7 was merged.' },
+      pullRequestState: 'merged',
+    });
+
+    const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
+    expect(stored.state).toBe('failed');
+    expect(stored.pullRequestStatus).toMatchObject({ state: 'merged', refreshedAt: T1 });
+  });
+
+  it('records no pull request state with any other failure', async () => {
+    runs.runs.find((candidate) => candidate.id === run.id)!.pullRequest = {
+      url: 'https://github.com/acme/shop/pull/7',
+      number: 7,
+    };
+    await report({ state: 'running' });
+
+    await report({
+      state: 'failed',
+      failure: { code: 'agent_failed', detail: 'x' },
+      pullRequestState: 'merged',
+    });
+
+    expect(runs.runs.find((candidate) => candidate.id === run.id)!.pullRequestStatus.state).toBe(
+      null,
+    );
   });
 
   it('redacts known values from the failure detail and commit subjects before storing them (#104)', async () => {

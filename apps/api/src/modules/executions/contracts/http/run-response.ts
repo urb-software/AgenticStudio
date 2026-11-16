@@ -36,6 +36,13 @@ export const runCancelledBySchema = z.enum(['operator', 'system']);
 /** How a Run was delivered (Issue #102): `none` is "No changes". */
 export const runDeliverySchema = z.enum(['none', 'delivered', 'failed']);
 
+/**
+ * Where a Run's pull request stands on the Git host (Issue #142): a second list next to the
+ * domain's, pinned to it by a test. `draft` and `open` are open; `missing` is a pull request or
+ * Run branch that was not found (gone, or not visible to the Agent account).
+ */
+export const pullRequestStateSchema = z.enum(['draft', 'open', 'merged', 'closed', 'missing']);
+
 /** The agent's open question (Issue #103): plain text, never markup. */
 export const runQuestionResponseSchema = z
   .object({
@@ -54,6 +61,9 @@ export const runQuestionResponseSchema = z
 export const followUpRefusalSchema = z.enum([
   'not_finished',
   'follow_up_queued',
+  'pull_request_merged',
+  'pull_request_closed',
+  'pull_request_missing',
   'working_copy_removed',
   'no_session',
   'step_total_reached',
@@ -172,7 +182,35 @@ export const runResponseSchema = z
      * while a Follow-up works on the Run or after it ended otherwise (Issue #141: one Run, at
      * most one pull request).
      */
-    pullRequest: z.object({ url: z.url(), number: z.int().positive() }).optional(),
+    pullRequest: z
+      .object({
+        url: z.url(),
+        number: z.int().positive(),
+        /**
+         * Issue #142: where the pull request stood when the agent worker last read it through the
+         * Agent account; absent until the first lookup succeeded. The last known state is kept
+         * when a later lookup fails.
+         */
+        state: pullRequestStateSchema.optional(),
+        /** Commits the Run branch is behind / ahead of the integration branch at that lookup. */
+        behindBy: z.int().min(0).optional(),
+        aheadBy: z.int().min(0).optional(),
+        /** Whether GitHub says it can be merged without conflicts; absent when it did not say. */
+        mergeable: z.boolean().optional(),
+        /** When the state was last read; absent until then. */
+        refreshedAt: z.iso.datetime().optional(),
+        /**
+         * Why the latest refresh failed, or that no agent worker is connected to carry it out;
+         * text for the operator.
+         */
+        refreshError: z.string().optional(),
+        /** A rate-limited refresh is tried again at this time. */
+        retryAt: z.iso.datetime().optional(),
+        /** Present (true) while a refresh waits for an agent worker or is being carried out. */
+        refreshing: z.literal(true).optional(),
+      })
+      .meta({ id: 'RunPullRequest' })
+      .optional(),
     /** Present (true) while a requested delivery retry is pending or in progress. */
     deliveryRetryRequested: z.literal(true).optional(),
     /**
@@ -231,6 +269,16 @@ export function toRunResponse(
     delivery: z.infer<typeof runDeliverySchema> | null;
     pullRequest: { url: string; number: number } | null;
     deliveryRequested: boolean;
+    pullRequestStatus: {
+      state: z.infer<typeof pullRequestStateSchema> | null;
+      behindBy: number | null;
+      aheadBy: number | null;
+      mergeable: boolean | null;
+      refreshedAt: Date | null;
+      refreshError: string | null;
+      retryAt: Date | null;
+      refreshRequestedAt: Date | null;
+    };
     failingChecks: string[];
     sessionRef: string | null;
     messages: (
@@ -251,6 +299,11 @@ export function toRunResponse(
     )[];
   },
   followUp?: { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> },
+  /**
+   * Issue #142: whether an agent worker is connected, when the caller knows. A refresh that
+   * waits while none is says so instead of loading for ever.
+   */
+  workerConnected?: boolean,
 ): RunResponse {
   const last = run.messages.at(-1);
   // Issue #141: the commits up to and including the pushed one are on the remote Run branch.
@@ -308,7 +361,13 @@ export function toRunResponse(
       : {}),
     ...(run.delivery ? { delivery: run.delivery } : {}),
     ...(run.pullRequest
-      ? { pullRequest: { url: run.pullRequest.url, number: run.pullRequest.number } }
+      ? {
+          pullRequest: toPullRequestResponse(
+            run.pullRequest,
+            run.pullRequestStatus,
+            workerConnected,
+          ),
+        }
       : {}),
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
     // The domain's canResumeAfterUsageLimit, on the plain shape (Issue #105).
@@ -365,6 +424,32 @@ export function toRunResponse(
               },
       ),
     ],
+  };
+}
+
+/** What a refresh that waits for an agent worker says while none is connected (Issue #142). */
+export const NO_WORKER_FOR_REFRESH =
+  'The agent worker is not connected, so the pull request state could not be refreshed.';
+
+function toPullRequestResponse(
+  pullRequest: { url: string; number: number },
+  status: Parameters<typeof toRunResponse>[0]['pullRequestStatus'],
+  workerConnected: boolean | undefined,
+): NonNullable<RunResponse['pullRequest']> {
+  const waiting = status.refreshRequestedAt !== null;
+  const noWorker = waiting && workerConnected === false;
+  const error = status.refreshError ?? (noWorker ? NO_WORKER_FOR_REFRESH : null);
+  return {
+    url: pullRequest.url,
+    number: pullRequest.number,
+    ...(status.state ? { state: status.state } : {}),
+    ...(status.behindBy === null ? {} : { behindBy: status.behindBy }),
+    ...(status.aheadBy === null ? {} : { aheadBy: status.aheadBy }),
+    ...(status.mergeable === null ? {} : { mergeable: status.mergeable }),
+    ...(status.refreshedAt ? { refreshedAt: status.refreshedAt.toISOString() } : {}),
+    ...(error ? { refreshError: error } : {}),
+    ...(status.retryAt ? { retryAt: status.retryAt.toISOString() } : {}),
+    ...(waiting && !noWorker ? { refreshing: true as const } : {}),
   };
 }
 

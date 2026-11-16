@@ -7,6 +7,7 @@ import {
   isRunId,
   OPERATOR_CANCELLATION,
   OPERATOR_CANCELLATION_BRANCH_PUSHED,
+  type PullRequestState,
   type Run,
   type RunDeliveryOutcome,
   type RunFailure,
@@ -15,6 +16,10 @@ import {
 } from '../../domain/entities/run.js';
 import { keepsSnapshotForRetry } from '../../domain/entities/run-environment-file.js';
 import { redactFailure, redactWorkingCopy } from '../../domain/services/log-redaction.js';
+import {
+  RUN_LOOKUP_REPOSITORY,
+  type RunLookupRepository,
+} from '../../domain/repositories/run-lookup-repository.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -44,6 +49,11 @@ export interface ReportRunStateInput {
   sessionRef?: string | null;
   /** With `failed` / `delivery_failed`: what the delivery pushed before it failed (#141, S2). */
   pushedCommit?: string | null;
+  /**
+   * With `failed` / `preparation_failed`: the pull request state the worker read before it refused
+   * a Follow-up (review S4 of #152).
+   */
+  pullRequestState?: PullRequestState | null;
 }
 
 /**
@@ -70,6 +80,7 @@ export class ReportRunStateHandler {
     @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
     @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
+    @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
   ) {}
 
   async execute(input: ReportRunStateInput): Promise<Run> {
@@ -114,6 +125,11 @@ export class ReportRunStateHandler {
         now: this.clock.now(),
       });
       if (changed) {
+        // Review S4 of #152: what the worker read about the pull request before it refused a
+        // Follow-up is what the page shows.
+        if (input.failure?.code === 'preparation_failed' && input.pullRequestState) {
+          await this.lookups.recordObservedState(run.id, input.pullRequestState, this.clock.now());
+        }
         // Live log streams re-read the state: a final Run ends them (Issue #99).
         this.signal.notify(run.id);
         // A final Run needs no more redaction, unless its failed delivery can be retried:

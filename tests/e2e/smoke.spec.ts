@@ -480,7 +480,9 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // session and the Run succeeds, so the test holds no server slot afterwards (the clean-up below
 // cancels whatever a failed run of it left unfinished, an answered Run queued to resume too).
 // Story #141: then the delivered Run takes a Follow-up and succeeds again with the same pull
-// request; the lists show it has had a Follow-up.
+// request; the lists show it has had a Follow-up. Story #142: its pull request card says
+// "Draft"; once the stub of GitHub says the pull request was merged, Refresh shows "Merged", the
+// Follow-up form gives way to the reason with "Run again", and the lists show the state.
 const RUN_TEST = 'operator starts runs and follows them to their result';
 
 /**
@@ -826,4 +828,49 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(rows).toHaveCount(9);
   await expect(deliveredRow).toContainText('1 Follow-up');
   await expect(deliveredRow).toContainText('Pull request #1');
+
+  // Story #142: the pull request card. Opening the page asks the agent worker to read the pull
+  // request through the Agent account (a lookup, no agent started): it is a draft, one commit
+  // ahead, and the Follow-up form is there. Scanned in both themes at this viewport.
+  await deliveredRow.getByRole('link').first().click();
+  await expect(heading).toHaveText('Change a file [fake:checks-failed]');
+  const pullRequestCard = main.getByRole('region', { name: 'Pull request' });
+  await expect(pullRequestCard.getByText('Draft', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(pullRequestCard).toContainText('0 commits behind · 1 commit ahead');
+  await expect(pullRequestCard).toContainText('Can be merged without conflicts');
+  const pullRequestLink = pullRequestCard.getByRole('link', { name: /#1/ });
+  await expect(pullRequestLink).toHaveAttribute(
+    'href',
+    /^https:\/\/github\.com\/fixtures\/run-[^/]+\/pull\/1$/,
+  );
+  await expect(main.getByRole('region', { name: 'Send a Follow-up' })).toBeVisible();
+  await expectInBothThemes(page, pullRequestCard);
+
+  // The operator merges it on GitHub (the stub); Refresh reads that: the card says "Merged", the
+  // Follow-up form is replaced by the reason, "Run again" stays, and the lists show the state.
+  const href = (await pullRequestLink.getAttribute('href')) ?? '';
+  const [, owner, repository, number] =
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)$/.exec(href) ?? [];
+  const control = await fetch(
+    `http://127.0.0.1:${process.env.E2E_GITHUB_STUB_PORT}/__control/pulls/${owner}/${repository}/${number}`,
+    { method: 'POST', body: JSON.stringify({ merged: true }) },
+  );
+  expect(control.status).toBe(200);
+  await pullRequestCard.getByRole('button', { name: 'Refresh' }).click();
+  await expect(pullRequestCard.getByText('Merged', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(main.getByRole('region', { name: 'Send a Follow-up' })).toHaveCount(0);
+  const notPossible = main.getByRole('region', { name: 'Follow-up not possible' });
+  await expect(notPossible).toContainText('The pull request was merged on GitHub');
+  await expect(notPossible).toContainText('Use “Run again”');
+  await expect(main.getByRole('button', { name: 'Run again' })).toBeVisible();
+  await expectInBothThemes(page, notPossible);
+
+  await breadcrumb.getByRole('link', { name: 'Executions' }).click();
+  await expect(page).toHaveURL(/\/executions$/);
+  await expect(deliveredRow).toContainText('Pull request #1');
+  await expect(deliveredRow).toContainText('Merged');
 });

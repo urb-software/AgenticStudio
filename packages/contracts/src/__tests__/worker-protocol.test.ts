@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   ANSWER_MAX_LENGTH,
   appendRunEventsRequestSchema,
+  claimLookupsResponseSchema,
+  LOOKUP_CLAIM_MAX,
+  lookupPayloadSchema,
+  lookupResultRequestSchema,
+  pullRequestStateResultSchema,
   FOLLOW_UP_MAX_LENGTH,
   RESUME_REASONS,
   runDeliverySchema,
@@ -1163,5 +1168,130 @@ describe('a Run diff report (Issue #144)', () => {
   it('fits its route body limit, which is larger than every other worker route', () => {
     expect(RUN_DIFF_REQUEST_MAX_BYTES).toBeGreaterThan(2 * RUN_DIFF_MAX_BYTES);
     expect(RUN_DIFF_REQUEST_MAX_BYTES).toBeGreaterThan(WORKER_REQUEST_MAX_BYTES);
+  });
+});
+
+// Issue #142: lookups, the questions for the Git host an agent worker answers.
+describe('lookups', () => {
+  const LOOKUP_ID = 'c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f';
+  const lookup = {
+    id: LOOKUP_ID,
+    kind: 'pull_request_state',
+    runId: RUN_ID,
+    repository: { remoteUrl: 'https://github.com/acme/shop.git' },
+    pullRequestNumber: 7,
+    runBranch: 'agent/add-store-r0b8e5c2d',
+    integrationBranch: 'dev',
+  };
+
+  it('a claimed lookup carries what the worker needs, closed', () => {
+    expect(lookupPayloadSchema.safeParse(lookup).success).toBe(true);
+    expect(lookupPayloadSchema.safeParse({ ...lookup, extra: 1 }).success).toBe(false);
+    expect(lookupPayloadSchema.safeParse({ ...lookup, kind: 'checks' }).success).toBe(false);
+    expect(lookupPayloadSchema.safeParse({ ...lookup, pullRequestNumber: 0 }).success).toBe(false);
+  });
+
+  it('a claim hands out at most five lookups', () => {
+    expect(claimLookupsResponseSchema.safeParse(Array(LOOKUP_CLAIM_MAX).fill(lookup)).success).toBe(
+      true,
+    );
+    expect(
+      claimLookupsResponseSchema.safeParse(Array(LOOKUP_CLAIM_MAX + 1).fill(lookup)).success,
+    ).toBe(false);
+  });
+
+  it('a pull request state result names the state and, when known, the branch position', () => {
+    for (const state of ['draft', 'open', 'merged', 'closed', 'missing']) {
+      expect(pullRequestStateResultSchema.safeParse({ state }).success).toBe(true);
+    }
+    expect(
+      pullRequestStateResultSchema.safeParse({
+        state: 'open',
+        behindBy: 0,
+        aheadBy: 4,
+        mergeable: true,
+      }).success,
+    ).toBe(true);
+    expect(pullRequestStateResultSchema.safeParse({ state: 'ready' }).success).toBe(false);
+    expect(pullRequestStateResultSchema.safeParse({ state: 'open', behindBy: -1 }).success).toBe(
+      false,
+    );
+    expect(pullRequestStateResultSchema.safeParse({ state: 'open', extra: 1 }).success).toBe(false);
+  });
+
+  it('a merged or missing pull request carries no branch position or verdict, a closed one no verdict', () => {
+    for (const state of ['merged', 'missing']) {
+      expect(pullRequestStateResultSchema.safeParse({ state, behindBy: 0 }).success).toBe(false);
+      expect(pullRequestStateResultSchema.safeParse({ state, mergeable: true }).success).toBe(
+        false,
+      );
+    }
+    expect(
+      pullRequestStateResultSchema.safeParse({ state: 'closed', behindBy: 1, aheadBy: 1 }).success,
+    ).toBe(true);
+    expect(
+      pullRequestStateResultSchema.safeParse({ state: 'closed', mergeable: true }).success,
+    ).toBe(false);
+  });
+
+  it('a failure report may carry the pull request state only with preparation_failed', () => {
+    const failed = (code: string, pullRequestState?: string) =>
+      reportRunStateRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        state: 'failed',
+        failure: { code, detail: 'x' },
+        ...(pullRequestState ? { pullRequestState } : {}),
+      }).success;
+    expect(failed('preparation_failed', 'merged')).toBe(true);
+    expect(failed('agent_failed', 'merged')).toBe(false);
+    expect(failed('preparation_failed', 'ready')).toBe(false);
+  });
+
+  it('an answer is a result of the lookup kind, or a failure with a code and a message', () => {
+    expect(
+      lookupResultRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'merged' },
+      }).success,
+    ).toBe(true);
+    expect(
+      lookupResultRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        ok: false,
+        code: 'rate_limited',
+        error: 'GitHub asked to wait.',
+        retryAfterSeconds: 60,
+      }).success,
+    ).toBe(true);
+    // No result without a kind, no failure without a code or message, no extra field.
+    expect(
+      lookupResultRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        ok: true,
+        result: { state: 'merged' },
+      }).success,
+    ).toBe(false);
+    expect(
+      lookupResultRequestSchema.safeParse({ workerId: WORKER_ID, ok: false, error: 'x' }).success,
+    ).toBe(false);
+    expect(
+      lookupResultRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        ok: false,
+        code: 'failed',
+        error: '',
+      }).success,
+    ).toBe(false);
+    expect(
+      lookupResultRequestSchema.safeParse({
+        workerId: WORKER_ID,
+        ok: false,
+        code: 'failed',
+        error: 'x',
+        retryAfterSeconds: 0,
+      }).success,
+    ).toBe(false);
   });
 });

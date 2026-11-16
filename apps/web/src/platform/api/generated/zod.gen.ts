@@ -131,12 +131,34 @@ export const zRunFollowUpEligibilityOutput = z.object({
     reason: z.enum([
         'not_finished',
         'follow_up_queued',
+        'pull_request_merged',
+        'pull_request_closed',
+        'pull_request_missing',
         'working_copy_removed',
         'no_session',
         'step_total_reached',
         'provider_unavailable',
         'worker_unavailable'
     ]).optional()
+});
+
+export const zRunPullRequestOutput = z.object({
+    url: z.url(),
+    number: z.int().gt(0).lte(9007199254740991),
+    state: z.enum([
+        'draft',
+        'open',
+        'merged',
+        'closed',
+        'missing'
+    ]).optional(),
+    behindBy: z.int().gte(0).lte(9007199254740991).optional(),
+    aheadBy: z.int().gte(0).lte(9007199254740991).optional(),
+    mergeable: z.boolean().optional(),
+    refreshedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    refreshError: z.string().optional(),
+    retryAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    refreshing: z.literal(true).optional()
 });
 
 export const zRunQuestionOutput = z.object({
@@ -243,10 +265,7 @@ export const zRunOutput = z.object({
         'delivered',
         'failed'
     ]).optional(),
-    pullRequest: z.object({
-        url: z.url(),
-        number: z.int().gt(0).lte(9007199254740991)
-    }).optional(),
+    pullRequest: zRunPullRequestOutput.optional(),
     deliveryRetryRequested: z.literal(true).optional(),
     resumable: z.literal(true).optional(),
     failingChecks: z.array(z.string()).optional(),
@@ -267,6 +286,10 @@ export const zAnswerRunRequest = z.object({
 
 export const zFollowUpRunRequest = z.object({
     text: z.string().min(1).max(10000)
+});
+
+export const zRefreshPullRequestRequest = z.object({
+    onOpen: z.boolean().optional()
 });
 
 export const zRunEventOutput = z.object({
@@ -516,6 +539,14 @@ export const zFollowUpRunPath = z.object({
 });
 
 export const zFollowUpRunResponse = zRunOutput;
+
+export const zRefreshRunPullRequestBody = zRefreshPullRequestRequest;
+
+export const zRefreshRunPullRequestPath = z.object({
+    runId: z.string()
+});
+
+export const zRefreshRunPullRequestResponse = zRunOutput;
 
 export const zListRunEventsPath = z.object({
     runId: z.string()

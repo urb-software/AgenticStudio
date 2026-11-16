@@ -17,6 +17,7 @@ import {
   UsageLimitError,
 } from '../runner.js';
 import { ProviderDisabledError } from '../provider-gate.js';
+import type { LookupService } from '../pull-request-lookups.js';
 import { type ComputedRunDiff, type RunDiffPort, RunDiffUnavailableError } from '../run-diff.js';
 import { StudioApiError } from '../studio-api.js';
 import { AgentWorker, SHUTDOWN_FAILURE, type WorkerApi } from '../worker.js';
@@ -200,6 +201,29 @@ class FakeRunDiffs implements RunDiffPort {
   }
 }
 
+/** Issue #142: a fake of the lookups: what the pull request state is, and how often it was served. */
+class FakeLookups implements LookupService {
+  served = 0;
+  readonly asked: string[] = [];
+  /** The pull request state a Follow-up reads. */
+  state: 'draft' | 'open' | 'merged' | 'closed' | 'missing' | 'unknown' = 'open';
+  /** The next serve fails with this. */
+  failure: Error | undefined;
+  async serve(): Promise<number> {
+    this.served++;
+    if (this.failure) {
+      const failure = this.failure;
+      this.failure = undefined;
+      throw failure;
+    }
+    return 0;
+  }
+  async followUpState(run: RunPayload) {
+    this.asked.push(run.runId);
+    return this.state;
+  }
+}
+
 class RecordingApi implements WorkerApi {
   readonly calls: [string, string, unknown?][] = [];
   claims = 0;
@@ -325,6 +349,7 @@ interface Extras {
   minuteMs?: number;
   gate?: { assertEnabled(provider: string): void };
   diffs?: RunDiffPort;
+  lookups?: LookupService;
 }
 
 function startWorker(
@@ -348,6 +373,7 @@ function startWorker(
     resources: extras.resources ?? new FakeResources(),
     deliveries,
     diffs: extras.diffs ?? new FakeRunDiffs(),
+    ...(extras.lookups ? { lookups: extras.lookups } : {}),
     pollMs: 5,
     heartbeatMs: 10,
     killGraceMs: extras.killGraceMs ?? 50,
@@ -374,6 +400,38 @@ afterEach(async () => {
 });
 
 describe('AgentWorker', () => {
+  // Issue #142: the lookups run in a loop of their own, whatever the worker carries.
+  describe('lookups (Issue #142)', () => {
+    it('serves lookups while it is idle, and keeps going after a failed serve', async () => {
+      const lookups = new FakeLookups();
+      lookups.failure = new Error('The Studio API answered 500');
+      startWorker(new RecordingApi([]), undefined, undefined, { lookups });
+
+      await until(() => lookups.served >= 3);
+    });
+
+    it('serves lookups while it carries a long Run step', async () => {
+      const run = payload('Work for a long time [fake:long]');
+      const api = new RecordingApi([run]);
+      const lookups = new FakeLookups();
+      startWorker(api, new FakeRunner({ slowMs: 60_000 }), undefined, { lookups });
+
+      await until(() => api.reports().length === 1);
+      const before = lookups.served;
+      await until(() => lookups.served >= before + 3);
+
+      // Still carrying: no end report yet.
+      expect(api.reports()).toHaveLength(1);
+    });
+
+    it('serves nothing without lookups configured', async () => {
+      const api = new RecordingApi([]);
+      startWorker(api);
+
+      await until(() => api.claims >= 2);
+    });
+  });
+
   it('carries a Run to succeeded: running, the step result, succeeded with its delivery', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
@@ -1615,6 +1673,73 @@ describe('AgentWorker', () => {
         expect(kinds[1]?.[0]).toBe('step_started');
         expect(kinds.at(-1)).toEqual(['notice', 'Follow-up 2 ended: done']);
         expect(api.reports()[1]?.[2]).toMatchObject({ index: 4, kind: 'resume' });
+      });
+
+      // Issue #142: the pull request is read right before the agent would start.
+      describe('the pull request state (Issue #142)', () => {
+        it.each([
+          ['merged', 'was merged on GitHub'],
+          ['closed', 'was closed on GitHub'],
+          ['missing', 'was not found on GitHub'],
+        ] as const)(
+          'does not start the agent for a pull request that is %s: the Run fails with the reason',
+          async (state, words) => {
+            const run = followUpPayload('Also handle the empty list.');
+            const api = new RecordingApi([run]);
+            const runner = new RecordingRunner();
+            const workingCopies = new FakeWorkingCopies();
+            const lookups = new FakeLookups();
+            lookups.state = state;
+            startWorker(api, runner, workingCopies, { lookups });
+
+            await until(() => api.reports().length === 1);
+
+            expect(lookups.asked).toEqual([run.runId]);
+            expect(runner.resumed).toEqual([]);
+            expect(workingCopies.located).toEqual([]);
+            expect(api.reports()[0]?.[2]).toMatchObject({
+              state: 'failed',
+              failure: {
+                code: 'preparation_failed',
+                detail: expect.stringContaining(words),
+              },
+            });
+            // Review S4 of #152: the failure report carries the state it read.
+            expect(api.reports()[0]?.[2]).toMatchObject({ pullRequestState: state });
+            expect(notices(api)).toEqual([
+              `Follow-up 2 not started: the pull request is ${state === 'missing' ? 'not found' : state}`,
+              'Follow-up 2 ended: failed',
+            ]);
+          },
+        );
+
+        it.each(['open', 'draft', 'unknown'] as const)(
+          'starts the agent when the pull request is %s',
+          async (state) => {
+            const run = followUpPayload('Also handle the empty list.');
+            const api = new RecordingApi([run]);
+            const runner = new RecordingRunner();
+            const lookups = new FakeLookups();
+            lookups.state = state;
+            startWorker(api, runner, undefined, { lookups });
+
+            await until(() => api.reports().length === 3);
+
+            expect(runner.resumed).toHaveLength(1);
+            expect(api.reports()[2]?.[2]).toMatchObject({ state: 'succeeded' });
+          },
+        );
+
+        it('reads the state for a Follow-up only, not for an answer', async () => {
+          const run = resumePayload('[fake:question]');
+          const api = new RecordingApi([run]);
+          const lookups = new FakeLookups();
+          startWorker(api, undefined, undefined, { lookups });
+
+          await until(() => api.reports().length >= 2);
+
+          expect(lookups.asked).toEqual([]);
+        });
       });
 
       it('marks the end of a Follow-up that failed, but not of one that asks', async () => {

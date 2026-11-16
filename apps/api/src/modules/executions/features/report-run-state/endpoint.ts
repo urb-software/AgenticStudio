@@ -28,6 +28,7 @@ export class ReportRunStateEndpoint {
         delivery: body.delivery ?? null,
         sessionRef: body.sessionRef ?? null,
         pushedCommit: body.pushedCommit ?? null,
+        pullRequestState: body.pullRequestState ?? null,
       });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

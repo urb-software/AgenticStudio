@@ -203,4 +203,116 @@ describe('GitHubPullRequests', () => {
       expect((updated as Error).message).not.toContain(token);
     });
   });
+
+  // Issue #142: the reads a pull request lookup makes.
+  describe('reads for a lookup (Issue #142)', () => {
+    const pull = { owner: 'acme', repo: 'shop', number: 41 };
+    const signal = () => new AbortController().signal;
+    const branch = 'agent/add-pagination-r0b8e5c2d';
+
+    it('reads a pull request with its branch, its author, its draft and merge state', async () => {
+      stub.pullRequests.push({
+        owner: 'acme',
+        repo: 'shop',
+        head: branch,
+        number: 41,
+        draft: true,
+        mergeable: true,
+      });
+
+      expect(await client().details(pull, signal())).toEqual({
+        url: 'https://github.com/acme/shop/pull/41',
+        number: 41,
+        state: 'open',
+        merged: false,
+        draft: true,
+        mergeable: true,
+        headRef: branch,
+        headRepository: 'acme/shop',
+        author: 'agent-bot',
+      });
+      stub.pullRequests[0]!.mergeable = undefined;
+      expect(await client().details(pull, signal())).toMatchObject({ mergeable: null });
+    });
+
+    it('reads how far a branch is behind and ahead of the base; a missing branch is null', async () => {
+      stub.position = { behindBy: 3, aheadBy: 5 };
+
+      const repository = { owner: 'acme', repo: 'shop' };
+      expect(await client().position(repository, 'dev', branch, signal())).toEqual({
+        behindBy: 3,
+        aheadBy: 5,
+      });
+      expect(stub.requests.at(-1)?.path).toBe(`/repos/acme/shop/compare/dev...${branch}`);
+      stub.missingBranches.push(branch);
+      expect(await client().position(repository, 'dev', branch, signal())).toBeNull();
+    });
+
+    it('tells whether a branch exists (review S3 of #152)', async () => {
+      const repository = { owner: 'acme', repo: 'shop' };
+
+      expect(await client().branchExists(repository, branch, signal())).toBe(true);
+      expect(stub.requests.at(-1)?.path).toBe(`/repos/acme/shop/branches/${branch}`);
+      stub.missingBranches.push(branch);
+      expect(await client().branchExists(repository, branch, signal())).toBe(false);
+    });
+
+    it('reads who the Agent account is', async () => {
+      expect(await client().viewer(signal())).toBe('agent-bot');
+      expect(stub.requests.at(-1)).toMatchObject({
+        path: '/user',
+        authorization: `Bearer ${token}`,
+      });
+    });
+
+    it('reads only: every request of a lookup is a GET', async () => {
+      stub.pullRequests.push({ owner: 'acme', repo: 'shop', head: branch, number: 41 });
+
+      await client().details(pull, signal());
+      await client().position({ owner: 'acme', repo: 'shop' }, 'dev', branch, signal());
+      await client().viewer(signal());
+
+      expect(stub.requests.map((request) => request.method)).toEqual(['GET', 'GET', 'GET']);
+    });
+
+    it('says how long GitHub asks to wait when it refuses for a rate limit', async () => {
+      stub.pullRequests.push({ owner: 'acme', repo: 'shop', head: branch, number: 41 });
+
+      stub.refuseNextRead = { status: 429, headers: { 'retry-after': '90' } };
+      const retryAfter = await client()
+        .details(pull, signal())
+        .catch((error: unknown) => error);
+      expect(retryAfter).toBeInstanceOf(PullRequestFailedError);
+      expect(retryAfter).toMatchObject({ status: 429, retryAfterSeconds: 90 });
+      expect((retryAfter as Error).message).not.toContain(token);
+
+      stub.refuseNextRead = {
+        status: 403,
+        headers: {
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 120),
+        },
+      };
+      const reset = await client()
+        .details(pull, signal())
+        .catch((error: unknown) => error);
+      expect((reset as PullRequestFailedError).retryAfterSeconds).toBeGreaterThanOrEqual(118);
+      expect((reset as PullRequestFailedError).retryAfterSeconds).toBeLessThanOrEqual(121);
+
+      // A plain refusal is not a rate limit.
+      stub.refuseNextRead = { status: 403 };
+      const refused = await client()
+        .details(pull, signal())
+        .catch((error: unknown) => error);
+      expect(refused).toMatchObject({ status: 403 });
+      expect((refused as PullRequestFailedError).retryAfterSeconds).toBeUndefined();
+    });
+
+    it('answers a pull request that does not exist with the status GitHub gave', async () => {
+      const bad = await client()
+        .details({ ...pull, number: 99 }, signal())
+        .catch((e: unknown) => e);
+      expect(bad).toMatchObject({ status: 404 });
+    });
+  });
 });

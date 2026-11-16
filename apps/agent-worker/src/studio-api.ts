@@ -1,6 +1,9 @@
 import {
+  type ClaimLookupsResponse,
+  claimLookupsResponseSchema,
   type HeartbeatResponse,
   heartbeatResponseSchema,
+  type LookupResultRequest,
   type RunEventInput,
   type ReportRunDiffRequest,
   type ReportRunStateRequest,
@@ -107,6 +110,25 @@ export class StudioApi {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.post(`runs/${encodeURIComponent(runId)}/diff`, report, signal);
+  }
+
+  /**
+   * The lookups waiting for a worker, up to five, claimed for this one (Issue #142); empty when
+   * none is waiting (204). A claim not answered within two minutes goes to another worker.
+   */
+  async claimLookups(signal?: AbortSignal): Promise<ClaimLookupsResponse> {
+    const response = await this.post('lookups/claim', {}, signal);
+    if (response.status === 204) return [];
+    return claimLookupsResponseSchema.parse(await response.json());
+  }
+
+  /** Reports what a claimed lookup found out, or why it could not (Issue #142). */
+  async reportLookup(
+    lookupId: string,
+    answer: WithoutWorker<LookupResultRequest>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.post(`lookups/${encodeURIComponent(lookupId)}/result`, answer, signal);
   }
 
   /** Appends a batch of the Run's log events (Issue #99); a re-sent seq is ignored by Studio. */

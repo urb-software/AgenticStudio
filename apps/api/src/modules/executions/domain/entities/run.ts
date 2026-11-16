@@ -73,6 +73,59 @@ export interface RunFailure {
 /** Longest Task, in characters. */
 export const TASK_MAX_LENGTH = 20_000;
 
+/**
+ * Where a Run's pull request stands on the Git host (Issue #142): `draft` and `open` are open;
+ * `merged` and `closed` are over; `missing` means the pull request, or the Run branch it came
+ * from, no longer exists. The worker protocol's list is pinned to this one by a test.
+ */
+export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
+export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
+
+/** The Follow-up refusal for each state in which no pull request is left to update. */
+export const PULL_REQUEST_ENDED_REFUSALS = {
+  merged: 'pull_request_merged',
+  closed: 'pull_request_closed',
+  missing: 'pull_request_missing',
+} as const satisfies Partial<Record<PullRequestState, FollowUpRefusal>>;
+
+/**
+ * What Studio knows about the Run's pull request (Issue #142), from the lookups the agent worker
+ * answered through the Agent account; Studio itself never reads the Git host. `state` is `null`
+ * until the first lookup succeeded, and is kept when a later one fails (`refreshError` then says
+ * why). Every field is `null` for a Run without a pull request.
+ */
+export interface RunPullRequestStatus {
+  state: PullRequestState | null;
+  /** Commits the Run branch is behind / ahead of the integration branch at that lookup. */
+  behindBy: number | null;
+  aheadBy: number | null;
+  /** Whether the Git host said it can be merged without conflicts; `null` when it did not say. */
+  mergeable: boolean | null;
+  /** When the state was read. */
+  refreshedAt: Date | null;
+  /** Why the latest lookup failed; cleared by a success. */
+  refreshError: string | null;
+  /** A rate-limited lookup is tried again at this time. */
+  retryAt: Date | null;
+  /** Set while a lookup waits for an agent worker or is being answered. */
+  refreshRequestedAt: Date | null;
+  /** When a lookup was last requested, whether or not it succeeded (review S1 of #152). */
+  lastAttemptAt: Date | null;
+}
+
+/** No lookup yet: what a Run starts with. */
+export const NO_PULL_REQUEST_STATUS: RunPullRequestStatus = {
+  state: null,
+  behindBy: null,
+  aheadBy: null,
+  mergeable: null,
+  refreshedAt: null,
+  refreshError: null,
+  retryAt: null,
+  refreshRequestedAt: null,
+  lastAttemptAt: null,
+};
+
 /** One commit on a Run branch: its id and subject line. */
 export interface RunCommit {
   id: string;
@@ -283,6 +336,8 @@ export interface Run {
   pushedCommit: string | null;
   /** When the agent worker reported its retention removed the Working copy (Issue #141). */
   workingCopyRemovedAt: Date | null;
+  /** Where the Run's pull request stands on the Git host, as last read (Issue #142). */
+  pullRequestStatus: RunPullRequestStatus;
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {
@@ -454,11 +509,16 @@ export function isResumable(run: Pick<Run, 'state' | 'sessionRef' | 'messages'>)
  * running, waiting for the operator, or its delivery is being retried), a Follow-up is already
  * queued, its Working copy was removed (or it never reported one), it has no agent session, it
  * reached its Run step total, its Provider is unavailable, or the agent worker that holds its
- * Working copy is not connected. Pull request state (merged, closed) comes with #142.
+ * Working copy is not connected. Issue #142: or its pull request, as last read, was merged or
+ * closed, or was not found (`pull_request_missing`: gone, or not visible to the Agent account); a pull request
+ * of unknown state does not stop it.
  */
 export const FOLLOW_UP_REFUSALS = [
   'not_finished',
   'follow_up_queued',
+  'pull_request_merged',
+  'pull_request_closed',
+  'pull_request_missing',
   'working_copy_removed',
   'no_session',
   'step_total_reached',
@@ -489,6 +549,7 @@ export function followUpEligibility(
     | 'workingCopyRemovedAt'
     | 'stepCount'
     | 'limits'
+    | 'pullRequestStatus'
   >,
   context: { workerAvailable: boolean; providerAvailable: boolean },
 ): FollowUpEligibility {
@@ -496,6 +557,14 @@ export function followUpEligibility(
   if (run.followUpQueued) return refuse('follow_up_queued');
   if (!isFinal(run.state) || run.claimedBy !== null || run.deliveryRequested) {
     return refuse('not_finished');
+  }
+  // Issue #142: nothing to update once the pull request is over; a reopened one is open again
+  // at the next lookup.
+  const pullRequest = run.pullRequestStatus.state;
+  if (pullRequest !== null && pullRequest in PULL_REQUEST_ENDED_REFUSALS) {
+    return refuse(
+      PULL_REQUEST_ENDED_REFUSALS[pullRequest as keyof typeof PULL_REQUEST_ENDED_REFUSALS],
+    );
   }
   if (run.sessionRef === null) return refuse('no_session');
   if (run.workingCopy === null || run.workingCopyRemovedAt !== null) {

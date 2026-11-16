@@ -11,6 +11,8 @@ import {
   isFinal,
   isResumable,
   longWaitCancellation,
+  NO_PULL_REQUEST_STATUS,
+  type RunPullRequestStatus,
   RUN_STATES,
   type Run,
   type RunState,
@@ -121,6 +123,7 @@ describe('long-wait rule', () => {
     stepsBeforePart: 0,
     pushedCommit: null,
     workingCopyRemovedAt: null,
+    pullRequestStatus: NO_PULL_REQUEST_STATUS,
     ...overrides,
   });
   const after = (days: number, extraMs = 0) =>
@@ -202,6 +205,7 @@ describe('questions and answers', () => {
     stepsBeforePart: 0,
     pushedCommit: null,
     workingCopyRemovedAt: null,
+    pullRequestStatus: NO_PULL_REQUEST_STATUS,
   };
   const question = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
   const asked: Run = { ...base, messages: [{ kind: 'question', question, at }] };
@@ -241,10 +245,49 @@ describe('Follow-ups', () => {
     workingCopy: { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false } as
       Run['workingCopy'] | null,
     workingCopyRemovedAt: null as Date | null,
+    pullRequestStatus: NO_PULL_REQUEST_STATUS as RunPullRequestStatus,
     stepCount: 3,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
   };
   const available = { workerAvailable: true, providerAvailable: true };
+  const known = (state: NonNullable<RunPullRequestStatus['state']>): RunPullRequestStatus => ({
+    ...NO_PULL_REQUEST_STATUS,
+    state,
+    refreshedAt: at,
+  });
+
+  it.each(['draft', 'open'] as const)(
+    'lets a Run whose pull request is %s take a Follow-up',
+    (state) => {
+      expect(
+        followUpEligibility({ ...finished, pullRequestStatus: known(state) }, available),
+      ).toEqual({ allowed: true });
+    },
+  );
+
+  it('allows a Follow-up when the pull request state is unknown, and again once it is reopened', () => {
+    expect(followUpEligibility(finished, available)).toEqual({ allowed: true });
+    const closed = { ...finished, pullRequestStatus: known('closed') };
+    expect(followUpEligibility(closed, available)).toEqual({
+      allowed: false,
+      reason: 'pull_request_closed',
+    });
+    // The next lookup finds it open again.
+    expect(followUpEligibility({ ...closed, pullRequestStatus: known('open') }, available)).toEqual(
+      { allowed: true },
+    );
+  });
+
+  it('keeps the last known state when a lookup failed', () => {
+    const failed = {
+      ...finished,
+      pullRequestStatus: { ...known('merged'), refreshError: 'GitHub could not be reached.' },
+    };
+    expect(followUpEligibility(failed, available)).toEqual({
+      allowed: false,
+      reason: 'pull_request_merged',
+    });
+  });
 
   it.each(['succeeded', 'failed', 'timed_out', 'cancelled'] as const)(
     'lets a finished Run (%s) with its session and Working copy take a Follow-up',
@@ -264,6 +307,10 @@ describe('Follow-ups', () => {
     ['working_copy_removed', { workingCopy: null }],
     ['working_copy_removed', { workingCopyRemovedAt: at }],
     ['step_total_reached', { stepCount: 50 }],
+    // Issue #142: the pull request is over, or gone.
+    ['pull_request_merged', { pullRequestStatus: known('merged') }],
+    ['pull_request_closed', { pullRequestStatus: known('closed') }],
+    ['pull_request_missing', { pullRequestStatus: known('missing') }],
   ] as const)('refuses with %s', (reason, patch) => {
     expect(followUpEligibility({ ...finished, ...patch }, available)).toEqual({
       allowed: false,
