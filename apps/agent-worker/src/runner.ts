@@ -1,4 +1,9 @@
-import type { RunnerEvent, RunPayload, RunStepResult } from '@agentic-studio/contracts';
+import type {
+  ResumeReason,
+  RunnerEvent,
+  RunPayload,
+  RunStepResult,
+} from '@agentic-studio/contracts';
 import type { AgentDefinition } from './agent-definition/index.js';
 import type { ProcessGroupRegistry } from './spawn-boundary.js';
 
@@ -44,10 +49,15 @@ export interface StartRunStepInput {
  * starts a new session instead.
  */
 export interface ResumeRunStepInput extends StartRunStepInput {
-  /** The operator's answer to the agent's question. */
+  /**
+   * The operator's message: the answer to the agent's question, "Continue where you stopped."
+   * after the usage limit, or a Follow-up's text (Issue #141), as `reason` says.
+   */
   answer: string;
   /** The agent session to continue, as the runner reported it with the question. */
   sessionRef: string;
+  /** Why the session continues (Issue #141): a runner words the message after it. */
+  reason: ResumeReason;
 }
 
 /**

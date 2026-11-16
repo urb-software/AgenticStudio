@@ -27,7 +27,7 @@ import { WITHOUT_QUEUE_WORKERS } from './test-config.js';
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
 const LEASE_SECONDS = 60;
-const LIMITS = { stepMinutes: 60, maxSteps: 2, waitingDays: 14 };
+const LIMITS = { stepMinutes: 60, maxSteps: 2, waitingDays: 14, maxTotalSteps: 3 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -53,6 +53,7 @@ const PROBLEM = {
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
+  followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
 };
 
 const BOTH_ENABLED = { claude_code: true, codex: true };
@@ -196,6 +197,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         environmentFileSupplied: false,
         // Issue #100: the limits in force, copied onto the Run when it is started.
         limits: LIMITS,
+        // Issue #141: no Run step and no Follow-up yet.
+        steps: { used: 0, usedInPart: 0 },
+        followUps: 0,
         // Issue #103: the conversation starts with the Task.
         messages: [
           {
@@ -206,7 +210,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           },
         ],
       });
-      expect((await getRun(created.body.id)).body).toEqual(created.body);
+      // Issue #141: the Run page also learns whether a Follow-up is possible.
+      expect((await getRun(created.body.id)).body).toEqual({
+        ...created.body,
+        followUp: { allowed: false, reason: 'not_finished' },
+      });
       const projectRuns = await http()
         .get(`/api/projects/${project.id}/runs`)
         .set('Cookie', cookie);
@@ -505,6 +513,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         // Issue #100: the limits the worker enforces, and no Run step taken yet.
         limits: { stepMinutes: LIMITS.stepMinutes, maxSteps: LIMITS.maxSteps },
         completedSteps: 0,
+        // Issue #141: the first part of the Run starts its allowance at 0.
+        stepsBeforePart: 0,
       });
       const preparing = (await getRun(run.id)).body;
       expect(preparing).toMatchObject({
@@ -1121,7 +1131,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           finishedAt: clock.current.toISOString(),
           cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
         });
-        expect((await getRun(run.id)).body).toEqual(cancelled.body);
+        // Issue #141: the Run page also says whether a Follow-up is possible.
+        expect((await getRun(run.id)).body).toEqual({
+          ...cancelled.body,
+          followUp: { allowed: false, reason: 'no_session' },
+        });
         expect((await claim()).status).toBe(204);
       });
 
@@ -1998,6 +2012,571 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           await reportStep(randomUUID(), { outcome: 'needs_input', summary: 'no question' }),
           400,
         );
+      });
+    });
+  });
+
+  describe('Follow-ups (Issue #141)', () => {
+    const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+    const C1 = 'c'.repeat(40);
+    const C2 = 'd'.repeat(40);
+    const DONE = {
+      outcome: 'done',
+      summary: 'Added GET /health.',
+      sessionRef: 'session-7',
+    };
+    const followUp = (runId: string, body: unknown, origin: string | null = STUDIO_ORIGIN) => {
+      const call = http().post(`/api/runs/${runId}/follow-up`).set('Cookie', cookie);
+      if (origin !== null) call.set('Origin', origin);
+      return call.send(body as object);
+    };
+    const step = (
+      runId: string,
+      index: number,
+      kind: 'start' | 'resume',
+      result: object,
+      workingCopy: object = WORKING_COPY,
+      workerId = W1,
+    ) => worker(`${runId}/steps`, { workerId, index, kind, result, workingCopy });
+
+    /** W1 carries a Run of a new project through one done step to `delivered` with its pull request. */
+    async function deliveredRun() {
+      const project = await readyProject(`Shop ${randomUUID()}`);
+      const run = await queuedRun(project.id);
+      expect((await claim()).body.kind).toBe('start');
+      await report(run.id, { state: 'running' });
+      expect((await step(run.id, 1, 'start', DONE)).status).toBe(204);
+      const delivered = await report(run.id, {
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST, pushedCommit: C1 },
+      });
+      expect(delivered.status).toBe(204);
+      return { project, run };
+    }
+
+    it('reopens a delivered Run: same session, same Working copy, same pull request', async () => {
+      const { run } = await deliveredRun();
+      const before = (await getRun(run.id)).body;
+      expect(before).toMatchObject({
+        state: 'succeeded',
+        followUp: { allowed: true },
+        followUps: 0,
+        steps: { used: 1, usedInPart: 1 },
+        commits: [{ id: C1, subject: 'Add GET /health', pushed: true }],
+      });
+
+      advance(60);
+      const sent = await followUp(run.id, { text: '  Also handle HEAD requests.  ' });
+      expect(sent.status).toBe(202);
+      expect(sent.body).toMatchObject({
+        state: 'queued',
+        followUps: 1,
+        followUp: { allowed: false, reason: 'follow_up_queued' },
+        pullRequest: PULL_REQUEST,
+      });
+      expect(sent.body).not.toHaveProperty('finishedAt');
+      expect(sent.body).not.toHaveProperty('delivery');
+      expect(sent.body.messages.at(-1)).toEqual({
+        role: 'operator',
+        kind: 'follow_up',
+        text: 'Also handle HEAD requests.',
+        at: clock.current.toISOString(),
+      });
+      // A second submission while one is queued is refused clearly.
+      const second = await followUp(run.id, { text: 'And OPTIONS.' });
+      expectProblem(second, 409, PROBLEM.followUpNotAllowed);
+      expect(second.body.detail).toBe(
+        'A Follow-up is already queued for this run. Wait until it has finished.',
+      );
+      // The lists show the Run as active and that it has had a Follow-up.
+      const [listed] = (await http().get('/api/runs').set('Cookie', cookie)).body;
+      expect(listed).toMatchObject({ id: run.id, state: 'queued', followUps: 1 });
+      expect((await http().get('/api/runs/summary').set('Cookie', cookie)).body).toEqual({
+        running: 1,
+        waiting: 0,
+      });
+
+      // Only the agent worker that holds the Working copy and the session resumes it.
+      expect((await claim(W2)).status).toBe(204);
+      const claimed = await claim(W1);
+      expect(claimed.body).toMatchObject({
+        runId: run.id,
+        kind: 'resume',
+        resumeReason: 'follow_up',
+        followUpNumber: 1,
+        answer: 'Also handle HEAD requests.',
+        sessionRef: 'session-7',
+        runBranch: WORKING_COPY.runBranch,
+        completedSteps: 1,
+        stepsBeforePart: 1,
+        pullRequestNumber: 7,
+      });
+      await report(run.id, { state: 'running' });
+      const twoCommits = {
+        ...WORKING_COPY,
+        commits: [...WORKING_COPY.commits, { id: C2, subject: 'Handle HEAD' }],
+      };
+      // Committed in the Working copy, not pushed yet: the page tells the two apart.
+      expect((await step(run.id, 2, 'resume', DONE, twoCommits)).status).toBe(204);
+      expect((await getRun(run.id)).body.commits).toEqual([
+        { id: C1, subject: 'Add GET /health', pushed: true },
+        { id: C2, subject: 'Handle HEAD', pushed: false },
+      ]);
+      expect(
+        (
+          await report(run.id, {
+            state: 'succeeded',
+            delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST, pushedCommit: C2 },
+          })
+        ).status,
+      ).toBe(204);
+
+      const after = (await getRun(run.id)).body;
+      expect(after).toMatchObject({
+        state: 'succeeded',
+        delivery: 'delivered',
+        pullRequest: PULL_REQUEST,
+        followUps: 1,
+        steps: { used: 2, usedInPart: 1 },
+        limits: { maxSteps: LIMITS.maxSteps, maxTotalSteps: LIMITS.maxTotalSteps },
+        commits: [
+          { id: C1, subject: 'Add GET /health', pushed: true },
+          { id: C2, subject: 'Handle HEAD', pushed: true },
+        ],
+      });
+      // The earlier result stays in the conversation; the state reflects the latest one.
+      expect(after.messages.map((message: { kind: string }) => message.kind)).toEqual([
+        'task',
+        'part_end',
+        'follow_up',
+      ]);
+      expect(after.messages[1]).toMatchObject({
+        role: 'studio',
+        kind: 'part_end',
+        end: { state: 'succeeded', delivery: 'delivered' },
+      });
+      expect(JSON.stringify(after)).not.toContain('session-7');
+    });
+
+    it.each([
+      ['failed', { state: 'failed', failure: { code: 'agent_failed', detail: 'It broke.' } }],
+      ['timed_out', { state: 'timed_out' }],
+    ])('takes a Follow-up on a %s Run', async (_state, end) => {
+      const project = await readyProject(`Shop ${randomUUID()}`);
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      await step(run.id, 1, 'start', { ...DONE, outcome: 'needs_input', question: { text: 'Q?' } });
+      await report(run.id, { state: 'waiting_for_operator' });
+      // Refused while the Run waits for the operator.
+      expectProblem(await followUp(run.id, { text: 'x' }), 409, PROBLEM.followUpNotAllowed);
+      await http()
+        .post(`/api/runs/${run.id}/answer`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+        .send({ text: 'Yes' });
+      await claim();
+      await report(run.id, { state: 'running' });
+      expect((await report(run.id, { ...end, workingCopy: WORKING_COPY })).status).toBe(204);
+
+      const sent = await followUp(run.id, { text: 'Try again, smaller.' });
+      expect(sent.status).toBe(202);
+      expect(sent.body).toMatchObject({ state: 'queued' });
+      expect(sent.body).not.toHaveProperty('failure');
+    });
+
+    it('takes a Follow-up on a cancelled Run, and a queued Follow-up can be cancelled', async () => {
+      const project = await readyProject(`Shop ${randomUUID()}`);
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      await step(run.id, 1, 'start', { ...DONE, outcome: 'needs_input', question: { text: 'Q?' } });
+      await report(run.id, { state: 'waiting_for_operator' });
+      const cancel = () =>
+        http().post(`/api/runs/${run.id}/cancel`).set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+      expect((await cancel()).body.state).toBe('cancelled');
+
+      expect((await followUp(run.id, { text: 'Go on after all.' })).status).toBe(202);
+      const cancelled = await cancel();
+      expect(cancelled.body).toMatchObject({ state: 'cancelled', followUps: 1 });
+      // Cancelled before it was claimed: nothing is handed out, and it can be followed up again.
+      expect((await claim()).status).toBe(204);
+      expect((await getRun(run.id)).body.followUp).toEqual({ allowed: true });
+    });
+
+    it('refuses a Run that is queued, preparing or running, or has no session (409)', async () => {
+      const project = await readyProject(`Shop ${randomUUID()}`);
+      const run = await queuedRun(project.id);
+      expectProblem(await followUp(run.id, { text: 'x' }), 409, PROBLEM.followUpNotAllowed);
+      await claim();
+      expectProblem(await followUp(run.id, { text: 'x' }), 409, PROBLEM.followUpNotAllowed);
+      await report(run.id, { state: 'running' });
+      const running = await followUp(run.id, { text: 'x' });
+      expectProblem(running, 409, PROBLEM.followUpNotAllowed);
+      expect(running.body.detail).toBe(
+        'The run is still working or waiting for you. Send a Follow-up once it has finished.',
+      );
+      // Failed before any step reported a session: nothing to continue.
+      await report(run.id, { state: 'failed', failure: { code: 'agent_failed', detail: 'x' } });
+      expect((await getRun(run.id)).body.followUp).toEqual({
+        allowed: false,
+        reason: 'no_session',
+      });
+      expectProblem(await followUp(run.id, { text: 'x' }), 409, PROBLEM.followUpNotAllowed);
+    });
+
+    it('validates the text (422), finds the Run (404) and guards the session and origin', async () => {
+      const { run } = await deliveredRun();
+      expectProblem(await followUp(run.id, { text: '   ' }), 422);
+      expectProblem(await followUp(run.id, { text: 'a'.repeat(10_001) }), 422);
+      expectProblem(await followUp(run.id, { text: 'x', extra: true }), 422);
+      expectProblem(await followUp(randomUUID(), { text: 'x' }), 404, PROBLEM.runNotFound);
+      expectProblem(await followUp('nope', { text: 'x' }), 404, PROBLEM.runNotFound);
+      expect((await followUp(run.id, { text: 'x' }, 'https://evil.example')).status).toBe(403);
+      const anonymous = await http()
+        .post(`/api/runs/${run.id}/follow-up`)
+        .set('Origin', STUDIO_ORIGIN)
+        .send({ text: 'x' });
+      expect(anonymous.status).toBe(401);
+      expect((await followUp(run.id, { text: 'a'.repeat(10_000) })).status).toBe(202);
+    });
+
+    it('gives each Follow-up its own Run step allowance and stops at the Run step total', async () => {
+      // LIMITS: 2 Run steps per part, 3 in total.
+      const { run } = await deliveredRun();
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+      expect((await claim()).body).toMatchObject({ completedSteps: 1, stepsBeforePart: 1 });
+      await report(run.id, { state: 'running' });
+      expect(
+        (
+          await step(run.id, 2, 'resume', {
+            ...DONE,
+            outcome: 'needs_input',
+            question: { text: 'Q?' },
+          })
+        ).status,
+      ).toBe(204);
+      await report(run.id, { state: 'waiting_for_operator' });
+      await http()
+        .post(`/api/runs/${run.id}/answer`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+        .send({ text: 'Yes' });
+      // A Question inside a Follow-up: the answer resumes it, still Follow-up 1.
+      expect((await claim()).body).toMatchObject({
+        resumeReason: 'answer',
+        followUpNumber: 1,
+        completedSteps: 2,
+        stepsBeforePart: 1,
+      });
+      await report(run.id, { state: 'running' });
+      expect((await step(run.id, 3, 'resume', DONE)).status).toBe(204);
+      await report(run.id, {
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+      });
+
+      // Three Run steps in total: no further Follow-up.
+      expect((await getRun(run.id)).body).toMatchObject({
+        steps: { used: 3, usedInPart: 2 },
+        followUp: { allowed: false, reason: 'step_total_reached' },
+      });
+      const refused = await followUp(run.id, { text: 'One more.' });
+      expectProblem(refused, 409, PROBLEM.followUpNotAllowed);
+      expect(refused.body.detail).toBe(
+        'The run has used all the run steps it may take in total. Start a new run instead.',
+      );
+    });
+
+    it('fails a Follow-up step beyond its own allowance with step_limit', async () => {
+      const { run } = await deliveredRun();
+      await followUp(run.id, { text: 'Next.' });
+      await claim();
+      await report(run.id, { state: 'running' });
+      // Steps 2 and 3 are the Follow-up's two; step 4 would be its third.
+      await step(run.id, 2, 'resume', {
+        ...DONE,
+        outcome: 'needs_input',
+        question: { text: 'Q?' },
+      });
+      await report(run.id, { state: 'waiting_for_operator' });
+      await http()
+        .post(`/api/runs/${run.id}/answer`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+        .send({ text: 'Yes' });
+      await claim();
+      await report(run.id, { state: 'running' });
+      await step(run.id, 3, 'resume', {
+        ...DONE,
+        outcome: 'needs_input',
+        question: { text: 'Q?' },
+      });
+      await report(run.id, { state: 'waiting_for_operator' });
+      await http()
+        .post(`/api/runs/${run.id}/answer`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+        .send({ text: 'Yes' });
+      await claim();
+      await report(run.id, { state: 'running' });
+      expectProblem(await step(run.id, 4, 'resume', DONE), 409, PROBLEM.stepLimitReached);
+      expect((await getRun(run.id)).body).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'step_limit',
+          detail: 'The Follow-up reached its limit of 2 run steps; no further step was started.',
+        },
+        // A failed Follow-up keeps the Run's pull request; nothing new was pushed.
+        pullRequest: PULL_REQUEST,
+      });
+    });
+
+    it('waits in the queue under the concurrency limits and starts once its project is free', async () => {
+      const { project, run } = await deliveredRun();
+      const other = await queuedRun(project.id, 'Another task');
+      expect((await claim(W2)).body.runId).toBe(other.id);
+
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+      // The project's place is taken: the Follow-up waits, holding no place of its own.
+      expect((await claim(W1)).status).toBe(204);
+      await report(other.id, { state: 'running' }, W2);
+      await report(
+        other.id,
+        { state: 'failed', failure: { code: 'agent_failed', detail: 'x' } },
+        W2,
+      );
+      expect((await claim(W1)).body).toMatchObject({ runId: run.id, resumeReason: 'follow_up' });
+    });
+
+    it('records a cancel, a failure and a time-out during a Follow-up, keeping the pull request', async () => {
+      for (const end of ['cancelled', 'failed', 'timed_out'] as const) {
+        const { run } = await deliveredRun();
+        await followUp(run.id, { text: 'Next.' });
+        await claim();
+        await report(run.id, { state: 'running' });
+        if (end === 'cancelled') {
+          await http()
+            .post(`/api/runs/${run.id}/cancel`)
+            .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+          expect((await heartbeat(run.id)).body).toEqual({ cancelRequested: true });
+        }
+        const body =
+          end === 'failed'
+            ? {
+                state: end,
+                failure: { code: 'agent_failed', detail: 'x' },
+                workingCopy: WORKING_COPY,
+              }
+            : { state: end, workingCopy: WORKING_COPY };
+        expect((await report(run.id, body)).status).toBe(204);
+        const ended = (await getRun(run.id)).body;
+        expect(ended).toMatchObject({ state: end, pullRequest: PULL_REQUEST, followUps: 1 });
+        expect(ended).not.toHaveProperty('delivery');
+        // Its commits stay in the Working copy, and a further Follow-up can continue from them.
+        expect(ended.followUp).toEqual({ allowed: true });
+      }
+    });
+
+    it('opens the first pull request from a Follow-up of a Run that had none', async () => {
+      const project = await readyProject(`Shop ${randomUUID()}`);
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      await step(run.id, 1, 'start', DONE, { ...WORKING_COPY, commits: [] });
+      await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } });
+
+      await followUp(run.id, { text: 'Now change something.' });
+      const claimed = await claim();
+      expect(claimed.body).not.toHaveProperty('pullRequestNumber');
+      await report(run.id, { state: 'running' });
+      await step(run.id, 2, 'resume', DONE);
+      await report(run.id, {
+        state: 'succeeded',
+        delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST, pushedCommit: C1 },
+      });
+      expect((await getRun(run.id)).body).toMatchObject({
+        delivery: 'delivered',
+        pullRequest: PULL_REQUEST,
+      });
+    });
+
+    // Review S1 of #150: how a part ended stays in the conversation after a Follow-up.
+    it("keeps each part's end in the conversation: state, failure and delivery", async () => {
+      const project = await readyProject(`Shop ${randomUUID()}`);
+      const run = await queuedRun(project.id);
+      await claim();
+      await report(run.id, { state: 'running' });
+      await step(run.id, 1, 'start', DONE);
+      await report(run.id, {
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: 'The tests did not compile.' },
+        workingCopy: WORKING_COPY,
+      });
+
+      const sent = await followUp(run.id, { text: 'Fix the compile error.' });
+      expect(sent.status).toBe(202);
+      expect(sent.body.messages.slice(1)).toEqual([
+        {
+          role: 'studio',
+          kind: 'part_end',
+          text: 'The tests did not compile.',
+          end: { state: 'failed', failureCode: 'agent_failed' },
+          at: expect.stringMatching(ISO_8601),
+        },
+        {
+          role: 'operator',
+          kind: 'follow_up',
+          text: 'Fix the compile error.',
+          at: expect.stringMatching(ISO_8601),
+        },
+      ]);
+      expect(sent.body).not.toHaveProperty('failure');
+    });
+
+    // Review S2 of #150: a delivery that pushed before it failed still records the push.
+    it('records the pushed commit of a delivery that failed after its push', async () => {
+      const { run } = await deliveredRun();
+      await followUp(run.id, { text: 'Next.' });
+      await claim();
+      await report(run.id, { state: 'running' });
+      const twoCommits = {
+        ...WORKING_COPY,
+        commits: [...WORKING_COPY.commits, { id: C2, subject: 'Handle HEAD' }],
+      };
+      await step(run.id, 2, 'resume', DONE, twoCommits);
+      const failed = await report(run.id, {
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'Updating the pull request was refused.' },
+        pushedCommit: C2,
+      });
+      expect(failed.status).toBe(204);
+      expect((await getRun(run.id)).body).toMatchObject({
+        state: 'failed',
+        delivery: 'failed',
+        pullRequest: PULL_REQUEST,
+        commits: [
+          { id: C1, pushed: true },
+          { id: C2, pushed: true },
+        ],
+      });
+    });
+
+    // Review S9 of #150: a removal reported while a Follow-up waits is never dropped.
+    it('fails a queued Follow-up whose Working copy was removed meanwhile', async () => {
+      const { run } = await deliveredRun();
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+      await worker('states', { workerId: W1, runIds: [run.id], removedRunIds: [run.id] });
+
+      expect((await claim()).status).toBe(204);
+      expect((await getRun(run.id)).body).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'preparation_failed',
+          detail:
+            "Working copy no longer exists — run again: the agent worker's retention removed it.",
+        },
+        followUp: { allowed: false, reason: 'working_copy_removed' },
+      });
+    });
+
+    // Review S8 of #150.
+    it('fails a queued Follow-up whose agent worker is gone as preparation_failed', async () => {
+      const { run } = await deliveredRun();
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+
+      const shortLease = await startStudioApp(
+        {
+          ...services.config,
+          workerToken: WORKER_TOKEN_DIGEST,
+          workerLeaseSeconds: 2,
+          runLimits: LIMITS,
+        },
+        { executions: { clock } },
+      );
+      try {
+        advance(3);
+        const deadline = Date.now() + 10_000;
+        while ((await getRun(run.id)).body.state === 'queued' && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      } finally {
+        await shortLease.close();
+      }
+      expect((await getRun(run.id)).body).toMatchObject({
+        state: 'failed',
+        failure: { code: 'preparation_failed' },
+      });
+    });
+
+    it('resumes a Follow-up stopped at the usage limit, with a new Environment file snapshot', async () => {
+      const { run } = await deliveredRun();
+      await followUp(run.id, { text: 'Next.' });
+      expect((await claim()).body).toMatchObject({ replaceEnvironmentFile: true, studioPaths: [] });
+      await report(run.id, { state: 'running' });
+      await report(run.id, {
+        state: 'failed',
+        failure: { code: 'usage_limit', detail: 'The usage limit was reached.' },
+        workingCopy: WORKING_COPY,
+        sessionRef: 'session-7',
+      });
+
+      const resumed = await http()
+        .post(`/api/runs/${run.id}/resume`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
+      expect(resumed.status).toBe(202);
+      expect((await claim()).body).toMatchObject({
+        kind: 'resume',
+        resumeReason: 'usage_limit',
+        followUpNumber: 1,
+        replaceEnvironmentFile: true,
+        answer: 'Continue where you stopped.',
+      });
+    });
+
+    it('counts toward the server-wide limit only once claimed', async () => {
+      const { run } = await deliveredRun();
+      // Two other projects take both places on the server.
+      const a = await queuedRun((await readyProject(`A ${randomUUID()}`)).id);
+      const b = await queuedRun((await readyProject(`B ${randomUUID()}`)).id);
+      expect((await claim(W2)).body.runId).toBe(a.id);
+      expect((await claim(W2)).body.runId).toBe(b.id);
+
+      expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
+      expect((await claim(W1)).status).toBe(204);
+      await report(a.id, { state: 'running' }, W2);
+      await report(a.id, { state: 'failed', failure: { code: 'agent_failed', detail: 'x' } }, W2);
+      expect((await claim(W1)).body).toMatchObject({ runId: run.id, resumeReason: 'follow_up' });
+    });
+
+    it('records the Working copies retention removed, reported by the worker that holds them', async () => {
+      const { run } = await deliveredRun();
+      // Another worker cannot report it.
+      await worker('states', { workerId: W2, runIds: [run.id], removedRunIds: [run.id] });
+      expect((await getRun(run.id)).body.followUp).toEqual({ allowed: true });
+
+      const removed = await worker('states', {
+        workerId: W1,
+        runIds: [run.id],
+        removedRunIds: [run.id],
+      });
+      expect(removed.status).toBe(200);
+      expect((await getRun(run.id)).body.followUp).toEqual({
+        allowed: false,
+        reason: 'working_copy_removed',
+      });
+      expectProblem(await followUp(run.id, { text: 'x' }), 409, PROBLEM.followUpNotAllowed);
+    });
+
+    it('refuses while the agent worker holding the Working copy is not connected', async () => {
+      const { run } = await deliveredRun();
+      advance(LEASE_SECONDS + 1);
+      // Another worker reports: the Provider is available, but not the Working copy's worker.
+      expect((await workerStatus(BOTH_ENABLED, W2)).status).toBe(204);
+      expect((await getRun(run.id)).body.followUp).toEqual({
+        allowed: false,
+        reason: 'worker_unavailable',
+      });
+      expect((await workerStatus({ claude_code: false, codex: true }, W1)).status).toBe(204);
+      expect((await getRun(run.id)).body.followUp).toEqual({
+        allowed: false,
+        reason: 'provider_unavailable',
       });
     });
   });

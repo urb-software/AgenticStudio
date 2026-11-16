@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ANSWER_MAX_LENGTH,
   appendRunEventsRequestSchema,
+  FOLLOW_UP_MAX_LENGTH,
+  RESUME_REASONS,
+  runDeliverySchema,
   QUESTION_OPTION_MAX_LENGTH,
   QUESTION_TEXT_MAX_LENGTH,
   SESSION_REF_MAX_LENGTH,
@@ -112,6 +115,7 @@ describe('run payload (claim response)', () => {
       runBranch: 'agent/x-r0b8e5c2d',
       sessionRef: 'session-1',
       answer: 'Use PostgreSQL.',
+      resumeReason: 'answer',
       nextSeq: 42,
       completedSteps: 1,
     };
@@ -120,13 +124,19 @@ describe('run payload (claim response)', () => {
       expect(runPayloadSchema.parse(resume)).toEqual(resume);
     });
 
-    it('needs all four, and only a resume claim carries the session and answer', () => {
-      for (const field of ['runBranch', 'sessionRef', 'answer', 'nextSeq'] as const) {
+    it('needs all five, and only a resume claim carries the session and answer', () => {
+      for (const field of [
+        'runBranch',
+        'sessionRef',
+        'answer',
+        'resumeReason',
+        'nextSeq',
+      ] as const) {
         const { [field]: _left, ...without } = resume;
         void _left;
         expect(runPayloadSchema.safeParse(without).success).toBe(false);
       }
-      for (const field of ['sessionRef', 'answer', 'nextSeq'] as const) {
+      for (const field of ['sessionRef', 'answer', 'resumeReason', 'nextSeq'] as const) {
         expect(runPayloadSchema.safeParse({ ...payload, [field]: resume[field] }).success).toBe(
           false,
         );
@@ -152,6 +162,76 @@ describe('run payload (claim response)', () => {
       expect(valid({ answer: '' })).toBe(false);
       expect(valid({ nextSeq: 0 })).toBe(false);
       expect(valid({ nextSeq: 1 })).toBe(true);
+    });
+  });
+
+  describe('a Follow-up claim (Issue #141)', () => {
+    const followUp = {
+      ...payload,
+      kind: 'resume',
+      runBranch: 'agent/x-r0b8e5c2d',
+      sessionRef: 'session-1',
+      answer: 'Also handle the empty list.',
+      resumeReason: 'follow_up',
+      followUpNumber: 1,
+      stepsBeforePart: 3,
+      pullRequestNumber: 7,
+      nextSeq: 120,
+      completedSteps: 3,
+    };
+
+    it('carries the Follow-up text, its number, the steps before it and the recorded pull request', () => {
+      expect(runPayloadSchema.parse(followUp)).toEqual(followUp);
+      for (const reason of RESUME_REASONS) {
+        expect(runPayloadSchema.safeParse({ ...followUp, resumeReason: reason }).success).toBe(
+          true,
+        );
+      }
+      expect(runPayloadSchema.safeParse({ ...followUp, resumeReason: 'other' }).success).toBe(
+        false,
+      );
+    });
+
+    it('needs the Follow-up number with the reason follow_up, and only with a resume claim', () => {
+      const { followUpNumber: _number, ...withoutNumber } = followUp;
+      void _number;
+      expect(runPayloadSchema.safeParse(withoutNumber).success).toBe(false);
+      expect(runPayloadSchema.safeParse({ ...withoutNumber, resumeReason: 'answer' }).success).toBe(
+        true,
+      );
+      expect(runPayloadSchema.safeParse({ ...payload, followUpNumber: 1 }).success).toBe(false);
+      expect(runPayloadSchema.safeParse({ ...followUp, followUpNumber: 0 }).success).toBe(false);
+    });
+
+    it('bounds the Follow-up text by its own limit and an answer by the answer limit', () => {
+      const valid = (patch: object) =>
+        runPayloadSchema.safeParse({ ...followUp, ...patch }).success;
+      expect(valid({ answer: 'a'.repeat(FOLLOW_UP_MAX_LENGTH) })).toBe(true);
+      expect(valid({ answer: 'a'.repeat(FOLLOW_UP_MAX_LENGTH + 1) })).toBe(false);
+      const { followUpNumber: _number, ...answer } = followUp;
+      void _number;
+      expect(
+        runPayloadSchema.safeParse({
+          ...answer,
+          resumeReason: 'answer',
+          answer: 'a'.repeat(ANSWER_MAX_LENGTH + 1),
+        }).success,
+      ).toBe(false);
+    });
+
+    it('carries the recorded pull request with a resume or delivery claim, never a start', () => {
+      expect(runPayloadSchema.safeParse({ ...payload, pullRequestNumber: 7 }).success).toBe(false);
+      expect(
+        runPayloadSchema.safeParse({
+          ...payload,
+          kind: 'deliver',
+          runBranch: 'agent/x-r0b8e5c2d',
+          nextSeq: 3,
+          pullRequestNumber: 7,
+        }).success,
+      ).toBe(true);
+      expect(runPayloadSchema.safeParse({ ...followUp, pullRequestNumber: 0 }).success).toBe(false);
+      expect(runPayloadSchema.safeParse({ ...followUp, stepsBeforePart: -1 }).success).toBe(false);
     });
   });
 
@@ -442,6 +522,17 @@ describe('worker requests', () => {
     expect(ask([])).toBe(false);
     expect(ask(Array.from({ length: 501 }, () => RUN_ID))).toBe(false);
     expect(ask(['../../etc'])).toBe(false);
+  });
+
+  it('may report the Runs whose Working copies retention removed (Issue #141)', () => {
+    const ask = (removedRunIds: unknown) =>
+      runStatesRequestSchema.safeParse({ workerId: WORKER_ID, runIds: [RUN_ID], removedRunIds })
+        .success;
+    expect(ask(undefined)).toBe(true);
+    expect(ask([])).toBe(true);
+    expect(ask([RUN_ID])).toBe(true);
+    expect(ask(['not-a-run'])).toBe(false);
+    expect(ask(Array.from({ length: 501 }, () => RUN_ID))).toBe(false);
   });
 
   it('answers with the state of each known Run and when it finished', () => {
@@ -895,6 +986,83 @@ describe('a pushed branch without a pull request (review of #124)', () => {
 
     expect(report('cancelled')).toBe(true);
     expect(report('succeeded')).toBe(false);
+  });
+});
+
+describe('the pushed commit of a delivery (Issue #141)', () => {
+  const pullRequest = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+
+  it('comes with a delivered pull request or a pushed branch, as a commit id', () => {
+    const valid = (delivery: object) => runDeliverySchema.safeParse(delivery).success;
+    expect(valid({ outcome: 'delivered', pullRequest, pushedCommit: 'a'.repeat(40) })).toBe(true);
+    expect(valid({ outcome: 'delivered', pullRequest, pushedCommit: 'b'.repeat(64) })).toBe(true);
+    expect(valid({ outcome: 'delivered', pullRequest })).toBe(true);
+    expect(valid({ outcome: 'delivered', pullRequest, pushedCommit: 'main' })).toBe(false);
+    expect(valid({ outcome: 'none', branchPushed: true, pushedCommit: 'c'.repeat(40) })).toBe(true);
+    expect(valid({ outcome: 'none', pushedCommit: 'c'.repeat(40) })).toBe(false);
+  });
+});
+
+describe('a Follow-up with a new Environment file snapshot (Issue #141, review S3)', () => {
+  const resume = {
+    runId: RUN_ID,
+    projectId: PROJECT_ID,
+    provider: 'claude_code',
+    task: 'Add a health check',
+    startCommit: 'a'.repeat(40),
+    repository: { remoteUrl: 'git@github.com:acme/shop.git' },
+    integrationBranch: 'dev',
+    kind: 'resume',
+    runBranch: 'agent/x-r0b8e5c2d',
+    sessionRef: 'session-1',
+    answer: 'Go on.',
+    resumeReason: 'follow_up',
+    followUpNumber: 1,
+    nextSeq: 9,
+    studioPaths: ['.env', 'config/.env'],
+    limits: { stepMinutes: 60, maxSteps: 10 },
+    completedSteps: 1,
+  };
+  const file = { path: 'config/.env', content: 'A=1\n' };
+  const valid = (patch: object) => runPayloadSchema.safeParse({ ...resume, ...patch }).success;
+
+  it('carries the replacement, with or without a file, only with a resume claim', () => {
+    expect(valid({ replaceEnvironmentFile: true, environmentFile: file })).toBe(true);
+    expect(valid({ replaceEnvironmentFile: true })).toBe(true);
+    expect(valid({ environmentFile: file })).toBe(false);
+    expect(valid({ replaceEnvironmentFile: true, environmentFile: { ...file, path: 'x' } })).toBe(
+      false,
+    );
+    expect(
+      runPayloadSchema.safeParse({
+        ...resume,
+        kind: 'deliver',
+        sessionRef: undefined,
+        answer: undefined,
+        resumeReason: undefined,
+        followUpNumber: undefined,
+        replaceEnvironmentFile: true,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('the pushed commit of a failed delivery (Issue #141, review S2)', () => {
+  const report = (body: object) =>
+    reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
+  it('comes only with delivery_failed', () => {
+    const pushedCommit = 'a'.repeat(40);
+    expect(
+      report({
+        state: 'failed',
+        failure: { code: 'delivery_failed', detail: 'x' },
+        pushedCommit,
+      }),
+    ).toBe(true);
+    expect(
+      report({ state: 'failed', failure: { code: 'agent_failed', detail: 'x' }, pushedCommit }),
+    ).toBe(false);
+    expect(report({ state: 'cancelled', pushedCommit })).toBe(false);
   });
 });
 

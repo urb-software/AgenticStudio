@@ -1424,6 +1424,7 @@ describe('AgentWorker', () => {
       runBranch: REPORT.runBranch,
       sessionRef: fakeSessionRef(payload(task, n).runId),
       answer: 'Option A',
+      resumeReason: 'answer',
       nextSeq: 10,
       completedSteps,
     });
@@ -1457,6 +1458,7 @@ describe('AgentWorker', () => {
       expect(runner.resumed[0]).toMatchObject({
         sessionRef: run.sessionRef,
         answer: 'Option A',
+        reason: 'answer',
         workspace: { repoDir: `/data/runs/${run.runId}/repo` },
         agentDefinition: { version: expect.any(String) },
       });
@@ -1576,6 +1578,197 @@ describe('AgentWorker', () => {
         failure: { code: 'step_limit' },
       });
       expect(workingCopies.located).toEqual([]);
+    });
+
+    // Issue #141: a Follow-up continues the session of a finished Run as a new part of it.
+    describe('a Follow-up (Issue #141)', () => {
+      const followUpPayload = (text: string, overrides: Partial<RunPayload> = {}): RunPayload => ({
+        ...resumePayload('Add a feature', 3),
+        answer: text,
+        resumeReason: 'follow_up',
+        followUpNumber: 2,
+        stepsBeforePart: 3,
+        pullRequestNumber: 7,
+        ...overrides,
+      });
+      const notices = (api: RecordingApi) =>
+        api
+          .events()
+          .filter((event) => event.kind === 'notice')
+          .map((event) => event.text);
+
+      it('hands the runner the Follow-up text and its reason, and marks its start and end in the log', async () => {
+        const run = followUpPayload('Also handle the empty list.');
+        const api = new RecordingApi([run]);
+        const runner = new RecordingRunner();
+        startWorker(api, runner);
+
+        await until(() => api.reports().length === 3);
+
+        expect(runner.resumed[0]).toMatchObject({
+          answer: 'Also handle the empty list.',
+          reason: 'follow_up',
+          sessionRef: run.sessionRef,
+        });
+        const kinds = api.events().map((event) => [event.kind, event.text]);
+        expect(kinds[0]).toEqual(['notice', 'Follow-up 2 started']);
+        expect(kinds[1]?.[0]).toBe('step_started');
+        expect(kinds.at(-1)).toEqual(['notice', 'Follow-up 2 ended: done']);
+        expect(api.reports()[1]?.[2]).toMatchObject({ index: 4, kind: 'resume' });
+      });
+
+      it('marks the end of a Follow-up that failed, but not of one that asks', async () => {
+        const failing = followUpPayload('[fake:fail]');
+        const api = new RecordingApi([failing]);
+        startWorker(api);
+        await until(() => api.reports().length === 2);
+        expect(notices(api)).toEqual(['Follow-up 2 started', 'Follow-up 2 ended: failed']);
+        await worker?.stop();
+
+        const asking = followUpPayload('[fake:question]', { runId: payload('x', 2).runId });
+        const askingApi = new RecordingApi([
+          { ...asking, sessionRef: fakeSessionRef(asking.runId) },
+        ]);
+        startWorker(askingApi);
+        await until(() => askingApi.reports().length === 3);
+        expect(askingApi.reports()[2]?.[2]).toEqual({ state: 'waiting_for_operator' });
+        expect(notices(askingApi)).toEqual(['Follow-up 2 started']);
+      });
+
+      it('marks the end when an answer inside the Follow-up finishes it', async () => {
+        const { followUpNumber, ...rest } = followUpPayload('x');
+        const run: RunPayload = { ...rest, followUpNumber, resumeReason: 'answer', answer: 'A' };
+        const api = new RecordingApi([run]);
+        startWorker(api, new RecordingRunner());
+
+        await until(() => api.reports().length === 3);
+
+        expect(notices(api)).toEqual(['Follow-up 2 ended: done']);
+      });
+
+      it('gives each part its own allowance of Run steps', async () => {
+        // Three steps before the Follow-up, ten allowed per part: step 13 may start, 14 not.
+        const allowed = followUpPayload('More', { completedSteps: 12 });
+        const api = new RecordingApi([allowed]);
+        startWorker(api, new RecordingRunner());
+        await until(() => api.reports().length === 3);
+        expect(api.reports()[1]?.[2]).toMatchObject({ index: 13 });
+        await worker?.stop();
+
+        const beyond = followUpPayload('More', { completedSteps: 13 });
+        const refusedApi = new RecordingApi([beyond]);
+        const workingCopies = new FakeWorkingCopies();
+        startWorker(refusedApi, new RecordingRunner(), workingCopies);
+        await until(() => refusedApi.reports().length === 1);
+        expect(refusedApi.reports()[0]?.[2]).toMatchObject({
+          state: 'failed',
+          failure: { code: 'step_limit' },
+        });
+        expect(workingCopies.located).toEqual([]);
+      });
+
+      // Review S7 of #150: the usage limit pauses a Follow-up; its resume goes on with it.
+      it('pauses a Follow-up at the usage limit and says so when it resumes', async () => {
+        class LimitedRunner extends RecordingRunner {
+          // eslint-disable-next-line require-yield
+          override async *resume(input: ResumeRunStepInput): RunStep {
+            this.resumed.push(input);
+            throw new UsageLimitError('The usage limit was reached.', input.sessionRef);
+          }
+        }
+        const api = new RecordingApi([followUpPayload('More')]);
+        const deliveries = new FakeDeliveries();
+        startWorker(api, new LimitedRunner(), new FakeWorkingCopies(), deliveries);
+        await until(() => api.reports().length === 2);
+        expect(notices(api)).toEqual(['Follow-up 2 started', 'Follow-up 2 paused: usage limit']);
+        expect(api.reports()[1]?.[2]).toMatchObject({ failure: { code: 'usage_limit' } });
+        await worker?.stop();
+
+        const resumed = followUpPayload('Continue where you stopped.', {
+          resumeReason: 'usage_limit',
+        });
+        const resumedApi = new RecordingApi([resumed]);
+        startWorker(resumedApi, new RecordingRunner());
+        await until(() => resumedApi.reports().length === 3);
+        expect(notices(resumedApi)).toEqual(['Follow-up 2 resumed', 'Follow-up 2 ended: done']);
+      });
+
+      // Review S8 of #150.
+      it.each([
+        ['fails', '[fake:fail]'],
+        ['crashes', '[fake:crash]'],
+      ])('never delivers a Follow-up that %s: nothing is pushed', async (_what, text) => {
+        const run = followUpPayload(text, { sessionRef: fakeSessionRef(payload('x', 9).runId) });
+        const own = { ...run, runId: payload('x', 9).runId };
+        const api = new RecordingApi([own]);
+        const deliveries = new FakeDeliveries();
+        startWorker(api, undefined, new FakeWorkingCopies(), deliveries);
+        await until(() => api.reports().length === 2);
+        expect(api.reports()[1]?.[2]).toMatchObject({ state: 'failed' });
+        expect(deliveries.calls.map(([call]) => call)).not.toContain('deliver');
+        expect(deliveries.calls.map(([call]) => call)).not.toContain('commit');
+      });
+
+      it('delivers a Follow-up of a Run without a pull request yet as a first delivery', async () => {
+        const run = followUpPayload('More', { pullRequestNumber: undefined });
+        const api = new RecordingApi([run]);
+        const deliveries = new FakeDeliveries();
+        const seen: RunPayload[] = [];
+        const recording: DeliveryPort = {
+          commit: (prepared, payload, result) => deliveries.commit(prepared, payload, result),
+          deliver: (prepared, payload, result, signal) => {
+            seen.push(payload);
+            return deliveries.deliver(prepared, payload, result, signal);
+          },
+          locate: (payload) => deliveries.locate(payload),
+        };
+        startWorker(api, new RecordingRunner(), new FakeWorkingCopies(), recording);
+        await until(() => api.reports().length === 3);
+        expect(seen).toHaveLength(1);
+        expect(seen[0]?.pullRequestNumber).toBeUndefined();
+        expect(api.reports()[2]?.[2]).toMatchObject({ state: 'succeeded', delivery: DELIVERED });
+      });
+
+      // Review S2 of #150: a delivery that failed after its push still says what it pushed.
+      it('reports the pushed commit of a delivery that failed after its push', async () => {
+        const api = new RecordingApi([followUpPayload('More')]);
+        const deliveries = new FakeDeliveries();
+        deliveries.deliverFailure = new DeliveryFailedError(
+          'Updating the pull request failed: GitHub answered 403.',
+          true,
+          'a'.repeat(40),
+        );
+        startWorker(api, new RecordingRunner(), new FakeWorkingCopies(), deliveries);
+        await until(() => api.reports().length === 3);
+        expect(api.reports()[2]?.[2]).toMatchObject({
+          state: 'failed',
+          failure: { code: 'delivery_failed' },
+          pushedCommit: 'a'.repeat(40),
+        });
+      });
+
+      it('passes the claim to the Working copy, which replaces the Environment file (review S3)', async () => {
+        const run = followUpPayload('More', {
+          replaceEnvironmentFile: true,
+          studioPaths: ['.env'],
+          environmentFile: { path: '.env', content: 'A=1' },
+        });
+        const api = new RecordingApi([run]);
+        const workingCopies = new FakeWorkingCopies();
+        const located: RunPayload[] = [];
+        class Recording extends FakeWorkingCopies {
+          override async locate(payload: RunPayload): Promise<PreparedRun> {
+            located.push(payload);
+            return workingCopies.locate(payload);
+          }
+        }
+        const runner = new RecordingRunner();
+        startWorker(api, runner, new Recording());
+        await until(() => api.reports().length === 3);
+        expect(located[0]).toMatchObject({ replaceEnvironmentFile: true });
+        // The content never reaches the runner.
+        expect(runner.resumed[0]?.run).not.toHaveProperty('environmentFile');
+      });
     });
 
     it('checks the provider gate before it resumes (provider_disabled)', async () => {

@@ -91,12 +91,41 @@ export class PullRequestFailedError extends Error {
   }
 }
 
+/** One pull request of a repository, by number (Issue #141). */
+export interface PullRequestNumber {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+/** A pull request's state on GitHub (Issue #141): open, or closed (merged or not). */
+export interface PullRequestState extends PullRequestRef {
+  state: 'open' | 'closed';
+  merged: boolean;
+}
+
 /** The pull request client the delivery uses ({@link GitHubPullRequests} in production). */
 export interface PullRequestClient {
   openDraft(target: PullRequestTarget, signal: AbortSignal): Promise<OpenedPullRequest>;
+  /** The Run's recorded pull request, by number (Issue #141). */
+  get(pull: PullRequestNumber, signal: AbortSignal): Promise<PullRequestState>;
+  /**
+   * Replaces the pull request's title and, when given, its description (Issue #141; review S7
+   * of #150: a title alone keeps the description).
+   */
+  update(
+    pull: PullRequestNumber & { title: string; body?: string },
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 
 const pullRequestAnswer = z.object({ number: z.number(), html_url: z.string() });
+
+const pullRequestStateAnswer = pullRequestAnswer.extend({
+  state: z.enum(['open', 'closed']),
+  merged: z.boolean().optional(),
+  merged_at: z.string().nullable().optional(),
+});
 
 /** Longest wait for one GitHub API call. */
 const GITHUB_TIMEOUT_MS = 30_000;
@@ -145,6 +174,36 @@ export class GitHubPullRequests implements PullRequestClient {
     return { ...this.ref(parsed.data), reused: false };
   }
 
+  async get(pull: PullRequestNumber, signal: AbortSignal): Promise<PullRequestState> {
+    const answer = await this.call('GET', this.pullPath(pull), undefined, pull, signal, 'read');
+    const parsed = pullRequestStateAnswer.safeParse(answer);
+    if (!parsed.success || parsed.data.number !== pull.number) throw this.invalidAnswer();
+    return {
+      ...this.ref(parsed.data),
+      state: parsed.data.state,
+      merged: parsed.data.merged === true || Boolean(parsed.data.merged_at),
+    };
+  }
+
+  async update(
+    pull: PullRequestNumber & { title: string; body?: string },
+    signal: AbortSignal,
+  ): Promise<void> {
+    const answer = await this.call(
+      'PATCH',
+      this.pullPath(pull),
+      { title: pull.title, ...(pull.body === undefined ? {} : { body: pull.body }) },
+      pull,
+      signal,
+      'update',
+    );
+    if (!pullRequestAnswer.safeParse(answer).success) throw this.invalidAnswer();
+  }
+
+  private pullPath(pull: PullRequestNumber): string {
+    return `repos/${encodeURIComponent(pull.owner)}/${encodeURIComponent(pull.repo)}/pulls/${pull.number}`;
+  }
+
   private ref(answer: z.infer<typeof pullRequestAnswer>): PullRequestRef {
     const ref = pullRequestRefSchema.safeParse({ url: answer.html_url, number: answer.number });
     if (!ref.success) throw this.invalidAnswer();
@@ -159,11 +218,12 @@ export class GitHubPullRequests implements PullRequestClient {
   }
 
   private async call(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     path: string,
     body: object | undefined,
-    target: PullRequestTarget,
+    target: Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>,
     signal: AbortSignal,
+    action: 'open' | 'read' | 'update' = 'open',
   ): Promise<unknown> {
     const call = this.options.fetch ?? fetch;
     let response: Response;
@@ -184,13 +244,13 @@ export class GitHubPullRequests implements PullRequestClient {
     } catch (error) {
       if (signal.aborted) throw error;
       throw new PullRequestFailedError(
-        'GitHub could not be reached to open the pull request. Check the network of the agent ' +
+        `GitHub could not be reached to ${action} the pull request. Check the network of the agent ` +
           'worker and STUDIO_AGENT_GITHUB_API_URL, then retry the delivery.',
       );
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new PullRequestFailedError(refusal(response.status, target));
+      throw new PullRequestFailedError(refusal(response.status, target, action));
     }
     return response.json().catch(() => {
       throw this.invalidAnswer();
@@ -199,28 +259,37 @@ export class GitHubPullRequests implements PullRequestClient {
 }
 
 /** What a refusal from GitHub means for the operator. */
-function refusal(status: number, target: PullRequestTarget): string {
+function refusal(
+  status: number,
+  target: Pick<PullRequestTarget, 'owner' | 'repo'> & Partial<PullRequestTarget>,
+  action: 'open' | 'read' | 'update',
+): string {
   const name = `${target.owner}/${target.repo}`;
+  const what = {
+    open: 'Opening the pull request',
+    read: "Reading the run's pull request",
+    update: "Updating the run's pull request",
+  }[action];
   switch (status) {
     case 401:
       return (
-        'Opening the pull request failed: GitHub answered 401 (the token of the Agent account is ' +
+        `${what} failed: GitHub answered 401 (the token of the Agent account is ` +
         'not valid). Check STUDIO_AGENT_GITHUB_TOKEN on the agent worker.'
       );
     case 403:
     case 404:
       return (
-        `Opening the pull request failed: GitHub answered ${status}. Check that the Agent ` +
+        `${what} failed: GitHub answered ${status}. Check that the Agent ` +
         `account can open pull requests in ${name} and that its token covers that repository.`
       );
     case 422:
-      return (
-        'Opening the pull request failed: GitHub answered 422. Check that the integration ' +
-        `branch ${target.base} exists in ${name}.`
-      );
+      return action === 'open'
+        ? `${what} failed: GitHub answered 422. Check that the integration ` +
+            `branch ${target.base ?? ''} exists in ${name}.`
+        : `${what} failed: GitHub answered 422. Check the pull request in ${name}.`;
     default:
       return (
-        `Opening the pull request failed: GitHub answered ${status}. Check the access of the ` +
+        `${what} failed: GitHub answered ${status}. Check the access of the ` +
         'Agent account and the status of GitHub, then retry the delivery.'
       );
   }

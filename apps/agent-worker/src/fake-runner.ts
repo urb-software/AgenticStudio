@@ -71,6 +71,8 @@ function asking(runId: string, text: string): RunStepResult {
 /** The file the `commit` and `dirty` scenarios write in the Working copy. */
 export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
 
+/** The file a Follow-up's `commit` and `dirty` scenarios write (Issue #141). */
+export const FAKE_FOLLOW_UP_FILE = 'FAKE_FOLLOW_UP.md';
 /** The second file of the `two-files` scenario, left uncommitted (Issue #144). */
 export const FAKE_NOTES_FILE = 'FAKE_NOTES.md';
 
@@ -106,7 +108,9 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  * - `long` (Issue #100): like `slow`, but for `longMs` (ten minutes): a Run to cancel.
  * - `crash`: the runner itself breaks (a plain error).
  * `resume` checks that it continues the Run's own session and got an answer (else it fails as
- * the agent, like a provider without that session), then succeeds. It ignores the agent
+ * the agent, like a provider without that session), then succeeds. A Follow-up (Issue #141)
+ * plays the scenario its own text names (`[fake:<scenario>]`, default `success`) like a first
+ * step; its `commit` writes {@link FAKE_FOLLOW_UP_FILE} with new content each time. It ignores the agent
  * definition. Each step streams an agent message, a command and its output, like a real agent.
  */
 export class FakeRunner implements Runner {
@@ -122,10 +126,41 @@ export class FakeRunner implements Runner {
     this.git = options.git ?? new GitRunner();
   }
 
-  async *start({ run, workspace, signal }: StartRunStepInput): RunStep {
+  /**
+   * Like a real runner (Issue #141), every result names the agent session the step ran in, so a
+   * finished Run can take a Follow-up.
+   */
+  async *start(input: StartRunStepInput): RunStep {
+    return withSession(input.run.runId, yield* this.startStep(input));
+  }
+
+  async *resume(input: ResumeRunStepInput): RunStep {
+    return withSession(input.run.runId, yield* this.resumeStep(input));
+  }
+
+  private async *startStep({ run, workspace, signal }: StartRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
     yield { type: 'message', text: `fake runner: ${scenario}` };
+    return yield* this.play(scenario, run, workspace, signal, false);
+  }
+
+  /**
+   * Plays a scenario: a first step's, or (Issue #141) a Follow-up's, whose `commit` writes
+   * {@link FAKE_FOLLOW_UP_FILE} with new content, so every Follow-up makes a new commit.
+   */
+  private async *play(
+    scenario: FakeScenario,
+    run: StartRunStepInput['run'],
+    workspace: RunWorkspace,
+    signal: AbortSignal,
+    followUp: boolean,
+  ): RunStep {
     if (scenario !== 'stubborn') signal.throwIfAborted();
+    const change = (commit: boolean) =>
+      followUp
+        ? this.followUpChange(workspace, signal, run.completedSteps, commit)
+        : this.change(workspace, signal, commit);
+    const changed = followUp ? FAKE_FOLLOW_UP_FILE : FAKE_CHANGE_FILE;
     switch (scenario) {
       case 'fail':
         throw new AgentFailedError('The fake agent failed.');
@@ -171,12 +206,12 @@ export class FakeRunner implements Runner {
         await delay(this.slowMs, undefined, { ref: false });
         return done();
       case 'commit':
-        await this.change(workspace, signal, true);
-        yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}` };
+        await change(true);
+        yield { type: 'output', text: `committed ${changed}` };
         return done();
       case 'dirty':
-        await this.change(workspace, signal, false);
-        yield { type: 'output', text: `left ${FAKE_CHANGE_FILE} uncommitted` };
+        await change(false);
+        yield { type: 'output', text: `left ${changed} uncommitted` };
         return done();
       case 'two-files':
         await this.change(workspace, signal, true);
@@ -184,8 +219,8 @@ export class FakeRunner implements Runner {
         yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}; left ${FAKE_NOTES_FILE}` };
         return done();
       case 'checks-failed':
-        await this.change(workspace, signal, true);
-        yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}; a check failed` };
+        await change(true);
+        yield { type: 'output', text: `committed ${changed}; a check failed` };
         return {
           ...done(),
           checks: [
@@ -220,9 +255,42 @@ export class FakeRunner implements Runner {
     await writeFile(file, content, { flag: 'wx', mode: 0o644 });
   }
 
-  async *resume({ run, signal, answer, sessionRef }: ResumeRunStepInput): RunStep {
+  /** Writes {@link FAKE_FOLLOW_UP_FILE}, new content per Run step, and commits it if asked. */
+  private async followUpChange(
+    workspace: RunWorkspace,
+    signal: AbortSignal,
+    completedSteps: number,
+    commit: boolean,
+  ) {
+    const file = join(workspace.repoDir, FAKE_FOLLOW_UP_FILE);
+    // As in `change`: never written through whatever the repository put at that path.
+    await rm(file, { force: true });
+    await writeFile(file, `Follow-up change after run step ${completedSteps}.\n`, {
+      flag: 'wx',
+      mode: 0o644,
+    });
+    if (!commit) return;
+    const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
+    await this.git.run(['add', '--', FAKE_FOLLOW_UP_FILE], options);
+    await this.git.run(
+      ['commit', '--quiet', '--no-verify', '-m', 'Fake follow-up change'],
+      options,
+    );
+  }
+
+  private async *resumeStep({
+    run,
+    workspace,
+    signal,
+    answer,
+    sessionRef,
+    reason,
+  }: ResumeRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
-    yield { type: 'message', text: 'fake runner: resume' };
+    yield {
+      type: 'message',
+      text: reason === 'follow_up' ? 'fake runner: follow-up' : 'fake runner: resume',
+    };
     signal.throwIfAborted();
     if (scenario === 'lost-session' || sessionRef !== fakeSessionRef(run.runId)) {
       throw new AgentFailedError(
@@ -230,6 +298,12 @@ export class FakeRunner implements Runner {
       );
     }
     if (answer.trim() === '') throw new AgentFailedError('The fake agent got no answer.');
+    if (reason === 'follow_up') {
+      // Issue #141: a Follow-up names its own scenario (`[fake:<scenario>]` in its text).
+      const followUpScenario = fakeScenarioOf(answer);
+      yield { type: 'output', text: `follow-up received: ${followUpScenario}` };
+      return yield* this.play(followUpScenario, run, workspace, signal, true);
+    }
     yield { type: 'output', text: `answer received: ${answer}` };
     // The first resume of question-twice (its second Run step) asks again.
     if (scenario === 'question-twice' && run.completedSteps === 1) {
@@ -237,6 +311,11 @@ export class FakeRunner implements Runner {
     }
     return done();
   }
+}
+
+/** The result with the fake agent's session reference (Issue #141). */
+function withSession(runId: string, result: RunStepResult): RunStepResult {
+  return { ...result, sessionRef: fakeSessionRef(runId) };
 }
 
 function done(): RunStepResult {

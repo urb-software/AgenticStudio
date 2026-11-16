@@ -203,11 +203,46 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     expect(result).toMatchObject({ outcome: 'done', sessionRef: SESSION });
   });
 
+  it('resumes a Follow-up with exactly the options of an answer, only the prompt worded for it (Issue #141)', async () => {
+    spawn.mockImplementation(() => fakeChild(recording('resume')));
+    await drain(
+      runner().resume({
+        ...input('Add a store'),
+        answer: 'PostgreSQL',
+        reason: 'answer',
+        sessionRef: SESSION,
+      }),
+    );
+    spawn.mockImplementation(() => fakeChild(recording('resume')));
+
+    const { result } = await drain(
+      runner().resume({
+        ...input('Add a store'),
+        answer: 'Also add an index.',
+        reason: 'follow_up',
+        sessionRef: SESSION,
+      }),
+    );
+
+    const answerArgs = spawn.mock.calls[0]![1] as string[];
+    const followUpArgs = spawn.mock.calls[1]![1] as string[];
+    expect(followUpArgs[1]).toBe("The operator's Follow-up:\n\nAlso add an index.");
+    expect(followUpArgs.slice(2)).toEqual(answerArgs.slice(2));
+    expect(followUpArgs.slice(2, 4)).toEqual(['--resume', SESSION]);
+    // The recorded stream of a resumed step ends done, in the same session.
+    expect(result).toMatchObject({ outcome: 'done', sessionRef: SESSION });
+  });
+
   it('resumes with the same options, the stored session and the answer as the prompt', async () => {
     spawn.mockImplementation(() => fakeChild(recording('resume')));
 
     const { result } = await drain(
-      runner().resume({ ...input('Add a store'), answer: 'PostgreSQL', sessionRef: SESSION }),
+      runner().resume({
+        ...input('Add a store'),
+        answer: 'PostgreSQL',
+        reason: 'answer',
+        sessionRef: SESSION,
+      }),
     );
 
     const args = spawn.mock.calls[0]![1] as string[];
@@ -357,7 +392,7 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
 
     await expect(off.start(input('x')).next()).rejects.toBeInstanceOf(ProviderDisabledError);
     await expect(
-      off.resume({ ...input('x'), answer: 'a', sessionRef: SESSION }).next(),
+      off.resume({ ...input('x'), answer: 'a', reason: 'answer', sessionRef: SESSION }).next(),
     ).rejects.toBeInstanceOf(ProviderDisabledError);
     expect(spawn).not.toHaveBeenCalled();
     expect(existsSync(join(runDir, 'instructions.md'))).toBe(false);

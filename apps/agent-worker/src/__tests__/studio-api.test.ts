@@ -47,6 +47,21 @@ describe('StudioApi', () => {
     await expect(invalid.runStates([runId])).rejects.toThrow();
   });
 
+  it('reports removed Working copies with a states request (Issue #141)', async () => {
+    const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
+    const { api, calls } = client(async () => Response.json([]));
+
+    await api.runStates([runId], undefined, [runId]);
+    await api.runStates([runId], undefined, []);
+
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      workerId: WORKER_ID,
+      runIds: [runId],
+      removedRunIds: [runId],
+    });
+    expect(JSON.parse(String(calls[1]?.init.body))).not.toHaveProperty('removedRunIds');
+  });
+
   it('sends the token as a Bearer credential and the worker id in the JSON body', async () => {
     const { api, calls } = client(async () => new Response(null, { status: 204 }));
 

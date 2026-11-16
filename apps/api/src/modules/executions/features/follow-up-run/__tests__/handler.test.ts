@@ -1,0 +1,294 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { FollowUpNotAllowedError, type Run, type RunState } from '../../../domain/entities/run.js';
+import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
+import type { RecordedWorkerStatus } from '../../../domain/services/provider-availability.js';
+import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
+import { FollowUpRunHandler } from '../handler.js';
+
+/** The latest agent worker status and when each worker last reported (Issue #101). */
+class InMemoryWorkerStatusStore implements WorkerStatusStore {
+  private current: RecordedWorkerStatus | undefined;
+  private readonly seen = new Map<string, Date>();
+  record(status: RecordedWorkerStatus): void {
+    this.current = status;
+    this.seen.set(status.workerId, status.reportedAt);
+  }
+  latest(): RecordedWorkerStatus | undefined {
+    return this.current;
+  }
+  lastSeen(workerId: string): Date | undefined {
+    return this.seen.get(workerId);
+  }
+}
+
+// Issue #141: the operator sends a Follow-up to a finished Run.
+const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
+const OTHER_PROJECT = '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f';
+const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
+const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
+const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
+const T0 = new Date('2026-11-16T12:00:00.000Z');
+const T1 = new Date('2026-11-16T12:30:00.000Z');
+const LEASE = { seconds: 60 };
+const WORKING_COPY = {
+  runBranch: 'agent/x-r0b8e5c2d',
+  commits: [{ id: 'a'.repeat(40), subject: 'First' }],
+  hasUncommittedChanges: false,
+};
+const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
+const newRun = (projectId = PROJECT, maxTotalSteps = 50) => ({
+  projectId,
+  provider: 'claude_code' as const,
+  task: 'Add a health check',
+  startCommit: 'a',
+  remoteUrl: 'https://git.example.test/a.git',
+  limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps },
+  integrationBranch: 'dev',
+});
+
+describe('FollowUpRunHandler', () => {
+  let runs: InMemoryRunRepository;
+  let workers: InMemoryWorkerStatusStore;
+  let handler: FollowUpRunHandler;
+
+  /** The worker reports itself connected with both providers on, at `at`. */
+  function connect(workerId = WORKER, at = T1, providers = { claude_code: true, codex: true }) {
+    workers.record({ workerId, runner: 'fake', providers, reportedAt: at });
+  }
+
+  /** A Run WORKER carried to `end` after `steps` done steps, delivering its pull request. */
+  async function finished(end: RunState = 'succeeded', steps = 1, projectId = PROJECT) {
+    const added = await runs.add(newRun(projectId));
+    await runs.claimNext(WORKER, T0);
+    await runs.transitionClaimed({
+      runId: added.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T0,
+    });
+    for (let index = 1; index <= steps; index++) {
+      await runs.appendStep(
+        added.id,
+        WORKER,
+        { kind: 'start', result: { outcome: 'done', summary: 'Done.' }, sessionRef: 'session-1' },
+        WORKING_COPY,
+        [],
+        T0,
+      );
+    }
+    if (end === 'cancelled') await runs.requestCancel(added.id, T0);
+    await runs.transitionClaimed({
+      runId: added.id,
+      workerId: WORKER,
+      from: 'running',
+      to: end,
+      failure: end === 'failed' ? { code: 'agent_failed', detail: 'It failed.' } : null,
+      ...(end === 'succeeded'
+        ? { delivery: { outcome: 'delivered' as const, pullRequest: PULL_REQUEST } }
+        : {}),
+      ...(end === 'cancelled' ? { cancellation: { by: 'operator' as const, reason: 'x' } } : {}),
+      cancelRequested: end === 'cancelled',
+      now: T0,
+    });
+    return (await runs.findById(added.id))!;
+  }
+
+  beforeEach(() => {
+    runs = new InMemoryRunRepository();
+    workers = new InMemoryWorkerStatusStore();
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE);
+    connect();
+  });
+
+  it.each(['succeeded', 'failed', 'timed_out', 'cancelled'] as const)(
+    'queues a %s Run for its agent worker, with the Follow-up as its latest message',
+    async (end) => {
+      const run = await finished(end);
+
+      const { run: queued, followUp } = await handler.execute(run.id, 'Also handle empty lists.');
+
+      expect(queued).toMatchObject({
+        state: 'queued',
+        followUpQueued: true,
+        followUpCount: 1,
+        stepsBeforePart: 1,
+        failure: null,
+        finishedAt: null,
+        cancellation: null,
+        cancelRequestedAt: null,
+        delivery: null,
+        sessionRef: 'session-1',
+      });
+      expect(queued.messages.at(-1)).toEqual({
+        kind: 'follow_up',
+        text: 'Also handle empty lists.',
+        at: T1,
+      });
+      expect(followUp).toEqual({ allowed: false, reason: 'follow_up_queued' });
+    },
+  );
+
+  it("keeps the Run's pull request: the same one is updated", async () => {
+    const run = await finished('succeeded');
+
+    const { run: queued } = await handler.execute(run.id, 'Rename it.');
+
+    expect(queued.pullRequest).toEqual(PULL_REQUEST);
+  });
+
+  it('refuses a second submission while one is queued, and a Run that is not finished', async () => {
+    const run = await finished('succeeded');
+    await handler.execute(run.id, 'First.');
+
+    await expect(handler.execute(run.id, 'Second.')).rejects.toEqual(
+      new FollowUpNotAllowedError('follow_up_queued'),
+    );
+    await runs.claimNext(WORKER, T1);
+    await expect(handler.execute(run.id, 'Third.')).rejects.toEqual(
+      new FollowUpNotAllowedError('not_finished'),
+    );
+    expect(
+      (await runs.findById(run.id))!.messages.filter((m) => m.kind === 'follow_up'),
+    ).toHaveLength(1);
+  });
+
+  it('refuses a Run whose Working copy was removed, or that has no session', async () => {
+    const removed = await finished('succeeded');
+    await runs.markWorkingCopiesRemoved(WORKER, [removed.id], T1);
+    await expect(handler.execute(removed.id, 'x')).rejects.toEqual(
+      new FollowUpNotAllowedError('working_copy_removed'),
+    );
+
+    const failedAtStart: Run = await runs.add(newRun(OTHER_PROJECT));
+    await runs.claimNext(WORKER, T0);
+    await runs.transitionClaimed({
+      runId: failedAtStart.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'failed',
+      failure: { code: 'preparation_failed', detail: 'x' },
+      cancelRequested: false,
+      now: T0,
+    });
+    await expect(handler.execute(failedAtStart.id, 'x')).rejects.toEqual(
+      new FollowUpNotAllowedError('no_session'),
+    );
+  });
+
+  it('refuses a Run that has used its Run step total', async () => {
+    const added = await runs.add({ ...newRun(), limits: { ...newRun().limits, maxTotalSteps: 2 } });
+    await runs.claimNext(WORKER, T0);
+    await runs.transitionClaimed({
+      runId: added.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T0,
+    });
+    for (let i = 0; i < 2; i++) {
+      await runs.appendStep(
+        added.id,
+        WORKER,
+        { kind: 'start', result: {}, sessionRef: 'session-1' },
+        WORKING_COPY,
+        [],
+        T0,
+      );
+    }
+    await runs.transitionClaimed({
+      runId: added.id,
+      workerId: WORKER,
+      from: 'running',
+      to: 'succeeded',
+      failure: null,
+      delivery: { outcome: 'none' },
+      cancelRequested: false,
+      now: T0,
+    });
+
+    await expect(handler.execute(added.id, 'x')).rejects.toEqual(
+      new FollowUpNotAllowedError('step_total_reached'),
+    );
+  });
+
+  it('refuses while the agent worker holding the Working copy is gone, or the Provider is off', async () => {
+    const run = await finished('succeeded');
+    workers = new InMemoryWorkerStatusStore();
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE);
+    connect(OTHER_WORKER);
+    await expect(handler.execute(run.id, 'x')).rejects.toEqual(
+      new FollowUpNotAllowedError('worker_unavailable'),
+    );
+
+    connect(WORKER, T1, { claude_code: false, codex: true });
+    await expect(handler.execute(run.id, 'x')).rejects.toEqual(
+      new FollowUpNotAllowedError('provider_unavailable'),
+    );
+  });
+
+  it('answers not found for an unknown Run or an id that is not a UUID', async () => {
+    await expect(handler.execute(UNKNOWN_RUN, 'x')).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(handler.execute('nope', 'x')).rejects.toBeInstanceOf(RunNotFoundError);
+  });
+
+  it('waits in the queue without holding a place: another Run of the project starts first', async () => {
+    const run = await finished('succeeded');
+    const other = await runs.add(newRun());
+    const started = await runs.claimNext(OTHER_WORKER, T1);
+    expect(started?.id).toBe(other.id);
+
+    await handler.execute(run.id, 'Go on.');
+
+    // The project is busy: the Follow-up waits, then its own worker claims it once it is free.
+    expect(await runs.claimNext(WORKER, T1)).toBeNull();
+    await runs.transitionClaimed({
+      runId: other.id,
+      workerId: OTHER_WORKER,
+      from: 'preparing',
+      to: 'failed',
+      failure: { code: 'preparation_failed', detail: 'x' },
+      cancelRequested: false,
+      now: T1,
+    });
+    expect(await runs.claimNext(OTHER_WORKER, T1)).toBeNull();
+    expect(await runs.claimNext(WORKER, T1)).toMatchObject({
+      id: run.id,
+      state: 'preparing',
+      followUpQueued: false,
+    });
+  });
+
+  it('gives the Follow-up its own Run step allowance', async () => {
+    const run = await finished('succeeded', 10);
+    await handler.execute(run.id, 'Go on.');
+    await runs.claimNext(WORKER, T1);
+    await runs.transitionClaimed({
+      runId: run.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T1,
+    });
+
+    for (let i = 0; i < 10; i++) {
+      expect(
+        await runs.appendStep(run.id, WORKER, { kind: 'resume', result: {} }, WORKING_COPY, [], T1),
+      ).toMatchObject({ status: 'stored' });
+    }
+    expect(
+      await runs.appendStep(run.id, WORKER, { kind: 'resume', result: {} }, WORKING_COPY, [], T1),
+    ).toEqual({ status: 'step_limit' });
+    expect((await runs.findById(run.id))!.failure).toEqual({
+      code: 'step_limit',
+      detail: 'The Follow-up reached its limit of 10 run steps; no further step was started.',
+    });
+  });
+});

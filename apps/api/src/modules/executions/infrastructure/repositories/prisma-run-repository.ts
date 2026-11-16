@@ -24,6 +24,8 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
+  partEndOf,
+  type RunPartEnd,
   type RunState,
   type RunWorkingCopy,
   stepLimitFailure,
@@ -78,13 +80,31 @@ const LIST_FIELDS = {
   stepStartedAt: true,
   releasedBy: true,
   sessionRef: true,
+  lastClaimedBy: true,
+  followUpCount: true,
+  followUpQueued: true,
+  stepsBeforePart: true,
+  limitMaxTotalSteps: true,
+  pushedCommit: true,
+  workingCopyRemovedAt: true,
+  // Issue #141: the Run step total, counted with the Run.
+  _count: { select: { steps: true } },
 } as const;
 
 /** A single Run's fields with its conversation (Issue #103); lists read {@link LIST_FIELDS}. */
 const RUN_FIELDS = {
   ...LIST_FIELDS,
   messages: {
-    select: { kind: true, text: true, options: true, recommendation: true, at: true },
+    select: {
+      kind: true,
+      text: true,
+      options: true,
+      recommendation: true,
+      at: true,
+      endState: true,
+      endFailureCode: true,
+      endDelivery: true,
+    },
     orderBy: { seq: 'asc' },
   },
 } as const;
@@ -124,6 +144,14 @@ interface RunRow {
   stepStartedAt: Date | null;
   releasedBy: string | null;
   sessionRef: string | null;
+  lastClaimedBy: string | null;
+  followUpCount: number;
+  followUpQueued: boolean;
+  stepsBeforePart: number;
+  limitMaxTotalSteps: number;
+  pushedCommit: string | null;
+  workingCopyRemovedAt: Date | null;
+  _count: { steps: number };
   /** Absent when a list read the Run (Issue #103). */
   messages?: {
     kind: string;
@@ -131,6 +159,9 @@ interface RunRow {
     options: Prisma.JsonValue;
     recommendation: string | null;
     at: Date;
+    endState: string | null;
+    endFailureCode: string | null;
+    endDelivery: string | null;
   }[];
 }
 
@@ -139,6 +170,18 @@ const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
 /** A message row as a Run's message (Issue #103); the CHECK constraint fixes the kinds. */
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
+  if (row.kind === 'follow_up') return { kind: 'follow_up', text: row.text, at: row.at };
+  if (row.kind === 'part_end') {
+    // The CHECK constraints fix the state, the code and the delivery (review S1 of #150).
+    return {
+      kind: 'part_end',
+      state: row.endState as RunPartEnd['state'],
+      failureCode: row.endFailureCode as RunFailureCode | null,
+      delivery: row.endDelivery as RunDeliveryState | null,
+      detail: row.text,
+      at: row.at,
+    };
+  }
   if (row.kind !== 'question') {
     throw new Error(`Unexpected run message kind in the database: ${row.kind}`);
   }
@@ -156,14 +199,32 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   };
 }
 
-/** The columns of a delivery outcome (Issue #102). */
+/**
+ * The columns of a delivery outcome (Issue #102). Issue #141: a Run has at most one pull request,
+ * so an outcome without one leaves a recorded pull request (from an earlier part of the Run) as
+ * it is; the pushed commit is recorded whenever the worker reports one.
+ */
 function deliveryColumns(delivery: RunDeliveryOutcome) {
   return {
     delivery: delivery.outcome satisfies RunDeliveryState,
-    pullRequestUrl: delivery.outcome === 'delivered' ? delivery.pullRequest.url : null,
-    pullRequestNumber: delivery.outcome === 'delivered' ? delivery.pullRequest.number : null,
+    ...(delivery.outcome === 'delivered'
+      ? {
+          pullRequestUrl: delivery.pullRequest.url,
+          pullRequestNumber: delivery.pullRequest.number,
+        }
+      : {}),
+    ...(delivery.pushedCommit === undefined ? {} : { pushedCommit: delivery.pushedCommit }),
   };
 }
+
+/**
+ * Places held, as for a claim (SQL over `runs a`): an active state, a failed Run held for a
+ * delivery retry (Issue #102), or an answered Run queued for its worker to resume (Issue #103).
+ * A Run queued for a Follow-up holds none until it is claimed (Issue #141).
+ */
+const HOLDS_PLACE = Prisma.sql`(a.state IN (${ACTIVE})
+  OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
+  OR (a.state = 'queued' AND a.session_ref IS NOT NULL AND NOT a.follow_up_queued))`;
 
 function workingCopyColumns(workingCopy: RunWorkingCopy | null | undefined) {
   return workingCopy
@@ -242,6 +303,7 @@ function toRun(row: RunRow): Run {
       stepMinutes: row.limitStepMinutes,
       maxSteps: row.limitMaxSteps,
       waitingDays: row.limitWaitingDays,
+      maxTotalSteps: row.limitMaxTotalSteps,
     },
     cancelRequestedAt: row.cancelRequestedAt,
     cancellation: by === null ? null : { by: by as RunCancelledBy, reason: row.cancelReason ?? '' },
@@ -250,6 +312,13 @@ function toRun(row: RunRow): Run {
     releasedBy: row.releasedBy,
     sessionRef: row.sessionRef,
     messages: (row.messages ?? []).map(toMessage),
+    lastClaimedBy: row.lastClaimedBy,
+    stepCount: row._count.steps,
+    followUpCount: row.followUpCount,
+    followUpQueued: row.followUpQueued,
+    stepsBeforePart: row.stepsBeforePart,
+    pushedCommit: row.pushedCommit,
+    workingCopyRemovedAt: row.workingCopyRemovedAt,
   };
 }
 
@@ -274,6 +343,7 @@ export class PrismaRunRepository implements RunRepository {
         limitStepMinutes: limits.stepMinutes,
         limitMaxSteps: limits.maxSteps,
         limitWaitingDays: limits.waitingDays,
+        limitMaxTotalSteps: limits.maxTotalSteps,
       },
       select: RUN_FIELDS,
     });
@@ -330,16 +400,11 @@ export class PrismaRunRepository implements RunRepository {
                  OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
                      AND r.last_claimed_by = ${workerId}::uuid))
             AND (SELECT count(*) FROM runs a
-                 WHERE a.id <> r.id
-                   AND (a.state IN (${ACTIVE})
-                        OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
-                        OR (a.state = 'queued' AND a.session_ref IS NOT NULL))) < ${MAX_ACTIVE_RUNS}::int
+                 WHERE a.id <> r.id AND ${HOLDS_PLACE}) < ${MAX_ACTIVE_RUNS}::int
             AND NOT EXISTS (SELECT 1 FROM runs a
                             WHERE a.id <> r.id
                               AND a.project_id = r.project_id
-                              AND (a.state IN (${ACTIVE})
-                                   OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
-                                   OR (a.state = 'queued' AND a.session_ref IS NOT NULL)))
+                              AND ${HOLDS_PLACE})
           ORDER BY r.created_at, r.id
           LIMIT 1`;
         if (!next) return null;
@@ -354,6 +419,8 @@ export class PrismaRunRepository implements RunRepository {
                   // A resumed Run keeps its first start (Issue #103).
                   startedAt: next.started_at ?? now,
                   heartbeatAt: now,
+                  // A claimed Follow-up holds its places like any held Run (Issue #141).
+                  followUpQueued: false,
                 },
                 select: RUN_FIELDS,
               })
@@ -396,6 +463,8 @@ export class PrismaRunRepository implements RunRepository {
           ? deliveryColumns(change.delivery)
           : {}),
         ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
+        // Review S2 of #150: a delivery that pushed before it failed still records the push.
+        ...(change.pushedCommit ? { pushedCommit: change.pushedCommit } : {}),
         // Issue #105: the session a Run stopped at the usage limit resumes later.
         ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
           ? { sessionRef: change.sessionRef }
@@ -464,6 +533,7 @@ export class PrismaRunRepository implements RunRepository {
               failureCode: result.failure.code,
               failureDetail: result.failure.detail,
               delivery: 'failed',
+              ...(outcome.pushedCommit ? { pushedCommit: outcome.pushedCommit } : {}),
             }),
       },
     });
@@ -499,6 +569,7 @@ export class PrismaRunRepository implements RunRepository {
         cancelReason: cancellation.reason,
         waitingSince: null,
         finishedAt: now,
+        followUpQueued: false,
       },
     });
     return count === 1 ? this.findById(runId) : null;
@@ -610,8 +681,11 @@ export class PrismaRunRepository implements RunRepository {
           AND session_ref IS NOT NULL AND run_branch IS NOT NULL
           AND cancel_requested_at IS NULL
           -- A supplied Environment file's snapshot must still be there: the resumed step's log
-          -- is redacted with it (Issue #104). Past the retention period it is gone.
-          AND (NOT environment_file_supplied OR environment_file_secret_id IS NOT NULL)
+          -- is redacted with it (Issue #104). Past the retention period it is gone. A Run in a
+          -- Follow-up works without it already (Issue #141, coordinator decision 5), so its
+          -- usage-limit resume does not need it either.
+          AND (NOT environment_file_supplied OR environment_file_secret_id IS NOT NULL
+               OR follow_up_count > 0)
         FOR UPDATE`;
     if (!run) return { status: 'not_resumable' };
     // Places held as for a claim: an active state, a failed Run held for a delivery retry, or
@@ -620,10 +694,7 @@ export class PrismaRunRepository implements RunRepository {
         SELECT count(*) FILTER (WHERE a.project_id = ${run.project_id}::uuid)::int AS project,
                count(*)::int AS server
         FROM runs a
-        WHERE a.id <> ${runId}::uuid
-          AND (a.state IN (${ACTIVE})
-               OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
-               OR (a.state = 'queued' AND a.session_ref IS NOT NULL))`;
+        WHERE a.id <> ${runId}::uuid AND ${HOLDS_PLACE}`;
     if ((places?.project ?? 0) > 0) return { status: 'slot_taken', scope: 'project' };
     if ((places?.server ?? 0) >= MAX_ACTIVE_RUNS) return { status: 'slot_taken', scope: 'server' };
     const last = await tx.runMessage.findFirst({
@@ -642,6 +713,95 @@ export class PrismaRunRepository implements RunRepository {
     return { status: 'resumed', run: toRun(row) };
   }
 
+  async queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null> {
+    return this.db.$transaction(async (tx) => {
+      // Locks the Run row: the conditions, the message and the state change hold together, so a
+      // second submission, a claim or a delivery retry in between leaves this one refused.
+      const [run] = await tx.$queryRaw<{ id: string; steps: number }[]>`
+        SELECT r.id,
+               (SELECT count(*) FROM run_steps s WHERE s.run_id = r.id)::int AS steps
+        FROM runs r
+        WHERE r.id = ${runId}::uuid
+          AND r.state IN (${Prisma.join([...FINAL_RUN_STATES])})
+          AND r.claimed_by IS NULL AND NOT r.delivery_requested AND NOT r.follow_up_queued
+          AND r.session_ref IS NOT NULL AND r.run_branch IS NOT NULL
+          AND r.working_copy_removed_at IS NULL
+        FOR UPDATE`;
+      if (!run) return null;
+      const current = toRun(
+        await tx.run.findUniqueOrThrow({ where: { id: runId }, select: RUN_FIELDS }),
+      );
+      if (run.steps >= current.limits.maxTotalSteps) return null;
+      const last = await tx.runMessage.findFirst({
+        where: { runId },
+        orderBy: { seq: 'desc' },
+        select: { seq: true },
+      });
+      const seq = (last?.seq ?? 0) + 1;
+      // Review S1 of #150: how the part before the Follow-up ended stays in the conversation.
+      const ended = partEndOf(current)!;
+      await tx.runMessage.create({
+        data: {
+          runId,
+          seq,
+          kind: 'part_end',
+          text: ended.detail,
+          endState: ended.state,
+          endFailureCode: ended.failureCode,
+          endDelivery: ended.delivery,
+          at: now,
+        },
+      });
+      await tx.runMessage.create({
+        data: { runId, seq: seq + 1, kind: 'follow_up', text, at: now },
+      });
+      // Back to the queue: the earlier result is cleared (the Run's state reflects its latest
+      // result), its pull request stays (the same one is updated), and the new part gets its
+      // own Run step allowance.
+      const row = await tx.run.update({
+        where: { id: runId },
+        data: {
+          state: 'queued',
+          followUpQueued: true,
+          followUpCount: { increment: 1 },
+          stepsBeforePart: run.steps,
+          failureCode: null,
+          failureDetail: null,
+          finishedAt: null,
+          cancelledBy: null,
+          cancelReason: null,
+          cancelRequestedAt: null,
+          delivery: null,
+          waitingSince: null,
+          stepStartedAt: null,
+        },
+        select: RUN_FIELDS,
+      });
+      return toRun(row);
+    });
+  }
+
+  async markWorkingCopiesRemoved(
+    workerId: string,
+    runIds: readonly string[],
+    now: Date,
+  ): Promise<number> {
+    if (runIds.length === 0) return 0;
+    // Only the worker that holds a Run's Working copy can report it gone, and only for a Run it
+    // does not carry. Never dropped (review S9 of #150): a Follow-up queued meanwhile then fails
+    // at its claim, and the Run says its Working copy was removed.
+    const { count } = await this.db.run.updateMany({
+      where: {
+        id: { in: [...runIds] },
+        lastClaimedBy: workerId,
+        claimedBy: null,
+        workingCopyRemovedAt: null,
+      },
+      data: { workingCopyRemovedAt: now },
+    });
+    return count;
+  }
+
   async listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
     const rows = await this.db.run.findMany({
       where: { state: 'queued', sessionRef: { not: null } },
@@ -658,6 +818,7 @@ export class PrismaRunRepository implements RunRepository {
         failureCode: failure.code,
         failureDetail: failure.detail,
         finishedAt: now,
+        followUpQueued: false,
       },
     });
     return count === 1;
@@ -686,8 +847,15 @@ export class PrismaRunRepository implements RunRepository {
   ): Promise<AppendStepOutcome> {
     return this.db.$transaction(async (tx): Promise<AppendStepOutcome> => {
       // Locks the Run row: the check and the numbering hold until the step is stored.
-      const [run] = await tx.$queryRaw<{ id: string; limit_max_steps: number }[]>`
-        SELECT id, limit_max_steps FROM runs
+      const [run] = await tx.$queryRaw<
+        {
+          id: string;
+          limit_max_steps: number;
+          steps_before_part: number;
+          follow_up_count: number;
+        }[]
+      >`
+        SELECT id, limit_max_steps, steps_before_part, follow_up_count FROM runs
         WHERE id = ${runId}::uuid AND state = 'running' AND claimed_by = ${workerId}::uuid
         FOR UPDATE`;
       if (!run) return { status: 'not_held' };
@@ -697,9 +865,10 @@ export class PrismaRunRepository implements RunRepository {
       // A retried report of a step already stored (review of #121): acknowledged, not stored.
       if (index <= last) return { status: 'stored', index, duplicate: true };
       if (index !== last + 1) return { status: 'out_of_order', expected: last + 1 };
-      if (index > run.limit_max_steps) {
+      // Issue #141: each part (the first, or a Follow-up) gets its own allowance.
+      if (index > run.steps_before_part + run.limit_max_steps) {
         // Issue #100: the step is not stored, and the Run fails under the same row lock.
-        const failure = stepLimitFailure(run.limit_max_steps);
+        const failure = stepLimitFailure(run.limit_max_steps, run.follow_up_count > 0);
         await tx.run.update({
           where: { id: runId },
           data: {
@@ -811,6 +980,22 @@ export class PrismaRunRepository implements RunRepository {
         environmentFileSupplied: true,
         environmentFilePath: file.path,
         environmentFileSecretId: file.secretRef,
+      },
+    });
+    return count === 1;
+  }
+
+  async replaceEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string } | null,
+  ): Promise<boolean> {
+    const { count } = await this.db.run.updateMany({
+      where: { id: runId, state: 'preparing', claimedBy: workerId },
+      data: {
+        environmentFileSupplied: file !== null,
+        environmentFilePath: file?.path ?? null,
+        environmentFileSecretId: file?.secretRef ?? null,
       },
     });
     return count === 1;

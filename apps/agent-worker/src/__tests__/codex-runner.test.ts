@@ -268,16 +268,58 @@ describe('CodexRunner at the spawn boundary', () => {
     gitCalls = [];
     spawn.mockReset();
     replaying('resume');
-    await drain(runner().resume({ ...input('x'), answer: 'PostgreSQL', sessionRef: THREAD }));
+    await drain(
+      runner().resume({
+        ...input('x'),
+        answer: 'PostgreSQL',
+        reason: 'answer',
+        sessionRef: THREAD,
+      }),
+    );
     expect(gitCalls).toEqual([]);
     expect(readFileSync(join(runDir, 'codex', 'answer.md'), 'utf8')).not.toContain('Use pnpm.');
+  });
+
+  it('resumes a Follow-up with exactly the command of an answer, its text on standard input (Issue #141)', async () => {
+    replaying('resume');
+    await drain(
+      runner().resume({
+        ...input('x'),
+        answer: 'PostgreSQL',
+        reason: 'answer',
+        sessionRef: THREAD,
+      }),
+    );
+    replaying('resume');
+
+    const { result } = await drain(
+      runner().resume({
+        ...input('x'),
+        answer: 'Also add an index.',
+        reason: 'follow_up',
+        sessionRef: THREAD,
+      }),
+    );
+
+    const calls = spawn.mock.calls;
+    expect(calls.at(-1)![1]).toEqual(calls[0]![1]);
+    expect(readFileSync(join(runDir, 'codex', 'answer.md'), 'utf8')).toBe(
+      "The operator's Follow-up:\n\nAlso add an index.\n",
+    );
+    // The result of a resumed step is read from the last agent message (compliance record).
+    expect(result).toMatchObject({ outcome: 'done', sessionRef: THREAD });
   });
 
   it('resumes the stored session with the same options and the answer file as standard input', async () => {
     replaying('resume');
 
     const { result } = await drain(
-      runner().resume({ ...input('Add a store'), answer: 'PostgreSQL', sessionRef: THREAD }),
+      runner().resume({
+        ...input('Add a store'),
+        answer: 'PostgreSQL',
+        reason: 'answer',
+        sessionRef: THREAD,
+      }),
     );
 
     const [, args, options] = spawn.mock.calls[0]!;
@@ -421,7 +463,7 @@ describe('CodexRunner at the spawn boundary', () => {
 
     await expect(off.start(input('x')).next()).rejects.toBeInstanceOf(ProviderDisabledError);
     await expect(
-      off.resume({ ...input('x'), answer: 'a', sessionRef: THREAD }).next(),
+      off.resume({ ...input('x'), answer: 'a', reason: 'answer', sessionRef: THREAD }).next(),
     ).rejects.toBeInstanceOf(ProviderDisabledError);
     expect(spawn).not.toHaveBeenCalled();
     expect(existsSync(join(home, '.codex'))).toBe(false);

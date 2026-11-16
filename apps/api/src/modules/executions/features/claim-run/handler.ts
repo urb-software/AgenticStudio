@@ -11,7 +11,12 @@ import {
   type RunEnvironmentFiles,
 } from '../../../projects/contracts/index.js';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/entities/run-environment-file.js';
-import { resumeAnswer, type Run, type RunFailure } from '../../domain/entities/run.js';
+import {
+  resumeMessage,
+  type Run,
+  type RunFailure,
+  takesNewEnvironmentFile,
+} from '../../domain/entities/run.js';
 import {
   RUN_LOG_REPOSITORY,
   type RunLogRepository,
@@ -65,6 +70,12 @@ const NOT_RESUMABLE: RunFailure = {
     'remote or integration branch for this run.',
 };
 
+/** A resume whose Working copy the agent worker reported removed (review S9 of #150). */
+const WORKING_COPY_REMOVED: RunFailure = {
+  code: 'preparation_failed',
+  detail: "Working copy no longer exists — run again: the agent worker's retention removed it.",
+};
+
 /**
  * A claimed Run and what goes to the claiming worker with it: the Project's Environment file
  * as it was at the claim (Issue #104), or `null` when the Project has none or the claim is a
@@ -74,11 +85,22 @@ const NOT_RESUMABLE: RunFailure = {
  */
 export interface ClaimedRun extends Run {
   environmentFile: EnvironmentFile | null;
+  /**
+   * Review S3 of #150: the claim carries a new snapshot of the Project's Environment file (or
+   * none): the worker replaces the Studio-placed files in the Working copy with it.
+   */
+  replaceEnvironmentFile: boolean;
+  /** Paths of the files Studio placed in the Working copy: never committed or pushed. */
+  studioPaths: string[];
   completedSteps: number;
   nextSeq: number;
   /** With a resume or delivery claim: where the Run's diffs stand (Issue #144), if reported. */
   diffState?: RunDiffState | null;
 }
+
+/** The Studio-placed paths of a Run: its Environment file's, when it has one. */
+const studioPathsOf = (run: Pick<Run, 'environmentFilePath'>): string[] =>
+  run.environmentFilePath ? [run.environmentFilePath] : [];
 
 /** The snapshot could not be taken; the Run was failed. */
 const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
@@ -125,7 +147,13 @@ export class ClaimRunHandler {
         // (review R5 of #122).
         if (run.remoteUrl !== '' && run.integrationBranch !== '' && run.workingCopy) {
           // Its events continue after the stored log (coordinator decision on #103).
-          return { ...run, environmentFile: null, ...(await this.progress(run.id)) };
+          return {
+            ...run,
+            environmentFile: null,
+            replaceEnvironmentFile: false,
+            studioPaths: studioPathsOf(run),
+            ...(await this.progress(run.id)),
+          };
         }
         await this.runs.finishDeliveryRetry({
           runId: run.id,
@@ -142,13 +170,40 @@ export class ClaimRunHandler {
       // from (nor an integration branch, Issue #102): it fails with preparation_failed here
       // instead of reaching a worker (review S6).
       const reachable = run.remoteUrl !== '' && run.integrationBranch !== '';
-      if (resumeAnswer(run) !== null) {
-        // Issue #103: the resumed step continues the Run's step numbers and its log's seqs.
-        if (reachable && run.workingCopy) {
-          return { ...run, environmentFile: null, ...(await this.progress(run.id)) };
+      const resume = resumeMessage(run);
+      if (resume !== null) {
+        // Issue #103 (and a Follow-up, #141): the resumed step continues the Run's step
+        // numbers and its log's seqs. Review S9 of #150: a Working copy the worker reported
+        // removed (also while a Follow-up waited) cannot be resumed.
+        if (!reachable || !run.workingCopy || run.workingCopyRemovedAt !== null) {
+          const failure = run.workingCopyRemovedAt !== null ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
+          await this.fail(run, workerId, failure, now);
+          continue;
         }
-        await this.fail(run, workerId, NOT_RESUMABLE, now);
-        continue;
+        if (!takesNewEnvironmentFile(run, resume.reason)) {
+          return {
+            ...run,
+            environmentFile: null,
+            replaceEnvironmentFile: false,
+            studioPaths: studioPathsOf(run),
+            ...(await this.progress(run.id)),
+          };
+        }
+        // Review S3 of #150: a Follow-up works with the Project's current Environment file.
+        const environmentFile = await this.snapshot(run, workerId, now, true);
+        if (environmentFile === SNAPSHOT_FAILED) continue;
+        return {
+          ...run,
+          environmentFileSupplied: environmentFile !== null,
+          environmentFilePath: environmentFile?.path ?? null,
+          environmentFile,
+          replaceEnvironmentFile: true,
+          // The earlier file's path too: the worker removes it, and it is never committed.
+          studioPaths: [
+            ...new Set([...studioPathsOf(run), ...(environmentFile ? [environmentFile.path] : [])]),
+          ],
+          ...(await this.progress(run.id)),
+        };
       }
       if (!reachable) {
         await this.fail(run, workerId, NO_REMOTE, now);
@@ -161,6 +216,8 @@ export class ClaimRunHandler {
         environmentFileSupplied: environmentFile !== null,
         environmentFilePath: environmentFile?.path ?? null,
         environmentFile,
+        replaceEnvironmentFile: false,
+        studioPaths: environmentFile ? [environmentFile.path] : [],
         completedSteps: 0,
         nextSeq: 1,
       };
@@ -170,21 +227,32 @@ export class ClaimRunHandler {
   /**
    * The Project's current Environment file, stored as the Run's snapshot; `null` when it has
    * none. When it cannot be read or stored, the Run fails (preparation_failed) instead of
-   * starting without the file it should have.
+   * starting without the file it should have. `replace` (review S3 of #150, a Follow-up): the
+   * Run's earlier snapshot is deleted first, and the new one (or none) is recorded in its place.
    */
   private async snapshot(
     run: Run,
     workerId: string,
     now: Date,
+    replace = false,
   ): Promise<EnvironmentFile | null | typeof SNAPSHOT_FAILED> {
     let secretRef: string | undefined;
     try {
+      if (replace) await this.snapshots.releaseFor(run.id);
       const file = await this.environmentFiles.forProject(run.projectId);
-      if (!file) return null;
+      if (!file) {
+        if (!replace || (await this.runs.replaceEnvironmentFile(run.id, workerId, null))) {
+          return null;
+        }
+        throw new Error('The run is no longer held for its claim.');
+      }
       secretRef = await this.secrets.put(file.content, {
         owner: RUN_ENVIRONMENT_FILE_SECRET_OWNER,
       });
-      if (await this.runs.attachEnvironmentFile(run.id, workerId, { path: file.path, secretRef })) {
+      const attached = replace
+        ? await this.runs.replaceEnvironmentFile(run.id, workerId, { path: file.path, secretRef })
+        : await this.runs.attachEnvironmentFile(run.id, workerId, { path: file.path, secretRef });
+      if (attached) {
         return file;
       }
     } catch (error) {

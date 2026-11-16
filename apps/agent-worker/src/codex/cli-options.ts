@@ -1,3 +1,4 @@
+import type { ResumeReason } from '@agentic-studio/contracts';
 import { posix } from 'node:path';
 import {
   PROVIDER_PASSED_VARIABLES,
@@ -175,7 +176,11 @@ export function codexPrompt(instructions: string, task: string): string {
   return `${instructions.trimEnd()}\n\n${CODEX_DELIVERY_NOTE}\n# The operator's Task\n\n${task}\n`;
 }
 
-/** Standard input of a resumed step: the operator's answer. */
-export function codexAnswer(answer: string): string {
+/**
+ * Standard input of a resumed step: the operator's answer, or (Issue #141) a Follow-up, a
+ * further instruction to the finished Task.
+ */
+export function codexAnswer(answer: string, reason: ResumeReason = 'answer'): string {
+  if (reason === 'follow_up') return `The operator's Follow-up:\n\n${answer}\n`;
   return `The operator's answer:\n\n${answer}\n`;
 }

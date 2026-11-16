@@ -1,5 +1,6 @@
-// A local stub of the two GitHub REST routes the agent worker uses for a delivery (#102): the
-// open pull requests of a branch, and creating one. `pnpm e2e:smoke` starts it as its own
+// A local stub of the GitHub REST routes the agent worker uses for a delivery (#102): the
+// open pull requests of a branch, and creating one; Issue #141: one pull request by number,
+// read (GET) or updated (PATCH, a repeated delivery after a Follow-up). `pnpm e2e:smoke` starts it as its own
 // process (the smoke runner's event loop is blocked while Playwright runs) on 127.0.0.1 at
 // STUB_GITHUB_PORT, and points the worker's STUDIO_AGENT_GITHUB_API_URL at it. Never real
 // GitHub. `GET /health` answers 200 once it listens.
@@ -31,9 +32,9 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify(body));
   };
   if (url.pathname === '/health') return send(200, { status: 'ok' });
-  const match = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(url.pathname);
+  const match = /^\/repos\/([^/]+)\/([^/]+)\/pulls(?:\/(\d+))?$/.exec(url.pathname);
   if (!match) return send(404, { message: 'Not Found' });
-  const [, owner, repo] = match;
+  const [, owner, repo, pullNumber] = match;
   if (request.headers.authorization !== `Bearer ${token}`) {
     console.log(`[stub-github] refused ${request.method} ${url.pathname}: not the Agent token`);
     return send(401, { message: 'Bad credentials' });
@@ -42,6 +43,33 @@ const server = createServer((request, response) => {
     number: pr.number,
     html_url: `https://github.com/${owner}/${repo}/pull/${pr.number}`,
   });
+  // Issue #141: one pull request by number: read it (GET) or change its title and body (PATCH).
+  if (pullNumber !== undefined) {
+    const pr = pulls.find(
+      (candidate) =>
+        candidate.repo === `${owner}/${repo}` && candidate.number === Number(pullNumber),
+    );
+    if (!pr) return send(404, { message: 'Not Found' });
+    const full = () => ({
+      ...view(pr),
+      state: 'open',
+      merged: false,
+      title: pr.title,
+      body: pr.body,
+    });
+    if (request.method === 'GET') return send(200, full());
+    if (request.method !== 'PATCH') return send(405, { message: 'Method not allowed' });
+    let text = '';
+    request.on('data', (chunk) => (text += chunk));
+    request.on('end', () => {
+      const body = JSON.parse(text || '{}');
+      if (typeof body.title === 'string') pr.title = body.title;
+      if (typeof body.body === 'string') pr.body = body.body;
+      console.log(`[stub-github] updated pull request #${pr.number} in ${owner}/${repo}`);
+      send(200, full());
+    });
+    return;
+  }
   if (request.method === 'GET') {
     const head = url.searchParams.get('head');
     return send(
@@ -62,7 +90,13 @@ const server = createServer((request, response) => {
       return send(422, { message: 'Validation Failed' });
     }
     const number = pulls.filter((pr) => pr.repo === `${owner}/${repo}`).length + 1;
-    const pr = { repo: `${owner}/${repo}`, head: `${owner}:${body.head}`, number };
+    const pr = {
+      repo: `${owner}/${repo}`,
+      head: `${owner}:${body.head}`,
+      number,
+      title: body.title,
+      body: body.body,
+    };
     pulls.push(pr);
     console.log(`[stub-github] opened draft pull request #${number} in ${owner}/${repo}`);
     send(201, view(pr));

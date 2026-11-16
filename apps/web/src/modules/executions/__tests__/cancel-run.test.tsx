@@ -183,7 +183,7 @@ describe('Cancel run (Issue #100)', () => {
     const run = aRun({
       state: 'timed_out',
       finishedAt: '2026-11-15T11:00:00.000Z',
-      limits: { stepMinutes: 45, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 45, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     });
     fakeRunsApi([run]);
     const { container } = renderRun(run.id);
@@ -198,7 +198,7 @@ describe('Cancel run (Issue #100)', () => {
   it('shows the limits in force on the Run page', async () => {
     const run = aRun({
       state: 'running',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     });
     fakeRunsApi([run]);
     renderRun(run.id);

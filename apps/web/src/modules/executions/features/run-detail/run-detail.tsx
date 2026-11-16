@@ -40,7 +40,8 @@ import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunChanges } from '../run-changes/run-changes';
 import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { AnswerQuestion, RunConversation } from './run-conversation';
-import { RunDelivery } from './run-delivery';
+import { RunCommits, RunDelivery } from './run-delivery';
+import { RunFollowUp } from './run-follow-up';
 import { ResumeRun } from './run-resume';
 
 /** The Run page's tabs (Issue #144): its log and what it changed. */
@@ -131,6 +132,11 @@ function CodexFacts() {
 
 /** Why a queued Run waits; it needs the project's Runs, read (and polled) only while queued. */
 function QueuedReason({ run }: { run: RunOutput }) {
+  // Issue #141: a Follow-up waits for the agent worker that holds the Working copy, and for a
+  // free place under the concurrency limits like any queued Run.
+  if (run.messages?.at(-1)?.kind === 'follow_up') {
+    return <FollowUpQueuedReason run={run} />;
+  }
   // Issue #103: an answered Run waits for the agent worker that holds its Working copy.
   if (run.messages?.at(-1)?.kind === 'answer') {
     return (
@@ -140,6 +146,16 @@ function QueuedReason({ run }: { run: RunOutput }) {
     );
   }
   return <ProjectQueuedReason run={run} />;
+}
+
+function FollowUpQueuedReason({ run }: { run: RunOutput }) {
+  const { data } = useProjectRuns(run.projectId);
+  return (
+    <Banner tone="info" icon={ClockIcon} title="Follow-up sent.">
+      The agent continues the run with your Follow-up when its agent worker picks it up.
+      {data ? ` ${queuedReason(run, data)}` : null}
+    </Banner>
+  );
 }
 
 function ProjectQueuedReason({ run }: { run: RunOutput }) {
@@ -223,13 +239,28 @@ function RunActions({ run }: { run: RunOutput }) {
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-/** The limits in force for the Run (Issue #100), in words. */
-function limitsText({ stepMinutes, maxSteps, waitingDays }: RunOutput['limits']): string {
+/** The limits in force for the Run (Issue #100; per part and in total, Issue #141), in words. */
+function limitsText({
+  stepMinutes,
+  maxSteps,
+  waitingDays,
+  maxTotalSteps,
+}: RunOutput['limits']): string {
   return [
     `${plural(stepMinutes, 'minute', 'minutes')} per run step`,
-    `at most ${plural(maxSteps, 'run step', 'run steps')}`,
+    `at most ${plural(maxSteps, 'run step', 'run steps')} per part (first part or Follow-up)`,
+    `${plural(maxTotalSteps, 'run step', 'run steps')} in total`,
     `cancelled after ${plural(waitingDays, 'day', 'days')} waiting for you`,
   ].join(' · ');
+}
+
+/** The Run step totals (Issue #141): in total, and in the current part. */
+function stepsText(run: RunOutput): string {
+  const part = run.followUps > 0 ? 'in this Follow-up' : 'in this run';
+  return (
+    `${run.steps.used} of ${run.limits.maxTotalSteps} in total · ` +
+    `${run.steps.usedInPart} of ${run.limits.maxSteps} ${part}`
+  );
 }
 
 /** How a Run that was stopped ended (Issue #100): who cancelled it and why, or its time limit. */
@@ -287,8 +318,10 @@ export function RunTitle({ runId }: { runId: string }) {
  * Run that is not finished can be cancelled; the limits in force are shown, and a cancelled or
  * timed-out Run says why it stopped (Issue #100). A Run waiting for the operator shows the
  * agent's question and the answer form; once the agent asked, the Task leads the conversation
- * of questions and answers (Issue #103). Below, two tabs: the Run's log (Issue #99) and its
- * Changes (Issue #144), what it changed in its Working copy.
+ * of questions and answers (Issue #103). A finished Run offers a Follow-up, or says why it cannot
+ * take one; the conversation marks each Follow-up and keeps each part's result, the Details show
+ * the Run step totals, and the commits say which are pushed (Issue #141). Below, two tabs: the
+ * Run's log (Issue #99) and its Changes (Issue #144), what it changed in its Working copy.
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
@@ -375,11 +408,14 @@ export function RunDetail({ runId }: { runId: string }) {
       {run.resumable ? <ResumeRun run={run} /> : null}
       <Stopped run={run} />
       <RunDelivery run={run} />
+      {FINAL_STATES.includes(run.state) && run.followUp ? (
+        <RunFollowUp run={run} followUp={run.followUp} />
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         {/* Issue #103: once the agent asked, the Task leads the conversation. */}
         {run.messages && run.messages.length > 1 ? (
-          <RunConversation messages={run.messages} onShowStep={showStep} />
+          <RunConversation runId={run.id} messages={run.messages} onShowStep={showStep} />
         ) : (
           <Card aria-labelledby="run-task-title">
             <CardHeader>
@@ -423,11 +459,16 @@ export function RunDetail({ runId }: { runId: string }) {
                   <span className="font-mono text-code tabular-nums">{duration}</span>
                 </Fact>
               ) : null}
+              <Fact term="Run steps">
+                <span className="tabular-nums">{stepsText(run)}</span>
+              </Fact>
               <Fact term="Limits">{limitsText(run.limits)}</Fact>
             </dl>
           </CardContent>
         </Card>
       </div>
+
+      <RunCommits run={run} />
 
       <Tabs
         items={RUN_TABS}
@@ -437,10 +478,11 @@ export function RunDetail({ runId }: { runId: string }) {
       >
         {/* Kept mounted while hidden: the live log keeps its stream and its place. */}
         <TabPanel value="log" forceMount>
-          <RunLog key={run.id} ref={log} run={run} />
+          {/* Issue #141: a Follow-up reopens a finished Run, so its log opens again, live. */}
+          <RunLog key={`${run.id}-${run.followUps}`} ref={log} run={run} />
         </TabPanel>
         <TabPanel value="changes">
-          <RunChanges key={run.id} run={run} />
+          <RunChanges key={`${run.id}-${run.followUps}`} run={run} />
         </TabPanel>
       </Tabs>
     </div>

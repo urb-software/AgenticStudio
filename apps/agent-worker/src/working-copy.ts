@@ -67,9 +67,10 @@ export interface WorkingCopyPort {
   /**
    * For a resume (Issue #103): the Run's kept Working copy, unchanged since its question, on
    * the Run branch Studio recorded. Throws {@link PreparationFailedError} ("Working copy no
-   * longer exists — run again") when it is gone.
+   * longer exists — run again") when it is gone. Review S3 of #150: with
+   * `replaceEnvironmentFile`, the Studio-placed files are replaced by the claim's new snapshot.
    */
-  locate(run: RunPayload): Promise<PreparedRun>;
+  locate(run: RunPayload, signal?: AbortSignal): Promise<PreparedRun>;
 }
 
 /** Why a resume cannot go on (Issue #103): its Working copy was removed. */
@@ -231,7 +232,7 @@ export class WorkingCopies implements WorkingCopyPort {
     };
   }
 
-  async locate(run: RunPayload): Promise<PreparedRun> {
+  async locate(run: RunPayload, signal?: AbortSignal): Promise<PreparedRun> {
     // The Run branch and start commit come from Studio, never from `run.json`, which the agent
     // could rewrite (as for a delivery retry, review R1 of #122).
     if (run.kind !== 'resume' || run.runBranch === undefined) {
@@ -251,6 +252,13 @@ export class WorkingCopies implements WorkingCopyPort {
       throw new PreparationFailedError(
         `The Working copy is not on its Run branch ${run.runBranch}, so the run cannot resume ` +
           'there — run again.',
+      );
+    }
+    if (run.replaceEnvironmentFile) {
+      await this.replaceEnvironmentFile(
+        paths,
+        run,
+        signal ?? AbortSignal.timeout(GIT_TIMEOUTS.local),
       );
     }
     return {
@@ -371,6 +379,42 @@ export class WorkingCopies implements WorkingCopyPort {
       await handle.writeFile(file.content, 'utf8');
     } finally {
       await handle.close();
+    }
+  }
+
+  /**
+   * Review S3 of #150: a Follow-up works with the Project's current Environment file. Every
+   * Studio-placed file (the earlier path too) is removed from the Working copy, never through a
+   * symlink, then the claim's new file, if any, is written as at the start and listed in the
+   * Working copy's exclude section and the Run file, so it is never committed.
+   */
+  private async replaceEnvironmentFile(
+    paths: ReturnType<typeof runDirectories>,
+    run: RunPayload,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const file = run.environmentFile;
+    if (file && environmentFilePathProblem(file.path) !== null) {
+      throw new PreparationFailedError('The Environment file path is not a safe relative path.');
+    }
+    for (const path of run.studioPaths) {
+      if (environmentFilePathProblem(path) !== null) continue;
+      await removeStudioFile(paths.repoDir, path);
+    }
+    if (!file) return;
+    await this.placeEnvironmentFile(paths.repoDir, run.startCommit.toLowerCase(), file, signal);
+    const exclude = posix.join(paths.repoDir, '.git', 'info', 'exclude');
+    const listed = await readFile(exclude, 'utf8').catch(() => '');
+    if (!listed.includes(STUDIO_EXCLUDE_SECTION.trim())) {
+      await appendFile(exclude, STUDIO_EXCLUDE_SECTION);
+    }
+    await appendFile(exclude, `${excludePattern(file.path)}\n`);
+    const runFile = await readRunFile(paths.runFile);
+    if (runFile) {
+      const studioPaths = [...new Set([...(runFile.studioPaths ?? []), ...run.studioPaths])];
+      await writeFile(paths.runFile, `${JSON.stringify({ ...runFile, studioPaths }, null, 2)}\n`, {
+        mode: 0o600,
+      });
     }
   }
 
@@ -534,4 +578,23 @@ export async function readRunFile(path: string): Promise<RunFile | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Removes a Studio-placed file from the Working copy (review S3 of #150): only a file or a
+ * symlink at exactly that path, reached through real directories; a path that leads through a
+ * symlink or a file is left alone (nothing outside the Working copy is touched).
+ */
+async function removeStudioFile(repoDir: string, path: string): Promise<void> {
+  const segments = path.split('/');
+  let current = repoDir;
+  for (const segment of segments.slice(0, -1)) {
+    current = posix.join(current, segment);
+    const stats = await lstat(current).catch(() => null);
+    if (!stats || stats.isSymbolicLink() || !stats.isDirectory()) return;
+  }
+  const target = posix.join(current, segments.at(-1)!);
+  const stats = await lstat(target).catch(() => null);
+  if (!stats || stats.isDirectory()) return;
+  await rm(target, { force: true });
 }

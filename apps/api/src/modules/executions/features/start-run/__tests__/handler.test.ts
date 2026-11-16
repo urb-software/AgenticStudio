@@ -14,7 +14,7 @@ const HEAD = 'd'.repeat(40);
 const REMOTE = 'git@github.com:acme/shop.git';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
-const LIMITS = { stepMinutes: 45, maxSteps: 5, waitingDays: 3 };
+const LIMITS = { stepMinutes: 45, maxSteps: 5, waitingDays: 3, maxTotalSteps: 20 };
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
   private current: RecordedWorkerStatus | undefined;

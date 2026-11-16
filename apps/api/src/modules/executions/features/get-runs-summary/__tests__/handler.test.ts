@@ -22,7 +22,7 @@ describe('GetRunsSummaryHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
 

@@ -51,6 +51,11 @@ export interface ClaimedRunChange {
    * becomes the Run's session reference, so the operator can resume the Run later.
    */
   sessionRef?: string | null;
+  /**
+   * With `failed` / `delivery_failed` (review S2 of #150): the commit the delivery pushed before
+   * it failed; recorded as the Run's pushed commit.
+   */
+  pushedCommit?: string | null;
   now: Date;
 }
 
@@ -66,6 +71,8 @@ export interface DeliveryRetryOutcome {
     { state: 'succeeded'; delivery: RunDeliveryOutcome } | { state: 'failed'; failure: RunFailure };
   /** When set, becomes the Run's latest Working copy state. */
   workingCopy: RunWorkingCopy | null;
+  /** A retry that failed after its push: the pushed commit (review S2 of #150). */
+  pushedCommit?: string | null;
   now: Date;
 }
 
@@ -247,7 +254,8 @@ export interface RunRepository {
   /**
    * Resumes a Run stopped at the usage limit (Issue #105), in one transaction: if it is still
    * `failed` with `usage_limit`, a session reference, a Working copy, no cancel request and,
-   * when it was given an Environment file, still its snapshot (the resumed step's redaction),
+   * when it was given an Environment file, still its snapshot (the resumed step's redaction;
+   * not needed in a Follow-up, Issue #141, which works without it already),
    * `text` is stored as the operator's answer and the Run goes back to `queued` (failure and
    * finish time cleared), to be resumed like an answered Run by the worker that started it.
    * A queued Run with a session reference holds its project's place and one of the server's
@@ -256,6 +264,26 @@ export interface RunRepository {
    * claims (review R1 of #129).
    */
   resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<ResumeAfterLimitOutcome>;
+
+  /**
+   * Queues a Follow-up (Issue #141), in one transaction, recording first how the part before it
+   * ended (a `part_end` message, review S1 of #150): if the Run is still finished (a final
+   * state, held by no worker, no delivery retry requested, no Follow-up queued), has a session
+   * reference and a recorded Working copy that was not reported removed, and has taken fewer Run
+   * steps than its total, `text` is stored as a `follow_up` message and the Run goes back to
+   * `queued` (its earlier result cleared, its pull request kept), with a new Run step allowance
+   * from the steps it has taken. It is resumed like an answered Run by the worker that holds its
+   * Working copy, but holds no place while it waits: the claim starts it under the concurrency
+   * limits. `null` if a condition failed (nothing changed).
+   */
+  queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null>;
+
+  /**
+   * Records that `workerId`'s retention removed the Working copies of these Runs (Issue #141):
+   * only for Runs it last claimed and does not hold, also one queued for a Follow-up meanwhile
+   * (review S9 of #150). Returns how many were recorded.
+   */
+  markWorkingCopiesRemoved(workerId: string, runIds: readonly string[], now: Date): Promise<number>;
 
   /** Resumable Runs no worker claimed yet, with the worker that started each (Issue #103). */
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;
@@ -310,6 +338,17 @@ export interface RunRepository {
     runId: string,
     workerId: string,
     file: { path: string; secretRef: string },
+  ): Promise<boolean>;
+
+  /**
+   * Records the new Environment file snapshot of a `preparing` Run held by `workerId` (review S3
+   * of #150: a Follow-up, or a usage-limit resume inside one, takes the Project's current file),
+   * or that it has none now; false (nothing changed) if the Run is no longer so held.
+   */
+  replaceEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string } | null,
   ): Promise<boolean>;
 
   /** The reference to the Run's Environment file snapshot, or `null` (none, or already deleted). */

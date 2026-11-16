@@ -37,7 +37,7 @@ describe('ClaimRunHandler', () => {
       task: `Task of ${projectId}`,
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
 
@@ -108,7 +108,7 @@ describe('ClaimRunHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: '',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: '',
     });
     const next = await queue(B);
@@ -601,7 +601,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       integrationBranch: 'dev',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     });
 
   beforeEach(() => {
@@ -619,9 +619,110 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
           failRead ? Promise.reject(failRead) : Promise.resolve(current && { ...current }),
       },
       secrets,
-      { releaseFor: () => Promise.resolve(), releaseFinal: () => Promise.resolve() },
+      {
+        releaseFor: async (runId) => {
+          const ref = await runs.findEnvironmentFileSecret(runId);
+          if (ref === null) return;
+          await secrets.delete(ref);
+          await runs.clearEnvironmentFileSecret(runId, ref);
+        },
+        releaseFinal: () => Promise.resolve(),
+      },
       new InMemoryRunDiffRepository(runs),
     );
+  });
+
+  /** The claimed Run carried by WORKER through one done step to `succeeded`. */
+  async function finish(runId: string) {
+    await runs.transitionClaimed({
+      runId,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'running',
+      failure: null,
+      cancelRequested: false,
+      now: T0,
+    });
+    await runs.appendStep(
+      runId,
+      WORKER,
+      { kind: 'start', result: {}, sessionRef: 'session-1' },
+      { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false },
+      [],
+      T0,
+    );
+    await runs.transitionClaimed({
+      runId,
+      workerId: WORKER,
+      from: 'running',
+      to: 'succeeded',
+      failure: null,
+      delivery: { outcome: 'none' },
+      cancelRequested: false,
+      now: T0,
+    });
+  }
+
+  // Review S3 of #150: a Follow-up works with the Project's current Environment file.
+  it("takes a new snapshot of the Project's current file for a Follow-up, replacing the earlier one", async () => {
+    const queued = await queue();
+    await handler.execute(WORKER);
+    const first = await runs.findEnvironmentFileSecret(queued.id);
+    await finish(queued.id);
+    await runs.queueFollowUp(queued.id, 'Go on.', T0);
+    current = { path: 'config/.env', content: 'DB_PASSWORD=test-only-new\n' };
+
+    const claimed = await handler.execute(WORKER);
+
+    expect(claimed).toMatchObject({
+      id: queued.id,
+      replaceEnvironmentFile: true,
+      environmentFile: current,
+      environmentFileSupplied: true,
+      environmentFilePath: 'config/.env',
+      studioPaths: ['.env', 'config/.env'],
+    });
+    expect(secrets.values.has(first!)).toBe(false);
+    const snapshot = await runs.findEnvironmentFileSecret(queued.id);
+    expect(secrets.values.get(snapshot!)).toBe('DB_PASSWORD=test-only-new\n');
+  });
+
+  it('goes on without a file when the Project has none now, and the earlier file is removed', async () => {
+    const queued = await queue();
+    await handler.execute(WORKER);
+    await finish(queued.id);
+    await runs.queueFollowUp(queued.id, 'Go on.', T0);
+    current = null;
+
+    const claimed = await handler.execute(WORKER);
+
+    expect(claimed).toMatchObject({
+      replaceEnvironmentFile: true,
+      environmentFile: null,
+      environmentFileSupplied: false,
+      studioPaths: ['.env'],
+    });
+    expect(await runs.findEnvironmentFileSecret(queued.id)).toBeNull();
+    expect(secrets.values.size).toBe(0);
+  });
+
+  it('keeps the snapshot for an answer, and fails a Follow-up whose Working copy was removed', async () => {
+    const queued = await queue();
+    await handler.execute(WORKER);
+    await finish(queued.id);
+    await runs.queueFollowUp(queued.id, 'Go on.', T0);
+    // Review S9 of #150: the worker's retention removed it while the Follow-up waited.
+    await runs.markWorkingCopiesRemoved(WORKER, [queued.id], T0);
+
+    expect(await handler.execute(WORKER)).toBeNull();
+    expect(await runs.findById(queued.id)).toMatchObject({
+      state: 'failed',
+      failure: {
+        code: 'preparation_failed',
+        detail:
+          "Working copy no longer exists — run again: the agent worker's retention removed it.",
+      },
+    });
   });
 
   it("hands the Project's file to the claiming worker and keeps a Run-scoped snapshot", async () => {

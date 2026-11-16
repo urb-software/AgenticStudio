@@ -67,7 +67,7 @@ describe('loadConfig', () => {
       gitAllowPrivateRemotes: false,
       sshKnownHosts: [],
       workerLeaseSeconds: 60,
-      runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
     });
@@ -452,11 +452,12 @@ describe('loadConfig', () => {
 
   // Issue #100: the Run limits are configuration, with the Issue's defaults.
   describe('Run limits', () => {
-    it('defaults to 60-minute Run steps, 10 Run steps and 14 days of waiting', () => {
+    it('defaults to 60-minute Run steps, 10 Run steps, 14 days of waiting and 50 Run steps in total', () => {
       expect(loadConfig(requiredEnv).runLimits).toEqual({
         stepMinutes: 60,
         maxSteps: 10,
         waitingDays: 14,
+        maxTotalSteps: 50,
       });
     });
 
@@ -467,8 +468,9 @@ describe('loadConfig', () => {
           STUDIO_RUN_STEP_MINUTES: '5',
           STUDIO_RUN_MAX_STEPS: '3',
           STUDIO_RUN_WAITING_DAYS: '2',
+          STUDIO_RUN_MAX_TOTAL_STEPS: '7',
         }).runLimits,
-      ).toEqual({ stepMinutes: 5, maxSteps: 3, waitingDays: 2 });
+      ).toEqual({ stepMinutes: 5, maxSteps: 3, waitingDays: 2, maxTotalSteps: 7 });
     });
 
     it.each([
@@ -480,6 +482,8 @@ describe('loadConfig', () => {
       ['STUDIO_RUN_WAITING_DAYS', '0'],
       ['STUDIO_RUN_WAITING_DAYS', '366'],
       ['STUDIO_RUN_WAITING_DAYS', 'abc'],
+      ['STUDIO_RUN_MAX_TOTAL_STEPS', '0'],
+      ['STUDIO_RUN_MAX_TOTAL_STEPS', '10001'],
     ])('refuses %s=%j', (name, value) => {
       const error = captureError(() => loadConfig({ ...requiredEnv, [name]: value }));
       expect(error.message).toMatch(new RegExp(name));

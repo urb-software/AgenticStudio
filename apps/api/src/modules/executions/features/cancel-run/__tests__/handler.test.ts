@@ -12,7 +12,7 @@ const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const T1 = new Date('2026-11-15T12:05:00.000Z');
 const T2 = new Date('2026-11-15T12:06:00.000Z');
-const LIMITS = { stepMinutes: 60, maxSteps: 10, waitingDays: 14 };
+const LIMITS = { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 };
 
 describe('CancelRunHandler', () => {
   let runs: InMemoryRunRepository;

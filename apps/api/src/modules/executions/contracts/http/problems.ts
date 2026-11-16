@@ -1,5 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
+import type { z } from 'zod';
 import { ProblemException } from '../../../../platform/http/problem-details.js';
+import type { followUpRefusalSchema } from './run-response.js';
 
 /**
  * Problem `type` URIs of the executions API (RFC 9457 §3.1.1), shared by several features of
@@ -34,11 +36,40 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
   /** 409: the Run's project or the server has no free place to resume it in (Issue #105). */
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
+  /** 409: the Run cannot take a Follow-up now (Issue #141); the detail says why. */
+  followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
   /** 404: the Run has no diff yet: no Run step reported a result (Issue #144). */
   runDiffNotFound: 'urn:agentic-studio:problem:run-diff-not-found',
   /** 404: the Run's diff lists no file at this path (Issue #144). */
   runDiffFileNotFound: 'urn:agentic-studio:problem:run-diff-file-not-found',
 } as const;
+
+/** Why a Run cannot take a Follow-up, for the operator (Issue #141; keyed by the domain's codes). */
+const FOLLOW_UP_REFUSAL_DETAILS: Record<z.infer<typeof followUpRefusalSchema>, string> = {
+  not_finished:
+    'The run is still working or waiting for you. Send a Follow-up once it has finished.',
+  follow_up_queued: 'A Follow-up is already queued for this run. Wait until it has finished.',
+  working_copy_removed:
+    "The run's working copy was removed on the agent worker. Start a new run instead.",
+  no_session: 'The run has no agent session to continue. Start a new run instead.',
+  step_total_reached:
+    'The run has used all the run steps it may take in total. Start a new run instead.',
+  provider_unavailable:
+    "The run's provider is unavailable on the agent worker. Send the Follow-up once it is available.",
+  worker_unavailable:
+    "The agent worker that holds the run's working copy is not connected. Send the Follow-up once it is back.",
+};
+
+/** 409 when the Run cannot take a Follow-up now (Issue #141); the detail says why. */
+export function followUpNotAllowed(
+  reason: z.infer<typeof followUpRefusalSchema>,
+): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.followUpNotAllowed,
+    title: 'Follow-up not possible',
+    detail: FOLLOW_UP_REFUSAL_DETAILS[reason],
+  });
+}
 
 /** 404: no Run step of the Run has reported a result, so it has no diff yet (Issue #144). */
 export function runDiffNotFound(): ProblemException {

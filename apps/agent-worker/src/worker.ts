@@ -241,6 +241,8 @@ export class AgentWorker {
     });
     let prepared: PreparedRun | undefined;
     let processes: StepProcessGroups | undefined;
+    /** Whether the end of the Follow-up the Run works on was logged already (Issue #141). */
+    let followUpMarked = false;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
     // The Run's events go to Studio as they happen (Issue #99); a resumed Run's and a delivery
     // retry's continue after the seqs Studio stored (Issue #103).
@@ -283,15 +285,22 @@ export class AgentWorker {
       }
       // Before anything is fetched (note on #117); the dispatcher checks again before the step.
       this.options.gate.assertEnabled(run.provider);
-      if (run.completedSteps + 1 > run.limits.maxSteps) {
+      // Issue #141: each part of the Run (the first, or one Follow-up) gets its own allowance.
+      if (run.completedSteps + 1 > (run.stepsBeforePart ?? 0) + run.limits.maxSteps) {
         throw new StepLimitError(run.limits.maxSteps);
       }
       // A resumed Run continues in the Working copy it kept (Issue #103).
       prepared =
         run.kind === 'resume'
-          ? await this.options.workingCopies.locate(run)
+          ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
+      if (run.resumeReason === 'follow_up') {
+        log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} started`);
+      } else if (run.resumeReason === 'usage_limit' && run.followUpNumber !== undefined) {
+        // Review S7 of #150: the Follow-up the usage limit paused goes on.
+        log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} resumed`);
+      }
       outbox.send('running', (signal) => api.reportState(run.runId, { state: 'running' }, signal));
       processes = this.processesFor(prepared);
       const limit = setTimeout(
@@ -309,6 +318,10 @@ export class AgentWorker {
         clearTimeout(limit);
       }
       abort.signal.throwIfAborted();
+      if (result.outcome === 'done') {
+        followUpEnded(run, stepIndex, log, 'done');
+        followUpMarked = true;
+      }
       // The log goes first: Studio accepts events only while the worker holds the Run.
       await this.closeLog(log);
       abort.signal.throwIfAborted();
@@ -390,6 +403,23 @@ export class AgentWorker {
           'notice',
           `Run step stopped: its time limit of ${run.limits.stepMinutes} minutes was reached`,
         );
+      }
+      // A Follow-up ends with the step that did not finish (Issue #141); a failed delivery after
+      // a done step already marked its end.
+      if (run.kind !== 'deliver' && !followUpMarked && reason !== 'lost') {
+        // Review S7 of #150: the usage limit pauses the Follow-up; a resume continues it.
+        if (error instanceof UsageLimitError && reason === undefined) {
+          if (run.followUpNumber !== undefined) {
+            log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} paused: usage limit`);
+          }
+        } else {
+          followUpEnded(
+            run,
+            stepIndex,
+            log,
+            reason === 'cancel' ? 'cancelled' : reason === 'timeout' ? 'timed out' : 'failed',
+          );
+        }
       }
       if (reason !== 'lost') await this.closeLog(log);
       await this.finish(run, error, reason, {
@@ -547,7 +577,12 @@ export class AgentWorker {
     log.push(stepIndex, 'step_started', `Run step ${stepIndex} started`);
     const runnerStep =
       run.kind === 'resume' && run.sessionRef !== undefined && run.answer !== undefined
-        ? this.options.runner.resume({ ...input, sessionRef: run.sessionRef, answer: run.answer })
+        ? this.options.runner.resume({
+            ...input,
+            sessionRef: run.sessionRef,
+            answer: run.answer,
+            reason: run.resumeReason ?? 'answer',
+          })
         : this.options.runner.start(input);
     const step = drainRunStep(runnerStep, (event) => log.push(stepIndex, event.type, event.text));
     const stopped = rejectOnAbort(signal);
@@ -608,7 +643,15 @@ export class AgentWorker {
       const send = (signal?: AbortSignal) =>
         api.reportState(
           run.runId,
-          { state: 'failed', failure: deliveryFailure, ...withWorkingCopy },
+          {
+            state: 'failed',
+            failure: deliveryFailure,
+            ...withWorkingCopy,
+            // Review S2 of #150: what the delivery pushed before it failed.
+            ...(error instanceof DeliveryFailedError && error.pushedCommit !== undefined
+              ? { pushedCommit: error.pushedCommit }
+              : {}),
+          },
           signal,
         );
       try {
@@ -644,7 +687,13 @@ export class AgentWorker {
       // the pushed Run branch is recorded.
       const pushed =
         reason === 'cancel' && error instanceof DeliveryFailedError && error.branchPushed
-          ? { delivery: { outcome: 'none' as const, branchPushed: true as const } }
+          ? {
+              delivery: {
+                outcome: 'none' as const,
+                branchPushed: true as const,
+                ...(error.pushedCommit === undefined ? {} : { pushedCommit: error.pushedCommit }),
+              },
+            }
           : {};
       outbox.send(state, (signal) =>
         api.reportState(run.runId, { state, ...withWorkingCopy, ...pushed }, signal),
@@ -725,6 +774,15 @@ export class AgentWorker {
       // Woken by stop().
     }
   }
+}
+
+/**
+ * Marks the end of the Follow-up the Run is working on (Issue #141), when there is one: its
+ * step ended `done`, or did not finish.
+ */
+function followUpEnded(run: RunPayload, stepIndex: number, log: RunLog, outcome: string): void {
+  if (run.followUpNumber === undefined) return;
+  log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} ended: ${outcome}`);
 }
 
 /** The failure a Run step's error is reported with. */

@@ -87,7 +87,7 @@ export class ClaudeCodeRunner implements Runner {
   }
 
   resume(input: ResumeRunStepInput): RunStep {
-    return this.step(input, claudePrompt('answer', input.answer), input.sessionRef);
+    return this.step(input, claudePrompt(input.reason, input.answer), input.sessionRef);
   }
 
   private async *step(input: StartRunStepInput, prompt: string, sessionRef?: string): RunStep {

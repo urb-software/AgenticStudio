@@ -10,6 +10,7 @@ import type {
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
+  FollowUpRunRequest,
   ProblemDetails,
   ProjectDetailOutput,
   ProjectListOutput,
@@ -42,6 +43,7 @@ export type {
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
+  FollowUpRunRequest,
   HealthResponseOutput,
   ProblemDetails,
   ProjectDetailOutput,
@@ -245,6 +247,12 @@ export const api = {
    */
   answerRun: (runId: string, body: AnswerRunRequest): Promise<RunOutput> =>
     unwrap(sdk.answerRun({ path: { runId }, body })),
+  /**
+   * Sends a Follow-up to a finished Run (Issue #141; 202: the Run, `queued` to resume its agent
+   * session). A Run that cannot take one answers 409 saying why; an empty or too long text 422.
+   */
+  followUpRun: (runId: string, body: FollowUpRunRequest): Promise<RunOutput> =>
+    unwrap(sdk.followUpRun({ path: { runId }, body })),
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),

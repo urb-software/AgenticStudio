@@ -27,7 +27,7 @@ describe('CancelLongWaitingRunsHandler', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       integrationBranch: 'dev',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays, maxTotalSteps: 50 },
     });
     await runs.claimNext(WORKER, T0);
     for (const [from, to] of [

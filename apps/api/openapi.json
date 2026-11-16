@@ -1333,6 +1333,87 @@
         ]
       }
     },
+    "/api/runs/{runId}/follow-up": {
+      "post": {
+        "operationId": "followUpRun",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowUpRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run cannot take a Follow-up now (urn:agentic-studio:problem:follow-up-not-allowed)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request body (field errors)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/runs/{runId}/events": {
       "get": {
         "operationId": "listRunEvents",
@@ -2109,12 +2190,62 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "maxTotalSteps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "stepMinutes",
           "maxSteps",
-          "waitingDays"
+          "waitingDays",
+          "maxTotalSteps"
+        ],
+        "additionalProperties": false
+      },
+      "RunStepTotals_Output": {
+        "type": "object",
+        "properties": {
+          "used": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "usedInPart": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "used",
+          "usedInPart"
+        ],
+        "additionalProperties": false
+      },
+      "RunFollowUpEligibility_Output": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_finished",
+              "follow_up_queued",
+              "working_copy_removed",
+              "no_session",
+              "step_total_reached",
+              "provider_unavailable",
+              "worker_unavailable"
+            ]
+          }
+        },
+        "required": [
+          "allowed"
         ],
         "additionalProperties": false
       },
@@ -2146,7 +2277,8 @@
             "type": "string",
             "enum": [
               "operator",
-              "agent"
+              "agent",
+              "studio"
             ]
           },
           "kind": {
@@ -2154,11 +2286,16 @@
             "enum": [
               "task",
               "question",
-              "answer"
+              "answer",
+              "follow_up",
+              "part_end"
             ]
           },
           "text": {
             "type": "string"
+          },
+          "end": {
+            "$ref": "#/components/schemas/RunPartEnd_Output"
           },
           "options": {
             "type": "array",
@@ -2180,6 +2317,45 @@
           "kind",
           "text",
           "at"
+        ],
+        "additionalProperties": false
+      },
+      "RunPartEnd_Output": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out"
+            ]
+          },
+          "failureCode": {
+            "type": "string",
+            "enum": [
+              "provider_disabled",
+              "preparation_failed",
+              "agent_failed",
+              "usage_limit",
+              "worker_lost",
+              "delivery_failed",
+              "step_limit",
+              "unknown"
+            ]
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "none",
+              "delivered",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "state"
         ],
         "additionalProperties": false
       },
@@ -2276,6 +2452,9 @@
                 },
                 "subject": {
                   "type": "string"
+                },
+                "pushed": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -2293,6 +2472,17 @@
           },
           "limits": {
             "$ref": "#/components/schemas/RunLimits_Output"
+          },
+          "steps": {
+            "$ref": "#/components/schemas/RunStepTotals_Output"
+          },
+          "followUps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "followUp": {
+            "$ref": "#/components/schemas/RunFollowUpEligibility_Output"
           },
           "cancelRequestedAt": {
             "type": "string",
@@ -2379,7 +2569,9 @@
           "startCommit",
           "createdAt",
           "environmentFileSupplied",
-          "limits"
+          "limits",
+          "steps",
+          "followUps"
         ],
         "additionalProperties": false
       },
@@ -2410,6 +2602,20 @@
         "additionalProperties": false
       },
       "AnswerRunRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "FollowUpRunRequest": {
         "type": "object",
         "properties": {
           "text": {

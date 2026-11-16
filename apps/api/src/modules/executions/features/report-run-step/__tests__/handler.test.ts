@@ -43,7 +43,7 @@ describe('ReportRunStepHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
-      limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;

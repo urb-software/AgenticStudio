@@ -479,6 +479,8 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // waiting Run's question on its page (an option of the fake agent), the same worker resumes the
 // session and the Run succeeds, so the test holds no server slot afterwards (the clean-up below
 // cancels whatever a failed run of it left unfinished, an answered Run queued to resume too).
+// Story #141: then the delivered Run takes a Follow-up and succeeds again with the same pull
+// request; the lists show it has had a Follow-up.
 const RUN_TEST = 'operator starts runs and follows them to their result';
 
 /**
@@ -512,7 +514,7 @@ test(RUN_TEST, async ({ page }, testInfo) => {
     process.env.E2E_API_PLATFORM !== 'linux',
     'Repository features and the agent worker run on Linux only; CI runs this test on Linux.',
   );
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const base = process.env.E2E_FIXTURE_REPO_BASE;
   if (!base) throw new Error('E2E_FIXTURE_REPO_BASE is not set; run `pnpm e2e:smoke` on Linux');
   const projectName = `Runs ${testInfo.project.name}`;
@@ -793,4 +795,35 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(runLog).toContainText('answer received: Option B');
   await expect(runLog).toContainText('Run step 2 finished: done');
   await expectInBothThemes(page, pill);
+
+  // Story #141: a Follow-up to the delivered Run. The same agent worker continues the same
+  // agent session in the same Working copy; the fake agent commits once more, and the Run
+  // succeeds again with the same draft pull request (updated on the stub, never a second one).
+  // The form is scanned in both themes at this viewport (a phone at 390 px).
+  await breadcrumb.getByRole('link', { name: 'Executions' }).click();
+  await expect(page).toHaveURL(/\/executions$/);
+  const deliveredRow = rows.filter({ hasText: 'Change a file [fake:checks-failed]' });
+  await deliveredRow.getByRole('link').first().click();
+  await expect(heading).toHaveText('Change a file [fake:checks-failed]');
+  const followUpForm = main.getByRole('region', { name: 'Send a Follow-up' });
+  await expect(followUpForm).toBeVisible();
+  await expectInBothThemes(page, followUpForm);
+  await followUpForm.getByLabel('Follow-up').fill('Commit once more [fake:commit]');
+  await expectNoHorizontalScroll(page);
+  await followUpForm.getByRole('button', { name: 'Send Follow-up' }).click();
+  await expect(conversation).toContainText('You · Follow-up 1', { timeout: 15_000 });
+  await expect(conversation).toContainText('Commit once more [fake:commit]');
+  await expect(runLog).toContainText('Follow-up 1 ended: done', { timeout: 30_000 });
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(main.getByText('Draft pull request opened.')).toBeVisible({ timeout: 15_000 });
+  await expect(main.getByRole('link', { name: /Pull request #1/ })).toHaveCount(1);
+  await expect(main.getByRole('link', { name: /Pull request #2/ })).toHaveCount(0);
+  await expectInBothThemes(page, pill);
+
+  // The lists show that the Run has had a Follow-up.
+  await breadcrumb.getByRole('link', { name: 'Executions' }).click();
+  await expect(page).toHaveURL(/\/executions$/);
+  await expect(rows).toHaveCount(9);
+  await expect(deliveredRow).toContainText('1 Follow-up');
+  await expect(deliveredRow).toContainText('Pull request #1');
 });

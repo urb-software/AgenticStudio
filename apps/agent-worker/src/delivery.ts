@@ -41,6 +41,8 @@ export class DeliveryFailedError extends Error {
   constructor(
     readonly detail: string,
     readonly branchPushed = false,
+    /** With `branchPushed` (Issue #141): the commit the push left the remote Run branch at. */
+    readonly pushedCommit?: string,
   ) {
     super(detail);
     this.name = 'DeliveryFailedError';
@@ -62,7 +64,10 @@ export interface DeliveryPort {
   ): Promise<void>;
   /**
    * Pushes the Run branch and opens (or reuses) its draft pull request; `none` when the Run
-   * branch has no commits beyond the start commit. Throws {@link DeliveryFailedError}.
+   * branch has no commits beyond the start commit. Issue #141: a Run with a recorded pull
+   * request (`pullRequestNumber`) delivers to it only: refused before the push when it is no
+   * longer open, its title and description replaced when the agent gave new ones; a delivered
+   * result carries the pushed commit. Throws {@link DeliveryFailedError}.
    */
   deliver(
     prepared: PreparedRun,
@@ -232,28 +237,100 @@ export class Deliveries implements DeliveryPort {
       );
     }
 
-    await this.push(prepared, run, target.transport, token, signal);
-
     const client = (this.options.pullRequests ?? defaultPullRequests)({
       token,
       apiUrl: this.options.github.apiUrl,
     });
-    try {
-      const opened = await client.openDraft(
-        {
-          owner: target.owner,
-          repo: target.repo,
-          head: prepared.runBranch,
-          base: run.integrationBranch,
-          ...pullRequestContent(run, prepared, result),
-        },
-        signal,
+    // Issue #141: a Run delivers to at most one pull request. The one Studio recorded must still
+    // be open; a merged or closed one stops the delivery before anything is pushed.
+    const recorded = run.pullRequestNumber;
+    if (recorded !== undefined) {
+      const state = await this.pullRequestCall(run, () =>
+        client.get({ owner: target.owner, repo: target.repo, number: recorded }, signal),
       );
-      return { outcome: 'delivered', pullRequest: { url: opened.url, number: opened.number } };
+      if (state.state !== 'open') {
+        throw new DeliveryFailedError(
+          `The run's pull request #${recorded} is ${state.merged ? 'merged' : 'closed'} on ` +
+            'GitHub, so nothing was pushed. Start a new run for further changes.',
+        );
+      }
+    }
+
+    const pushedCommit = await this.push(prepared, run, target.transport, token, signal);
+
+    const content = pullRequestContent(run, prepared, result);
+    // Review S7 of #150: only what the agent gave replaces the old text; a title alone keeps the
+    // description (whose footer is Studio's).
+    const update = result.pullRequest?.body.trim() ? content : { title: content.title };
+    const pushed = { branchPushed: true, pushedCommit };
+    if (recorded !== undefined) {
+      // Repeated delivery: the same pull request; new title and description only when the
+      // agent gave them (the footer is always Studio's).
+      const state = await this.pullRequestCall(
+        run,
+        async () => {
+          if (result.pullRequest) {
+            await client.update(
+              { owner: target.owner, repo: target.repo, number: recorded, ...update },
+              signal,
+            );
+          }
+          return client.get({ owner: target.owner, repo: target.repo, number: recorded }, signal);
+        },
+        pushed,
+      );
+      return {
+        outcome: 'delivered',
+        pullRequest: { url: state.url, number: state.number },
+        pushedCommit,
+      };
+    }
+    const opened = await this.pullRequestCall(
+      run,
+      async () => {
+        const pull = await client.openDraft(
+          {
+            owner: target.owner,
+            repo: target.repo,
+            head: prepared.runBranch,
+            base: run.integrationBranch,
+            ...content,
+          },
+          signal,
+        );
+        if (pull.reused && result.pullRequest) {
+          await client.update(
+            { owner: target.owner, repo: target.repo, number: pull.number, ...update },
+            signal,
+          );
+        }
+        return pull;
+      },
+      pushed,
+    );
+    return {
+      outcome: 'delivered',
+      pullRequest: { url: opened.url, number: opened.number },
+      pushedCommit,
+    };
+  }
+
+  /** A pull request call; a refusal becomes a {@link DeliveryFailedError} saying what was pushed. */
+  private async pullRequestCall<T>(
+    run: RunPayload,
+    call: () => Promise<T>,
+    pushed?: { branchPushed: boolean; pushedCommit: string },
+  ): Promise<T> {
+    try {
+      return await call();
     } catch (error) {
       if (error instanceof PullRequestFailedError) {
         this.options.logger.error(`Delivery of run ${run.runId}: ${error.message}`);
-        throw new DeliveryFailedError(error.message, true);
+        throw new DeliveryFailedError(
+          error.message,
+          pushed?.branchPushed ?? false,
+          pushed?.pushedCommit,
+        );
       }
       throw error;
     }
@@ -319,7 +396,7 @@ export class Deliveries implements DeliveryPort {
     transport: 'https' | 'ssh' | 'file',
     token: string,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<string> {
     const { git, dataDir } = this.options;
     if (!isRunBranchOf(prepared.runBranch, run)) {
       throw new DeliveryFailedError(
@@ -333,6 +410,7 @@ export class Deliveries implements DeliveryPort {
     // No templates and no user config for making and filling push.git (review R2 of #122).
     const isolated = { ...local, userConfig: false as const };
     await rm(pushDir, { recursive: true, force: true });
+    let pushedTip = '';
     try {
       await this.gitStep('handing the Run branch to the push', async () => {
         const tip = (
@@ -348,6 +426,7 @@ export class Deliveries implements DeliveryPort {
           await git.run(['rev-parse', '--verify', ref], { ...local, cwd: pushDir })
         ).trim();
         if (fetched !== tip) throw new GitCommandError('fetch', null, 'Run branch moved', 'exit');
+        pushedTip = fetched;
       });
       await git.run(['push', '--', remoteUrl, `${ref}:${ref}`], {
         ...local,
@@ -397,6 +476,7 @@ export class Deliveries implements DeliveryPort {
     } finally {
       await rm(pushDir, { recursive: true, force: true });
     }
+    return pushedTip;
   }
 
   private studioPathspecs(prepared: PreparedRun, run: RunPayload): Promise<string[]> {
