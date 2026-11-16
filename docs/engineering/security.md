@@ -209,7 +209,7 @@ Enforced controls must **reject** the following, evidenced by automated tests as
 
 Also verify: a canceled or retried execution causes no duplicate irreversible effects.
 
-**Run isolation model ([ADR 0002](../architecture/adr/0002-agent-run-isolation.md)).** The deployed model must pass these checks, run as the agent user (implemented by a later story):
+**Run isolation model ([ADR 0002](../architecture/adr/0002-agent-run-isolation.md)).** The deployed model must pass these checks, run as the agent user. They are implemented by `deploy/check-boundary.sh` and set up by `deploy/setup-server.sh` (#107; [Deployment](deployment.md)):
 
 - The agent user cannot read Studio's files.
 - The agent user cannot reach the system Docker socket.

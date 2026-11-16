@@ -269,6 +269,40 @@ jobs:
       # and Redis (Testcontainers on the runner's Docker). Linux-only suites run here. No secrets.
       - run: pnpm test:agent-worker
 
+  deploy-server:
+    name: deploy:server
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node.js only, for the Compose file test; the scripts install their own Node.js.
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: ''
+          install: 'false'
+      # Server setup and isolation boundary checks (Issue #107, docs/engineering/deployment.md).
+      - name: ShellCheck
+        run: shellcheck --version && shellcheck deploy/*.sh deploy/tests/*.sh
+      # `docker compose config` only: renders the server Compose files, starts nothing.
+      - name: Server Compose files publish no database or Redis port
+        run: node --test "deploy/tests/*.test.mjs"
+      - name: The setup script refuses other distributions
+        run: docker run --rm -v "$PWD:/w:ro" debian:12 bash /w/deploy/tests/refuse-distro.sh
+      # Ubuntu 24.04 without systemd: refusals, the steps that need no systemd run twice, and the
+      # boundary checks' negative side.
+      - name: Setup and boundary checks in a clean Ubuntu 24.04 container
+        run: docker run --rm -v "$PWD:/w:ro" ubuntu:24.04 bash /w/deploy/tests/container-tests.sh
+      # The runner VM is Ubuntu 24.04 with systemd and cgroup v2: the whole setup runs twice as
+      # root, then the boundary checks run as the agent user (API checks skipped: no Studio
+      # images yet). The VM is discarded after the job.
+      - name: Full setup twice and boundary checks on the runner VM
+        run: sudo bash deploy/tests/vm-tests.sh
+
   ci-required:
     name: ci:required
     if: always()
@@ -286,6 +320,7 @@ jobs:
       - security
       - quality-agent-worker
       - test-agent-worker
+      - deploy-server
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -1,0 +1,29 @@
+# The agent worker as a systemd user service of the agent user (Issue #107). Installed by
+# deploy/setup-server.sh as /etc/systemd/user/agentic-studio-worker.service (root-owned) and
+# enabled only for the agent user, whose user manager runs without a login session (linger).
+# @WORKER_CODE_DIR@ and @NODE_BIN@ are filled in by the setup script.
+[Unit]
+Description=AI Agent Studio agent worker
+Documentation=file://@WORKER_CODE_DIR@/docs/engineering/deployment.md
+# The agent user's rootless Docker daemon (a user service of the same manager).
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=simple
+# Root-owned code the agent user can read but not change.
+WorkingDirectory=@WORKER_CODE_DIR@/apps/agent-worker
+# The worker's own settings (agent user, 0600). It never reads Studio's configuration and refuses
+# to start if a database, Redis, secret-store or operator variable reaches its environment.
+EnvironmentFile=%h/.config/agentic-studio-worker/.env
+# The agent user's rootless Docker daemon, never the system one.
+Environment=DOCKER_HOST=unix://%t/docker.sock
+ExecStart=@NODE_BIN@ @WORKER_CODE_DIR@/apps/agent-worker/dist/main.js
+Restart=on-failure
+RestartSec=10s
+# SIGTERM lets the worker stop its Run steps (interrupt, grace, kill) before it exits.
+KillMode=mixed
+TimeoutStopSec=330s
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,46 @@
+# Studio's web and API on the server (Issue #107), added on top of compose.server.yaml.
+#
+# GAP: Studio has no production container images yet (docs/engineering/deployment.md, "Known
+# gaps"). This file fixes how they are run once they exist: the image names come from
+# STUDIO_API_IMAGE and STUDIO_WEB_IMAGE, and the only host ports on the server are the API and
+# web ports, bound to 127.0.0.1 for a reverse proxy on the same host. The setup script installs
+# it root-only as /opt/agentic-studio/compose.app.yaml; agentic-studio-compose uses it only when
+# both image variables are set.
+services:
+  api:
+    image: ${STUDIO_API_IMAGE:?set STUDIO_API_IMAGE in /etc/agentic-studio/.env}
+    restart: unless-stopped
+    env_file:
+      - path: ${STUDIO_ENV_FILE:-/etc/agentic-studio/.env}
+        required: true
+    environment:
+      # Inside the container the API listens on every interface; the host port below is
+      # bound to 127.0.0.1 only.
+      API_HOST: 0.0.0.0
+      API_PORT: '3001'
+      STUDIO_DATA_DIR: /data
+    volumes:
+      - ${STUDIO_DATA_HOST_DIR:-/var/lib/agentic-studio/data}:/data
+    ports:
+      - '127.0.0.1:${API_PORT:-3001}:3001'
+    networks:
+      - studio
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    image: ${STUDIO_WEB_IMAGE:?set STUDIO_WEB_IMAGE in /etc/agentic-studio/.env}
+    restart: unless-stopped
+    # No env_file: the web app gets no Studio secret, only where the API is.
+    environment:
+      API_ORIGIN: http://api:3001
+      STUDIO_WEB_API_PROXY: 'true'
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    networks:
+      - studio
+    depends_on:
+      - api
