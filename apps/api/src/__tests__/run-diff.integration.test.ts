@@ -226,6 +226,21 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
     );
   });
 
+  it('stores and reads a file whose path is too long for an index entry', async () => {
+    const runId = await runningRun();
+    const path = `${'deep/'.repeat(800)}file.ts`;
+    const files = [{ path, status: 'added', additions: 1, deletions: 0, patch: '+deep\n' }];
+
+    expect((await report(runId, { run: diffOf(files), last: diffOf(files) })).status).toBe(204);
+
+    const file = await http()
+      .get(`/api/runs/${runId}/diff/file`)
+      .query({ scope: 'run', path })
+      .set('Cookie', cookie);
+    expect(file.status).toBe(200);
+    expect(file.body).toMatchObject({ path, patch: '+deep\n' });
+  });
+
   it('stores why the diffs could not be computed', async () => {
     const runId = await runningRun();
 

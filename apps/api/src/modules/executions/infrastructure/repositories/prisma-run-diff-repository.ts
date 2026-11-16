@@ -32,7 +32,8 @@ const storedFilesSchema = z.array(
 
 /**
  * PostgreSQL adapter of {@link RunDiffRepository} (Issue #144): one `run_diffs` row per Run and
- * scope (the file list as JSON) and one `run_diff_files` row per file with a patch. A report
+ * scope (the file list as JSON) and one `run_diff_files` row per file with a patch, keyed by
+ * the file's position in that list. A report
  * locks the Run row, checks the holder and replaces both scopes in one transaction.
  */
 @Injectable()
@@ -79,14 +80,13 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
             reportedAt: now,
           },
         });
-        const patches = diff.files.filter(
-          (file): file is RunDiffFileSummary & { patch: string } => file.patch !== undefined,
+        // Keyed by position in the file list: a path may be too long for an index entry.
+        const patches = diff.files.flatMap((file, position) =>
+          file.patch === undefined
+            ? []
+            : [{ runId, scope, position, path: file.path, patch: file.patch }],
         );
-        if (patches.length > 0) {
-          await tx.runDiffFile.createMany({
-            data: patches.map((file) => ({ runId, scope, path: file.path, patch: file.patch })),
-          });
-        }
+        if (patches.length > 0) await tx.runDiffFile.createMany({ data: patches });
       }
       return true;
     });
@@ -119,11 +119,12 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
   ): Promise<RunDiffFileView | null> {
     const diff = await this.find(runId, scope);
     if (!diff || diff.kind === 'unavailable') return null;
-    const file = diff.files.find((candidate) => candidate.path === path);
+    const position = diff.files.findIndex((candidate) => candidate.path === path);
+    const file = diff.files[position];
     if (!file) return null;
     if (!file.hasPatch) return file;
     const stored = await this.db.runDiffFile.findUnique({
-      where: { runId_scope_path: { runId, scope, path } },
+      where: { runId_scope_position: { runId, scope, position } },
       select: { patch: true },
     });
     return stored ? { ...file, patch: stored.patch } : file;

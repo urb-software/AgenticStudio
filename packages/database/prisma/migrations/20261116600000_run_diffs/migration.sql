@@ -1,6 +1,7 @@
 -- A Run's diffs (Issue #144): the latest "whole Run" diff and the latest "since the previous
 -- result" diff per Run, as the agent worker reported them after a Run step's result, with each
--- file's patch (redacted like the log) in its own row. Kept after the Working copy is removed;
+-- file's patch (redacted like the log) in its own row, keyed by the file's position in the list
+-- (a path can be longer than an index entry may be). Kept after the Working copy is removed;
 -- removed with the Run.
 
 -- CreateTable
@@ -21,10 +22,11 @@ CREATE TABLE "run_diffs" (
 CREATE TABLE "run_diff_files" (
     "run_id" UUID NOT NULL,
     "scope" VARCHAR(8) NOT NULL,
-    "path" VARCHAR(4096) NOT NULL,
+    "position" INTEGER NOT NULL,
+    "path" TEXT NOT NULL,
     "patch" TEXT NOT NULL,
 
-    CONSTRAINT "run_diff_files_pkey" PRIMARY KEY ("run_id","scope","path")
+    CONSTRAINT "run_diff_files_pkey" PRIMARY KEY ("run_id","scope","position")
 );
 
 -- AddForeignKey
@@ -38,3 +40,4 @@ ALTER TABLE "run_diff_files" ADD CONSTRAINT "run_diff_files_run_id_scope_fkey" F
 ALTER TABLE "run_diffs" ADD CONSTRAINT "run_diffs_scope_check" CHECK ("scope" IN ('run', 'last'));
 ALTER TABLE "run_diffs" ADD CONSTRAINT "run_diffs_base_check"
     CHECK (("base_commit" IS NULL) = ("unavailable_reason" IS NOT NULL));
+ALTER TABLE "run_diff_files" ADD CONSTRAINT "run_diff_files_position_check" CHECK ("position" >= 0);

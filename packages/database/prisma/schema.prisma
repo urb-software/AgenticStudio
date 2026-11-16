@@ -326,14 +326,17 @@ model RunDiff {
 }
 
 /// One file's patch in a Run's diff (Issue #144): Git's unified diff text, redacted like the log.
+/// Keyed by the file's position in the diff's file list (a path may be too long for an index).
 model RunDiffFile {
-  runId String  @map("run_id") @db.Uuid
-  scope String  @db.VarChar(8)
-  diff  RunDiff @relation(fields: [runId, scope], references: [runId, scope], onDelete: Cascade)
-  path  String  @db.VarChar(4096)
-  patch String
+  runId    String  @map("run_id") @db.Uuid
+  scope    String  @db.VarChar(8)
+  diff     RunDiff @relation(fields: [runId, scope], references: [runId, scope], onDelete: Cascade)
+  /// 0, 1, … in the order of run_diffs.files.
+  position Int
+  path     String
+  patch    String
 
-  @@id([runId, scope, path], map: "run_diff_files_pkey")
+  @@id([runId, scope, position], map: "run_diff_files_pkey")
   @@map("run_diff_files")
 }
 
