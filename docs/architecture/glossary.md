@@ -51,6 +51,10 @@ The operator's instruction that starts a Run.
 The operator's further instruction to a finished Run: the agent continues the same agent session and the Run delivers to the same pull request. It is not an Answer: a Follow-up reopens a finished Run.
 _Avoid_: New task, re-run, continuation
 
+**Bring up to date**:
+The operator's request to merge the Integration branch into a Run's branch, so that its pull request stops being behind and may stop conflicting. It is a Follow-up of its own source (same eligibility, step allowance and concurrency limits, same agent session): the agent worker fetches the Integration branch, merges it with a merge commit (never a rebase, never a force-push), and resumes the agent to resolve any conflicts and to run the project's checks. When the agent leaves conflicts unresolved the merge is aborted and nothing is pushed; when the branch already has everything, nothing changes and no agent starts.
+_Avoid_: Rebase, sync, update branch
+
 **Run step**:
 One non-interactive execution of the agent CLI within a Run. A Run consists of one or more Run steps.
 _Avoid_: Turn, step (unqualified), iteration
