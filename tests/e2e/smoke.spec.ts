@@ -481,8 +481,11 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // cancels whatever a failed run of it left unfinished, an answered Run queued to resume too).
 // Story #141: then the delivered Run takes a Follow-up and succeeds again with the same pull
 // request; the lists show it has had a Follow-up. Story #142: its pull request card says
-// "Draft"; once the stub of GitHub says the pull request was merged, Refresh shows "Merged", the
-// Follow-up form gives way to the reason with "Run again", and the lists show the state.
+// "Draft". Story #147: another client moves the integration branch on, the card offers "Bring up
+// to date", the worker merges it into the Run branch (a merge commit, an ordinary fast-forward
+// push to the same pull request) and a second request finds nothing to do. Once the stub of
+// GitHub says the pull request was merged, Refresh shows "Merged", the Follow-up form gives way
+// to the reason with "Run again", and the lists show the state.
 const RUN_TEST = 'operator starts runs and follows them to their result';
 
 /**
@@ -848,16 +851,100 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(main.getByRole('region', { name: 'Send a Follow-up' })).toBeVisible();
   await expectInBothThemes(page, pullRequestCard);
 
-  // The operator merges it on GitHub (the stub); Refresh reads that: the card says "Merged", the
-  // Follow-up form is replaced by the reason, "Run again" stays, and the lists show the state.
   const href = (await pullRequestLink.getAttribute('href')) ?? '';
   const [, owner, repository, number] =
     /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)$/.exec(href) ?? [];
-  const control = await fetch(
-    `http://127.0.0.1:${process.env.E2E_GITHUB_STUB_PORT}/__control/pulls/${owner}/${repository}/${number}`,
-    { method: 'POST', body: JSON.stringify({ merged: true }) },
-  );
-  expect(control.status).toBe(200);
+  /** Changes the pull request on the stub of GitHub, as the operator would on GitHub. */
+  const controlPullRequest = async (state: object) => {
+    const response = await fetch(
+      `http://127.0.0.1:${process.env.E2E_GITHUB_STUB_PORT}/__control/pulls/${owner}/${repository}/${number}`,
+      { method: 'POST', body: JSON.stringify(state) },
+    );
+    expect(response.status).toBe(200);
+  };
+
+  // Story #147: another client moves the integration branch (`dev`) on; the stub of GitHub, which
+  // reads no Git, is told the pull request is one commit behind. Refresh shows it, and the card
+  // offers "Bring up to date", with how far behind and what GitHub says about conflicts.
+  const fixtureName = `run-${testInfo.project.name}`;
+  const bare = join(fileURLToPath(base), `${fixtureName}.git`);
+  pushFixtureCommit(base, fixtureName);
+  const devTip = fixtureGit(bare, ['rev-parse', 'refs/heads/dev']);
+  await controlPullRequest({ behindBy: 1 });
+  await pullRequestCard.getByRole('button', { name: 'Refresh' }).click();
+  await expect(pullRequestCard).toContainText('1 commit behind · 1 commit ahead', {
+    timeout: 30_000,
+  });
+  await expect(pullRequestCard).toContainText('GitHub reports no conflicts.');
+  const bringUp = pullRequestCard.getByRole('button', { name: 'Bring up to date' });
+  await expect(bringUp).toBeVisible();
+  await expectInBothThemes(page, pullRequestCard);
+
+  // The confirm says what will happen; scanned open, in both themes at this viewport.
+  const confirm = page.getByRole('dialog', { name: 'Bring up to date' });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+    await bringUp.click();
+    await expect(confirm).toContainText('never rebases and never force-pushes');
+    await expectNoHorizontalScroll(page);
+    await expectNoAxeViolations(page);
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(confirm).toHaveCount(0);
+  }
+
+  // Confirming with a note: the worker fetches `dev` into the Working copy and merges it (a
+  // merge commit with the Run branch's own tip first), the fake agent runs its checks, and the
+  // result is pushed to the same pull request as an ordinary update of the Run branch.
+  const runBranch = (await pullRequestCard.getByText(/^agent\//).textContent()) ?? '';
+  const tipBefore = fixtureGit(bare, ['rev-parse', `refs/heads/${runBranch}`]);
+  await bringUp.click();
+  await confirm.getByLabel(/Note for the agent/).fill('Keep both sides.');
+  await confirm.getByRole('button', { name: 'Bring up to date' }).click();
+  await expect(conversation).toContainText('You · Follow-up 2 · Bring up to date', {
+    timeout: 15_000,
+  });
+  await expect(conversation).toContainText('Keep both sides.');
+  await expect(runLog).toContainText('without conflicts', { timeout: 45_000 });
+  await expect(runLog).toContainText('Follow-up 2 ended: done', { timeout: 45_000 });
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(conversation).toContainText('Merged the integration branch commit');
+  await expect(conversation).toContainText(devTip.slice(0, 7));
+  const merge = fixtureGit(bare, ['rev-list', '--parents', '-n', '1', `refs/heads/${runBranch}`])
+    .split(' ')
+    .slice(1);
+  expect(merge, 'the pushed tip is a merge commit').toEqual([tipBefore, devTip]);
+  await expect(main.getByRole('link', { name: /Pull request #1/ })).toHaveCount(1);
+  await expect(main.getByRole('link', { name: /Pull request #2/ })).toHaveCount(0);
+  await expectInBothThemes(page, pill);
+
+  // Once the page is read again the branch is no longer behind, and the action is gone.
+  await controlPullRequest({ behindBy: 0 });
+  await pullRequestCard.getByRole('button', { name: 'Refresh' }).click();
+  await expect(pullRequestCard).toContainText('0 commits behind', { timeout: 30_000 });
+  await expect(bringUp).toHaveCount(0);
+
+  // A request on a stale reading: the branch has everything already, so nothing changes, no
+  // agent starts, nothing is pushed, and the page says so.
+  await controlPullRequest({ behindBy: 1 });
+  await pullRequestCard.getByRole('button', { name: 'Refresh' }).click();
+  await expect(bringUp).toBeVisible({ timeout: 30_000 });
+  const mergeTip = fixtureGit(bare, ['rev-parse', `refs/heads/${runBranch}`]);
+  await bringUp.click();
+  await confirm.getByRole('button', { name: 'Bring up to date' }).click();
+  await expect(conversation).toContainText('You · Follow-up 3 · Bring up to date', {
+    timeout: 15_000,
+  });
+  await expect(conversation).toContainText('already has everything', { timeout: 45_000 });
+  await expect(runLog).toContainText('nothing was changed', { timeout: 15_000 });
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  expect(fixtureGit(bare, ['rev-parse', `refs/heads/${runBranch}`])).toBe(mergeTip);
+  await controlPullRequest({ behindBy: 0 });
+
+  // The operator merges it on GitHub (the stub); Refresh reads that: the card says "Merged", the
+  // Follow-up form is replaced by the reason, "Run again" stays, and the lists show the state.
+  await controlPullRequest({ merged: true });
   await pullRequestCard.getByRole('button', { name: 'Refresh' }).click();
   await expect(pullRequestCard.getByText('Merged', { exact: true })).toBeVisible({
     timeout: 30_000,
