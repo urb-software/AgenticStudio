@@ -14,7 +14,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { GUARDRAILS_DIR } from '../managed-guardrails.js';
 import { isUuid, runsDirectory } from '../run-layout.js';
 
 /**
@@ -22,23 +22,26 @@ import { isUuid, runsDirectory } from '../run-layout.js';
  * Before every Codex Run step, and after retention removed Working copies, the worker writes, in
  * the agent user's default Codex home (`$HOME/.codex`; `CODEX_HOME` is never set for the CLI):
  *
- * - `config.toml`: the whole file, from Studio's template (`guardrails/codex-config.toml`), plus
- *   one `[projects."<path>"] trust_level = "untrusted"` entry for every existing Working copy
- *   (and the step's own), so no project `.codex/` layer, hook or rule loads (record, finding 3);
- *   whatever an agent wrote into the file is overwritten;
- * - `rules/studio.rules`: Studio's command rules, as the only file in `rules/`: Studio's only
- *   Codex guardrail (coordinator decision after the smoke of #133). There is no Studio hook (a
- *   user-level hook needs a trust the CLI keeps against its hash, so it would not run
- *   unattended): `hooks.json` and `studio/` are removed. The template leaves the hooks feature
- *   flag at the CLI's default.
+ * - `config.toml`: the whole file, from Studio's template (`guardrails/codex-config.toml`, only
+ *   comments since #134), plus one `[projects."<path>"] trust_level = "untrusted"` entry for
+ *   every existing Working copy (and the step's own), so no project `.codex/` layer, hook or rule
+ *   loads (record, finding 3); whatever an agent wrote into the file is overwritten;
+ * - `rules/studio.rules`: Studio's command rules, as the only file in `rules/` (anything an agent
+ *   planted there, e.g. an `allow` rule, is removed). The same rules are enforced from the
+ *   root-owned `/etc/codex/requirements.toml` since #134;
+ * - no user-level hooks: `hooks.json` and `studio/` are removed. Studio's hook is a managed hook
+ *   in `/etc/codex/requirements.toml` (#134), which needs no trust and is the only kind of hook
+ *   that runs (`allow_managed_hooks_only`).
+ *
+ * Studio's other Codex settings (sandbox network, command environment, feature flags) are in the
+ * root-owned `/etc/codex/managed_config.toml` (#134), above this file and `-c` overrides.
  *
  * GUARDRAILS, NOT THE SECURITY BOUNDARY (ADR 0002). Writes are serialised across Run steps and
  * worker processes with a lock file and land by rename, so a starting CLI never reads half a
  * file. The login (`auth.json`) and the session files in the same directory are never read.
  */
 
-/** The worker's guardrails folder: `apps/agent-worker/guardrails` (from `src/` and `dist/`). */
-export const GUARDRAILS_DIR = fileURLToPath(new URL('../../guardrails/', import.meta.url));
+export { GUARDRAILS_DIR };
 
 export const CODEX_GUARDRAIL_FILES = {
   config: 'codex-config.toml',

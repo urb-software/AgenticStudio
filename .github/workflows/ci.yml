@@ -287,7 +287,7 @@ jobs:
           install: 'false'
       # Server setup and isolation boundary checks (Issue #107, docs/engineering/deployment.md).
       - name: ShellCheck
-        run: shellcheck --version && shellcheck deploy/*.sh deploy/tests/*.sh
+        run: shellcheck --version && shellcheck deploy/*.sh deploy/tests/*.sh apps/agent-worker/scripts/*.sh
       # `docker compose config` only: renders the server Compose files, starts nothing.
       - name: Server Compose files publish no database or Redis port
         run: node --test "deploy/tests/*.test.mjs"

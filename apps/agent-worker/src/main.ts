@@ -6,6 +6,7 @@ import { Deliveries } from './delivery.js';
 import { FakeRunner } from './fake-runner.js';
 import { GitRunner } from './git.js';
 import { terminateLeftovers } from './leftovers.js';
+import { ManagedGuardrails } from './managed-guardrails.js';
 import { RETENTION_INTERVAL_MS, Retention } from './retention.js';
 import { DockerRunResources } from './run-resources.js';
 import { ProviderGate } from './provider-gate.js';
@@ -53,6 +54,16 @@ if (config.runner === 'cli' && switches.isEnabled('codex')) {
     process.env,
   );
   if (!check.ok) unavailable.codex = check.reason;
+}
+// Issue #134: Studio's guardrails for both CLIs are root-owned managed files the server setup
+// installs; a switched-on provider whose files are missing or changed is unavailable.
+if (config.runner === 'cli') {
+  const managed = new ManagedGuardrails();
+  for (const provider of ['claude_code', 'codex'] as const) {
+    if (!switches.isEnabled(provider) || unavailable[provider] !== undefined) continue;
+    const problem = await managed.problem(provider);
+    if (problem !== null) unavailable[provider] = problem;
+  }
 }
 const gate = new ProviderGate(config.providers, unavailable);
 const cli = { gate, binaries: config.providerBinaries };

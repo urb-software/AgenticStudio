@@ -1,0 +1,15 @@
+# Studio's managed guardrail files (Issue #134): which file of this folder is installed where.
+# Read by deploy/setup-server.sh (step `guardrails`: root:root, files 0644, directories 0755),
+# deploy/check-boundary.sh (ownership, mode, SHA-256), the agent worker (checked before every Run
+# step of the provider) and scripts/smoke-guardrails.sh. One entry per line:
+#   <provider> <file in this folder> <absolute installed path>
+#   <provider> absent <absolute path>     a managed input the CLI would merge into Studio's
+#                                          policy: it must not exist (review L1 of #136)
+claude_code claude-managed-settings.json /etc/claude-code/managed-settings.json
+claude_code claude-guard.mjs /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs
+codex codex-managed-config.toml /etc/codex/managed_config.toml
+codex codex-requirements.toml /etc/codex/requirements.toml
+codex claude-guard.mjs /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs
+claude_code absent /etc/claude-code/managed-settings.d
+claude_code absent /etc/claude-code/managed-mcp.json
+codex absent /etc/codex/config.toml

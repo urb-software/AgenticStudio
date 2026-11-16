@@ -1,0 +1,43 @@
+# Studio's managed Codex configuration (Issue #134), installed by the server setup as
+# /etc/codex/managed_config.toml (root:root 0644; managed-files.txt). GUARDRAILS, NOT THE
+# SECURITY BOUNDARY: the boundary is the operating-system user with its rootless Docker daemon
+# (ADR 0002, docs/engineering/security.md §2).
+#
+# MANAGED DEFAULTS, NOT REQUIREMENTS (review L3 of #136): Codex applies this layer above the
+# user's ~/.codex/config.toml and above `-c` overrides when it starts, so every Run step (a new
+# `codex exec`) starts with these values whatever the agent user wrote there; the docs say a user
+# can still change them during a run, which `codex exec` offers no way to do. Requirements cannot
+# carry these keys in the supported versions; what they can carry is in codex-requirements.toml
+# (hook, rules, feature flags). The agent worker checks this file (owner, mode, SHA-256 against
+# its own copy) before every Codex Run step. The per-Working-copy trust entries stay in the user
+# configuration the worker writes (codex-config.toml).
+
+# ADR 0002 (trial of 2026-11-15): the workspace-write sandbox is kept, with network access on,
+# so the agent reaches the agent user's rootless Docker daemon and can install dependencies.
+# The sandbox mode itself is on the command line (`--sandbox workspace-write`).
+[sandbox_workspace_write]
+network_access = true
+
+# Compliance record, finding 4: commands the agent runs get only these variables (the Codex
+# process itself already has only the worker's allowlist), and names containing KEY, SECRET or
+# TOKEN are filtered out (`ignore_default_excludes = false`). Not `inherit = "core"`: the
+# rootless Docker daemon needs DOCKER_HOST / XDG_RUNTIME_DIR and the Run's COMPOSE_PROJECT_NAME.
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = false
+include_only = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "TZ",
+  "XDG_RUNTIME_DIR",
+  "DOCKER_HOST",
+  "TERM",
+  "TMPDIR",
+  "COMPOSE_PROJECT_NAME",
+]
+
+# Feature flags (apps off, hooks on) are pinned in codex-requirements.toml.

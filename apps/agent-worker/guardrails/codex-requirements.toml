@@ -1,0 +1,42 @@
+# Studio's Codex requirements (Issue #134), installed by the server setup as
+# /etc/codex/requirements.toml (root:root 0644; managed-files.txt). GUARDRAILS, NOT THE SECURITY
+# BOUNDARY: the boundary is the operating-system user with its rootless Docker daemon (ADR 0002,
+# docs/engineering/security.md §2). The agent worker checks this file (owner, mode, SHA-256
+# against its own copy) before every Codex Run step.
+
+# Only managed hooks run: user, project, session and plugin hooks are skipped. Managed hooks are
+# trusted by policy (no per-hook trust, unlike a user-level hook: compliance record, finding 212).
+allow_managed_hooks_only = true
+
+# Hooks stay on even if a user configuration turns them off; app (connector) integrations stay
+# off (no MCP servers or connectors in the first version). Pinned here, not in
+# managed_config.toml, because requirements are enforced while managed_config.toml only sets
+# defaults applied at start.
+[features]
+hooks = true
+apps = false
+
+# Studio's PreToolUse hook: the same guard script as Claude Code's, run by the root-owned Node.js
+# from the root-owned guardrails folder (both installed by the server setup), with a cleared
+# environment (`env -i`): nothing of the session's environment reaches the guard.
+[hooks]
+managed_dir = "/usr/local/lib/agentic-studio/guardrails"
+
+[[hooks.PreToolUse]]
+matcher = "^(Bash|apply_patch)$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin /usr/local/bin/node /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs"
+timeout = 10
+
+# Studio's command rules, enforced: the same rules as codex-studio.rules, which the worker also
+# keeps writing as the only file in ~/.codex/rules/. Requirements rules can only prompt or forbid;
+# Studio's only forbid (a Run never waits for an approval). The most restrictive decision wins.
+[rules]
+prefix_rules = [
+  { pattern = [{ any_of = ["sudo", "su", "doas", "pkexec"] }], decision = "forbidden", justification = "No privilege escalation on the agent worker." },
+  { pattern = [{ token = "git" }, { token = "push" }], decision = "forbidden", justification = "The agent worker pushes the Run branch when the step ends." },
+  { pattern = [{ token = "docker" }, { any_of = ["-H", "--host", "context"] }], decision = "forbidden", justification = "The Docker daemon is fixed for the Run: the agent user's rootless daemon." },
+  { pattern = [{ token = "rm" }, { any_of = ["-rf", "-fr", "-r", "-R"] }, { any_of = ["/", "/*", "~", "~/"] }], decision = "forbidden", justification = "Deleting the root or the home directory is not allowed." },
+]

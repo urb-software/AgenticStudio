@@ -15,7 +15,9 @@
 # its API and web containers directly (only the reverse proxy's worker port is open to the agent).
 # Must work: rootless Docker (a container with resource limits, a Compose stack), the worker
 # routes with the worker token; that token reaches nothing else on the API. Also: not WSL with
-# interop or automount, cgroup v2 with limits on the agent user's slice.
+# interop or automount, cgroup v2 with limits on the agent user's slice, and Studio's managed
+# guardrails for the provider CLIs in place: root-owned, unchangeable by the agent user and equal
+# to the worker's own copies (Issue #134).
 # shellcheck disable=SC2016,SC2317 # single-quoted text run by another shell; check_* called by name
 set -uo pipefail
 
@@ -32,12 +34,14 @@ STUDIO_REDIS_ADDRESS="${STUDIO_REDIS_ADDRESS:-172.31.250.11}"
 STUDIO_API_ADDRESS="${STUDIO_API_ADDRESS:-172.31.250.12}"
 STUDIO_WEB_ADDRESS="${STUDIO_WEB_ADDRESS:-172.31.250.13}"
 WORKER_ENV_FILE="${WORKER_ENV_FILE:-$HOME/.config/agentic-studio-worker/.env}"
+# The agent worker's code (root-owned): its guardrails folder lists and holds the managed files.
+WORKER_CODE_DIR="${WORKER_CODE_DIR:-/opt/agentic-studio-worker}"
 # A small public image for the rootless container checks.
 CHECK_IMAGE="${CHECK_IMAGE:-busybox:1.37}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
 # -------------------------------------------------------------------------------------------------
 
-GROUPS_ALL=(identity processes studio-files docker-socket sudo studio-network host cgroup rootless api)
+GROUPS_ALL=(identity processes studio-files docker-socket sudo studio-network host cgroup guardrails rootless api)
 SKIP=""
 PASSED=0
 FAILED=0
@@ -300,6 +304,78 @@ check_cgroup() {
     fail agent-user-limits "$slice: MemoryMax=${memory:-?} TasksMax=${tasks:-?}"
   else
     pass agent-user-limits "$slice: MemoryMax=$memory TasksMax=$tasks"
+  fi
+}
+
+# The first directory from $1 up to / that is not root-owned or is writable by group or others
+# (printed), or nothing.
+not_root_only_dir() {
+  local up="$1"
+  while :; do
+    if [ -L "$up" ] || [ "$(stat -c %U "$up" 2>/dev/null)" != root ] ||
+      [ $((8#$(stat -c %a "$up" 2>/dev/null || echo 777) & 8#022)) -ne 0 ]; then
+      printf '%s' "$up"
+      return
+    fi
+    [ "$up" != / ] || return
+    up="$(dirname "$up")"
+  done
+}
+
+check_guardrails() {
+  # Issue #134: the provider CLIs' managed configuration and Studio's guard script, installed by
+  # the setup's guardrails step from the worker's guardrails folder (managed-files.txt).
+  local dir="$WORKER_CODE_DIR/apps/agent-worker/guardrails"
+  local manifest="$dir/managed-files.txt"
+  if [ ! -r "$manifest" ]; then
+    fail managed-guardrails "$manifest not found: run on the set-up server"
+    fail managed-guardrails-locked "not run: no managed-files.txt"
+    return
+  fi
+  local _provider source dest _rest problems=() writable=() count=0 parent bad program
+  while read -r _provider source dest _rest; do
+    case "$_provider" in '' | '#'*) continue ;; esac
+    parent="$(dirname "$dest")"
+    if [ "$source" = absent ]; then
+      # A managed input the CLI would merge into Studio's policy (review L1 of #136).
+      if [ -e "$dest" ] || [ -L "$dest" ]; then problems+=("$dest must not exist"); fi
+      continue
+    fi
+    count=$((count + 1))
+    if [ -L "$dest" ]; then
+      problems+=("$dest is a symbolic link")
+    elif [ ! -f "$dest" ]; then
+      problems+=("$dest missing")
+    elif [ "$(stat -c '%U:%G %a' "$dest")" != "root:root 644" ]; then
+      problems+=("$dest is $(stat -c '%U:%G %a' "$dest"), not root:root 644")
+    elif [ "$(sha256sum <"$dest" | cut -d' ' -f1)" != "$(sha256sum <"$dir/$source" | cut -d' ' -f1)" ]; then
+      problems+=("$dest differs from the worker's $source (SHA-256)")
+    fi
+    # The file's directory and every one above it: whoever could write one could swap the files.
+    bad="$(not_root_only_dir "$parent")"
+    [ -z "$bad" ] || problems+=("$bad is not a root-only directory")
+    { [ -w "$dest" ] || [ -w "$parent" ]; } && writable+=("$dest")
+  done <"$manifest"
+  # The managed hooks' launcher (env -i) and interpreter (the setup's node step): they run the
+  # guard, and a hook that cannot start blocks nothing.
+  for program in /usr/bin/env /usr/local/bin/node; do
+    if [ -L "$program" ] || [ ! -f "$program" ] || [ "$(stat -c %U "$program")" != root ] ||
+      [ $((8#$(stat -c %a "$program") & 8#022)) -ne 0 ] || [ -n "$(not_root_only_dir "$(dirname "$program")")" ]; then
+      problems+=("$program is not a root-owned file only root can change")
+    fi
+    [ ! -w "$program" ] || writable+=("$program")
+  done
+  if [ "$count" -eq 0 ]; then
+    fail managed-guardrails "$manifest lists no file"
+  elif [ "${#problems[@]}" -gt 0 ]; then
+    fail managed-guardrails "${problems[*]:0:4}"
+  else
+    pass managed-guardrails "$count managed-files.txt entries: root:root 0644, equal to the worker's copies; no other managed input"
+  fi
+  if [ "${#writable[@]}" -gt 0 ]; then
+    fail managed-guardrails-locked "$(id -un) can write or replace: ${writable[*]:0:4}"
+  else
+    pass managed-guardrails-locked "$(id -un) can neither write nor replace them"
   fi
 }
 

@@ -8,6 +8,11 @@ import { createInterface } from 'node:readline';
 import { buildInstructions, type RepositoryFiles } from '../claude-code/instructions.js';
 import { errorReason } from '../cli-output.js';
 import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from '../git.js';
+import {
+  ManagedGuardrails,
+  type ManagedGuardrailsCheck,
+  managedGuardrailsFailure,
+} from '../managed-guardrails.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import {
   AgentFailedError,
@@ -79,13 +84,20 @@ export interface CodexRunnerOptions {
   marker?: () => string;
   /** Test seam: where Studio's templates are. */
   guardrails?: { dir?: string };
+  /**
+   * The check of Studio's root-owned managed guardrails before every step (Issue #134; default:
+   * the installed files, see managed-guardrails.ts). Test seam only.
+   */
+  managed?: ManagedGuardrailsCheck;
 }
 
 /**
  * The Codex runner (Issue #106): runs a Run step with the Codex CLI, signed in with the
- * operator's ChatGPT plan, behind the runner interface. Per step it states the sandbox mode in
- * the Run's log, rewrites Studio's Codex configuration in the agent user's Codex home (the
- * Working copies marked untrusted, Studio's rules, no user-level hooks), writes the step's files in the
+ * operator's ChatGPT plan, behind the runner interface. Per step it checks Studio's root-owned
+ * managed configuration and requirements (Issue #134: settings, the guard hook, the enforced
+ * rules), states the sandbox mode in the Run's log, rewrites Studio's user-level Codex
+ * configuration in the agent user's Codex home (the Working copies marked untrusted, Studio's
+ * rules, no user-level hooks), writes the step's files in the
  * Run's directory (outside the Working copy), then starts the CLI through the spawn boundary
  * with exactly the compliance record's command, a minimal environment and standard input read
  * from a file, in the Working copy. It maps the streamed events to the Run's log and ends with
@@ -124,6 +136,9 @@ export class CodexRunner implements Runner {
       await presentUserLevelFiles(home, CODEX_USER_LEVEL_FILES),
     );
     if (userFiles !== null) throw new AgentFailedError(userFiles);
+    // Issue #134: Studio's settings, hook and rules are the root-owned managed files.
+    const managed = await (this.options.managed ?? new ManagedGuardrails()).problem(PROVIDER);
+    if (managed !== null) throw new AgentFailedError(managedGuardrailsFailure('Codex', managed));
     yield { type: 'notice', text: sandboxNotice(this.options.sandbox) };
     await prepareCodexHome(
       {
