@@ -107,6 +107,236 @@ describe('lookups: claim and result', () => {
       retryAt: null,
       refreshRequestedAt: null,
       lastAttemptAt: T0,
+      checks: null,
+      prepareRequestedAt: null,
+      prepareError: null,
+      preparedFollowUp: false,
+    });
+  });
+
+  // Issue #145: the Pull request checks come with the state.
+  describe('Pull request checks', () => {
+    const SHA = 'c'.repeat(40);
+    const checks = [
+      { name: 'build', state: 'passed' as const, durationSeconds: 61, url: 'https://ci.test/1' },
+      { name: 'lint', state: 'failed' as const, url: 'https://ci.test/2' },
+    ];
+
+    it('stores the checks and their commit with the state, replacing the earlier ones', async () => {
+      const { run, lookup } = await claimed();
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'open', behindBy: 0, aheadBy: 1, checksCommit: SHA, checks },
+      });
+
+      expect(status(run.id).checks).toEqual({ commit: SHA, checks });
+
+      await lookups.request(run.id, 'pull_request_state', T1);
+      const [second] = await claims.execute(WORKER);
+      await results.execute(second!.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'open', behindBy: 0, aheadBy: 1, checksCommit: SHA, checks: [] },
+      });
+
+      expect(status(run.id).checks).toEqual({ commit: SHA, checks: [] });
+    });
+
+    it('stores that the Git host refused to tell the checks, dropping the old ones', async () => {
+      const { run, lookup } = await claimed();
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'open', checksUnavailable: true },
+      });
+
+      expect(status(run.id).checks).toEqual({ unavailable: true });
+    });
+
+    it('masks token-shaped strings in the name of a check', async () => {
+      const { run, lookup } = await claimed();
+      const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: {
+          state: 'open',
+          checksCommit: SHA,
+          checks: [{ name: `deploy ${token}`, state: 'failed', url: 'https://ci.test/3' }],
+        },
+      });
+
+      const stored = status(run.id).checks;
+      expect(JSON.stringify(stored)).not.toContain(token);
+    });
+
+    it('keeps no checks for a pull request that has ended', async () => {
+      const { run, lookup } = await claimed();
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'open', checksCommit: SHA, checks },
+      });
+      await lookups.request(run.id, 'pull_request_state', T1);
+      const [second] = await claims.execute(WORKER);
+      await results.execute(second!.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'merged' },
+      });
+
+      expect(status(run.id).checks).toBeNull();
+    });
+  });
+
+  // Issue #145: the logs of the failing checks become a prepared Follow-up, never a sent one.
+  describe('logs of failing checks', () => {
+    const SHA = 'c'.repeat(40);
+    const claimedLogs = async () => {
+      const run = await deliveredRun(runs);
+      await lookups.request(run.id, 'failing_check_logs', T0);
+      const [lookup] = await claims.execute(WORKER);
+      return { run, lookup: lookup! };
+    };
+    const logsAnswer = {
+      workerId: WORKER,
+      ok: true as const,
+      kind: 'failing_check_logs' as const,
+      result: {
+        commit: SHA,
+        checks: [
+          {
+            name: 'unit tests',
+            url: 'https://ci.test/1',
+            logAvailable: true,
+            excerpt: 'FAIL src/a.test.ts\nexpected 1 to be 2',
+          },
+          {
+            name: 'deploy',
+            url: 'https://ci.test/2',
+            logAvailable: false,
+            note: 'Log unavailable: the log has expired.',
+          },
+        ],
+      },
+    };
+
+    it('hands the worker the same scope as a state lookup', async () => {
+      const { run, lookup } = await claimedLogs();
+
+      expect(lookup).toMatchObject({
+        kind: 'failing_check_logs',
+        runId: run.id,
+        pullRequestNumber: 7,
+      });
+    });
+
+    it('stores a prepared Follow-up for the operator, and sends nothing', async () => {
+      const { run, lookup } = await claimedLogs();
+      const before = runs.runs.find((candidate) => candidate.id === run.id)!;
+      const messages = before.messages.length;
+
+      await results.execute(lookup.id, logsAnswer);
+
+      const draft = runs.prepared.get(run.id)!;
+      expect(draft.source).toBe('pull_request_checks');
+      expect(draft.text).toContain('expected 1 to be 2');
+      expect(draft.items.map((item) => item.name)).toEqual(['unit tests', 'deploy']);
+      expect(status(run.id)).toMatchObject({
+        preparedFollowUp: true,
+        prepareRequestedAt: null,
+        prepareError: null,
+      });
+      // The Run is not queued and has no new message: only the operator's send does that.
+      expect(before.messages).toHaveLength(messages);
+      expect(before.followUpQueued).toBe(false);
+      expect(before.state).not.toBe('queued');
+    });
+
+    it('replaces the earlier prepared Follow-up of the Run', async () => {
+      const { run, lookup } = await claimedLogs();
+      await results.execute(lookup.id, logsAnswer);
+      await lookups.request(run.id, 'failing_check_logs', T1);
+      const [second] = await claims.execute(WORKER);
+
+      await results.execute(second!.id, {
+        ...logsAnswer,
+        result: { commit: SHA, checks: [logsAnswer.result.checks[1]!] },
+      });
+
+      expect(runs.prepared.get(run.id)!.items).toHaveLength(1);
+    });
+
+    it('redacts token-shaped strings in the log before storing it', async () => {
+      const { run, lookup } = await claimedLogs();
+      const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
+
+      await results.execute(lookup.id, {
+        ...logsAnswer,
+        result: {
+          commit: SHA,
+          checks: [
+            {
+              name: 'unit tests',
+              url: 'https://ci.test/1',
+              logAvailable: true,
+              excerpt: `export GITHUB_TOKEN=${token}\nerror`,
+            },
+          ],
+        },
+      });
+
+      expect(runs.prepared.get(run.id)!.text).not.toContain(token);
+    });
+
+    it('records why a preparation failed and leaves the pull request state alone', async () => {
+      const { run, lookup } = await claimedLogs();
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: false,
+        code: 'failed',
+        error: 'The pull request is not open any more.',
+      });
+
+      expect(status(run.id)).toMatchObject({
+        prepareRequestedAt: null,
+        prepareError: 'The pull request is not open any more.',
+        refreshError: null,
+        preparedFollowUp: false,
+      });
+    });
+
+    it('keeps a rate-limited preparation preparing until its retry', async () => {
+      const { run, lookup } = await claimedLogs();
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: false,
+        code: 'rate_limited',
+        error: 'GitHub asked to wait.',
+        retryAfterSeconds: 60,
+      });
+
+      expect(status(run.id)).toMatchObject({ prepareRequestedAt: T0, retryAt: null });
+    });
+
+    it('refuses a state answer for a logs lookup', async () => {
+      const { lookup } = await claimedLogs();
+
+      await expect(
+        results.execute(lookup.id, {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: { state: 'open' },
+        }),
+      ).rejects.toThrow("The answer is not of the lookup's kind.");
     });
   });
 

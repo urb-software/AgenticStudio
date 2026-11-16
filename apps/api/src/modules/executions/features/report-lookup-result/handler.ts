@@ -5,6 +5,7 @@ import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../domain/repositories/run-lookup-repository.js';
+import { prepareFailingChecksDraft } from '../../domain/services/failing-checks-draft.js';
 import { redactLogText } from '../../domain/services/log-redaction.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 
@@ -34,9 +35,11 @@ export class LookupKindMismatchError extends Error {
 
 /**
  * Command (Issue #142): the agent worker holding a lookup reports its result, or why it failed.
- * A result replaces what Studio knows of the Run's pull request; a failure keeps the last known
- * state and records why (the worker's words, redacted: never a token), and a rate limit puts the
- * lookup back in the queue for later. A repeated answer changes nothing. Throws
+ * A result replaces what Studio knows of the Run's pull request (Issue #145: with its Pull
+ * request checks) or, for the logs of failing checks, becomes the Run's prepared Follow-up for the
+ * operator to review, never sent by itself; a failure keeps the last known state and records why
+ * (the worker's words, redacted: never a token), and a rate limit puts the lookup back in the
+ * queue for later. A repeated answer changes nothing. Throws
  * {@link LookupNotFoundError}, {@link LookupNotHeldError} or {@link LookupKindMismatchError}.
  */
 @Injectable()
@@ -52,8 +55,20 @@ export class ReportLookupResultHandler {
     const now = this.clock.now();
     if (answer.ok) {
       if (answer.kind !== kind) throw new LookupKindMismatchError();
-      const { state, behindBy, aheadBy, mergeable } = answer.result;
-      // A merged, closed or missing pull request has no branch position worth keeping.
+      if (answer.kind === 'failing_check_logs') {
+        const stored = await this.lookups.completeFailingCheckLogs(
+          lookupId,
+          answer.workerId,
+          prepareFailingChecksDraft(answer.result),
+          now,
+        );
+        if (stored === 'not_held') throw new LookupNotHeldError();
+        return;
+      }
+      const { state, behindBy, aheadBy, mergeable, checksCommit, checks, checksUnavailable } =
+        answer.result;
+      // The answer's own fields are what is kept: a merged or missing pull request has no branch
+      // position, a closed one no merge verdict, and only an open one has checks.
       const outcome = await this.lookups.completePullRequestState(
         lookupId,
         answer.workerId,
@@ -62,6 +77,14 @@ export class ReportLookupResultHandler {
           ...(behindBy === undefined ? {} : { behindBy }),
           ...(aheadBy === undefined ? {} : { aheadBy }),
           ...(mergeable === undefined ? {} : { mergeable }),
+          ...(checksCommit === undefined ? {} : { checksCommit }),
+          ...(checks === undefined
+            ? {}
+            : {
+                // The names come from CI jobs: token-shaped strings are masked like any log text.
+                checks: checks.map((check) => ({ ...check, name: redactLogText(check.name, []) })),
+              }),
+          ...(checksUnavailable === undefined ? {} : { checksUnavailable }),
         },
         now,
       );

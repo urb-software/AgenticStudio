@@ -133,6 +133,23 @@ export type RunPullRequestOutput = {
     refreshError?: string;
     retryAt?: string;
     refreshing?: true;
+    checks?: Array<RunPullRequestCheckOutput>;
+    checksCommit?: string;
+    checksUnavailable?: true;
+    checksOtherCommit?: true;
+    failingChecksPreparation?: FailingChecksPreparationOutput;
+};
+
+export type RunPullRequestCheckOutput = {
+    name: string;
+    state: 'queued' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
+    durationSeconds?: number;
+    url: string;
+};
+
+export type FailingChecksPreparationOutput = {
+    state: 'preparing' | 'ready' | 'failed';
+    error?: string;
 };
 
 export type RunQuestionOutput = {
@@ -148,6 +165,7 @@ export type RunMessageOutput = {
     end?: RunPartEndOutput;
     options?: Array<string>;
     recommendation?: string;
+    source?: 'pull_request_checks';
     at: string;
 };
 
@@ -210,10 +228,24 @@ export type AnswerRunRequest = {
 
 export type FollowUpRunRequest = {
     text: string;
+    source?: 'pull_request_checks';
 };
 
 export type RefreshPullRequestRequest = {
     onOpen?: boolean;
+};
+
+export type PreparedFollowUpCheckOutput = {
+    name: string;
+    url: string;
+    logAvailable: boolean;
+    section: string;
+};
+
+export type PreparedFollowUpOutput = {
+    source: 'pull_request_checks';
+    text: string;
+    checks: Array<PreparedFollowUpCheckOutput>;
 };
 
 export type RunEventOutput = {
@@ -1088,6 +1120,97 @@ export type RefreshRunPullRequestResponses = {
 };
 
 export type RefreshRunPullRequestResponse = RefreshRunPullRequestResponses[keyof RefreshRunPullRequestResponses];
+
+export type PrepareRunFailingChecksData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/pull-request/failing-checks/prepare';
+};
+
+export type PrepareRunFailingChecksErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run has no pull request (urn:agentic-studio:problem:pull-request-not-refreshable) or no failed check (urn:agentic-studio:problem:no-failing-checks)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type PrepareRunFailingChecksError = PrepareRunFailingChecksErrors[keyof PrepareRunFailingChecksErrors];
+
+export type PrepareRunFailingChecksResponses = {
+    202: RunOutput;
+};
+
+export type PrepareRunFailingChecksResponse = PrepareRunFailingChecksResponses[keyof PrepareRunFailingChecksResponses];
+
+export type DiscardRunPreparedFollowUpData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/pull-request/failing-checks/prepared';
+};
+
+export type DiscardRunPreparedFollowUpErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type DiscardRunPreparedFollowUpError = DiscardRunPreparedFollowUpErrors[keyof DiscardRunPreparedFollowUpErrors];
+
+export type DiscardRunPreparedFollowUpResponses = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type DiscardRunPreparedFollowUpResponse = DiscardRunPreparedFollowUpResponses[keyof DiscardRunPreparedFollowUpResponses];
+
+export type GetRunPreparedFollowUpData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/pull-request/failing-checks/prepared';
+};
+
+export type GetRunPreparedFollowUpErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found) or no prepared Follow-up (urn:agentic-studio:problem:prepared-follow-up-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunPreparedFollowUpError = GetRunPreparedFollowUpErrors[keyof GetRunPreparedFollowUpErrors];
+
+export type GetRunPreparedFollowUpResponses = {
+    200: PreparedFollowUpOutput;
+};
+
+export type GetRunPreparedFollowUpResponse = GetRunPreparedFollowUpResponses[keyof GetRunPreparedFollowUpResponses];
 
 export type ListRunEventsData = {
     body?: never;

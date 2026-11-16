@@ -971,7 +971,7 @@ export type WorkerStatusReport = Omit<WorkerStatusRequest, 'workerId'>;
  * add theirs next to it. Reads only: no lookup changes anything on the Git host or starts an
  * agent CLI.
  */
-export const LOOKUP_KINDS = ['pull_request_state'] as const;
+export const LOOKUP_KINDS = ['pull_request_state', 'failing_check_logs'] as const;
 export const lookupKindSchema = z.enum(LOOKUP_KINDS);
 export type LookupKind = z.infer<typeof lookupKindSchema>;
 
@@ -979,10 +979,47 @@ export type LookupKind = z.infer<typeof lookupKindSchema>;
 export const LOOKUP_CLAIM_MAX = 5;
 
 /**
+ * How a Pull request check stands (Issue #145): `queued` and `running` have not finished,
+ * `passed`, `failed`, `skipped` and `cancelled` have. The API's list is pinned to this one by a
+ * test.
+ */
+export const PULL_REQUEST_CHECK_STATES = [
+  'queued',
+  'running',
+  'passed',
+  'failed',
+  'skipped',
+  'cancelled',
+] as const;
+export const pullRequestCheckStateSchema = z.enum(PULL_REQUEST_CHECK_STATES);
+export type PullRequestCheckState = z.infer<typeof pullRequestCheckStateSchema>;
+
+/** Most Pull request checks a result carries; GitHub's rest are left out. */
+export const PULL_REQUEST_CHECKS_MAX = 100;
+
+/** Longest name of a Pull request check, in characters. */
+export const PULL_REQUEST_CHECK_NAME_MAX_LENGTH = 200;
+
+/** A web link (http or https) as a check or the Git host gives it. */
+const webUrlSchema = z.url({ protocol: /^https?$/ }).max(REMOTE_URL_MAX_LENGTH);
+
+/** A Pull request check as the Git host reports it (Issue #145): name, state, duration, link. */
+export const pullRequestCheckSchema = z.strictObject({
+  name: z.string().min(1).max(PULL_REQUEST_CHECK_NAME_MAX_LENGTH),
+  state: pullRequestCheckStateSchema,
+  durationSeconds: z.int().min(0).max(PG_INT_MAX).optional(),
+  url: webUrlSchema,
+});
+export type PullRequestCheck = z.infer<typeof pullRequestCheckSchema>;
+
+/**
  * The result of a `pull_request_state` lookup: the state, how many commits the Run branch is
  * behind and ahead of the integration branch (not for `missing`), and whether the Git host says
  * the pull request can be merged without conflicts (left out while the host has not worked it
- * out yet, and for a merged or closed one).
+ * out yet, and for a merged or closed one). Issue #145: for a draft or open pull request also
+ * its Pull request checks (`checks`, for the pull request's latest commit `checksCommit`; an
+ * empty list means none are configured or reported), or `checksUnavailable` when the Git host
+ * refused to tell (the Agent account lacks the permission).
  */
 export const pullRequestStateResultSchema = z
   .strictObject({
@@ -990,6 +1027,9 @@ export const pullRequestStateResultSchema = z
     behindBy: z.int().min(0).max(PG_INT_MAX).optional(),
     aheadBy: z.int().min(0).max(PG_INT_MAX).optional(),
     mergeable: z.boolean().optional(),
+    checksCommit: commitIdSchema.optional(),
+    checks: z.array(pullRequestCheckSchema).max(PULL_REQUEST_CHECKS_MAX).optional(),
+    checksUnavailable: z.literal(true).optional(),
   })
   .refine(
     (result) =>
@@ -1005,7 +1045,22 @@ export const pullRequestStateResultSchema = z
   .refine((result) => result.state !== 'closed' || result.mergeable === undefined, {
     path: ['mergeable'],
     message: 'A closed pull request has no merge verdict.',
-  });
+  })
+  .refine(
+    (result) =>
+      (result.state === 'draft' || result.state === 'open'
+        ? true
+        : result.checks === undefined &&
+          result.checksCommit === undefined &&
+          result.checksUnavailable === undefined) &&
+      (result.checks === undefined) === (result.checksCommit === undefined) &&
+      !(result.checks !== undefined && result.checksUnavailable !== undefined),
+    {
+      path: ['checks'],
+      message:
+        'Pull request checks come with their commit, for a draft or open pull request only, and not together with checksUnavailable.',
+    },
+  );
 export type PullRequestStateResult = z.infer<typeof pullRequestStateResultSchema>;
 
 /**
@@ -1051,17 +1106,64 @@ export const LOOKUP_ERROR_CODES = ['scope_mismatch', 'rate_limited', 'failed'] a
 export const lookupErrorCodeSchema = z.enum(LOOKUP_ERROR_CODES);
 export type LookupErrorCode = z.infer<typeof lookupErrorCodeSchema>;
 
+/** Longest log excerpt of one failed check, in characters (Issue #145: 16 KiB). */
+export const FAILING_CHECK_EXCERPT_MAX_LENGTH = 16 * 1024;
+
+/** Longest total of the log excerpts of one `failing_check_logs` result, in characters (64 KiB). */
+export const FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH = 64 * 1024;
+
+/**
+ * The result of a `failing_check_logs` lookup (Issue #145): for the pull request's latest
+ * commit, each failed check with its name and link and, when the worker could read it, the last
+ * lines of its log (`excerpt`, `logAvailable` true). The text is untrusted: it comes from a CI
+ * job and may say anything. Studio redacts and fits it before it shows it to the operator.
+ */
+export const failingCheckLogsResultSchema = z
+  .strictObject({
+    commit: commitIdSchema,
+    checks: z
+      .array(
+        z.strictObject({
+          name: z.string().min(1).max(PULL_REQUEST_CHECK_NAME_MAX_LENGTH),
+          url: webUrlSchema,
+          logAvailable: z.boolean(),
+          excerpt: z.string().max(FAILING_CHECK_EXCERPT_MAX_LENGTH).optional(),
+          /** Why there is no log (no permission, expired, too large), when there is none. */
+          note: z.string().max(LOOKUP_ERROR_MAX_LENGTH).optional(),
+        }),
+      )
+      .max(PULL_REQUEST_CHECKS_MAX),
+  })
+  .refine(
+    (result) =>
+      result.checks.every((check) => check.logAvailable === (check.excerpt !== undefined)) &&
+      result.checks.reduce((sum, check) => sum + (check.excerpt?.length ?? 0), 0) <=
+        FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH,
+    {
+      path: ['checks'],
+      message:
+        'An excerpt comes with an available log only, and all excerpts total at most 64 KiB.',
+    },
+  );
+export type FailingCheckLogsResult = z.infer<typeof failingCheckLogsResultSchema>;
+
 /**
  * `POST /api/worker/lookups/:id/result` body: the result of the lookup's kind, or why it
  * failed (text for the operator, never a token or a path). Closed; Studio checks the kind is
  * the claimed lookup's.
  */
-export const lookupResultRequestSchema = z.discriminatedUnion('ok', [
+export const lookupResultRequestSchema = z.union([
   z.strictObject({
     workerId: workerIdSchema,
     ok: z.literal(true),
     kind: z.literal('pull_request_state'),
     result: pullRequestStateResultSchema,
+  }),
+  z.strictObject({
+    workerId: workerIdSchema,
+    ok: z.literal(true),
+    kind: z.literal('failing_check_logs'),
+    result: failingCheckLogsResultSchema,
   }),
   z.strictObject({
     workerId: workerIdSchema,

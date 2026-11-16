@@ -5,6 +5,7 @@ import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_DIFF_REPOSITORY } from './domain/repositories/run-diff-repository.js';
 import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
+import { PREPARED_FOLLOW_UP_REPOSITORY } from './domain/repositories/prepared-follow-up-repository.js';
 import { RUN_LOOKUP_REPOSITORY } from './domain/repositories/run-lookup-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
 import { AnswerRunEndpoint } from './features/answer-run/endpoint.js';
@@ -37,6 +38,12 @@ import { ListProjectRunsHandler } from './features/list-project-runs/handler.js'
 import { ListRunsEndpoint } from './features/list-runs/endpoint.js';
 import { ListRunsHandler } from './features/list-runs/handler.js';
 import { RecordHeartbeatEndpoint } from './features/record-heartbeat/endpoint.js';
+import { DiscardPreparedFollowUpEndpoint } from './features/discard-prepared-follow-up/endpoint.js';
+import { DiscardPreparedFollowUpHandler } from './features/discard-prepared-follow-up/handler.js';
+import { GetPreparedFollowUpEndpoint } from './features/get-prepared-follow-up/endpoint.js';
+import { GetPreparedFollowUpHandler } from './features/get-prepared-follow-up/handler.js';
+import { PrepareFailingChecksEndpoint } from './features/prepare-failing-checks/endpoint.js';
+import { PrepareFailingChecksHandler } from './features/prepare-failing-checks/handler.js';
 import { RefreshPullRequestEndpoint } from './features/refresh-pull-request/endpoint.js';
 import { RefreshPullRequestHandler } from './features/refresh-pull-request/handler.js';
 import { ReportLookupResultEndpoint } from './features/report-lookup-result/endpoint.js';
@@ -81,6 +88,7 @@ import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunDiffRepository } from './infrastructure/repositories/prisma-run-diff-repository.js';
 import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
+import { PrismaPreparedFollowUpRepository } from './infrastructure/repositories/prisma-prepared-follow-up-repository.js';
 import { PrismaRunLookupRepository } from './infrastructure/repositories/prisma-run-lookup-repository.js';
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
@@ -151,6 +159,9 @@ export class ExecutionsModule {
         ResumeRunEndpoint,
         FollowUpRunEndpoint,
         RefreshPullRequestEndpoint,
+        PrepareFailingChecksEndpoint,
+        GetPreparedFollowUpEndpoint,
+        DiscardPreparedFollowUpEndpoint,
         ClaimRunEndpoint,
         ClaimLookupsEndpoint,
         ReportLookupResultEndpoint,
@@ -172,6 +183,7 @@ export class ExecutionsModule {
         { provide: RUN_LOG_REPOSITORY, useClass: PrismaRunLogRepository },
         { provide: RUN_DIFF_REPOSITORY, useClass: PrismaRunDiffRepository },
         { provide: RUN_LOOKUP_REPOSITORY, useClass: PrismaRunLookupRepository },
+        { provide: PREPARED_FOLLOW_UP_REPOSITORY, useClass: PrismaPreparedFollowUpRepository },
         { provide: RUN_LOG_SIGNAL, useClass: InProcessRunLogSignal },
         { provide: OPERATOR_SESSIONS, useClass: PlatformOperatorSessions },
         options.secretValues
@@ -211,6 +223,9 @@ export class ExecutionsModule {
         ResumeRunHandler,
         FollowUpRunHandler,
         RefreshPullRequestHandler,
+        PrepareFailingChecksHandler,
+        GetPreparedFollowUpHandler,
+        DiscardPreparedFollowUpHandler,
         ClaimRunHandler,
         ClaimLookupsHandler,
         ReportLookupResultHandler,

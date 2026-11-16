@@ -50,8 +50,10 @@ function PullRequestLink({ pullRequest }: { pullRequest: { url: string; number: 
 function FailingChecks({ run }: { run: RunOutput }) {
   const names = run.failingChecks ?? [];
   if (names.length === 0) return null;
+  // The Run's latest commit when the agent reported: the commit its reported checks belong to.
+  const lastCommit = run.commits?.at(-1)?.id;
   return (
-    <Banner tone="warning" title="Some checks failed.">
+    <Banner tone="warning" title="Reported checks: some failed.">
       The agent reported {names.length === 1 ? 'this check' : 'these checks'} as failed:{' '}
       {names.map((name, index) => (
         <span key={`${index}-${name}`}>
@@ -59,7 +61,15 @@ function FailingChecks({ run }: { run: RunOutput }) {
           <Mono>{name}</Mono>
         </span>
       ))}
-      .{run.delivery === 'delivered' ? ' The pull request says so too.' : null}
+      .{run.delivery === 'delivered' ? ' The pull request says so too.' : null} This is the agent’s
+      own account of its latest run step
+      {lastCommit ? (
+        <>
+          {' '}
+          (commit <Mono>{lastCommit.slice(0, 7)}</Mono>)
+        </>
+      ) : null}
+      ; GitHub’s results are under Pull request checks.
     </Banner>
   );
 }

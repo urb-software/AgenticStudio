@@ -4,11 +4,12 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type { PullRequestState } from '../../domain/entities/run.js';
+import type { PullRequestState, RunPullRequestChecks } from '../../domain/entities/run.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
   type LookupKind,
+  type PreparedFollowUp,
   type PullRequestStateResult,
 } from '../../domain/entities/run-lookup.js';
 import type {
@@ -47,7 +48,12 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       await tx.run.update({
         where: { id: runId },
-        data: { prRefreshRequestedAt: now, prLastAttemptAt: now },
+        data:
+          // Issue #145: reading the failing checks' logs is not a refresh of the state: it only
+          // marks the Run as preparing, and leaves the page-open throttle alone.
+          kind === 'failing_check_logs'
+            ? { prPrepareRequestedAt: now, prPrepareError: null }
+            : { prRefreshRequestedAt: now, prLastAttemptAt: now },
       });
       return 'requested';
     });
@@ -142,7 +148,55 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
           prRefreshError: null,
           prRetryAt: null,
           prRefreshRequestedAt: null,
+          prChecks: checksColumn(result),
         },
+      });
+      return 'stored';
+    });
+  }
+
+  async completeFailingCheckLogs(
+    lookupId: string,
+    workerId: string,
+    draft: PreparedFollowUp,
+    now: Date,
+  ): Promise<LookupAnswerOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const lookup = await tx.runLookup.findUnique({ where: { id: lookupId } });
+      if (!lookup || lookup.claimedBy !== workerId) return 'not_held';
+      if (lookup.status === 'done') return 'duplicate';
+      if (lookup.status !== 'claimed') return 'not_held';
+      await tx.runLookup.update({
+        where: { id: lookupId },
+        data: {
+          status: 'done',
+          finishedAt: now,
+          // The text is kept in the prepared Follow-up only, not twice.
+          result: { items: draft.items.length },
+          error: null,
+          retryAt: null,
+        },
+      });
+      // The latest preparation replaces the earlier one.
+      await tx.runPreparedFollowUp.upsert({
+        where: { runId: lookup.runId },
+        create: {
+          runId: lookup.runId,
+          source: draft.source,
+          text: draft.text,
+          items: draft.items as unknown as Prisma.InputJsonValue,
+          createdAt: now,
+        },
+        update: {
+          source: draft.source,
+          text: draft.text,
+          items: draft.items as unknown as Prisma.InputJsonValue,
+          createdAt: now,
+        },
+      });
+      await tx.run.updateMany({
+        where: { id: lookup.runId },
+        data: { prPrepareRequestedAt: null, prPrepareError: null },
       });
       return 'stored';
     });
@@ -176,12 +230,19 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       await tx.run.updateMany({
         where: { id: lookup.runId },
-        data: {
-          prRefreshError: error,
-          prRetryAt: retryAt,
-          // Still being refreshed while the lookup waits for its retry.
-          prRefreshRequestedAt: retryAt === null ? null : lookup.requestedAt,
-        },
+        data:
+          lookup.kind === 'failing_check_logs'
+            ? {
+                prPrepareError: error,
+                // Still preparing while the lookup waits for its retry.
+                prPrepareRequestedAt: retryAt === null ? null : lookup.requestedAt,
+              }
+            : {
+                prRefreshError: error,
+                prRetryAt: retryAt,
+                // Still being refreshed while the lookup waits for its retry.
+                prRefreshRequestedAt: retryAt === null ? null : lookup.requestedAt,
+              },
       });
       return 'stored';
     });
@@ -198,7 +259,20 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
   async recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
     await this.db.run.updateMany({
       where: { id: runId, pullRequestNumber: { not: null } },
-      data: { prState: state, prRefreshedAt: now, prRefreshError: null, prRetryAt: null },
+      data: {
+        prState: state,
+        prRefreshedAt: now,
+        prRefreshError: null,
+        prRetryAt: null,
+        // Review N1 of #152: what an ended pull request cannot have is cleared with the state.
+        ...(state === 'merged' || state === 'missing'
+          ? { prBehindBy: null, prAheadBy: null, prMergeable: null }
+          : {}),
+        ...(state === 'closed' ? { prMergeable: null } : {}),
+        ...(state === 'merged' || state === 'missing' || state === 'closed'
+          ? { prChecks: Prisma.DbNull }
+          : {}),
+      },
     });
   }
 
@@ -234,4 +308,20 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     });
     return rows.map((row) => row.id);
   }
+}
+
+/**
+ * The `pr_checks` column for a state result (Issue #145): the checks and their commit, the
+ * marker that the Git host would not tell, or nothing (null) when the result has no checks.
+ */
+function checksColumn(
+  result: PullRequestStateResult,
+): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  const value: RunPullRequestChecks | null =
+    result.checksUnavailable === true
+      ? { unavailable: true }
+      : result.checks !== undefined && result.checksCommit !== undefined
+        ? { commit: result.checksCommit, checks: result.checks }
+        : null;
+  return value === null ? Prisma.DbNull : (value as unknown as Prisma.InputJsonValue);
 }

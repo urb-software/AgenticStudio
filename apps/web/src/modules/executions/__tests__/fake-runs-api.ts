@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type {
+  PreparedFollowUpOutput,
   ProblemDetails,
   ProjectOutput,
   ProviderAvailabilityOutput,
@@ -28,6 +29,9 @@ type Route =
   | 'answer'
   | 'followUp'
   | 'refresh'
+  | 'prepare'
+  | 'prepared'
+  | 'discardPrepared'
   | 'diff'
   | 'diffFile';
 
@@ -50,6 +54,11 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
   [/^\/api\/runs\/([^/]+)\/follow-up$/, () => 'followUp'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/refresh$/, () => 'refresh'],
+  [/^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepare$/, () => 'prepare'],
+  [
+    /^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepared$/,
+    (method) => (method === 'DELETE' ? 'discardPrepared' : 'prepared'),
+  ],
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
   [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
   [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
@@ -144,6 +153,9 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     answer: [],
     followUp: [],
     refresh: [],
+    prepare: [],
+    prepared: [],
+    discardPrepared: [],
     events: [],
     steps: [],
     stream: [],
@@ -155,6 +167,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
   const logs = new Map<string, RunEventOutput[]>();
   const stepResults = new Map<string, RunStepOutput[]>();
   const streams: FakeStream[] = [];
+  /** Each Run's prepared Follow-up of its failing checks (Issue #145). */
+  const prepared = new Map<string, PreparedFollowUpOutput>();
   /** Each Run's stored diffs by scope (Issue #144). */
   const diffs = new Map<string, Partial<Record<RunDiffOutput['scope'], FakeDiff>>>();
 
@@ -311,7 +325,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
             problem(409, 'Follow-up not possible', 'The run cannot take a Follow-up now.'),
           );
         }
-        const { text } = body as { text: string };
+        const { text, source } = body as { text: string; source?: 'pull_request_checks' };
+        prepared.delete(run.id);
         const { failure: _failure, finishedAt: _finishedAt, delivery: _delivery, ...rest } = run;
         void _failure;
         void _finishedAt;
@@ -324,7 +339,13 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           followUp: { allowed: false, reason: 'follow_up_queued' },
           messages: [
             ...(run.messages ?? []),
-            { role: 'operator', kind: 'follow_up', text, at: new Date().toISOString() },
+            {
+              role: 'operator',
+              kind: 'follow_up',
+              text,
+              ...(source ? { source } : {}),
+              at: new Date().toISOString(),
+            },
           ],
         };
         runs[index] = queued;
@@ -340,6 +361,23 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         }
         return json(202, run);
       }
+      case 'prepare': {
+        // Issue #145: the API only records a request; the Run comes back as it is. Tests move it
+        // on with `update` and `setPrepared`, as the agent worker's answer would.
+        const run = runs.find((candidate) => candidate.id === id);
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (!run.pullRequest) return json(409, problem(409, 'No pull request to read'));
+        return json(202, run);
+      }
+      case 'prepared': {
+        const draft = prepared.get(id!);
+        return draft
+          ? json(200, draft)
+          : json(404, problem(404, 'No prepared Follow-up', 'The run has no prepared Follow-up.'));
+      }
+      case 'discardPrepared':
+        prepared.delete(id!);
+        return new Response(null, { status: 204 });
       case 'retryDelivery': {
         const index = runs.findIndex((candidate) => candidate.id === id);
         if (index === -1) return json(404, problem(404, 'Run not found'));
@@ -439,6 +477,12 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     setDiff(runId: string, scope: RunDiffOutput['scope'], diff: FakeDiff) {
       diffs.set(runId, { ...diffs.get(runId), [scope]: diff });
     },
+    /** Sets a Run's prepared Follow-up of its failing checks (Issue #145). */
+    setPrepared(runId: string, draft: PreparedFollowUpOutput) {
+      prepared.set(runId, draft);
+    },
+    /** Whether the Run still has a prepared Follow-up on the server. */
+    hasPrepared: (runId: string) => prepared.has(runId),
     /** The live log connections opened so far, in order. */
     streams: () => [...streams],
   };

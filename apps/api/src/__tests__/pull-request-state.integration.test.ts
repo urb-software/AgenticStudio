@@ -35,6 +35,8 @@ const PROBLEM = {
   lookupNotFound: 'urn:agentic-studio:problem:lookup-not-found',
   lookupNotHeld: 'urn:agentic-studio:problem:lookup-not-held',
   lookupKindMismatch: 'urn:agentic-studio:problem:lookup-kind-mismatch',
+  noFailingChecks: 'urn:agentic-studio:problem:no-failing-checks',
+  preparedFollowUpNotFound: 'urn:agentic-studio:problem:prepared-follow-up-not-found',
 };
 
 function expectProblem(response: request.Response, status: number, type?: string) {
@@ -599,6 +601,350 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       expect(run.body).toMatchObject({ state: 'succeeded', pullRequest: { state: 'merged' } });
       // Nothing was queued for an agent: no Run waits to be claimed.
       expect((await asWorker('runs/claim', { workerId: W1 })).status).toBe(204);
+    });
+  });
+  // Issue #145: Pull request checks with the state, and the Follow-up prepared from failing ones.
+  describe('pull request checks and failing checks', () => {
+    const COMMIT = 'c'.repeat(40);
+    const checks = [
+      { name: 'build', state: 'passed', durationSeconds: 61, url: 'https://github.com/a/b/runs/1' },
+      { name: 'unit tests', state: 'failed', url: 'https://github.com/a/b/runs/2' },
+    ];
+    const prepare = (runId: string, headers: object = {}) =>
+      http()
+        .post(`/api/runs/${runId}/pull-request/failing-checks/prepare`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie, ...headers })
+        .send();
+    const prepared = (runId: string, headers: Record<string, string> = { Cookie: cookie }) =>
+      http().get(`/api/runs/${runId}/pull-request/failing-checks/prepared`).set(headers);
+    const discard = (runId: string, headers: object = {}) =>
+      http()
+        .delete(`/api/runs/${runId}/pull-request/failing-checks/prepared`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie, ...headers });
+    const logsAnswer = (workerId = W1) => ({
+      workerId,
+      ok: true,
+      kind: 'failing_check_logs',
+      result: {
+        commit: COMMIT,
+        checks: [
+          {
+            name: 'unit tests',
+            url: 'https://github.com/a/b/runs/2',
+            logAvailable: true,
+            excerpt: 'FAIL src/health.test.ts\nexpected 200 to be 201',
+          },
+        ],
+      },
+    });
+
+    /** A delivered Run whose stored state lookup read `checks` for `COMMIT`. */
+    async function runWithChecks(read: object[] = checks) {
+      const runId = await deliveredRun();
+      await refresh(runId);
+      await readAs({ state: 'open', behindBy: 0, aheadBy: 1, checksCommit: COMMIT, checks: read });
+      return runId;
+    }
+
+    /** The prepared Follow-up of a Run with a failing check, ready for review. */
+    async function runWithDraft() {
+      const runId = await runWithChecks();
+      expect((await prepare(runId)).status).toBe(202);
+      const claimed = await claimLookups();
+      expect(claimed.body).toHaveLength(1);
+      expect(claimed.body[0].kind).toBe('failing_check_logs');
+      expect((await answer(claimed.body[0].id, logsAnswer())).status).toBe(204);
+      return runId;
+    }
+
+    it('stores the checks of a state lookup and shows them on the Run and in the lists', async () => {
+      const runId = await runWithChecks();
+
+      const run = await getRun(runId);
+      expect(run.body.pullRequest).toMatchObject({
+        state: 'open',
+        checksCommit: COMMIT,
+        checks,
+      });
+      const list = await http().get('/api/runs').set('Cookie', cookie);
+      expect(
+        list.body.find((item: { id: string }) => item.id === runId).pullRequest.checks,
+      ).toEqual(checks);
+    });
+
+    it('stores an empty list, a refusal to tell and an ended pull request without checks', async () => {
+      const runId = await runWithChecks([]);
+      expect((await getRun(runId)).body.pullRequest).toMatchObject({
+        checksCommit: COMMIT,
+        checks: [],
+      });
+
+      await refresh(runId);
+      await readAs({ state: 'open', checksUnavailable: true });
+      const unavailable = (await getRun(runId)).body.pullRequest;
+      expect(unavailable.checksUnavailable).toBe(true);
+      expect(unavailable).not.toHaveProperty('checks');
+
+      await refresh(runId);
+      await readAs({ state: 'merged' });
+      const merged = (await getRun(runId)).body.pullRequest;
+      expect(merged).toMatchObject({ state: 'merged' });
+      expect(merged).not.toHaveProperty('checks');
+      expect(merged).not.toHaveProperty('behindBy');
+    });
+
+    it('refuses what a worker may not report: checks of a merged pull request, unknown states, javascript links', async () => {
+      const runId = await deliveredRun();
+      await refresh(runId);
+      const claimed = (await claimLookups()).body[0].id as string;
+
+      for (const result of [
+        { state: 'merged', checksCommit: COMMIT, checks },
+        { state: 'open', checksCommit: COMMIT, checks: [{ ...checks[0], state: 'pending' }] },
+        {
+          state: 'open',
+          checksCommit: COMMIT,
+          checks: [{ ...checks[0], url: 'javascript:alert(1)' }],
+        },
+        { state: 'open', checks },
+      ]) {
+        expect((await answer(claimed, read(result))).status).toBe(422);
+      }
+    });
+
+    it('prepares only when a check is known to have failed, and only for a Run with a pull request', async () => {
+      const passing = await runWithChecks([checks[0]!]);
+      expectProblem(await prepare(passing), 409, PROBLEM.noFailingChecks);
+      const unread = await deliveredRun();
+      expectProblem(await prepare(unread), 409, PROBLEM.noFailingChecks);
+      const none = await deliveredRun({ delivered: false });
+      expectProblem(await prepare(none), 409, PROBLEM.pullRequestNotRefreshable);
+      expectProblem(await prepare(randomUUID()), 404, PROBLEM.runNotFound);
+    });
+
+    it('records a request for the logs, never an agent Run step, and lets a worker claim it', async () => {
+      const runId = await runWithChecks();
+
+      const asked = await prepare(runId);
+
+      expect(asked.status).toBe(202);
+      expect(asked.body.pullRequest.failingChecksPreparation).toEqual({ state: 'preparing' });
+      // Asking twice is one request; the state is not marked as refreshing.
+      expect((await prepare(runId)).status).toBe(202);
+      expect(asked.body.pullRequest).not.toHaveProperty('refreshing');
+      const claimed = await claimLookups();
+      expect(claimed.body).toEqual([
+        {
+          id: expect.any(String),
+          kind: 'failing_check_logs',
+          runId,
+          repository: { remoteUrl: expect.stringMatching(/^https:\/\/github\.com\/acme\//) },
+          pullRequestNumber: 7,
+          runBranch: WORKING_COPY.runBranch,
+          integrationBranch: 'dev',
+        },
+      ]);
+      expect((await asWorker('runs/claim', { workerId: W1 })).status).toBe(204);
+    });
+
+    it('stores what the worker read as a prepared Follow-up that is never sent by itself', async () => {
+      const runId = await runWithDraft();
+
+      const run = (await getRun(runId)).body;
+      expect(run.pullRequest.failingChecksPreparation).toEqual({ state: 'ready' });
+      // The Run is as it was: finished, no Follow-up queued, no message added.
+      expect(run).toMatchObject({ state: 'succeeded', followUps: 0 });
+      expect(run.messages.map((message: { kind: string }) => message.kind)).toEqual(['task']);
+      const draft = await prepared(runId);
+      expect(draft.status).toBe(200);
+      expect(draft.body).toMatchObject({
+        source: 'pull_request_checks',
+        checks: [
+          {
+            name: 'unit tests',
+            url: 'https://github.com/a/b/runs/2',
+            logAvailable: true,
+            section: expect.stringContaining('expected 200 to be 201'),
+          },
+        ],
+      });
+      expect(draft.body.text).toContain('expected 200 to be 201');
+      expect(draft.body.text).toContain(draft.body.checks[0].section);
+      expect(draft.body.text.length).toBeLessThanOrEqual(10_000);
+    });
+
+    it('redacts token-shaped strings in a log before storing the Follow-up', async () => {
+      const runId = await runWithChecks();
+      await prepare(runId);
+      const id = (await claimLookups()).body[0].id as string;
+      const token = `ghp_${randomBytes(18).toString('hex')}`;
+      const body = logsAnswer();
+      body.result.checks[0]!.excerpt = `export GITHUB_TOKEN=${token}\nerror`;
+
+      expect((await answer(id, body)).status).toBe(204);
+
+      const text = (await prepared(runId)).body.text as string;
+      expect(text).not.toContain(token);
+      expect(text).toContain('error');
+    });
+
+    it('replaces the earlier prepared Follow-up with a new preparation', async () => {
+      const runId = await runWithDraft();
+      expect((await prepare(runId)).status).toBe(202);
+      const id = (await claimLookups()).body[0].id as string;
+      const body = logsAnswer();
+      body.result.checks[0]!.excerpt = 'a newer failure';
+
+      expect((await answer(id, body)).status).toBe(204);
+
+      expect((await prepared(runId)).body.text).toContain('a newer failure');
+    });
+
+    it('says why a preparation failed, and keeps the pull request state', async () => {
+      const runId = await runWithChecks();
+      await prepare(runId);
+      const id = (await claimLookups()).body[0].id as string;
+
+      await answer(id, {
+        workerId: W1,
+        ok: false,
+        code: 'failed',
+        error: 'The pull request is not open any more.',
+      });
+
+      const run = (await getRun(runId)).body.pullRequest;
+      expect(run.failingChecksPreparation).toEqual({
+        state: 'failed',
+        error: 'The pull request is not open any more.',
+      });
+      expect(run).toMatchObject({ state: 'open', checks });
+      expect(run).not.toHaveProperty('refreshError');
+      expectProblem(await prepared(runId), 404, PROBLEM.preparedFollowUpNotFound);
+    });
+
+    it('refuses an answer of another kind than the lookup', async () => {
+      const runId = await runWithChecks();
+      await prepare(runId);
+      const id = (await claimLookups()).body[0].id as string;
+
+      expectProblem(await answer(id, read({ state: 'open' })), 409, PROBLEM.lookupKindMismatch);
+    });
+
+    it('sends the edited text through the Follow-up rules, marked as prepared, and removes the draft', async () => {
+      const runId = await runWithDraft();
+
+      const sent = await http()
+        .post(`/api/runs/${runId}/follow-up`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+        .send({ text: 'Only fix the unit tests.', source: 'pull_request_checks' });
+
+      expect(sent.status).toBe(202);
+      expect(sent.body).toMatchObject({ state: 'queued', followUps: 1 });
+      const messages = sent.body.messages as { kind: string; text: string; source?: string }[];
+      expect(messages.at(-1)).toMatchObject({
+        kind: 'follow_up',
+        text: 'Only fix the unit tests.',
+        source: 'pull_request_checks',
+      });
+      expectProblem(await prepared(runId), 404, PROBLEM.preparedFollowUpNotFound);
+      expect(sent.body.pullRequest).not.toHaveProperty('failingChecksPreparation');
+    });
+
+    it('keeps the normal Follow-up rules: an unknown source is invalid, a refused send keeps the draft', async () => {
+      const runId = await runWithDraft();
+      const post = (body: object) =>
+        http()
+          .post(`/api/runs/${runId}/follow-up`)
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+          .send(body);
+      expect((await post({ text: 'x', source: 'review_comments' })).status).toBe(422);
+      expect((await post({ text: 'one' })).status).toBe(202);
+
+      expectProblem(
+        await post({ text: 'two', source: 'pull_request_checks' }),
+        409,
+        PROBLEM.followUpNotAllowed,
+      );
+      expect((await prepared(runId)).status).toBe(200);
+    });
+
+    it('stores a Follow-up written from scratch without a source, leaving a draft under review alone', async () => {
+      const runId = await runWithDraft();
+
+      const sent = await followUp(runId);
+
+      expect(sent.status).toBe(202);
+      expect(sent.body.messages.at(-1)).not.toHaveProperty('source');
+      expect((await prepared(runId)).status).toBe(200);
+    });
+
+    it('discards the prepared Follow-up without sending anything, also when there is none', async () => {
+      const runId = await runWithDraft();
+
+      expect((await discard(runId)).status).toBe(204);
+      expect((await discard(runId)).status).toBe(204);
+
+      expectProblem(await prepared(runId), 404, PROBLEM.preparedFollowUpNotFound);
+      expect((await getRun(runId)).body).toMatchObject({ state: 'succeeded', followUps: 0 });
+      expectProblem(await discard('not-a-run'), 404, PROBLEM.runNotFound);
+    });
+
+    it('needs the operator session, and the Origin check where it changes something', async () => {
+      const runId = await runWithDraft();
+
+      expect((await prepare(runId, { Cookie: '' })).status).toBe(401);
+      expect((await prepared(runId, {})).status).toBe(401);
+      expect((await discard(runId, { Cookie: '' })).status).toBe(401);
+      expect((await prepare(runId, { Origin: 'https://evil.example' })).status).toBe(403);
+      expect((await discard(runId, { Origin: 'https://evil.example' })).status).toBe(403);
+      // The worker token is not an operator credential.
+      expect(
+        (
+          await http()
+            .get(`/api/runs/${runId}/pull-request/failing-checks/prepared`)
+            .set('Authorization', `Bearer ${WORKER_TOKEN}`)
+        ).status,
+      ).toBe(401);
+      // Nothing was discarded or sent by the refused calls.
+      expect((await prepared(runId)).status).toBe(200);
+    });
+
+    it('removes a Run with its prepared Follow-up (cascade)', async () => {
+      const runId = await runWithDraft();
+
+      await db().$executeRaw`DELETE FROM runs WHERE id = ${runId}::uuid`;
+
+      const left = await db().$queryRaw<{ count: bigint }[]>`
+        SELECT count(*) FROM run_prepared_follow_ups`;
+      expect(Number(left[0]!.count)).toBe(0);
+    });
+
+    it('clears the checks and the branch position when a Follow-up refusal observes an ended pull request (review N1 of #152)', async () => {
+      const runId = await runWithChecks();
+      const before = await db().run.findUniqueOrThrow({ where: { id: runId } });
+      expect(before.prBehindBy).toBe(0);
+      expect(before.prChecks).not.toBeNull();
+      // A Follow-up is queued and claimed; the worker reads the pull request as merged right
+      // before it refuses to start the agent, and reports that with the failure.
+      expect((await followUp(runId)).status).toBe(202);
+      expect((await asWorker('runs/claim', { workerId: W1 })).status).toBe(200);
+
+      const failed = await asWorker(`runs/${runId}/state`, {
+        workerId: W1,
+        state: 'failed',
+        failure: { code: 'preparation_failed', detail: 'The pull request #7 was merged.' },
+        pullRequestState: 'merged',
+      });
+
+      expect(failed.status).toBe(204);
+      const after = await db().run.findUniqueOrThrow({ where: { id: runId } });
+      expect(after).toMatchObject({
+        prState: 'merged',
+        prBehindBy: null,
+        prAheadBy: null,
+        prMergeable: null,
+        prChecks: null,
+      });
     });
   });
 });

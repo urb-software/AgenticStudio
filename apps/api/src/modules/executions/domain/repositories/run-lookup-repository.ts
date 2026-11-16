@@ -1,5 +1,10 @@
 import type { PullRequestState } from '../entities/run.js';
-import type { ClaimedLookup, LookupKind, PullRequestStateResult } from '../entities/run-lookup.js';
+import type {
+  ClaimedLookup,
+  LookupKind,
+  PreparedFollowUp,
+  PullRequestStateResult,
+} from '../entities/run-lookup.js';
 
 /** DI token for the {@link RunLookupRepository} adapter. */
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');
@@ -31,7 +36,8 @@ export type LookupAnswerOutcome =
 export interface RunLookupRepository {
   /**
    * Records a request of `kind` for the Run unless one is open, and marks the Run as being
-   * refreshed. Serialized per Run, so two requests at once record one.
+   * refreshed (a `failing_check_logs` request marks it as preparing instead, Issue #145, and
+   * clears the last preparation's error). Serialized per Run, so two requests at once record one.
    */
   request(runId: string, kind: LookupKind, now: Date): Promise<LookupRequestOutcome>;
 
@@ -45,7 +51,8 @@ export interface RunLookupRepository {
   /**
    * Stores a `pull_request_state` result for a lookup `workerId` holds: the lookup is `done`
    * and the Run's pull request state, branch position and refresh time are replaced (a Run
-   * without a pull request is left alone), the error and retry time cleared.
+   * without a pull request is left alone), the error and retry time cleared. Issue #145: the
+   * Pull request checks are replaced the same way (cleared for a pull request that is not open).
    */
   completePullRequestState(
     lookupId: string,
@@ -55,8 +62,21 @@ export interface RunLookupRepository {
   ): Promise<LookupAnswerOutcome>;
 
   /**
+   * Stores a `failing_check_logs` result for a lookup `workerId` holds (Issue #145): the lookup
+   * is `done`, the Run's prepared Follow-up is replaced by `draft` (one per Run) and the Run is
+   * no longer preparing.
+   */
+  completeFailingCheckLogs(
+    lookupId: string,
+    workerId: string,
+    draft: PreparedFollowUp,
+    now: Date,
+  ): Promise<LookupAnswerOutcome>;
+
+  /**
    * Records a failed lookup `workerId` holds: the Run keeps its last known state and gets
-   * `error` (already redacted). With `retryInSeconds` (a rate limit) the lookup goes back in the
+   * `error` (already redacted); a failed `failing_check_logs` lookup sets the Run's preparation
+   * error instead (Issue #145). With `retryInSeconds` (a rate limit) the lookup goes back in the
    * queue, not to be handed out before `now` plus that, and the Run says when; otherwise the
    * lookup ends as `failed`.
    */
@@ -71,7 +91,9 @@ export interface RunLookupRepository {
   /**
    * Records the state of the Run's pull request a worker read on its own (review S4 of #152: right
    * before it refused a Follow-up): the state and its read time replace the Run's, the error is
-   * cleared; the branch position is left as it was. A Run without a pull request is left alone.
+   * cleared. A merged, closed or missing pull request has no branch position, merge verdict or
+   * checks worth keeping (review N1 of #152, Issue #145): those are cleared with the state (a
+   * closed one keeps its branch position). A Run without a pull request is left alone.
    */
   recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void>;
 

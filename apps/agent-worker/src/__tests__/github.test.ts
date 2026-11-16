@@ -229,6 +229,7 @@ describe('GitHubPullRequests', () => {
         mergeable: true,
         headRef: branch,
         headRepository: 'acme/shop',
+        headSha: 'c'.repeat(40),
         author: 'agent-bot',
       });
       stub.pullRequests[0]!.mergeable = undefined;
@@ -313,6 +314,126 @@ describe('GitHubPullRequests', () => {
         .details({ ...pull, number: 99 }, signal())
         .catch((e: unknown) => e);
       expect(bad).toMatchObject({ status: 404 });
+    });
+  });
+
+  // Issue #145: the checks of a commit and the log of an Actions job.
+  describe('checks and job logs (Issue #145)', () => {
+    const repository = { owner: 'acme', repo: 'shop' };
+    const signal = () => new AbortController().signal;
+    const sha = 'c'.repeat(40);
+    const fallback = 'https://github.com/acme/shop/pull/41/checks';
+    const run = (overrides: Record<string, unknown> = {}) => ({
+      id: 100,
+      name: 'build',
+      status: 'completed',
+      conclusion: 'success',
+      started_at: '2026-11-16T10:00:00Z',
+      completed_at: '2026-11-16T10:01:05Z',
+      html_url: 'https://github.com/acme/shop/runs/100',
+      app: { slug: 'github-actions' },
+      output: { summary: null },
+      ...overrides,
+    });
+
+    it('maps check runs and commit statuses to the check states, with durations and links', async () => {
+      stub.checkRuns.push(
+        run(),
+        run({ id: 101, name: 'lint', conclusion: 'failure', output: { summary: 'Two problems' } }),
+        run({ id: 102, name: 'queued job', status: 'queued', conclusion: null }),
+        run({ id: 103, name: 'waiting', status: 'waiting', conclusion: null }),
+        run({ id: 104, name: 'running job', status: 'in_progress', conclusion: null }),
+        run({ id: 105, name: 'optional', conclusion: 'skipped' }),
+        run({ id: 106, name: 'neutral', conclusion: 'neutral' }),
+        run({ id: 107, name: 'stopped', conclusion: 'cancelled' }),
+        run({ id: 108, name: 'too slow', conclusion: 'timed_out' }),
+        run({ id: 109, name: 'external', app: { slug: 'circleci' }, html_url: null }),
+      );
+      stub.statuses.push(
+        { context: 'ci/legacy', state: 'success', target_url: 'https://ci.example.test/1' },
+        { context: 'ci/pending', state: 'pending', target_url: 'javascript:alert(1)' },
+        { context: 'ci/broken', state: 'error', description: 'It broke' },
+      );
+
+      const checks = await client().checks(repository, sha, fallback, signal());
+
+      expect(checks.map(({ name, state }) => [name, state])).toEqual([
+        ['build', 'passed'],
+        ['lint', 'failed'],
+        ['queued job', 'queued'],
+        ['waiting', 'queued'],
+        ['running job', 'running'],
+        ['optional', 'skipped'],
+        ['neutral', 'skipped'],
+        ['stopped', 'cancelled'],
+        ['too slow', 'failed'],
+        ['external', 'passed'],
+        ['ci/legacy', 'passed'],
+        ['ci/pending', 'running'],
+        ['ci/broken', 'failed'],
+      ]);
+      expect(checks[0]).toEqual({
+        name: 'build',
+        state: 'passed',
+        durationSeconds: 65,
+        url: 'https://github.com/acme/shop/runs/100',
+        jobId: 100,
+      });
+      expect(checks[1]).toMatchObject({ jobId: 101, summary: 'Two problems' });
+      // A check without a link of its own, or with one that is not a web link, gets the fallback.
+      expect(checks[9]).toMatchObject({ url: fallback });
+      expect(checks[9]).not.toHaveProperty('jobId');
+      expect(checks[11]).toMatchObject({ url: fallback });
+      expect(checks[12]).toMatchObject({ summary: 'It broke' });
+      expect(stub.requests.at(-2)).toMatchObject({
+        path: `/repos/acme/shop/commits/${sha}/check-runs`,
+        query: { per_page: '100' },
+        authorization: `Bearer ${token}`,
+      });
+    });
+
+    it('reads the end of a job log from the download GitHub redirects to, never sending the token there', async () => {
+      stub.jobLogs.set(100, { text: 'step 1\nstep 2\nerror: boom\n' });
+
+      const outcome = await client().jobLog(repository, 100, signal());
+
+      expect(outcome).toEqual({ log: 'step 1\nstep 2\nerror: boom\n' });
+      expect(stub.requests.at(-1)).toMatchObject({
+        path: '/__logs/100',
+        authorization: undefined,
+      });
+      expect(stub.requests.at(-2)).toMatchObject({ authorization: `Bearer ${token}` });
+    });
+
+    it('keeps only the end of a very long log', async () => {
+      stub.jobLogs.set(100, { text: `${'a'.repeat(2_000_000)}\nthe end\n` });
+
+      const outcome = await client().jobLog(repository, 100, signal());
+
+      expect('log' in outcome && outcome.log.length).toBeLessThanOrEqual(256 * 1024);
+      expect('log' in outcome && outcome.log.endsWith('the end\n')).toBe(true);
+    });
+
+    it.each([
+      [404, 'cannot read the log, or it was removed'],
+      [403, 'cannot read the log, or it was removed'],
+      [410, 'has expired'],
+    ])('says why there is no log when GitHub answers %i', async (status, reason) => {
+      stub.jobLogs.set(100, { status });
+
+      const outcome = await client().jobLog(repository, 100, signal());
+
+      expect(outcome).toEqual({ unavailable: expect.stringContaining(reason) });
+    });
+
+    it('still reports a rate limit on a log as a refusal to wait out', async () => {
+      stub.refuseNextRead = { status: 429, headers: { 'retry-after': '30' } };
+
+      const error = await client()
+        .jobLog(repository, 100, signal())
+        .catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ status: 429, retryAfterSeconds: 30 });
     });
   });
 });

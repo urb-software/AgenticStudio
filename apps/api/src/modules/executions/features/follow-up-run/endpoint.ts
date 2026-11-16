@@ -53,6 +53,7 @@ export class FollowUpRunEndpoint {
       const { run, followUp, workerConnected } = await this.handler.execute(
         runId,
         parsed.data.text,
+        parsed.data.source,
       );
       return toRunResponse(run, followUp, workerConnected);
     } catch (error) {

@@ -142,6 +142,29 @@ export const zRunFollowUpEligibilityOutput = z.object({
     ]).optional()
 });
 
+export const zRunPullRequestCheckOutput = z.object({
+    name: z.string(),
+    state: z.enum([
+        'queued',
+        'running',
+        'passed',
+        'failed',
+        'skipped',
+        'cancelled'
+    ]),
+    durationSeconds: z.int().gte(0).lte(9007199254740991).optional(),
+    url: z.url()
+});
+
+export const zFailingChecksPreparationOutput = z.object({
+    state: z.enum([
+        'preparing',
+        'ready',
+        'failed'
+    ]),
+    error: z.string().optional()
+});
+
 export const zRunPullRequestOutput = z.object({
     url: z.url(),
     number: z.int().gt(0).lte(9007199254740991),
@@ -158,7 +181,12 @@ export const zRunPullRequestOutput = z.object({
     refreshedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
     refreshError: z.string().optional(),
     retryAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
-    refreshing: z.literal(true).optional()
+    refreshing: z.literal(true).optional(),
+    checks: z.array(zRunPullRequestCheckOutput).optional(),
+    checksCommit: z.string().optional(),
+    checksUnavailable: z.literal(true).optional(),
+    checksOtherCommit: z.literal(true).optional(),
+    failingChecksPreparation: zFailingChecksPreparationOutput.optional()
 });
 
 export const zRunQuestionOutput = z.object({
@@ -208,6 +236,7 @@ export const zRunMessageOutput = z.object({
     end: zRunPartEndOutput.optional(),
     options: z.array(z.string()).optional(),
     recommendation: z.string().optional(),
+    source: z.enum(['pull_request_checks']).optional(),
     at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
@@ -285,11 +314,25 @@ export const zAnswerRunRequest = z.object({
 });
 
 export const zFollowUpRunRequest = z.object({
-    text: z.string().min(1).max(10000)
+    text: z.string().min(1).max(10000),
+    source: z.enum(['pull_request_checks']).optional()
 });
 
 export const zRefreshPullRequestRequest = z.object({
     onOpen: z.boolean().optional()
+});
+
+export const zPreparedFollowUpCheckOutput = z.object({
+    name: z.string(),
+    url: z.url(),
+    logAvailable: z.boolean(),
+    section: z.string()
+});
+
+export const zPreparedFollowUpOutput = z.object({
+    source: z.enum(['pull_request_checks']),
+    text: z.string(),
+    checks: z.array(zPreparedFollowUpCheckOutput)
 });
 
 export const zRunEventOutput = z.object({
@@ -547,6 +590,27 @@ export const zRefreshRunPullRequestPath = z.object({
 });
 
 export const zRefreshRunPullRequestResponse = zRunOutput;
+
+export const zPrepareRunFailingChecksPath = z.object({
+    runId: z.string()
+});
+
+export const zPrepareRunFailingChecksResponse = zRunOutput;
+
+export const zDiscardRunPreparedFollowUpPath = z.object({
+    runId: z.string()
+});
+
+/**
+ * Error (RFC 9457 problem details)
+ */
+export const zDiscardRunPreparedFollowUpResponse = zProblemDetails;
+
+export const zGetRunPreparedFollowUpPath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunPreparedFollowUpResponse = zPreparedFollowUpOutput;
 
 export const zListRunEventsPath = z.object({
     runId: z.string()

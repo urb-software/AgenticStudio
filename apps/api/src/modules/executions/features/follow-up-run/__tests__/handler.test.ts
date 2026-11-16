@@ -107,6 +107,57 @@ describe('FollowUpRunHandler', () => {
     connect();
   });
 
+  // Issue #145: a Follow-up prepared from failing checks, as the operator left it.
+  describe('a Follow-up prepared from failing checks', () => {
+    const draft = {
+      source: 'pull_request_checks' as const,
+      text: 'Prepared text.',
+      items: [{ name: 'unit tests', url: 'https://ci.test/1', logAvailable: true, section: 'x' }],
+    };
+
+    it('is stored as given, marked with its source, and removes the prepared draft', async () => {
+      const run = await finished();
+      runs.prepared.set(run.id, draft);
+
+      const { run: queued } = await handler.execute(
+        run.id,
+        'Prepared text, edited by the operator.',
+        'pull_request_checks',
+      );
+
+      expect(queued.messages.at(-1)).toEqual({
+        kind: 'follow_up',
+        text: 'Prepared text, edited by the operator.',
+        at: T1,
+        source: 'pull_request_checks',
+      });
+      expect(runs.prepared.has(run.id)).toBe(false);
+    });
+
+    it('keeps the prepared draft when the Follow-up is refused', async () => {
+      const run = await finished();
+      await handler.execute(run.id, 'A first Follow-up.');
+      runs.prepared.set(run.id, draft);
+
+      await expect(handler.execute(run.id, 'Text.', 'pull_request_checks')).rejects.toBeInstanceOf(
+        FollowUpNotAllowedError,
+      );
+
+      expect(runs.prepared.has(run.id)).toBe(true);
+    });
+
+    it('has no source when the operator wrote it from scratch', async () => {
+      const run = await finished();
+      runs.prepared.set(run.id, draft);
+
+      const { run: queued } = await handler.execute(run.id, 'Written from scratch.');
+
+      expect(queued.messages.at(-1)).not.toHaveProperty('source');
+      // A Follow-up of its own does not touch a draft the operator is still reviewing.
+      expect(runs.prepared.has(run.id)).toBe(true);
+    });
+  });
+
   it.each(['succeeded', 'failed', 'timed_out', 'cancelled'] as const)(
     'queues a %s Run for its agent worker, with the Follow-up as its latest message',
     async (end) => {

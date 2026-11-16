@@ -3,8 +3,10 @@ import type { PullRequestState } from '../../entities/run.js';
 import type {
   ClaimedLookup,
   LookupKind,
+  PreparedFollowUp,
   PullRequestStateResult,
 } from '../../entities/run-lookup.js';
+import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
 import type {
   LookupAnswerOutcome,
   LookupRequestOutcome,
@@ -31,7 +33,9 @@ export interface FakeLookup {
  * again, a rate-limited lookup waits for its retry time, and an answer updates the Run's
  * pull request status in the given Run store.
  */
-export class InMemoryRunLookupRepository implements RunLookupRepository {
+export class InMemoryRunLookupRepository
+  implements RunLookupRepository, PreparedFollowUpRepository
+{
   readonly lookups: FakeLookup[] = [];
 
   constructor(private readonly runs: InMemoryRunRepository) {}
@@ -67,11 +71,10 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
       finishedAt: null,
       error: null,
     });
-    run.pullRequestStatus = {
-      ...run.pullRequestStatus,
-      refreshRequestedAt: now,
-      lastAttemptAt: now,
-    };
+    run.pullRequestStatus =
+      kind === 'failing_check_logs'
+        ? { ...run.pullRequestStatus, prepareRequestedAt: now, prepareError: null }
+        : { ...run.pullRequestStatus, refreshRequestedAt: now, lastAttemptAt: now };
     return Promise.resolve('requested');
   }
 
@@ -137,6 +140,7 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     const run = this.run(lookup.runId);
     if (run) {
       run.pullRequestStatus = {
+        ...run.pullRequestStatus,
         state: result.state,
         behindBy: result.behindBy ?? null,
         aheadBy: result.aheadBy ?? null,
@@ -146,9 +150,52 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
         retryAt: null,
         refreshRequestedAt: null,
         lastAttemptAt: run.pullRequestStatus.lastAttemptAt,
+        checks:
+          result.checksUnavailable === true
+            ? { unavailable: true }
+            : result.checks !== undefined && result.checksCommit !== undefined
+              ? { commit: result.checksCommit, checks: result.checks }
+              : null,
       };
     }
     return Promise.resolve('stored');
+  }
+
+  completeFailingCheckLogs(
+    lookupId: string,
+    workerId: string,
+    draft: PreparedFollowUp,
+    now: Date,
+  ): Promise<LookupAnswerOutcome> {
+    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
+    if (!lookup || lookup.claimedBy !== workerId) return Promise.resolve('not_held');
+    if (lookup.status === 'done') return Promise.resolve('duplicate');
+    if (lookup.status !== 'claimed') return Promise.resolve('not_held');
+    lookup.status = 'done';
+    lookup.finishedAt = now;
+    lookup.error = null;
+    this.runs.prepared.set(lookup.runId, draft);
+    const run = this.run(lookup.runId);
+    if (run) {
+      run.pullRequestStatus = {
+        ...run.pullRequestStatus,
+        prepareRequestedAt: null,
+        prepareError: null,
+        preparedFollowUp: true,
+      };
+    }
+    return Promise.resolve('stored');
+  }
+
+  find(runId: string): Promise<PreparedFollowUp | null> {
+    return Promise.resolve(this.runs.prepared.get(runId) ?? null);
+  }
+
+  discard(runId: string): Promise<void> {
+    this.runs.prepared.delete(runId);
+    const run = this.run(runId);
+    if (run) run.pullRequestStatus = { ...run.pullRequestStatus, preparedFollowUp: false };
+    return Promise.resolve();
   }
 
   fail(
@@ -173,12 +220,19 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     else Object.assign(lookup, { status: 'requested', claimedBy: null, claimedAt: null, retryAt });
     const run = this.run(lookup.runId);
     if (run) {
-      run.pullRequestStatus = {
-        ...run.pullRequestStatus,
-        refreshError: error,
-        retryAt,
-        refreshRequestedAt: retryAt === null ? null : lookup.requestedAt,
-      };
+      run.pullRequestStatus =
+        lookup.kind === 'failing_check_logs'
+          ? {
+              ...run.pullRequestStatus,
+              prepareError: error,
+              prepareRequestedAt: retryAt === null ? null : lookup.requestedAt,
+            }
+          : {
+              ...run.pullRequestStatus,
+              refreshError: error,
+              retryAt,
+              refreshRequestedAt: retryAt === null ? null : lookup.requestedAt,
+            };
     }
     return Promise.resolve('stored');
   }
@@ -190,12 +244,18 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
   recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
     const run = this.run(runId);
     if (run?.pullRequest) {
+      const ended = state === 'merged' || state === 'missing' || state === 'closed';
       run.pullRequestStatus = {
         ...run.pullRequestStatus,
         state,
         refreshedAt: now,
         refreshError: null,
         retryAt: null,
+        ...(state === 'merged' || state === 'missing'
+          ? { behindBy: null, aheadBy: null, mergeable: null }
+          : {}),
+        ...(state === 'closed' ? { mergeable: null } : {}),
+        ...(ended ? { checks: null } : {}),
       };
     }
     return Promise.resolve();

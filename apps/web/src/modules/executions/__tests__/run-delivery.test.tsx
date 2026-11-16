@@ -120,10 +120,15 @@ describe('Run page: delivery (Issue #102)', () => {
     const { container } = renderRun(run.id);
     await heading();
 
-    const banner = screen.getByText('Some checks failed.').closest('[data-slot="banner"]');
+    const banner = screen
+      .getByText('Reported checks: some failed.')
+      .closest('[data-slot="banner"]');
     expect(banner?.textContent).toContain(
       'The agent reported these checks as failed: unit tests, lint. The pull request says so too.',
     );
+    // Issue #145: the agent's own account, kept apart from GitHub's results.
+    expect(banner?.textContent).toContain('This is the agent’s own account of its latest run step');
+    expect(banner?.textContent).toContain('GitHub’s results are under Pull request checks');
     await expect(container).toHaveNoAxeViolations();
   });
 

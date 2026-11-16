@@ -44,6 +44,10 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runDiffFileNotFound: 'urn:agentic-studio:problem:run-diff-file-not-found',
   /** 409: the Run has no pull request whose state could be refreshed (Issue #142). */
   pullRequestNotRefreshable: 'urn:agentic-studio:problem:pull-request-not-refreshable',
+  /** 409: no stored Pull request check of the Run has failed, so there is nothing to send (Issue #145). */
+  noFailingChecks: 'urn:agentic-studio:problem:no-failing-checks',
+  /** 404: the Run has no prepared Follow-up to review (Issue #145). */
+  preparedFollowUpNotFound: 'urn:agentic-studio:problem:prepared-follow-up-not-found',
   /** 404 (worker routes): no lookup has this id (Issue #142). */
   lookupNotFound: 'urn:agentic-studio:problem:lookup-not-found',
   /** 409 (worker routes): the lookup is not claimed by the answering worker (Issue #142). */
@@ -91,6 +95,25 @@ export function pullRequestNotRefreshable(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.pullRequestNotRefreshable,
     title: 'No pull request to refresh',
     detail: 'The run has no pull request yet, so there is no state to refresh.',
+  });
+}
+
+/** 409: no Pull request check of the Run is known to have failed (Issue #145). */
+export function noFailingChecks(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.noFailingChecks,
+    title: 'No failing checks',
+    detail:
+      'None of the pull request checks Studio knows of has failed. Refresh the pull request and try again.',
+  });
+}
+
+/** 404: the Run has no prepared Follow-up (Issue #145). */
+export function preparedFollowUpNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: EXECUTIONS_PROBLEM_TYPES.preparedFollowUpNotFound,
+    title: 'No prepared Follow-up',
+    detail: 'The run has no prepared Follow-up to review.',
   });
 }
 

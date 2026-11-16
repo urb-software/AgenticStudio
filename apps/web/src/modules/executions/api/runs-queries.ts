@@ -38,7 +38,9 @@ function pollIntervalFor(
       (run) =>
         UNDER_WAY_STATES.includes(run.state) ||
         run.deliveryRetryRequested ||
-        (followRefresh && run.pullRequest?.refreshing),
+        (followRefresh &&
+          (run.pullRequest?.refreshing ||
+            run.pullRequest?.failingChecksPreparation?.state === 'preparing')),
     )
   ) {
     return ACTIVE_POLL_MS;
@@ -220,6 +222,8 @@ export function useFollowUpRun(runId: string) {
     mutationFn: (request: FollowUpRunRequest) => api.followUpRun(runId, request),
     onSuccess: async (run: RunOutput) => {
       queryClient.setQueryData(runKey(run.id), run);
+      // Issue #145: a sent Follow-up removes the prepared one.
+      queryClient.removeQueries({ queryKey: preparedFollowUpKey(run.id) });
       await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
     },
     onError: async (error: unknown) => {
@@ -242,6 +246,58 @@ export function useRefreshPullRequest(runId: string) {
     mutationFn: (request?: RefreshPullRequestRequest) => api.refreshRunPullRequest(runId, request),
     onSuccess: (run: RunOutput) => {
       queryClient.setQueryData(runKey(run.id), run);
+    },
+  });
+}
+
+/** The Follow-up prepared from the Run's failing checks (Issue #145). */
+const preparedFollowUpKey = (runId: string) => ['prepared-follow-up', runId] as const;
+
+/**
+ * "Send failing checks to the agent" (Issue #145): asks the agent worker to read the logs of the
+ * failed Pull request checks. The 202 answer (the Run, marked as preparing) replaces the cached
+ * Run, so the page follows it until the draft is ready. Nothing is sent to an agent.
+ */
+export function usePrepareFailingChecks(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.prepareRunFailingChecks(runId),
+    onSuccess: (run: RunOutput) => {
+      queryClient.setQueryData(runKey(run.id), run);
+    },
+    // The Run changed (its checks passed meanwhile): read it at once, so the page says so.
+    onError: async (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: runKey(runId) });
+      }
+    },
+  });
+}
+
+/**
+ * The Follow-up prepared from the failing checks, for the operator's review (Issue #145); only
+ * while the Run says one is ready. Read once per preparation, never refetched under the
+ * operator's edits.
+ */
+export function usePreparedFollowUp(runId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: preparedFollowUpKey(runId),
+    queryFn: () => api.getRunPreparedFollowUp(runId),
+    enabled,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+/** Discards the prepared Follow-up without sending it (Issue #145); the Run is read again. */
+export function useDiscardPreparedFollowUp(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.discardRunPreparedFollowUp(runId),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: preparedFollowUpKey(runId) });
+      await queryClient.invalidateQueries({ queryKey: runKey(runId) });
     },
   });
 }
