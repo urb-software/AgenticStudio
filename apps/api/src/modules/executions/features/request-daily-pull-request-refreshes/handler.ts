@@ -52,10 +52,13 @@ export class RequestDailyPullRequestRefreshesHandler {
 /** How often the daily refresh looks for states older than a day. */
 export const DAILY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
+/** The first pass after the app has started waits this long (it is not part of start-up). */
+export const DAILY_REFRESH_FIRST_PASS_MS = 60 * 1000;
+
 /**
- * Runs the daily refresh once the app has started, and then every hour (it only takes states
- * older than a day, so each Run is asked about about once a day, and an API that was down catches
- * up when it starts). The timer is `unref`'d and cleared on shutdown; a failed pass is logged and
+ * Runs the daily refresh a minute after the app has started, and then every hour (it only takes
+ * states older than a day, so each Run is asked about about once a day, and an API that was down
+ * catches up soon after it starts). The timer is `unref`'d and cleared on shutdown; a failed pass is logged and
  * tried again at the next tick.
  */
 @Injectable()
@@ -64,6 +67,7 @@ export class DailyPullRequestRefreshSchedule
 {
   private readonly logger = new Logger('PullRequestRefresh');
   private timer: NodeJS.Timeout | undefined;
+  private firstPass: NodeJS.Timeout | undefined;
   private running = false;
 
   constructor(
@@ -76,13 +80,16 @@ export class DailyPullRequestRefreshSchedule
       this.settings.manual(() => this.tick());
       return;
     }
-    void this.tick();
+    this.firstPass = setTimeout(() => void this.tick(), DAILY_REFRESH_FIRST_PASS_MS);
+    this.firstPass.unref();
     this.timer = setInterval(() => void this.tick(), this.settings.intervalMs);
     this.timer.unref();
   }
 
   onApplicationShutdown(): void {
+    clearTimeout(this.firstPass);
     clearInterval(this.timer);
+    this.firstPass = undefined;
     this.timer = undefined;
   }
 

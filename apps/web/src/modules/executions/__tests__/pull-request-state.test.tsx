@@ -293,6 +293,19 @@ describe('Run page: Follow-up by pull request state (Issue #142)', () => {
 });
 
 describe('Runs lists: the pull request state (Issue #142)', () => {
+  it('does not poll a list for a refresh: only the Run page follows one', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const run = delivered({ state: 'open', refreshedAt: REFRESHED, refreshing: true });
+    const api = fakeRunsApi([run]);
+    renderWith(<ExecutionsOverview />);
+    await screen.findByRole('list', { name: 'Runs' });
+    const reads = api.calls('runs').length;
+
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+
+    expect(api.calls('runs')).toHaveLength(reads);
+  });
+
   it('shows the state next to the pull request marker', async () => {
     const draft = delivered({ state: 'draft', refreshedAt: REFRESHED }, { task: 'Draft run' });
     const merged = delivered(

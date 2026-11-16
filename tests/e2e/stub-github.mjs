@@ -70,16 +70,16 @@ const server = createServer((request, response) => {
     return;
   }
   const match = /^\/repos\/([^/]+)\/([^/]+)\/pulls(?:\/(\d+))?$/.exec(url.pathname);
-  if (!match) return send(404, { message: 'Not Found' });
-  const [, owner, repo, pullNumber] = match;
+  const compare = /^\/repos\/([^/]+)\/([^/]+)\/compare\/(.+)\.\.\.(.+)$/.exec(url.pathname);
+  if (!match && !compare && url.pathname !== '/user') return send(404, { message: 'Not Found' });
   if (request.headers.authorization !== `Bearer ${token}`) {
     console.log(`[stub-github] refused ${request.method} ${url.pathname}: not the Agent token`);
     return send(401, { message: 'Bad credentials' });
   }
   // Issue #142: the Agent account itself, and a branch's position against the base.
-  if (url.pathname === '/user' && request.method === 'GET')
+  if (url.pathname === '/user' && request.method === 'GET') {
     return send(200, { login: AGENT_LOGIN });
-  const compare = /^\/repos\/([^/]+)\/([^/]+)\/compare\/(.+)\.\.\.(.+)$/.exec(url.pathname);
+  }
   if (compare && request.method === 'GET') {
     const head = decodeURIComponent(compare[4]);
     const pr = pulls.find(
@@ -88,6 +88,8 @@ const server = createServer((request, response) => {
     if (!pr) return send(404, { message: 'Not Found' });
     return send(200, { ahead_by: pr.aheadBy, behind_by: pr.behindBy });
   }
+  if (!match) return send(405, { message: 'Method not allowed' });
+  const [, owner, repo, pullNumber] = match;
   const view = (pr) => ({
     number: pr.number,
     html_url: `https://github.com/${owner}/${repo}/pull/${pr.number}`,

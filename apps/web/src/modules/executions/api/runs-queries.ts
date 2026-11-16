@@ -24,16 +24,21 @@ const WAITING_POLL_MS = 10_000;
  * The poll interval for a set of Runs (#97 DoR): fast while any is active (or retrying its
  * delivery), slower while one only waits for the operator, and none once all are finished.
  */
-function pollIntervalFor(runs: readonly RunOutput[] | undefined): number | false {
+function pollIntervalFor(
+  runs: readonly RunOutput[] | undefined,
+  /** Issue #142: also follow a pull request refresh under way (the Run page only). */
+  followRefresh = false,
+): number | false {
   if (!runs) return false;
   // A requested delivery retry (Issue #102) moves on without the operator too.
-  // Issue #142: a pull request refresh an agent worker is carrying out moves on by itself too.
+  // Issue #142: a pull request refresh an agent worker is carrying out moves on by itself too;
+  // only the Run page follows it (a list cannot tell a refresh no worker will answer).
   if (
     runs.some(
       (run) =>
         UNDER_WAY_STATES.includes(run.state) ||
         run.deliveryRetryRequested ||
-        run.pullRequest?.refreshing,
+        (followRefresh && run.pullRequest?.refreshing),
     )
   ) {
     return ACTIVE_POLL_MS;
@@ -131,7 +136,7 @@ export function useRun(runId: string) {
   return useQuery({
     queryKey: runKey(runId),
     queryFn: () => api.getRun(runId),
-    refetchInterval: (query) => pollIntervalFor(query.state.data && [query.state.data]),
+    refetchInterval: (query) => pollIntervalFor(query.state.data && [query.state.data], true),
     refetchIntervalInBackground: false,
   });
 }

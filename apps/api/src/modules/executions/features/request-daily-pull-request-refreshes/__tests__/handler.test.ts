@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PullRequestState } from '../../../domain/entities/run.js';
 import { deliveredRun, T0 } from '../../../domain/repositories/__tests__/delivered-run.js';
 import { InMemoryRunLookupRepository } from '../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
@@ -93,6 +93,32 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
 });
 
 describe('DailyPullRequestRefreshSchedule', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('does nothing while the app starts: the first pass comes a minute later, then every interval', async () => {
+    vi.useFakeTimers();
+    let passes = 0;
+    const counting = {
+      execute: async () => {
+        passes++;
+        return 0;
+      },
+    } as unknown as RequestDailyPullRequestRefreshesHandler;
+    const schedule = new DailyPullRequestRefreshSchedule(counting, { intervalMs: HOUR });
+
+    schedule.onApplicationBootstrap();
+    expect(passes).toBe(0);
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(passes).toBe(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(passes).toBe(1);
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(passes).toBe(2);
+    schedule.onApplicationShutdown();
+    await vi.advanceTimersByTimeAsync(2 * HOUR);
+    expect(passes).toBe(2);
+  });
+
   it('hands its pass to a test instead of starting a timer', async () => {
     let passes = 0;
     let handed: (() => Promise<void>) | undefined;
