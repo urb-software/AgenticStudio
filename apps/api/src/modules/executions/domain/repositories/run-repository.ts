@@ -69,6 +69,14 @@ export interface DeliveryRetryOutcome {
   now: Date;
 }
 
+/** What resuming a Run stopped at the usage limit did (Issue #105). */
+export type ResumeAfterLimitOutcome =
+  | { status: 'resumed'; run: Run }
+  /** Not (any more) a resumable Run stopped at the usage limit; nothing changed. */
+  | { status: 'not_resumable' }
+  /** Another Run holds the project's place, or the server's places are taken; nothing changed. */
+  | { status: 'slot_taken'; scope: 'project' | 'server' };
+
 /** What storing a Run step did (Issue #100: the API also enforces the step limit). */
 export type AppendStepOutcome =
   /** Stored now, or (`duplicate`) already stored by an earlier delivery of the same report. */
@@ -230,9 +238,12 @@ export interface RunRepository {
    * when it was given an Environment file, still its snapshot (the resumed step's redaction),
    * `text` is stored as the operator's answer and the Run goes back to `queued` (failure and
    * finish time cleared), to be resumed like an answered Run by the worker that started it.
-   * `null` if the condition failed.
+   * A queued Run with a session reference holds its project's place and one of the server's
+   * (like an answered Run), so it is refused (`slot_taken`) while another Run of the project is
+   * active, held or queued to resume, or `MAX_ACTIVE_RUNS` other Runs are; serialized against
+   * claims (review R1 of #129).
    */
-  resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<Run | null>;
+  resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<ResumeAfterLimitOutcome>;
 
   /** Resumable Runs no worker claimed yet, with the worker that started each (Issue #103). */
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;

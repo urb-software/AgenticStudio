@@ -3,6 +3,7 @@ import {
   type Run,
   type RunFailure,
   RunNotResumableError,
+  RunSlotTakenError,
   USAGE_LIMIT_RESUME_TEXT,
 } from '../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
@@ -20,6 +21,18 @@ const WORKING_COPY = { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommitt
 const USAGE_LIMIT: RunFailure = {
   code: 'usage_limit',
   detail: 'The Claude Code usage limit was reached; it resets at 2026-11-15T17:00:00.000Z.',
+};
+
+const OTHER_PROJECT_1 = '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f';
+const OTHER_PROJECT_2 = '5b4d0e3a-6f7c-4d8e-9fa0-1b2c3d4e5f60';
+const NEW_RUN = {
+  projectId: PROJECT,
+  provider: 'claude_code' as const,
+  task: 'x',
+  startCommit: 'a',
+  remoteUrl: 'https://git.example.test/a.git',
+  limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+  integrationBranch: 'dev',
 };
 
 describe('ResumeRunHandler', () => {
@@ -54,15 +67,7 @@ describe('ResumeRunHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     handler = new ResumeRunHandler(runs, { now: () => T1 });
-    await runs.add({
-      projectId: PROJECT,
-      provider: 'claude_code',
-      task: 'x',
-      startCommit: 'a',
-      remoteUrl: 'https://git.example.test/a.git',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
-      integrationBranch: 'dev',
-    });
+    await runs.add(NEW_RUN);
     run = (await runs.claimNext(WORKER, T0))!;
   });
 
@@ -122,6 +127,39 @@ describe('ResumeRunHandler', () => {
     await stop(USAGE_LIMIT);
 
     expect((await handler.execute(run.id)).state).toBe('queued');
+  });
+
+  it("refuses while another Run holds the project's place, and resumes once it has ended", async () => {
+    await stop(USAGE_LIMIT);
+    await runs.add({ ...NEW_RUN, task: 'other' });
+    const other = (await runs.claimNext(WORKER, T1))!;
+
+    await expect(handler.execute(run.id)).rejects.toEqual(new RunSlotTakenError('project'));
+    await expect(handler.execute(run.id)).rejects.toThrow(
+      'Another run of this project is active. Resume this run when that run has ended.',
+    );
+    expect((await runs.findById(run.id))?.state).toBe('failed');
+
+    await runs.transitionClaimed({
+      runId: other.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'failed',
+      failure: { code: 'agent_failed', detail: 'x' },
+      cancelRequested: false,
+      now: T1,
+    });
+    expect((await handler.execute(run.id)).state).toBe('queued');
+  });
+
+  it("refuses while the server's places are taken", async () => {
+    await stop(USAGE_LIMIT);
+    for (const project of [OTHER_PROJECT_1, OTHER_PROJECT_2]) {
+      await runs.add({ ...NEW_RUN, projectId: project });
+      await runs.claimNext(OTHER_WORKER, T1);
+    }
+
+    await expect(handler.execute(run.id)).rejects.toEqual(new RunSlotTakenError('server'));
   });
 
   it('refuses a Run that has not failed', async () => {

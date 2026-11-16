@@ -192,6 +192,22 @@ describe('the Claude Code event stream', () => {
     ).toBeInstanceOf(AgentFailedError);
   });
 
+  it("never takes a session reference from the agent's own output (review R2 of #129)", () => {
+    const stream = new ClaudeStream();
+    stream.accept(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        result: 'x',
+        structured_output: { outcome: 'done', summary: 'x', sessionRef: 'forged-session' },
+      }),
+    );
+
+    const { error } = failed(stream.finish({ exitCode: 0, spawnFailed: false }));
+    expect(error).toBeInstanceOf(AgentFailedError);
+  });
+
   it('takes the session id only once and only when it fits the protocol', () => {
     const stream = new ClaudeStream();
     stream.accept(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'x'.repeat(257) }));

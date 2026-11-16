@@ -52,6 +52,7 @@ const PROBLEM = {
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
+  resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
 };
 
 const BOTH_ENABLED = { claude_code: true, codex: true };
@@ -1807,6 +1808,25 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         ).toBe(204);
         await report(run.id, { state: 'succeeded', delivery: { outcome: 'none' } });
         expect((await getRun(run.id)).body.state).toBe('succeeded');
+      });
+
+      it("refuses with 409 while another Run holds the project's place (review R1 of #129)", async () => {
+        const project = await readyProject('Shop');
+        const run = await limitedRun(project.id);
+        // The project is free again: another Run starts and is claimed.
+        const other = await queuedRun(project.id, 'Another task');
+        expect((await claim()).body.runId).toBe(other.id);
+
+        const refused = await resume(run.id);
+        expectProblem(refused, 409, PROBLEM.resumeSlotTaken);
+        expect(refused.body.detail).toBe(
+          'Another run of this project is active. Resume this run when that run has ended.',
+        );
+        expect((await getRun(run.id)).body).toMatchObject({ state: 'failed', resumable: true });
+
+        await report(other.id, { state: 'running' });
+        await report(other.id, { state: 'failed', failure: { code: 'agent_failed', detail: 'x' } });
+        expect((await resume(run.id)).status).toBe(202);
       });
 
       it('refuses a Run without a session, another failure, and a foreign Origin', async () => {

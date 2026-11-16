@@ -4,6 +4,7 @@ import {
   runStepResultSchema,
   SESSION_REF_MAX_LENGTH,
 } from '@agentic-studio/contracts';
+import { agentResultSchema } from '../agent-definition/index.js';
 import { AgentFailedError, UsageLimitError } from '../runner.js';
 
 /**
@@ -171,11 +172,15 @@ export class ClaudeStream {
     }
     const result = this.result;
     if (result && !result.isError && result.subtype === 'success' && end.exitCode === 0) {
-      const parsed = runStepResultSchema.safeParse(
-        isObject(result.structured)
-          ? { ...result.structured, ...(this.session ? { sessionRef: this.session } : {}) }
-          : undefined,
-      );
+      // The agent's part first, strictly (review R2 of #129): the session comes only from the
+      // stream, never from the agent's output.
+      const agent = agentResultSchema.safeParse(result.structured);
+      const parsed = agent.success
+        ? runStepResultSchema.safeParse({
+            ...agent.data,
+            ...(this.session ? { sessionRef: this.session } : {}),
+          })
+        : agent;
       if (parsed.success) return { result: parsed.data, events: [] };
       return {
         error: new AgentFailedError(

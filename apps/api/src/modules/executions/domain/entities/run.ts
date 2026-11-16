@@ -383,6 +383,21 @@ export class RunNotResumableError extends Error {
   }
 }
 
+/**
+ * Resuming a Run stopped at the usage limit while its place is taken (review R1 of #129):
+ * another Run of its project is active, or the server's places are.
+ */
+export class RunSlotTakenError extends Error {
+  constructor(readonly scope: 'project' | 'server') {
+    super(
+      scope === 'project'
+        ? 'Another run of this project is active. Resume this run when that run has ended.'
+        : `${MAX_ACTIVE_RUNS} runs are already active on the server. Resume this run when one of them has ended.`,
+    );
+    this.name = 'RunSlotTakenError';
+  }
+}
+
 /** Answering a Run that is not waiting for the operator (Issue #103). */
 export class RunNotWaitingError extends Error {
   constructor(readonly state: RunState) {

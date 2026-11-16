@@ -32,6 +32,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
   /** 409: the Run did not stop at the usage limit with a session to resume (Issue #105). */
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
+  /** 409: the Run's project or the server has no free place to resume it in (Issue #105). */
+  resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
 } as const;
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
@@ -49,6 +51,15 @@ export function runNotResumable(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.runNotResumable,
     title: 'Run not resumable',
     detail: 'Only a run stopped at the usage limit, with an agent session, can be resumed.',
+  });
+}
+
+/** 409: another Run holds the project's place, or the server's places are taken (#105). */
+export function resumeSlotTaken(detail: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.resumeSlotTaken,
+    title: 'No free place to resume the run',
+    detail,
   });
 }
 

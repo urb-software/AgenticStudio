@@ -1,6 +1,14 @@
 import { type RunPayload, runnerEventSchema, type RunnerEvent } from '@agentic-studio/contracts';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -296,6 +304,33 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     );
   });
 
+  it("refuses a step, starting nothing, while the agent user's settings hold hooks or env (review R4 of #129)", async () => {
+    const home = join(runDir, 'home');
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(
+      join(home, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'x', hooks: { secret: 'test-only-value' }, env: { A: '1' } }),
+    );
+    const withHome = new ClaudeCodeRunner({
+      cli: {
+        gate: new ProviderGate({ claude_code: true, codex: false }),
+        binaries: DEFAULT_PROVIDER_BINARIES,
+      },
+      git: { run: async () => '' },
+      env: { ...WORKER_ENV, HOME: home },
+      maxTurns: 200,
+    });
+
+    const step = drain(withHome.start(input('x')));
+
+    await expect(step).rejects.toThrow(
+      'Claude Code user settings contain hooks, env; the operator must review them.',
+    );
+    await expect(step).rejects.not.toThrow(/test-only-value/);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(runDir, 'instructions.md'))).toBe(false);
+  });
+
   it('starts nothing and writes nothing when Claude Code is switched off', async () => {
     const off = runner(new ProviderGate({ claude_code: false, codex: true }));
 
@@ -337,6 +372,8 @@ describe('the version check at worker start', () => {
 
     expect(await probeClaudeCode(cli(), WORKER_ENV)).toEqual({ ok: true, version: '2.1.325' });
     expect(spawn).toHaveBeenCalledWith('claude', ['--version'], {
+      // A neutral, empty temporary directory (review R3 of #129), removed afterwards.
+      cwd: expect.stringContaining('studio-claude-version-'),
       env: {
         PATH: '/usr/bin:/bin',
         HOME: '/home/agent',
@@ -348,6 +385,20 @@ describe('the version check at worker start', () => {
       shell: false,
       detached: true,
     });
+  });
+
+  it('runs in an empty temporary directory that is removed afterwards', async () => {
+    let cwd = '';
+    spawn.mockImplementation((_binary: string, _args: string[], options: { cwd: string }) => {
+      cwd = options.cwd;
+      expect(readdirSync(cwd)).toEqual([]);
+      return fakeChild('2.1.325 (Claude Code)\n');
+    });
+
+    await probeClaudeCode(cli(), WORKER_ENV);
+
+    expect(cwd.startsWith(tmpdir())).toBe(true);
+    expect(existsSync(cwd)).toBe(false);
   });
 
   it('reports an unsupported version with the supported range', async () => {

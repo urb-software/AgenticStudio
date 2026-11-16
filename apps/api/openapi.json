@@ -1275,7 +1275,7 @@
             }
           },
           "409": {
-            "description": "The run did not stop at the usage limit with a session (urn:agentic-studio:problem:run-not-resumable)",
+            "description": "The run did not stop at the usage limit with a session (urn:agentic-studio:problem:run-not-resumable), or its project or the server has no free place (urn:agentic-studio:problem:resume-slot-taken)",
             "content": {
               "application/problem+json": {
                 "schema": {

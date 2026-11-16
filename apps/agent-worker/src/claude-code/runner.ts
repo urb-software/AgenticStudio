@@ -1,6 +1,8 @@
 import type { Provider } from '@agentic-studio/contracts';
 import { randomBytes } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from '../git.js';
@@ -31,6 +33,7 @@ import {
 import { type GuardrailsOptions, prepareGuardrails } from './guardrails.js';
 import { buildInstructions, type RepositoryFiles } from './instructions.js';
 import { ClaudeStream } from './stream.js';
+import { userSettingsProblem } from './user-settings.js';
 
 const PROVIDER: Provider = 'claude_code';
 
@@ -80,6 +83,9 @@ export class ClaudeCodeRunner implements Runner {
     // The dispatcher checked already; nothing is written for a provider that is off.
     this.options.cli.gate.assertEnabled(PROVIDER);
     signal.throwIfAborted();
+    // Review R4 of #129: the agent user's own settings still load; refuse what they must not hold.
+    const userSettings = await userSettingsProblem(this.options.env.HOME);
+    if (userSettings !== null) throw new AgentFailedError(userSettings);
     const files = claudeStepFiles(workspace.runDir);
     await mkdir(files.tmpDir, { recursive: true, mode: 0o700 });
     const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
@@ -202,10 +208,26 @@ const PROBE_TIMEOUT_MS = 15_000;
  * closed, checked against the supported range. A missing binary, no version within the time
  * limit or an unsupported version → the reason the provider is unavailable.
  */
-export function probeClaudeCode(
+export async function probeClaudeCode(
   cli: ProviderCli,
   env: Record<string, string | undefined>,
   timeoutMs = PROBE_TIMEOUT_MS,
+): Promise<VersionCheck> {
+  // A neutral working directory: an empty temporary one (review R3 of #129).
+  cli.gate.assertEnabled(PROVIDER);
+  const cwd = await mkdtemp(join(tmpdir(), 'studio-claude-version-'));
+  try {
+    return await runProbe(cli, env, cwd, timeoutMs);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}
+
+function runProbe(
+  cli: ProviderCli,
+  env: Record<string, string | undefined>,
+  cwd: string,
+  timeoutMs: number,
 ): Promise<VersionCheck> {
   return new Promise((resolve) => {
     const groups: number[] = [];
@@ -217,7 +239,11 @@ export function probeClaudeCode(
         {
           provider: PROVIDER,
           args: ['--version'],
-          options: { env: claudeEnvironment({ base: env }), stdio: ['ignore', 'pipe', 'ignore'] },
+          options: {
+            cwd,
+            env: claudeEnvironment({ base: env }),
+            stdio: ['ignore', 'pipe', 'ignore'],
+          },
         },
         registry,
       );

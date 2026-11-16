@@ -905,7 +905,7 @@ export type ResumeRunErrors = {
      */
     404: ProblemDetails;
     /**
-     * The run did not stop at the usage limit with a session (urn:agentic-studio:problem:run-not-resumable)
+     * The run did not stop at the usage limit with a session (urn:agentic-studio:problem:run-not-resumable), or its project or the server has no free place (urn:agentic-studio:problem:resume-slot-taken)
      */
     409: ProblemDetails;
     /**
