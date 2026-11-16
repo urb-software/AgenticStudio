@@ -52,6 +52,7 @@ compose.yaml               # Local development PostgreSQL and Redis
 - Product: [MVP scope](docs/product/mvp.md), [first walking skeleton](docs/product/walking-skeleton.md)
 - Architecture: [system](docs/architecture/system.md), [backend](docs/architecture/backend.md), [frontend](docs/architecture/frontend.md)
 - Guardrails: [quality & tests](docs/engineering/quality.md), [security](docs/engineering/security.md)
+- Deployment: [server setup and isolation boundary checks](docs/engineering/deployment.md)
 - Bootstrap: [repository bootstrap and Story 1 readiness](docs/engineering/bootstrap-plan.md), [agent roles](docs/engineering/agent-roles.md)
 - SDLC: `docs/engineering/definition-of-ready.md`, `definition-of-done.md`, `issue-workflow.md`; `docs/templates/implementation-handoff.md`, `review-report.md`; `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`
 
@@ -334,6 +335,7 @@ pnpm contracts:check      # regenerate, then fail if openapi.json or the generat
 | `test:contracts` | `pnpm contracts:check` |
 | `e2e:smoke` | `pnpm exec playwright install --with-deps chromium`, then `pnpm e2e:smoke` (throwaway PostgreSQL and Redis via Testcontainers, random per-run operator password) |
 | `security` | `pnpm audit --audit-level high` over all dependencies |
+| `deploy:server` | ShellCheck, the server Compose file test, and the setup script and boundary checks in containers and on the runner VM ([Deployment](docs/engineering/deployment.md) §8) |
 | `ci:required` | Always runs; the aggregate the `dev` ruleset requires |
 
 - Jobs run on `ubuntu-24.04` with Node.js 24 and the pnpm version from `packageManager`. Linux CI is authoritative: a check that passes only on Windows is a bug.

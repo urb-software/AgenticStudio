@@ -118,6 +118,7 @@ describe('evaluateRequired', () => {
       'security',
       'quality-agent-worker',
       'test-agent-worker',
+      'deploy-server',
     ]);
   });
 

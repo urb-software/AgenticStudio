@@ -1,0 +1,61 @@
+# Studio's side of the server (Issue #107, docs/engineering/deployment.md): PostgreSQL and Redis
+# under the system Docker daemon. Neither publishes a host port; only Studio's own containers on
+# the `studio` network reach them, and Redis requires a password. The setup script installs this file root-only as
+# /opt/agentic-studio/compose.yaml; values come from the root-only /etc/agentic-studio/.env.
+#
+# The network has a fixed subnet and the two services fixed addresses so the setup script's
+# firewall rule (agent user -> this subnet: rejected, except the API port) and the boundary
+# checks know them. Keep these defaults equal to deploy/setup-server.sh, deploy/check-boundary.sh
+# and deploy/studio.env.example (deploy/tests/compose-server.test.mjs checks it).
+name: ${COMPOSE_PROJECT_NAME:-agentic-studio}
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agentic_studio}
+      POSTGRES_USER: ${POSTGRES_USER:-studio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in /etc/agentic-studio/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks:
+      studio:
+        ipv4_address: ${STUDIO_POSTGRES_ADDRESS:-172.31.250.10}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.10.3-alpine
+    restart: unless-stopped
+    # The password reaches Redis through a config file inside the container, never a command
+    # line visible on the host.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in /etc/agentic-studio/.env}
+    command:
+      - sh
+      - -c
+      - printf 'requirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/redis.conf && exec docker-entrypoint.sh redis-server /tmp/redis.conf
+    volumes:
+      - redis-data:/data
+    networks:
+      studio:
+        ipv4_address: ${STUDIO_REDIS_ADDRESS:-172.31.250.11}
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  studio:
+    ipam:
+      config:
+        - subnet: ${STUDIO_NETWORK_SUBNET:-172.31.250.0/24}
+
+volumes:
+  postgres-data:
+  redis-data:

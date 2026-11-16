@@ -100,6 +100,7 @@ logging/    # Structured logs, correlation/tracing
 - Target: one dedicated server, single operator, with no production credentials on it and backups kept off it ([ADR 0002](adr/0002-agent-run-isolation.md)).
 - **Studio's side:** the reverse proxy, database, queue, API, web and environment-controller run as a Docker Compose stack under the system Docker daemon, which only root controls.
 - **The agent side:** the agent worker and the agents run on the host as an ordinary user (the agent user), not in the `docker` group and without passwordless `sudo`, with their own rootless Docker daemon. This operating-system boundary is the security boundary; CLI hooks and permission rules are guardrails only.
+- Server setup and the boundary checks run as the agent user: [Deployment](../engineering/deployment.md) (#107).
 - MVP has no mandatory GPU, Kubernetes, multi-tenant infrastructure, or microVM/KVM dependency.
 - Compose is a starting point, **not security-equivalent to a sandbox/microVM**; stronger isolation can follow a risk assessment.
 - Keep the Studio administrative session separate from untrusted Preview origins. Restrict exposed ports, networking, filesystem mounts and privileges.
