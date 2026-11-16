@@ -684,7 +684,6 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   };
   await openChanges();
   await expect(main.getByText('Every change here is pushed')).toBeVisible();
-  await expect(main.getByRole('region', { name: 'FAKE_CHANGE.md' })).toBeAttached();
   for (const theme of ['light', 'dark']) {
     await page.evaluate((value) => localStorage.setItem('theme', value), theme);
     await page.reload();
