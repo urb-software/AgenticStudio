@@ -55,7 +55,7 @@ AGENT_CPU_WEIGHT="${AGENT_CPU_WEIGHT:-50}"
 AGENT_DISK_QUOTA_GB="${AGENT_DISK_QUOTA_GB:-}"
 # -------------------------------------------------------------------------------------------------
 
-STEPS=(preflight packages node user logins layout worker firewall limits rootless service)
+STEPS=(preflight packages node user logins layout worker guardrails firewall limits rootless service)
 SYSTEMD_STEPS=(firewall limits rootless service)
 DOCKER_GPG_FINGERPRINT="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -113,6 +113,10 @@ layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.e
            apps/agent-worker/.env.example) and ~/.local/share/agentic-studio-worker (0700).
 worker     The agent worker's code from this checkout's HEAD into ${WORKER_CODE_DIR} (root-owned,
            world-readable, not writable by the agent user), installed and built there.
+guardrails Studio's managed guardrails for Claude Code and Codex, from the worker's guardrails folder
+           (${WORKER_CODE_DIR}/apps/agent-worker/guardrails, its managed-files.txt): root:root, files 0644,
+           directories 0755 (/etc/claude-code/managed-settings.json, /etc/codex/managed_config.toml,
+           /etc/codex/requirements.toml, /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs).
 firewall   /usr/local/sbin/agentic-studio-agent-firewall and agentic-studio-agent-firewall.service:
            rejects the agent user's traffic to ${STUDIO_NETWORK_SUBNET} except the reverse proxy's worker
            port (${STUDIO_PROXY_ADDRESS}:${STUDIO_PROXY_WORKER_PORT});
@@ -535,6 +539,36 @@ step_worker() {
   mv "$staging" "$WORKER_CODE_DIR"
   rm -rf "$WORKER_CODE_DIR.old"
   changed "agent worker ${commit:0:12} built in $WORKER_CODE_DIR"
+}
+
+# Directories the guardrails step creates stop below these existing system directories.
+SYSTEM_DIRS=" / /etc /usr /usr/local /usr/local/lib "
+
+step_guardrails() {
+  # The worker's own copies: the agent worker compares the installed files with exactly these.
+  local dir="$WORKER_CODE_DIR/apps/agent-worker/guardrails"
+  local manifest="$dir/managed-files.txt"
+  [ -f "$manifest" ] || die "$manifest is missing; run the worker step first."
+  local provider source dest rest count=0 parent dirs
+  while read -r provider source dest rest; do
+    case "$provider" in '' | '#'*) continue ;; esac
+    [ -z "$rest" ] && [[ "$source" =~ ^[A-Za-z0-9._-]+$ ]] && [[ "$dest" == /* ]] && [[ "$dest" != *..* ]] ||
+      die "malformed line in $manifest: $provider $source $dest $rest"
+    [ -f "$dir/$source" ] && [ ! -L "$dir/$source" ] || die "$dir/$source is missing."
+    # Every directory from the first one below a system directory down to the file's own.
+    dirs=()
+    parent="$(dirname "$dest")"
+    while [[ "$SYSTEM_DIRS" != *" $parent "* ]]; do
+      dirs=("$parent" "${dirs[@]}")
+      parent="$(dirname "$parent")"
+    done
+    for parent in "${dirs[@]}"; do ensure_root_dir "$parent" 755; done
+    [ ! -L "$dest" ] || rm -f "$dest"
+    install_content "$dest" 644 <"$dir/$source" || true
+    count=$((count + 1))
+  done <"$manifest"
+  [ "$count" -gt 0 ] || die "$manifest lists no file."
+  step_log "ok ($count managed-files.txt entries in place, root:root 0644; run by /usr/local/bin/node from the node step)"
 }
 
 step_firewall() {

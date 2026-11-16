@@ -1,21 +1,25 @@
 #!/usr/bin/env node
-// Studio's PreToolUse hook for Claude Code (Issue #105). GUARDRAIL, NOT THE SECURITY BOUNDARY:
-// the boundary is the operating-system user with its rootless Docker daemon (ADR 0002,
-// docs/engineering/security.md §2). A misled agent can get around these checks (an interpreter,
-// an encoded command, a script it writes); they only stop the obvious mistakes early and say why.
+// Studio's PreToolUse hook for Claude Code (Issue #105) and Codex (Issue #134). GUARDRAIL, NOT
+// THE SECURITY BOUNDARY: the boundary is the operating-system user with its rootless Docker
+// daemon (ADR 0002, docs/engineering/security.md §2). A misled agent can get around these checks
+// (an interpreter, an encoded command, a script it writes); they only stop the obvious mistakes
+// early and say why.
 //
-// The agent worker copies this file and claude-settings.json (same folder) into the Run's
-// directory before every Run step and points the settings' hook at the copy, so nothing from
-// the repository is ever executed as a hook. Claude Code passes the tool call as JSON on
-// standard input; exit code 2 blocks the call and shows the reason to the agent, exit code 0
-// leaves it to the permission rules.
+// The server setup installs this file root-owned as
+// /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs (managed-files.txt); the CLIs'
+// managed configuration runs it with /usr/local/bin/node (claude-managed-settings.json,
+// codex-requirements.toml), so nothing from the repository or the agent user's files is ever
+// executed as Studio's hook. The CLI passes the tool call as JSON on standard input; exit code 2
+// blocks the call and shows the reason to the agent, exit code 0 leaves it to the permission
+// rules. Codex sends shell commands as `Bash` and file edits as `apply_patch` (the patch in
+// `command`), and the session's working directory as `cwd`.
 //
 // It blocks:
 // - privilege escalation (sudo, su, doas, pkexec) and `git push` (the worker delivers, #102);
 // - recursive deletes of the filesystem root or the home directory;
 // - the system Docker daemon (its socket, `docker -H/--host`, `docker context`, `DOCKER_HOST=`);
-// - file writes (Edit, MultiEdit, Write, NotebookEdit) outside the Working copy and the Run
-//   step's temporary directory;
+// - file writes (Edit, MultiEdit, Write, NotebookEdit, Codex's apply_patch) outside the Working
+//   copy and the Run step's temporary directory;
 // - reading the CLIs' logins and other credentials in the agent user's home directory.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { posix } from 'node:path';
@@ -105,27 +109,24 @@ function real(path) {
   }
 }
 
+/** The files a Codex patch adds, updates, deletes or moves to. */
+function patchedFiles(patch) {
+  const files = [];
+  for (const line of patch.split('\n')) {
+    const match = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/.exec(line.trim());
+    if (match) files.push(match[1].trim());
+  }
+  return files;
+}
+
 function inside(path, dir) {
   if (!dir) return false;
   const lexical = posix.resolve(dir);
   return [lexical, real(lexical)].some((base) => path === base || path.startsWith(`${base}/`));
 }
 
-/**
- * Whether Studio's guardrails block a tool call: the reason, or `null` to leave it to the
- * permission rules. `env` gives `CLAUDE_PROJECT_DIR` (the Working copy), `TMPDIR` (the Run
- * step's temporary directory) and `HOME`.
- */
-export function decide(input, env) {
-  const tool = input?.tool_name;
-  const toolInput = input?.tool_input ?? {};
-  const project = env.CLAUDE_PROJECT_DIR || input?.cwd;
-  const home = env.HOME;
-  if (tool === 'Bash') {
-    return typeof toolInput.command === 'string' ? checkBash(toolInput.command) : null;
-  }
-  const target = toolInput.file_path ?? toolInput.notebook_path ?? toolInput.path;
-  if (typeof target !== 'string' || target === '') return null;
+/** Why a tool call on `target` is blocked, or `null`. */
+function checkPath(tool, target, { project, home, tmp }) {
   const expanded = home && target.startsWith('~/') ? posix.join(home, target.slice(2)) : target;
   // As written and with symbolic links resolved: a link must not lead around a check.
   const lexical = posix.resolve(project ?? '/', expanded);
@@ -141,11 +142,37 @@ export function decide(input, env) {
   }
   if (
     WRITING_TOOLS.has(tool) &&
-    !paths.every((path) => inside(path, project) || inside(path, env.TMPDIR))
+    !paths.every((path) => inside(path, project) || inside(path, tmp))
   ) {
     return 'files are written only inside the Working copy (or the temporary directory)';
   }
   return null;
+}
+
+/**
+ * Whether Studio's guardrails block a tool call: the reason, or `null` to leave it to the
+ * permission rules. `env` gives `CLAUDE_PROJECT_DIR` (the Working copy; Codex: the input's
+ * `cwd`), `TMPDIR` (the Run step's temporary directory) and `HOME`.
+ */
+export function decide(input, env) {
+  const tool = input?.tool_name;
+  const toolInput = input?.tool_input ?? {};
+  const where = { project: env.CLAUDE_PROJECT_DIR || input?.cwd, home: env.HOME, tmp: env.TMPDIR };
+  const command = Array.isArray(toolInput.command)
+    ? toolInput.command.filter((word) => typeof word === 'string').join(' ')
+    : toolInput.command;
+  if (tool === 'Bash') return typeof command === 'string' ? checkBash(command) : null;
+  if (tool === 'apply_patch') {
+    if (typeof command !== 'string') return null;
+    for (const file of patchedFiles(command)) {
+      const reason = checkPath('Write', file, where);
+      if (reason !== null) return reason;
+    }
+    return null;
+  }
+  const target = toolInput.file_path ?? toolInput.notebook_path ?? toolInput.path;
+  if (typeof target !== 'string' || target === '') return null;
+  return checkPath(tool, target, where);
 }
 
 function main() {

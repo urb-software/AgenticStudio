@@ -1,20 +1,14 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 import { decide } from '../../guardrails/claude-guard.mjs';
-import { prepareGuardrails, readGuardrailSettings } from '../claude-code/guardrails.js';
+import { readGuardrailSettings } from '../claude-code/guardrails.js';
+import { readManagedFiles } from '../managed-guardrails.js';
 
-// Issue #105: Studio's guardrails for Claude Code, from Studio's own folder: the settings
-// (allowed tools, deny rules, the hook) and the PreToolUse hook. Guardrails, not the boundary.
+// Issues #105 and #134: Studio's guardrails for Claude Code, from Studio's own folder: the
+// managed settings (allowed tools, deny rules, managed-only hooks and rules, the hook) and the
+// PreToolUse hook, which Codex runs too. Guardrails, not the boundary.
 
-describe("Studio's guardrail settings", () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'studio-guardrails-'));
-  });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
-
+describe("Studio's managed Claude Code settings", () => {
   it('allows the working tools and common build tools, and never git push', async () => {
     const { permissions } = await readGuardrailSettings();
 
@@ -41,25 +35,47 @@ describe("Studio's guardrail settings", () => {
     }
   });
 
-  it("copies the settings and the hook into the Run's directory, the hook run by the worker's Node", async () => {
-    const target = {
-      settingsFile: join(dir, 'claude-settings.json'),
-      guardScript: join(dir, 'claude-guard.mjs'),
-    };
+  it('lets only managed hooks and permission rules apply, and never bypass mode', async () => {
+    const settings = await readGuardrailSettings();
 
-    const prepared = await prepareGuardrails(target, { nodePath: '/usr/bin/node' });
+    expect(settings.allowManagedHooksOnly).toBe(true);
+    expect(settings.allowManagedPermissionRulesOnly).toBe(true);
+    expect(settings.permissions.disableBypassPermissionsMode).toBe('disable');
+    expect(settings.enableAllProjectMcpServers).toBe(false);
+  });
 
-    const original = await readGuardrailSettings();
-    const copy = JSON.parse(readFileSync(target.settingsFile, 'utf8'));
-    expect(prepared).toEqual({
-      settingsFile: target.settingsFile,
-      allowedTools: original.permissions.allow,
-    });
-    expect(copy.permissions).toEqual(original.permissions);
-    expect(copy.hooks.PreToolUse[0].hooks).toEqual([
-      { type: 'command', command: `'/usr/bin/node' '${target.guardScript}'`, timeout: 10 },
+  it('runs the root-owned guard script with the root-owned Node.js, by absolute paths', async () => {
+    const settings = await readGuardrailSettings();
+    const guard = (await readManagedFiles()).find(
+      (file) => file.provider === 'claude_code' && file.source === 'claude-guard.mjs',
+    );
+
+    expect(guard?.path).toBe('/usr/local/lib/agentic-studio/guardrails/claude-guard.mjs');
+    expect(settings.hooks.PreToolUse).toEqual([
+      {
+        matcher: 'Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Glob|Grep',
+        hooks: [{ type: 'command', command: `/usr/local/bin/node ${guard?.path}`, timeout: 10 }],
+      },
     ]);
-    expect(readFileSync(target.guardScript, 'utf8')).toContain("Studio's PreToolUse hook");
+  });
+
+  it("is installed as Claude Code's managed settings file", async () => {
+    const files = await readManagedFiles();
+
+    expect(files).toContainEqual({
+      provider: 'claude_code',
+      source: 'claude-managed-settings.json',
+      path: '/etc/claude-code/managed-settings.json',
+    });
+    // Strict JSON: a broken managed file stops every Claude Code session.
+    expect(() =>
+      JSON.parse(
+        readFileSync(
+          new URL('../../guardrails/claude-managed-settings.json', import.meta.url),
+          'utf8',
+        ),
+      ),
+    ).not.toThrow();
   });
 });
 
@@ -137,5 +153,52 @@ describe("Studio's PreToolUse hook", () => {
     expect(tool('Read', { file_path: '/var/run/docker.sock' })).toEqual(expect.any(String));
     expect(tool('Read', { file_path: '/data/runs/r1/repo/README.md' })).toBeNull();
     expect(tool('Glob', { pattern: '**/*.ts' })).toBeNull();
+  });
+
+  it('blocks a command given as a list of words (Codex)', () => {
+    expect(decide({ tool_name: 'Bash', tool_input: { command: ['git', 'push'] } }, env)).toEqual(
+      expect.any(String),
+    );
+  });
+});
+
+describe("Studio's PreToolUse hook run by Codex (Issue #134)", () => {
+  // Codex gives no CLAUDE_PROJECT_DIR: the session's working directory (the Working copy) is
+  // `cwd` in the hook input. File edits are `apply_patch` with the patch as `command`.
+  const env = { TMPDIR: '/data/runs/r1/tmp', HOME: '/home/agent' };
+  const codex = (tool_name: string, command: string) =>
+    decide({ tool_name, tool_input: { command }, cwd: '/data/runs/r1/repo' }, env);
+  const patch = (...headers: string[]) =>
+    ['*** Begin Patch', ...headers.flatMap((header) => [header, '+x']), '*** End Patch'].join('\n');
+
+  it('applies the command checks to Codex shell commands', () => {
+    expect(codex('Bash', 'git push origin main')).toEqual(expect.any(String));
+    expect(codex('Bash', 'DOCKER_HOST=unix:///x.sock touch probe.txt')).toEqual(expect.any(String));
+    expect(codex('Bash', 'cat ~/.codex/auth.json')).toEqual(expect.any(String));
+    expect(codex('Bash', 'pnpm test')).toBeNull();
+  });
+
+  it('lets a patch change files only inside the Working copy or the temporary directory', () => {
+    expect(codex('apply_patch', patch('*** Update File: src/a.ts'))).toBeNull();
+    expect(codex('apply_patch', patch('*** Add File: /data/runs/r1/repo/b.ts'))).toBeNull();
+    expect(codex('apply_patch', patch('*** Add File: /data/runs/r1/tmp/scratch.txt'))).toBeNull();
+    for (const header of [
+      '*** Add File: /etc/hosts',
+      '*** Update File: ../codex/prompt.md',
+      '*** Delete File: /home/agent/.bashrc',
+    ]) {
+      expect(codex('apply_patch', patch('*** Update File: src/a.ts', header))).toEqual(
+        expect.any(String),
+      );
+    }
+    expect(
+      codex('apply_patch', patch('*** Update File: src/a.ts', '*** Move to: /home/agent/x.ts')),
+    ).toEqual(expect.any(String));
+  });
+
+  it('keeps the logins out of reach of a patch', () => {
+    expect(codex('apply_patch', patch('*** Add File: /home/agent/.ssh/authorized_keys'))).toEqual(
+      expect.any(String),
+    );
   });
 });

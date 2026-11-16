@@ -15,6 +15,11 @@ import {
   type StartRunStepInput,
 } from '../runner.js';
 import { errorReason } from '../cli-output.js';
+import {
+  ManagedGuardrails,
+  type ManagedGuardrailsCheck,
+  managedGuardrailsFailure,
+} from '../managed-guardrails.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import {
   type ProcessGroupRegistry,
@@ -31,7 +36,7 @@ import {
   claudeStepFiles,
   type VersionCheck,
 } from './cli-options.js';
-import { type GuardrailsOptions, prepareGuardrails } from './guardrails.js';
+import { prepareRunSettings } from './guardrails.js';
 import { buildInstructions, type RepositoryFiles } from './instructions.js';
 import { ClaudeStream } from './stream.js';
 import { userSettingsProblem } from './user-settings.js';
@@ -50,18 +55,24 @@ export interface ClaudeCodeRunnerOptions {
   env: Record<string, string | undefined>;
   /** The bound on agent turns per Run step (`STUDIO_CLAUDE_MAX_TURNS`). */
   maxTurns: number;
-  /** Test seam: where Studio's guardrails are and which Node runs the hook. */
-  guardrails?: GuardrailsOptions;
+  /** Test seam: where the worker's copies of Studio's guardrails are. */
+  guardrails?: { dir?: string };
+  /**
+   * The check of Studio's root-owned managed guardrails before every step (Issue #134; default:
+   * the installed files, see managed-guardrails.ts). Test seam only.
+   */
+  managed?: ManagedGuardrailsCheck;
   /** Test seam: the per-step code that delimits the repository's instruction blocks. */
   marker?: () => string;
 }
 
 /**
  * The Claude Code runner (Issue #105): runs a Run step with the Claude Code CLI, signed in with
- * the operator's subscription, behind the runner interface. Per step it writes, in the Run's
- * directory and outside the Working copy, the instructions file (the agent definition and the
- * repository's instruction text) and a copy of Studio's guardrail settings and hook, then
- * starts the CLI through the spawn boundary with exactly the compliance record's options, a
+ * the operator's subscription, behind the runner interface. Per step it checks Studio's
+ * root-owned managed guardrails (Issue #134: managed settings and the guard script, installed by
+ * the server setup), writes, in the Run's directory and outside the Working copy, the
+ * instructions file (the agent definition and the repository's instruction text) and an empty
+ * per-Run settings file, then starts the CLI through the spawn boundary with exactly the compliance record's options, a
  * minimal environment and standard input closed, in the Working copy. It maps the streamed
  * events to the Run's log and ends with the structured result (with the session id), or fails:
  * `agent_failed` (non-zero exit, an error result, no valid structured result) or `usage_limit`
@@ -87,6 +98,10 @@ export class ClaudeCodeRunner implements Runner {
     // Review R4 of #129: the agent user's own settings still load; refuse what they must not hold.
     const userSettings = await userSettingsProblem(this.options.env.HOME);
     if (userSettings !== null) throw new AgentFailedError(userSettings);
+    // Issue #134: Studio's guardrails are the root-owned managed files; never run without them.
+    const managed = await (this.options.managed ?? new ManagedGuardrails()).problem(PROVIDER);
+    if (managed !== null)
+      throw new AgentFailedError(managedGuardrailsFailure('Claude Code', managed));
     const files = claudeStepFiles(workspace.runDir);
     await mkdir(files.tmpDir, { recursive: true, mode: 0o700 });
     const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
@@ -97,7 +112,7 @@ export class ClaudeCodeRunner implements Runner {
     );
     await writeFile(files.instructionsFile, instructions.text, { mode: 0o600 });
     for (const notice of instructions.notices) yield { type: 'notice', text: notice };
-    const guardrails = await prepareGuardrails(files, this.options.guardrails);
+    const guardrails = await prepareRunSettings(files.settingsFile, this.options.guardrails?.dir);
     signal.throwIfAborted();
     const args = claudeArguments({
       prompt,

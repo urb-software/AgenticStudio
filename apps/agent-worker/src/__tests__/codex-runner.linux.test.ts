@@ -2,8 +2,10 @@ import type { RunPayload, RunnerEvent } from '@agentic-studio/contracts';
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -15,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import { CodexRunner, probeCodex } from '../codex/runner.js';
+import { ManagedGuardrails } from '../managed-guardrails.js';
+import { installManagedGuardrails } from './fixtures/managed-guardrails.js';
 import { GitRunner } from '../git.js';
 import { ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
@@ -100,6 +104,8 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
       git: new GitRunner(),
       env: workerEnv(),
       sandbox: 'workspace-write',
+      // Issue #134: the real check, on managed files installed under the test's root.
+      managed: new ManagedGuardrails({ root: join(root, 'managed'), ownerUid: process.getuid!() }),
     });
   const payload = (task: string): RunPayload => ({
     runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
@@ -142,8 +148,9 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     return { events, result };
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), 'studio-codex-stub-'));
+    await installManagedGuardrails(join(root, 'managed'));
     home = join(root, 'home');
     mkdirSync(home);
     runDir = join(root, 'run');
@@ -253,6 +260,35 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     expect(readFileSync(join(home, '.codex', 'rules', 'studio.rules'), 'utf8')).toContain(
       'decision = "forbidden"',
     );
+  });
+
+  it('removes a hook or an allow rule the agent planted at user level before the CLI starts (Issue #134)', async () => {
+    mkdirSync(join(home, '.codex', 'rules'), { recursive: true });
+    writeFileSync(
+      join(home, '.codex', 'hooks.json'),
+      JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'true' }] }] },
+      }),
+    );
+    writeFileSync(
+      join(home, '.codex', 'rules', 'agent.rules'),
+      'prefix_rule(pattern = ["git", "push"], decision = "allow")',
+    );
+
+    await drain(runner().start(input('x')));
+
+    expect(existsSync(join(home, '.codex', 'hooks.json'))).toBe(false);
+    expect(readdirSync(join(home, '.codex', 'rules'))).toEqual(['studio.rules']);
+    expect(calls()[0]!.config).not.toMatch(/^\s*\[+hooks/m);
+  });
+
+  it('refuses a step, starting nothing, when a managed Codex file is missing (Issue #134)', async () => {
+    rmSync(join(root, 'managed', 'etc/codex/requirements.toml'));
+
+    await expect(drain(runner().start(input('x')))).rejects.toThrow(
+      'Codex: managed guardrails missing or changed: /etc/codex/requirements.toml.',
+    );
+    expect(existsSync(join(runDir, 'codex-stub-calls.ndjson'))).toBe(false);
   });
 
   it('asks, then resumes the same session with the answer file', async () => {

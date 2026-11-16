@@ -59,6 +59,7 @@ printf '%s\n' "$second" | sed 's/^/      | /'
 if [ "$status" -eq 0 ]; then ok "second run succeeded"; else not_ok "second run failed (exit $status)"; fi
 expect_line "second run changed nothing" "$second" '^Done: 0 change\(s\)\.$'
 expect_line "rootless Docker reported unchanged" "$second" '^\[rootless\] unchanged'
+expect_line "managed guardrails reported ok" "$second" '^\[guardrails\] ok '
 
 uid="$(id -u agent)"
 as_agent() {
@@ -226,9 +227,30 @@ for name in not-root not-in-docker-group processes-in-user-manager no-studio-con
   system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-stack-running \
   studio-postgres-unreachable studio-redis-unreachable studio-app-direct-unreachable no-wsl-escape \
   cgroup-v2 agent-user-limits rootless-docker rootless-container-limits rootless-compose \
-  worker-token-works worker-token-nothing-else; do
+  worker-token-works worker-token-nothing-else managed-guardrails managed-guardrails-locked; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
+
+section "Managed guardrails (Issue #134): the agent user cannot write or replace them"
+for file in /etc/claude-code/managed-settings.json /etc/codex/managed_config.toml /etc/codex/requirements.toml \
+  /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs; do
+  expect_stat "$file" root:root 644
+  expect_false "agent user cannot write $file" as_agent sh -c "echo '# planted' >> '$file'"
+  expect_false "agent user cannot replace $file" as_agent sh -c "printf '{}' > '$file.agent' && mv -f '$file.agent' '$file'"
+  expect_false "agent user cannot remove $file" as_agent rm -f "$file"
+done
+expect_false "agent user cannot add a Claude Code managed drop-in" as_agent mkdir /etc/claude-code/managed-settings.d
+expect_false "agent user cannot add a file next to the guard script" \
+  as_agent touch /usr/local/lib/agentic-studio/guardrails/planted.mjs
+# Negative case: a changed file is caught by the boundary check, and the setup step restores it.
+ONLY_GUARDRAILS=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,api')
+printf '\n' >>/etc/claude-code/managed-settings.json
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_GUARDRAILS[@]}" 2>&1)"
+expect_line "changed managed settings -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*managed-settings\.json differs'
+out="$(bash "$SETUP" --only guardrails 2>&1)"
+expect_line "the guardrails step reinstalls it" "$out" '^\[guardrails\] changed: /etc/claude-code/managed-settings\.json'
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary "${ONLY_GUARDRAILS[@]}" 2>&1)"
+expect_line "reinstalled -> PASS managed-guardrails" "$out" '^PASS  managed-guardrails '
 
 section "Breaking the boundary is caught"
 usermod -aG docker agent

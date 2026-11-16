@@ -46,18 +46,21 @@ useradd --create-home --uid 1500 lowuid
 expect_fail "refuses an agent user below uid 2000" "below 2000" env AGENT_USER=lowuid bash "$SETUP" --only preflight
 userdel -r lowuid 2>/dev/null
 
-STEPS=packages,node,user,logins,layout,worker
+STEPS=packages,node,user,logins,layout,worker,guardrails
+MANAGED=(/etc/claude-code/managed-settings.json /etc/codex/managed_config.toml /etc/codex/requirements.toml
+  /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs)
 snapshot() {
   {
     find /etc/agentic-studio /var/lib/agentic-studio /opt/agentic-studio \
       /home/agent/.config/agentic-studio-worker /home/agent/.local/share/agentic-studio-worker \
       /usr/local/sbin/agentic-studio-compose /usr/local/bin/agentic-studio-check-boundary \
       /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.asc \
-      /opt/agentic-studio-worker/.source-commit -printf '%p %u:%g %m\n' | sort
+      /opt/agentic-studio-worker/.source-commit /etc/claude-code /etc/codex /usr/local/lib/agentic-studio \
+      -printf '%p %u:%g %m\n' | sort
     find /etc/agentic-studio /opt/agentic-studio /home/agent/.config/agentic-studio-worker \
       /usr/local/sbin/agentic-studio-compose /usr/local/bin/agentic-studio-check-boundary \
       /etc/apt/sources.list.d/docker.sources /opt/agentic-studio-worker/.source-commit \
-      -type f -exec sha256sum {} + | sort
+      /etc/claude-code /etc/codex /usr/local/lib/agentic-studio -type f -exec sha256sum {} + | sort
     /usr/local/bin/node --version
     id agent
   }
@@ -79,6 +82,8 @@ if [ "$status" -eq 0 ]; then ok "second run succeeded"; else not_ok "second run 
 expect_line "second run changed nothing" "$second" '^Done: 0 change\(s\)\.$'
 expect_line "node reported unchanged" "$second" '^\[node\] unchanged'
 expect_line "worker reported unchanged" "$second" '^\[worker\] unchanged'
+expect_line "guardrails reported ok" "$second" '^\[guardrails\] ok '
+expect_false "guardrails changed nothing on the second run" grep -q '^\[guardrails\] changed' <<<"$second"
 after="$(snapshot)"
 if [ "$before" = "$after" ]; then
   ok "files, owners, modes and contents identical after the second run"
@@ -141,6 +146,30 @@ else
   not_ok "the built worker did not refuse its empty token (exit $status)"
 fi
 
+section "Managed guardrails (Issue #134): root-owned, equal to the worker's copies"
+GUARDRAILS_SRC=/opt/agentic-studio-worker/apps/agent-worker/guardrails
+for dir in /etc/claude-code /etc/codex /usr/local/lib/agentic-studio /usr/local/lib/agentic-studio/guardrails; do
+  expect_stat "$dir" root:root 755
+done
+for file in "${MANAGED[@]}"; do expect_stat "$file" root:root 644; done
+expect_true "Claude Code managed settings equal the worker's copy" \
+  cmp -s /etc/claude-code/managed-settings.json "$GUARDRAILS_SRC/claude-managed-settings.json"
+expect_true "Codex requirements equal the worker's copy" cmp -s /etc/codex/requirements.toml "$GUARDRAILS_SRC/codex-requirements.toml"
+expect_true "Codex managed config equals the worker's copy" cmp -s /etc/codex/managed_config.toml "$GUARDRAILS_SRC/codex-managed-config.toml"
+expect_true "the guard script equals the worker's copy" \
+  cmp -s /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs "$GUARDRAILS_SRC/claude-guard.mjs"
+expect_true "the managed settings are valid JSON" \
+  /usr/local/bin/node -e 'JSON.parse(require("fs").readFileSync("/etc/claude-code/managed-settings.json", "utf8"))'
+for file in "${MANAGED[@]}"; do
+  expect_false "agent user cannot change $file" as_agent sh -c "echo x >> '$file'"
+  expect_false "agent user cannot replace $file" as_agent sh -c "ln -sf /dev/null '$file.agent' && mv -f '$file.agent' '$file'"
+done
+expect_false "agent user cannot add a Claude Code drop-in folder" as_agent mkdir /etc/claude-code/managed-settings.d
+# The guard as installed blocks a guarded command (exit 2) and leaves an ordinary one alone.
+guard() { as_agent sh -c "printf '%s' '$1' | /usr/local/bin/node /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs"; }
+expect_fail "the installed guard blocks git push" "Blocked by Studio's guardrails" guard '{"tool_name":"Bash","tool_input":{"command":"git push"}}'
+expect_true "the installed guard leaves npm test alone" guard '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
 section "Boundary checks as the agent user (no systemd, no rootless Docker here)"
 out="$(check_as_agent --skip api)"
 status=$?
@@ -148,7 +177,7 @@ printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -eq 1 ]; then ok "fails overall here (rootless Docker and slice limits need systemd)"; else not_ok "exit $status, expected 1"; fi
 for name in not-root not-in-docker-group processes-in-user-manager no-studio-container-as-agent studio-config-unreadable studio-data-unreadable secrets-unreachable \
   system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-postgres-unreachable \
-  studio-redis-unreachable studio-app-direct-unreachable no-wsl-escape; do
+  studio-redis-unreachable studio-app-direct-unreachable no-wsl-escape managed-guardrails managed-guardrails-locked; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
 for name in rootless-docker agent-user-limits; do
@@ -161,6 +190,38 @@ expect_line "last line is the result" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
 
 ONLY_LOCAL=(--skip 'rootless,cgroup,api')
 section "Each check fails when its rule is broken"
+ONLY_GUARDRAILS=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,api')
+guardrails_reinstalled() {
+  local out
+  out="$(bash "$SETUP" --only guardrails 2>&1)"
+  grep -q '^\[guardrails\] changed: ' <<<"$out" && check_as_agent "${ONLY_GUARDRAILS[@]}" | grep -q '^PASS  managed-guardrails '
+}
+echo '# changed' >>/etc/codex/requirements.toml
+out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+expect_line "changed requirements -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*requirements\.toml differs'
+expect_true "the guardrails step restores it" guardrails_reinstalled
+chmod 0666 /etc/claude-code/managed-settings.json
+out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+expect_line "writable managed settings -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*not root:root 644'
+expect_line "writable managed settings -> FAIL managed-guardrails-locked" "$out" '^FAIL  managed-guardrails-locked '
+expect_true "the guardrails step restores its mode" guardrails_reinstalled
+chown agent /usr/local/lib/agentic-studio/guardrails
+out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+expect_line "guard folder owned by the agent -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*not a root-only directory'
+expect_line "guard folder owned by the agent -> FAIL managed-guardrails-locked" "$out" '^FAIL  managed-guardrails-locked '
+expect_true "the guardrails step takes the folder back" guardrails_reinstalled
+mv /etc/codex/managed_config.toml /root/managed_config.toml.test
+ln -s /root/managed_config.toml.test /etc/codex/managed_config.toml
+out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+expect_line "symbolic link -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*symbolic link'
+expect_true "the guardrails step replaces the link" guardrails_reinstalled
+expect_false "... with a real file" test -L /etc/codex/managed_config.toml
+rm -f /root/managed_config.toml.test
+rm -f /etc/claude-code/managed-settings.json
+out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+expect_line "missing managed settings -> FAIL managed-guardrails" "$out" '^FAIL  managed-guardrails .*managed-settings\.json missing'
+expect_true "the guardrails step reinstalls it" guardrails_reinstalled
+
 chmod 0755 /etc/agentic-studio && chmod 0644 /etc/agentic-studio/.env
 out="$(check_as_agent "${ONLY_LOCAL[@]}")"
 expect_line "readable Studio config -> FAIL studio-config-unreadable" "$out" '^FAIL  studio-config-unreadable '
