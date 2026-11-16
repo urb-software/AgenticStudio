@@ -104,7 +104,6 @@ describe('CodexRunner at the spawn boundary', () => {
       cli: { gate, binaries: DEFAULT_PROVIDER_BINARIES },
       env,
       sandbox: 'workspace-write',
-      guardrails: { nodePath: '/usr/bin/node' },
     });
   const input = (task: string) => ({
     run: payload(task),

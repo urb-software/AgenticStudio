@@ -1,18 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { decide, patchTargets } from '../../guardrails/codex-guard.mjs';
 import { readConfigTemplate, tomlString, trustEntries } from '../codex/codex-home.js';
 
 // Issue #106: Studio's guardrails for Codex, from Studio's own folder: the configuration
-// template, the command rules and the PreToolUse hook. Guardrails, not the boundary.
-
-const env = { HOME: '/home/agent' };
-const bash = (command: string) => decide({ tool_name: 'Bash', tool_input: { command } }, env);
-const patch = (text: string) =>
-  decide(
-    { tool_name: 'apply_patch', tool_input: { command: text }, cwd: '/data/runs/r1/repo' },
-    env,
-  );
+// template and the command rules (Studio's only Codex guardrail: hooks are off, coordinator
+// decision after the smoke of #133). Guardrails, not the boundary.
 
 describe("Studio's Codex configuration template", () => {
   it('turns network access on in the workspace-write sandbox (ADR 0002)', async () => {
@@ -44,7 +36,7 @@ describe("Studio's Codex configuration template", () => {
     ]);
   });
 
-  it('defines no trust entries, hooks, MCP servers or sandbox override of its own', async () => {
+  it('turns hooks off and defines no trust entries, MCP servers or sandbox override', async () => {
     const template = await readConfigTemplate();
     const settings = template
       .split('\n')
@@ -52,7 +44,7 @@ describe("Studio's Codex configuration template", () => {
       .join('\n');
 
     expect(settings).not.toMatch(/projects|mcp_servers|danger-full-access|sandbox_mode|trusted/);
-    expect(settings).toMatch(/\[features\]\nhooks = true\napps = false/);
+    expect(settings).toMatch(/\[features\]\nhooks = false\napps = false/);
   });
 
   it('writes Working copy paths as safe TOML strings', () => {
@@ -80,51 +72,5 @@ describe("Studio's Codex rules", () => {
     expect(rules).toContain('pattern = [["sudo", "su", "doas", "pkexec"]]');
     expect(rules).toContain('pattern = ["git", "push"]');
     expect(rules).toContain('pattern = ["docker", ["-H", "--host", "context"]]');
-  });
-});
-
-describe("Studio's Codex hook", () => {
-  it.each([
-    ['sudo ls', 'sudo is not allowed'],
-    ['git push origin main', 'git push is not allowed'],
-    ['cd x && git push', 'git push is not allowed'],
-    ['rm -rf /', 'deleting the root or the home directory'],
-    ['docker -H unix:///var/run/docker.sock ps', 'the system Docker daemon is off limits'],
-    ['docker --host=tcp://x ps', 'no -H/--host'],
-    ['DOCKER_HOST=tcp://x docker ps', 'no DOCKER_HOST='],
-    ['cat ~/.codex/auth.json', 'the Codex home are off limits'],
-    ['echo x >> $HOME/.codex/config.toml', 'the Codex home are off limits'],
-    ['cp evil.rules /home/agent/.codex/rules/', 'the Codex home are off limits'],
-    ['cat ~/.ssh/id_ed25519', 'credentials'],
-  ])('blocks %j', (command, reason) => {
-    expect(bash(command)).toContain(reason);
-  });
-
-  it.each([
-    'npm test',
-    'git status',
-    'docker compose up -d',
-    'cat .codex/config.toml',
-    'rm -rf build',
-  ])('lets %j go on', (command) => {
-    expect(bash(command)).toBeNull();
-  });
-
-  it('blocks patches that write outside the Working copy or into the Codex home', () => {
-    expect(
-      patchTargets('*** Begin Patch\n*** Add File: src/a.ts\n+x\n*** Move to: b.ts\n'),
-    ).toEqual(['src/a.ts', 'b.ts']);
-    expect(patch('*** Begin Patch\n*** Add File: src/a.ts\n+x\n*** End Patch')).toBeNull();
-    expect(patch('*** Begin Patch\n*** Update File: ../../other/repo/a.ts\n*** End Patch')).toBe(
-      'files are written only inside the Working copy',
-    );
-    expect(patch('*** Begin Patch\n*** Add File: ~/.codex/rules/x.rules\n*** End Patch')).toBe(
-      'logins, credentials and the Codex home are off limits',
-    );
-  });
-
-  it('leaves other tools and malformed input alone', () => {
-    expect(decide({ tool_name: 'update_plan', tool_input: { command: 'sudo x' } }, env)).toBeNull();
-    expect(decide(undefined, env)).toBeNull();
   });
 });

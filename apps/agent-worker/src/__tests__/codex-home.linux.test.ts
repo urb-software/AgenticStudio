@@ -34,8 +34,7 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
     mkdirSync(repo, { recursive: true });
     return repo;
   };
-  const prepare = (current: string[] = []) =>
-    prepareCodexHome({ home, dataDir, nodePath: '/usr/bin/node' }, current);
+  const prepare = (current: string[] = []) => prepareCodexHome({ home, dataDir }, current);
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'studio-codex-home-'));
@@ -84,6 +83,8 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
       '[projects."/data"]\ntrust_level = "trusted"\n[mcp_servers.evil]\ncommand = "x"\n',
     );
     writeFileSync(join(codex(), 'hooks.json'), '{"hooks":{"PreToolUse":[]}}');
+    mkdirSync(join(codex(), 'studio'));
+    writeFileSync(join(codex(), 'studio', 'codex-guard.mjs'), '// an earlier version');
     writeFileSync(join(codex(), 'rules', 'allow.rules'), 'prefix_rule(pattern=["curl"])');
     writeFileSync(join(codex(), 'rules', 'studio.rules'), '# emptied by the agent');
 
@@ -94,12 +95,9 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
     expect(readFileSync(join(codex(), 'rules', 'studio.rules'), 'utf8')).toBe(
       readFileSync(new URL('../../guardrails/codex-studio.rules', import.meta.url), 'utf8'),
     );
-    const hooks = JSON.parse(readFileSync(join(codex(), 'hooks.json'), 'utf8'));
-    expect(hooks.hooks.PreToolUse[0].matcher).toBe('^(Bash|apply_patch)$');
-    expect(hooks.hooks.PreToolUse[0].hooks[0].command).toBe(
-      `'/usr/bin/node' '${join(codex(), 'studio', 'codex-guard.mjs')}'`,
-    );
-    expect(existsSync(join(codex(), 'studio', 'codex-guard.mjs'))).toBe(true);
+    // Hooks are off: no hooks file, and Studio's earlier hook folder is gone.
+    expect(existsSync(join(codex(), 'hooks.json'))).toBe(false);
+    expect(existsSync(join(codex(), 'studio'))).toBe(false);
   });
 
   it('replaces a symbolic link or a file at the folders it manages, never following it (review C1 of #133)', async () => {
@@ -113,11 +111,12 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
     await prepare();
 
     expect(readdirSync(outside)).toEqual(['keep.txt']);
-    expect(existsSync(join(home, 'codex-guard.mjs'))).toBe(false);
-    for (const name of ['rules', 'studio']) {
-      expect(lstatSync(join(codex(), name)).isSymbolicLink()).toBe(false);
-      expect(lstatSync(join(codex(), name)).isDirectory()).toBe(true);
-    }
+    expect(lstatSync(join(codex(), 'rules')).isSymbolicLink()).toBe(false);
+    expect(lstatSync(join(codex(), 'rules')).isDirectory()).toBe(true);
+    // The leftover studio link is removed itself; the home it pointed at stays.
+    expect(existsSync(join(codex(), 'studio'))).toBe(false);
+    expect(existsSync(home)).toBe(true);
+    expect(existsSync(join(codex(), 'config.toml'))).toBe(true);
     expect(readdirSync(join(codex(), 'rules'))).toEqual(['studio.rules']);
 
     // A link inside rules/ is removed itself; its target stays.
@@ -187,7 +186,7 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
   it('refuses a template that defines trust entries of its own', async () => {
     const dir = join(root, 'guardrails');
     mkdirSync(dir);
-    for (const name of ['codex-hooks.json', 'codex-guard.mjs', 'codex-studio.rules']) {
+    for (const name of ['codex-studio.rules']) {
       writeFileSync(
         join(dir, name),
         readFileSync(new URL(`../../guardrails/${name}`, import.meta.url)),

@@ -26,8 +26,10 @@ import { isUuid, runsDirectory } from '../run-layout.js';
  *   one `[projects."<path>"] trust_level = "untrusted"` entry for every existing Working copy
  *   (and the step's own), so no project `.codex/` layer, hook or rule loads (record, finding 3);
  *   whatever an agent wrote into the file is overwritten;
- * - `hooks.json` and `studio/codex-guard.mjs`: Studio's PreToolUse hook;
- * - `rules/studio.rules`: Studio's command rules, as the only file in `rules/`.
+ * - `rules/studio.rules`: Studio's command rules, as the only file in `rules/`: Studio's only
+ *   Codex guardrail (coordinator decision after the smoke of #133). The template turns lifecycle
+ *   hooks off (`[features] hooks = false`): a user-level hook needs a trust the CLI keeps against
+ *   its hash, so it would not run unattended; `hooks.json` and `studio/` are removed.
  *
  * GUARDRAILS, NOT THE SECURITY BOUNDARY (ADR 0002). Writes are serialised across Run steps and
  * worker processes with a lock file and land by rename, so a starting CLI never reads half a
@@ -39,20 +41,19 @@ export const GUARDRAILS_DIR = fileURLToPath(new URL('../../guardrails/', import.
 
 export const CODEX_GUARDRAIL_FILES = {
   config: 'codex-config.toml',
-  hooks: 'codex-hooks.json',
-  hook: 'codex-guard.mjs',
   rules: 'codex-studio.rules',
 } as const;
 
 /** The files Studio writes in the Codex home, relative to it. */
 export const CODEX_HOME_FILES = {
   config: 'config.toml',
-  hooks: 'hooks.json',
-  hook: 'studio/codex-guard.mjs',
   rulesDir: 'rules',
   rules: 'rules/studio.rules',
   lock: '.studio-config.lock',
 } as const;
+
+/** What earlier versions of Studio wrote in the Codex home, removed before every step. */
+export const LEFTOVERS = ['hooks.json', 'studio'] as const;
 
 /** A lock file older than this is left over from a crashed writer and is taken over. */
 const STALE_LOCK_MS = 60_000;
@@ -65,8 +66,6 @@ export interface CodexHomeOptions {
   dataDir?: string;
   /** Where Studio's templates are (default {@link GUARDRAILS_DIR}). */
   guardrailsDir?: string;
-  /** The Node binary that runs the hook (default: the worker's own). */
-  nodePath?: string;
   /** Longest wait for another writer's lock (default 10 s). */
   lockTimeoutMs?: number;
 }
@@ -74,11 +73,6 @@ export interface CodexHomeOptions {
 /** The Codex home of the agent user. */
 export function codexHome(home: string): string {
   return posix.join(home, '.codex');
-}
-
-/** A POSIX shell word: single-quoted, so the hook command's shell never expands it. */
-function shellWord(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 // eslint-disable-next-line no-control-regex -- the point is to reject control characters
@@ -237,20 +231,11 @@ export async function prepareCodexHome(
       template + trustEntries(untrusted),
     );
 
-    const hook = posix.join(home, CODEX_HOME_FILES.hook);
-    await realDirectory(posix.dirname(hook));
-    await replaceFile(hook, await readFile(join(dir, CODEX_GUARDRAIL_FILES.hook), 'utf8'));
-    const command = `${shellWord(options.nodePath ?? process.execPath)} ${shellWord(hook)}`;
-    const hooks = JSON.parse(await readFile(join(dir, CODEX_GUARDRAIL_FILES.hooks), 'utf8')) as {
-      hooks: Record<string, { hooks: { command: string }[] }[]>;
-    };
-    for (const groups of Object.values(hooks.hooks)) {
-      for (const group of groups) for (const handler of group.hooks) handler.command = command;
+    // No hooks (they are off in the template): a hooks file and Studio's earlier hook folder are
+    // removed, a link itself and never its target.
+    for (const leftover of LEFTOVERS) {
+      await rm(posix.join(home, leftover), { recursive: true, force: true });
     }
-    await replaceFile(
-      posix.join(home, CODEX_HOME_FILES.hooks),
-      `${JSON.stringify(hooks, null, 2)}\n`,
-    );
 
     // Studio's rules are the only rules: anything else in the folder is removed first.
     const rulesDir = posix.join(home, CODEX_HOME_FILES.rulesDir);

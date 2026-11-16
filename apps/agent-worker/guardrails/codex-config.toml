@@ -37,8 +37,10 @@ include_only = [
   "COMPOSE_PROJECT_NAME",
 ]
 
-# Studio's PreToolUse hook (hooks.json beside this file, written by the worker as well) stays on;
-# app (connector) integrations are off: no MCP servers or connectors in the first version.
+# Lifecycle hooks are off: Studio's guardrails for Codex are its command rules only (coordinator
+# decision after the smoke of #133; a user-level hook needs a trust the CLI keeps against its
+# hash, so it would not run unattended). App (connector) integrations are off: no MCP servers or
+# connectors in the first version.
 [features]
-hooks = true
+hooks = false
 apps = false

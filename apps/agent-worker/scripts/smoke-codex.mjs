@@ -8,7 +8,7 @@
 //   CODEX_CLI_ENABLED=true node apps/agent-worker/scripts/smoke-codex.mjs
 //
 // Studio owns the agent user's Codex configuration: like every Codex Run step, this script
-// rewrites ~/.codex/config.toml, ~/.codex/hooks.json and ~/.codex/rules/ (it never reads the
+// rewrites ~/.codex/config.toml (hooks off) and ~/.codex/rules/ (it never reads the
 // login or the session files). It runs the runner directly (no Studio, no database) on a
 // throwaway Git repository with hostile project configuration, in a temporary directory deleted
 // afterwards (pass --keep to keep it):
@@ -17,7 +17,7 @@
 //      hooks and rules not loaded, whether a project skill is offered;
 //   3. one question, then a resume with the answer (same session; result from the last message);
 //   4. a container through the agent user's rootless Docker (network on in the sandbox);
-//   5. a command Studio's rules forbid and one Studio's hook blocks.
+//   5. a command Studio's rules forbid (Studio's only Codex guardrail; hooks are off).
 // It prints only redacted summary lines: outcomes, counts and yes/no checks. Never the agent's
 // output, the session id, the environment or file content.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,7 +59,7 @@ line(
   `install and version check: ${version.ok ? `${version.version} (complete install, supported)` : `FAILED: ${version.reason}`}`,
 );
 if (!version.ok) process.exit(1);
-line("note: Studio's configuration was written to ~/.codex (config.toml, hooks.json, rules/).");
+line("note: Studio's configuration was written to ~/.codex (config.toml, rules/).");
 
 const root = mkdtempSync(join(tmpdir(), 'studio-codex-smoke-'));
 const runDir = join(root, 'run');
@@ -206,8 +206,9 @@ try {
     'project config not loaded (STUDIO_PROJECT_LAYER not set)',
     !has(first.events, 'output', /^loaded\s*$/),
   );
+  // Known limitation (security.md §2): Codex documents no key that disables project skills.
   finding(
-    `project skill ${SKILL_NAME} offered to the agent (agent's own report)`,
+    `project skill ${SKILL_NAME} offered to the agent (agent's own report; known limitation)`,
     /skill available: yes/i.test(first.result?.summary ?? ''),
   );
 
@@ -260,14 +261,13 @@ try {
     has(docker.events, 'output', /Hello from Docker!/),
   );
 
-  // 5. Studio's rules and hook.
-  const blocked = await step("step 5 (Studio's rules and hook)", (input) =>
+  // 5. Studio's rules.
+  const blocked = await step("step 5 (Studio's rules)", (input) =>
     runner.start(
       task(
         input,
-        'Run exactly these two commands, once each, and report what happened to each in the ' +
-          'summary: `sudo -n true` and `echo DOCKER_HOST=studio-hook-probe`. Change no files. ' +
-          'End the step as done.',
+        'Run exactly `sudo -n true` once and report what happened in the summary. Change no ' +
+          'files. End the step as done.',
       ),
     ),
   );
@@ -277,11 +277,6 @@ try {
   check(
     'sudo was refused by a rule (forbidden)',
     /forbidden|rejected|not allowed|blocked/i.test(said),
-  );
-  check(
-    "Studio's hook blocked the DOCKER_HOST= command",
-    !has(blocked.events, 'output', /^DOCKER_HOST=studio-hook-probe\s*$/) &&
-      /Studio's guardrails|blocked/i.test(said),
   );
 } finally {
   if (keep) line(`kept: ${root}`);
