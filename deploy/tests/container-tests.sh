@@ -194,7 +194,9 @@ ONLY_GUARDRAILS=(--skip 'identity,processes,studio-files,docker-socket,sudo,stud
 guardrails_reinstalled() {
   local out
   out="$(bash "$SETUP" --only guardrails 2>&1)"
-  grep -q '^\[guardrails\] changed: ' <<<"$out" && check_as_agent "${ONLY_GUARDRAILS[@]}" | grep -q '^PASS  managed-guardrails '
+  grep -q '^\[guardrails\] changed: ' <<<"$out" || return 1
+  out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"
+  grep -q '^PASS  managed-guardrails ' <<<"$out"
 }
 echo '# changed' >>/etc/codex/requirements.toml
 out="$(check_as_agent "${ONLY_GUARDRAILS[@]}")"

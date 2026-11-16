@@ -331,10 +331,17 @@ check_guardrails() {
     elif [ "$(sha256sum <"$dest" | cut -d' ' -f1)" != "$(sha256sum <"$dir/$source" | cut -d' ' -f1)" ]; then
       problems+=("$dest differs from the worker's $source (SHA-256)")
     fi
-    if [ -L "$parent" ] || [ "$(stat -c %U "$parent" 2>/dev/null)" != root ] ||
-      [ $((8#$(stat -c %a "$parent" 2>/dev/null || echo 777) & 8#022)) -ne 0 ]; then
-      problems+=("$parent is not a root-only directory")
-    fi
+    # The file's directory and every one above it: whoever could write one could swap the files.
+    local up="$parent"
+    while :; do
+      if [ -L "$up" ] || [ "$(stat -c %U "$up" 2>/dev/null)" != root ] ||
+        [ $((8#$(stat -c %a "$up" 2>/dev/null || echo 777) & 8#022)) -ne 0 ]; then
+        problems+=("$up is not a root-only directory")
+        break
+      fi
+      [ "$up" != / ] || break
+      up="$(dirname "$up")"
+    done
     { [ -w "$dest" ] || [ -w "$parent" ]; } && writable+=("$dest")
   done <"$manifest"
   # The managed hooks' interpreter (the setup's node step): a hook that cannot start blocks nothing.

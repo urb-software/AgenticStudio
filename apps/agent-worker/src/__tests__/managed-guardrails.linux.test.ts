@@ -116,6 +116,22 @@ describe.skipIf(process.platform !== 'linux')("Studio's managed guardrails", () 
     },
   );
 
+  it.each<[Provider, string, string]>([
+    ['claude_code', '/etc', '/etc/claude-code/managed-settings.json'],
+    ['codex', '/usr/local/lib', '/usr/local/lib/agentic-studio/guardrails/claude-guard.mjs'],
+  ])(
+    '%s: refuses a directory higher up (%s) that others can write',
+    async (provider, dir, path) => {
+      chmodSync(installed(dir), 0o777);
+
+      const problem = await check().problem(provider);
+
+      expect(problem).toMatch(/^managed guardrails missing or changed: \//);
+      if (provider === 'claude_code')
+        expect(problem).toBe(`managed guardrails missing or changed: ${path}`);
+    },
+  );
+
   it('refuses a directory in place of a file', async () => {
     const path = '/etc/codex/requirements.toml';
     unlinkSync(installed(path));

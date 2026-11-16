@@ -170,8 +170,13 @@ export function decide(input, env) {
   const command = Array.isArray(toolInput.command)
     ? commandText(toolInput.command.filter((word) => typeof word === 'string'))
     : toolInput.command;
-  if (tool === 'Bash') return typeof command === 'string' ? checkBash(command) : null;
-  if (tool === 'apply_patch') {
+  if (tool === 'Bash') {
+    if (typeof command !== 'string') return null;
+    const reason = checkBash(command);
+    if (reason !== null || !/^\s*apply_patch\b/.test(command)) return reason;
+  }
+  // A patch: Codex's apply_patch tool, or apply_patch run through its shell.
+  if (tool === 'apply_patch' || tool === 'Bash') {
     if (typeof command !== 'string') return null;
     for (const file of patchedFiles(command)) {
       const reason = checkPath('Write', file, where);

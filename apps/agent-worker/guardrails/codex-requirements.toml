@@ -24,7 +24,6 @@ matcher = "^(Bash|apply_patch)$"
 type = "command"
 command = "/usr/local/bin/node /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs"
 timeout = 10
-statusMessage = "Checking Studio's guardrails"
 
 # Studio's command rules, enforced: the same rules as codex-studio.rules, which the worker also
 # keeps writing as the only file in ~/.codex/rules/. Requirements rules can only prompt or forbid;

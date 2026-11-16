@@ -208,6 +208,15 @@ describe("Studio's PreToolUse hook run by Codex (Issue #134)", () => {
     ).toEqual(expect.any(String));
   });
 
+  it('checks a patch run through the shell too', () => {
+    expect(codex('Bash', `apply_patch <<'EOF'\n${patch('*** Add File: /etc/hosts')}\nEOF`)).toEqual(
+      expect.any(String),
+    );
+    expect(
+      codex('Bash', `apply_patch <<'EOF'\n${patch('*** Add File: src/b.ts')}\nEOF`),
+    ).toBeNull();
+  });
+
   it('keeps the logins out of reach of a patch', () => {
     expect(codex('apply_patch', patch('*** Add File: /home/agent/.ssh/authorized_keys'))).toEqual(
       expect.any(String),

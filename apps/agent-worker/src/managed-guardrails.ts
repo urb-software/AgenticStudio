@@ -114,7 +114,7 @@ export class ManagedGuardrails implements ManagedGuardrailsCheck {
     // start does not block anything, so it must be there and root's too.
     const node = posix.join(this.root, HOOK_INTERPRETER);
     if (
-      !(await this.ownedByRoot(posix.dirname(node), 'directory')) ||
+      !(await this.rootOnlyPath(posix.dirname(node))) ||
       !(await this.ownedByRoot(node, 'file'))
     ) {
       return `managed guardrails missing or changed: ${HOOK_INTERPRETER}`;
@@ -134,9 +134,21 @@ export class ManagedGuardrails implements ManagedGuardrailsCheck {
     }
   }
 
+  /**
+   * `dir` and every directory above it up to the root are root-owned and writable by nobody
+   * else: whoever could write one of them could swap the files between the check and the CLI.
+   */
+  private async rootOnlyPath(dir: string): Promise<boolean> {
+    const top = posix.resolve(this.root);
+    for (let current = posix.resolve(dir); ; current = posix.dirname(current)) {
+      if (!(await this.ownedByRoot(current, 'directory'))) return false;
+      if (current === top || current === posix.dirname(current)) return true;
+    }
+  }
+
   private async intact(file: ManagedFile): Promise<boolean> {
     const installed = posix.join(this.root, file.path);
-    if (!(await this.ownedByRoot(posix.dirname(installed), 'directory'))) return false;
+    if (!(await this.rootOnlyPath(posix.dirname(installed)))) return false;
     if (!(await this.ownedByRoot(installed, 'file'))) return false;
     try {
       return (await sha256(installed)) === (await sha256(join(this.dir, file.source)));

@@ -8,9 +8,12 @@ import { GUARDRAILS_DIR, HOOK_INTERPRETER, readManagedFiles } from '../../manage
  * test's own user (Issue #134). Returns `root`.
  */
 export async function installManagedGuardrails(root: string): Promise<string> {
+  // Every directory from `root` down, 0755 whatever the umask (the worker checks them all).
   const directory = async (dir: string) => {
     await mkdir(dir, { recursive: true });
-    await chmod(dir, 0o755);
+    for (let current = dir; current !== root; current = posix.dirname(current)) {
+      await chmod(current, 0o755);
+    }
   };
   for (const file of await readManagedFiles()) {
     const target = join(root, file.path);
@@ -22,5 +25,6 @@ export async function installManagedGuardrails(root: string): Promise<string> {
   await directory(posix.dirname(node));
   await writeFile(node, '#!/bin/sh\n');
   await chmod(node, 0o755);
+  await chmod(root, 0o755);
   return root;
 }
