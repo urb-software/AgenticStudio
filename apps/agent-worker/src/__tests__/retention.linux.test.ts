@@ -16,15 +16,16 @@ import { Retention, type RetentionOptions } from '../retention.js';
 import { composeProjectName } from '../run-layout.js';
 import type { RunResources } from '../run-resources.js';
 
-// Issue #98: the retention rules for Working copies, on a real directory tree, with Studio's
-// answers and the Run's containers faked (no Docker in unit tests). Linux only, like the worker.
+// Issues #98 and #143: what the worker removes, on a real directory tree, with Studio's answers
+// (which Runs are removable, which are kept until when) and the Run's containers faked (no
+// Docker in unit tests). The rules themselves are Studio's and tested there. Linux only, like
+// the worker.
 
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const DAY = 24 * 60 * 60_000;
-const PROJECT_A = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';
-const PROJECT_B = '4b6d8f0a-3e5a-4b7d-9f1c-2e4a6b8d0f3c';
 
 type State = RunStatesResponse[number]['state'];
+type Answer = Omit<RunStatesResponse[number], 'runId'>;
 
 class RecordingResources implements RunResources {
   readonly cleaned: string[] = [];
@@ -38,7 +39,7 @@ class RecordingResources implements RunResources {
 describe.skipIf(process.platform !== 'linux')('Retention', () => {
   let dataDir: string;
   let runsDir: string;
-  let states: Map<string, { state: State; finishedAt: string | null }>;
+  let states: Map<string, Answer>;
   let resources: RecordingResources;
   let carrying: string | undefined;
   let statesError: Error | undefined;
@@ -66,30 +67,31 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
         });
       },
       resources,
-      retentionDays: 7,
-      maxPerProject: 10,
-      now: () => NOW,
       carrying: () => carrying,
       logger: { info: () => undefined, error: () => undefined },
       ...overrides,
     });
   }
 
-  /** A Run directory as the worker makes it, and Studio's state of that Run. */
-  function run(projectId: string, state: State, finishedDaysAgo?: number): string {
+  /**
+   * A Run directory as the worker makes it, and Studio's answer for that Run: a final state is
+   * `removable` or kept until a week from NOW; any other state has neither.
+   */
+  function run(state: State, retained?: 'removable' | 'kept'): string {
     const runId = randomUUID();
     mkdirSync(join(runsDir, runId, 'repo'), { recursive: true });
     writeFileSync(join(runsDir, runId, 'repo', 'file.txt'), 'x');
     writeFileSync(
       join(runsDir, runId, 'run.json'),
-      JSON.stringify({ runId, projectId, composeProjectName: composeProjectName(runId) }),
+      JSON.stringify({ runId, composeProjectName: composeProjectName(runId) }),
     );
     states.set(runId, {
       state,
-      finishedAt:
-        finishedDaysAgo === undefined
-          ? null
-          : new Date(NOW.getTime() - finishedDaysAgo * DAY).toISOString(),
+      finishedAt: retained === undefined ? null : new Date(NOW.getTime() - DAY).toISOString(),
+      ...(retained === 'removable' ? { removable: true as const } : {}),
+      ...(retained === 'kept'
+        ? { keepUntil: new Date(NOW.getTime() + 7 * DAY).toISOString() }
+        : {}),
     });
     return runId;
   }
@@ -97,8 +99,8 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
   const left = () => readdirSync(runsDir).sort();
 
   it('removes directories without a known Run, with their containers', async () => {
-    const known = run(PROJECT_A, 'succeeded', 1);
-    const unknown = run(PROJECT_A, 'succeeded', 1);
+    const known = run('succeeded', 'kept');
+    const unknown = run('succeeded', 'kept');
     states.delete(unknown);
     mkdirSync(join(runsDir, 'not-a-run'));
     writeFileSync(join(runsDir, 'stray-file'), 'x');
@@ -116,61 +118,56 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     ]);
   });
 
-  it('keeps a finished Working copy for the retention days, then removes it with its containers', async () => {
-    const recent = run(PROJECT_A, 'succeeded', 6.9);
-    const expired = run(PROJECT_A, 'failed', 7.1);
-    const cancelled = run(PROJECT_B, 'cancelled', 30);
-
-    await retention().sweep();
-
-    expect(left()).toEqual([recent]);
-    expect(resources.cleaned.sort()).toEqual(
-      [composeProjectName(expired), composeProjectName(cancelled)].sort(),
-    );
-  });
-
-  it('keeps at most the newest N finished Working copies per Project', async () => {
-    const a = Array.from({ length: 12 }, (_, n) => run(PROJECT_A, 'succeeded', n * 0.1));
-    const b = [run(PROJECT_B, 'succeeded', 5), run(PROJECT_B, 'timed_out', 6)];
+  it('removes the Working copy of a final Run Studio calls removable, with its containers, and no other', async () => {
+    const kept = run('succeeded', 'kept');
+    const removable = run('failed', 'removable');
+    const cancelled = run('cancelled', 'removable');
+    const timedOut = run('timed_out', 'removable');
 
     const outcome = await retention().sweep();
 
-    expect(left()).toEqual([...a.slice(0, 10), ...b].sort());
-    expect(outcome.removed).toEqual(
-      expect.arrayContaining([
-        { name: a[10], reason: 'over_project_limit' },
-        { name: a[11], reason: 'over_project_limit' },
-      ]),
+    expect(left()).toEqual([kept]);
+    expect(resources.cleaned.sort()).toEqual(
+      [removable, cancelled, timedOut].map((id) => composeProjectName(id)).sort(),
+    );
+    expect(outcome.removed.map((removal) => removal.reason)).toEqual(
+      Array.from({ length: 3 }, () => 'retention_ended'),
     );
   });
 
-  it('takes both limits from the configuration', async () => {
-    const newest = run(PROJECT_A, 'succeeded', 0.5);
-    run(PROJECT_A, 'succeeded', 1);
-    run(PROJECT_A, 'succeeded', 2.5);
+  it('keeps a final Run for which Studio gave no answer to remove it, however old', async () => {
+    const quiet = run('succeeded');
+    states.set(quiet, {
+      state: 'succeeded',
+      finishedAt: new Date(NOW.getTime() - 400 * DAY).toISOString(),
+    });
 
-    await retention({ retentionDays: 2, maxPerProject: 1 }).sweep();
+    await retention().sweep();
 
-    expect(left()).toEqual([newest]);
+    expect(left()).toEqual([quiet]);
+    expect(resources.cleaned).toEqual([]);
   });
 
-  it('never removes the Working copy of a Run that is active, waiting or queued, however old', async () => {
+  it('never removes the Working copy of a Run that is active, waiting or queued, whatever Studio says', async () => {
     const kept = [
-      run(PROJECT_A, 'preparing'),
-      run(PROJECT_B, 'running'),
-      run(PROJECT_A, 'waiting_for_operator'),
+      run('preparing'),
+      run('running'),
+      run('waiting_for_operator'),
       // Also an answered Run queued to resume its session in this Working copy (Issue #103).
-      run(PROJECT_B, 'queued'),
+      run('queued'),
     ];
+    for (const runId of kept) {
+      states.set(runId, { ...states.get(runId)!, removable: true });
+    }
 
-    await retention({ retentionDays: 0, maxPerProject: 0 }).sweep();
+    await retention().sweep();
 
     expect(left()).toEqual(kept.sort());
     expect(resources.cleaned).toEqual([]);
   });
 
   it('never touches the Run the worker is carrying, even before Studio knows it', async () => {
-    const current = run(PROJECT_A, 'preparing');
+    const current = run('preparing');
     states.delete(current);
     carrying = current;
 
@@ -180,7 +177,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
   });
 
   it('keeps a Working copy whose containers could not be removed, for the next pass', async () => {
-    const expired = run(PROJECT_A, 'succeeded', 30);
+    const expired = run('succeeded', 'removable');
     resources.failing = true;
 
     expect((await retention().sweep()).removed).toEqual([]);
@@ -192,7 +189,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
   });
 
   it('removes no Working copy when Studio cannot be asked', async () => {
-    const expired = run(PROJECT_A, 'succeeded', 30);
+    const expired = run('succeeded', 'removable');
     statesError = new Error('fetch failed');
 
     await expect(retention().sweep()).rejects.toThrow('fetch failed');
@@ -219,9 +216,9 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     writeFileSync(join(target, 'file.txt'), 'keep');
     const linked = randomUUID();
     symlinkSync(target, join(runsDir, linked));
-    states.set(linked, { state: 'succeeded', finishedAt: NOW.toISOString() });
+    states.set(linked, { state: 'succeeded', finishedAt: NOW.toISOString(), removable: true });
 
-    await retention({ retentionDays: 0, maxPerProject: 0 }).sweep();
+    await retention().sweep();
 
     expect(left()).toEqual([]);
     expect(readdirSync(target)).toEqual(['file.txt']);
@@ -232,6 +229,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
 
     expect((await retention().sweep()).removed).toEqual([]);
   });
+
   describe('reporting removed Working copies (Issue #141)', () => {
     type Call = { runIds: readonly string[]; removed: readonly string[] | undefined };
 
@@ -252,8 +250,8 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     }
 
     it('tells Studio which Working copies the sweep removed', async () => {
-      const kept = run(PROJECT_A, 'succeeded', 1);
-      const expired = run(PROJECT_A, 'failed', 8);
+      const kept = run('succeeded', 'kept');
+      const expired = run('failed', 'removable');
       const calls: Call[] = [];
 
       await recording(calls, { count: 0 }).sweep();
@@ -264,7 +262,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     });
 
     it('reports nothing when nothing was removed', async () => {
-      run(PROJECT_A, 'succeeded', 1);
+      run('succeeded', 'kept');
       const calls: Call[] = [];
 
       await recording(calls, { count: 0 }).sweep();
@@ -273,8 +271,8 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     });
 
     it('keeps a removal it could not report and sends it with the next sweep', async () => {
-      const kept = run(PROJECT_A, 'succeeded', 1);
-      const expired = run(PROJECT_A, 'failed', 8);
+      const kept = run('succeeded', 'kept');
+      const expired = run('failed', 'removable');
       const calls: Call[] = [];
       const sweeper = recording(calls, { count: 1 });
 

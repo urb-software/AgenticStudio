@@ -20,7 +20,12 @@ import { ProviderDisabledError } from '../provider-gate.js';
 import type { LookupService } from '../pull-request-lookups.js';
 import { type ComputedRunDiff, type RunDiffPort, RunDiffUnavailableError } from '../run-diff.js';
 import { StudioApiError } from '../studio-api.js';
-import { AgentWorker, SHUTDOWN_FAILURE, type WorkerApi } from '../worker.js';
+import {
+  AgentWorker,
+  type AgentWorkerOptions,
+  SHUTDOWN_FAILURE,
+  type WorkerApi,
+} from '../worker.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from '../working-copy.js';
 
 // Issue #96: the worker loop against a recording fake of the worker routes.
@@ -350,6 +355,7 @@ interface Extras {
   gate?: { assertEnabled(provider: string): void };
   diffs?: RunDiffPort;
   lookups?: LookupService;
+  disk?: { snapshot(): unknown };
 }
 
 function startWorker(
@@ -374,6 +380,7 @@ function startWorker(
     deliveries,
     diffs: extras.diffs ?? new FakeRunDiffs(),
     ...(extras.lookups ? { lookups: extras.lookups } : {}),
+    ...(extras.disk ? { disk: extras.disk as AgentWorkerOptions['disk'] } : {}),
     pollMs: 5,
     heartbeatMs: 10,
     killGraceMs: extras.killGraceMs ?? 50,
@@ -1093,6 +1100,32 @@ describe('AgentWorker', () => {
     const kinds = api.calls.map(([kind]) => kind).slice(0, 3);
     expect(kinds).toEqual(['status', 'status', 'status']);
     expect(api.calls[0]?.[2]).toEqual(STATUS);
+  });
+
+  // Issue #143: the disk figures go with the status, once measured.
+  it('adds the disk figures to its status report once they are measured (Issue #143)', async () => {
+    const figures = {
+      workingCopiesBytes: 5_000_000,
+      cachesBytes: 1_000_000,
+      keptRuns: 3,
+      freeBytes: 80_000_000_000,
+      totalBytes: 200_000_000_000,
+      minFreeBytes: 10_737_418_240,
+    };
+    const measured: { figures: typeof figures | undefined } = { figures: undefined };
+    const api = new RecordingApi([]);
+    startWorker(api, undefined, undefined, { disk: { snapshot: () => measured.figures } });
+    await until(() => api.claims >= 2);
+
+    expect(api.calls.find(([kind]) => kind === 'status')?.[2]).toEqual(STATUS);
+
+    measured.figures = figures;
+    const seen = api.calls.length;
+    await until(() => api.calls.slice(seen).some(([kind]) => kind === 'status'));
+    expect(api.calls.slice(seen).find(([kind]) => kind === 'status')?.[2]).toEqual({
+      ...STATUS,
+      disk: figures,
+    });
   });
 
   it('keeps its status fresh with every heartbeat while it carries a long Run', async () => {

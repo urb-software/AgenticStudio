@@ -9,12 +9,9 @@ import {
   runsDirectory,
 } from './run-layout.js';
 import type { RunResources } from './run-resources.js';
-import { readRunFile } from './working-copy.js';
 
 /** How often the worker applies the retention rules (besides once at start). */
 export const RETENTION_INTERVAL_MS = 60 * 60_000;
-
-const DAY_MS = 24 * 60 * 60_000;
 
 /** Final Run states: only these Runs' Working copies fall under the retention rules. */
 const FINAL_STATES = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
@@ -33,41 +30,33 @@ export interface RetentionOptions {
   ): Promise<RunStatesResponse>;
   /** Removes a Run's containers, networks and volumes. */
   resources: RunResources;
-  /** A finished Working copy is removed after this many days... */
-  retentionDays: number;
-  /** ...and beyond the newest this many per Project. */
-  maxPerProject: number;
-  now: () => Date;
   /** The Run the worker carries right now: its directory is never touched. */
   carrying: () => string | undefined;
   logger: { info(message: string): void; error(message: string): void };
 }
 
-/** Why a Run directory was removed. */
-export type RemovalReason = 'unknown_run' | 'expired' | 'over_project_limit';
+/**
+ * Why a Run directory was removed: no Run is known for it, or Studio said the Run's Working copy
+ * is no longer kept (Issue #143; Studio's reasons are its own business).
+ */
+export type RemovalReason = 'unknown_run' | 'retention_ended';
 
 export interface RetentionOutcome {
   removed: { name: string; reason: RemovalReason }[];
 }
 
-interface Finished {
-  runId: string;
-  finishedAt: number;
-  projectId: string | null;
-}
-
 /**
- * The retention rules for Working copies (Issue #98, ADR 0002). Studio decides what a Run's
- * state is; the worker asks it for the Runs it has directories for. Then:
- * - a directory without a known Run (unknown id, or not a Run id at all) is removed;
- * - the Working copy of a Run that is not final (queued, preparing, running, waiting for the
- *   operator) is never removed, nor the one the worker is carrying; this keeps a waiting Run's
- *   Working copy and an answered one queued to resume its session (Issue #103);
- * - a final Run's Working copy is removed once it finished more than `retentionDays` ago,
- *   and beyond the newest `maxPerProject` finished ones of its Project.
- * Removing a Working copy first removes the Run's containers, networks and volumes; if that
- * fails, the directory is kept and the next pass tries again. If Studio cannot be asked,
- * no Working copy is removed (only entries that cannot be a Run directory at all).
+ * The retention of Working copies (Issue #98, ADR 0002; Issue #143). Studio decides: it knows each
+ * Run's pull request, its last activity and its Project's other Runs, and answers, for each Run
+ * directory the worker asks about, whether the Working copy is kept (`keepUntil`) or `removable`.
+ * The worker removes:
+ * - a directory without a known Run (unknown id, or not a Run id at all);
+ * - the Working copy of a final Run that Studio says is `removable`.
+ * The Working copy of a Run that is not final (queued, preparing, running, waiting for the
+ * operator) is never removed, nor the one the worker is carrying; a final Run without an answer
+ * to remove is kept. Removing a Working copy first removes the Run's containers, networks and
+ * volumes; if that fails, the directory is kept and the next pass tries again. If Studio cannot
+ * be asked, no Working copy is removed (only entries that cannot be a Run directory at all).
  */
 export class Retention {
   /** Removed Run Working copies Studio has not been told of yet (Issue #141). */
@@ -151,38 +140,12 @@ export class Retention {
       for (const state of answer) states.set(state.runId, state);
     }
 
-    const finished: Finished[] = [];
     for (const runId of runIds) {
       const state = states.get(runId);
       if (!state) {
         await this.remove(runId, 'unknown_run', outcome, signal);
-      } else if (FINAL_STATES.has(state.state) && state.finishedAt !== null) {
-        const runFile = await readRunFile(runDirectories(this.options.dataDir, runId).runFile);
-        finished.push({
-          runId,
-          finishedAt: Date.parse(state.finishedAt),
-          projectId: runFile?.projectId ?? null,
-        });
-      }
-    }
-
-    const cutoff = this.options.now().getTime() - this.options.retentionDays * DAY_MS;
-    const kept: Finished[] = [];
-    for (const run of finished) {
-      if (run.finishedAt < cutoff) await this.remove(run.runId, 'expired', outcome, signal);
-      else kept.push(run);
-    }
-    const byProject = new Map<string, Finished[]>();
-    for (const run of kept) {
-      // Without a readable run.json the Project is unknown: such a Run counts on its own, so
-      // it never pushes out another Project's Working copies (the age limit still applies).
-      const key = run.projectId ?? `unknown:${run.runId}`;
-      byProject.set(key, [...(byProject.get(key) ?? []), run]);
-    }
-    for (const runs of byProject.values()) {
-      runs.sort((a, b) => b.finishedAt - a.finishedAt);
-      for (const run of runs.slice(this.options.maxPerProject)) {
-        await this.remove(run.runId, 'over_project_limit', outcome, signal);
+      } else if (FINAL_STATES.has(state.state) && state.removable === true) {
+        await this.remove(runId, 'retention_ended', outcome, signal);
       }
     }
     return outcome;

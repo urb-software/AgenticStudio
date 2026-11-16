@@ -42,8 +42,7 @@ describe('loadWorkerConfig', () => {
       dataDir: '/var/lib/studio-agent',
       agentGitName: 'Studio Agent',
       agentGitEmail: 'agent@example.test',
-      retentionDays: 7,
-      retentionMaxPerProject: 10,
+      minFreeBytes: 10 * 1024 ** 3,
       killGraceMs: 10_000,
       claudeMaxTurns: 200,
       codexSandbox: 'workspace-write',
@@ -158,14 +157,11 @@ X-Evil: 1`,
     );
   });
 
-  it('reads the retention settings (Issue #98)', () => {
-    expect(
-      loadWorkerConfig({
-        ...env,
-        STUDIO_WORKER_RETENTION_DAYS: '3',
-        STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: '25',
-      }),
-    ).toMatchObject({ retentionDays: 3, retentionMaxPerProject: 25 });
+  it('reads the free disk space the worker keeps, in GiB (Issue #143)', () => {
+    expect(loadWorkerConfig({ ...env, STUDIO_WORKER_MIN_FREE_GB: '2.5' }).minFreeBytes).toBe(
+      2.5 * 1024 ** 3,
+    );
+    expect(loadWorkerConfig({ ...env, STUDIO_WORKER_MIN_FREE_GB: '0' }).minFreeBytes).toBe(0);
   });
 
   it('reads the kill grace of a stopped Run step in seconds (Issue #100)', () => {
@@ -239,14 +235,14 @@ X-Evil: 1`,
       /STUDIO_AGENT_GIT_EMAIL/,
     ],
     [
-      'negative retention days',
-      { ...env, STUDIO_WORKER_RETENTION_DAYS: '-1' },
-      /STUDIO_WORKER_RETENTION_DAYS/,
+      'negative free disk space',
+      { ...env, STUDIO_WORKER_MIN_FREE_GB: '-1' },
+      /STUDIO_WORKER_MIN_FREE_GB/,
     ],
     [
-      'a non-numeric retention count',
-      { ...env, STUDIO_WORKER_RETENTION_MAX_PER_PROJECT: 'many' },
-      /STUDIO_WORKER_RETENTION_MAX_PER_PROJECT/,
+      'a non-numeric free disk space',
+      { ...env, STUDIO_WORKER_MIN_FREE_GB: 'plenty' },
+      /STUDIO_WORKER_MIN_FREE_GB/,
     ],
     [
       'a kill grace of zero',
