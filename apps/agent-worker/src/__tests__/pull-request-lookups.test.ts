@@ -64,7 +64,12 @@ class FakeReader implements PullRequestReader {
     if (this.checkReports instanceof Error) throw this.checkReports;
     return this.checkReports;
   }
-  async jobLog(repository: { owner: string; repo: string }, jobId: number): Promise<JobLogOutcome> {
+  async jobLog(
+    repository: { owner: string; repo: string },
+    jobId: number,
+    _signal?: AbortSignal,
+  ): Promise<JobLogOutcome> {
+    void _signal;
     this.calls.push(`log ${repository.owner}/${repository.repo} ${jobId}`);
     const log = this.jobLogs.get(jobId) ?? { unavailable: 'The log has expired.' };
     if (log instanceof Error) throw log;
@@ -285,7 +290,7 @@ describe('PullRequestLookups', () => {
       expect(reader.calls.some((call) => call.startsWith('position'))).toBe(false);
     });
 
-    it('never sends a write request: it only has the three reads', async () => {
+    it('never sends a write request: it only has the reads of a lookup', async () => {
       await answerOf();
 
       expect(reader.calls.every((call) => /^(details|position|viewer|checks)/.test(call))).toBe(
@@ -461,6 +466,79 @@ describe('PullRequestLookups', () => {
             note: expect.stringMatching(/does not run on GitHub Actions.*Build exceeded the quota/),
           },
         ]);
+      });
+
+      it('keeps the other logs when one log cannot be read (a 5xx, an error of the download)', async () => {
+        reader.checkReports = [
+          check({ name: 'unit tests', state: 'failed', jobId: 11 }),
+          check({ name: 'lint', state: 'failed', jobId: 12 }),
+        ];
+        reader.jobLogs.set(11, new PullRequestFailedError('GitHub answered 500', 500));
+        reader.jobLogs.set(12, { log: 'x problems\n' });
+
+        const { checks } = (await answerForLogs()).result;
+
+        expect(checks).toEqual([
+          expect.objectContaining({
+            name: 'unit tests',
+            logAvailable: false,
+            note: expect.stringContaining('Log unavailable'),
+          }),
+          expect.objectContaining({ name: 'lint', logAvailable: true, excerpt: 'x problems' }),
+        ]);
+      });
+
+      it('stops reading logs after its time budget, listing the rest as unavailable', async () => {
+        reader.checkReports = [
+          check({ name: 'a', state: 'failed', jobId: 11 }),
+          check({ name: 'b', state: 'failed', jobId: 12 }),
+        ];
+        reader.jobLogs.set(11, { log: 'a failed\n' });
+        // The first log takes longer than the whole budget.
+        const slow = reader.jobLog.bind(reader);
+        reader.jobLog = async (
+          repository: { owner: string; repo: string },
+          jobId: number,
+          signal?: AbortSignal,
+        ) => {
+          if (jobId === 11) await new Promise((resolve) => setTimeout(resolve, 60));
+          return slow(repository, jobId, signal);
+        };
+        queue.push(lookup({ kind: 'failing_check_logs' }));
+        await new PullRequestLookups({
+          api,
+          github: { token: 'test-token-value', apiUrl: 'https://api.example.test' },
+          allowFileRemotes: false,
+          logsBudgetMs: 30,
+          reader: () => reader,
+          logger: { info: () => undefined, error: () => undefined },
+        }).serve(abort);
+
+        const answer = reported.at(-1)?.[1] as {
+          result: { checks: { name: string; logAvailable: boolean; note?: string }[] };
+        };
+        expect(answer.result.checks[1]).toMatchObject({
+          name: 'b',
+          logAvailable: false,
+          note: expect.stringContaining('time limit'),
+        });
+      });
+
+      it('caps an excerpt at 16 KiB and the total at 64 KiB in bytes, not characters', async () => {
+        const line = `${'\u00e9'.repeat(50)}\n`;
+        reader.checkReports = Array.from({ length: 6 }, (_, index) =>
+          check({ name: `job ${index}`, state: 'failed', jobId: 30 + index }),
+        );
+        for (let index = 0; index < 6; index += 1) {
+          reader.jobLogs.set(30 + index, { log: line.repeat(190) });
+        }
+
+        const { checks } = (await answerForLogs()).result;
+
+        const sizes = checks.map((entry) => Buffer.byteLength(entry.excerpt ?? '', 'utf8'));
+        expect(Math.max(...sizes)).toBeLessThanOrEqual(16 * 1024);
+        expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(64 * 1024);
+        expect(sizes[0]).toBeGreaterThan(9_000);
       });
 
       it('refuses when the pull request is no longer open, reading no log', async () => {

@@ -284,7 +284,14 @@ function webLink(...candidates: (string | null | undefined)[]): string | undefin
     if (!candidate || candidate.length > 2048) continue;
     try {
       const url = new URL(candidate);
-      if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
+      // Never a link with credentials in it.
+      if (
+        (url.protocol === 'https:' || url.protocol === 'http:') &&
+        !url.username &&
+        !url.password
+      ) {
+        return url.href;
+      }
     } catch {
       // Not a link.
     }
@@ -306,9 +313,10 @@ function checkRunState(
       return 'cancelled';
     case 'skipped':
     case 'neutral':
+    case 'stale':
       return 'skipped';
     default:
-      // failure, timed_out, action_required, startup_failure, stale, or none given.
+      // failure, timed_out, action_required, startup_failure, or none given.
       return 'failed';
   }
 }

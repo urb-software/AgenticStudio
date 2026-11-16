@@ -8,6 +8,7 @@ import {
 import { prepareFailingChecksDraft } from '../../domain/services/failing-checks-draft.js';
 import { redactLogText } from '../../domain/services/log-redaction.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
 /** The lookup does not exist. */
 export class LookupNotFoundError extends Error {
@@ -47,19 +48,23 @@ export class ReportLookupResultHandler {
   constructor(
     @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
   ) {}
 
   async execute(lookupId: string, answer: LookupResultRequest): Promise<void> {
-    const kind = await this.lookups.findKind(lookupId);
-    if (kind === null) throw new LookupNotFoundError();
+    const found = await this.lookups.findRef(lookupId);
+    if (found === null) throw new LookupNotFoundError();
+    const { kind } = found;
     const now = this.clock.now();
     if (answer.ok) {
       if (answer.kind !== kind) throw new LookupKindMismatchError();
+      // Text from CI jobs is redacted like the Run's log: with the Run's known secret values too.
+      const known = await this.secrets.forRun(found.runId);
       if (answer.kind === 'failing_check_logs') {
         const stored = await this.lookups.completeFailingCheckLogs(
           lookupId,
           answer.workerId,
-          prepareFailingChecksDraft(answer.result),
+          prepareFailingChecksDraft(answer.result, known),
           now,
         );
         if (stored === 'not_held') throw new LookupNotHeldError();
@@ -81,8 +86,12 @@ export class ReportLookupResultHandler {
           ...(checks === undefined
             ? {}
             : {
-                // The names come from CI jobs: token-shaped strings are masked like any log text.
-                checks: checks.map((check) => ({ ...check, name: redactLogText(check.name, []) })),
+                // Names and links come from CI jobs: masked like any log text.
+                checks: checks.map((check) => ({
+                  ...check,
+                  name: redactLogText(check.name, known),
+                  url: redactLogText(check.url, known),
+                })),
               }),
           ...(checksUnavailable === undefined ? {} : { checksUnavailable }),
         },

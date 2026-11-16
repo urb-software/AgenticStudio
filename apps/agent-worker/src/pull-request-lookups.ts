@@ -8,6 +8,9 @@ import {
   type RunPayload,
 } from '@agentic-studio/contracts';
 import { excerptAllowance, logExcerpt } from './check-logs.js';
+
+/** The whole reading of logs of one preparation stays below the lookup's lease of two minutes. */
+const LOGS_BUDGET_MS = 90_000;
 import {
   type CheckReport,
   GitHubPullRequests,
@@ -64,6 +67,8 @@ export interface PullRequestLookupsOptions {
   api: LookupApi;
   /** The Agent account on GitHub: its token (when configured) and the REST API's base URL. */
   github: { token?: string; apiUrl: string };
+  /** How long one preparation may read logs (default 90 s, below the lookup's lease). */
+  logsBudgetMs?: number;
   /** A development or test worker: `file://` fixture remotes name a repository too. */
   allowFileRemotes: boolean;
   /** Builds the reader (default: {@link GitHubPullRequests}). */
@@ -350,9 +355,10 @@ export class PullRequestLookups implements LookupService {
       const failed = reports.filter((report) => report.state === 'failed');
       const checks: FailingCheckLogsResult['checks'] = [];
       let used = 0;
+      const deadline = Date.now() + (this.options.logsBudgetMs ?? LOGS_BUDGET_MS);
       for (const report of failed) {
-        const entry = await this.failedCheck(reader, repository, report, used, signal);
-        used += entry.excerpt?.length ?? 0;
+        const entry = await this.failedCheck(reader, repository, report, used, signal, deadline);
+        used += Buffer.byteLength(entry.excerpt ?? '', 'utf8');
         checks.push(entry);
       }
       return { commit: details.headSha, checks };
@@ -367,6 +373,7 @@ export class PullRequestLookups implements LookupService {
     report: CheckReport,
     used: number,
     signal: AbortSignal,
+    deadline: number,
   ): Promise<FailingCheckLogsResult['checks'][number]> {
     const base = { name: report.name, url: report.url };
     const summary = report.summary ? ` The check's summary: ${report.summary}` : '';
@@ -380,7 +387,27 @@ export class PullRequestLookups implements LookupService {
     }
     const allowance = excerptAllowance(used);
     if (allowance === 0) return unavailable('the size limit for all logs was reached.');
-    const outcome = await reader.jobLog(repository, report.jobId, signal);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return unavailable('the time limit for reading logs was reached.');
+    let outcome;
+    try {
+      outcome = await reader.jobLog(
+        repository,
+        report.jobId,
+        AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
+      );
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // A rate limit is the whole lookup's to wait out; anything else costs this log only.
+      if (error instanceof PullRequestFailedError && error.retryAfterSeconds !== undefined) {
+        throw error;
+      }
+      return unavailable(
+        error instanceof PullRequestFailedError
+          ? 'GitHub could not give the log.'
+          : 'the time limit for reading logs was reached.',
+      );
+    }
     if ('unavailable' in outcome) return unavailable(outcome.unavailable);
     const excerpt = logExcerpt(outcome.log, allowance);
     if (excerpt === undefined) return unavailable('the log is empty.');

@@ -1349,6 +1349,7 @@ describe('lookups', () => {
       expect(parse({ durationSeconds: 1.5 })).toBe(false);
       expect(parse({ url: 'javascript:alert(1)' })).toBe(false);
       expect(parse({ url: 'not a link' })).toBe(false);
+      expect(parse({ url: 'https://user:token@ci.test/x' })).toBe(false);
       expect(parse({ extra: 1 })).toBe(false);
     });
 
@@ -1395,6 +1396,12 @@ describe('lookups', () => {
         expect(parse([...Array(full).fill(big(FAILING_CHECK_EXCERPT_MAX_LENGTH)), big(1)])).toBe(
           false,
         );
+      });
+
+      it('counts the caps in UTF-8 bytes, not characters', () => {
+        // 9 000 two-byte characters are 18 000 bytes: over the 16 KiB cap.
+        expect(parse([{ ...entry, excerpt: 'é'.repeat(9_000) }])).toBe(false);
+        expect(parse([{ ...entry, excerpt: 'é'.repeat(8_192) }])).toBe(true);
       });
 
       it('is answered with the kind failing_check_logs only', () => {

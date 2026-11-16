@@ -1,4 +1,4 @@
-import type { FollowUpSource, PullRequestCheck, PullRequestState, Run } from './run.js';
+import type { PullRequestCheck, PullRequestState, Run } from './run.js';
 
 /**
  * Lookups (Issue #142): Studio's questions for the Git host that only an agent worker can
@@ -72,25 +72,6 @@ export interface FailedCheckLog {
 export interface FailingCheckLogsResult {
   commit: string;
   checks: FailedCheckLog[];
-}
-
-/** One part of a prepared Follow-up the operator can leave out (Issue #145). */
-export interface PreparedFollowUpItem {
-  name: string;
-  url: string;
-  logAvailable: boolean;
-  /** Exactly the part of the text that belongs to this item. */
-  section: string;
-}
-
-/**
- * The Follow-up Studio prepared for the operator to review (Issue #145): never sent by itself.
- * One per Run; a new preparation replaces it.
- */
-export interface PreparedFollowUp {
-  source: FollowUpSource;
-  text: string;
-  items: PreparedFollowUpItem[];
 }
 
 export type LookupFailureCode = 'scope_mismatch' | 'rate_limited' | 'failed';

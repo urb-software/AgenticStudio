@@ -4,12 +4,12 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
+import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
 import type { PullRequestState, RunPullRequestChecks } from '../../domain/entities/run.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
   type LookupKind,
-  type PreparedFollowUp,
   type PullRequestStateResult,
 } from '../../domain/entities/run-lookup.js';
 import type {
@@ -48,12 +48,7 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       await tx.run.update({
         where: { id: runId },
-        data:
-          // Issue #145: reading the failing checks' logs is not a refresh of the state: it only
-          // marks the Run as preparing, and leaves the page-open throttle alone.
-          kind === 'failing_check_logs'
-            ? { prPrepareRequestedAt: now, prPrepareError: null }
-            : { prRefreshRequestedAt: now, prLastAttemptAt: now },
+        data: requestedColumns(kind, now),
       });
       return 'requested';
     });
@@ -230,30 +225,18 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
       });
       await tx.run.updateMany({
         where: { id: lookup.runId },
-        data:
-          lookup.kind === 'failing_check_logs'
-            ? {
-                prPrepareError: error,
-                // Still preparing while the lookup waits for its retry.
-                prPrepareRequestedAt: retryAt === null ? null : lookup.requestedAt,
-              }
-            : {
-                prRefreshError: error,
-                prRetryAt: retryAt,
-                // Still being refreshed while the lookup waits for its retry.
-                prRefreshRequestedAt: retryAt === null ? null : lookup.requestedAt,
-              },
+        data: failedColumns(lookup.kind as LookupKind, error, retryAt, lookup.requestedAt),
       });
       return 'stored';
     });
   }
 
-  async findKind(lookupId: string): Promise<LookupKind | null> {
+  async findRef(lookupId: string): Promise<{ kind: LookupKind; runId: string } | null> {
     const lookup = await this.db.runLookup.findUnique({
       where: { id: lookupId },
-      select: { kind: true },
+      select: { kind: true, runId: true },
     });
-    return lookup === null ? null : (lookup.kind as LookupKind);
+    return lookup === null ? null : { kind: lookup.kind as LookupKind, runId: lookup.runId };
   }
 
   async recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
@@ -324,4 +307,31 @@ function checksColumn(
         ? { commit: result.checksCommit, checks: result.checks }
         : null;
   return value === null ? Prisma.DbNull : (value as unknown as Prisma.InputJsonValue);
+}
+
+/**
+ * The Run's columns a new request of `kind` sets (Issue #145: reading the failing checks' logs is
+ * not a refresh of the state: it only marks the Run as preparing, and leaves the page-open
+ * throttle alone).
+ */
+function requestedColumns(kind: LookupKind, now: Date): Prisma.RunUpdateInput {
+  return kind === 'failing_check_logs'
+    ? { prPrepareRequestedAt: now, prPrepareError: null }
+    : { prRefreshRequestedAt: now, prLastAttemptAt: now };
+}
+
+/**
+ * The Run's columns a failed lookup of `kind` sets: the error, and with a retry (`retryAt`) the
+ * Run stays refreshing or preparing until it.
+ */
+function failedColumns(
+  kind: LookupKind,
+  error: string,
+  retryAt: Date | null,
+  requestedAt: Date,
+): Prisma.RunUpdateManyMutationInput {
+  const waiting = retryAt === null ? null : requestedAt;
+  return kind === 'failing_check_logs'
+    ? { prPrepareError: error, prPrepareRequestedAt: waiting }
+    : { prRefreshError: error, prRetryAt: retryAt, prRefreshRequestedAt: waiting };
 }

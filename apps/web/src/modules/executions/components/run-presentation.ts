@@ -114,12 +114,19 @@ export function summarizeChecks(checks: PullRequestChecks): ChecksSummary {
       unfinished,
     };
   }
-  return {
-    text: total === 1 ? 'The check passed' : `All ${total} checks passed`,
-    marker: count('passed') > 0 ? 'passed' : 'none',
-    failed,
-    unfinished,
-  };
+  const passed = count('passed');
+  const skipped = count('skipped');
+  const text =
+    skipped === 0
+      ? total === 1
+        ? 'The check passed'
+        : `All ${total} checks passed`
+      : passed === 0
+        ? total === 1
+          ? 'The check was skipped'
+          : `All ${total} checks were skipped`
+        : `${passed} ${passed === 1 ? 'check' : 'checks'} passed, ${skipped} skipped`;
+  return { text, marker: passed > 0 ? 'passed' : 'none', failed, unfinished };
 }
 
 export const PROVIDER_LABEL: Record<Provider, string> = {

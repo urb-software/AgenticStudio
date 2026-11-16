@@ -1,9 +1,6 @@
 import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../entities/run.js';
-import type {
-  FailingCheckLogsResult,
-  PreparedFollowUp,
-  PreparedFollowUpItem,
-} from '../entities/run-lookup.js';
+import type { PreparedFollowUp, PreparedFollowUpItem } from '../entities/prepared-follow-up.js';
+import type { FailingCheckLogsResult } from '../entities/run-lookup.js';
 import { redactLogText } from './log-redaction.js';
 
 /** What a Follow-up prepared from failing checks is prepared from. */
@@ -79,16 +76,19 @@ function section(entry: Entry, excerpt: string | undefined, note = entry.note): 
  * introduction leave, and checks that do not fit even without a log are counted in a closing line
  * (the operator sees all on GitHub). The operator reviews and may edit it; nothing sends it.
  */
-export function prepareFailingChecksDraft(result: FailingCheckLogsResult): PreparedFollowUp {
+export function prepareFailingChecksDraft(
+  result: FailingCheckLogsResult,
+  known: readonly string[] = [],
+): PreparedFollowUp {
   const intro = introduction(result.commit);
   const entries: Entry[] = result.checks.map((check) => ({
-    name: redactLogText(oneLine(check.name), []).slice(0, 200) || 'check',
-    url: oneLine(check.url),
+    name: redactLogText(oneLine(check.name), known).slice(0, 200) || 'check',
+    url: redactLogText(oneLine(check.url), known),
     excerpt:
       check.logAvailable && check.excerpt !== undefined
-        ? redactLogText(check.excerpt, [])
+        ? redactLogText(check.excerpt, known)
         : undefined,
-    note: redactLogText(oneLine(check.note ?? 'Log unavailable.'), []),
+    note: redactLogText(oneLine(check.note ?? 'Log unavailable.'), known),
   }));
   const closing = (omitted: number) =>
     omitted === 0

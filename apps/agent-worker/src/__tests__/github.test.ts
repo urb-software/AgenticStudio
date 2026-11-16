@@ -348,6 +348,9 @@ describe('GitHubPullRequests', () => {
         run({ id: 107, name: 'stopped', conclusion: 'cancelled' }),
         run({ id: 108, name: 'too slow', conclusion: 'timed_out' }),
         run({ id: 109, name: 'external', app: { slug: 'circleci' }, html_url: null }),
+        run({ id: 110, name: 'old run', conclusion: 'stale' }),
+        run({ id: 111, name: 'needs approval', conclusion: 'action_required' }),
+        run({ id: 112, name: 'secret link', html_url: 'https://user:token@ci.test/x' }),
       );
       stub.statuses.push(
         { context: 'ci/legacy', state: 'success', target_url: 'https://ci.example.test/1' },
@@ -368,6 +371,9 @@ describe('GitHubPullRequests', () => {
         ['stopped', 'cancelled'],
         ['too slow', 'failed'],
         ['external', 'passed'],
+        ['old run', 'skipped'],
+        ['needs approval', 'failed'],
+        ['secret link', 'passed'],
         ['ci/legacy', 'passed'],
         ['ci/pending', 'running'],
         ['ci/broken', 'failed'],
@@ -383,8 +389,8 @@ describe('GitHubPullRequests', () => {
       // A check without a link of its own, or with one that is not a web link, gets the fallback.
       expect(checks[9]).toMatchObject({ url: fallback });
       expect(checks[9]).not.toHaveProperty('jobId');
-      expect(checks[11]).toMatchObject({ url: fallback });
-      expect(checks[12]).toMatchObject({ summary: 'It broke' });
+      expect(checks[14]).toMatchObject({ url: fallback });
+      expect(checks[15]).toMatchObject({ summary: 'It broke' });
       expect(stub.requests.at(-2)).toMatchObject({
         path: `/repos/acme/shop/commits/${sha}/check-runs`,
         query: { per_page: '100' },
@@ -424,6 +430,46 @@ describe('GitHubPullRequests', () => {
       const outcome = await client().jobLog(repository, 100, signal());
 
       expect(outcome).toEqual({ unavailable: expect.stringContaining(reason) });
+    });
+
+    it('leaves a link with credentials out, using the fallback', async () => {
+      stub.checkRuns.push(run({ html_url: 'https://user:token@ci.test/x', details_url: null }));
+
+      const [only] = await client().checks(repository, sha, fallback, signal());
+
+      expect(only?.url).toBe(fallback);
+    });
+
+    it('does not follow a redirect to another host over http, a missing address or a strange scheme', async () => {
+      const follow = async (location: string | null) => {
+        const requests: string[] = [];
+        const fake = new GitHubPullRequests({
+          apiUrl: 'https://api.example.test',
+          token,
+          fetch: (async (input: unknown) => {
+            requests.push(String(input));
+            return new Response(null, {
+              status: 302,
+              headers: location === null ? {} : { Location: location },
+            });
+          }) as typeof fetch,
+        });
+        const outcome = await fake.jobLog(repository, 100, signal());
+        return { outcome, requests };
+      };
+
+      for (const location of [
+        null,
+        'http://evil.example/log',
+        'file:///etc/passwd',
+        'javascript:alert(1)',
+      ]) {
+        const { outcome, requests } = await follow(location);
+        expect(outcome).toEqual({ unavailable: expect.stringContaining('no usable address') });
+        // Only the API call was made: nothing went to the foreign address.
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatch(/^https:\/\/api\.example\.test\//);
+      }
     });
 
     it('still reports a rate limit on a log as a refusal to wait out', async () => {

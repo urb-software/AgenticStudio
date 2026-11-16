@@ -118,10 +118,16 @@ export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullReque
     : false;
   // The page's own periodic refresh while a check has not finished: only while it is visible, and
   // never on top of one already under way.
+  const latest = useRef({ refreshing, retryAt: pullRequest.retryAt });
+  useEffect(() => {
+    latest.current = { refreshing, retryAt: pullRequest.retryAt };
+  });
   useEffect(() => {
     if (!unfinished) return;
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') mutate(undefined);
+      const { refreshing: underWay, retryAt: waitUntil } = latest.current;
+      const waiting = waitUntil !== undefined && Date.parse(waitUntil) > Date.now();
+      if (document.visibilityState === 'visible' && !underWay && !waiting) mutate(undefined);
     }, CHECKS_REFRESH_MS);
     return () => clearInterval(timer);
   }, [unfinished, mutate]);

@@ -100,6 +100,28 @@ describe('Run page: Pull request checks (Issue #145)', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('says what was skipped instead of counting it as passed', async () => {
+    const some = delivered({
+      checks: [
+        ...Array.from({ length: 10 }, (_, index) => check({ name: `job ${index}` })),
+        check({ name: 'docs', state: 'skipped' }),
+        check({ name: 'e2e', state: 'skipped' }),
+      ],
+    });
+    const all = delivered({
+      checks: [check({ state: 'skipped' }), check({ name: 'b', state: 'skipped' })],
+    });
+    fakeRunsApi([some, all]);
+
+    const first = renderRun(some.id);
+    await heading();
+    expect(checksSection().textContent).toContain('10 checks passed, 2 skipped');
+    first.unmount();
+    renderRun(all.id);
+    await heading();
+    expect(checksSection().textContent).toContain('All 2 checks were skipped');
+  });
+
   it('names the commit the checks belong to, and keeps them apart from the agent’s Reported checks', async () => {
     const run = delivered(
       { checks: [check()] },
@@ -262,6 +284,30 @@ describe('Run page: refreshing the checks (Issue #145)', () => {
     await act(() => vi.advanceTimersByTimeAsync(95_000));
 
     expect(api.calls('refresh')).toHaveLength(1);
+  });
+
+  it('does not refresh on top of a refresh under way, or while GitHub asked to wait', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const running = [check({ state: 'running', durationSeconds: undefined })];
+    const under = delivered({ checks: running, refreshing: true });
+    const waiting = delivered({
+      checks: running,
+      retryAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+    const api = fakeRunsApi([under, waiting]);
+
+    const first = renderRun(under.id);
+    await heading();
+    await vi.waitFor(() => expect(api.calls('refresh')).toHaveLength(1));
+    await act(() => vi.advanceTimersByTimeAsync(65_000));
+    expect(api.calls('refresh')).toHaveLength(1);
+    first.unmount();
+
+    renderRun(waiting.id);
+    await heading();
+    await vi.waitFor(() => expect(api.calls('refresh')).toHaveLength(2));
+    await act(() => vi.advanceTimersByTimeAsync(65_000));
+    expect(api.calls('refresh')).toHaveLength(2);
   });
 
   it('does not refresh periodically when no check is unfinished', async () => {
@@ -478,13 +524,15 @@ describe('Run page: sending failing checks to the agent (Issue #145)', () => {
     expect(await screen.findByText(/Follow-up 1 · prepared from Pull request checks/)).toBeTruthy();
   });
 
-  it('cannot send with no check left, or no text', async () => {
+  it('sends the operator’s own text even with every check deselected, but not without text', async () => {
     const { box } = await preview();
     const send = () => within(card()).getByRole('button', { name: 'Send Follow-up' });
 
     await userEvent.click(within(card()).getByRole('checkbox', { name: /unit tests/ }));
     await userEvent.click(within(card()).getByRole('checkbox', { name: /lint/ }));
-    expect((send() as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.clear(box);
+    await userEvent.type(box, 'My own instruction.');
+    expect((send() as HTMLButtonElement).disabled).toBe(false);
 
     await userEvent.click(within(card()).getByRole('checkbox', { name: /lint/ }));
     expect((send() as HTMLButtonElement).disabled).toBe(false);

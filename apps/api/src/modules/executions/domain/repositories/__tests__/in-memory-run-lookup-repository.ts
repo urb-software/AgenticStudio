@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { PullRequestState } from '../../entities/run.js';
+import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type {
   ClaimedLookup,
   LookupKind,
-  PreparedFollowUp,
   PullRequestStateResult,
 } from '../../entities/run-lookup.js';
 import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
@@ -237,8 +237,9 @@ export class InMemoryRunLookupRepository
     return Promise.resolve('stored');
   }
 
-  findKind(lookupId: string): Promise<LookupKind | null> {
-    return Promise.resolve(this.lookups.find((lookup) => lookup.id === lookupId)?.kind ?? null);
+  findRef(lookupId: string): Promise<{ kind: LookupKind; runId: string } | null> {
+    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
+    return Promise.resolve(lookup ? { kind: lookup.kind, runId: lookup.runId } : null);
   }
 
   recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {

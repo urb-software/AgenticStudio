@@ -1001,7 +1001,23 @@ export const PULL_REQUEST_CHECKS_MAX = 100;
 export const PULL_REQUEST_CHECK_NAME_MAX_LENGTH = 200;
 
 /** A web link (http or https) as a check or the Git host gives it. */
-const webUrlSchema = z.url({ protocol: /^https?$/ }).max(REMOTE_URL_MAX_LENGTH);
+const webUrlSchema = z
+  .url({ protocol: /^https?$/ })
+  .max(REMOTE_URL_MAX_LENGTH)
+  // A link with credentials in it is never stored or shown.
+  .refine((link) => {
+    try {
+      const { username, password } = new URL(link);
+      return username === '' && password === '';
+    } catch {
+      return false;
+    }
+  });
+
+/** Size of a text in UTF-8 bytes. */
+function utf8Length(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
 
 /** A Pull request check as the Git host reports it (Issue #145): name, state, duration, link. */
 export const pullRequestCheckSchema = z.strictObject({
@@ -1106,10 +1122,10 @@ export const LOOKUP_ERROR_CODES = ['scope_mismatch', 'rate_limited', 'failed'] a
 export const lookupErrorCodeSchema = z.enum(LOOKUP_ERROR_CODES);
 export type LookupErrorCode = z.infer<typeof lookupErrorCodeSchema>;
 
-/** Longest log excerpt of one failed check, in characters (Issue #145: 16 KiB). */
+/** Longest log excerpt of one failed check, in UTF-8 bytes (Issue #145: 16 KiB). */
 export const FAILING_CHECK_EXCERPT_MAX_LENGTH = 16 * 1024;
 
-/** Longest total of the log excerpts of one `failing_check_logs` result, in characters (64 KiB). */
+/** Longest total of the log excerpts of one `failing_check_logs` result, in UTF-8 bytes (64 KiB). */
 export const FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH = 64 * 1024;
 
 /**
@@ -1127,7 +1143,12 @@ export const failingCheckLogsResultSchema = z
           name: z.string().min(1).max(PULL_REQUEST_CHECK_NAME_MAX_LENGTH),
           url: webUrlSchema,
           logAvailable: z.boolean(),
-          excerpt: z.string().max(FAILING_CHECK_EXCERPT_MAX_LENGTH).optional(),
+          excerpt: z
+            .string()
+            .refine((text) => utf8Length(text) <= FAILING_CHECK_EXCERPT_MAX_LENGTH, {
+              message: 'An excerpt is at most 16 KiB.',
+            })
+            .optional(),
           /** Why there is no log (no permission, expired, too large), when there is none. */
           note: z.string().max(LOOKUP_ERROR_MAX_LENGTH).optional(),
         }),
@@ -1137,7 +1158,7 @@ export const failingCheckLogsResultSchema = z
   .refine(
     (result) =>
       result.checks.every((check) => check.logAvailable === (check.excerpt !== undefined)) &&
-      result.checks.reduce((sum, check) => sum + (check.excerpt?.length ?? 0), 0) <=
+      result.checks.reduce((sum, check) => sum + utf8Length(check.excerpt ?? ''), 0) <=
         FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH,
     {
       path: ['checks'],

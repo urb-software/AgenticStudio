@@ -132,6 +132,40 @@ describe('Run page: delivery (Issue #102)', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('has a Reported checks heading with its commit when the agent reported checks and none failed', async () => {
+    const run = aRun({
+      state: 'succeeded',
+      runBranch: BRANCH,
+      delivery: 'delivered',
+      pullRequest: PULL_REQUEST,
+      commits: [
+        { id: 'abcdef0123456789abcdef0123456789abcdef01', subject: 'Add it', pushed: true },
+      ],
+    });
+    const api = fakeRunsApi([run]);
+    api.setSteps(run.id, [
+      {
+        index: 1,
+        kind: 'start',
+        outcome: 'done',
+        summary: 'Done.',
+        checks: [
+          { name: 'unit tests', result: 'passed' },
+          { name: 'lint', result: 'passed' },
+          { name: 'e2e', result: 'not_run' },
+        ],
+        reportedAt: '2026-11-15T10:05:00.000Z',
+      },
+    ]);
+    renderRun(run.id);
+    await heading();
+
+    const section = await screen.findByRole('region', { name: 'Reported checks' });
+    expect(section.textContent).toContain('2 passed, 1 not run');
+    expect(section.textContent).toContain('abcdef0');
+    expect(section.textContent).toContain('GitHub’s results are under Pull request checks');
+  });
+
   it('shows a failed delivery with its reason and "Retry delivery", which asks for a retry', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const run = aRun({

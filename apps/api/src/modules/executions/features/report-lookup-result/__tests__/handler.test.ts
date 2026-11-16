@@ -20,6 +20,8 @@ describe('lookups: claim and result', () => {
   let now: Date;
   let claims: ClaimLookupsHandler;
   let results: ReportLookupResultHandler;
+  /** The Run's known secret values (its Environment file), as the log redaction gets them. */
+  const secrets = { forRun: () => Promise.resolve(['hunter2-env-value']) };
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
@@ -27,7 +29,7 @@ describe('lookups: claim and result', () => {
     now = T1;
     const clock = { now: () => now };
     claims = new ClaimLookupsHandler(lookups, clock);
-    results = new ReportLookupResultHandler(lookups, clock);
+    results = new ReportLookupResultHandler(lookups, clock, secrets);
   });
 
   /** A delivered Run with a lookup requested and claimed by `WORKER`. */
@@ -157,6 +159,30 @@ describe('lookups: claim and result', () => {
       expect(status(run.id).checks).toEqual({ unavailable: true });
     });
 
+    it("masks the Run's known secrets and link credentials in a check's name and link", async () => {
+      const { run, lookup } = await claimed();
+      await results.execute(lookup.id, {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: {
+          state: 'open',
+          checksCommit: SHA,
+          checks: [
+            {
+              name: 'deploy hunter2-env-value',
+              state: 'failed',
+              url: 'https://user:s3cr3t@ci.test/3',
+            },
+          ],
+        },
+      });
+
+      const stored = JSON.stringify(status(run.id).checks);
+      expect(stored).not.toContain('hunter2-env-value');
+      expect(stored).not.toContain('s3cr3t');
+    });
+
     it('masks token-shaped strings in the name of a check', async () => {
       const { run, lookup } = await claimed();
       const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
@@ -272,6 +298,31 @@ describe('lookups: claim and result', () => {
       });
 
       expect(runs.prepared.get(run.id)!.items).toHaveLength(1);
+    });
+
+    it("redacts the Run's known secret values and link credentials, in the log, names and links", async () => {
+      const { run, lookup } = await claimedLogs();
+
+      await results.execute(lookup.id, {
+        ...logsAnswer,
+        result: {
+          commit: SHA,
+          checks: [
+            {
+              name: 'deploy hunter2-env-value',
+              url: 'https://user:s3cr3t@ci.test/job/1',
+              logAvailable: true,
+              excerpt: 'password is hunter2-env-value',
+            },
+          ],
+        },
+      });
+
+      const draft = runs.prepared.get(run.id)!;
+      for (const leaked of ['hunter2-env-value', 's3cr3t']) {
+        expect(draft.text).not.toContain(leaked);
+        expect(JSON.stringify(draft.items)).not.toContain(leaked);
+      }
     });
 
     it('redacts token-shaped strings in the log before storing it', async () => {

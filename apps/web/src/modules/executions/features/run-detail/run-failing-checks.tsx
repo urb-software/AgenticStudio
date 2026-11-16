@@ -183,7 +183,7 @@ function PreparedPreview({
           variant="primary"
           icon={SendIcon}
           loading={send.isPending}
-          disabled={busy || !sendable || included.size === 0 || problem !== undefined}
+          disabled={busy || !sendable || problem !== undefined}
           onClick={() => send.mutate({ text: trimmed, source: 'pull_request_checks' })}
         >
           Send Follow-up

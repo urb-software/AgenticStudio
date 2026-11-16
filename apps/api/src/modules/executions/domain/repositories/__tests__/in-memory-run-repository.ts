@@ -17,7 +17,7 @@ import {
   stepLimitFailure,
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
-import type { PreparedFollowUp } from '../../entities/run-lookup.js';
+import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,

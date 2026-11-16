@@ -1,4 +1,4 @@
-import type { PreparedFollowUp } from '../entities/run-lookup.js';
+import type { PreparedFollowUp } from '../entities/prepared-follow-up.js';
 
 /** DI token for the {@link PreparedFollowUpRepository} adapter. */
 export const PREPARED_FOLLOW_UP_REPOSITORY = Symbol('PREPARED_FOLLOW_UP_REPOSITORY');

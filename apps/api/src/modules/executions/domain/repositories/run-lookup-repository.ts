@@ -1,10 +1,6 @@
 import type { PullRequestState } from '../entities/run.js';
-import type {
-  ClaimedLookup,
-  LookupKind,
-  PreparedFollowUp,
-  PullRequestStateResult,
-} from '../entities/run-lookup.js';
+import type { PreparedFollowUp } from '../entities/prepared-follow-up.js';
+import type { ClaimedLookup, LookupKind, PullRequestStateResult } from '../entities/run-lookup.js';
 
 /** DI token for the {@link RunLookupRepository} adapter. */
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');
@@ -100,8 +96,8 @@ export interface RunLookupRepository {
   /** Removes lookups that finished (done or failed) before `before`; returns how many. */
   deleteFinishedBefore(before: Date): Promise<number>;
 
-  /** The kind of a lookup, or `null` when there is none with this id. */
-  findKind(lookupId: string): Promise<LookupKind | null>;
+  /** The kind and Run of a lookup, or `null` when there is none with this id. */
+  findRef(lookupId: string): Promise<{ kind: LookupKind; runId: string } | null>;
 
   /**
    * Ids of Runs with a pull request whose state is `draft`, `open` or unknown, whose last lookup

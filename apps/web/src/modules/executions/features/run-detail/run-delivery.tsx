@@ -5,7 +5,7 @@ import { Banner } from '@/shared/components/banner';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import type { RunOutput } from '../../../../platform/api';
-import { useProjectRuns, useRetryDelivery } from '../../api/runs-queries';
+import { useProjectRuns, useRetryDelivery, useRunSteps } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
 import { FINAL_STATES } from '../../components/run-states';
 import { isGitHubPullRequestUrl } from '../../components/github-links';
@@ -46,12 +46,54 @@ function PullRequestLink({ pullRequest }: { pullRequest: { url: string; number: 
   );
 }
 
-/** The checks the agent reported failed, said plainly (Issue #102). */
+const REPORTED_RESULT: Record<'passed' | 'failed' | 'not_run', string> = {
+  passed: 'passed',
+  failed: 'failed',
+  not_run: 'not run',
+};
+
+/**
+ * Reported checks (Issues #102, #145): the agent's own account of what it ran in its latest Run
+ * step. The checks it reported failed are said plainly in a warning; when none failed but it
+ * reported checks, a quiet heading with how they went. Either way it names the commit it refers to
+ * and says GitHub's results are separate.
+ */
 function FailingChecks({ run }: { run: RunOutput }) {
   const names = run.failingChecks ?? [];
-  if (names.length === 0) return null;
+  const { data: steps } = useRunSteps(run.id);
   // The Run's latest commit when the agent reported: the commit its reported checks belong to.
   const lastCommit = run.commits?.at(-1)?.id;
+  if (names.length === 0) {
+    const latest = steps
+      ? [...steps.values()].filter((step) => step.checks.length > 0).at(-1)
+      : undefined;
+    if (!latest) return null;
+    const tally = (['passed', 'failed', 'not_run'] as const)
+      .map(
+        (result) =>
+          [result, latest.checks.filter((check) => check.result === result).length] as const,
+      )
+      .filter(([, count]) => count > 0)
+      .map(([result, count]) => `${count} ${REPORTED_RESULT[result]}`)
+      .join(', ');
+    return (
+      <section aria-labelledby="reported-checks-title" className="flex flex-col gap-1 text-small">
+        <h2 id="reported-checks-title" className="m-0 text-body font-semibold text-text">
+          Reported checks
+        </h2>
+        <p className="m-0 text-text-muted">
+          The agent reported {tally} in its latest run step
+          {lastCommit ? (
+            <>
+              {' '}
+              (commit <Mono>{lastCommit.slice(0, 7)}</Mono>)
+            </>
+          ) : null}
+          . This is its own account; GitHub’s results are under Pull request checks.
+        </p>
+      </section>
+    );
+  }
   return (
     <Banner tone="warning" title="Reported checks: some failed.">
       The agent reported {names.length === 1 ? 'this check' : 'these checks'} as failed:{' '}
