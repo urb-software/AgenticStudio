@@ -459,7 +459,8 @@ export function RunDetail({ runId }: { runId: string }) {
 
       <RunCommits run={run} />
 
-      <RunLog key={run.id} ref={log} run={run} />
+      {/* Issue #141: a Follow-up reopens a finished Run, so its log opens again and follows it live. */}
+      <RunLog key={`${run.id}-${run.followUps}`} ref={log} run={run} />
     </div>
   );
 }
