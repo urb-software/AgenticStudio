@@ -73,22 +73,24 @@ function turnRows(index: number, turn: { question: string; answer?: string }): L
   return rows;
 }
 
-/**
- * The rows of a Run's log for the LogViewer: each event's text line by line (commands as `$`
- * lines, notices as warnings, step markers as section rows), a note under a cut event, and the
- * step's structured result right after its `step_finished` marker once it is known. After a
- * step that ended with a question come the question and the operator's answer (Issue #103), so
- * the log reads as the conversation with each Run step's log between its turns.
- */
-export function toLogRows(
+type Turn = ReturnType<typeof questionsAndAnswers>[number];
+
+/** The key of the row that starts Run step `index` (its `step_started` marker), if it is loaded. */
+export function stepStartRowKey(
   events: readonly RunEventOutput[],
+  index: number,
+): string | undefined {
+  const event = events.find((e) => e.kind === 'step_started' && e.stepIndex === index);
+  return event ? `${event.seq}:0` : undefined;
+}
+
+/** Which turn follows which `needs_input` step: the n-th such step asked the n-th question. */
+function turnsByStep(
   steps: ReadonlyMap<number, RunStepOutput>,
-  messages: readonly RunMessageOutput[] = [],
-): LogRow[] {
-  const rows: LogRow[] = [];
+  messages: readonly RunMessageOutput[],
+): ReadonlyMap<number, Turn> {
   const turns = questionsAndAnswers(messages);
-  // The n-th step that ended with needs_input asked the n-th question.
-  const turnOfStep = new Map<number, (typeof turns)[number]>();
+  const turnOfStep = new Map<number, Turn>();
   [...steps.values()]
     .filter((step) => step.outcome === 'needs_input')
     .sort((a, b) => a.index - b.index)
@@ -96,23 +98,86 @@ export function toLogRows(
       const turn = turns[n];
       if (turn) turnOfStep.set(step.index, turn);
     });
-  for (const event of events) {
-    const tone = KIND_TONE[event.kind];
-    lines(event.text).forEach((line, i) => {
-      const text = event.kind === 'command' ? `${i === 0 ? '$' : ' '} ${line}` : line;
-      rows.push({ key: `${event.seq}:${i}`, text, tone: toneOf(event, tone) });
+  return turnOfStep;
+}
+
+/** One event's rows, followed by its step's result and turn when it ends a known step. */
+function eventRows(
+  event: RunEventOutput,
+  steps: ReadonlyMap<number, RunStepOutput>,
+  turnOfStep: ReadonlyMap<number, Turn>,
+  rows: LogRow[],
+): void {
+  const tone = KIND_TONE[event.kind];
+  lines(event.text).forEach((line, i) => {
+    const text = event.kind === 'command' ? `${i === 0 ? '$' : ' '} ${line}` : line;
+    rows.push({ key: `${event.seq}:${i}`, text, tone: toneOf(event, tone) });
+  });
+  if (event.truncated) {
+    rows.push({
+      key: `${event.seq}:cut`,
+      text: '… (cut: longer than an entry may be)',
+      tone: 'dim',
     });
-    if (event.truncated) {
-      rows.push({
-        key: `${event.seq}:cut`,
-        text: '… (cut: longer than an entry may be)',
-        tone: 'dim',
-      });
-    }
-    const step = event.kind === 'step_finished' ? steps.get(event.stepIndex) : undefined;
-    if (step) rows.push(...resultRows(step));
-    const turn = step ? turnOfStep.get(step.index) : undefined;
-    if (step && turn) rows.push(...turnRows(step.index, turn));
   }
-  return rows;
+  const step = event.kind === 'step_finished' ? steps.get(event.stepIndex) : undefined;
+  if (step) rows.push(...resultRows(step));
+  const turn = step ? turnOfStep.get(step.index) : undefined;
+  if (step && turn) rows.push(...turnRows(step.index, turn));
+}
+
+/**
+ * The rows of a Run's log for the LogViewer: each event's text line by line (commands as `$`
+ * lines, notices as warnings, step markers as section rows), a note under a cut event, and the
+ * step's structured result right after its `step_finished` marker once it is known. After a
+ * step that ended with a question come the question and the operator's answer (Issue #103), so
+ * the log reads as the conversation with each Run step's log between its turns.
+ *
+ * Built incrementally (Issue #115): the log's events array grows in place, so a live batch
+ * appends only the new events' rows and earlier rows stay the same objects. New step results
+ * or messages (once per Run step) or a new events array lay the rows out again.
+ */
+export class LogRowBuilder {
+  private built:
+    | {
+        events: readonly RunEventOutput[];
+        steps: ReadonlyMap<number, RunStepOutput>;
+        messages: readonly RunMessageOutput[];
+        turnOfStep: ReadonlyMap<number, Turn>;
+        /** How many events the rows cover. */
+        count: number;
+        rows: readonly LogRow[];
+      }
+    | undefined;
+
+  build(
+    events: readonly RunEventOutput[],
+    steps: ReadonlyMap<number, RunStepOutput>,
+    messages: readonly RunMessageOutput[],
+  ): readonly LogRow[] {
+    const built = this.built;
+    const grows =
+      built !== undefined &&
+      built.events === events &&
+      built.steps === steps &&
+      built.messages === messages &&
+      built.count <= events.length;
+    const base = grows
+      ? built
+      : {
+          events,
+          steps,
+          messages,
+          turnOfStep: turnsByStep(steps, messages),
+          count: 0,
+          rows: [] as readonly LogRow[],
+        };
+    if (grows && base.count === events.length) return base.rows;
+    const added: LogRow[] = [];
+    for (let i = base.count; i < events.length; i++) {
+      eventRows(events[i]!, steps, base.turnOfStep, added);
+    }
+    this.built = { ...base, count: events.length, rows: base.rows.concat(added) };
+    return this.built.rows;
+  }
 }

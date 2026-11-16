@@ -250,8 +250,9 @@ export const api = {
 
 /**
  * How a Run's log stream connection ended: `end` (the Run is final, all sent), `dropped`
- * (reconnect), or `refused` (4xx: the session expired, sending the browser to the login page
- * on 401, or the Run is gone; reconnecting cannot help).
+ * (reconnect; also a 429, too many live logs open), or `refused` (any other 4xx: the session
+ * expired, sending the browser to the login page on 401, or the Run is gone; reconnecting
+ * cannot help).
  */
 export type RunEventStreamEnd = 'end' | 'dropped' | 'refused';
 
@@ -264,9 +265,9 @@ function isRunEvent(value: unknown): value is RunEventOutput {
  * One connection to a Run's live log (`GET /api/runs/:runId/events/stream`, generated client)
  * from the event after `after`. `onOpen` fires once the stream is open, `onEvent` for each
  * event. Resolves `end` when the server said the Run is final and everything was sent, or
- * `dropped` when the connection failed or closed early (or `signal` aborted), or `refused` on
- * a 4xx answer; reconnecting is the caller's (see `platform/realtime`). The generated client
- * does not retry here.
+ * `dropped` when the connection failed or closed early (or `signal` aborted, or a 429), or
+ * `refused` on another 4xx answer; reconnecting is the caller's (see `platform/realtime`).
+ * The generated client does not retry here.
  */
 export async function streamRunEvents(
   runId: string,
@@ -300,6 +301,9 @@ export async function streamRunEvents(
     if (isRunEvent(data)) handlers.onEvent(data);
   }
   if (status === 401) redirectToLogin();
+  // Too many live logs open (429): a slot frees when another closes, so back off and try again
+  // like after a drop (Issue #115) instead of giving up.
+  if (status === 429) return 'dropped';
   if (status >= 400 && status < 500) return 'refused';
   return ended ? 'end' : 'dropped';
 }
