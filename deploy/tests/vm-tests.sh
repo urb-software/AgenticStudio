@@ -32,6 +32,12 @@ for file in /etc/apt/sources.list.d/*; do
     rm -f "$file"
   fi
 done
+# The runner image sets its own user's XDG_RUNTIME_DIR in /etc/environment; the setup script
+# refuses that (it would point the agent user's services at the runner user's directory).
+if grep -q '^XDG_RUNTIME_DIR=' /etc/environment; then
+  grep '^XDG_RUNTIME_DIR=' /etc/environment | sed 's/^/removing from \/etc\/environment: /'
+  sed -i '/^XDG_RUNTIME_DIR=/d' /etc/environment
+fi
 if command -v docker >/dev/null; then docker version --format 'existing system Docker {{.Server.Version}}' || true; fi
 
 section "First run (every step)"
