@@ -10,12 +10,12 @@ Two-axis review of a diff against its PR base:
 - **Standards**: does the code conform to this repo's documented standards?
 - **Spec**: does the code faithfully implement the originating GitHub Issue?
 
-Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings into `docs/templates/review-report.md`.
+In an independent review both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings into `docs/templates/review-report.md`.
 
 ## 0. Pick the mode
 
 - **Independent review** (DoD §2): this context has **no** implementer conversation history and did not write the diff. Only this mode can produce a verdict for the PR (`docs/engineering/agent-roles.md` §1).
-- **Self-review**: this session wrote (or helped write) the diff, e.g. when called from `studio-implement`. Run the same process, but title the output **"Self-review — does not satisfy independent review"** and give no verdict.
+- **Self-review**: this session wrote (or helped write) the diff, e.g. when called from `studio-implement`. Run the same steps **in this session, without sub-agents**: the session already holds the diff and the Issue, and the independent review is the gate that needs isolated contexts. Go through the Spec brief, then the Standards brief (step 4), keeping the two lists of findings separate. Title the output **"Self-review — does not satisfy independent review"** and give no verdict.
 
 If you're unsure which applies, it's self-review.
 
@@ -52,6 +52,8 @@ Always include:
 
 Plus any other file that documents how code should be written (e.g. `CONTRIBUTING.md`).
 
+Pass on only what the diff can violate: skip `frontend.md` for a diff that touches no web code and `backend.md` for one that touches no API or worker code, and name the relevant sections of the long documents (e.g. `quality.md` §3, §4, §6) rather than asking for a whole file to be read. `AGENTS.md` and `security.md` always apply in full.
+
 On top of the repo docs, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3). Two rules bind it:
 
 - **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell. (E.g. a port with a single Prisma adapter is mandated by `backend.md`, so it is not Speculative Generality or Middle Man.)
@@ -74,7 +76,9 @@ Each smell reads *what it is* → *how to fix*:
 
 ### 4. Spawn both sub-agents in parallel
 
-Issue both sub-agent calls together, in the foreground, read-only (they must not edit files), and aggregate the reports they return.
+Independent mode only; a self-review works through the same two briefs in its own session (step 0).
+
+Issue both sub-agent calls together, in the foreground, read-only (they must not edit files), and aggregate the reports they return. In Claude Code, spawn both with `model: opus`: the reviewer is never a weaker model than the one that wrote the diff (`docs/engineering/agent-roles.md` §6).
 
 **Standards sub-agent prompt** should include:
 
@@ -104,7 +108,19 @@ Fill `docs/templates/review-report.md` for the pinned head SHA:
 
 End with a one-line summary: findings per axis and the worst issue _within each axis_. Don't pick a single winner across axes.
 
-Save the report to the OS temp directory and print its path; the operator decides whether to post it. After fixes, the review must be re-run against the new head SHA.
+Save the report to the OS temp directory and print its path; the operator decides whether to post it. After fixes, the review must be re-run against the new head SHA (step 7).
+
+### 7. Re-review after fixes
+
+A second or later round reviews what changed, not the whole PR again. It needs the previously reviewed SHA and that round's findings (the review summary on the PR, or the earlier report); if either is missing, run a full review.
+
+1. Pin the new head SHA as in step 1. The delta is `git diff <previous-sha>..<new-sha>`.
+2. For each earlier BLOCKER and MAJOR finding, state whether it is resolved, with the hunk that resolves it. An unresolved finding stays open.
+3. Review the delta itself on both axes for anything the fixes introduced.
+4. Take the checks (step 5) for the **new** head SHA; results for an earlier SHA do not carry over.
+5. Report against the new head SHA, listing carried-over and new findings separately. The verdict rules of step 6 are unchanged.
+
+Run a full review instead when the delta touches a business module, public contract or security-relevant code that the earlier rounds did not cover, when the branch was rebased so the previous SHA is no longer an ancestor of the new one, or when the delta is not clearly smaller than the PR.
 
 ## Why two axes
 

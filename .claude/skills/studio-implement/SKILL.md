@@ -8,6 +8,16 @@ disable-model-invocation: true
 
 You are the **implementer** (`docs/engineering/agent-roles.md`). Implement exactly the work assigned to this session; nothing more.
 
+## Working economically
+
+Every turn re-reads the whole conversation, so the cost of a session is roughly its number of turns times the size of its context. Keep both small; none of this relaxes a check.
+
+- **Batch independent lookups.** Issue every read and search you already know you need as parallel tool calls in one turn, starting with the handoff's **Read first** list. Use the file read and search tools rather than one `cat` / `grep` shell call per turn.
+- **Chain commands that belong together.** Typecheck plus the affected test file is one shell call, not two.
+- **Fix every failure a run reports before rerunning.** Do not rerun after each single fix.
+- **Keep output small.** Prefer a reporter or filter that prints failures only, and never dump a whole log or a large file into the conversation when a search answers the question.
+- **Wait for CI with one blocking call** (`gh pr checks <n> --watch`); never poll in a `sleep` loop.
+
 ## 1. Load the bounded context
 
 - The input is a GitHub Issue number and, normally, an implementation handoff based on `docs/templates/implementation-handoff.md`. Fetch the Issue (`gh issue view <n> --json title,body,issueType,parent,blockedBy`) and state its number, title and native type before starting. If the reference is ambiguous, ask.
@@ -23,15 +33,15 @@ For a meaningful change, write a short plan before coding: affected business mod
 
 - Call the Skill tool with "studio-tdd" at the seams the handoff or Issue already agreed. If no seams were agreed, propose them and confirm before writing tests.
 - Follow the architecture rules (AGENTS.md §2, `docs/architecture/backend.md` / `frontend.md`): six business modules only, imports through public entry points, Prisma adapters behind ports, one canonical definition per public contract, no feature logic in `shared/`, no speculative layers.
-- Run typechecking and single test files regularly, and the full relevant suite once at the end.
+- During the loop, run typechecking and the affected test file together in one command. Run the full relevant suite once at the end, not after every slice.
 
 ## 4. Verify
 
-Run every relevant existing check from `docs/engineering/quality.md` §8 (format, lint, typecheck, `architecture:api` / `architecture:web` / `architecture:monorepo`, unit, integration, contract). For each, record the exact command and exit status. A script that does not exist yet is reported as `NOT IMPLEMENTED`, never `PASS`. Never remove or disable tests, auth checks or architecture gates to get green.
+Run every relevant existing check from `docs/engineering/quality.md` §8 (format, lint, typecheck, `architecture:api` / `architecture:web` / `architecture:monorepo`, unit, integration, contract). Use the handoff's **Verify command** when it gives one; otherwise chain the checks for your scope into one command (for example `pnpm check:api && pnpm architecture:api && pnpm test:api`) instead of one check per turn. For each check, record the exact command and exit status; a check that did not run because an earlier one failed is `NOT RUN`. A script that does not exist yet is reported as `NOT IMPLEMENTED`, never `PASS`. Never remove or disable tests, auth checks or architecture gates to get green.
 
 ## 5. Self-review
 
-Call the Skill tool with "studio-code-review" in **self-review** mode against the PR base (`origin/dev`). Fix what it finds. A self-review in this session does **not** satisfy independent review (`agent-roles.md` §1); say so wherever you report it.
+Call the Skill tool with "studio-code-review" in **self-review** mode against the PR base (`origin/dev`). In this mode the skill runs both axes in this session and spawns no sub-agents. Fix what it finds. A self-review in this session does **not** satisfy independent review (`agent-roles.md` §1); say so wherever you report it.
 
 ## 6. Commit and hand back
 
