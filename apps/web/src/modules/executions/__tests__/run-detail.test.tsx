@@ -115,6 +115,8 @@ describe('Run page', () => {
       'None',
     ],
     [{ state: 'queued', environmentFileSupplied: false }, 'Decided when the run starts'],
+    // A Run that ended without starting (cancelled while queued) was given none.
+    [{ state: 'cancelled', environmentFileSupplied: false }, 'None'],
   ] as const)(
     'shows whether the Environment file was supplied (Issue #104): %j',
     async (fields, text) => {

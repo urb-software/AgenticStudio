@@ -87,7 +87,10 @@ function EnvironmentFileFact({ run }: { run: RunOutput }) {
       </span>
     );
   }
-  if (!run.startedAt) return <span className="text-text-dim">Decided when the run starts</span>;
+  // A Run that ended without ever starting (cancelled while queued, failed at claim) got none.
+  if (!run.startedAt && !FINAL_STATES.includes(run.state)) {
+    return <span className="text-text-dim">Decided when the run starts</span>;
+  }
   return <span className="text-text-dim">None</span>;
 }
 

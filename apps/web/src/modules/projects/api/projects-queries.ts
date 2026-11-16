@@ -209,10 +209,16 @@ export function useEnvironmentFile(projectId: string) {
   });
 }
 
-/** Sets or replaces the Environment file; the answer (never the content) seeds the query. */
+/**
+ * Sets or replaces the Environment file; the answer (never the content) seeds the query. The
+ * request (with the content) is a mutation variable, so the mutation is dropped from the
+ * mutation cache as soon as nothing observes it (`gcTime: 0`; the dialog resets it when it
+ * closes): the content is not kept in the browser after the save (review of #126).
+ */
 export function useSetEnvironmentFile(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    gcTime: 0,
     mutationFn: (request: SetEnvironmentFileRequest) => api.setEnvironmentFile(projectId, request),
     onSuccess: (info: EnvironmentFileInfoOutput) => {
       queryClient.setQueryData(environmentFileKey(projectId), info);

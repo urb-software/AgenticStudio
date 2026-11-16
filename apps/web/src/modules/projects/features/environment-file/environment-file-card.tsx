@@ -101,9 +101,10 @@ export function EnvironmentFileCard({ projectId }: { projectId: string }) {
             <code className="font-mono text-code break-all">{data.path}</code>
           </Detail>
           <Detail term="Content">
-            <span className="font-mono text-code" aria-label="Hidden">
+            <span className="font-mono text-code" aria-hidden="true">
               ••••••••
             </span>
+            <span className="sr-only">Hidden</span>
             <span className="ml-2 text-small text-text-muted">Stored outside Git, write-only</span>
           </Detail>
           <Detail term="Size">{formatSize(data.sizeBytes)}</Detail>

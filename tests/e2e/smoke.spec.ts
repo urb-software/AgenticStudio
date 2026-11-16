@@ -533,6 +533,16 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   // Issue #104: an Environment file for the project's Runs, with a throwaway test value. The
   // dialog warns before saving; afterwards the card shows path and size, never the content.
   const envValue = `test-only-${randomBytes(8).toString('hex')}`;
+  // Every API answer the browser gets from here on, through the same-origin proxy (review of
+  // #126): the value must be in none of them. The live log stream is a server-sent event
+  // stream that stays open; its events are the stored log, which the paged answers carry too.
+  const apiBodies: Promise<string>[] = [];
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (!url.pathname.startsWith('/api/')) return;
+    if ((response.headers()['content-type'] ?? '').startsWith('text/event-stream')) return;
+    apiBodies.push(response.text().catch(() => ''));
+  });
   const envCard = main.getByRole('region', { name: 'Environment file' });
   await envCard.getByRole('button', { name: 'Set environment file' }).click();
   const envDialog = page.getByRole('dialog', { name: 'Set environment file' });
@@ -624,6 +634,9 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
   await expect(main.getByText('Environment file supplied')).toBeVisible();
   expect(await page.content()).not.toContain(envValue);
+  const bodies = await Promise.all(apiBodies);
+  expect(bodies.length).toBeGreaterThan(0);
+  expect(bodies.filter((body) => body.includes(envValue))).toEqual([]);
 
   // Run again, prefilled; this time the fake agent commits a change and reports a failing
   // check: the Run is delivered as a draft pull request, and the page says so (Issue #102).

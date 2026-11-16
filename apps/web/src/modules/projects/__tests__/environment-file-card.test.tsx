@@ -20,8 +20,18 @@ const PROJECT: ProjectOutput = {
 };
 const CONTENT = 'DB_PASSWORD=test-only-pw-1\n';
 
+let client: QueryClient;
+
+/** Whether any entry of the mutation cache still holds `text` (in its variables or state). */
+function mutationCacheHolds(text: string): boolean {
+  return client
+    .getMutationCache()
+    .getAll()
+    .some((mutation) => JSON.stringify(mutation.state).includes(text));
+}
+
 function renderDetail() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <ProjectDetail projectId={PROJECT.id} />
@@ -84,6 +94,8 @@ describe('Environment file card', () => {
     expect(within(region).getByText('27 bytes')).toBeTruthy();
     expect(within(region).getByText('Stored outside Git, write-only')).toBeTruthy();
     expect(document.body.textContent).not.toContain('test-only-pw-1');
+    // Write-only in memory too: the save's request is not kept in the mutation cache.
+    await waitFor(() => expect(mutationCacheHolds('test-only-pw-1')).toBe(false));
     expect(await screen.findByText('Environment file saved')).toBeTruthy();
     await expect(document.body).toHaveNoAxeViolations();
   });
@@ -185,5 +197,51 @@ describe('Environment file card', () => {
     expect(api.calls('removeEnvironmentFile')).toHaveLength(1);
     expect(await within(region).findByText('No environment file')).toBeTruthy();
     expect(await screen.findByText('Environment file removed')).toBeTruthy();
+  });
+
+  it('keeps no content in the mutation cache after a refused save and a cancelled dialog', async () => {
+    const api = fakeProjectApi(PROJECT);
+    api.respondNext('setEnvironmentFile', 500, problem(500, 'Internal Server Error'));
+    renderDetail();
+    const dialog = await openSetDialog();
+    await userEvent.type(within(dialog).getByLabelText('Content'), 'A=test-only-refused');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save environment file' }));
+    expect(await within(dialog).findByRole('alert')).toBeTruthy();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(mutationCacheHolds('test-only-refused')).toBe(false));
+    expect(document.body.textContent).not.toContain('test-only-refused');
+  });
+
+  it('keeps nothing of a dialog cancelled before saving', async () => {
+    fakeProjectApi(PROJECT);
+    renderDetail();
+    const dialog = await openSetDialog();
+    await userEvent.type(within(dialog).getByLabelText('Content'), 'A=test-only-typed');
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mutationCacheHolds('test-only-typed')).toBe(false);
+    // Opened again, the content field is empty.
+    const reopened = await openSetDialog();
+    expect(within(reopened).getByLabelText('Content')).toHaveProperty('value', '');
+  });
+
+  it('masks the content with hidden dots and a spoken "Hidden"', async () => {
+    const api = fakeProjectApi(PROJECT);
+    api.state.environmentFile = {
+      path: '.env',
+      sizeBytes: 5,
+      updatedAt: '2026-11-15T10:00:00.000Z',
+    };
+    renderDetail();
+    const region = await card();
+
+    const hidden = await within(region).findByText('Hidden');
+    expect(hidden.className).toContain('sr-only');
+    expect(within(region).getByText('••••••••').getAttribute('aria-hidden')).toBe('true');
   });
 });
