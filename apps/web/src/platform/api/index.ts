@@ -34,6 +34,7 @@ import type {
 } from './generated';
 import { client } from './generated/client.gen';
 import {
+  zBringUpToDateRequest,
   zConnectRepositoryRequest,
   zRunEventOutput,
   zCreateProjectRequest,
@@ -88,6 +89,9 @@ export const connectRepositoryRequestHint = zConnectRepositoryRequest;
 
 /** Generated hint for the New run form; the API trims the Task and its 422 field errors are final. */
 export const startRunRequestHint = zStartRunRequest;
+
+/** The bring-up-to-date note's rules as a client-side hint (Issue #147); the API stays authoritative. */
+export const bringUpToDateRequestHint = zBringUpToDateRequest;
 
 client.setConfig({ credentials: 'same-origin' });
 

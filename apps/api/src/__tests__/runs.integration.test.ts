@@ -2203,28 +2203,84 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           pullRequestNumber: 7,
           stepsBeforePart: 1,
         });
-        // The merge commit goes on the conversation entry with the part's running report.
-        expect((await report(run.id, { state: 'running', mergedCommit: MERGED })).status).toBe(204);
-        expect((await getRun(run.id)).body.messages.at(-1)).toMatchObject({
-          kind: 'follow_up',
-          source: 'bring_up_to_date',
-          mergedCommit: MERGED,
-        });
+        // Where the merge started is kept by Studio; the page shows a merged commit only once the
+        // part succeeded and delivered.
+        expect(
+          (
+            await report(run.id, {
+              state: 'running',
+              bringUpToDateStarted: { baseCommit: C1, integrationCommit: MERGED },
+            })
+          ).status,
+        ).toBe(204);
+        expect((await getRun(run.id)).body.messages.at(-1)).not.toHaveProperty('mergedCommit');
         expect((await step(run.id, 2, 'resume', DONE)).status).toBe(204);
         expect(
           (
             await report(run.id, {
               state: 'succeeded',
               delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST, pushedCommit: C2 },
-              mergedCommit: MERGED,
             })
           ).status,
         ).toBe(204);
-        expect((await getRun(run.id)).body).toMatchObject({
+        const after = (await getRun(run.id)).body;
+        expect(after).toMatchObject({
           state: 'succeeded',
           delivery: 'delivered',
           steps: { used: 2, usedInPart: 1 },
         });
+        expect(after.messages.at(-1)).toMatchObject({
+          source: 'bring_up_to_date',
+          mergedCommit: MERGED,
+        });
+        // The next claim counts the Run's own changes from the commit it merged.
+        expect((await followUp(run.id, { text: 'One more thing.' })).status).toBe(202);
+        const next = (await claim()).body;
+        expect(next).toMatchObject({ resumeReason: 'follow_up', mergedIntegrationCommit: MERGED });
+        expect(next).not.toHaveProperty('bringUpToDate');
+      });
+
+      it('hands every claim of the part where the merge started, until the part is over', async () => {
+        const { run } = await deliveredRun();
+        await bringUp(run.id);
+        await claim();
+        await report(run.id, {
+          state: 'running',
+          bringUpToDateStarted: { baseCommit: C1, integrationCommit: MERGED },
+        });
+        // The agent asks mid-part: the answer resumes the same part, with the same knowledge.
+        await step(run.id, 2, 'resume', {
+          ...DONE,
+          outcome: 'needs_input',
+          question: { text: 'Which side?' },
+        });
+        await report(run.id, { state: 'waiting_for_operator' });
+        await http()
+          .post(`/api/runs/${run.id}/answer`)
+          .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
+          .send({ text: 'Ours' });
+
+        expect((await claim()).body).toMatchObject({
+          resumeReason: 'answer',
+          bringUpToDate: true,
+          updateBase: C1,
+          updateTip: MERGED,
+        });
+      });
+
+      it('holds a bring-up request back while the concurrency limit is full, like a Follow-up', async () => {
+        const { run } = await deliveredRun();
+        await bringUp(run.id);
+        // Two other projects fill the server's places before this one is claimed.
+        const first = await readyProject(`Shop ${randomUUID()}`);
+        const second = await readyProject(`Shop ${randomUUID()}`);
+        await queuedRun(first.id, 'First');
+        await queuedRun(second.id, 'Second');
+        expect((await claim(W2)).body).toMatchObject({ kind: 'start', task: 'First' });
+        expect((await claim(W2)).body).toMatchObject({ kind: 'start', task: 'Second' });
+
+        expect((await claim(W1)).status).toBe(204);
+        expect((await getRun(run.id)).body.state).toBe('queued');
       });
 
       it('takes no note, and gives the claim a default text', async () => {
@@ -2249,9 +2305,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await bringUp(run.id, { note: 'Please.' });
         await claim();
 
-        expect((await report(run.id, { state: 'succeeded', alreadyUpToDate: true })).status).toBe(
-          204,
-        );
+        expect((await report(run.id, { state: 'succeeded', unchanged: true })).status).toBe(204);
 
         const after = (await getRun(run.id)).body;
         expect(after).toMatchObject({
@@ -2275,9 +2329,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         });
         expect(after.messages.at(-2)).not.toHaveProperty('mergedCommit');
         // The worker's retry of the same report changes nothing, and another request works.
-        expect((await report(run.id, { state: 'succeeded', alreadyUpToDate: true })).status).toBe(
-          204,
-        );
+        expect((await report(run.id, { state: 'succeeded', unchanged: true })).status).toBe(204);
         expect((await bringUp(run.id)).status).toBe(202);
       });
 
@@ -2339,7 +2391,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await claim();
         await report(plain.id, { state: 'running' });
 
-        const refused = await report(plain.id, { state: 'succeeded', alreadyUpToDate: true });
+        const refused = await report(plain.id, { state: 'succeeded', unchanged: true });
 
         expectProblem(refused, 409, PROBLEM.illegalRunTransition);
         expect((await getRun(plain.id)).body.state).toBe('running');

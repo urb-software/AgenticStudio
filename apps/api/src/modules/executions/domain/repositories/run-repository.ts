@@ -1,4 +1,5 @@
 import type {
+  BringUpSource,
   Provider,
   Run,
   RunCancellation,
@@ -280,16 +281,27 @@ export interface RunRepository {
     runId: string,
     text: string,
     now: Date,
-    source?: 'bring_up_to_date',
+    source?: BringUpSource,
   ): Promise<Run | null>;
 
   /**
-   * Records the integration branch commit a bring-up-to-date Follow-up has merged (Issue #147) on
-   * its conversation entry: only while `workerId` holds the Run, and only the Run's latest
-   * Follow-up, when it came from that request and has no commit yet. Idempotent. False when
-   * nothing was recorded.
+   * Records where a bring-up-to-date merge started (Issue #147) on the Run's latest Follow-up:
+   * the Run branch's commit before it and the integration branch commit being merged, kept for
+   * the later claims of the part. Only while `workerId` holds the Run, only when that Follow-up
+   * came from the request and has none yet. False when nothing was recorded.
    */
-  recordMergedCommit(runId: string, workerId: string, commit: string): Promise<boolean>;
+  recordUpdateStart(
+    runId: string,
+    workerId: string,
+    start: { baseCommit: string; integrationCommit: string },
+  ): Promise<boolean>;
+
+  /**
+   * Once a bring-up-to-date part succeeded (Issue #147): its merge is in the pushed Run branch, so
+   * the Follow-up's `updateTip` becomes its `mergedCommit` (what the page shows and what the Run's
+   * own changes are counted from). Idempotent; false when there was nothing to record.
+   */
+  recordMergedCommit(runId: string): Promise<boolean>;
 
   /**
    * Ends a bring-up-to-date Follow-up whose branch was already up to date (Issue #147), in one

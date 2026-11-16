@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { BranchUpdates, bringUpToDateInstruction, MergeIncompleteError } from '../branch-update.js';
+import { BranchUpdates, MergeIncompleteError } from '../branch-update.js';
 import { Deliveries } from '../delivery.js';
 import { type GitOptions, GitRunner } from '../git.js';
 import { PreparationFailedError, type PreparedRun, WorkingCopies } from '../working-copy.js';
@@ -140,7 +140,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
 
     const start = await updates().start(prepared, run, signal());
 
-    expect(start).toEqual({ outcome: 'merged', commit: tip });
+    expect(start).toEqual({ outcome: 'merged', commit: tip, baseCommit: before });
     // A merge commit: the Run branch's own tip first, the integration commit second.
     expect(parentsOf(prepared)).toEqual([before, tip]);
     expect(inRepo(prepared, ['log', '-1', '--format=%s'])).toBe(
@@ -169,8 +169,9 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
 
     const start = await updates().start(prepared, run, signal());
 
-    expect(start).toEqual({ outcome: 'merged', commit: tip });
     const [own] = parentsOf(prepared);
+    // The base is the Run branch's commit after the leftovers were committed.
+    expect(start).toEqual({ outcome: 'merged', commit: tip, baseCommit: own });
     expect(inRepo(prepared, ['show', '--format=%an <%ae>', '--no-patch', own!])).toBe(
       `${AGENT.agentGitName} <${AGENT.agentGitEmail}>`,
     );
@@ -180,17 +181,19 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     expect(inRepo(prepared, ['status', '--porcelain'])).toBe('');
   });
 
-  it('changes nothing when the Run branch already has the integration branch', async () => {
+  it('changes nothing when the Run branch already has the integration branch, not even a commit', async () => {
     const run = payload();
     const prepared = await prepare(run);
     agentCommits(prepared, { 'run.txt': 'y\n' }, 'Run change');
     const before = headOf(prepared);
+    // Review S9 of #154: what is uncommitted stays exactly as it is.
+    writeFileSync(join(prepared.repoDir, 'wip.ts'), 'export const WIP = 1;\n');
 
     const start = await updates().start(prepared, run, signal());
 
     expect(start).toEqual({ outcome: 'already_up_to_date', commit: first });
     expect(headOf(prepared)).toBe(before);
-    expect(inRepo(prepared, ['status', '--porcelain'])).toBe('');
+    expect(inRepo(prepared, ['status', '--porcelain'])).toBe('?? wip.ts');
     expect(mergeOpen(prepared)).toBe(false);
   });
 
@@ -246,6 +249,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
       expect(start).toEqual({
         outcome: 'conflicts',
         commit: tip,
+        baseCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
         files: ['config.txt'],
         moreFiles: 0,
       });
@@ -261,7 +265,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
 
       const completed = await updates().complete(prepared, run, signal());
 
-      expect(completed).toEqual({ mergedCommit: tip });
+      expect(completed).toEqual({ mergedCommit: tip, completed: true });
       expect(parentsOf(prepared)).toEqual([before, tip]);
       expect(mergeOpen(prepared)).toBe(false);
       expect(inRepo(prepared, ['log', '-1', '--format=%ae'])).toBe(AGENT.agentGitEmail);
@@ -274,7 +278,10 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
       inRepo(prepared, ['commit', '--quiet', '--no-edit']);
 
       // No merge is open any more and the commit is in the history: done, nothing more to commit.
-      expect(await updates().complete(prepared, run, signal(), tip)).toEqual({ mergedCommit: tip });
+      expect(await updates().complete(prepared, run, signal(), tip)).toEqual({
+        mergedCommit: tip,
+        completed: false,
+      });
       expect(parentsOf(prepared)[1]).toBe(tip);
 
       // Another Working copy, where the agent aborted the merge instead.
@@ -295,7 +302,10 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
       const { run, prepared, tip } = await conflicted();
       writeFileSync(join(prepared.repoDir, 'config.txt'), 'a=both\n');
 
-      expect(await updates().complete(prepared, run, signal())).toEqual({ mergedCommit: tip });
+      expect(await updates().complete(prepared, run, signal())).toEqual({
+        mergedCommit: tip,
+        completed: true,
+      });
       expect(readFileSync(join(prepared.repoDir, 'config.txt'), 'utf8')).toBe('a=both\n');
       expect(parentsOf(prepared)).toHaveLength(2);
       expect(inRepo(prepared, ['status', '--porcelain'])).toBe('');
@@ -361,6 +371,102 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     });
   });
 
+  describe('conflicts that are not text (review S5 of #154)', () => {
+    /** A binary file both sides added: git leaves "ours" in the tree, without a marker. */
+    async function binaryConflict() {
+      const run = payload();
+      const prepared = await prepare(run);
+      agentCommits(prepared, { 'logo.bin': '\u0000ours\n' }, 'Add the logo');
+      remote.commit('Their logo', { 'logo.bin': '\u0000theirs\n' });
+      const start = await updates().start(prepared, run, signal());
+      return { run, prepared, start };
+    }
+
+    it('does not take a binary conflict the agent left alone: the merge is refused, then aborted', async () => {
+      const { run, prepared, start } = await binaryConflict();
+      // Both sides added logo.bin differently: a conflict without a marker.
+      expect(start.outcome).toBe('conflicts');
+      expect(readFileSync(join(prepared.repoDir, 'logo.bin'), 'utf8')).toBe('\u0000ours\n');
+      const before = parentsOf(prepared);
+
+      await expect(updates().complete(prepared, run, signal())).rejects.toThrow(/logo\.bin/);
+      expect(mergeOpen(prepared)).toBe(true);
+
+      expect(await updates().abort(prepared)).toBe(true);
+      expect(mergeOpen(prepared)).toBe(false);
+      expect(parentsOf(prepared)).toEqual(before);
+    });
+
+    it('takes the binary file once the agent staged its own choice', async () => {
+      const { run, prepared } = await binaryConflict();
+      writeFileSync(join(prepared.repoDir, 'logo.bin'), '\u0000mine\n');
+      inRepo(prepared, ['add', 'logo.bin']);
+
+      expect((await updates().complete(prepared, run, signal()))?.completed).toBe(true);
+      expect(parentsOf(prepared)).toHaveLength(2);
+    });
+  });
+
+  describe('undoing an update that did not end well (review S3 of #154)', () => {
+    it('resets the Run branch to the commit before the merge, so a second request merges again', async () => {
+      const { run, prepared } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
+      const start = await updates().start(prepared, run, signal());
+      if (start.outcome !== 'merged') throw new Error('expected a clean merge');
+      // The agent then made a fix of its own.
+      agentCommits(prepared, { 'fix.ts': 'fix\n' }, 'Fix what the update broke');
+
+      expect(await updates().abort(prepared, start.baseCommit)).toBe(true);
+
+      expect(headOf(prepared)).toBe(start.baseCommit);
+      expect(existsSync(join(prepared.repoDir, 'main.txt'))).toBe(false);
+      // The next request is not "already up to date": it merges the integration branch again.
+      expect((await updates().start(prepared, run, signal())).outcome).toBe('merged');
+    });
+
+    it('also takes an open merge with it, and leaves a branch that is already at the base alone', async () => {
+      const { run, prepared } = await behind(
+        { 'config.txt': 'a=main\n' },
+        { 'config.txt': 'a=run\n' },
+      );
+      const start = await updates().start(prepared, run, signal());
+      if (start.outcome !== 'conflicts') throw new Error('expected conflicts');
+
+      expect(await updates().abort(prepared, start.baseCommit)).toBe(true);
+      expect(mergeOpen(prepared)).toBe(false);
+      expect(headOf(prepared)).toBe(start.baseCommit);
+      expect(await updates().abort(prepared, start.baseCommit)).toBe(false);
+    });
+
+    it('never resets to a commit the Run branch does not contain', async () => {
+      const { run, prepared } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
+      const head = headOf(prepared);
+
+      expect(await updates().abort(prepared, 'f'.repeat(40))).toBe(false);
+      expect(headOf(prepared)).toBe(head);
+      void run;
+    });
+  });
+
+  describe('the Run own changes after a merge (review S1 of #154)', () => {
+    it('counts the Run commits from the merged integration commit, not from the start commit', async () => {
+      const { run, prepared, tip } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
+      await updates().start(prepared, run, signal());
+      const report = (base: string) =>
+        workingCopies().report({ ...prepared, diffBase: base }, signal());
+
+      const fromStart = await report(first);
+      const fromMerge = await report(tip);
+
+      // From the start commit, the integration commit shows as the Run's own work.
+      expect(fromStart.commits.map((commit) => commit.subject)).toContain('Integration change');
+      // From the merged commit: the Run's commit and the merge, as the pull request shows them.
+      expect(fromMerge.commits.map((commit) => commit.subject)).toEqual([
+        'Run change',
+        `Merge main into ${prepared.runBranch}`,
+      ]);
+    });
+  });
+
   describe('delivery after the update', () => {
     const resume = (run: RunPayload, prepared: PreparedRun): RunPayload => ({
       ...run,
@@ -420,34 +526,5 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
         git(bare(), ['merge-base', '--is-ancestor', pushedBefore, ref], env),
       ).not.toThrow();
     });
-  });
-});
-
-describe('bringUpToDateInstruction', () => {
-  const merged = { outcome: 'merged', commit: 'a1b2c3d4e5f6'.padEnd(40, '0') } as const;
-
-  it('says the merge commit exists, and asks for the checks and what the update broke', () => {
-    const text = bringUpToDateInstruction({ integrationBranch: 'main', start: merged, note: '' });
-    expect(text).toContain('`main` (commit a1b2c3d)');
-    expect(text).toContain('nothing conflicted');
-    expect(text).toMatch(/checks/);
-    expect(text).toMatch(/Do not rebase, reset, rewrite history or push/);
-    expect(text).not.toContain("operator's note");
-  });
-
-  it('lists the conflicted files and quotes the operator note as theirs', () => {
-    const text = bringUpToDateInstruction({
-      integrationBranch: 'main',
-      start: {
-        outcome: 'conflicts',
-        commit: merged.commit,
-        files: ['src/a.ts', 'we\nird\u0007name.md'],
-        moreFiles: 2,
-      },
-      note: '  Keep our config.  ',
-    });
-    expect(text).toContain('- src/a.ts\n- we?ird?name.md\n- and 2 more');
-    expect(text).toContain("The operator's note:\n\nKeep our config.");
-    expect(text).toMatch(/Do not abort the merge/);
   });
 });

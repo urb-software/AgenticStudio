@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  type BringUpSource,
   followUpEligibility,
   type FollowUpEligibility,
   FollowUpNotAllowedError,
@@ -28,7 +29,9 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
  * concurrency limits, and resumes the same agent session with the Follow-up as the next Run
  * step. The store re-checks the conditions under a row lock, so a second submission is refused.
  * The text is the operator's input: stored as given (the endpoint trims and bounds it). Returns
- * the queued Run and its eligibility now. Throws {@link RunNotFoundError} or
+ * the queued Run and its eligibility now. Issue #147: `source` marks a request to bring the Run
+ * branch up to date, which is a Follow-up in every other respect (its `text` is the operator's
+ * note, possibly empty). Throws {@link RunNotFoundError} or
  * {@link FollowUpNotAllowedError}.
  */
 @Injectable()
@@ -46,12 +49,13 @@ export class FollowUpRunHandler {
   async execute(
     runId: string,
     text: string,
+    source?: BringUpSource,
   ): Promise<{ run: Run; followUp: FollowUpEligibility; workerConnected: boolean }> {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
     const before = this.eligibility(run);
     if (!before.allowed) throw new FollowUpNotAllowedError(before.reason);
-    const queued = await this.runs.queueFollowUp(run.id, text, this.clock.now());
+    const queued = await this.runs.queueFollowUp(run.id, text, this.clock.now(), source);
     if (queued) {
       // Issue #142: the pull request state is read again with every Follow-up (the agent worker
       // also checks it before it starts the agent); the page then shows the state it found.

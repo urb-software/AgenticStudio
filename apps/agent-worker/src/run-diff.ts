@@ -14,7 +14,7 @@ import { posix } from 'node:path';
 import type { RunDiffLimits } from './config.js';
 import { GIT_TIMEOUTS, GitCommandError, type GitOptions, type GitRunner } from './git.js';
 import { studioPathspecs } from './studio-paths.js';
-import type { PreparedRun } from './working-copy.js';
+import { diffBaseOf, type PreparedRun } from './working-copy.js';
 
 /**
  * A Run's diffs (Issue #144, ADR 0002: the Working copy is `executions`' own). After every Run
@@ -108,7 +108,8 @@ export class RunDiffs implements RunDiffPort {
       const headTree = await this.snapshot(prepared, studioPaths, local, 'head');
       const state = await this.usableState(run.diffState, local);
       // A result moves the base on to the latest result; a refresh keeps the one it had.
-      const startCommit = prepared.startCommit;
+      // Issue #147: the Run's own changes count from the integration commit it last merged.
+      const startCommit = diffBaseOf(prepared);
       const base = state
         ? options.refresh
           ? { tree: state.previousTree, commit: state.previousCommit }

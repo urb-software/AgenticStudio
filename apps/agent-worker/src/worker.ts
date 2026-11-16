@@ -12,9 +12,10 @@ import {
 import { posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AGENT_DEFINITION } from './agent-definition/index.js';
+import { bringUpToDateInstruction } from './agent-definition/bring-up-to-date.js';
 import {
   type BranchUpdatePort,
-  bringUpToDateInstruction,
+  type BranchUpdateStart,
   MergeIncompleteError,
 } from './branch-update.js';
 import { DeliveryFailedError, type DeliveryPort } from './delivery.js';
@@ -277,10 +278,11 @@ export class AgentWorker {
     let processes: StepProcessGroups | undefined;
     /** Whether the end of the Follow-up the Run works on was logged already (Issue #141). */
     let followUpMarked = false;
-    /** Issue #147: the integration branch commit the Run branch has merged, once it is known. */
-    let mergedCommit: string | undefined;
-    /** Issue #147: the commit whose merge stopped on conflicts in this claim, until it is done. */
-    let conflictedCommit: string | undefined;
+    /** Issue #147: the integration branch commit this part merges, and the Run branch's commit before. */
+    let expectedCommit: string | undefined = run.updateTip;
+    let baseCommit: string | undefined = run.updateBase;
+    /** Issue #147: where the merge started, reported with `running`. */
+    let mergeStarted: { baseCommit: string; integrationCommit: string } | undefined;
     /** Issue #147: what the agent is told after the merge started, in place of the note. */
     let instruction: string | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
@@ -352,49 +354,78 @@ export class AgentWorker {
           ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
+      // Review S4 of #154: a new part starts from a clean state. A merge an earlier part left open
+      // (cancelled while it waited, a crash, the usage limit and then another request) is aborted
+      // first, so nothing of it is built on or committed. A later claim of the same part goes on.
+      if (run.resumeReason === 'follow_up' || run.resumeReason === 'bring_up_to_date') {
+        if (await this.options.branchUpdates.abort(prepared, undefined, abort.signal)) {
+          log.push(stepIndex, 'notice', 'A merge an earlier part left open was aborted');
+        }
+      }
       if (run.resumeReason === 'bring_up_to_date') {
         log.push(
           stepIndex,
           'notice',
           `Follow-up ${run.followUpNumber} started: bring the branch up to date with ${run.integrationBranch}`,
         );
-        const update = await this.options.branchUpdates.start(prepared, run, abort.signal);
+        // The Run's own changes count from the integration commit it last merged (review S1).
+        let update: BranchUpdateStart | undefined;
+        let notUpdated: string | undefined;
+        try {
+          update = await this.options.branchUpdates.start(prepared, run, abort.signal);
+        } catch (error) {
+          // Nothing was merged (review S2): the Run goes back to its earlier result, and the
+          // conversation says why.
+          if (!(error instanceof PreparationFailedError)) throw error;
+          notUpdated = `${error.detail} Nothing was changed: the Run is as it was before the request.`;
+        }
         abort.signal.throwIfAborted();
-        if (update.outcome === 'already_up_to_date') {
-          // Nothing to merge: no agent starts, nothing is pushed, the Run returns to its earlier
-          // result (Issue #147).
+        if (update === undefined || update.outcome === 'already_up_to_date') {
           log.push(
             stepIndex,
             'notice',
-            `The Run branch already has ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}): nothing was changed`,
+            update === undefined
+              ? `The branch was not updated: ${notUpdated}`
+              : `The Run branch already has ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}): nothing was changed`,
           );
-          followUpEnded(run, stepIndex, log, 'already up to date');
+          followUpEnded(
+            run,
+            stepIndex,
+            log,
+            update === undefined ? 'not updated' : 'already up to date',
+          );
           followUpMarked = true;
           await this.closeLog(log);
           abort.signal.throwIfAborted();
-          outbox.send('up_to_date', (signal) =>
-            api.reportState(run.runId, { state: 'succeeded', alreadyUpToDate: true }, signal),
+          outbox.send('unchanged', (signal) =>
+            api.reportState(
+              run.runId,
+              {
+                state: 'succeeded',
+                unchanged: true,
+                ...(notUpdated === undefined
+                  ? {}
+                  : { unchangedDetail: notUpdated.slice(0, FAILURE_DETAIL_MAX_LENGTH) }),
+              },
+              signal,
+            ),
           );
           await outbox.drain();
           if (outbox.lost) logger.error(`Run ${run.runId} is no longer held by this worker.`);
-          else logger.info(`Run ${run.runId} reported: already up to date.`);
+          else logger.info(`Run ${run.runId} reported: nothing changed.`);
           return;
         }
-        if (update.outcome === 'merged') {
-          mergedCommit = update.commit;
-          log.push(
-            stepIndex,
-            'notice',
-            `Merged ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}) without conflicts`,
-          );
-        } else {
-          conflictedCommit = update.commit;
-          log.push(
-            stepIndex,
-            'notice',
-            `Merging ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}) conflicts in ${update.files.length + update.moreFiles} file(s)`,
-          );
-        }
+        expectedCommit = update.commit;
+        baseCommit = update.baseCommit;
+        prepared.diffBase = update.commit;
+        mergeStarted = { baseCommit: update.baseCommit, integrationCommit: update.commit };
+        log.push(
+          stepIndex,
+          'notice',
+          update.outcome === 'merged'
+            ? `Merged ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}) without conflicts`
+            : `Merging ${run.integrationBranch} (commit ${update.commit.slice(0, 7)}) conflicts in ${update.files.length + update.moreFiles} file(s)`,
+        );
         instruction = bringUpToDateInstruction({
           integrationBranch: run.integrationBranch,
           start: update,
@@ -409,7 +440,10 @@ export class AgentWorker {
       outbox.send('running', (signal) =>
         api.reportState(
           run.runId,
-          { state: 'running', ...(mergedCommit === undefined ? {} : { mergedCommit }) },
+          {
+            state: 'running',
+            ...(mergeStarted === undefined ? {} : { bringUpToDateStarted: mergeStarted }),
+          },
           signal,
         ),
       );
@@ -444,12 +478,9 @@ export class AgentWorker {
           prepared,
           run,
           abort.signal,
-          conflictedCommit,
+          expectedCommit,
         );
-        if (completed) {
-          mergedCommit = completed.mergedCommit;
-          log.push(stepIndex, 'notice', 'The merge was completed');
-        }
+        if (completed?.completed) log.push(stepIndex, 'notice', 'The merge was completed');
       }
       if (result.outcome === 'done') {
         followUpEnded(run, stepIndex, log, 'done');
@@ -517,15 +548,7 @@ export class AgentWorker {
           );
         } else {
           outbox.send('succeeded', (signal) =>
-            api.reportState(
-              run.runId,
-              {
-                state: 'succeeded',
-                delivery,
-                ...(mergedCommit === undefined ? {} : { mergedCommit }),
-              },
-              signal,
-            ),
+            api.reportState(run.runId, { state: 'succeeded', delivery }, signal),
           );
         }
       }
@@ -563,22 +586,25 @@ export class AgentWorker {
         }
       }
       if (reason !== 'lost') await this.closeLog(log);
-      // Issue #147: a merge still open when the part does not end well is aborted, so the Working
-      // copy returns to where it was; only the usage limit, which resumes the session, keeps it.
+      // Issue #147: a part that does not end well leaves nothing of the update behind: an open merge
+      // is aborted and the Run branch goes back to its commit before the part (review S3 of #154).
+      // Only the usage limit, which resumes the session, keeps it; a delivery that failed after a
+      // done step keeps the merge for its retry.
       if (
         run.bringUpToDate === true &&
         prepared &&
-        !(error instanceof UsageLimitError && reason === undefined)
+        !(error instanceof UsageLimitError && reason === undefined) &&
+        !(error instanceof DeliveryFailedError) &&
+        !this.delivering
       ) {
-        if (await this.options.branchUpdates.abort(prepared)) {
-          logger.info(`Run ${run.runId}: the open merge was aborted.`);
+        if (await this.options.branchUpdates.abort(prepared, baseCommit)) {
+          logger.info(`Run ${run.runId}: the update was undone.`);
         }
       }
       await this.finish(run, error, reason, {
         prepared,
         stepStarted: processes !== undefined,
         outbox,
-        mergedCommit,
       });
     } finally {
       log.dispose();
@@ -773,12 +799,7 @@ export class AgentWorker {
     run: RunPayload,
     error: unknown,
     reason: StopReason | undefined,
-    context: {
-      prepared: PreparedRun | undefined;
-      stepStarted: boolean;
-      outbox: ReportOutbox;
-      mergedCommit?: string;
-    },
+    context: { prepared: PreparedRun | undefined; stepStarted: boolean; outbox: ReportOutbox },
   ): Promise<void> {
     const { api, logger } = this.options;
     const { prepared, outbox } = context;
@@ -810,10 +831,6 @@ export class AgentWorker {
             // Review S2 of #150: what the delivery pushed before it failed.
             ...(error instanceof DeliveryFailedError && error.pushedCommit !== undefined
               ? { pushedCommit: error.pushedCommit }
-              : {}),
-            // Issue #147: the merge is in the Run branch even though its delivery failed.
-            ...(context.mergedCommit !== undefined && run.kind !== 'deliver'
-              ? { mergedCommit: context.mergedCommit }
               : {}),
           },
           signal,

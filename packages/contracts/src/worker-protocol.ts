@@ -281,6 +281,20 @@ export const runPayloadSchema = z
      */
     bringUpToDate: z.literal(true).optional(),
     /**
+     * With `bringUpToDate` (Issue #147, review S3/S6 of #154), once the worker reported the merge's
+     * start: the Run branch's commit just before it (after the leftovers were committed) and the
+     * integration branch commit being merged. Studio holds them, so a later claim of the same part
+     * still knows what to reset the branch to when the part fails, and which merge to expect.
+     */
+    updateBase: commitIdSchema.optional(),
+    updateTip: commitIdSchema.optional(),
+    /**
+     * With `resume` and `deliver` (Issue #147, review S1 of #154): the integration branch commit the
+     * Run branch last merged. The Run's own changes, in its diffs and its commit list, are counted
+     * from it, as the pull request counts them from the merge base; absent: from the start commit.
+     */
+    mergedIntegrationCommit: commitIdSchema.optional(),
+    /**
      * Issue #141: how many Run steps the Run had taken when its current part began (the first
      * part: 0; a Follow-up: the steps before it). Each part gets `limits.maxSteps` Run steps, so
      * the worker refuses a step beyond `stepsBeforePart + limits.maxSteps`. Absent: 0.
@@ -355,6 +369,19 @@ export const runPayloadSchema = z
         'A Follow-up number comes with a resume claim only, and always with the resume reason follow_up or bring_up_to_date.',
     },
   )
+  .refine(
+    (payload) =>
+      (payload.updateBase === undefined && payload.updateTip === undefined) ||
+      payload.bringUpToDate === true,
+    {
+      path: ['updateBase'],
+      message: 'The merge start commits come only with the bring-up-to-date flag.',
+    },
+  )
+  .refine((payload) => payload.mergedIntegrationCommit === undefined || payload.kind !== 'start', {
+    path: ['mergedIntegrationCommit'],
+    message: 'A start claim has merged nothing yet.',
+  })
   .refine(
     (payload) =>
       (payload.bringUpToDate === undefined ||
@@ -637,18 +664,23 @@ export const reportRunStateRequestSchema = z
      */
     pullRequestState: pullRequestStateSchema.optional(),
     /**
-     * Issue #147, with a bring-up-to-date claim only: the commit of the integration branch the
-     * Run branch now has merged. Reported with `running` (a merge without conflicts), or with the
-     * end of the part (`succeeded`, or `failed` / `delivery_failed`) once a conflicted merge was
-     * completed; Studio shows it on the conversation entry.
+     * Issue #147, with `running` of a bring-up-to-date claim only: the merge started. `baseCommit`
+     * is the Run branch's commit just before it, `integrationCommit` the integration branch commit
+     * being merged; Studio keeps both on the conversation entry and hands them back with every later
+     * claim of the part. The merged commit the page shows is recorded when the part succeeds.
      */
-    mergedCommit: commitIdSchema.optional(),
+    bringUpToDateStarted: z
+      .strictObject({ baseCommit: commitIdSchema, integrationCommit: commitIdSchema })
+      .optional(),
     /**
-     * Issue #147, with `succeeded` only: the Run branch already had everything the integration
-     * branch has, so nothing was changed, no agent was started and nothing was pushed. The Run
-     * goes back to the result it had before the request; no delivery comes with it.
+     * Issue #147, with `succeeded` only: the bring-up-to-date request changed nothing (the Run
+     * branch already had everything the integration branch has, or the integration branch could
+     * not be fetched): no agent was started and nothing was pushed. The Run goes back to the result
+     * it had before the request; no delivery comes with it.
      */
-    alreadyUpToDate: z.literal(true).optional(),
+    unchanged: z.literal(true).optional(),
+    /** With `unchanged`: why nothing changed, in the conversation (default: already up to date). */
+    unchangedDetail: z.string().min(1).max(FAILURE_DETAIL_MAX_LENGTH).optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
     path: ['failure'],
@@ -666,11 +698,10 @@ export const reportRunStateRequestSchema = z
   )
   .refine(
     (report) =>
-      report.alreadyUpToDate === true
+      report.unchanged === true
         ? report.state === 'succeeded' &&
           report.delivery === undefined &&
-          report.workingCopy === undefined &&
-          report.mergedCommit === undefined
+          report.workingCopy === undefined
         : report.state === 'succeeded'
           ? report.delivery !== undefined
           : report.delivery === undefined || report.state === 'cancelled',
@@ -701,18 +732,14 @@ export const reportRunStateRequestSchema = z
         'A pushed commit on its own comes only with the failure delivery_failed (Issue #141).',
     },
   )
-  .refine(
-    (report) =>
-      report.mergedCommit === undefined ||
-      report.state === 'running' ||
-      report.state === 'succeeded' ||
-      report.failure?.code === 'delivery_failed',
-    {
-      path: ['mergedCommit'],
-      message:
-        'A merged commit comes with the state running or succeeded, or the failure delivery_failed (Issue #147).',
-    },
-  )
+  .refine((report) => report.bringUpToDateStarted === undefined || report.state === 'running', {
+    path: ['bringUpToDateStarted'],
+    message: 'The merge start comes only with the state running (Issue #147).',
+  })
+  .refine((report) => report.unchangedDetail === undefined || report.unchanged === true, {
+    path: ['unchangedDetail'],
+    message: 'A reason for no change comes only with unchanged (Issue #147).',
+  })
   .refine(
     (report) =>
       report.workingCopy === undefined ||

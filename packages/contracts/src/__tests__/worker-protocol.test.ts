@@ -1332,6 +1332,34 @@ describe('bringing a Run branch up to date (Issue #147)', () => {
     expect(runPayloadSchema.safeParse({ ...claim, kind: 'start' }).success).toBe(false);
   });
 
+  it('carries where the merge started, only with the flag, and the last merged commit', () => {
+    const start = { updateBase: 'a'.repeat(40), updateTip: 'b'.repeat(40) };
+    expect(runPayloadSchema.safeParse({ ...claim, ...start }).success).toBe(true);
+    const { bringUpToDate: _flag, resumeReason: _reason, ...plain } = claim;
+    void _flag;
+    void _reason;
+    const followUp = { ...plain, resumeReason: 'follow_up' };
+    expect(runPayloadSchema.safeParse({ ...followUp, ...start }).success).toBe(false);
+    expect(runPayloadSchema.safeParse({ ...claim, updateTip: 'abc' }).success).toBe(false);
+    // Review S1 of #154: resume and delivery claims name the commit the Run branch last merged.
+    const merged = { mergedIntegrationCommit: 'c'.repeat(40) };
+    expect(runPayloadSchema.safeParse({ ...followUp, ...merged }).success).toBe(true);
+    expect(
+      runPayloadSchema.safeParse({
+        ...claim,
+        kind: 'start',
+        runBranch: undefined,
+        sessionRef: undefined,
+        answer: undefined,
+        resumeReason: undefined,
+        followUpNumber: undefined,
+        bringUpToDate: undefined,
+        nextSeq: undefined,
+        ...merged,
+      }).success,
+    ).toBe(false);
+  });
+
   it('takes the note as long as a Follow-up', () => {
     expect(
       runPayloadSchema.safeParse({ ...claim, answer: 'a'.repeat(FOLLOW_UP_MAX_LENGTH) }).success,
@@ -1348,35 +1376,30 @@ describe('bringing a Run branch up to date (Issue #147)', () => {
     const merged = 'b'.repeat(40);
     const delivery = { outcome: 'none' };
 
-    it('names the merged commit with running, succeeded or a failed delivery', () => {
-      expect(valid({ state: 'running', mergedCommit: merged })).toBe(true);
-      expect(valid({ state: 'succeeded', delivery, mergedCommit: merged })).toBe(true);
+    it('names where the merge started with running only', () => {
+      const started = { baseCommit: 'a'.repeat(40), integrationCommit: merged };
+      expect(valid({ state: 'running', bringUpToDateStarted: started })).toBe(true);
+      expect(valid({ state: 'succeeded', delivery, bringUpToDateStarted: started })).toBe(false);
       expect(
-        valid({
-          state: 'failed',
-          failure: { code: 'delivery_failed', detail: 'x' },
-          mergedCommit: merged,
-        }),
-      ).toBe(true);
-      expect(
-        valid({
-          state: 'failed',
-          failure: { code: 'agent_failed', detail: 'x' },
-          mergedCommit: merged,
-        }),
+        valid({ state: 'running', bringUpToDateStarted: { ...started, baseCommit: 'abc' } }),
       ).toBe(false);
-      expect(valid({ state: 'cancelled', mergedCommit: merged })).toBe(false);
-      expect(valid({ state: 'running', mergedCommit: 'abc' })).toBe(false);
+      expect(
+        valid({ state: 'running', bringUpToDateStarted: { baseCommit: started.baseCommit } }),
+      ).toBe(false);
+      // The merged commit is Studio's to record once the part succeeded: a worker cannot name it.
+      expect(valid({ state: 'running', mergedCommit: merged })).toBe(false);
     });
 
-    it('reports a branch that was already up to date as succeeded without a delivery', () => {
-      expect(valid({ state: 'succeeded', alreadyUpToDate: true })).toBe(true);
-      expect(valid({ state: 'succeeded', alreadyUpToDate: true, delivery })).toBe(false);
-      expect(valid({ state: 'running', alreadyUpToDate: true })).toBe(false);
-      expect(valid({ state: 'succeeded', alreadyUpToDate: true, mergedCommit: merged })).toBe(
-        false,
-      );
-      expect(valid({ state: 'succeeded', alreadyUpToDate: false })).toBe(false);
+    it('reports a request that changed nothing as succeeded without a delivery, with a reason', () => {
+      expect(valid({ state: 'succeeded', unchanged: true })).toBe(true);
+      expect(
+        valid({ state: 'succeeded', unchanged: true, unchangedDetail: 'Could not fetch.' }),
+      ).toBe(true);
+      expect(valid({ state: 'succeeded', unchanged: true, delivery })).toBe(false);
+      expect(valid({ state: 'running', unchanged: true })).toBe(false);
+      expect(valid({ state: 'succeeded', unchanged: false })).toBe(false);
+      expect(valid({ state: 'succeeded', delivery, unchangedDetail: 'x' })).toBe(false);
+      expect(valid({ state: 'succeeded', unchanged: true, unchangedDetail: '' })).toBe(false);
       // Without the flag a succeeded report still needs its delivery.
       expect(valid({ state: 'succeeded' })).toBe(false);
     });

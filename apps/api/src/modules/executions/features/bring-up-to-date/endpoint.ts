@@ -51,7 +51,7 @@ export class BringUpToDateEndpoint {
     try {
       const { run, followUp, workerConnected } = await this.handler.execute(
         runId,
-        parsed.data.note === '' ? undefined : parsed.data.note,
+        parsed.data.note,
       );
       return toRunResponse(run, followUp, workerConnected);
     } catch (error) {

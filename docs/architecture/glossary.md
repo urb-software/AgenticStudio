@@ -52,7 +52,7 @@ The operator's further instruction to a finished Run: the agent continues the sa
 _Avoid_: New task, re-run, continuation
 
 **Bring up to date**:
-The operator's request to merge the Integration branch into a Run's branch, so that its pull request stops being behind and may stop conflicting. It is a Follow-up of its own source (same eligibility, step allowance and concurrency limits, same agent session): the agent worker fetches the Integration branch, merges it with a merge commit (never a rebase, never a force-push), and resumes the agent to resolve any conflicts and to run the project's checks. When the agent leaves conflicts unresolved the merge is aborted and nothing is pushed; when the branch already has everything, nothing changes and no agent starts.
+The operator's request to merge the Integration branch into a Run's branch, so that its pull request stops being behind and may stop conflicting. It is a Follow-up of its own source (same eligibility, step allowance and concurrency limits, same agent session): the agent worker fetches the Integration branch, merges it with a merge commit (never a rebase, never a force-push), and resumes the agent to resolve any conflicts and to run the project's checks. A part that does not end well (conflicts unresolved, the agent fails, a timeout or a cancel) is undone: the merge is aborted, the Run branch goes back to its commit before the request, and nothing is pushed. When the branch already has everything, or the Integration branch cannot be fetched, nothing changes, no agent starts, and the Run keeps its earlier result with the reason in its conversation.
 _Avoid_: Rebase, sync, update branch
 
 **Run step**:

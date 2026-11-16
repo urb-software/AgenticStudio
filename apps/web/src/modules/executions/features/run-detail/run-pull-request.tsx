@@ -82,9 +82,7 @@ function BringUpToDate({ run, pullRequest }: { run: RunOutput; pullRequest: Pull
   const behindBy = pullRequest.behindBy ?? 0;
   const offered = behindBy > 0 && run.followUp?.allowed === true;
   // Once the request is sent the Run is queued and the offer goes away. The confirm stays
-  // mounted (so its own close still runs) and is never open without the offer: it does not come
-  // back when the Run is finished again.
-  if (!offered && open) setOpen(false);
+  // mounted, so its own close (on success) still runs, and it is never shown without the offer.
   const conflicts =
     pullRequest.mergeable === false
       ? 'GitHub reports conflicts with the integration branch.'

@@ -225,8 +225,18 @@ export type RunMessage =
  * Run branch has merged, once the agent worker reported it.
  */
 export type FollowUpSource =
-  | { source?: undefined; mergedCommit?: undefined }
-  | { source: 'bring_up_to_date'; mergedCommit?: string };
+  | { source?: undefined; mergedCommit?: undefined; updateBase?: undefined; updateTip?: undefined }
+  | {
+      source: 'bring_up_to_date';
+      mergedCommit?: string;
+      /** The Run branch's commit just before the merge started (reported when it started). */
+      updateBase?: string;
+      /** The integration branch commit being merged (reported when the merge started). */
+      updateTip?: string;
+    };
+
+/** The source of a Follow-up that is not the operator's own text (Issue #147). */
+export type BringUpSource = NonNullable<FollowUpSource['source']>;
 
 /**
  * How a part of the Run (its first part, or a Follow-up) ended (review S1 of #150): recorded
@@ -428,11 +438,65 @@ export const OPERATOR_CANCELLATION_BRANCH_PUSHED: RunCancellation = {
     'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
 };
 
+/** What every cancellation by the operator starts with (the reasons above). */
+export const OPERATOR_CANCELLATION_PREFIX = 'Cancelled by the operator';
+
 /** The cancellation recorded when the operator cancels a Run (Issue #100). */
 export const OPERATOR_CANCELLATION: RunCancellation = {
   by: 'operator',
-  reason: 'Cancelled by the operator.',
+  reason: `${OPERATOR_CANCELLATION_PREFIX}.`,
 };
+
+/**
+ * A Run's result as it was before a part that changed nothing (Issue #147): the state, failure,
+ * cancellation and delivery its `part_end` recorded, which the Follow-up cleared. The cancel's
+ * author is told from its reason, which only this module words.
+ */
+export function restoreEarlierResult(end: RunPartEnd): {
+  state: RunPartEnd['state'];
+  failure: RunFailure | null;
+  cancellation: RunCancellation | null;
+  delivery: RunDeliveryState | null;
+} {
+  return {
+    state: end.state,
+    failure:
+      end.state === 'failed' && end.failureCode
+        ? { code: end.failureCode, detail: end.detail }
+        : null,
+    cancellation:
+      end.state === 'cancelled'
+        ? {
+            by: end.detail.startsWith(OPERATOR_CANCELLATION_PREFIX) ? 'operator' : 'system',
+            reason: end.detail,
+          }
+        : null,
+    delivery: end.delivery,
+  };
+}
+
+/** The integration branch commit the Run branch last merged (Issue #147), if it ever did. */
+export function latestMergedCommit(run: Pick<Run, 'messages'>): string | undefined {
+  for (let index = run.messages.length - 1; index >= 0; index--) {
+    const message = run.messages[index]!;
+    if (message.kind === 'follow_up' && message.mergedCommit !== undefined) {
+      return message.mergedCommit;
+    }
+  }
+  return undefined;
+}
+
+/** The latest Follow-up's merge start when the current part is a bring-up request (Issue #147). */
+export function currentUpdateStart(
+  run: Pick<Run, 'messages'>,
+): { updateBase?: string; updateTip?: string } | undefined {
+  const last = run.messages.findLast((message) => message.kind === 'follow_up');
+  if (last?.kind !== 'follow_up' || last.source !== 'bring_up_to_date') return undefined;
+  return {
+    ...(last.updateBase === undefined ? {} : { updateBase: last.updateBase }),
+    ...(last.updateTip === undefined ? {} : { updateTip: last.updateTip }),
+  };
+}
 
 /**
  * The long-wait rule (Issue #100): a Run waiting for the operator longer than its

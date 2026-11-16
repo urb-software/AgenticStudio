@@ -5,6 +5,8 @@ import {
   CLAIMED_RUN_STATES,
   isFinal,
   partEndOf,
+  restoreEarlierResult,
+  type BringUpSource,
   MAX_ACTIVE_RUNS,
   NO_PULL_REQUEST_STATUS,
   type Run,
@@ -410,7 +412,7 @@ export class InMemoryRunRepository implements RunRepository {
     runId: string,
     text: string,
     now: Date,
-    source?: 'bring_up_to_date',
+    source?: BringUpSource,
   ): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (
@@ -464,7 +466,11 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(removed.length);
   }
 
-  recordMergedCommit(runId: string, workerId: string, commit: string): Promise<boolean> {
+  recordUpdateStart(
+    runId: string,
+    workerId: string,
+    start: { baseCommit: string; integrationCommit: string },
+  ): Promise<boolean> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     const entry = run?.messages.findLast((message) => message.kind === 'follow_up');
     if (
@@ -472,11 +478,27 @@ export class InMemoryRunRepository implements RunRepository {
       run.claimedBy !== workerId ||
       entry?.kind !== 'follow_up' ||
       entry.source !== 'bring_up_to_date' ||
+      entry.updateTip !== undefined
+    ) {
+      return Promise.resolve(false);
+    }
+    entry.updateBase = start.baseCommit;
+    entry.updateTip = start.integrationCommit;
+    return Promise.resolve(true);
+  }
+
+  recordMergedCommit(runId: string): Promise<boolean> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    const entry = run?.messages.findLast((message) => message.kind === 'follow_up');
+    if (
+      entry?.kind !== 'follow_up' ||
+      entry.source !== 'bring_up_to_date' ||
+      entry.updateTip === undefined ||
       entry.mergedCommit !== undefined
     ) {
       return Promise.resolve(false);
     }
-    entry.mergedCommit = commit;
+    entry.mergedCommit = entry.updateTip;
     return Promise.resolve(true);
   }
 
@@ -509,19 +531,7 @@ export class InMemoryRunRepository implements RunRepository {
       at: now,
     });
     Object.assign(run, {
-      state: before.state,
-      failure:
-        before.state === 'failed' && before.failureCode
-          ? { code: before.failureCode, detail: before.detail }
-          : null,
-      cancellation:
-        before.state === 'cancelled'
-          ? {
-              by: before.detail.startsWith('Cancelled by the operator') ? 'operator' : 'system',
-              reason: before.detail,
-            }
-          : null,
-      delivery: before.delivery,
+      ...restoreEarlierResult(before),
       claimedBy: null,
       heartbeatAt: null,
       releasedBy: workerId,

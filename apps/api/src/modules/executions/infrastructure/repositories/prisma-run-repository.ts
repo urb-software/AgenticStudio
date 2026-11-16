@@ -25,6 +25,8 @@ import {
   type RunFailureCode,
   type RunMessage,
   partEndOf,
+  restoreEarlierResult,
+  type BringUpSource,
   type PullRequestState,
   type RunPartEnd,
   type RunState,
@@ -116,6 +118,8 @@ const RUN_FIELDS = {
       endDelivery: true,
       source: true,
       mergedCommit: true,
+      updateBase: true,
+      updateTip: true,
     },
     orderBy: { seq: 'asc' },
   },
@@ -185,6 +189,8 @@ interface RunRow {
     endDelivery: string | null;
     source: string | null;
     mergedCommit: string | null;
+    updateBase: string | null;
+    updateTip: string | null;
   }[];
 }
 
@@ -202,6 +208,8 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
           at: row.at,
           source: 'bring_up_to_date',
           ...(row.mergedCommit === null ? {} : { mergedCommit: row.mergedCommit }),
+          ...(row.updateBase === null ? {} : { updateBase: row.updateBase }),
+          ...(row.updateTip === null ? {} : { updateTip: row.updateTip }),
         }
       : { kind: 'follow_up', text: row.text, at: row.at };
   }
@@ -763,7 +771,7 @@ export class PrismaRunRepository implements RunRepository {
     runId: string,
     text: string,
     now: Date,
-    source?: 'bring_up_to_date',
+    source?: BringUpSource,
   ): Promise<Run | null> {
     return this.db.$transaction(async (tx) => {
       // Locks the Run row: the conditions, the message and the state change hold together, so a
@@ -839,21 +847,48 @@ export class PrismaRunRepository implements RunRepository {
     });
   }
 
-  async recordMergedCommit(runId: string, workerId: string, commit: string): Promise<boolean> {
+  async recordUpdateStart(
+    runId: string,
+    workerId: string,
+    start: { baseCommit: string; integrationCommit: string },
+  ): Promise<boolean> {
     return this.db.$transaction(async (tx) => {
       const held = await tx.run.count({ where: { id: runId, claimedBy: workerId } });
       if (held === 0) return false;
       const entry = await tx.runMessage.findFirst({
         where: { runId, kind: 'follow_up' },
         orderBy: { seq: 'desc' },
-        select: { seq: true, source: true, mergedCommit: true },
+        select: { seq: true, source: true, updateTip: true },
       });
-      if (!entry || entry.source !== 'bring_up_to_date' || entry.mergedCommit !== null) {
+      if (!entry || entry.source !== 'bring_up_to_date' || entry.updateTip !== null) {
         return false;
       }
       await tx.runMessage.update({
         where: { runId_seq: { runId, seq: entry.seq } },
-        data: { mergedCommit: commit },
+        data: { updateBase: start.baseCommit, updateTip: start.integrationCommit },
+      });
+      return true;
+    });
+  }
+
+  async recordMergedCommit(runId: string): Promise<boolean> {
+    return this.db.$transaction(async (tx) => {
+      const entry = await tx.runMessage.findFirst({
+        where: { runId, kind: 'follow_up' },
+        orderBy: { seq: 'desc' },
+        select: { seq: true, source: true, updateTip: true, mergedCommit: true },
+      });
+      if (
+        !entry ||
+        entry.source !== 'bring_up_to_date' ||
+        entry.updateTip === null ||
+        entry.mergedCommit !== null
+      ) {
+        return false;
+      }
+      await tx.runMessage.update({
+        where: { runId_seq: { runId, seq: entry.seq } },
+        data: { mergedCommit: entry.updateTip },
       });
       return true;
     });
@@ -902,16 +937,21 @@ export class PrismaRunRepository implements RunRepository {
           at: now,
         },
       });
-      const operatorCancel = before.text.startsWith('Cancelled by the operator');
+      const earlier = restoreEarlierResult({
+        state: ended,
+        failureCode: before.endFailureCode as RunFailureCode | null,
+        delivery: before.endDelivery as RunDeliveryState | null,
+        detail: before.text,
+      });
       const row = await tx.run.update({
         where: { id: runId },
         data: {
-          state: ended,
-          failureCode: ended === 'failed' ? before.endFailureCode : null,
-          failureDetail: ended === 'failed' ? before.text : null,
-          cancelledBy: ended === 'cancelled' ? (operatorCancel ? 'operator' : 'system') : null,
-          cancelReason: ended === 'cancelled' ? before.text : null,
-          delivery: before.endDelivery,
+          state: earlier.state,
+          failureCode: earlier.failure?.code ?? null,
+          failureDetail: earlier.failure?.detail ?? null,
+          cancelledBy: earlier.cancellation?.by ?? null,
+          cancelReason: earlier.cancellation?.reason ?? null,
+          delivery: earlier.delivery,
           claimedBy: null,
           heartbeatAt: null,
           releasedBy: workerId,

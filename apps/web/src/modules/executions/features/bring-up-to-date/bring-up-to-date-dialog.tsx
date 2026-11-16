@@ -15,12 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/shared/ui/dialog';
-import { ApiError, type RunOutput } from '../../../../platform/api';
+import { ApiError, bringUpToDateRequestHint, type RunOutput } from '../../../../platform/api';
 import { useBringUpToDateRun } from '../../api/runs-queries';
 import { taskSummary } from '../../components/run-presentation';
-
-/** Longest note the API takes, in characters (the API's limit is authoritative). */
-const NOTE_MAX_LENGTH = 10_000;
 
 type BringUpToDateDialogProps = {
   run: RunOutput;
@@ -65,8 +62,15 @@ export function BringUpToDateDialog({ run, open, onOpenChange }: BringUpToDateDi
   function submit(event: FormEvent) {
     event.preventDefault();
     const trimmed = note.trim();
-    if (trimmed.length > NOTE_MAX_LENGTH) {
-      setLocalError(`Use at most ${NOTE_MAX_LENGTH} characters.`);
+    // The generated schema counts characters as the API does (code points), and says the limit.
+    const checked = bringUpToDateRequestHint.safeParse({ note: trimmed });
+    if (!checked.success) {
+      const issue = checked.error.issues[0];
+      setLocalError(
+        issue?.code === 'too_big'
+          ? `Use at most ${String(issue.maximum)} characters.`
+          : 'Check the note and try again.',
+      );
       return;
     }
     setLocalError(undefined);
@@ -115,7 +119,7 @@ export function BringUpToDateDialog({ run, open, onOpenChange }: BringUpToDateDi
             <TextField
               multiline
               label="Note for the agent (optional)"
-              help="For example, which side to prefer in a conflict. At most 10 000 characters."
+              help="For example, which side to prefer in a conflict."
               value={note}
               onChange={(event) => {
                 setNote(event.target.value);

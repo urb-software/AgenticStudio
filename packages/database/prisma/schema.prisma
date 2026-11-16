@@ -321,6 +321,10 @@ model RunMessage {
   source         String?  @db.VarChar(24)
   /// With a source only: the integration branch commit the Run branch has merged, once reported.
   mergedCommit   String?  @map("merged_commit") @db.VarChar(64)
+  /// With a source only: the Run branch's commit just before the merge started, and the integration
+  /// branch commit being merged (reported when it started; Studio hands them back with the claim).
+  updateBase     String?  @map("update_base") @db.VarChar(64)
+  updateTip      String?  @map("update_tip") @db.VarChar(64)
 
   @@id([runId, seq], map: "run_messages_pkey")
   @@map("run_messages")

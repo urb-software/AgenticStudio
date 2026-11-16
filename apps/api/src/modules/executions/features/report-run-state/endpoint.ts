@@ -29,8 +29,9 @@ export class ReportRunStateEndpoint {
         sessionRef: body.sessionRef ?? null,
         pushedCommit: body.pushedCommit ?? null,
         pullRequestState: body.pullRequestState ?? null,
-        mergedCommit: body.mergedCommit ?? null,
-        alreadyUpToDate: body.alreadyUpToDate === true,
+        bringUpToDateStarted: body.bringUpToDateStarted ?? null,
+        unchanged: body.unchanged === true,
+        unchangedDetail: body.unchangedDetail ?? null,
       });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

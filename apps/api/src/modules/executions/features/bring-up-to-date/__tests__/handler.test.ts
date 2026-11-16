@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   BRING_UP_TO_DATE_DEFAULT_TEXT,
   FollowUpNotAllowedError,
+  currentUpdateStart,
   inBringUpToDate,
+  latestMergedCommit,
   resumeMessage,
   type Run,
   type RunState,
@@ -13,7 +15,7 @@ import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in
 import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../domain/services/provider-availability.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
-import { BringUpToDateHandler } from '../handler.js';
+import { FollowUpRunHandler } from '../../follow-up-run/handler.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -56,11 +58,13 @@ const newRun = (maxTotalSteps = 50) => ({
   integrationBranch: 'dev',
 });
 
-describe('BringUpToDateHandler', () => {
+describe('bringing the branch up to date (the Follow-up handler with its source)', () => {
   let runs: InMemoryRunRepository;
   let workers: InMemoryWorkerStatusStore;
   let lookups: InMemoryRunLookupRepository;
-  let handler: BringUpToDateHandler;
+  let handler: FollowUpRunHandler;
+  const bringUp = (runId: string, note: string | undefined) =>
+    handler.execute(runId, note ?? '', 'bring_up_to_date');
 
   function connect(providers = { claude_code: true, codex: true }) {
     workers.record({ workerId: WORKER, runner: 'fake', providers, reportedAt: T1 });
@@ -119,14 +123,14 @@ describe('BringUpToDateHandler', () => {
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
     lookups = new InMemoryRunLookupRepository(runs);
-    handler = new BringUpToDateHandler(runs, { now: () => T1 }, workers, LEASE, lookups);
+    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups);
     connect();
   });
 
   it('queues the Run as a Follow-up marked bring_up_to_date with the operator note', async () => {
     const run = await finished();
 
-    const { run: queued } = await handler.execute(run.id, 'Keep our version of the config.');
+    const { run: queued } = await bringUp(run.id, 'Keep our version of the config.');
 
     expect(queued).toMatchObject({
       state: 'queued',
@@ -151,7 +155,7 @@ describe('BringUpToDateHandler', () => {
   it('stores no text without a note and hands the worker a default one', async () => {
     const run = await finished();
 
-    const { run: queued } = await handler.execute(run.id, undefined);
+    const { run: queued } = await bringUp(run.id, undefined);
 
     expect(queued.messages.at(-1)).toMatchObject({ kind: 'follow_up', text: '' });
     expect(resumeMessage(queued)).toEqual({
@@ -167,7 +171,7 @@ describe('BringUpToDateHandler', () => {
   it('records how the part before it ended, like any Follow-up', async () => {
     const run = await finished('failed');
 
-    const { run: queued } = await handler.execute(run.id, undefined);
+    const { run: queued } = await bringUp(run.id, undefined);
 
     expect(queued.messages.at(-2)).toMatchObject({
       kind: 'part_end',
@@ -180,20 +184,20 @@ describe('BringUpToDateHandler', () => {
   it('refuses for the Follow-up reasons, and a second request while one is queued', async () => {
     const run = await finished();
     const waiting = await runs.add(newRun());
-    await expect(handler.execute(waiting.id, undefined)).rejects.toMatchObject({
+    await expect(bringUp(waiting.id, undefined)).rejects.toMatchObject({
       reason: 'not_finished',
     });
-    await handler.execute(run.id, undefined);
-    await expect(handler.execute(run.id, undefined)).rejects.toMatchObject({
+    await bringUp(run.id, undefined);
+    await expect(bringUp(run.id, undefined)).rejects.toMatchObject({
       reason: 'follow_up_queued',
     });
-    await expect(handler.execute(run.id, 'x')).rejects.toBeInstanceOf(FollowUpNotAllowedError);
+    await expect(bringUp(run.id, 'x')).rejects.toBeInstanceOf(FollowUpNotAllowedError);
   });
 
   it('counts against the Run step total like a Follow-up', async () => {
     const run = await finished('succeeded', 2, 2);
 
-    await expect(handler.execute(run.id, undefined)).rejects.toMatchObject({
+    await expect(bringUp(run.id, undefined)).rejects.toMatchObject({
       reason: 'step_total_reached',
     });
   });
@@ -206,42 +210,67 @@ describe('BringUpToDateHandler', () => {
       providers: { claude_code: false, codex: true },
       reportedAt: T1,
     });
-    await expect(handler.execute(run.id, undefined)).rejects.toMatchObject({
+    await expect(bringUp(run.id, undefined)).rejects.toMatchObject({
       reason: 'provider_unavailable',
     });
   });
 
   it('answers an unknown Run with RunNotFoundError', async () => {
-    await expect(handler.execute(UNKNOWN_RUN, undefined)).rejects.toBeInstanceOf(RunNotFoundError);
-    await expect(handler.execute('not-a-run-id', undefined)).rejects.toBeInstanceOf(
-      RunNotFoundError,
-    );
+    await expect(bringUp(UNKNOWN_RUN, undefined)).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(bringUp('not-a-run-id', undefined)).rejects.toBeInstanceOf(RunNotFoundError);
   });
 
   describe('what the worker reports', () => {
-    it('records the merged commit on the entry, once, only while it holds the Run', async () => {
+    it('records where the merge started, once, only while the worker holds the Run', async () => {
       const run = await finished();
-      await handler.execute(run.id, 'Note.');
+      await bringUp(run.id, 'Note.');
       await claimed(run);
+      const start = { baseCommit: 'a'.repeat(40), integrationCommit: MERGED };
 
-      expect(await runs.recordMergedCommit(run.id, 'someone-else', MERGED)).toBe(false);
-      expect(await runs.recordMergedCommit(run.id, WORKER, MERGED)).toBe(true);
-      expect(await runs.recordMergedCommit(run.id, WORKER, 'c'.repeat(40))).toBe(false);
+      expect(await runs.recordUpdateStart(run.id, 'someone-else', start)).toBe(false);
+      expect(await runs.recordUpdateStart(run.id, WORKER, start)).toBe(true);
+      expect(
+        await runs.recordUpdateStart(run.id, WORKER, {
+          ...start,
+          integrationCommit: 'c'.repeat(40),
+        }),
+      ).toBe(false);
 
       const stored = (await runs.findById(run.id))!;
       expect(stored.messages.at(-1)).toMatchObject({
         kind: 'follow_up',
         source: 'bring_up_to_date',
-        mergedCommit: MERGED,
+        updateBase: 'a'.repeat(40),
+        updateTip: MERGED,
       });
+      expect(currentUpdateStart(stored)).toEqual({ updateBase: 'a'.repeat(40), updateTip: MERGED });
+      // Not merged until the part succeeded.
+      expect(latestMergedCommit(stored)).toBeUndefined();
+      expect(await runs.recordMergedCommit(run.id)).toBe(true);
+      expect(await runs.recordMergedCommit(run.id)).toBe(false);
+      expect(latestMergedCommit((await runs.findById(run.id))!)).toBe(MERGED);
     });
 
-    it('records no merged commit on a Follow-up that is not a bring-up request', async () => {
+    it('records no merge on a Follow-up that is not a bring-up request or never started one', async () => {
       const run = await finished();
       await runs.queueFollowUp(run.id, 'Plain.', T1);
       await claimed(run);
+      expect(
+        await runs.recordUpdateStart(run.id, WORKER, {
+          baseCommit: 'a'.repeat(40),
+          integrationCommit: MERGED,
+        }),
+      ).toBe(false);
+      expect(await runs.recordMergedCommit(run.id)).toBe(false);
+      expect(currentUpdateStart((await runs.findById(run.id))!)).toBeUndefined();
+    });
 
-      expect(await runs.recordMergedCommit(run.id, WORKER, MERGED)).toBe(false);
+    it('has no merged commit to record for a request whose merge never started', async () => {
+      const run = await finished();
+      await bringUp(run.id, undefined);
+      await claimed(run);
+
+      expect(await runs.recordMergedCommit(run.id)).toBe(false);
     });
 
     it.each([
@@ -253,7 +282,7 @@ describe('BringUpToDateHandler', () => {
       'returns a %s Run to its earlier result when the branch was already up to date',
       async (end, delivery) => {
         const run = await finished(end);
-        await handler.execute(run.id, undefined);
+        await bringUp(run.id, undefined);
         await claimed(run);
 
         const restored = await runs.finishBringUpToDate(run.id, WORKER, 'Already up to date.', T2);
@@ -283,14 +312,14 @@ describe('BringUpToDateHandler', () => {
           detail: 'Already up to date.',
         });
         // Not a pending request any more: another can be made.
-        const again = await handler.execute(run.id, undefined);
+        const again = await bringUp(run.id, undefined);
         expect(again.run.followUpCount).toBe(2);
       },
     );
 
     it('is refused for a worker that does not hold the Run, or for a plain Follow-up', async () => {
       const run = await finished();
-      await handler.execute(run.id, undefined);
+      await bringUp(run.id, undefined);
       await claimed(run);
       expect(await runs.finishBringUpToDate(run.id, 'someone-else', 'x', T2)).toBeNull();
 

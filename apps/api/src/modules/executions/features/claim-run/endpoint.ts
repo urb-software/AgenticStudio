@@ -1,7 +1,11 @@
 import { type RunPayload, runPayloadSchema } from '@agentic-studio/contracts';
 import { Body, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
 import { WorkerController } from '../../../../platform/auth/worker-route.js';
-import { inBringUpToDate, resumeMessage } from '../../domain/entities/run.js';
+import {
+  currentUpdateStart,
+  latestMergedCommit,
+  resumeMessage,
+} from '../../domain/entities/run.js';
 import { type ClaimedRun, ClaimRunHandler } from './handler.js';
 import { ClaimRunRequestDto } from './schema.js';
 
@@ -59,12 +63,27 @@ export class ClaimRunEndpoint {
   }
 }
 
+/**
+ * Issue #147: while the Run's current part is a request to bring the Run branch up to date, the
+ * flag and, once the worker reported the merge's start, where it started (so every later claim of
+ * the part can reset the branch or expect the merge).
+ */
+function updateOf(run: ClaimedRun) {
+  const start = currentUpdateStart(run);
+  return start === undefined ? {} : { bringUpToDate: true as const, ...start };
+}
+
 /** The kind of a claim and the fields that go with it. */
 function kindOf(run: ClaimedRun) {
   // Issue #141: a delivery updates the Run's one pull request, never opens a second.
   const pullRequest = run.pullRequest ? { pullRequestNumber: run.pullRequest.number } : {};
+  // Issue #147 (review S1 of #154): the Run's own changes are counted from the integration branch
+  // commit it last merged.
+  const merged = latestMergedCommit(run);
+  const mergedBase = merged === undefined ? {} : { mergedIntegrationCommit: merged };
   if (run.state === 'failed') {
     return {
+      ...mergedBase,
       kind: 'deliver' as const,
       runBranch: run.workingCopy?.runBranch,
       nextSeq: run.nextSeq,
@@ -74,6 +93,7 @@ function kindOf(run: ClaimedRun) {
   const resume = resumeMessage(run);
   if (resume !== null && run.sessionRef !== null) {
     return {
+      ...mergedBase,
       kind: 'resume' as const,
       runBranch: run.workingCopy?.runBranch,
       sessionRef: run.sessionRef,
@@ -83,7 +103,7 @@ function kindOf(run: ClaimedRun) {
       ...(run.followUpCount > 0 ? { followUpNumber: run.followUpCount } : {}),
       // Issue #147: the part is a request to bring the Run branch up to date (a merge left open
       // at its end is completed or aborted by the worker).
-      ...(inBringUpToDate(run) ? { bringUpToDate: true as const } : {}),
+      ...updateOf(run),
       nextSeq: run.nextSeq,
       ...pullRequest,
     };
