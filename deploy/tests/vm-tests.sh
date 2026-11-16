@@ -166,7 +166,8 @@ expect_line "the migrations were applied" "$(docker logs "$migrate" 2>&1)" 'migr
 for service in api web proxy; do
   container="$(agentic-studio-compose ps -q "$service")"
   expect_true "$service runs as 10001:10001" bash -c "[ \"\$(docker inspect -f '{{.Config.User}}' $container)\" = 10001:10001 ]"
-  uids="$(docker top "$container" -eo uid | tail -n +2 | sort -u | tr -d ' ' | tr '\n' ' ')"
+  # docker top needs the PID column; the second column is the uid.
+  uids="$(docker top "$container" -eo pid,uid | awk 'NR > 1 { print $2 }' | sort -u | tr '\n' ' ')"
   expect_line "every $service process runs as uid 10001" "$uids" '^10001 $'
   expect_true "$service has a read-only root filesystem" bash -c "[ \"\$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' $container)\" = true ]"
 done
