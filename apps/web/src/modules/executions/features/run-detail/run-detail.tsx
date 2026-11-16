@@ -13,9 +13,11 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { StatusPill } from '@/shared/components/status-pill';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/tabs';
 import { formatDuration } from '@/shared/lib/duration';
 import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
@@ -35,6 +37,7 @@ import { FINAL_STATES } from '../../components/run-states';
 import { StaleBanner } from '../../components/stale-banner';
 import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
+import { RunChanges } from '../run-changes/run-changes';
 import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunDelivery } from './run-delivery';
@@ -278,11 +281,18 @@ export function RunTitle({ runId }: { runId: string }) {
  * Run that is not finished can be cancelled; the limits in force are shown, and a cancelled or
  * timed-out Run says why it stopped (Issue #100). A Run waiting for the operator shows the
  * agent's question and the answer form; once the agent asked, the Task leads the conversation
- * of questions and answers (Issue #103). Below, the Run's log (Issue #99).
+ * of questions and answers (Issue #103). Below, two tabs: the Run's log (Issue #99) and its
+ * Changes (Issue #144), what it changed in its Working copy.
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
   const log = useRef<RunLogHandle>(null);
+  const [tab, setTab] = useState<'log' | 'changes'>('log');
+  /** Shows where a Run step starts in the log, switching to the Log tab first. */
+  const showStep = (index: number) => {
+    if (tab !== 'log') flushSync(() => setTab('log'));
+    return log.current?.showStep(index) ?? false;
+  };
 
   if (isPending) return <LoadingRun />;
   // A failed background poll keeps the last known Run on screen (below); only a first load
@@ -363,10 +373,7 @@ export function RunDetail({ runId }: { runId: string }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         {/* Issue #103: once the agent asked, the Task leads the conversation. */}
         {run.messages && run.messages.length > 1 ? (
-          <RunConversation
-            messages={run.messages}
-            onShowStep={(index) => log.current?.showStep(index) ?? false}
-          />
+          <RunConversation messages={run.messages} onShowStep={showStep} />
         ) : (
           <Card aria-labelledby="run-task-title">
             <CardHeader>
@@ -416,7 +423,19 @@ export function RunDetail({ runId }: { runId: string }) {
         </Card>
       </div>
 
-      <RunLog key={run.id} ref={log} run={run} />
+      <Tabs value={tab} onValueChange={(value) => setTab(value === 'changes' ? 'changes' : 'log')}>
+        <TabsList aria-label="Run">
+          <TabsTrigger value="log">Log</TabsTrigger>
+          <TabsTrigger value="changes">Changes</TabsTrigger>
+        </TabsList>
+        {/* Kept mounted while hidden: the live log keeps its stream and its place. */}
+        <TabsContent value="log" forceMount className="data-[state=inactive]:hidden">
+          <RunLog key={run.id} ref={log} run={run} />
+        </TabsContent>
+        <TabsContent value="changes">
+          <RunChanges key={run.id} run={run} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

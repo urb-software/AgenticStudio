@@ -17,6 +17,8 @@ import type {
   ProviderListOutput,
   RepositoryOutput,
   RunEventOutput,
+  RunDiffFileOutput,
+  RunDiffOutput,
   RunEventPageOutput,
   RunListOutput,
   RunOutput,
@@ -51,6 +53,9 @@ export type {
   RepositoryOutput,
   RepositoryStateOutput,
   RepositorySummaryOutput,
+  RunDiffFileOutput,
+  RunDiffFileSummaryOutput,
+  RunDiffOutput,
   RunEventOutput,
   RunEventPageOutput,
   RunListOutput,
@@ -246,6 +251,19 @@ export const api = {
   /** The structured result of each reported Run step. */
   listRunSteps: (runId: string): Promise<RunStepListOutput> =>
     unwrap(sdk.listRunSteps({ path: { runId } })),
+  /**
+   * A Run's diff (Issue #144): the whole Run or since the previous result; its file list without
+   * patches. 404 while no Run step has reported a result.
+   */
+  getRunDiff: (runId: string, scope: RunDiffOutput['scope']): Promise<RunDiffOutput> =>
+    unwrap(sdk.getRunDiff({ path: { runId }, query: { scope } })),
+  /** One file of a Run's diff with its patch (Issue #144), so a large diff loads per file. */
+  getRunDiffFile: (
+    runId: string,
+    scope: RunDiffOutput['scope'],
+    path: string,
+  ): Promise<RunDiffFileOutput> =>
+    unwrap(sdk.getRunDiffFile({ path: { runId }, query: { scope, path } })),
 };
 
 /**
