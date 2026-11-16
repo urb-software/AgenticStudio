@@ -1,5 +1,5 @@
 import type { LogRow, LogTone } from '@/shared/components/log-viewer';
-import type { RunEventOutput, RunStepOutput } from '../../../../platform/api';
+import type { RunEventOutput, RunMessageOutput, RunStepOutput } from '../../../../platform/api';
 
 const KIND_TONE: Record<RunEventOutput['kind'], LogTone> = {
   message: 'plain',
@@ -48,16 +48,54 @@ function resultRows(step: RunStepOutput): LogRow[] {
   return rows;
 }
 
+/** Each question of the Run with the operator's answer to it, if any, in order (Issue #103). */
+function questionsAndAnswers(messages: readonly RunMessageOutput[]) {
+  const turns: { question: string; answer?: string }[] = [];
+  for (const message of messages) {
+    if (message.kind === 'question') turns.push({ question: message.text });
+    else if (message.kind === 'answer' && turns.length > 0) turns.at(-1)!.answer = message.text;
+  }
+  return turns;
+}
+
+/** The question a `needs_input` step ended with and the answer that resumed the Run. */
+function turnRows(index: number, turn: { question: string; answer?: string }): LogRow[] {
+  const key = `step-${index}:turn`;
+  const rows: LogRow[] = [];
+  lines(turn.question).forEach((line, i) =>
+    rows.push({ key: `${key}:q:${i}`, text: i === 0 ? `Question: ${line}` : line, tone: 'warn' }),
+  );
+  if (turn.answer !== undefined) {
+    lines(turn.answer).forEach((line, i) =>
+      rows.push({ key: `${key}:a:${i}`, text: i === 0 ? `Answer: ${line}` : line, tone: 'ok' }),
+    );
+  }
+  return rows;
+}
+
 /**
  * The rows of a Run's log for the LogViewer: each event's text line by line (commands as `$`
  * lines, notices as warnings, step markers as section rows), a note under a cut event, and the
- * step's structured result right after its `step_finished` marker once it is known.
+ * step's structured result right after its `step_finished` marker once it is known. After a
+ * step that ended with a question come the question and the operator's answer (Issue #103), so
+ * the log reads as the conversation with each Run step's log between its turns.
  */
 export function toLogRows(
   events: readonly RunEventOutput[],
   steps: ReadonlyMap<number, RunStepOutput>,
+  messages: readonly RunMessageOutput[] = [],
 ): LogRow[] {
   const rows: LogRow[] = [];
+  const turns = questionsAndAnswers(messages);
+  // The n-th step that ended with needs_input asked the n-th question.
+  const turnOfStep = new Map<number, (typeof turns)[number]>();
+  [...steps.values()]
+    .filter((step) => step.outcome === 'needs_input')
+    .sort((a, b) => a.index - b.index)
+    .forEach((step, n) => {
+      const turn = turns[n];
+      if (turn) turnOfStep.set(step.index, turn);
+    });
   for (const event of events) {
     const tone = KIND_TONE[event.kind];
     lines(event.text).forEach((line, i) => {
@@ -73,6 +111,8 @@ export function toLogRows(
     }
     const step = event.kind === 'step_finished' ? steps.get(event.stepIndex) : undefined;
     if (step) rows.push(...resultRows(step));
+    const turn = step ? turnOfStep.get(step.index) : undefined;
+    if (step && turn) rows.push(...turnRows(step.index, turn));
   }
   return rows;
 }

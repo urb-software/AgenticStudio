@@ -2,7 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  type AnswerRunRequest,
   api,
+  ApiError,
   type RunOutput,
   type RunStepListOutput,
   type StartRunRequest,
@@ -142,6 +144,29 @@ export function useRetryDelivery(runId: string) {
     onSuccess: async (run: RunOutput) => {
       queryClient.setQueryData(runKey(run.id), run);
       await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
+    },
+  });
+}
+
+/**
+ * Answers the agent's question (Issue #103). The 202 answer (the Run, queued to resume)
+ * replaces the cached Run, so the page polls it again; every Run list is read again. A 409
+ * reads the Run again at once.
+ */
+export function useAnswerRun(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: AnswerRunRequest) => api.answerRun(runId, request),
+    onSuccess: async (run: RunOutput) => {
+      queryClient.setQueryData(runKey(run.id), run);
+      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
+    },
+    // The Run moved on (answered elsewhere, cancelled): read it at once, not at the next poll
+    // (review Spec-2 of #128).
+    onError: async (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: runKey(runId) });
+      }
     },
   });
 }

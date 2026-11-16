@@ -6,6 +6,7 @@
 // browser sends by itself: no code here reads it, and no token is ever stored.
 import * as sdk from './generated';
 import type {
+  AnswerRunRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -34,6 +35,7 @@ import {
 } from './generated/zod.gen';
 
 export type {
+  AnswerRunRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -51,7 +53,9 @@ export type {
   RunEventOutput,
   RunEventPageOutput,
   RunListOutput,
+  RunMessageOutput,
   RunOutput,
+  RunQuestionOutput,
   RunStepListOutput,
   RunStepOutput,
   SessionResponseOutput,
@@ -222,6 +226,12 @@ export const api = {
    * preparing or running one carries `cancelRequestedAt` until the agent worker confirms.
    */
   cancelRun: (runId: string): Promise<RunOutput> => unwrap(sdk.cancelRun({ path: { runId } })),
+  /**
+   * Answers the agent's open question (Issue #103; 202: the Run, `queued` to resume). A Run that
+   * no longer waits answers 409; an empty or too long answer 422 with field errors.
+   */
+  answerRun: (runId: string, body: AnswerRunRequest): Promise<RunOutput> =>
+    unwrap(sdk.answerRun({ path: { runId }, body })),
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),
