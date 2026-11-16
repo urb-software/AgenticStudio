@@ -192,7 +192,7 @@ as_agent sed -i "s|^STUDIO_WORKER_TOKEN=.*|STUDIO_WORKER_TOKEN=$TEST_TOKEN|" /ho
 stub() {
   STUB_TOKEN="$TEST_TOKEN" STUB_LEAKY="$1" node -e "
     require('node:http').createServer((req, res) => {
-      if (req.url === '/api/health') { res.writeHead(200); return res.end('{"status":"ok"}'); }
+      if (req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
       const auth = req.headers.authorization === 'Bearer ' + process.env.STUB_TOKEN;
       const worker = req.url.startsWith('/api/worker/');
       const allowed = auth && (worker || process.env.STUB_LEAKY === '1');
