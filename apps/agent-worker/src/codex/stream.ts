@@ -6,6 +6,7 @@ import {
 } from '@agentic-studio/contracts';
 import { agentResultSchema } from '../agent-definition/index.js';
 import { AgentFailedError, UsageLimitError } from '../runner.js';
+import { withoutNulls } from './result-schema.js';
 
 /**
  * Reads the CLI's `codex exec --json` output of one Run step (Issue #106): one JSON event per
@@ -252,7 +253,8 @@ function parseResult(raw: string | undefined, session: string | undefined) {
   } catch {
     return undefined;
   }
-  const agent = agentResultSchema.safeParse(value);
+  // The strict output schema makes absent fields null (coordinator smoke of #133).
+  const agent = agentResultSchema.safeParse(withoutNulls(value));
   if (!agent.success) return undefined;
   const result = runStepResultSchema.safeParse({
     ...agent.data,

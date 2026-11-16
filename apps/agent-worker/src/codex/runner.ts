@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 import { errorReason } from '../cli-output.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import {
@@ -35,6 +34,7 @@ import {
 } from './cli-options.js';
 import { prepareCodexHome } from './codex-home.js';
 import { codexInstallProblem } from './install-check.js';
+import { CODEX_RESULT_JSON_SCHEMA } from './result-schema.js';
 import { CodexStream, type ResultSource } from './stream.js';
 
 const PROVIDER: Provider = 'codex';
@@ -112,7 +112,7 @@ export class CodexRunner implements Runner {
     let args: string[];
     let stdinFile: string;
     if (resumed === undefined) {
-      await writeFile(files.schemaFile, AGENT_RESULT_JSON_SCHEMA, { mode: 0o600 });
+      await writeFile(files.schemaFile, CODEX_RESULT_JSON_SCHEMA, { mode: 0o600 });
       await rm(files.resultFile, { force: true });
       await writeFile(files.promptFile, codexPrompt(agentDefinition.text, run.task), {
         mode: 0o600,
@@ -194,10 +194,13 @@ export class CodexRunner implements Runner {
     }
     const exitCode = await exited;
     if (signal.aborted) throw signal.reason;
+    // Expected CLI warnings (e.g. the untrusted project's configuration being skipped) are
+    // notices, never the failure's reason (coordinator smoke of #133).
+    const { expected, rest: errorOutput } = splitStderr(stderr);
+    for (const warning of expected) yield { type: 'notice', text: `Codex: ${warning}` };
     const outcome = stream.finish({ exitCode, spawnFailed }, await source());
     for (const event of outcome.events) yield event;
     if ('result' in outcome) return outcome.result;
-    const errorOutput = stderr.trim();
     if (errorOutput === '') throw outcome.error;
     yield { type: 'notice', text: `Codex's error output: ${errorOutput}` };
     if (outcome.error instanceof AgentFailedError) {
@@ -205,6 +208,21 @@ export class CodexRunner implements Runner {
     }
     throw outcome.error;
   }
+}
+
+/** CLI warnings on standard error that are expected in every Studio step. */
+const EXPECTED_STDERR = [/^warning: untrusted project-local configuration is disabled/i];
+
+/** Standard error split into the expected warnings (each once) and the rest, trimmed. */
+export function splitStderr(stderr: string): { expected: string[]; rest: string } {
+  const expected = new Set<string>();
+  const rest: string[] = [];
+  for (const line of stderr.split('\n')) {
+    const trimmed = line.trim();
+    if (EXPECTED_STDERR.some((pattern) => pattern.test(trimmed))) expected.add(trimmed);
+    else rest.push(line);
+  }
+  return { expected: [...expected], rest: rest.join('\n').trim() };
 }
 
 /** Longest wait for `codex --version`. */

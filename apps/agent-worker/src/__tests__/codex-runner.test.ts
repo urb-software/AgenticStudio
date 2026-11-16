@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_DEFINITION, AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
+import { AGENT_DEFINITION } from '../agent-definition/index.js';
+import { CODEX_RESULT_JSON_SCHEMA } from '../codex/result-schema.js';
 import { CodexRunner } from '../codex/runner.js';
 import { DEFAULT_PROVIDER_BINARIES } from '../config.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
@@ -217,7 +218,7 @@ describe('CodexRunner at the spawn boundary', () => {
     expect(prompt).toContain('You cannot commit');
     expect(prompt).toContain("# The operator's Task\n\nAdd a health check");
     expect(readFileSync(join(runDir, 'codex', 'result.schema.json'), 'utf8')).toBe(
-      AGENT_RESULT_JSON_SCHEMA,
+      CODEX_RESULT_JSON_SCHEMA,
     );
     expect(existsSync(join(runDir, 'tmp'))).toBe(true);
     expect(existsSync(join(runDir, 'repo', 'prompt.md'))).toBe(false);
@@ -291,6 +292,35 @@ describe('CodexRunner at the spawn boundary', () => {
       type: 'notice',
       text: "Codex's error output: Error: unexpected argument found",
     });
+  });
+
+  it("logs the CLI's expected untrusted-project warning as a notice, never as the failure reason (smoke of #133)", async () => {
+    const WARNING = 'warning: Untrusted project-local configuration is disabled for this project.';
+    spawn.mockImplementation((_binary: string, args: string[]) => {
+      writeFileSync(args[args.indexOf('--output-last-message') + 1]!, lastMessage('success')!);
+      const child = fakeChild(recording('success'));
+      child.stderr.write(`${WARNING}\n`);
+      return child;
+    });
+    const events: RunnerEvent[] = [];
+
+    const result = await drainRunStep(runner().start(input('x')), (event) => events.push(event));
+
+    expect(result.outcome).toBe('done');
+    expect(events).toContainEqual({
+      type: 'notice',
+      text: 'Codex: warning: Untrusted project-local configuration is disabled for this project.',
+    });
+
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('Error: invalid_json_schema\n');
+      child.stderr.write(`${WARNING}\n`);
+      return child;
+    });
+    await expect(drain(runner().start(input('x')))).rejects.toThrow(
+      'Its error output: Error: invalid_json_schema',
+    );
   });
 
   it('refuses a step without the agent user home, starting nothing', async () => {
