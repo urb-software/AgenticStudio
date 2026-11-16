@@ -257,6 +257,24 @@ export interface RunRepository {
    */
   resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<ResumeAfterLimitOutcome>;
 
+  /**
+   * Queues a Follow-up (Issue #141), in one transaction: if the Run is still finished (a final
+   * state, held by no worker, no delivery retry requested, no Follow-up queued), has a session
+   * reference and a recorded Working copy that was not reported removed, and has taken fewer Run
+   * steps than its total, `text` is stored as a `follow_up` message and the Run goes back to
+   * `queued` (its earlier result cleared, its pull request kept), with a new Run step allowance
+   * from the steps it has taken. It is resumed like an answered Run by the worker that holds its
+   * Working copy, but holds no place while it waits: the claim starts it under the concurrency
+   * limits. `null` if a condition failed (nothing changed).
+   */
+  queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null>;
+
+  /**
+   * Records that `workerId`'s retention removed the Working copies of these Runs (Issue #141):
+   * only for final Runs it last claimed and does not hold. Returns how many were recorded.
+   */
+  markWorkingCopiesRemoved(workerId: string, runIds: readonly string[], now: Date): Promise<number>;
+
   /** Resumable Runs no worker claimed yet, with the worker that started each (Issue #103). */
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;
 

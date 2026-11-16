@@ -7,7 +7,7 @@ import { RunStatesRequestDto } from './schema.js';
 /**
  * `POST /api/worker/runs/states` (Issue #98), worker token only: 200 with the state of each
  * asked Run that exists and, for a final one, when it finished. Feeds the agent worker's
- * Working copy retention; changes nothing.
+ * Working copy retention. Issue #141: records the Working copies the worker reports removed.
  */
 @WorkerController('runs')
 export class GetRunStatesEndpoint {
@@ -16,7 +16,10 @@ export class GetRunStatesEndpoint {
   @Post('states')
   @HttpCode(HttpStatus.OK)
   async states(@Body() body: RunStatesRequestDto): Promise<RunStatesResponse> {
-    const states = await this.handler.execute(body.runIds);
+    const states = await this.handler.execute(body.runIds, {
+      workerId: body.workerId,
+      runIds: body.removedRunIds ?? [],
+    });
     return runStatesResponseSchema.parse(
       states.map((run) => ({
         runId: run.runId,

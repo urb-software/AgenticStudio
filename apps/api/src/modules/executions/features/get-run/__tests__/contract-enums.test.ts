@@ -1,4 +1,6 @@
 import {
+  ANSWER_MAX_LENGTH as WORKER_ANSWER_MAX_LENGTH,
+  FOLLOW_UP_MAX_LENGTH as WORKER_FOLLOW_UP_MAX_LENGTH,
   RUN_EVENT_KINDS as WORKER_EVENT_KINDS,
   PROVIDERS as WORKER_PROVIDERS,
   RUN_FAILURE_CODES as WORKER_FAILURE_CODES,
@@ -11,6 +13,7 @@ import { EXECUTIONS_PROBLEM_TYPES } from '../../../contracts/http/problems.js';
 import { describe, expect, it } from 'vitest';
 import { runEventKindSchema } from '../../../contracts/http/run-event-response.js';
 import {
+  followUpRefusalSchema,
   runCancelledBySchema,
   runDeliverySchema,
   runFailureCodeSchema,
@@ -18,6 +21,9 @@ import {
   runStateSchema,
 } from '../../../contracts/http/run-response.js';
 import {
+  ANSWER_MAX_LENGTH,
+  FOLLOW_UP_MAX_LENGTH,
+  FOLLOW_UP_REFUSALS,
   PROVIDERS,
   RUN_CANCELLED_BY,
   RUN_DELIVERIES,
@@ -37,6 +43,8 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(runCancelledBySchema.options).toEqual([...RUN_CANCELLED_BY]);
     // Issue #102.
     expect(runDeliverySchema.options).toEqual([...RUN_DELIVERIES]);
+    // Issue #141.
+    expect(followUpRefusalSchema.options).toEqual([...FOLLOW_UP_REFUSALS]);
   });
 
   it('worker protocol: the same states, providers, failure codes and Task limit', () => {
@@ -44,6 +52,9 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect([...WORKER_PROVIDERS]).toEqual([...PROVIDERS]);
     expect([...WORKER_FAILURE_CODES]).toEqual([...RUN_FAILURE_CODES]);
     expect(WORKER_TASK_MAX_LENGTH).toBe(TASK_MAX_LENGTH);
+    // Issue #141: the Follow-up and the answer travel in the same payload field.
+    expect(WORKER_FOLLOW_UP_MAX_LENGTH).toBe(FOLLOW_UP_MAX_LENGTH);
+    expect(WORKER_ANSWER_MAX_LENGTH).toBe(ANSWER_MAX_LENGTH);
   });
 
   it("worker protocol: the problem types the worker acts on are the API's (review of #121)", () => {

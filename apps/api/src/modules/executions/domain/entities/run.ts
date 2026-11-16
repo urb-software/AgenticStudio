@@ -97,8 +97,11 @@ export interface RunWorkingCopy {
  */
 export interface RunLimits {
   stepMinutes: number;
+  /** The most Run steps the first part of the Run, and each Follow-up, may take (Issue #141). */
   maxSteps: number;
   waitingDays: number;
+  /** The most Run steps the Run may take in total before it accepts no Follow-up (Issue #141). */
+  maxTotalSteps: number;
 }
 
 /** Who cancelled a Run (Issue #100): the operator, or Studio itself (a Run waiting too long). */
@@ -126,13 +129,20 @@ export interface RunPullRequest {
   number: number;
 }
 
-/** What an agent worker reports about a successful delivery. */
+/**
+ * What an agent worker reports about a successful delivery; `pushedCommit` (Issue #141) is the
+ * commit the push left the remote Run branch at.
+ */
 export type RunDeliveryOutcome =
   /** `branchPushed`: only for a Run cancelled after its push, before a pull request (#124 review). */
-  { outcome: 'none'; branchPushed?: true } | { outcome: 'delivered'; pullRequest: RunPullRequest };
+  | { outcome: 'none'; branchPushed?: true; pushedCommit?: string }
+  | { outcome: 'delivered'; pullRequest: RunPullRequest; pushedCommit?: string };
 
 /** Longest operator answer to an agent's question, in characters (Issue #103). */
 export const ANSWER_MAX_LENGTH = 10_000;
+
+/** Longest Follow-up, in characters (Issue #141). */
+export const FOLLOW_UP_MAX_LENGTH = 10_000;
 
 /**
  * The agent's question to the operator (Issue #103), from a `needs_input` step result: its
@@ -146,11 +156,13 @@ export interface RunQuestion {
 
 /**
  * One turn of the Run's conversation after its Task (Issue #103), in order: the agent's
- * question, or the operator's answer to it.
+ * question, the operator's answer to it, or the operator's Follow-up to the finished Run
+ * (Issue #141).
  */
 export type RunMessage =
   | { kind: 'question'; question: RunQuestion; at: Date }
-  | { kind: 'answer'; text: string; at: Date };
+  | { kind: 'answer'; text: string; at: Date }
+  | { kind: 'follow_up'; text: string; at: Date };
 
 export interface Run {
   id: string;
@@ -225,8 +237,25 @@ export interface Run {
    * it goes to the agent worker that holds the Working copy, never to the operator API.
    */
   sessionRef: string | null;
-  /** The agent's questions and the operator's answers, in order (Issue #103). */
+  /** The agent's questions, the operator's answers and Follow-ups, in order (Issue #103). */
   messages: RunMessage[];
+  /**
+   * The agent worker that last claimed the Run to start or resume it (Issue #102): only it holds
+   * the Working copy and the agent's session. Internal, never in the operator API.
+   */
+  lastClaimedBy: string | null;
+  /** How many Run steps the Run has taken (stored step results; Issue #141). */
+  stepCount: number;
+  /** How many Follow-ups the operator sent (Issue #141). */
+  followUpCount: number;
+  /** Queued for a Follow-up its agent worker has not claimed yet (Issue #141). */
+  followUpQueued: boolean;
+  /** How many Run steps the Run had taken when its current part began (Issue #141). */
+  stepsBeforePart: number;
+  /** The commit the latest push left the remote Run branch at (Issue #141); `null` if none. */
+  pushedCommit: string | null;
+  /** When the agent worker reported its retention removed the Working copy (Issue #141). */
+  workingCopyRemovedAt: Date | null;
 }
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {
@@ -336,30 +365,118 @@ export function longWaitCancellation(run: Run, now: Date): RunCancellation | nul
  */
 export const STEP_TIME_LIMIT_GRACE_MINUTES = 5;
 
-/** The failure of a Run that would exceed its maximum number of Run steps (Issue #100). */
-export function stepLimitFailure(maxSteps: number): RunFailure {
+/**
+ * The failure of a Run that would exceed its maximum number of Run steps (Issue #100); in a
+ * Follow-up the allowance is the Follow-up's own (Issue #141).
+ */
+export function stepLimitFailure(maxSteps: number, inFollowUp = false): RunFailure {
+  const steps = `${maxSteps} run ${maxSteps === 1 ? 'step' : 'steps'}`;
   return {
     code: 'step_limit',
-    detail: `The run reached its limit of ${maxSteps} run ${maxSteps === 1 ? 'step' : 'steps'}; no further step was started.`,
+    detail: inFollowUp
+      ? `The Follow-up reached its limit of ${steps}; no further step was started.`
+      : `The run reached its limit of ${steps}; no further step was started.`,
   };
 }
 
+/** Why a resumed Run step continues the agent session (Issue #141; the worker protocol's list). */
+export type ResumeReason = 'answer' | 'usage_limit' | 'follow_up';
+
 /**
- * The answer that resumes the Run's agent session (Issue #103): the operator's last answer,
- * while it is the latest message and the Run has a session reference; otherwise `null`. A
- * resumed step that asks again adds a question after it, so it is never handed out twice.
+ * The message that resumes the Run's agent session, and why (Issue #103, #105, #141): the
+ * operator's latest message while it is the last one and the Run has a session reference;
+ * otherwise `null`. A Follow-up resumes as `follow_up`; an answer right after the agent's
+ * question as `answer`; any other answer is the usage-limit resume's "Continue where you
+ * stopped." (`usage_limit`). A resumed step that asks again adds a question after it, so it is
+ * never handed out twice.
  */
-export function resumeAnswer(run: Pick<Run, 'sessionRef' | 'messages'>): string | null {
+export function resumeMessage(
+  run: Pick<Run, 'sessionRef' | 'messages'>,
+): { text: string; reason: ResumeReason } | null {
   const last = run.messages.at(-1);
-  return run.sessionRef !== null && last?.kind === 'answer' ? last.text : null;
+  if (run.sessionRef === null || last === undefined || last.kind === 'question') return null;
+  if (last.kind === 'follow_up') return { text: last.text, reason: 'follow_up' };
+  const before = run.messages.at(-2);
+  return { text: last.text, reason: before?.kind === 'question' ? 'answer' : 'usage_limit' };
+}
+
+/** The answer that resumes the Run's agent session (Issue #103); see {@link resumeMessage}. */
+export function resumeAnswer(run: Pick<Run, 'sessionRef' | 'messages'>): string | null {
+  return resumeMessage(run)?.text ?? null;
 }
 
 /**
- * Whether the Run waits in the queue to be resumed (Issue #103): the operator answered, and
- * the agent worker that holds its Working copy has not claimed it yet.
+ * Whether the Run waits in the queue to be resumed (Issue #103): the operator answered (or sent
+ * a Follow-up, Issue #141), and the agent worker that holds its Working copy has not claimed it.
  */
 export function isResumable(run: Pick<Run, 'state' | 'sessionRef' | 'messages'>): boolean {
-  return run.state === 'queued' && resumeAnswer(run) !== null;
+  return run.state === 'queued' && resumeMessage(run) !== null;
+}
+
+/**
+ * Why a Run cannot take a Follow-up now (Issue #141): it is not finished (queued, preparing,
+ * running, waiting for the operator, or its delivery is being retried), a Follow-up is already
+ * queued, its Working copy was removed (or it never reported one), it has no agent session, it
+ * reached its Run step total, its Provider is unavailable, or the agent worker that holds its
+ * Working copy is not connected. Pull request state (merged, closed) comes with #142.
+ */
+export const FOLLOW_UP_REFUSALS = [
+  'not_finished',
+  'follow_up_queued',
+  'working_copy_removed',
+  'no_session',
+  'step_total_reached',
+  'provider_unavailable',
+  'worker_unavailable',
+] as const;
+export type FollowUpRefusal = (typeof FOLLOW_UP_REFUSALS)[number];
+
+export type FollowUpEligibility = { allowed: true } | { allowed: false; reason: FollowUpRefusal };
+
+/**
+ * Whether the operator may send the Run a Follow-up (Issue #141): the one way from a final state
+ * back to `queued`, next to {@link canRetryDelivery} and {@link canResumeAfterUsageLimit}. A
+ * finished Run (succeeded, failed, timed out or cancelled) that no worker holds, whose Working
+ * copy and agent session exist, below its Run step total, with its Provider available on the
+ * connected agent worker that holds the Working copy. `context` is what Studio knows about the
+ * agent worker now.
+ */
+export function followUpEligibility(
+  run: Pick<
+    Run,
+    | 'state'
+    | 'followUpQueued'
+    | 'claimedBy'
+    | 'deliveryRequested'
+    | 'sessionRef'
+    | 'workingCopy'
+    | 'workingCopyRemovedAt'
+    | 'stepCount'
+    | 'limits'
+  >,
+  context: { workerAvailable: boolean; providerAvailable: boolean },
+): FollowUpEligibility {
+  const refuse = (reason: FollowUpRefusal): FollowUpEligibility => ({ allowed: false, reason });
+  if (run.followUpQueued) return refuse('follow_up_queued');
+  if (!isFinal(run.state) || run.claimedBy !== null || run.deliveryRequested) {
+    return refuse('not_finished');
+  }
+  if (run.sessionRef === null) return refuse('no_session');
+  if (run.workingCopy === null || run.workingCopyRemovedAt !== null) {
+    return refuse('working_copy_removed');
+  }
+  if (run.stepCount >= run.limits.maxTotalSteps) return refuse('step_total_reached');
+  if (!context.workerAvailable) return refuse('worker_unavailable');
+  if (!context.providerAvailable) return refuse('provider_unavailable');
+  return { allowed: true };
+}
+
+/** A Follow-up the Run cannot take now (Issue #141), with the reason. */
+export class FollowUpNotAllowedError extends Error {
+  constructor(readonly reason: FollowUpRefusal) {
+    super(`The run cannot take a Follow-up now (${reason}).`);
+    this.name = 'FollowUpNotAllowedError';
+  }
 }
 
 /**

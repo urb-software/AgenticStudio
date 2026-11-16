@@ -33,7 +33,7 @@ describe('Environment file snapshots', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       integrationBranch: 'dev',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     });
     const run = (await runs.claimNext(WORKER, T0))!;
     const snapshot = await secrets.put(content, OWNER);

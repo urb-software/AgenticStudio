@@ -6,7 +6,7 @@ import {
   type RunEnvironmentFiles,
 } from '../../../projects/contracts/index.js';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/entities/run-environment-file.js';
-import { resumeAnswer, type Run, type RunFailure } from '../../domain/entities/run.js';
+import { resumeMessage, type Run, type RunFailure } from '../../domain/entities/run.js';
 import {
   RUN_LOG_REPOSITORY,
   type RunLogRepository,
@@ -134,8 +134,8 @@ export class ClaimRunHandler {
       // from (nor an integration branch, Issue #102): it fails with preparation_failed here
       // instead of reaching a worker (review S6).
       const reachable = run.remoteUrl !== '' && run.integrationBranch !== '';
-      if (resumeAnswer(run) !== null) {
-        // Issue #103: the resumed step continues the Run's step numbers and its log's seqs.
+      if (resumeMessage(run) !== null) {
+        // Issue #103 (and a Follow-up, #141): the resumed step continues the Run's step numbers and its log's seqs.
         if (reachable && run.workingCopy) {
           return { ...run, environmentFile: null, ...(await this.progress(run.id)) };
         }

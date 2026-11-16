@@ -34,13 +34,14 @@ const queuedToResume = (run: Run) => run.state === 'queued' && run.sessionRef !=
 
 /**
  * Active for the limits: an active state, a failed Run held for a delivery retry (#102), or a
- * resumable Run waiting for its worker (#103).
+ * resumable Run waiting for its worker (#103); a queued Follow-up holds none (#141).
  */
 const holdsPlace = (run: Run) =>
-  isActive(run.state) || run.claimedBy !== null || queuedToResume(run);
+  isActive(run.state) || run.claimedBy !== null || (queuedToResume(run) && !run.followUpQueued);
 const deliveryFields = (delivery: RunDeliveryOutcome) => ({
   delivery: delivery.outcome,
-  pullRequest: delivery.outcome === 'delivered' ? { ...delivery.pullRequest } : null,
+  ...(delivery.outcome === 'delivered' ? { pullRequest: { ...delivery.pullRequest } } : {}),
+  ...(delivery.pushedCommit === undefined ? {} : { pushedCommit: delivery.pushedCommit }),
 });
 
 /**
@@ -51,7 +52,6 @@ const deliveryFields = (delivery: RunDeliveryOutcome) => ({
 export class InMemoryRunRepository implements RunRepository {
   readonly runs: (Run & {
     heartbeatAt: Date | null;
-    lastClaimedBy?: string;
     environmentFileSecret: string | null;
   })[] = [];
   readonly steps: { runId: string; index: number; step: RunStepRecord }[] = [];
@@ -85,6 +85,13 @@ export class InMemoryRunRepository implements RunRepository {
       environmentFileSupplied: false,
       environmentFilePath: null,
       environmentFileSecret: null,
+      lastClaimedBy: null,
+      stepCount: 0,
+      followUpCount: 0,
+      followUpQueued: false,
+      stepsBeforePart: 0,
+      pushedCommit: null,
+      workingCopyRemovedAt: null,
     };
     this.runs.push(created);
     return Promise.resolve(this.view(created));
@@ -140,6 +147,7 @@ export class InMemoryRunRepository implements RunRepository {
         // A resumed Run keeps its first start (#103).
         startedAt: next.startedAt ?? now,
         heartbeatAt: now,
+        followUpQueued: false,
       });
     } else {
       Object.assign(next, { claimedBy: workerId, heartbeatAt: now });
@@ -260,6 +268,7 @@ export class InMemoryRunRepository implements RunRepository {
       cancellation: { ...cancellation },
       finishedAt: now,
       waitingSince: null,
+      followUpQueued: false,
     });
     return Promise.resolve(this.view(run));
   }
@@ -335,10 +344,10 @@ export class InMemoryRunRepository implements RunRepository {
     const index = step.index ?? last + 1;
     if (index <= last) return Promise.resolve({ status: 'stored', index, duplicate: true });
     if (index !== last + 1) return Promise.resolve({ status: 'out_of_order', expected: last + 1 });
-    if (index > run.limits.maxSteps) {
+    if (index > run.stepsBeforePart + run.limits.maxSteps) {
       Object.assign(run, {
         state: 'failed',
-        failure: stepLimitFailure(run.limits.maxSteps),
+        failure: stepLimitFailure(run.limits.maxSteps, run.followUpCount > 0),
         claimedBy: null,
         heartbeatAt: null,
         finishedAt: now,
@@ -347,6 +356,7 @@ export class InMemoryRunRepository implements RunRepository {
     }
     const { kind, result } = step;
     this.steps.push({ runId, index, step: structuredClone({ kind, result }) });
+    run.stepCount = index;
     run.workingCopy = structuredClone(workingCopy);
     run.failingChecks = [...failingChecks];
     run.stepStartedAt = null;
@@ -388,6 +398,55 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve({ status: 'resumed', run: this.view(run) });
   }
 
+  queueFollowUp(runId: string, text: string, now: Date): Promise<Run | null> {
+    const run = this.runs.find((candidate) => candidate.id === runId);
+    if (
+      !run ||
+      !isFinal(run.state) ||
+      run.claimedBy !== null ||
+      run.deliveryRequested ||
+      run.followUpQueued ||
+      run.sessionRef === null ||
+      run.workingCopy === null ||
+      run.workingCopyRemovedAt !== null ||
+      run.stepCount >= run.limits.maxTotalSteps
+    ) {
+      return Promise.resolve(null);
+    }
+    run.messages.push({ kind: 'follow_up', text, at: now });
+    Object.assign(run, {
+      state: 'queued',
+      followUpQueued: true,
+      followUpCount: run.followUpCount + 1,
+      stepsBeforePart: run.stepCount,
+      failure: null,
+      finishedAt: null,
+      cancellation: null,
+      cancelRequestedAt: null,
+      delivery: null,
+      waitingSince: null,
+      stepStartedAt: null,
+    });
+    return Promise.resolve(this.view(run));
+  }
+
+  markWorkingCopiesRemoved(
+    workerId: string,
+    runIds: readonly string[],
+    now: Date,
+  ): Promise<number> {
+    const removed = this.runs.filter(
+      (run) =>
+        runIds.includes(run.id) &&
+        run.lastClaimedBy === workerId &&
+        isFinal(run.state) &&
+        run.claimedBy === null &&
+        run.workingCopyRemovedAt === null,
+    );
+    for (const run of removed) run.workingCopyRemovedAt = now;
+    return Promise.resolve(removed.length);
+  }
+
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
     return Promise.resolve(
       this.runs
@@ -399,7 +458,12 @@ export class InMemoryRunRepository implements RunRepository {
   abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (!run || !queuedToResume(run)) return Promise.resolve(false);
-    Object.assign(run, { state: 'failed', failure: { ...failure }, finishedAt: now });
+    Object.assign(run, {
+      state: 'failed',
+      failure: { ...failure },
+      finishedAt: now,
+      followUpQueued: false,
+    });
     return Promise.resolve(true);
   }
 
@@ -496,14 +560,12 @@ export class InMemoryRunRepository implements RunRepository {
   private view(
     run: Run & {
       heartbeatAt: Date | null;
-      lastClaimedBy?: string;
       environmentFileSecret: string | null;
     },
   ): Run {
-    const { heartbeatAt, lastClaimedBy, environmentFileSecret, ...rest } = run;
+    const { heartbeatAt, environmentFileSecret, ...rest } = run;
     // Internal: not part of a Run.
     void heartbeatAt;
-    void lastClaimedBy;
     void environmentFileSecret;
     return structuredClone(rest);
   }

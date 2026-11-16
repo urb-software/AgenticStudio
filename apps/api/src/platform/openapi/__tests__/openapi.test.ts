@@ -316,8 +316,37 @@ describe('OpenAPI document', () => {
         'environmentFileSupplied',
         // Issue #100: the limits in force are always shown.
         'limits',
+        // Issue #141: the Run step totals and how many Follow-ups it had.
+        'steps',
+        'followUps',
       ],
     });
+  });
+
+  it('documents POST /api/runs/{runId}/follow-up: 202 with the Run, 404, 409, 422 (Issue #141)', () => {
+    const document = createOpenApiDocument(app);
+
+    const followUp = document.paths['/api/runs/{runId}/follow-up']?.post;
+    expect(followUp?.operationId).toBe('followUpRun');
+    expect(followUp?.requestBody).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/FollowUpRunRequest' } },
+      },
+    });
+    expect(Object.keys(followUp?.responses ?? {})).toEqual(
+      expect.arrayContaining(['202', '404', '409', '422']),
+    );
+    expect(document.components?.schemas?.FollowUpRunRequest).toMatchObject({
+      properties: { text: { type: 'string', minLength: 1, maxLength: 10_000 } },
+      required: ['text'],
+      additionalProperties: false,
+    });
+    const run = document.components?.schemas?.Run_Output as {
+      properties: Record<string, unknown>;
+    };
+    expect(Object.keys(run.properties)).toEqual(
+      expect.arrayContaining(['followUp', 'followUps', 'steps']),
+    );
   });
 
   it('documents POST /api/runs/{runId}/answer: 202 with the Run, 404, 409, 422 (Issue #103)', () => {

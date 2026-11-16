@@ -35,7 +35,7 @@ describe('ClaimRunHandler', () => {
       task: `Task of ${projectId}`,
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
 
@@ -104,7 +104,7 @@ describe('ClaimRunHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: '',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: '',
     });
     const next = await queue(B);
@@ -582,7 +582,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
       integrationBranch: 'dev',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     });
 
   beforeEach(() => {

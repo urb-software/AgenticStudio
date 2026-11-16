@@ -47,11 +47,28 @@ export const runQuestionResponseSchema = z
   })
   .meta({ id: 'RunQuestion' });
 
-/** One turn of the Run's conversation (Issue #103): the Task, a question or an answer. */
+/**
+ * Why a Run cannot take a Follow-up now (Issue #141): a second list next to the domain's,
+ * pinned to it by a test.
+ */
+export const followUpRefusalSchema = z.enum([
+  'not_finished',
+  'follow_up_queued',
+  'working_copy_removed',
+  'no_session',
+  'step_total_reached',
+  'provider_unavailable',
+  'worker_unavailable',
+]);
+
+/**
+ * One turn of the Run's conversation (Issue #103): the Task, a question, an answer, or a
+ * Follow-up the operator sent to the finished Run (Issue #141).
+ */
 export const runMessageResponseSchema = z
   .object({
     role: z.enum(['operator', 'agent']),
-    kind: z.enum(['task', 'question', 'answer']),
+    kind: z.enum(['task', 'question', 'answer', 'follow_up']),
     text: z.string(),
     /** A question's offered options, when it offered any (review M2 of #127). */
     options: z.array(z.string()).optional(),
@@ -79,8 +96,14 @@ export const runResponseSchema = z
      * `hasUncommittedChanges`, present once the agent worker has reported a Run step.
      */
     runBranch: z.string().optional(),
-    /** The commits on the Run branch since the start commit, oldest first (at most 200). */
-    commits: z.array(z.object({ id: z.string(), subject: z.string() })).optional(),
+    /**
+     * The commits on the Run branch since the start commit, oldest first (at most 200). `pushed`
+     * (Issue #141): the commit is on the remote Run branch; otherwise it exists only in the
+     * Working copy.
+     */
+    commits: z
+      .array(z.object({ id: z.string(), subject: z.string(), pushed: z.boolean() }))
+      .optional(),
     /** Whether the Working copy held uncommitted changes after the latest Run step. */
     hasUncommittedChanges: z.boolean().optional(),
     /** Whether the Run was given its Project's Environment file when it was claimed (Issue #104). */
@@ -92,10 +115,30 @@ export const runResponseSchema = z
     limits: z
       .object({
         stepMinutes: z.int().min(1),
+        /** The most Run steps of the first part, and of each Follow-up (Issue #141). */
         maxSteps: z.int().min(1),
         waitingDays: z.int().min(1),
+        /** The most Run steps in total; past it the Run takes no Follow-up (Issue #141). */
+        maxTotalSteps: z.int().min(1),
       })
       .meta({ id: 'RunLimits' }),
+    /**
+     * The Run step totals (Issue #141): how many Run steps the Run has taken, and how many of
+     * them in its current part (the first part, or the latest Follow-up).
+     */
+    steps: z
+      .object({ used: z.int().min(0), usedInPart: z.int().min(0) })
+      .meta({ id: 'RunStepTotals' }),
+    /** How many Follow-ups the operator sent to the Run (Issue #141); 0 when none. */
+    followUps: z.int().min(0),
+    /**
+     * Whether the Run can take a Follow-up now, and if not, why (Issue #141). In single-Run
+     * answers only (`GET /api/runs/:runId` and the Follow-up command).
+     */
+    followUp: z
+      .object({ allowed: z.boolean(), reason: followUpRefusalSchema.optional() })
+      .meta({ id: 'RunFollowUpEligibility' })
+      .optional(),
     /**
      * When the operator asked to cancel a preparing or running Run (Issue #100): the agent
      * worker is stopping it, and the Run ends as `cancelled` once it confirms.
@@ -109,7 +152,11 @@ export const runResponseSchema = z
      * `delivery_failed`; the delivery can be retried). Absent until then.
      */
     delivery: runDeliverySchema.optional(),
-    /** The Run's draft pull request on GitHub; present exactly when `delivery` is `delivered`. */
+    /**
+     * The Run's draft pull request on GitHub: present when `delivery` is `delivered`, and kept
+     * while a Follow-up works on the Run or after it ended otherwise (Issue #141: one Run, at
+     * most one pull request).
+     */
     pullRequest: z.object({ url: z.url(), number: z.int().positive() }).optional(),
     /** Present (true) while a requested delivery retry is pending or in progress. */
     deliveryRetryRequested: z.literal(true).optional(),
@@ -123,9 +170,10 @@ export const runResponseSchema = z
     /** Present exactly while the Run waits for the operator's answer to it (Issue #103). */
     question: runQuestionResponseSchema.optional(),
     /**
-     * The conversation, in order (Issue #103): the Task, then each question of the agent and
-     * each answer of the operator. Everything the agent wrote is plain text. In single-Run
-     * answers only (`GET /api/runs/:runId` and the commands); lists leave it and `question` out.
+     * The conversation, in order (Issue #103): the Task, then each question of the agent, each
+     * answer and each Follow-up of the operator (Issue #141). Everything the agent wrote is plain
+     * text. In single-Run answers only (`GET /api/runs/:runId` and the commands); lists leave it
+     * and `question` out.
      */
     messages: z.array(runMessageResponseSchema).optional(),
   })
@@ -140,41 +188,52 @@ export class RunListResponseDto extends createZodDto(runListResponseSchema) {}
 
 export type RunResponse = z.infer<typeof runResponseSchema>;
 
-export function toRunResponse(run: {
-  id: string;
-  projectId: string;
-  provider: z.infer<typeof runProviderSchema>;
-  task: string;
-  state: z.infer<typeof runStateSchema>;
-  startCommit: string;
-  createdAt: Date;
-  startedAt: Date | null;
-  finishedAt: Date | null;
-  failure: { code: z.infer<typeof runFailureCodeSchema>; detail: string } | null;
-  workingCopy: {
-    runBranch: string;
-    commits: { id: string; subject: string }[];
-    hasUncommittedChanges: boolean;
-  } | null;
-  environmentFileSupplied: boolean;
-  limits: { stepMinutes: number; maxSteps: number; waitingDays: number };
-  cancelRequestedAt: Date | null;
-  cancellation: { by: z.infer<typeof runCancelledBySchema>; reason: string } | null;
-  delivery: z.infer<typeof runDeliverySchema> | null;
-  pullRequest: { url: string; number: number } | null;
-  deliveryRequested: boolean;
-  failingChecks: string[];
-  sessionRef: string | null;
-  messages: (
-    | {
-        kind: 'question';
-        question: { text: string; options?: string[]; recommendation?: string };
-        at: Date;
-      }
-    | { kind: 'answer'; text: string; at: Date }
-  )[];
-}): RunResponse {
+export function toRunResponse(
+  run: {
+    id: string;
+    projectId: string;
+    provider: z.infer<typeof runProviderSchema>;
+    task: string;
+    state: z.infer<typeof runStateSchema>;
+    startCommit: string;
+    createdAt: Date;
+    startedAt: Date | null;
+    finishedAt: Date | null;
+    failure: { code: z.infer<typeof runFailureCodeSchema>; detail: string } | null;
+    workingCopy: {
+      runBranch: string;
+      commits: { id: string; subject: string }[];
+      hasUncommittedChanges: boolean;
+    } | null;
+    environmentFileSupplied: boolean;
+    limits: { stepMinutes: number; maxSteps: number; waitingDays: number; maxTotalSteps: number };
+    stepCount: number;
+    stepsBeforePart: number;
+    followUpCount: number;
+    pushedCommit: string | null;
+    cancelRequestedAt: Date | null;
+    cancellation: { by: z.infer<typeof runCancelledBySchema>; reason: string } | null;
+    delivery: z.infer<typeof runDeliverySchema> | null;
+    pullRequest: { url: string; number: number } | null;
+    deliveryRequested: boolean;
+    failingChecks: string[];
+    sessionRef: string | null;
+    messages: (
+      | {
+          kind: 'question';
+          question: { text: string; options?: string[]; recommendation?: string };
+          at: Date;
+        }
+      | { kind: 'answer' | 'follow_up'; text: string; at: Date }
+    )[];
+  },
+  followUp?: { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> },
+): RunResponse {
   const last = run.messages.at(-1);
+  // Issue #141: the commits up to and including the pushed one are on the remote Run branch.
+  const pushedUpTo = run.workingCopy
+    ? run.workingCopy.commits.findIndex((commit) => commit.id === run.pushedCommit)
+    : -1;
   const open = run.state === 'waiting_for_operator' && last?.kind === 'question' ? last : null;
   return {
     id: run.id,
@@ -191,7 +250,11 @@ export function toRunResponse(run: {
     ...(run.workingCopy
       ? {
           runBranch: run.workingCopy.runBranch,
-          commits: run.workingCopy.commits.map(({ id, subject }) => ({ id, subject })),
+          commits: run.workingCopy.commits.map(({ id, subject }, index) => ({
+            id,
+            subject,
+            pushed: index <= pushedUpTo,
+          })),
           hasUncommittedChanges: run.workingCopy.hasUncommittedChanges,
         }
       : {}),
@@ -199,7 +262,20 @@ export function toRunResponse(run: {
       stepMinutes: run.limits.stepMinutes,
       maxSteps: run.limits.maxSteps,
       waitingDays: run.limits.waitingDays,
+      maxTotalSteps: run.limits.maxTotalSteps,
     },
+    steps: {
+      used: run.stepCount,
+      usedInPart: Math.max(0, run.stepCount - run.stepsBeforePart),
+    },
+    followUps: run.followUpCount,
+    ...(followUp
+      ? {
+          followUp: followUp.allowed
+            ? { allowed: true }
+            : { allowed: false, reason: followUp.reason },
+        }
+      : {}),
     ...(run.cancelRequestedAt ? { cancelRequestedAt: run.cancelRequestedAt.toISOString() } : {}),
     ...(run.cancellation
       ? { cancellation: { by: run.cancellation.by, reason: run.cancellation.reason } }
@@ -245,7 +321,7 @@ export function toRunResponse(run: {
             }
           : {
               role: 'operator' as const,
-              kind: 'answer' as const,
+              kind: message.kind,
               text: message.text,
               at: message.at.toISOString(),
             },
@@ -264,3 +340,6 @@ export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResp
   void _question;
   return item;
 }
+
+/** What the operator API needs from a Run, for the mappers above. */
+export type RunResponseSource = Parameters<typeof toRunResponse>[0];

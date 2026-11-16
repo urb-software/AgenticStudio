@@ -7,7 +7,10 @@ import { RunResponseDto, toRunResponse } from '../../contracts/http/run-response
 import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
 import { GetRunHandler } from './handler.js';
 
-/** `GET /api/runs/:runId` (Issue #96), behind the global session guard. */
+/**
+ * `GET /api/runs/:runId` (Issue #96), behind the global session guard: the Run with its
+ * conversation and whether it can take a Follow-up now (Issue #141).
+ */
 @ApiTags('runs')
 @Controller('runs')
 export class GetRunEndpoint {
@@ -19,7 +22,8 @@ export class GetRunEndpoint {
   @ApiProblemResponses({ 404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})` })
   async get(@Param('runId') runId: string) {
     try {
-      return toRunResponse(await this.handler.execute(runId));
+      const { run, followUp } = await this.handler.execute(runId);
+      return toRunResponse(run, followUp);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       throw error;

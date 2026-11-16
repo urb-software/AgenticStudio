@@ -165,6 +165,24 @@ export const STUDIO_PATHS_MAX = 50;
 export const RUN_PAYLOAD_KINDS = ['start', 'deliver', 'resume'] as const;
 export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
 
+/**
+ * Why a `resume` claim continues the agent session (Issue #141): the operator's answer to a
+ * question (`answer`), the resume after the subscription's usage limit (`usage_limit`), or a
+ * Follow-up to a finished Run (`follow_up`). The worker and the built-in agent definition word
+ * the step after it; the text travels the same way for all three (`answer`).
+ */
+export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up'] as const;
+export type ResumeReason = (typeof RESUME_REASONS)[number];
+
+/** Longest Follow-up text, in characters (Issue #141). */
+export const FOLLOW_UP_MAX_LENGTH = 10_000;
+
+/** Largest PostgreSQL INTEGER: the bound of step numbers and counters in the payload. */
+const PG_INT_MAX = 2_147_483_647;
+
+/** A commit id: SHA-1 or SHA-256, lower-case hex. */
+const commitIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+
 /** Longest session reference a runner reports (Issue #103), e.g. the CLI's session id. */
 export const SESSION_REF_MAX_LENGTH = 256;
 
@@ -214,8 +232,32 @@ export const runPayloadSchema = z
     runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH).optional(),
     /** With `resume` only (Issue #103): the agent session to continue, as the runner reported it. */
     sessionRef: sessionRefSchema.optional(),
-    /** With `resume` only: the operator's answer to the agent's question. */
-    answer: z.string().min(1).max(ANSWER_MAX_LENGTH).optional(),
+    /**
+     * With `resume` only: the operator's message the session continues with: the answer to the
+     * agent's question, "Continue where you stopped." after the usage limit, or the Follow-up
+     * text (Issue #141), as `resumeReason` says.
+     */
+    answer: z.string().min(1).max(Math.max(ANSWER_MAX_LENGTH, FOLLOW_UP_MAX_LENGTH)).optional(),
+    /** With `resume` only (Issue #141): why the session continues. */
+    resumeReason: z.enum(RESUME_REASONS).optional(),
+    /**
+     * Issue #141: the number of the Follow-up the Run is working on (1, 2, …), present while the
+     * Run's current part is a Follow-up (also when it resumes after a question inside it). The
+     * worker marks the Follow-up's start and end in the log.
+     */
+    followUpNumber: z.int().min(1).max(PG_INT_MAX).optional(),
+    /**
+     * Issue #141: how many Run steps the Run had taken when its current part began (the first
+     * part: 0; a Follow-up: the steps before it). Each part gets `limits.maxSteps` Run steps, so
+     * the worker refuses a step beyond `stepsBeforePart + limits.maxSteps`. Absent: 0.
+     */
+    stepsBeforePart: z.int().min(0).max(PG_INT_MAX).optional(),
+    /**
+     * With `resume` and `deliver` (Issue #141): the number of the draft pull request Studio
+     * recorded for the Run. A delivery updates exactly this pull request (never a second one) and
+     * fails when it is no longer open.
+     */
+    pullRequestNumber: z.int().positive().max(PG_INT_MAX).optional(),
     /**
      * With `resume` and `deliver`: the seq of the Run's next event, one past the last Studio
      * stored, so the worker's events are not dropped as duplicates (Issue #99 note on #103). A
@@ -242,15 +284,32 @@ export const runPayloadSchema = z
   })
   .refine(
     (payload) =>
-      [payload.sessionRef, payload.answer].every(
+      [payload.sessionRef, payload.answer, payload.resumeReason].every(
         (field) => (field !== undefined) === (payload.kind === 'resume'),
       ) && (payload.nextSeq !== undefined) === (payload.kind !== 'start'),
     {
       path: ['kind'],
       message:
-        'A resume claim carries the session reference and the answer, a resume or delivery claim the next seq; a start claim none of them.',
+        'A resume claim carries the session reference, the answer and the resume reason, a resume or delivery claim the next seq; a start claim none of them.',
     },
   )
+  .refine(
+    (payload) =>
+      (payload.followUpNumber === undefined || payload.kind === 'resume') &&
+      (payload.resumeReason !== 'follow_up' || payload.followUpNumber !== undefined) &&
+      (payload.answer === undefined ||
+        payload.answer.length <=
+          (payload.resumeReason === 'follow_up' ? FOLLOW_UP_MAX_LENGTH : ANSWER_MAX_LENGTH)),
+    {
+      path: ['followUpNumber'],
+      message:
+        'A Follow-up number comes with a resume claim only, and always with the resume reason follow_up.',
+    },
+  )
+  .refine((payload) => payload.pullRequestNumber === undefined || payload.kind !== 'start', {
+    path: ['pullRequestNumber'],
+    message: 'A recorded pull request comes with a resume or delivery claim only.',
+  })
   .refine(
     (payload) =>
       payload.environmentFile === undefined ||
@@ -402,7 +461,7 @@ export const workingCopyReportSchema = z
     commits: z
       .array(
         z.strictObject({
-          id: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+          id: commitIdSchema,
           subject: z.string().max(COMMIT_SUBJECT_MAX_LENGTH),
         }),
       )
@@ -442,15 +501,30 @@ export type PullRequestRef = z.infer<typeof pullRequestRefSchema>;
  * request. A failed delivery is the failure `delivery_failed`.
  */
 export const runDeliverySchema = z.discriminatedUnion('outcome', [
+  z
+    .strictObject({
+      outcome: z.literal('none'),
+      /**
+       * Only with `cancelled` (review of #124): the cancel arrived during the delivery, the Run
+       * branch was pushed, but no pull request was opened.
+       */
+      branchPushed: z.literal(true).optional(),
+      /** With `branchPushed` (Issue #141): the commit the push left the remote Run branch at. */
+      pushedCommit: commitIdSchema.optional(),
+    })
+    .refine((delivery) => delivery.pushedCommit === undefined || delivery.branchPushed === true, {
+      path: ['pushedCommit'],
+      message: 'A pushed commit comes only with a pushed branch.',
+    }),
   z.strictObject({
-    outcome: z.literal('none'),
+    outcome: z.literal('delivered'),
+    pullRequest: pullRequestRefSchema,
     /**
-     * Only with `cancelled` (review of #124): the cancel arrived during the delivery, the Run
-     * branch was pushed, but no pull request was opened.
+     * Issue #141: the commit the push left the remote Run branch at; the commits up to and
+     * including it are pushed, later ones exist only in the Working copy.
      */
-    branchPushed: z.literal(true).optional(),
+    pushedCommit: commitIdSchema.optional(),
   }),
-  z.strictObject({ outcome: z.literal('delivered'), pullRequest: pullRequestRefSchema }),
 ]);
 export type RunDelivery = z.infer<typeof runDeliverySchema>;
 
@@ -557,6 +631,11 @@ export const RUN_STATES_REQUEST_MAX = 500;
 export const runStatesRequestSchema = z.strictObject({
   workerId: workerIdSchema,
   runIds: z.array(z.uuid()).min(1).max(RUN_STATES_REQUEST_MAX),
+  /**
+   * Issue #141: Runs whose Working copies this worker's retention removed and has not reported
+   * yet. Studio records the removal, so the Run page says a Follow-up is no longer possible.
+   */
+  removedRunIds: z.array(z.uuid()).max(RUN_STATES_REQUEST_MAX).optional(),
 });
 export type RunStatesRequest = z.infer<typeof runStatesRequestSchema>;
 

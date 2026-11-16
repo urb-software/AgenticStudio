@@ -22,13 +22,13 @@ describe('GetRunStatesHandler', () => {
       task: 'x',
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14 },
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
-    handler = new GetRunStatesHandler(runs);
+    handler = new GetRunStatesHandler(runs, { now: () => T1 });
   });
 
   it('answers the state of each asked Run, and when a final one finished', async () => {
@@ -65,5 +65,30 @@ describe('GetRunStatesHandler', () => {
     expect(await handler.execute([randomUUID(), run.id])).toEqual([
       { runId: run.id, state: 'queued', finishedAt: null },
     ]);
+  });
+
+  // Issue #141: the worker reports the Working copies its retention removed.
+  it("records the removed Working copies of final Runs the reporting worker started, and no other's", async () => {
+    const finished = await add(PROJECT);
+    const active = await add(OTHER_PROJECT);
+    await runs.claimNext(WORKER, T0);
+    await runs.transitionClaimed({
+      runId: finished.id,
+      workerId: WORKER,
+      from: 'preparing',
+      to: 'failed',
+      failure: { code: 'preparation_failed', detail: 'x' },
+      cancelRequested: false,
+      now: T0,
+    });
+    await runs.claimNext(WORKER, T0);
+
+    await handler.execute([finished.id], { workerId: randomUUID(), runIds: [finished.id] });
+    expect((await runs.findById(finished.id))!.workingCopyRemovedAt).toBeNull();
+
+    await handler.execute([finished.id], { workerId: WORKER, runIds: [finished.id, active.id] });
+    expect((await runs.findById(finished.id))!.workingCopyRemovedAt).toEqual(T1);
+    // A Run the worker is carrying keeps its Working copy, whatever is reported.
+    expect((await runs.findById(active.id))!.workingCopyRemovedAt).toBeNull();
   });
 });
