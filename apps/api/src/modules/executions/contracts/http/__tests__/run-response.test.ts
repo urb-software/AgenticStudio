@@ -42,7 +42,15 @@ describe('Run response: conversation (Issue #103)', () => {
     expect(response.question).toEqual(QUESTION);
     expect(response.messages).toEqual([
       { role: 'operator', kind: 'task', text: 'Add a store', at: T0.toISOString() },
-      { role: 'agent', kind: 'question', text: 'Which database?', at: T1.toISOString() },
+      {
+        role: 'agent',
+        kind: 'question',
+        text: 'Which database?',
+        // Review M2 of #127: a past question keeps its options and recommendation.
+        options: ['PostgreSQL', 'SQLite'],
+        recommendation: 'PostgreSQL',
+        at: T1.toISOString(),
+      },
     ]);
   });
 

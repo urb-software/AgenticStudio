@@ -1,5 +1,10 @@
 import { vi } from 'vitest';
-import type { ProblemDetails, ProjectOutput, RepositoryOutput } from '../../../platform/api';
+import type {
+  EnvironmentFileInfoOutput,
+  ProblemDetails,
+  ProjectOutput,
+  RepositoryOutput,
+} from '../../../platform/api';
 import { problem } from './fake-projects-api';
 
 interface ScriptedResponse {
@@ -7,7 +12,16 @@ interface ScriptedResponse {
   body: unknown;
 }
 
-type Route = 'project' | 'repository' | 'connect' | 'fetch' | 'disconnect' | 'verify';
+type Route =
+  | 'project'
+  | 'repository'
+  | 'connect'
+  | 'fetch'
+  | 'disconnect'
+  | 'verify'
+  | 'environmentFile'
+  | 'setEnvironmentFile'
+  | 'removeEnvironmentFile';
 
 /** A synthetic public key line for SSH connects (not key material). */
 export const FAKE_PUBLIC_KEY =
@@ -16,7 +30,7 @@ export const FAKE_PUBLIC_KEY =
 export const FAKE_FINGERPRINT = 'SHA256:c3ludGhldGljLWZpbmdlcnByaW50LWZvci10ZXN0cw';
 
 const RUNS_ROUTE = /^\/api\/projects\/[^/]+\/runs$/;
-const ROUTE = /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?)?$/;
+const ROUTE = /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?|\/environment-file)?$/;
 
 /**
  * A fake of the project detail API behind `fetch` (`GET /api/projects/:id`,
@@ -31,7 +45,14 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
    * `cleanupPending`: a disconnect cannot remove everything yet (202, `disconnecting`).
    * `hostTrusted`: verify clones at once; otherwise it asks to confirm `FAKE_FINGERPRINT`.
    */
-  const state = { repository: initial, cleanupPending: false, hostTrusted: false };
+  const state = {
+    repository: initial,
+    cleanupPending: false,
+    hostTrusted: false,
+    // Issue #104: what the server keeps of the project's Environment file (never sent back).
+    environmentFile: null as EnvironmentFileInfoOutput | null,
+    environmentFileContent: null as string | null,
+  };
   const scripted: Record<Route, ScriptedResponse[]> = {
     project: [],
     repository: [],
@@ -39,6 +60,9 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     fetch: [],
     disconnect: [],
     verify: [],
+    environmentFile: [],
+    setEnvironmentFile: [],
+    removeEnvironmentFile: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
   const held: Partial<Record<Route, Promise<void>>> = {};
@@ -64,6 +88,11 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     if (!match) return undefined;
     const projectId = match[1]!;
     if (!match[2]) return { route: 'project', projectId };
+    if (match[2] === '/environment-file') {
+      if (request.method === 'PUT') return { route: 'setEnvironmentFile', projectId };
+      if (request.method === 'DELETE') return { route: 'removeEnvironmentFile', projectId };
+      return { route: 'environmentFile', projectId };
+    }
     if (match[3] === '/fetch') return { route: 'fetch', projectId };
     if (match[3] === '/verify') return { route: 'verify', projectId };
     if (request.method === 'DELETE') return { route: 'disconnect', projectId };
@@ -77,7 +106,9 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     if (!target) return json(404, problem(404, 'Not Found'));
     const { route, projectId } = target;
     const body: unknown =
-      route === 'connect' || route === 'verify' ? await request.json() : undefined;
+      route === 'connect' || route === 'verify' || route === 'setEnvironmentFile'
+        ? await request.json()
+        : undefined;
     calls.push({ route, body });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
@@ -162,6 +193,22 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
         state.repository = { ...rest, state: 'fetching' };
         return json(202, state.repository);
       }
+      case 'environmentFile':
+        return json(200, state.environmentFile);
+      case 'setEnvironmentFile': {
+        const { path, content } = body as { path: string; content: string };
+        state.environmentFileContent = content;
+        state.environmentFile = {
+          path,
+          sizeBytes: new TextEncoder().encode(content).length,
+          updatedAt: '2026-11-15T12:00:00.000Z',
+        };
+        return json(200, state.environmentFile);
+      }
+      case 'removeEnvironmentFile':
+        state.environmentFile = null;
+        state.environmentFileContent = null;
+        return new Response(null, { status: 204 });
       case 'disconnect': {
         const current = state.repository;
         if (!current) return json(404, problem(404, 'No repository'));

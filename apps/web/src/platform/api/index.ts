@@ -6,8 +6,10 @@
 // browser sends by itself: no code here reads it, and no token is ever stored.
 import * as sdk from './generated';
 import type {
+  AnswerRunRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
+  EnvironmentFileInfoOutput,
   ProblemDetails,
   ProjectDetailOutput,
   ProjectListOutput,
@@ -20,6 +22,7 @@ import type {
   RunOutput,
   RunStepListOutput,
   SessionResponseOutput,
+  SetEnvironmentFileRequest,
   StartRunRequest,
   VerifyRepositoryRequest,
 } from './generated';
@@ -32,8 +35,10 @@ import {
 } from './generated/zod.gen';
 
 export type {
+  AnswerRunRequest,
   ConnectRepositoryRequest,
   CreateProjectRequest,
+  EnvironmentFileInfoOutput,
   HealthResponseOutput,
   ProblemDetails,
   ProjectDetailOutput,
@@ -48,10 +53,13 @@ export type {
   RunEventOutput,
   RunEventPageOutput,
   RunListOutput,
+  RunMessageOutput,
   RunOutput,
+  RunQuestionOutput,
   RunStepListOutput,
   RunStepOutput,
   SessionResponseOutput,
+  SetEnvironmentFileRequest,
   StartRunRequest,
   VerifyRepositoryRequest,
 } from './generated';
@@ -186,6 +194,19 @@ export const api = {
     if (!isRepository(data)) throw new Error('The disconnect answer has no Repository.');
     return data;
   },
+  /** The project's Environment file (path, size, last change; never the content), or `null`. */
+  getEnvironmentFile: (projectId: string): Promise<EnvironmentFileInfoOutput | null> =>
+    unwrap(sdk.getEnvironmentFile({ path: { id: projectId } })),
+  /** Sets or replaces the project's Environment file; the answer never has the content. */
+  setEnvironmentFile: (
+    projectId: string,
+    body: SetEnvironmentFileRequest,
+  ): Promise<EnvironmentFileInfoOutput> =>
+    unwrap(sdk.setEnvironmentFile({ path: { id: projectId }, body })),
+  /** Removes the project's Environment file (204, also when none was set). */
+  removeEnvironmentFile: async (projectId: string): Promise<void> => {
+    await unwrap(sdk.removeEnvironmentFile({ path: { id: projectId } }));
+  },
   /** Starts a Run on the project (201: the Run, `queued`). */
   startRun: (projectId: string, body: StartRunRequest): Promise<RunOutput> =>
     unwrap(sdk.startRun({ path: { id: projectId }, body })),
@@ -210,6 +231,12 @@ export const api = {
    * preparing or running one carries `cancelRequestedAt` until the agent worker confirms.
    */
   cancelRun: (runId: string): Promise<RunOutput> => unwrap(sdk.cancelRun({ path: { runId } })),
+  /**
+   * Answers the agent's open question (Issue #103; 202: the Run, `queued` to resume). A Run that
+   * no longer waits answers 409; an empty or too long answer 422 with field errors.
+   */
+  answerRun: (runId: string, body: AnswerRunRequest): Promise<RunOutput> =>
+    unwrap(sdk.answerRun({ path: { runId }, body })),
   /** One page of a Run's stored log: the events after `after`; `next` while more follow. */
   listRunEvents: (runId: string, after: number, limit: number): Promise<RunEventPageOutput> =>
     unwrap(sdk.listRunEvents({ path: { runId }, query: { after, limit } })),

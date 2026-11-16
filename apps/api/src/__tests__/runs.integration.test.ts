@@ -1498,6 +1498,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
             role: 'agent',
             kind: 'question',
             text: QUESTION.text,
+            options: QUESTION.options,
+            recommendation: QUESTION.recommendation,
             at: expect.stringMatching(ISO_8601),
           },
         ]);

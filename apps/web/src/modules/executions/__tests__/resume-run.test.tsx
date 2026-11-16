@@ -38,6 +38,7 @@ describe('Run page: resume after the usage limit (Issue #105)', () => {
     const { container } = renderRun(run.id);
     await heading();
 
+    expect(screen.getByRole('heading', { name: 'Resume after the usage limit' })).toBeTruthy();
     const alert = screen.getByRole('alert');
     expect(within(alert).getByText("The provider's usage limit was reached.")).toBeTruthy();
     expect(within(alert).getByText(USAGE_LIMIT.detail)).toBeTruthy();
@@ -45,8 +46,10 @@ describe('Run page: resume after the usage limit (Issue #105)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Resume run' }));
 
-    expect(await screen.findByText('Waiting to start.')).toBeTruthy();
+    expect(await screen.findByText('Answer sent.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Resume run' })).toBeNull();
+    // The resume is the operator's message in the conversation (Issue #103's thread).
+    expect(await screen.findByText('Continue where you stopped.')).toBeTruthy();
     expect(api.calls('resume')).toHaveLength(1);
   });
 

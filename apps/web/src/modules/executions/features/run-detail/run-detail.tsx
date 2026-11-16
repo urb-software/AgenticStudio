@@ -6,6 +6,7 @@ import {
   RotateCcwIcon,
   ClockIcon,
   FolderIcon,
+  LockIcon,
   RefreshCwIcon,
   SearchXIcon,
   TriangleAlertIcon,
@@ -35,6 +36,7 @@ import { StaleBanner } from '../../components/stale-banner';
 import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunLog } from '../run-log/run-log';
+import { AnswerQuestion, RunConversation } from './run-conversation';
 import { PullRequestLink, RunDelivery } from './run-delivery';
 import { ResumeRun } from './run-resume';
 
@@ -74,8 +76,40 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
   );
 }
 
+/**
+ * Whether the Run was given its project's Environment file (Issue #104): it is decided when an
+ * agent worker claims the Run, so a Run that has not started says so.
+ */
+function EnvironmentFileFact({ run }: { run: RunOutput }) {
+  if (run.environmentFileSupplied) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <LockIcon aria-hidden="true" className="size-3.5 shrink-0 text-text-muted" />
+        Environment file supplied
+      </span>
+    );
+  }
+  // A Run that ended without ever starting (cancelled while queued, failed at claim) got none.
+  if (!run.startedAt && !FINAL_STATES.includes(run.state)) {
+    return <span className="text-text-dim">Decided when the run starts</span>;
+  }
+  return <span className="text-text-dim">None</span>;
+}
+
 /** Why a queued Run waits; it needs the project's Runs, read (and polled) only while queued. */
 function QueuedReason({ run }: { run: RunOutput }) {
+  // Issue #103: an answered Run waits for the agent worker that holds its Working copy.
+  if (run.messages?.at(-1)?.kind === 'answer') {
+    return (
+      <Banner tone="info" icon={ClockIcon} title="Answer sent.">
+        The agent continues the run with your answer when its agent worker picks it up.
+      </Banner>
+    );
+  }
+  return <ProjectQueuedReason run={run} />;
+}
+
+function ProjectQueuedReason({ run }: { run: RunOutput }) {
   const { data } = useProjectRuns(run.projectId);
   // Until the project's Runs are known (or if they cannot be read), it still says it waits.
   return (
@@ -218,7 +252,9 @@ export function RunTitle({ runId }: { runId: string }) {
  * finished one has "Run again". How the result reached GitHub (Issue #102) follows: the draft
  * pull request, "No changes", failing checks, "Retry delivery" or where the Run branch stays. A
  * Run that is not finished can be cancelled; the limits in force are shown, and a cancelled or
- * timed-out Run says why it stopped (Issue #100). Below, the Run's log (Issue #99).
+ * timed-out Run says why it stopped (Issue #100). A Run waiting for the operator shows the
+ * agent's question and the answer form; once the agent asked, the Task leads the conversation
+ * of questions and answers (Issue #103). Below, the Run's log (Issue #99).
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
@@ -290,6 +326,9 @@ export function RunDetail({ runId }: { runId: string }) {
       {isError ? (
         <StaleBanner what="the run" retrying={isRefetching} onRetry={() => void refetch()} />
       ) : null}
+      {run.question && run.state === 'waiting_for_operator' ? (
+        <AnswerQuestion run={run} question={run.question} />
+      ) : null}
       {run.state === 'queued' ? <QueuedReason run={run} /> : null}
       {run.failure ? <Failure failure={run.failure} /> : null}
       {run.resumable ? <ResumeRun run={run} /> : null}
@@ -297,14 +336,19 @@ export function RunDetail({ runId }: { runId: string }) {
       <RunDelivery run={run} />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-        <Card aria-labelledby="run-task-title">
-          <CardHeader>
-            <CardTitle id="run-task-title">Task</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="m-0 break-words whitespace-pre-wrap">{run.task}</p>
-          </CardContent>
-        </Card>
+        {/* Issue #103: once the agent asked, the Task leads the conversation. */}
+        {run.messages && run.messages.length > 1 ? (
+          <RunConversation messages={run.messages} />
+        ) : (
+          <Card aria-labelledby="run-task-title">
+            <CardHeader>
+              <CardTitle id="run-task-title">Task</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="m-0 break-words whitespace-pre-wrap">{run.task}</p>
+            </CardContent>
+          </Card>
+        )}
         <Card aria-labelledby="run-facts-title">
           <CardHeader>
             <CardTitle id="run-facts-title">Details</CardTitle>
@@ -325,6 +369,9 @@ export function RunDetail({ runId }: { runId: string }) {
                   <PullRequestLink pullRequest={run.pullRequest} />
                 </Fact>
               ) : null}
+              <Fact term="Environment file">
+                <EnvironmentFileFact run={run} />
+              </Fact>
               <Fact term="Created">
                 <When iso={run.createdAt} />
               </Fact>

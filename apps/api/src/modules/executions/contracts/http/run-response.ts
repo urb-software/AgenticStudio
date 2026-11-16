@@ -53,6 +53,10 @@ export const runMessageResponseSchema = z
     role: z.enum(['operator', 'agent']),
     kind: z.enum(['task', 'question', 'answer']),
     text: z.string(),
+    /** A question's offered options, when it offered any (review M2 of #127). */
+    options: z.array(z.string()).optional(),
+    /** The option a question recommended, when it recommended one. */
+    recommendation: z.string().optional(),
     at: z.iso.datetime(),
   })
   .meta({ id: 'RunMessage' });
@@ -233,6 +237,10 @@ export function toRunResponse(run: {
               role: 'agent' as const,
               kind: 'question' as const,
               text: message.question.text,
+              ...(message.question.options ? { options: [...message.question.options] } : {}),
+              ...(message.question.recommendation === undefined
+                ? {}
+                : { recommendation: message.question.recommendation }),
               at: message.at.toISOString(),
             }
           : {

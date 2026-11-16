@@ -21,7 +21,8 @@ type Route =
   | 'events'
   | 'steps'
   | 'stream'
-  | 'cancel';
+  | 'cancel'
+  | 'answer';
 
 interface ScriptedResponse {
   status: number;
@@ -38,6 +39,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/resume$/, () => 'resume'],
   [/^\/api\/providers()$/, () => 'providers'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
+  [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
   [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
   [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
@@ -118,6 +120,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     resume: [],
     providers: [],
     cancel: [],
+    answer: [],
     events: [],
     steps: [],
     stream: [],
@@ -182,7 +185,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const [match, routeOf] = matched;
     const route = routeOf(request.method);
     const id = match![1];
-    const body: unknown = route === 'start' ? await request.json() : undefined;
+    const body: unknown =
+      route === 'start' || route === 'answer' ? await request.json() : undefined;
     calls.push({ route, body, query: searchParams });
     const response = scripted[route].shift();
     if (response) return json(response.status, response.body);
@@ -232,6 +236,31 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
             : { ...run, cancelRequestedAt: run.cancelRequestedAt ?? new Date().toISOString() };
         runs[index] = cancelled;
         return json(202, cancelled);
+      }
+      case 'answer': {
+        // Issue #103: the API's rules, in short.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        const run = runs[index];
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (run.state !== 'waiting_for_operator') {
+          return json(
+            409,
+            problem(409, 'Run not waiting for an answer', 'The run is not waiting for an answer.'),
+          );
+        }
+        const { text } = body as { text: string };
+        const { question: _question, ...rest } = run;
+        void _question;
+        const answered: RunOutput = {
+          ...rest,
+          state: 'queued',
+          messages: [
+            ...(run.messages ?? []),
+            { role: 'operator', kind: 'answer', text, at: new Date().toISOString() },
+          ],
+        };
+        runs[index] = answered;
+        return json(202, answered);
       }
       case 'retryDelivery': {
         const index = runs.findIndex((candidate) => candidate.id === id);

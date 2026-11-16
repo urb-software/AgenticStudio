@@ -475,8 +475,10 @@ test('connect says the platform is unsupported on an API host that is not Linux'
 // lines appear live through the web /api proxy (so it does not buffer the stream) and are all
 // there after a reload, and a printed token-shaped string arrives redacted. Linux only;
 // `pnpm e2e:smoke` fails on Linux if this test did not run and pass. Story #100: a long Run
-// (`[fake:long]`) is cancelled while it runs, and the waiting Run is cancelled at the end, so
-// the test holds no server slot afterwards and its place in the file no longer matters.
+// (`[fake:long]`) is cancelled while it runs. Story #103: at the end the operator answers the
+// waiting Run's question on its page (an option of the fake agent), the same worker resumes the
+// session and the Run succeeds, so the test holds no server slot afterwards (the clean-up below
+// cancels whatever a failed run of it left unfinished, an answered Run queued to resume too).
 const RUN_TEST = 'operator starts runs and follows them to their result';
 
 /**
@@ -530,6 +532,34 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await connect.getByRole('button', { name: 'Connect repository' }).click();
   await expect(card.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
 
+  // Issue #104: an Environment file for the project's Runs, with a throwaway test value. The
+  // dialog warns before saving; afterwards the card shows path and size, never the content.
+  const envValue = `test-only-${randomBytes(8).toString('hex')}`;
+  // Every API answer the browser gets from here on, through the same-origin proxy (review of
+  // #126): the value must be in none of them. The live log stream is a server-sent event
+  // stream that stays open; its events are the stored log, which the paged answers carry too.
+  const apiBodies: Promise<string>[] = [];
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (!url.pathname.startsWith('/api/')) return;
+    if ((response.headers()['content-type'] ?? '').startsWith('text/event-stream')) return;
+    apiBodies.push(response.text().catch(() => ''));
+  });
+  const envCard = main.getByRole('region', { name: 'Environment file' });
+  await envCard.getByRole('button', { name: 'Set environment file' }).click();
+  const envDialog = page.getByRole('dialog', { name: 'Set environment file' });
+  await expect(envDialog.getByText('Use test values only.')).toBeVisible();
+  await expect(envDialog.getByLabel('Path in the repository')).toHaveValue('.env');
+  await envDialog.getByLabel('Content').fill(`SMOKE_PASSWORD=${envValue}\n`);
+  await envDialog.getByRole('button', { name: 'Save environment file' }).click();
+  await expect(envDialog).toBeHidden();
+  await expect(envCard.getByText('An environment file is set.')).toBeVisible();
+  await expect(envCard.getByText('.env', { exact: true })).toBeVisible();
+  await expect(page.getByText(envValue)).toHaveCount(0);
+  // At this viewport (390 or 1440 px), in both themes: no sideways scroll, no axe violations.
+  await expectInBothThemes(page, envCard.getByText('An environment file is set.'));
+  expect(await page.content()).not.toContain(envValue);
+
   // Start a Run: the dialog opens with Claude Code chosen; submitting opens the Run page.
   await runs.getByRole('button', { name: 'New run' }).click();
   const dialog = page.getByRole('dialog', { name: 'New run' });
@@ -546,6 +576,8 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   // The worker claims it and the fake runner succeeds; the page polls until it is over.
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
   await expect(main.getByText('Claude Code', { exact: true })).toBeVisible();
+  // Issue #104: the Run was given the project's Environment file (not its content).
+  await expect(main.getByText('Environment file supplied')).toBeVisible();
   // Issue #102: the fake agent changed nothing, so nothing was pushed.
   await expect(main.getByText('No changes.')).toBeVisible();
   const breadcrumb = page
@@ -592,6 +624,21 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(runLog).toContainText('••••••[redacted]', { timeout: 30_000 });
   await expect(runLog).not.toContainText('ghp_');
   await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+
+  // Issue #104: an agent that prints the Environment file shows only redacted values in the
+  // log; the value itself is nowhere on the page.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Print the settings [fake:print-env]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Print the settings [fake:print-env]');
+  await expect(runLog).toContainText('$ cat .env', { timeout: 30_000 });
+  await expect(runLog).toContainText('SMOKE_PASSWORD=••••••[redacted]');
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(main.getByText('Environment file supplied')).toBeVisible();
+  expect(await page.content()).not.toContain(envValue);
+  const bodies = await Promise.all(apiBodies);
+  expect(bodies.length).toBeGreaterThan(0);
+  expect(bodies.filter((body) => body.includes(envValue))).toEqual([]);
 
   // Run again, prefilled; this time the fake agent commits a change and reports a failing
   // check: the Run is delivered as a draft pull request, and the page says so (Issue #102).
@@ -670,7 +717,8 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(page).toHaveURL(/\/executions$/);
   const list = main.getByRole('list', { name: 'Runs' });
   const rows = list.getByRole('listitem').filter({ hasText: projectName });
-  await expect(rows).toHaveCount(7);
+  // Eight Runs, including the cancelled one (#100) and the Environment file print (#104).
+  await expect(rows).toHaveCount(8);
   await expect(rows.nth(0)).toContainText('Waiting for you');
   await expect(rows.nth(1)).toContainText('Cancelled');
   await expect(rows.nth(2)).toContainText('Failed');
@@ -680,16 +728,29 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(rows.nth(4)).toContainText('Succeeded');
   await expect(rows.nth(5)).toContainText('Succeeded');
   await expect(rows.nth(6)).toContainText('Succeeded');
+  await expect(rows.nth(7)).toContainText('Succeeded');
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
 
-  // Story #100: the waiting Run is cancelled at once (no worker holds it), freeing its slot.
+  // Story #103: the operator answers the agent's question with one of its options; the same
+  // agent worker resumes the session and the Run succeeds. The conversation and the log show
+  // the question and the answer.
   await rows.nth(0).getByRole('link').first().click();
   await expect(heading).toHaveText('Ask before changing anything [fake:question]');
-  await main.getByRole('button', { name: 'Cancel run' }).click();
-  await page
-    .getByRole('alertdialog', { name: 'Cancel run' })
-    .getByRole('button', { name: 'Cancel run' })
-    .click();
-  await expect(pill).toHaveText('Cancelled', { timeout: 15_000 });
+  const decision = main.getByRole('region', { name: 'The agent needs your decision' });
+  await expect(decision).toContainText('Which option should the fake agent take?');
+  await expect(decision.getByRole('button', { name: /Option A/ })).toContainText('Recommended');
+  await decision.getByRole('button', { name: 'Option B' }).click();
+  await expect(decision.getByLabel('Your answer')).toHaveValue('Option B');
+  await expectNoHorizontalScroll(page);
+  await decision.getByRole('button', { name: 'Send answer' }).click();
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(decision).toHaveCount(0);
+  const conversation = main.getByRole('list', { name: 'Conversation' });
+  await expect(conversation).toContainText('Which option should the fake agent take?');
+  await expect(conversation).toContainText('You · Answer');
+  await expect(runLog).toContainText('Answer: Option B', { timeout: 15_000 });
+  await expect(runLog).toContainText('answer received: Option B');
+  await expect(runLog).toContainText('Run step 2 finished: done');
+  await expectInBothThemes(page, pill);
 });

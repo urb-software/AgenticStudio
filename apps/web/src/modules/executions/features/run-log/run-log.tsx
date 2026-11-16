@@ -6,13 +6,19 @@ import { Banner } from '@/shared/components/banner';
 import { LogViewer } from '@/shared/components/log-viewer';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
-import type { RunEventOutput, RunOutput, RunStepOutput } from '../../../../platform/api';
+import type {
+  RunEventOutput,
+  RunMessageOutput,
+  RunOutput,
+  RunStepOutput,
+} from '../../../../platform/api';
 import { useRefreshRunSteps, useRunSteps } from '../../api/runs-queries';
 import { FINAL_STATES } from '../../components/run-presentation';
 import { toLogRows } from './log-rows';
 import { type RunLogStatus, useRunLog } from './use-run-log';
 
 const NO_STEPS: ReadonlyMap<number, RunStepOutput> = new Map();
+const NO_MESSAGES: readonly RunMessageOutput[] = [];
 
 /** What a screen reader hears when the live log starts and ends (the log is not a live region). */
 const ANNOUNCEMENT: Record<RunLogStatus, string> = {
@@ -57,10 +63,10 @@ export function RunLog({ run }: { run: RunOutput }) {
   }, [run.state]); // eslint-disable-line react-hooks/exhaustive-deps -- on state changes only
   const { events, version } = log;
   const rows = useMemo(
-    () => toLogRows(events, steps ?? NO_STEPS),
+    () => toLogRows(events, steps ?? NO_STEPS, run.messages ?? NO_MESSAGES),
     // `events` grows in place; `version` says it did.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [events, version, steps],
+    [events, version, steps, run.messages],
   );
 
   return (
