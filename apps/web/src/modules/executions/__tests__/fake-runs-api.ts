@@ -3,6 +3,8 @@ import type {
   ProblemDetails,
   ProjectOutput,
   ProviderAvailabilityOutput,
+  RunDiffFileOutput,
+  RunDiffOutput,
   RunEventOutput,
   RunOutput,
   RunStepOutput,
@@ -23,7 +25,9 @@ type Route =
   | 'steps'
   | 'stream'
   | 'cancel'
-  | 'answer';
+  | 'answer'
+  | 'diff'
+  | 'diffFile';
 
 interface ScriptedResponse {
   status: number;
@@ -45,7 +49,14 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/events$/, () => 'events'],
   [/^\/api\/runs\/([^/]+)\/steps$/, () => 'steps'],
   [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
+  [/^\/api\/runs\/([^/]+)\/diff$/, () => 'diff'],
+  [/^\/api\/runs\/([^/]+)\/diff\/file$/, () => 'diffFile'],
 ];
+
+/** A Run's stored diff of one scope as the fake holds it: the file list with each file's patch. */
+export type FakeDiff = Omit<RunDiffOutput, 'scope' | 'files'> & {
+  files: (RunDiffOutput['files'][number] & { patch?: string })[];
+};
 
 /** One open live log connection of the fake: the test pushes events, ends or drops it. */
 export interface FakeStream {
@@ -127,12 +138,16 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     events: [],
     steps: [],
     stream: [],
+    diff: [],
+    diffFile: [],
   };
   const calls: { route: Route; body?: unknown; query?: URLSearchParams }[] = [];
   /** Each Run's stored log and step results, as the API would hold them. */
   const logs = new Map<string, RunEventOutput[]>();
   const stepResults = new Map<string, RunStepOutput[]>();
   const streams: FakeStream[] = [];
+  /** Each Run's stored diffs by scope (Issue #144). */
+  const diffs = new Map<string, Partial<Record<RunDiffOutput['scope'], FakeDiff>>>();
 
   function openStream(runId: string, after: number, signal: AbortSignal): Response {
     const encoder = new TextEncoder();
@@ -304,6 +319,30 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
       }
       case 'steps':
         return json(200, { steps: stepResults.get(id!) ?? [] });
+      case 'diff': {
+        const scope = searchParams.get('scope') as RunDiffOutput['scope'];
+        const diff = diffs.get(id!)?.[scope];
+        if (!diff) return json(404, problem(404, 'No diff yet'));
+        return json(200, {
+          ...diff,
+          scope,
+          files: diff.files.map(({ patch, ...file }) => {
+            void patch;
+            return file;
+          }),
+        });
+      }
+      case 'diffFile': {
+        const scope = searchParams.get('scope') as RunDiffOutput['scope'];
+        const file = diffs
+          .get(id!)
+          ?.[scope]?.files.find((candidate) => candidate.path === searchParams.get('path'));
+        if (!file) return json(404, problem(404, 'File not in the diff'));
+        const { additions, deletions, ...shown } = file;
+        void additions;
+        void deletions;
+        return json(200, shown satisfies RunDiffFileOutput);
+      }
       case 'stream':
         return openStream(id!, Number(searchParams.get('after') ?? 0), request.signal);
       case 'start': {
@@ -342,6 +381,10 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     /** Sets a Run's step results. */
     setSteps(runId: string, steps: RunStepOutput[]) {
       stepResults.set(runId, steps);
+    },
+    /** Sets a Run's stored diff of a scope (Issue #144). */
+    setDiff(runId: string, scope: RunDiffOutput['scope'], diff: FakeDiff) {
+      diffs.set(runId, { ...diffs.get(runId), [scope]: diff });
     },
     /** The live log connections opened so far, in order. */
     streams: () => [...streams],

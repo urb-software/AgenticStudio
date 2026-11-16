@@ -1557,6 +1557,162 @@
         ]
       }
     },
+    "/api/runs/{runId}/diff": {
+      "get": {
+        "operationId": "getRunDiff",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "run",
+                "last"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDiff_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found) or no diff yet (urn:agentic-studio:problem:run-diff-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/diff/file": {
+      "get": {
+        "operationId": "getRunDiffFile",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "run",
+                "last"
+              ]
+            }
+          },
+          {
+            "name": "path",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDiffFile_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid scope or path",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found) or file not in the diff (urn:agentic-studio:problem:run-diff-file-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/providers": {
       "get": {
         "operationId": "listProviders",
@@ -2417,6 +2573,123 @@
         },
         "required": [
           "steps"
+        ],
+        "additionalProperties": false
+      },
+      "RunDiffFileSummary_Output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "previousPath": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "renamed"
+            ]
+          },
+          "tooLarge": {
+            "type": "boolean",
+            "const": true
+          },
+          "binary": {
+            "type": "boolean",
+            "const": true
+          },
+          "additions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "deletions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "path",
+          "status",
+          "additions",
+          "deletions"
+        ],
+        "additionalProperties": false
+      },
+      "RunDiff_Output": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "run",
+              "last"
+            ]
+          },
+          "baseCommit": {
+            "type": "string"
+          },
+          "includesUnpushed": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunDiffFileSummary_Output"
+            }
+          },
+          "unavailableReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "truncated",
+          "files"
+        ],
+        "additionalProperties": false
+      },
+      "RunDiffFile_Output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "previousPath": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "renamed"
+            ]
+          },
+          "patch": {
+            "type": "string"
+          },
+          "tooLarge": {
+            "type": "boolean",
+            "const": true
+          },
+          "binary": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "path",
+          "status"
         ],
         "additionalProperties": false
       },

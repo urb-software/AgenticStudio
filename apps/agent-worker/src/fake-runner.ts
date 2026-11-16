@@ -28,6 +28,7 @@ export const FAKE_SCENARIOS = [
   'checks-failed',
   'secret',
   'print-env',
+  'two-files',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
@@ -70,6 +71,9 @@ function asking(runId: string, text: string): RunStepResult {
 /** The file the `commit` and `dirty` scenarios write in the Working copy. */
 export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
 
+/** The second file of the `two-files` scenario, left uncommitted (Issue #144). */
+export const FAKE_NOTES_FILE = 'FAKE_NOTES.md';
+
 /**
  * A token-shaped string for the `secret` scenario: GitHub's personal token shape, made of a
  * fixed pattern so it is obviously not a real token. Studio must redact it before storing.
@@ -83,6 +87,8 @@ const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
  * - `commit` (Issue #98): like `success`, after committing one new file on the Run branch.
  * - `dirty` (Issue #98): like `success`, leaving one new file uncommitted.
  * - `checks-failed` (Issue #102): like `commit`, but the agent reports a failing check.
+ * - `two-files` (Issue #144): like `commit`, and a second new file left uncommitted: a Run
+ *   that changes two files, for the Changes tab.
  * - `fail`: the agent fails ({@link AgentFailedError}).
  * - `question` (Issue #103): a `needs_input` result with a question, two options and a
  *   recommendation, in the session {@link fakeSessionRef}; resumed, it succeeds.
@@ -172,6 +178,11 @@ export class FakeRunner implements Runner {
         await this.change(workspace, signal, false);
         yield { type: 'output', text: `left ${FAKE_CHANGE_FILE} uncommitted` };
         return done();
+      case 'two-files':
+        await this.change(workspace, signal, true);
+        await this.write(workspace, FAKE_NOTES_FILE, 'Notes left by the fake runner.\n');
+        yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}; left ${FAKE_NOTES_FILE}` };
+        return done();
       case 'checks-failed':
         await this.change(workspace, signal, true);
         yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}; a check failed` };
@@ -191,16 +202,22 @@ export class FakeRunner implements Runner {
 
   /** Writes the fake change into the Working copy and, if asked, commits it on the Run branch. */
   private async change(workspace: RunWorkspace, signal: AbortSignal, commit: boolean) {
-    const file = join(workspace.repoDir, FAKE_CHANGE_FILE);
-    // Repository content is untrusted: whatever is at that path (e.g. a symlink to a file
-    // outside the Working copy) is removed, never written through, and a new file is created
-    // exclusively (review of #117, S2).
-    await rm(file, { force: true });
-    await writeFile(file, 'Made by the fake runner.\n', { flag: 'wx', mode: 0o644 });
+    await this.write(workspace, FAKE_CHANGE_FILE, 'Made by the fake runner.\n');
     if (!commit) return;
     const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
     await this.git.run(['add', '--', FAKE_CHANGE_FILE], options);
     await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake change'], options);
+  }
+
+  /**
+   * Writes a new file at the top of the Working copy. Repository content is untrusted: whatever
+   * is at that path (e.g. a symlink to a file outside the Working copy) is removed, never
+   * written through, and the file is created exclusively (review of #117, S2).
+   */
+  private async write(workspace: RunWorkspace, name: string, content: string) {
+    const file = join(workspace.repoDir, name);
+    await rm(file, { force: true });
+    await writeFile(file, content, { flag: 'wx', mode: 0o644 });
   }
 
   async *resume({ run, signal, answer, sessionRef }: ResumeRunStepInput): RunStep {

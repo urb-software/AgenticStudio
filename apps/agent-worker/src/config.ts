@@ -1,6 +1,9 @@
 import {
   type Provider,
   type ProviderSwitches,
+  RUN_DIFF_FILE_PATCH_MAX_BYTES,
+  RUN_DIFF_FILES_MAX,
+  RUN_DIFF_PATCH_MAX_BYTES,
   WORKER_RUNNER_MODES,
   type WorkerRunnerMode,
 } from '@agentic-studio/contracts';
@@ -110,6 +113,26 @@ const environmentSchema = z.object({
       message: 'must be one token without spaces or control characters',
     })
     .optional(),
+  // Issue #144: limits of a Run's diffs, in KiB of patch (as JSON) per file and per diff, and
+  // the most files a diff lists. Never above the worker protocol's own limits.
+  STUDIO_WORKER_DIFF_FILE_MAX_KIB: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(RUN_DIFF_FILE_PATCH_MAX_BYTES / 1024)
+    .default(256),
+  STUDIO_WORKER_DIFF_MAX_KIB: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(RUN_DIFF_PATCH_MAX_BYTES / 1024)
+    .default(2048),
+  STUDIO_WORKER_DIFF_FILES_MAX: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(RUN_DIFF_FILES_MAX)
+    .default(1000),
   // Where the worker opens pull requests; tests point it at a stub.
   STUDIO_AGENT_GITHUB_API_URL: z
     .url({ protocol: /^https?$/, error: 'must be an http(s) URL' })
@@ -165,6 +188,18 @@ export interface WorkerConfig {
   codexSandbox: CodexSandboxMode;
   /** The Agent account on GitHub (Issue #102): its token (if configured) and the API base URL. */
   agentGitHub: AgentGitHubConfig;
+  /** Limits of a Run's diffs (Issue #144). */
+  diffLimits: RunDiffLimits;
+}
+
+/** Limits of a Run's diffs (Issue #144), in bytes of patch as JSON and in files. */
+export interface RunDiffLimits {
+  /** A file whose patch is larger is listed "too large to show". */
+  filePatchBytes: number;
+  /** Once the patches of a diff reach this, the remaining files are listed without content. */
+  patchBytes: number;
+  /** Most files a diff lists. */
+  files: number;
 }
 
 /** How the worker reaches GitHub as the Agent account (Issue #102). */
@@ -250,6 +285,11 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     agentGitHub: {
       ...(githubToken ? { token: githubToken } : {}),
       apiUrl: githubApiUrl,
+    },
+    diffLimits: {
+      filePatchBytes: result.data.STUDIO_WORKER_DIFF_FILE_MAX_KIB * 1024,
+      patchBytes: result.data.STUDIO_WORKER_DIFF_MAX_KIB * 1024,
+      files: result.data.STUDIO_WORKER_DIFF_FILES_MAX,
     },
   };
 }

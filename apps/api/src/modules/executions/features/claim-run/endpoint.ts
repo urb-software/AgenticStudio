@@ -47,6 +47,8 @@ export class ClaimRunEndpoint {
       // The worker enforces these (Issue #100); the waiting period is Studio's own.
       limits: { stepMinutes: run.limits.stepMinutes, maxSteps: run.limits.maxSteps },
       completedSteps: run.completedSteps,
+      // Issue #144: where the Run's diffs stand, back to the worker that resumes or delivers it.
+      ...(run.diffState ? { diffState: run.diffState } : {}),
     });
   }
 }

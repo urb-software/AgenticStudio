@@ -22,6 +22,7 @@ import { FakeRunner } from '../fake-runner.js';
 import type { Runner, RunStep, StartRunStepInput } from '../runner.js';
 import { GitRunner } from '../git.js';
 import { Retention } from '../retention.js';
+import { RunDiffs } from '../run-diff.js';
 import { composeProjectName } from '../run-layout.js';
 import type { ProviderSwitches } from '@agentic-studio/contracts';
 import { ProviderGate } from '../provider-gate.js';
@@ -148,6 +149,12 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
         agentGitEmail: 'agent@example.test',
         allowFileRemotes: true,
         github: { token: AGENT_GITHUB_TOKEN, apiUrl: github.url },
+        logger,
+      }),
+      diffs: new RunDiffs({
+        dataDir: workerDataDir,
+        git,
+        limits: { filePatchBytes: 256 * 1024, patchBytes: 2048 * 1024, files: 1000 },
         logger,
       }),
       pollMs: 50,
@@ -393,6 +400,48 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     ).split('\n');
     expect(pushed).toContain('FAKE_CHANGE.md');
     expect(pushed).not.toContain('config/test.env');
+  });
+
+  it("reports the Run's diffs: both changed files, never the Environment file, pushed after the delivery (Issue #144)", async () => {
+    await announceWorker();
+    const projectId = await readyProject();
+    const set = await fetch(`${apiUrl}/api/projects/${projectId}/environment-file`, {
+      method: 'PUT',
+      headers: { Origin: STUDIO_ORIGIN, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'config/test.env', content: 'A=test-only-value\n' }),
+    });
+    expect(set.status).toBe(200);
+    const started = await requestRun('[fake:two-files] Two files', projectId);
+    const runId = ((await started.json()) as RunView).id;
+    startWorker();
+
+    expect(await runReaches(runId, ['succeeded', 'failed'])).toMatchObject({
+      state: 'succeeded',
+      delivery: 'delivered',
+    });
+
+    const read = (path: string) =>
+      fetch(`${apiUrl}/api/runs/${runId}/${path}`, { headers: { Cookie: cookie } });
+    for (const scope of ['run', 'last']) {
+      const diff = await read(`diff?scope=${scope}`);
+      expect(diff.status).toBe(200);
+      expect(await diff.json()).toMatchObject({
+        baseCommit: remoteHead,
+        // The delivery pushed everything, so the stored diff says so.
+        includesUnpushed: false,
+        truncated: false,
+        files: [
+          { path: 'FAKE_CHANGE.md', status: 'added', additions: 1, deletions: 0 },
+          { path: 'FAKE_NOTES.md', status: 'added', additions: 1, deletions: 0 },
+        ],
+      });
+    }
+    const file = await read('diff/file?scope=run&path=FAKE_NOTES.md');
+    expect(file.status).toBe(200);
+    const body = (await file.json()) as { path: string; status: string; patch: string };
+    expect(body).toMatchObject({ path: 'FAKE_NOTES.md', status: 'added' });
+    expect(body.patch).toContain('+Notes left by the fake runner.');
+    expect((await read('diff/file?scope=run&path=config/test.env')).status).toBe(404);
   });
 
   it('fails a delivery GitHub refuses as delivery_failed, and delivers on "Retry delivery" (Issue #102)', async () => {

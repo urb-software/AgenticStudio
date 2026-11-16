@@ -2,6 +2,7 @@ import {
   type HeartbeatResponse,
   heartbeatResponseSchema,
   type RunEventInput,
+  type ReportRunDiffRequest,
   type ReportRunStateRequest,
   type ReportRunStepRequest,
   type RunPayload,
@@ -94,6 +95,18 @@ export class StudioApi {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.post(`runs/${encodeURIComponent(runId)}/steps`, step, signal);
+  }
+
+  /**
+   * Reports the Run's diffs after a Run step's result (Issue #144), or why they could not be
+   * computed; Studio replaces the ones it stored.
+   */
+  async reportDiff(
+    runId: string,
+    report: WithoutWorker<ReportRunDiffRequest>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.post(`runs/${encodeURIComponent(runId)}/diff`, report, signal);
   }
 
   /** Appends a batch of the Run's log events (Issue #99); a re-sent seq is ignored by Studio. */
