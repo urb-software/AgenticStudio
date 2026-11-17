@@ -9,7 +9,8 @@ import {
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/services/provider-availability.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
-import { PullRequestNotRefreshableError, RefreshPullRequestHandler } from '../handler.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
+import { RefreshPullRequestHandler } from '../handler.js';
 
 class Workers implements WorkerStatusStore {
   current: RecordedWorkerStatus | undefined;

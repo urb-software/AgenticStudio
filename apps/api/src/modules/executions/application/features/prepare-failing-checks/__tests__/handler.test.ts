@@ -14,7 +14,7 @@ import {
   GetPreparedFollowUpHandler,
   PreparedFollowUpNotFoundError,
 } from '../../get-prepared-follow-up/handler.js';
-import { PullRequestNotRefreshableError } from '../../refresh-pull-request/handler.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
 import { NoFailingChecksError, PrepareFailingChecksHandler } from '../handler.js';
 
 class Workers implements WorkerStatusStore {

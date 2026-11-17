@@ -22,7 +22,7 @@ import { reviewCommentsView } from '../../../../domain/services/review-comments.
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { GetReviewCommentsHandler } from '../../get-review-comments/handler.js';
-import { PullRequestNotRefreshableError } from '../../refresh-pull-request/handler.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
 import {
   LookupKindMismatchError,
   LookupNotHeldError,

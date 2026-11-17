@@ -17,7 +17,7 @@ import { RunNotFoundError } from '../../../../domain/repositories/run-repository
 import type { RecordedWorkerStatus } from '../../../../domain/services/provider-availability.js';
 import type { RetentionPolicy } from '../../../ports/retention-policy.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
-import { FollowUpRunHandler } from '../../follow-up-run/handler.js';
+import { FollowUpRunHandler } from '../handler.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {

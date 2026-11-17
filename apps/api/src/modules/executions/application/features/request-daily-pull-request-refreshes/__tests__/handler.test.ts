@@ -1,17 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { PullRequestState } from '../../../../domain/entities/run.js';
 import { deliveredRun, T0 } from '../../../../domain/repositories/__tests__/delivered-run.js';
 import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import {
-  DailyPullRequestRefreshSchedule,
-  RequestDailyPullRequestRefreshesHandler,
-} from '../handler.js';
+import { RequestDailyPullRequestRefreshesHandler } from '../handler.js';
 
 // Issue #142: the daily refresh asks only about Runs with an open pull request, or one of unknown
 // state, that was last read more than a day ago.
 const HOUR = 60 * 60 * 1000;
-const SETTINGS = { intervalMs: HOUR };
 
 describe('RequestDailyPullRequestRefreshesHandler', () => {
   let runs: InMemoryRunRepository;
@@ -133,85 +129,5 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
 
     expect(lookups.lookups.every((lookup) => lookup.kind === 'pull_request_state')).toBe(true);
     expect(lookups.lookups.every((lookup) => lookup.status === 'requested')).toBe(true);
-  });
-});
-
-describe('DailyPullRequestRefreshSchedule', () => {
-  afterEach(() => vi.useRealTimers());
-
-  it('does nothing while the app starts: the first pass comes a minute later, then every interval', async () => {
-    vi.useFakeTimers();
-    let passes = 0;
-    const counting = {
-      execute: async () => {
-        passes++;
-        return 0;
-      },
-    } as unknown as RequestDailyPullRequestRefreshesHandler;
-    const schedule = new DailyPullRequestRefreshSchedule(counting, { intervalMs: HOUR });
-
-    schedule.onApplicationBootstrap();
-    expect(passes).toBe(0);
-    await vi.advanceTimersByTimeAsync(59_000);
-    expect(passes).toBe(0);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(passes).toBe(1);
-    await vi.advanceTimersByTimeAsync(HOUR);
-    expect(passes).toBe(2);
-    schedule.onApplicationShutdown();
-    await vi.advanceTimersByTimeAsync(2 * HOUR);
-    expect(passes).toBe(2);
-  });
-
-  it('hands its pass to a test instead of starting a timer', async () => {
-    let passes = 0;
-    let handed: (() => Promise<void>) | undefined;
-    const counting = {
-      execute: async () => {
-        passes++;
-        return 0;
-      },
-    } as unknown as RequestDailyPullRequestRefreshesHandler;
-    const schedule = new DailyPullRequestRefreshSchedule(counting, {
-      intervalMs: HOUR,
-      manual: (pass) => (handed = pass),
-    });
-
-    schedule.onApplicationBootstrap();
-
-    expect(passes).toBe(0);
-    await handed?.();
-    expect(passes).toBe(1);
-  });
-
-  it('never throws when a pass fails', async () => {
-    const failing = {
-      execute: () => Promise.reject(new Error('The database is down')),
-    } as unknown as RequestDailyPullRequestRefreshesHandler;
-
-    await expect(
-      new DailyPullRequestRefreshSchedule(failing, SETTINGS).tick(),
-    ).resolves.toBeUndefined();
-  });
-
-  it('runs one pass at a time', async () => {
-    let passes = 0;
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => (release = resolve));
-    const slow = {
-      execute: async () => {
-        passes++;
-        await held;
-        return 0;
-      },
-    } as unknown as RequestDailyPullRequestRefreshesHandler;
-    const schedule = new DailyPullRequestRefreshSchedule(slow, SETTINGS);
-
-    const first = schedule.tick();
-    await schedule.tick();
-    release();
-    await first;
-
-    expect(passes).toBe(1);
   });
 });

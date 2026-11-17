@@ -20,7 +20,7 @@ import {
 import { ReviewCommentsLoadRunningError } from '../../../../domain/entities/review-comments.js';
 import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { PullRequestNotRefreshableError } from '../../../../application/features/refresh-pull-request/handler.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
 import { LoadReviewCommentsHandler } from '../../../../application/features/load-review-comments/handler.js';
 import { loadReviewCommentsRequestSchema, LoadReviewCommentsRequestDto } from './schema.js';
 

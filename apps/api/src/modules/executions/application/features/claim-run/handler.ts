@@ -12,9 +12,12 @@ import {
 } from '../../../../projects/contracts/index.js';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/entities/run-environment-file.js';
 import {
+  longWaitCancellation,
+  lostWorkerRule,
   resumeMessage,
   type Run,
   type RunFailure,
+  STEP_TIME_LIMIT_GRACE_MINUTES,
   takesNewEnvironmentFile,
 } from '../../../domain/entities/run.js';
 import {
@@ -22,9 +25,6 @@ import {
   type RunLogRepository,
 } from '../../../domain/repositories/run-log-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
-import { cancelLongWaitingRuns } from '../../../domain/services/long-waiting-runs.js';
-import { failLostWorkers } from '../../../domain/services/lost-workers.js';
-import { timeOutOverdueSteps } from '../../../domain/services/overdue-steps.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
   ENVIRONMENT_FILE_SNAPSHOTS,
@@ -133,11 +133,18 @@ export class ClaimRunHandler {
 
   async execute(workerId: string): Promise<ClaimedRun | null> {
     const now = this.clock.now();
-    await failLostWorkers(this.runs, now, this.lease.seconds);
+    const { staleBefore, failure, deliveryFailure } = lostWorkerRule(now, this.lease.seconds);
+    await this.runs.failStaleClaims(staleBefore, failure, deliveryFailure, now);
     // A Run left waiting too long holds a slot; it is cancelled first (Issue #100).
-    await cancelLongWaitingRuns(this.runs, now);
+    for (const waiting of await this.runs.listWaiting()) {
+      const cancellation = longWaitCancellation(waiting, now);
+      // Conditional: an answer or an operator's cancel in between wins.
+      if (cancellation) {
+        await this.runs.cancelUnheld(waiting.id, 'waiting_for_operator', cancellation, now);
+      }
+    }
     // A step far past its time limit holds a slot too (review of #121: Studio's backstop).
-    await timeOutOverdueSteps(this.runs, now);
+    await this.runs.timeOutOverdueSteps(now, STEP_TIME_LIMIT_GRACE_MINUTES);
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;

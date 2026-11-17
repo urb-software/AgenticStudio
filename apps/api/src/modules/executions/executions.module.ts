@@ -64,15 +64,20 @@ import { ReportRunStepEndpoint } from './entry-points/http/agent-worker/report-r
 import { ReportRunStepHandler } from './application/features/report-run-step/handler.js';
 import { ReportWorkerStatusEndpoint } from './entry-points/http/agent-worker/report-worker-status/endpoint.js';
 import { ReportWorkerStatusHandler } from './application/features/report-worker-status/handler.js';
+import { RequestDailyPullRequestRefreshesHandler } from './application/features/request-daily-pull-request-refreshes/handler.js';
 import {
+  DAILY_PULL_REQUEST_REFRESH_SETTINGS,
   DAILY_REFRESH_INTERVAL_MS,
-  DailyPullRequestRefreshSchedule,
-  RequestDailyPullRequestRefreshesHandler,
-} from './application/features/request-daily-pull-request-refreshes/handler.js';
+  DailyPullRequestRefreshScheduler,
+  type DailyPullRequestRefreshSettings,
+} from './entry-points/schedulers/daily-pull-request-refresh.js';
+import { RunSweepsScheduler } from './entry-points/schedulers/run-sweeps.js';
+import { ReleaseFinalSnapshotsHandler } from './application/features/release-final-snapshots/handler.js';
+import { RenewHeldRunLeasesHandler } from './application/features/renew-held-run-leases/handler.js';
+import { TimeOutOverdueStepsHandler } from './application/features/time-out-overdue-steps/handler.js';
 import { RetryDeliveryEndpoint } from './entry-points/http/operator/retry-delivery/endpoint.js';
 import { RetryDeliveryHandler } from './application/features/retry-delivery/handler.js';
 import { BringUpToDateEndpoint } from './entry-points/http/operator/bring-up-to-date/endpoint.js';
-import { BringUpToDateHandler } from './application/features/bring-up-to-date/handler.js';
 import { FollowUpRunEndpoint } from './entry-points/http/operator/follow-up-run/endpoint.js';
 import { FollowUpRunHandler } from './application/features/follow-up-run/handler.js';
 import { ResumeRunEndpoint } from './entry-points/http/operator/resume-run/endpoint.js';
@@ -82,10 +87,8 @@ import { StartRunHandler } from './application/features/start-run/handler.js';
 import { StreamRunEventsEndpoint } from './entry-points/http/operator/stream-run-events/endpoint.js';
 import { StreamRunEventsHandler } from './application/features/stream-run-events/handler.js';
 import { LogStreamSlots } from './application/features/stream-run-events/log-stream-slots.js';
-import {
-  LostWorkerSweepSchedule,
-  SweepLostWorkersHandler,
-} from './application/features/sweep-lost-workers/handler.js';
+import { StreamSession } from './application/features/stream-run-events/stream-session.js';
+import { SweepLostWorkersHandler } from './application/features/sweep-lost-workers/handler.js';
 import { EnvironmentFileSecretValues } from './infrastructure/adapters/environment-file-secret-values.js';
 import { SecretStoreEnvironmentFileSnapshots } from './infrastructure/adapters/environment-file-snapshots.js';
 import {
@@ -103,10 +106,6 @@ import { PrismaRunLookupRepository } from './infrastructure/repositories/prisma-
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
 import { CLOCK, type Clock } from './application/ports/clock.js';
-import {
-  PULL_REQUEST_REFRESH_SETTINGS,
-  type PullRequestRefreshSettings,
-} from './application/ports/pull-request-refresh-settings.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from './application/ports/operator-login.js';
 import { RUN_LIMITS, type RunLimitsSetting } from './application/ports/run-limits.js';
 import { OPERATOR_SESSIONS } from './application/ports/operator-sessions.js';
@@ -129,7 +128,7 @@ export interface ExecutionsModuleOptions {
   logStreamLimits?: { perSession: number; total: number };
   secretValues?: RunSecretValues;
   /** The daily pull request refresh (Issue #142): a test runs its passes by hand. */
-  pullRequestRefresh?: Pick<PullRequestRefreshSettings, 'manual'>;
+  pullRequestRefresh?: Pick<DailyPullRequestRefreshSettings, 'manual'>;
 }
 
 const SYSTEM_CLOCK: Clock = { now: () => new Date() };
@@ -249,7 +248,6 @@ export class ExecutionsModule {
         AnswerRunHandler,
         ResumeRunHandler,
         FollowUpRunHandler,
-        BringUpToDateHandler,
         RefreshPullRequestHandler,
         PrepareFailingChecksHandler,
         GetPreparedFollowUpHandler,
@@ -266,6 +264,7 @@ export class ExecutionsModule {
         ListRunEventsHandler,
         StreamRunEventsHandler,
         LogStreamSlots,
+        StreamSession,
         ListRunStepsHandler,
         GetRunDiffHandler,
         ReportRunDiffHandler,
@@ -274,6 +273,9 @@ export class ExecutionsModule {
         ListProvidersHandler,
         GetAgentWorkerHandler,
         SweepLostWorkersHandler,
+        TimeOutOverdueStepsHandler,
+        RenewHeldRunLeasesHandler,
+        ReleaseFinalSnapshotsHandler,
         { provide: ENVIRONMENT_FILE_SNAPSHOTS, useClass: SecretStoreEnvironmentFileSnapshots },
         {
           provide: RUN_SNAPSHOT_SETTINGS,
@@ -282,16 +284,16 @@ export class ExecutionsModule {
           }),
           inject: [APP_CONFIG],
         },
-        LostWorkerSweepSchedule,
+        RunSweepsScheduler,
         RequestDailyPullRequestRefreshesHandler,
         {
-          provide: PULL_REQUEST_REFRESH_SETTINGS,
+          provide: DAILY_PULL_REQUEST_REFRESH_SETTINGS,
           useValue: {
             intervalMs: DAILY_REFRESH_INTERVAL_MS,
             ...options.pullRequestRefresh,
-          } satisfies PullRequestRefreshSettings,
+          } satisfies DailyPullRequestRefreshSettings,
         },
-        DailyPullRequestRefreshSchedule,
+        DailyPullRequestRefreshScheduler,
       ],
     };
   }
