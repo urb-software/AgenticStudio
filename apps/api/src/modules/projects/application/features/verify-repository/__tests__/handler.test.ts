@@ -14,9 +14,9 @@ import { generateDeployKey, hostKeyFingerprint } from '../../../../domain/value-
 import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
-import { NOT_STARTED_DETAIL } from '../../connect-repository/handler.js';
-import { DeployKeyHandler } from '../../deploy-key/handler.js';
-import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import { NOT_STARTED_DETAIL } from '../../../../domain/entities/repository.js';
+import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
+import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { HostKeyFingerprintMismatchError, VerifyRepositoryHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -30,7 +30,7 @@ describe('VerifyRepositoryHandler', () => {
   let git: FakeRepositoryGit;
   let jobs: RecordingRepositoryJobs;
   let secrets: InMemorySecretStore;
-  let deployKeys: DeployKeyHandler;
+  let deployKeys: InMemoryDeployKeys;
   let handler: VerifyRepositoryHandler;
 
   beforeEach(() => {
@@ -39,9 +39,7 @@ describe('VerifyRepositoryHandler', () => {
     git = new FakeRepositoryGit();
     jobs = new RecordingRepositoryJobs();
     secrets = new InMemorySecretStore();
-    deployKeys = new DeployKeyHandler(secrets, {
-      knownHosts: [{ hosts: ['github.com'], key: GITHUB_KEY }],
-    });
+    deployKeys = new InMemoryDeployKeys(secrets, [{ hosts: ['github.com'], key: GITHUB_KEY }]);
     handler = new VerifyRepositoryHandler(projects, git, jobs, deployKeys);
   });
 

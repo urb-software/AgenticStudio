@@ -154,6 +154,22 @@ export const HOST_KEY_CHANGED_DETAIL =
   "The Git host's key changed. Studio never accepts a changed host key on its own: if the " +
   'change is expected, disconnect the repository and connect it again.';
 
+/** Stored as the failure detail when no host key is trusted for an SSH operation (Issue #62). */
+export const NO_TRUSTED_HOST_KEY_DETAIL =
+  "Studio trusts no host key for this Git host. If the host's key changed as expected, " +
+  'disconnect the repository and connect it again.';
+
+/** No host key is trusted for the Repository's Git host: Studio does not connect. */
+export class NoTrustedHostKeyError extends Error {
+  constructor() {
+    super(NO_TRUSTED_HOST_KEY_DETAIL);
+    this.name = 'NoTrustedHostKeyError';
+  }
+}
+
+/** Stored on the Repository when the clone could not be scheduled after it was stored. */
+export const NOT_STARTED_DETAIL = 'The clone could not be started. Try again.';
+
 /**
  * The failure of a Git operation: `host_key_mismatch` gets Studio's explanation first, then
  * the redacted Git output; `unknown` without output gets a fixed detail saying so; every other

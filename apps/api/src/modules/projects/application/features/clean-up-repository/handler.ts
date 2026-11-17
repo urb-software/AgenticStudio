@@ -6,7 +6,7 @@ import {
 } from '../../../domain/repositories/project-repository.js';
 import type { RepositoryConnection } from '../../../domain/entities/repository.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
-import { DeployKeyHandler } from '../deploy-key/handler.js';
+import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 
 /**
  * The log line of a Disconnect that stays pending (redacted), written by both the Disconnect
@@ -49,14 +49,14 @@ export class CleanUpRepositoryHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) git: RepositoryGit,
-    deployKeys: DeployKeyHandler,
+    @Inject(DEPLOY_KEYS) deployKeys: DeployKeys,
   ) {
     this.steps = [
       { name: 'remove the Clone', run: (repository) => git.removeClone(repository.projectId) },
       {
         name: 'delete the Deploy key',
         run: async ({ deployKeySecret }) => {
-          if (deployKeySecret !== null) await deployKeys.delete(deployKeySecret);
+          if (deployKeySecret !== null) await deployKeys.remove(deployKeySecret);
         },
       },
       {

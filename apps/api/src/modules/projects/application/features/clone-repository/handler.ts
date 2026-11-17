@@ -7,7 +7,7 @@ import {
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
-import { DeployKeyHandler } from '../deploy-key/handler.js';
+import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 import {
   gitStepFailure,
   isAbortError,
@@ -34,7 +34,7 @@ export class CloneRepositoryHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
-    private readonly deployKeys: DeployKeyHandler,
+    @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
   ) {}
 
   /** Runs one clone. Aborts propagate, so the queue reports them through `onFailed`. */

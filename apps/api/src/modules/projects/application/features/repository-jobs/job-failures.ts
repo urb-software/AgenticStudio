@@ -2,20 +2,21 @@ import type { JobFailure } from '../../../../../platform/queue/job-queue.js';
 import {
   gitOperationFailure,
   interruptedFailure,
+  NO_TRUSTED_HOST_KEY_DETAIL,
+  NoTrustedHostKeyError,
   type RepositoryFailure,
   repositoryFailure,
   unexpectedFailure,
 } from '../../../domain/entities/repository.js';
 import { GitOperationError } from '../../ports/repository-git.js';
 import type { RepositoryOperation } from '../../ports/repository-jobs.js';
-import { NO_TRUSTED_HOST_KEY_DETAIL, NoTrustedHostKeyError } from '../deploy-key/handler.js';
 
 /**
  * How the Repository's job turns errors into stored failures, shared by its clone
  * (`clone-repository`) and fetch (`fetch-clone`) processors (#72: one copy instead of two).
  * It lives with `repository-jobs`, which owns the queue and so the meaning of a job's end;
  * it imports no feature handler, so no file cycle forms. Not in `domain/`: it maps the
- * platform queue's `JobFailure` and the Git port's and deploy-key's error classes.
+ * platform queue's `JobFailure` and the Git port's and the domain's error classes.
  */
 
 /** The failure stored for a clone or fetch job that did not finish on its own. */

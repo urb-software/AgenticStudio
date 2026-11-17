@@ -3,6 +3,7 @@ import { isProjectId } from '../../../domain/entities/project.js';
 import {
   gitOperationFailure,
   isVerifiable,
+  NOT_STARTED_DETAIL,
   type RepositoryConnection,
   repositoryFailure,
 } from '../../../domain/entities/repository.js';
@@ -20,8 +21,7 @@ import {
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
-import { NOT_STARTED_DETAIL } from '../connect-repository/handler.js';
-import { DeployKeyHandler } from '../deploy-key/handler.js';
+import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 
 export interface VerifyRepositoryInput {
   projectId: string;
@@ -68,7 +68,7 @@ export class VerifyRepositoryHandler {
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
     @Inject(REPOSITORY_JOBS) private readonly jobs: RepositoryJobs,
-    private readonly deployKeys: DeployKeyHandler,
+    @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
   ) {}
 
   async execute(input: VerifyRepositoryInput): Promise<RepositoryConnection> {
@@ -93,7 +93,7 @@ export class VerifyRepositoryHandler {
       return this.startClone(repository, { pendingHostKey: pending });
     }
 
-    if (this.deployKeys.trustedHostKeys(repository).length > 0) {
+    if (!this.deployKeys.trustedHostKeys(repository).isEmpty) {
       return this.startClone(repository, null);
     }
 

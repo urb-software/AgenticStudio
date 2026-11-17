@@ -14,9 +14,9 @@ import {
   UNEXPECTED_FAILURE_DETAIL,
 } from '../../../../domain/entities/repository.js';
 import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
-import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../deploy-key/handler.js';
-import { DeployKeyHandler } from '../../deploy-key/handler.js';
-import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/entities/repository.js';
+import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
+import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';
@@ -32,7 +32,7 @@ function abortError(): Error {
 
 describe('FetchCloneHandler', () => {
   let secrets: InMemorySecretStore;
-  let deployKeys: DeployKeyHandler;
+  let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
   let handler: FetchCloneHandler;
@@ -54,7 +54,7 @@ describe('FetchCloneHandler', () => {
 
   beforeEach(() => {
     secrets = new InMemorySecretStore();
-    deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
+    deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
