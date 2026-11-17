@@ -14,7 +14,7 @@ import {
 import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
 import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { BringUpToDateHandler } from '../../../../application/features/bring-up-to-date/handler.js';
+import { FollowUpRunHandler } from '../../../../application/features/follow-up-run/handler.js';
 import { bringUpToDateRequestSchema, BringUpToDateRequestDto } from './schema.js';
 
 /**
@@ -22,12 +22,15 @@ import { bringUpToDateRequestSchema, BringUpToDateRequestDto } from './schema.js
  * Origin guards: 202 with the Run, queued for the update, once it is stored; 404 for an unknown
  * Run; 409 when the Run cannot take a Follow-up now (the same reasons, the detail saying why);
  * 422 for a note that is too long. The body is optional and typed `unknown`, so the global pipe
- * leaves it alone and an invalid body becomes a 422 here.
+ * leaves it alone and an invalid body becomes a 422 here. It is a Follow-up in every respect
+ * (the same eligibility, Run step allowance, concurrency limits, agent session and Working
+ * copy), marked `bring_up_to_date`, so it calls the Follow-up handler with that source; the
+ * note is the Follow-up's text (empty when there is none).
  */
 @ApiTags('runs')
 @Controller('runs')
 export class BringUpToDateEndpoint {
-  constructor(private readonly handler: BringUpToDateHandler) {}
+  constructor(private readonly handler: FollowUpRunHandler) {}
 
   @Post(':runId/bring-up-to-date')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -51,7 +54,8 @@ export class BringUpToDateEndpoint {
     try {
       const { run, followUp, workerConnected } = await this.handler.execute(
         runId,
-        parsed.data.note,
+        parsed.data.note ?? '',
+        'bring_up_to_date',
       );
       return toRunResponse(run, followUp, workerConnected);
     } catch (error) {

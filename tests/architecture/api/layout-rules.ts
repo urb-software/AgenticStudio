@@ -11,6 +11,8 @@ import { listDirectories, listFiles, type Violation } from '../harness';
 export const LAYOUT_RULES = [
   'api-application-no-http-decorators',
   'api-entry-points-no-ports-or-infrastructure',
+  'api-features-no-feature-imports',
+  'api-production-no-test-imports',
   'api-contracts-only-index-and-events',
   'api-no-shared-common-utils-helpers-directory',
 ];
@@ -69,23 +71,16 @@ const HTTP_DECORATORS = new Set([
 ]);
 
 /**
- * The one pinned exemption of `api-entry-points-no-ports-or-infrastructure`: the live log
- * stream's endpoint injects two ports itself. Issue #166 moves that out of the endpoint and
- * removes this list. Any other file importing these ports, and any other port import in this
- * file, fails.
+ * Modules in which no feature folder imports another feature folder (backend.md §3 rule 1).
+ * Issue #166 adds `executions`; the check is by path pattern, so #164 adds `projects` and #170
+ * every module by listing it here (or dropping the list).
  */
-const PINNED_ENTRY_POINT_PORT_IMPORTS: { from: string; to: string }[] = [
-  {
-    from: 'src/modules/executions/entry-points/http/operator/stream-run-events/endpoint.ts',
-    to: 'src/modules/executions/application/ports/operator-sessions.ts',
-  },
-  {
-    from: 'src/modules/executions/entry-points/http/operator/stream-run-events/endpoint.ts',
-    to: 'src/modules/executions/application/ports/run-log-settings.ts',
-  },
-];
+const FEATURE_ISOLATED_MODULES = new Set(['executions']);
 
 const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
+/** `src/modules/<module>/application/features/<feature>/…` (not the tests of a feature). */
+const FEATURE_FILE = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\/(?!__tests__\/)/;
+const FEATURE_PATH = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\//;
 const ENTRY_POINT_FILE = /^src\/modules\/[^/]+\/entry-points\//;
 const INFRASTRUCTURE_FILE = /^src\/modules\/[^/]+\/infrastructure\//;
 const REPOSITORY_OR_PORT_FILE =
@@ -107,6 +102,8 @@ export function layoutViolations(baseDir: string): Violation[] {
     ...files
       .filter((path) => ENTRY_POINT_FILE.test(path))
       .flatMap((path) => entryPointViolations(baseDir, path)),
+    ...files.flatMap((path) => featureImportViolations(baseDir, path)),
+    ...files.flatMap((path) => testImportViolations(baseDir, path)),
     ...contractsViolations(baseDir),
     ...directoryViolations(baseDir),
   ];
@@ -195,11 +192,6 @@ function entryPointViolations(baseDir: string, path: string): Violation[] {
       return [{ rule: 'api-entry-points-no-ports-or-infrastructure', from: path, to }];
     }
     if (!REPOSITORY_OR_PORT_FILE.test(to)) return [];
-    if (
-      PINNED_ENTRY_POINT_PORT_IMPORTS.some((pinned) => pinned.from === path && pinned.to === to)
-    ) {
-      return [];
-    }
     return entry.names
       .filter((name) => !ERROR_NAME.test(name))
       .map((name) => ({
@@ -207,6 +199,40 @@ function entryPointViolations(baseDir: string, path: string): Violation[] {
         from: path,
         to: `${to} ${name}`,
       }));
+  });
+}
+
+/**
+ * A file of a feature folder imports nothing from another feature folder of its module (rule 1:
+ * features are independent, and handlers never call each other). Shared shapes live in the
+ * domain or in a port. The tests of a feature (`__tests__/`) are not checked: a round-trip test
+ * may build the handler that produces what the handler under test reads.
+ */
+function featureImportViolations(baseDir: string, path: string): Violation[] {
+  const own = FEATURE_FILE.exec(path);
+  if (!own || !FEATURE_ISOLATED_MODULES.has(own[1])) return [];
+  return moduleImports(baseDir, path).flatMap((entry) => {
+    const to = target(path, entry.specifier);
+    const other = to ? FEATURE_PATH.exec(to) : null;
+    if (!to || !other || other[1] !== own[1] || other[2] === own[2]) return [];
+    return [{ rule: 'api-features-no-feature-imports', from: path, to }];
+  });
+}
+
+/** A test file: inside a `__tests__/` directory, or named `*.test.ts(x)`. */
+const TEST_FILE = /(^|\/)__tests__\/|\.test\.tsx?$/;
+
+/**
+ * No production file of a module imports a test file (a file in `__tests__/` or `*.test.ts`),
+ * so test helpers and fakes never reach the application. Tests may import tests.
+ */
+function testImportViolations(baseDir: string, path: string): Violation[] {
+  if (TEST_FILE.test(path)) return [];
+  return moduleImports(baseDir, path).flatMap((entry) => {
+    const to = target(path, entry.specifier);
+    return to && TEST_FILE.test(to)
+      ? [{ rule: 'api-production-no-test-imports', from: path, to }]
+      : [];
   });
 }
 

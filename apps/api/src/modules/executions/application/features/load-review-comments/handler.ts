@@ -26,7 +26,7 @@ import {
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from '../../ports/operator-login.js';
-import { PullRequestNotRefreshableError } from '../refresh-pull-request/handler.js';
+import { PullRequestNotRefreshableError } from '../../../domain/entities/run-lookup.js';
 
 /**
  * Command (Issue #146): the operator asks for the Review comments of the Run's pull request to be

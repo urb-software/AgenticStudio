@@ -14,12 +14,12 @@ import {
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { type FollowUpView, runView } from '../../../domain/services/follow-up-context.js';
-import { isOverLimit } from '../../../domain/services/retention.js';
+import { isLimited, overLimit, retentionFactsOf } from '../../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
-import { PullRequestNotRefreshableError } from '../refresh-pull-request/handler.js';
+import { PullRequestNotRefreshableError } from '../../../domain/entities/run-lookup.js';
 
 /** None of the Run's stored Pull request checks has failed: nothing to prepare (Issue #145). */
 export class NoFailingChecksError extends Error {
@@ -67,7 +67,11 @@ export class PrepareFailingChecksHandler {
       now,
       this.lease.seconds,
       this.retention,
-      await isOverLimit(this.runs, run, this.retention),
+      isLimited(retentionFactsOf(run)) &&
+        overLimit(
+          await this.runs.findLimitedRuns([run.projectId]),
+          this.retention.maxPerProject,
+        ).has(run.id),
     );
   }
 }

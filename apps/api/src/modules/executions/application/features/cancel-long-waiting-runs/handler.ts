@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { longWaitCancellation } from '../../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
-import { cancelLongWaitingRuns } from '../../../domain/services/long-waiting-runs.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 
 /**
@@ -17,7 +17,17 @@ export class CancelLongWaitingRunsHandler {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  execute(): Promise<number> {
-    return cancelLongWaitingRuns(this.runs, this.clock.now());
+  async execute(): Promise<number> {
+    const now = this.clock.now();
+    let cancelled = 0;
+    for (const run of await this.runs.listWaiting()) {
+      const cancellation = longWaitCancellation(run, now);
+      if (!cancellation) continue;
+      // Conditional: an answer or an operator's cancel in between wins.
+      if (await this.runs.cancelUnheld(run.id, 'waiting_for_operator', cancellation, now)) {
+        cancelled++;
+      }
+    }
+    return cancelled;
   }
 }

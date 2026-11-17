@@ -96,6 +96,14 @@ export interface LookupFailure {
   retryAfterSeconds?: number;
 }
 
+/** The Run has no pull request (or no known Run branch) whose state could be read. */
+export class PullRequestNotRefreshableError extends Error {
+  constructor() {
+    super('The run has no pull request to refresh.');
+    this.name = 'PullRequestNotRefreshableError';
+  }
+}
+
 /**
  * Whether a Run's pull request can be looked up: it has one, and its Run branch is known (the
  * lookup is limited to that branch).

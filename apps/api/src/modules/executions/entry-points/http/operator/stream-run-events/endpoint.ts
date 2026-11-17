@@ -1,6 +1,6 @@
 import { once } from 'node:events';
 import type { ServerResponse } from 'node:http';
-import { Controller, Get, Headers, Inject, Logger, Param, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, Headers, Logger, Param, Query, Req, Res } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { redactSecrets } from '../../../../../../platform/http/redact.js';
@@ -9,19 +9,12 @@ import { toRunEventResponse } from '../../shared/run-event-response.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/services/log-redaction.js';
 import {
-  OPERATOR_SESSIONS,
-  type OperatorSessions,
-} from '../../../../application/ports/operator-sessions.js';
-import {
-  RUN_LOG_SETTINGS,
-  type RunLogSettings,
-} from '../../../../application/ports/run-log-settings.js';
-import {
   KEEP_ALIVE,
   type RunLogStreamItem,
   StreamRunEventsHandler,
 } from '../../../../application/features/stream-run-events/handler.js';
 import { LogStreamSlots } from '../../../../application/features/stream-run-events/log-stream-slots.js';
+import { StreamSession } from '../../../../application/features/stream-run-events/stream-session.js';
 import { StreamRunEventsQueryDto } from './schema.js';
 
 /** A `Last-Event-ID` the stream itself sent: a seq (PostgreSQL INTEGER). */
@@ -70,8 +63,7 @@ export class StreamRunEventsEndpoint {
   constructor(
     private readonly handler: StreamRunEventsHandler,
     private readonly slots: LogStreamSlots,
-    @Inject(OPERATOR_SESSIONS) private readonly sessions: OperatorSessions,
-    @Inject(RUN_LOG_SETTINGS) private readonly settings: RunLogSettings,
+    private readonly session: StreamSession,
   ) {}
 
   @Get(':runId/events/stream')
@@ -102,7 +94,7 @@ export class StreamRunEventsEndpoint {
   ): Promise<void> {
     const after = Math.max(query.after ?? 0, seqFromHeader(lastEventId));
     // The global guard admitted this request, so the session cookie is there and valid.
-    const sessionId = this.sessions.idOf(request) ?? '';
+    const sessionId = this.session.idOf(request) ?? '';
     const abort = new AbortController();
     response.on('close', () => abort.abort());
     let stream: AsyncGenerator<RunLogStreamItem>;
@@ -127,9 +119,9 @@ export class StreamRunEventsEndpoint {
     try {
       for await (const item of stream) {
         // On every idle tick, and at least once per interval while events keep coming.
-        if (item === KEEP_ALIVE || Date.now() - sessionCheckedAt >= this.settings.keepAliveMs) {
+        if (item === KEEP_ALIVE || Date.now() - sessionCheckedAt >= this.session.checkIntervalMs) {
           sessionCheckedAt = Date.now();
-          if (!(await this.sessions.isActive(sessionId))) {
+          if (!(await this.session.isActive(sessionId))) {
             // Logged out or expired: close without `end`; the reconnect gets 401.
             sessionGone = true;
             break;

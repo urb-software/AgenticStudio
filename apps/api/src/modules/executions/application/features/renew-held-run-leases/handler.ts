@@ -1,0 +1,24 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
+import { CLOCK, type Clock } from '../../ports/clock.js';
+import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
+
+/**
+ * Command (Issue #100, review of #121): when the API starts, it renews the lease of every held
+ * Run, so a short outage does not fail Runs whose agent workers kept going as `worker_lost`;
+ * a worker that is really gone is noticed one lease later. At most once per lease period, so
+ * an API that keeps crashing and restarting cannot keep a dead worker's Run alive. Returns how
+ * many leases were renewed, or `null` when they were renewed less than a lease ago.
+ */
+@Injectable()
+export class RenewHeldRunLeasesHandler {
+  constructor(
+    @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
+  ) {}
+
+  execute(): Promise<number | null> {
+    return this.runs.renewClaimsOncePerLease(this.clock.now(), this.lease.seconds);
+  }
+}

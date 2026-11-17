@@ -23,7 +23,7 @@ import {
   runView,
 } from '../../../domain/services/follow-up-context.js';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import { isOverLimit } from '../../../domain/services/retention.js';
+import { isLimited, overLimit, retentionFactsOf } from '../../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -92,7 +92,11 @@ export class FollowUpRunHandler {
         this.clock.now(),
         this.lease.seconds,
         this.retention,
-        await isOverLimit(this.runs, refreshed, this.retention),
+        isLimited(retentionFactsOf(refreshed)) &&
+          overLimit(
+            await this.runs.findLimitedRuns([refreshed.projectId]),
+            this.retention.maxPerProject,
+          ).has(refreshed.id),
       );
     }
     // The Run changed in between (a second submission, a claim): report why, as it is now.

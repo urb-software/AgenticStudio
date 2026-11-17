@@ -5,7 +5,6 @@ import {
   type Run,
   type RunState,
 } from '../entities/run.js';
-import type { RunRepository } from '../repositories/run-repository.js';
 
 /**
  * How long a finished Run's Working copy is kept (Issue #143): the periods and limits of the
@@ -100,20 +99,6 @@ export function overLimit(runs: readonly LimitedRun[], maxPerProject: number): S
     for (const run of projectRuns.slice(maxPerProject)) over.add(run.runId);
   }
   return over;
-}
-
-/**
- * Whether the per-Project limit removes this Run (Issue #143): it is a limited Run (see
- * {@link isLimited}) outside the newest `maxPerProject` of its Project that still have a Working
- * copy.
- */
-export async function isOverLimit(
-  runs: Pick<RunRepository, 'findLimitedRuns'>,
-  run: Run,
-  policy: RetentionPolicy,
-): Promise<boolean> {
-  if (!isLimited(retentionFactsOf(run))) return false;
-  return overLimit(await runs.findLimitedRuns([run.projectId]), policy.maxPerProject).has(run.id);
 }
 
 /** The retention facts of a loaded Run. */

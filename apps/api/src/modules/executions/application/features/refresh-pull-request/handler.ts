@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId, type Run } from '../../../domain/entities/run.js';
-import { canRefreshPullRequest, pageRefreshDue } from '../../../domain/entities/run-lookup.js';
+import {
+  canRefreshPullRequest,
+  pageRefreshDue,
+  PullRequestNotRefreshableError,
+} from '../../../domain/entities/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
@@ -11,19 +15,11 @@ import {
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { type FollowUpView, runView } from '../../../domain/services/follow-up-context.js';
-import { isOverLimit } from '../../../domain/services/retention.js';
+import { isLimited, overLimit, retentionFactsOf } from '../../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
-
-/** The Run has no pull request (or no known Run branch) whose state could be read. */
-export class PullRequestNotRefreshableError extends Error {
-  constructor() {
-    super('The run has no pull request to refresh.');
-    this.name = 'PullRequestNotRefreshableError';
-  }
-}
 
 /**
  * Command (Issue #142): the operator, or the Run page when it opens, asks for the state of the
@@ -63,7 +59,11 @@ export class RefreshPullRequestHandler {
       now,
       this.lease.seconds,
       this.retention,
-      await isOverLimit(this.runs, run, this.retention),
+      isLimited(retentionFactsOf(run)) &&
+        overLimit(
+          await this.runs.findLimitedRuns([run.projectId]),
+          this.retention.maxPerProject,
+        ).has(run.id),
     );
   }
 }
