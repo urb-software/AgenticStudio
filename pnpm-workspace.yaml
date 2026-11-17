@@ -84,3 +84,16 @@ peerDependencyRules:
 # Tracking task #19: https://github.com/urb-software/AgenticStudio/issues/19
 overrides:
   '@hey-api/json-schema-ref-parser>js-yaml': '4.3.2'
+
+# Temporary audit ignore, scoped to one advisory: GHSA-fc5q-39xc-vjpf (picomatch <=4.0.7, ReDoS
+# through single-branch repeated extglobs; high). The patched 4.0.8 is not yet released. It is
+# reported on about 100 paths, all in the dev-only toolchain: dependency-cruiser, typescript-eslint,
+# vite/vitest, Nest CLI and eslint-config-next (including picomatch 2.3.2 via eslint-config-next).
+# No production dependency path reaches picomatch, and its glob patterns come only from committed
+# configuration, so no untrusted input.
+# Decision: operator, 2026-11-17. Review by 2027-02-17; remove once `pnpm audit` no longer reports
+# GHSA-fc5q-39xc-vjpf without this ignore (every path on a patched picomatch).
+# Tracking Issue #191: https://github.com/urb-software/AgenticStudio/issues/191
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
