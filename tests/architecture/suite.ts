@@ -44,14 +44,11 @@ export const QUALITY_TABLE = [
   { row: '`contracts/` holds `index.ts` and `events/` only', expected: 'PASS', gate: 'api' },
   { row: '`contracts/` holds another file', expected: 'FAIL', gate: 'api' },
   { row: '`contracts/` holds another directory', expected: 'FAIL', gate: 'api' },
+  { row: 'A feature imports another feature of its module', expected: 'FAIL', gate: 'api' },
+  { row: 'A feature imports a port, the domain or its own files', expected: 'PASS', gate: 'api' },
   {
-    row: 'An entry-point file other than the pinned one imports a pinned port',
-    expected: 'FAIL',
-    gate: 'api',
-  },
-  {
-    row: 'The pinned entry-point file imports a port other than its two',
-    expected: 'FAIL',
+    row: 'A test of a feature imports another feature (tests are not checked)',
+    expected: 'PASS',
     gate: 'api',
   },
   {

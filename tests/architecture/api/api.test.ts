@@ -265,17 +265,51 @@ describeGate('api', apiGate, 'apps/api', [
     ],
     qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
   },
-  // The one pinned exemption, removed by #166, and proof that it does not widen.
-  { fixture: 'entry-point-pinned-exemption-stream-run-events', expected: [] },
   {
-    fixture: 'entry-point-other-file-imports-pinned-port',
+    fixture: 'entry-point-imports-operator-sessions-and-log-settings-ports',
     expected: ['api-entry-points-no-ports-or-infrastructure'],
-    qualityRow: 'An entry-point file other than the pinned one imports a pinned port',
+    qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
+  },
+  // Features are independent, in `executions` (Issue #166).
+  {
+    fixture: 'feature-imports-own-files-ports-and-domain',
+    expected: [],
+    qualityRow: 'A feature imports a port, the domain or its own files',
   },
   {
-    fixture: 'entry-point-pinned-file-imports-third-port',
-    expected: ['api-entry-points-no-ports-or-infrastructure'],
-    qualityRow: 'The pinned entry-point file imports a port other than its two',
+    fixture: 'feature-imports-another-feature-handler',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
+  {
+    fixture: 'feature-imports-another-feature-error',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
+  {
+    fixture: 'feature-reexports-another-feature',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
+  {
+    fixture: 'feature-imports-another-feature-type-only',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
+  {
+    fixture: 'feature-imports-another-feature-nested-file',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
+  {
+    fixture: 'feature-test-imports-another-feature',
+    expected: [],
+    qualityRow: 'A test of a feature imports another feature (tests are not checked)',
+  },
+  {
+    fixture: 'entry-point-imports-several-features',
+    expected: [],
+    qualityRow: '`entry-points/` imports a handler',
   },
   {
     fixture: 'contracts-index-and-events-only',

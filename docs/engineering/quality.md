@@ -45,8 +45,8 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - Event consumers use the owning module's public contract and do not bypass module boundaries.
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
 - `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API: no `nestjs-zod`, `@nestjs/swagger`, `class-validator`, `class-transformer`, `express`, `@nestjs/platform-express`, `bullmq`, `@nestjs/bullmq`, `@nestjs/schedule`, `node-cron`, `cron`, Node `http`/`https`/`http2`, and no controller, route or parameter decorator from `@nestjs/common` (`Controller`, `Get`, `Body`, `UseGuards`, …). Plain `zod` and `platform/queue/` stay allowed for now; #164 tightens `platform/queue/` for `application/`.
-- `entry-points/` imports nothing from `infrastructure/`, and from a repository interface or port file only domain error classes (imported names ending in `Error`), so an entry point reaches the application through handlers. **One pinned exemption, removed by #166:** `executions/entry-points/http/operator/stream-run-events/endpoint.ts` injects the `operator-sessions` and `run-log-settings` ports itself; the same import from any other file fails.
-- No import from one feature folder into another feature folder of the same module (added by #164 for `projects`; for `executions` by #166; for all modules, by path pattern, by #170).
+- `entry-points/` imports nothing from `infrastructure/`, and from a repository interface or port file only domain error classes (imported names ending in `Error`), so an entry point reaches the application through handlers.
+- No import from one feature folder into another feature folder of the same module, for `executions` (by path pattern; #164 adds `projects`, #170 all modules). The tests of a feature (`__tests__/`) are not checked: a round-trip test may build the handler that produces what the handler under test reads.
 - `domain/` imports nothing from `application/ports/` (added by #168).
 - Domain tests import no database client or container tooling (added by #168).
 - An application collaborator never imports `application/features/` (added by #170).
@@ -110,16 +110,15 @@ Positive and negative fixtures prove the rules catch violations:
 | `application/` imports only domain, ports and its own files | PASS |
 | `entry-points/` imports a handler | PASS |
 | `entry-points/` imports a repository interface, port or infrastructure file | FAIL |
-| An entry-point file other than the pinned one imports a pinned port (one pinned exemption, removed by #166) | FAIL |
-| The pinned entry-point file imports a port other than its two (removed by #166) | FAIL |
 | `contracts/` holds `index.ts` and `events/` only | PASS |
 | `contracts/` holds another file | FAIL |
 | `contracts/` holds another directory | FAIL |
 | A module has `entry-points/http/shared/` (the one exemption) | PASS |
 | A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/` | FAIL |
 | A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers` | FAIL |
-| A feature imports another feature of its module | FAIL (added by #164 for `projects`; `executions` by #166; all modules by #170) |
-| A feature imports a port, the domain or its own files | PASS (added by #164 for `projects`; `executions` by #166; all modules by #170) |
+| A feature imports another feature of its module | FAIL (`executions`; `projects` added by #164; all modules by #170) |
+| A feature imports a port, the domain or its own files | PASS (`executions`; `projects` added by #164; all modules by #170) |
+| A test of a feature imports another feature (tests are not checked) | PASS (`executions`) |
 | `domain/entities/` file exports a class with a non-public constructor | PASS (added by #165 for `projects`; `executions` by #167; all modules by #170) |
 | `domain/entities/` file exports a class with a public constructor, or no class | FAIL (added by #165 for `projects`; `executions` by #167; all modules by #170) |
 | A module has no `domain/services/` directory | PASS (added by #168) |
@@ -145,8 +144,8 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 
 | # | Rule | Enforcement |
 | --- | --- | --- |
-| 1 | Features are independent | Gate check: no import between feature folders (added by #164 for `projects`; `executions` by #166; all modules by #170) |
-| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1 (added by #164). Review only: that an entry point holds no business rule |
+| 1 | Features are independent | Gate check: no import between feature folders (`executions`; `projects` added by #164; all modules by #170) |
+| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1 (`executions`; `projects` by #164). Review only: that an entry point holds no business rule |
 | 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features (added by #170); pinned test: the list of application collaborators (added by #170); the six-step order is review only |
 | 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (added by #165 for `projects`; `executions` by #167; all modules by #170); where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory (added by #168) |
