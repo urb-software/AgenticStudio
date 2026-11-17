@@ -10,12 +10,12 @@ Two-axis review of a diff against its PR base:
 - **Standards**: does the code conform to this repo's documented standards?
 - **Spec**: does the code faithfully implement the originating GitHub Issue?
 
-In an independent review both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings into `docs/templates/review-report.md`.
+In an independent review both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings into `docs/templates/review-report.md`. When the diff touches `apps/api/src/modules/`, a narrow third brief checks only the nine structure rules (step 4).
 
 ## 0. Pick the mode
 
 - **Independent review** (DoD §2): this context has **no** implementer conversation history and did not write the diff. Only this mode can produce a verdict for the PR (`docs/engineering/agent-roles.md` §1).
-- **Self-review**: this session wrote (or helped write) the diff, e.g. when called from `studio-implement`. Run the same steps **in this session, without sub-agents**: the session already holds the diff and the Issue, and the independent review is the gate that needs isolated contexts. Go through the Spec brief, then the Standards brief (step 4), keeping the two lists of findings separate. Title the output **"Self-review — does not satisfy independent review"** and give no verdict.
+- **Self-review**: this session wrote (or helped write) the diff, e.g. when called from `studio-implement`. Run the same steps **in this session, without sub-agents**: the session already holds the diff and the Issue, and the independent review is the gate that needs isolated contexts. Go through the Spec brief, then the Standards brief (step 4), then the structure-rules brief when it applies, keeping the lists of findings separate. Title the output **"Self-review — does not satisfy independent review"** and give no verdict.
 
 If you're unsure which applies, it's self-review.
 
@@ -74,11 +74,11 @@ Each smell reads *what it is* → *how to fix*:
 - **Middle Man**: a class or function that mostly just delegates onward. → cut it, call the real target direct.
 - **Refused Bequest**: a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
 
-### 4. Spawn both sub-agents in parallel
+### 4. Spawn the sub-agents in parallel
 
 Independent mode only; a self-review works through the same two briefs in its own session (step 0).
 
-Issue both sub-agent calls together, in the foreground, read-only (they must not edit files), and aggregate the reports they return. In Claude Code, spawn both with `model: opus`: the reviewer is never a weaker model than the one that wrote the diff (`docs/engineering/agent-roles.md` §6).
+Issue the sub-agent calls together, in the foreground, read-only (they must not edit files), and aggregate the reports they return. In Claude Code, spawn each with `model: opus`: the reviewer is never a weaker model than the one that wrote the diff (`docs/engineering/agent-roles.md` §6).
 
 **Standards sub-agent prompt** should include:
 
@@ -92,6 +92,8 @@ Issue both sub-agent calls together, in the foreground, read-only (they must not
 - The fetched Issue (and parent Story / contract / handoff where relevant).
 - The brief: "Report: (a) acceptance criteria that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep, unrelated changes); (c) criteria that look implemented but where the implementation looks wrong; (d) missing failure-path, authorization or negative tests the criteria imply. Quote the Issue line for each finding and give a severity: BLOCKER, MAJOR or MINOR. Under 400 words."
 
+**Structure-rules sub-agent** (only when the diff touches `apps/api/src/modules/`): include the diff command, head SHA and the text of `docs/architecture/backend.md` §2 and §3. The brief: "Check only the nine structure rules against the diff, and nothing else. For each rule report a violation with file and line, or say none. Does a feature import another feature? Does an entry point (HTTP endpoint, job processor, scheduler, start-up routine, consumer) hold a business rule, or does application code touch HTTP, queue or timer APIs? Does one handler call another? Was shared logic extracted without working through the six steps of rule 3, or into a generic shared, common or utils folder? Is a rule written in a handler or in the database adapter instead of on the entity or value object? Is there a `domain/services/` directory, or does the domain take a repository or a port? Does a schema contain a business rule, or does `contracts/` hold anything but `index.ts` and `events/`? Is the form of each new type the one the role-to-form table in §10 gives? Give each finding a severity: BLOCKER, MAJOR or MINOR. Under 300 words." Report its findings under their own heading, separate from the two axes.
+
 If the spec is missing, skip the Spec sub-agent and note this in the report.
 
 ### 5. Checks
@@ -103,7 +105,7 @@ While the sub-agents run, determine the check status for the reviewed SHA: CI re
 Fill `docs/templates/review-report.md` for the pinned head SHA:
 
 - §1–§3 from the Spec findings, the Standards findings and the checks from step 5.
-- §4 **Findings**: keep the two axes separate. List the Standards findings, then the Spec findings, each with an **Axis** column; do **not** merge or rerank across axes (see _Why two axes_).
+- §4 **Findings**: keep the two axes separate, and list structure-rule findings (when that brief ran) under their own axis label. List the Standards findings, then the Spec findings, each with an **Axis** column; do **not** merge or rerank across axes (see _Why two axes_).
 - §5 **Decision**: in independent mode, `APPROVE` only with no open BLOCKER/MAJOR findings and no failing required check; `REQUEST_CHANGES` for fixable findings; `BLOCKED` when a decision, missing contract or external dependency prevents review. In self-review mode, omit the verdict.
 
 End with a one-line summary: findings per axis and the worst issue _within each axis_. Don't pick a single winner across axes.

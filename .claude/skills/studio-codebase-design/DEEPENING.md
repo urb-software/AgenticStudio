@@ -3,7 +3,7 @@
 How to deepen a cluster of shallow modules safely, given its dependencies. Assumes the vocabulary in [SKILL.md](SKILL.md): **module**, **interface**, **seam**, **adapter**.
 
 > **Repo overrides (AI Agent Studio).** `docs/architecture/backend.md` and `docs/engineering/quality.md` win over this file where they disagree:
-> - Persistence is **always** a Prisma adapter behind a port (`domain/repositories/` or `ports/`), even when a local stand-in exists. Category 2 below does not remove that port; it only changes how the adapter is tested (Testcontainers PostgreSQL, not PGLite).
+> - Persistence is **always** a Prisma adapter behind a port (`domain/repositories/` or `application/ports/`), even when a local stand-in exists. Category 2 below does not remove that port; it only changes how the adapter is tested (Testcontainers PostgreSQL, not PGLite).
 > - Provider CLIs (Claude Code, Codex) are category 4: an injected port with **Fake Runner** adapters in regular CI.
 > - Deepening never crosses a business module's public entry point. Merging, splitting or adding business modules is a material architecture change that needs operator approval.
 

@@ -12,7 +12,11 @@
 - [ ] Failure paths and authorization are addressed.
 
 ## 2. Architecture
-- [ ] Backend: module isolation / domain / ports / adapters (if applicable).
+- [ ] Backend: module isolation; ports and adapters (if applicable).
+- [ ] Backend: features are independent, and no handler calls another handler.
+- [ ] Backend: entry points are thin and hold no business rule.
+- [ ] Backend: business rules are in the domain, and none in the database adapter.
+- [ ] Backend: validation is in its two homes (endpoint schema for shape, entity or value object for rules).
 - [ ] Frontend: Feature-First / public APIs / state boundaries (if applicable).
 - [ ] Monorepo: no prohibited dependencies.
 - [ ] No unnecessary abstractions or unrelated changes.

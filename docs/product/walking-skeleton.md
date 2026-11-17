@@ -55,23 +55,23 @@ Do not scaffold unused business capabilities or privileged Docker operations to 
 
 ```text
 apps/api/src/modules/projects/
-  features/create-project/
-    handler.ts
-    endpoint.ts      # if an HTTP endpoint is needed
-    schema.ts        # request validation
-    __tests__/
-  features/list-projects/
-    handler.ts
-    endpoint.ts
-    __tests__/
+  application/
+    features/create-project/
+      handler.ts
+      __tests__/
+    features/list-projects/
+      handler.ts
+      __tests__/
   domain/
     entities/
     repositories/    # aggregate repository contract, if needed
+  entry-points/
+    http/<caller>/   # endpoints and their request schemas
   infrastructure/repositories/
   projects.module.ts
 ```
 
-Create only the files the slice requires. Handlers stay independent of HTTP and ORM; the endpoint is a thin adapter. Read queries may use a dedicated read port/repository if justified; no unnecessary abstractions.
+This is the layout of [Backend](../architecture/backend.md) §2 (ADR 0003); the first version of this slice was built under the earlier `features/` layout. Create only the files the slice requires. Handlers stay independent of HTTP and ORM; the endpoint is a thin entry point. Read queries may use a dedicated read port/repository if justified; no unnecessary abstractions.
 
 ## 5. Expected frontend implementation
 

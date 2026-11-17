@@ -31,7 +31,8 @@ Typical seams in this repo, highest first:
 | --- | --- | --- |
 | Full user flow (Next.js → API → DB) | Playwright | Critical journeys, smoke |
 | HTTP endpoint of a feature | Vitest + Supertest (+ Testcontainers PostgreSQL/Redis) | Auth, validation, persistence, transactions |
-| Feature handler through its ports | Vitest (+ `@nestjs/testing` where useful) | Business rules, domain transitions, negative cases |
+| Domain entity or value object | Vitest, no database, container or port fake | A business rule and its transitions, negative cases |
+| Feature handler through its ports | Vitest (+ `@nestjs/testing` where useful) | Load-call-save orchestration, error paths |
 | Business module public entry point | Vitest | Cross-module contract |
 | Frontend feature / component | Vitest + React Testing Library | Forms, loading/error states, accessibility-sensitive interactions |
 | API / event contract | Zod + OpenAPI checks | Payload validity, version compatibility |
@@ -47,7 +48,9 @@ When the shape of that interface is itself in question (how deep the module is, 
 
 ## Placement
 
-Feature tests live near the feature in `__tests__/` where practical; system-level E2E, security and contract suites live in repo-level `tests/`; fixtures and fakes shared by several apps live in `packages/testing/`.
+A domain rule gets a unit test that needs no database: the test builds the entity or value object, passes the outside facts as parameters, and asserts the outcome; it imports no repository, port, database client or container tooling. A handler test covers the orchestration with fakes of its ports, not the rule again.
+
+Backend feature tests live beside the handler in `application/features/<feature>/` (`docs/architecture/backend.md` §2), endpoint tests beside the endpoint in `entry-points/`; frontend feature tests live near the feature in `__tests__/`; system-level E2E, security and contract suites live in repo-level `tests/`; fixtures and fakes shared by several apps live in `packages/testing/`.
 
 ## Anti-patterns
 
