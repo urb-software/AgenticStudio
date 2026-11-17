@@ -282,6 +282,8 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
             // (or was told it had finished).
             expect(count(run.messages, 'answer')).toBe(1);
             expect([202, 409]).toContain(cancelled.status);
+            // The final state follows the cancel: it cancelled the queued Run, or found it finished.
+            expect(run.state).toBe(cancelled.status === 202 ? 'cancelled' : 'queued');
           } else {
             expect(answered.status).toBe(409);
             expect(cancelled.status).toBe(202);
