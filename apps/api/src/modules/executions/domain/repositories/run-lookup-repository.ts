@@ -28,7 +28,8 @@ export interface RunLookupRepository {
 
   /**
    * The lookup with this id, or `null`, read `FOR UPDATE`: for a transaction that decides from it
-   * and saves it, so a claim that lands between the read and the save is seen, not overwritten.
+   * and saves it, so a claim that lands between the read and the save is seen, not overwritten. The lock only
+   * holds on a transaction-bound repository (`RunTransactions`); on the plain one it ends at once.
    */
   findByIdForUpdate(id: string): Promise<RunLookup | null>;
 

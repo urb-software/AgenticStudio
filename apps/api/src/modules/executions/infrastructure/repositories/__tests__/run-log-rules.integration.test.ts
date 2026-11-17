@@ -49,6 +49,18 @@ describe('the log store follows the rule of the domain (PostgreSQL + Redis via T
     },
     waiting: { state: 'waiting_for_operator', waitingSince: T, startedAt: T },
     succeeded: { state: 'succeeded', finishedAt: T, startedAt: T },
+    // Held by a worker for a delivery retry, yet not a state a log is appended in.
+    failedHeldForRetry: {
+      state: 'failed',
+      failureCode: 'delivery_failed',
+      failureDetail: 'x',
+      delivery: 'failed',
+      deliveryRequested: true,
+      claimedBy: W1,
+      heartbeatAt: T,
+      startedAt: T,
+      finishedAt: T,
+    },
   } as const;
 
   for (const [name, row] of Object.entries(ROWS)) {
