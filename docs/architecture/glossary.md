@@ -101,6 +101,10 @@ _Avoid_: Prompt, approval request
 The operator's reply to a Question. It queues the Run again, and the agent worker that holds its Working copy resumes the same agent session with the answer as the next Run step. It is not a Follow-up: an Answer replies to a Question while the Run waits.
 _Avoid_: Reply (for the stored record)
 
+**Conversation**:
+The ordered list of a Run's Questions, Answers and Follow-ups, from the Task to the Run's latest result. It is distinct from a part of a Run, which is one segment between two ends of the agent's work (the Task, or a Follow-up, up to the result it ends with). The name "conversation" is proposed; the operator confirms it in review.
+_Avoid_: Thread, history
+
 **Cancel**:
 The operator's stop of a Run. A queued or waiting Run is cancelled at once; a running Run gets a cancel request that the agent worker carries out by stopping the Run step, and the Run ends as cancelled. Nothing is pushed; the Working copy is kept.
 _Avoid_: Abort, kill
@@ -116,6 +120,22 @@ _Avoid_: Checks (unqualified), CI status
 **Review comment**:
 A comment on a Run's pull request on the Git host: a review's summary with its verdict, an inline comment on the diff, or a conversation comment. Anyone can write one on a public pull request, so it is untrusted text: the operator loads them on request, sees them (their own, by the configured GitHub login, preselected; everyone else's collapsed and unselected), and sends only the ones they choose, as a Follow-up prepared from them.
 _Avoid_: Feedback, remark
+
+### Architecture vocabulary
+
+Terms of the API's structure rules ([Backend](backend.md) §3), not of the business domain.
+
+**Aggregate root**:
+The one object through which a group of objects that must stay consistent is created, changed and stored. Anything with its own repository is an aggregate root; it refers to other roots by id only.
+
+**Entity**:
+An object with an identity that outlives its values, and rules about what can happen to it. A root is an entity; a child entity has its identity only within its root (a Run step within its Run).
+
+**Value object**:
+An immutable object defined by its values, with no identity of its own; a change returns a new value. It owns the rules about the concept it names (a Run's state with its transitions).
+
+**Snapshot**:
+An entity's current values as read-only plain data, produced by the entity. It is what a handler returns where its result contains a whole aggregate; an entity class itself never leaves the application layer.
 
 ### Cross-cutting
 
