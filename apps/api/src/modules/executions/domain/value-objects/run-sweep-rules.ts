@@ -1,4 +1,9 @@
-import { type Run, lostWorkerRule, type RunFailure } from '../entities/run.js';
+import {
+  type Run,
+  longWaitCancellation,
+  lostWorkerRule,
+  type RunFailure,
+} from '../entities/run.js';
 
 /**
  * The lost-worker rule (Issue #96, #102, #169): a Run a worker holds whose last heartbeat is older
@@ -53,5 +58,84 @@ export class OverdueStepRule {
     if (run.state !== 'running' || run.stepStartedAt === null) return false;
     const allowedMs = (run.limits.stepMinutes + this.graceMinutes) * 60_000;
     return this.now.getTime() - run.stepStartedAt.getTime() > allowedMs;
+  }
+}
+
+/**
+ * The long-wait rule (Issue #100, #169): a Run waiting for the operator longer than its own
+ * `waitingDays` is cancelled by Studio, with {@link longWaitCancellation}'s reason. The store lists
+ * the Runs waiting for the operator (`listWaiting`: the only condition it holds is the state, the
+ * rule's {@link LongWaitRule.candidate}) and cancels one only while it still waits
+ * (`cancelUnheld`); {@link LongWaitRule.selects} decides which of them are cancelled.
+ */
+export class LongWaitRule {
+  private constructor(readonly now: Date) {}
+
+  static at(now: Date): LongWaitRule {
+    return new LongWaitRule(now);
+  }
+
+  /** The Runs the store lists for the sweep. */
+  static candidate(run: Pick<Run, 'state'>): boolean {
+    return run.state === 'waiting_for_operator';
+  }
+
+  selects(run: Pick<Run, 'state' | 'waitingSince' | 'limits'>): boolean {
+    return longWaitCancellation(run, this.now) !== null;
+  }
+
+  /** What happens to a selected Run. */
+  cancellationFor(run: Pick<Run, 'state' | 'waitingSince' | 'limits'>) {
+    return longWaitCancellation(run, this.now);
+  }
+}
+
+/**
+ * The gone-worker rule (Issue #102, #103, #169): a requested delivery retry that no worker holds,
+ * and an answered Run no worker claimed yet, can only be taken by the worker that started the Run;
+ * when that worker has not reported for longer than the lease they fail ({@link goneWorkerRule},
+ * {@link goneResumeWorkerRule}). The store lists the pending ones and gives one up only while it is
+ * still pending; these are the predicates behind the two lists.
+ */
+export class GoneWorkerRule {
+  /** A `failed` Run whose delivery retry was requested and that nobody holds. */
+  static pendingDeliveryRetry(
+    run: Pick<Run, 'state' | 'deliveryRequested' | 'claimedBy'>,
+  ): boolean {
+    return run.state === 'failed' && run.deliveryRequested && run.claimedBy === null;
+  }
+
+  /** A `queued` Run with an agent session: answered, or sent a Follow-up, and not claimed yet. */
+  static pendingResume(run: Pick<Run, 'state' | 'sessionRef'>): boolean {
+    return run.state === 'queued' && run.sessionRef !== null;
+  }
+}
+
+/**
+ * The lease renewal (Issue #100, review of #121, #169): when the API starts, every Run a worker
+ * holds in `preparing` or `running` gets a heartbeat of `now`, so a short outage does not fail the
+ * Runs their workers kept carrying; at most once per lease period, so a restart loop cannot keep a
+ * dead worker's Run alive. The store renews in one statement and records the time of the renewal.
+ */
+export class LeaseRenewalRule {
+  private constructor(
+    readonly now: Date,
+    readonly leaseSeconds: number,
+  ) {}
+
+  static at(now: Date, leaseSeconds: number): LeaseRenewalRule {
+    return new LeaseRenewalRule(now, leaseSeconds);
+  }
+
+  /** Whether the Run's lease is renewed. */
+  renews(run: Pick<Run, 'state'>): boolean {
+    return run.state === 'preparing' || run.state === 'running';
+  }
+
+  /** Whether a renewal is due: none yet, or the last one is at least a lease old. */
+  isDue(lastRenewal: Date | null): boolean {
+    return (
+      lastRenewal === null || this.now.getTime() - lastRenewal.getTime() >= this.leaseSeconds * 1000
+    );
   }
 }

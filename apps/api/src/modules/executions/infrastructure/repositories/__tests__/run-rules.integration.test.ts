@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HandOutRule } from '../../../domain/value-objects/hand-out-rule.js';
-import { LostWorkerRule, OverdueStepRule } from '../../../domain/value-objects/run-sweep-rules.js';
+import {
+  GoneWorkerRule,
+  LeaseRenewalRule,
+  LongWaitRule,
+  LostWorkerRule,
+  OverdueStepRule,
+} from '../../../domain/value-objects/run-sweep-rules.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   DATABASE_CLIENT,
@@ -364,6 +370,132 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
           expect(run.state).toBe(before.find((candidate) => candidate.id === run.id)!.state);
         }
       }
+    });
+  });
+
+  describe('the long-wait sweep and LongWaitRule', () => {
+    it('cancels exactly the Runs the rule selects, among the Runs waiting for the operator', async () => {
+      const waitedFor = (days: number) => new Date(NOW.getTime() - days * 86_400_000);
+      await fixtures([
+        { kind: 'waiting', project: 1, overrides: { waitingSince: waitedFor(15) } },
+        { kind: 'waiting', project: 2, overrides: { waitingSince: waitedFor(13) } },
+        {
+          kind: 'waiting',
+          project: 3,
+          overrides: { waitingSince: waitedFor(30), limitWaitingDays: 60 },
+        },
+        { kind: 'waiting', project: 4, overrides: { waitingSince: waitedFor(40) } },
+        { kind: 'fresh', project: 5 },
+        { kind: 'running', project: 6 },
+      ]);
+      const rule = LongWaitRule.at(NOW);
+      const before = await runs().listNewestFirst();
+      const candidates = before.filter((run) => LongWaitRule.candidate(run)).map((run) => run.id);
+      const selected = new Set(before.filter((run) => rule.selects(run)).map((run) => run.id));
+      expect(selected.size).toBe(2);
+
+      const listed = await runs().listWaiting();
+      expect(listed.map((run) => run.id).sort()).toEqual([...candidates].sort());
+      for (const run of listed) {
+        const cancellation = rule.cancellationFor(run);
+        if (!cancellation) continue;
+        expect(
+          await runs().cancelUnheld(run.id, 'waiting_for_operator', cancellation, NOW),
+        ).not.toBeNull();
+      }
+
+      for (const run of await runs().listNewestFirst()) {
+        if (selected.has(run.id)) {
+          expect(run).toMatchObject({
+            state: 'cancelled',
+            cancellation: { by: 'system' },
+            finishedAt: NOW,
+          });
+        } else {
+          expect(run.state).toBe(before.find((candidate) => candidate.id === run.id)!.state);
+        }
+      }
+      // A Run that no longer waits is not cancelled again.
+      const [cancelled] = [...selected];
+      expect(
+        await runs().cancelUnheld(
+          cancelled!,
+          'waiting_for_operator',
+          { by: 'system', reason: 'again' },
+          NOW,
+        ),
+      ).toBeNull();
+    });
+  });
+
+  describe('the gone-worker sweeps and GoneWorkerRule', () => {
+    it('lists and gives up exactly the Runs the rule calls pending', async () => {
+      await fixtures([
+        { kind: 'retry', project: 1, worker: W1 },
+        { kind: 'retryHeld', project: 2, worker: W2 },
+        { kind: 'failed', project: 3 },
+        { kind: 'answered', project: 4, worker: W1 },
+        { kind: 'followUp', project: 5, worker: W2 },
+        { kind: 'fresh', project: 6 },
+        { kind: 'waiting', project: 7 },
+      ]);
+      const before = await runs().listNewestFirst();
+      const retries = before.filter((run) => GoneWorkerRule.pendingDeliveryRetry(run));
+      const resumes = before.filter((run) => GoneWorkerRule.pendingResume(run));
+      expect(retries).toHaveLength(1);
+      expect(resumes).toHaveLength(2);
+      const failure = { code: 'delivery_failed', detail: 'gone' } as const;
+
+      const listedRetries = await runs().listPendingDeliveryRetries();
+      const listedResumes = await runs().listPendingResumes();
+
+      expect(listedRetries).toEqual(
+        retries.map((run) => ({ runId: run.id, startedBy: run.lastClaimedBy })),
+      );
+      expect(listedResumes.map((entry) => entry.runId).sort()).toEqual(
+        resumes.map((run) => run.id).sort(),
+      );
+      expect(listedResumes.map((entry) => entry.startedBy).sort()).toEqual(
+        resumes.map((run) => run.lastClaimedBy).sort(),
+      );
+      for (const run of before) {
+        const pendingRetry = GoneWorkerRule.pendingDeliveryRetry(run);
+        const pendingResume = GoneWorkerRule.pendingResume(run);
+        expect(await runs().abandonDeliveryRetry(run.id, failure, NOW)).toBe(pendingRetry);
+        expect(
+          await runs().abandonResume(run.id, { code: 'preparation_failed', detail: 'gone' }, NOW),
+        ).toBe(pendingResume);
+      }
+    });
+  });
+
+  describe('the lease renewal and LeaseRenewalRule', () => {
+    it('renews exactly the Runs the rule names, at most once per lease', async () => {
+      await db().$executeRaw`TRUNCATE TABLE run_lease_renewals`;
+      await fixtures([
+        { kind: 'preparing', project: 1 },
+        { kind: 'running', project: 2 },
+        { kind: 'retryHeld', project: 3 },
+        { kind: 'waiting', project: 4 },
+        { kind: 'fresh', project: 5 },
+      ]);
+      const rule = LeaseRenewalRule.at(NOW, LEASE_SECONDS);
+      const before = await runs().listNewestFirst();
+      const renewed = before.filter((run) => rule.renews(run));
+      expect(rule.isDue(null)).toBe(true);
+
+      expect(await runs().renewClaimsOncePerLease(NOW, LEASE_SECONDS)).toBe(renewed.length);
+
+      for (const run of await runs().listNewestFirst()) {
+        const was = before.find((candidate) => candidate.id === run.id)!;
+        expect(run.heartbeatAt).toEqual(rule.renews(run) ? NOW : was.heartbeatAt);
+      }
+      const soon = new Date(NOW.getTime() + 30_000);
+      expect(LeaseRenewalRule.at(soon, LEASE_SECONDS).isDue(NOW)).toBe(false);
+      expect(await runs().renewClaimsOncePerLease(soon, LEASE_SECONDS)).toBeNull();
+      const later = new Date(NOW.getTime() + LEASE_SECONDS * 1000);
+      expect(LeaseRenewalRule.at(later, LEASE_SECONDS).isDue(NOW)).toBe(true);
+      expect(await runs().renewClaimsOncePerLease(later, LEASE_SECONDS)).toBe(renewed.length);
     });
   });
 });

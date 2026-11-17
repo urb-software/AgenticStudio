@@ -790,6 +790,68 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
       );
     });
 
+    // The same race with real concurrency: a cancel (at once, as the Run is queued) and a claim
+    // started together. Not marked as an expected failure on dev's code: there the window is hit
+    // only now and then, so these cases would pass or fail by chance; the held-row case above is
+    // the deterministic one.
+    describe('a claim and a cancel started together', () => {
+      const holder = async (runId: string) =>
+        (
+          await db().$queryRaw<{ state: string; claimed_by: string | null }[]>`
+            SELECT state, claimed_by FROM runs WHERE id = ${runId}::uuid`
+        )[0]!;
+
+      it(
+        'never claims a Run that was cancelled at once, and the claim never fails',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await queuedRun(await newProject());
+
+            const [cancelled, claimed] = await race(cancel(runId), claim());
+
+            expect(cancelled.status).toBe(202);
+            expect([200, 204]).toContain(claimed.status);
+            const row = await holder(runId);
+            if (claimed.status === 200) {
+              // The claim came first: the cancel became a request the worker is told of.
+              expect(claimed.body.runId).toBe(runId);
+              expect(row).toMatchObject({ state: 'preparing', claimed_by: W1 });
+              expect((await getRun(runId)).body.cancelRequestedAt).toEqual(expect.any(String));
+            } else {
+              expect(row).toEqual({ state: 'cancelled', claimed_by: null });
+            }
+          }
+        },
+        CASE_TIMEOUT,
+      );
+
+      it(
+        'hands out the next Run or nothing when the Run it would take is cancelled at once',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const older = await queuedRun(await newProject());
+            const newer = await queuedRun(await newProject());
+
+            const [cancelled, claimed] = await race(cancel(older), claim());
+
+            expect(cancelled.status).toBe(202);
+            expect([200, 204]).toContain(claimed.status);
+            const olderRow = await holder(older);
+            if (olderRow.state === 'cancelled') {
+              expect(olderRow.claimed_by).toBeNull();
+              if (claimed.status === 200) expect(claimed.body.runId).toBe(newer);
+            } else {
+              expect(claimed.status).toBe(200);
+              expect(claimed.body.runId).toBe(older);
+            }
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
+
     describe('a report of the worker and what else changes the Run', () => {
       it(
         'keeps the Answer when the worker repeats its waiting report at the same moment',
