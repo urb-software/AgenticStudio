@@ -44,6 +44,7 @@ const PROBLEM = {
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
   followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
+  runNotHeld: 'urn:agentic-studio:problem:run-not-held',
 };
 
 interface MessageView {
@@ -630,5 +631,377 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
       },
       CASE_TIMEOUT,
     );
+  });
+
+  // Issue #169 (Epic #160): what the agent worker triggers on a Run, against itself, against the
+  // operator and against the sweeps. Written first against the code before the worker-triggered
+  // operations moved into the Run class; every case here but the one marked `fails` passed on it
+  // and keeps passing.
+  describe('what the agent worker triggers', () => {
+    const W2 = randomUUID();
+    const claimAs = (workerId: string) => worker('runs/claim', { workerId });
+    const heartbeat = (runId: string) => worker(`runs/${runId}/heartbeat`, { workerId: W1 });
+    const claimedBy = async (runId: string) =>
+      (
+        await db().$queryRaw<{ claimed_by: string | null }[]>`
+          SELECT claimed_by FROM runs WHERE id = ${runId}::uuid`
+      )[0]!.claimed_by;
+    const runIdsOf = (...responses: request.Response[]) =>
+      responses
+        .filter((response) => response.status === 200)
+        .map((response) => response.body.runId as string);
+    /** The clock moves past the worker lease: held Runs without a heartbeat are lost. */
+    const pastTheLease = () => {
+      clock.current = new Date(clock.current.getTime() + (LEASE_SECONDS + 5) * 1000);
+    };
+    const activePlaces = async () =>
+      (
+        await db().$queryRaw<{ active: number }[]>`
+          SELECT count(*)::int AS active FROM runs
+          WHERE state IN ('preparing', 'running', 'waiting_for_operator')`
+      )[0]!.active;
+
+    describe('handing out the next Run', () => {
+      it(
+        'hands one queued Run to only one of two claims arriving together',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await queuedRun(await newProject());
+
+            const [first, second] = await race(claimAs(W1), claimAs(W2));
+
+            expect(statuses(first, second)).toEqual([200, 204]);
+            expect(runIdsOf(first, second)).toEqual([runId]);
+            expect(await claimedBy(runId)).toBe(first.status === 200 ? W1 : W2);
+            expect((await getRun(runId)).body.state).toBe('preparing');
+          }
+        },
+        CASE_TIMEOUT,
+      );
+
+      it(
+        'hands out one Run of a project, the oldest, when two claims arrive together',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const projectId = await newProject();
+            const older = await queuedRun(projectId);
+            const newer = await queuedRun(projectId);
+
+            const [first, second] = await race(claimAs(W1), claimAs(W2));
+
+            expect(statuses(first, second)).toEqual([200, 204]);
+            expect(runIdsOf(first, second)).toEqual([older]);
+            expect((await getRun(newer)).body.state).toBe('queued');
+            expect(await activePlaces()).toBe(1);
+          }
+        },
+        CASE_TIMEOUT,
+      );
+
+      it(
+        'never hands out more Runs than the server allows when three claims arrive together',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runIds = [
+              await queuedRun(await newProject()),
+              await queuedRun(await newProject()),
+              await queuedRun(await newProject()),
+            ];
+
+            const responses = await Promise.all([claimAs(W1), claimAs(W2), claimAs(randomUUID())]);
+
+            expect(statuses(...responses)).toEqual([200, 200, 204]);
+            const handedOut = runIdsOf(...responses);
+            expect(new Set(handedOut).size).toBe(2);
+            for (const runId of handedOut) expect(runIds).toContain(runId);
+            expect(await activePlaces()).toBe(2);
+          }
+        },
+        CASE_TIMEOUT,
+      );
+
+      it(
+        'hands an answered Run only to the worker that started it',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await waitingRun();
+            expect((await answer(runId)).status).toBe(202);
+
+            const [stranger, owner] = await race(claimAs(W2), claimAs(W1));
+
+            expect(stranger.status).toBe(204);
+            expect(owner.status).toBe(200);
+            expect(owner.body).toMatchObject({ runId, kind: 'resume' });
+            expect(await claimedBy(runId)).toBe(W1);
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
+
+    // A cancel of a queued Run that lands after the claim read the Run and before it updated it.
+    // The test holds the Run's row (as the cancel's own transaction does), starts the claim, and
+    // commits the cancel once the claim is done or waits for the row. Only the claim of dev's
+    // code can fail here, with a database "not found" (Issue #167's review; Epic #160).
+    describe('a claim and a cancel of the Run it would hand out', () => {
+      it.fails(
+        'gets the next eligible Run or nothing, never an error, when the cancel lands in between',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await queuedRun(await newProject());
+            let claimed!: Promise<request.Response>;
+
+            await db().$transaction(
+              async (tx) => {
+                await tx.$queryRaw`SELECT id FROM runs WHERE id = ${runId}::uuid FOR UPDATE`;
+                let settled = false;
+                claimed = Promise.resolve(claim()).finally(() => {
+                  settled = true;
+                });
+                for (let waited = 0; waited < 3000 && !settled; waited += 50) {
+                  const [waiting] = await tx.$queryRaw<{ n: number }[]>`
+                    SELECT count(*)::int AS n FROM pg_stat_activity
+                    WHERE datname = current_database() AND wait_event_type = 'Lock'
+                      AND pid <> pg_backend_pid()`;
+                  if (waiting!.n > 0) break;
+                  await new Promise((resolve) => setTimeout(resolve, 50));
+                }
+                await tx.$executeRaw`
+                  UPDATE runs SET state = 'cancelled', cancelled_by = 'operator',
+                    cancel_reason = 'Cancelled by the operator.', finished_at = now()
+                  WHERE id = ${runId}::uuid`;
+              },
+              { timeout: 30_000, maxWait: 10_000 },
+            );
+
+            const response = await claimed;
+            expect(response.status).toBe(204);
+            expect((await getRun(runId)).body.state).toBe('cancelled');
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
+
+    describe('a report of the worker and what else changes the Run', () => {
+      it(
+        'keeps the Answer when the worker repeats its waiting report at the same moment',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await waitingRun();
+
+            const [answered, repeated] = await race(
+              answer(runId),
+              report(runId, { state: 'waiting_for_operator' }),
+            );
+
+            expect(answered.status).toBe(202);
+            // Before the Answer the repeat changes nothing; after it, the worker no longer
+            // holds the Run (nobody does: it is queued again).
+            expect([204, 409]).toContain(repeated.status);
+            if (repeated.status === 409) expect(repeated.body.type).toBe(PROBLEM.runNotHeld);
+            const run = (await getRun(runId)).body;
+            expect(run.state).toBe('queued');
+            expect(count(run.messages, 'answer')).toBe(1);
+          }
+        },
+        CASE_TIMEOUT,
+      );
+
+      it(
+        'keeps the Follow-up when the worker repeats its succeeded report at the same moment',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await deliveredRun();
+
+            const [sent, repeated] = await race(
+              followUp(runId),
+              report(runId, {
+                state: 'succeeded',
+                delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+              }),
+            );
+
+            expect(sent.status).toBe(202);
+            expect([204, 409]).toContain(repeated.status);
+            if (repeated.status === 409) expect(repeated.body.type).toBe(PROBLEM.runNotHeld);
+            const run = (await getRun(runId)).body;
+            expect(run).toMatchObject({ state: 'queued', followUps: 1 });
+            expect(count(run.messages, 'follow_up')).toBe(1);
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
+
+    describe('a worker that lost its claim', () => {
+      it(
+        'is refused a late report, Run step and heartbeat, and the Run stays failed',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await runningRun();
+            pastTheLease();
+            // The sweep that runs before every claim fails the Run.
+            expect((await claim()).status).toBe(204);
+
+            const late = await report(runId, {
+              state: 'succeeded',
+              delivery: { outcome: 'none' },
+            });
+            const lateStep = await step(runId, { outcome: 'done', summary: 'Done.' });
+            const lateBeat = await heartbeat(runId);
+
+            for (const refused of [late, lateStep, lateBeat]) {
+              expect(refused.status).toBe(409);
+              expect(refused.body.type).toBe(PROBLEM.runNotHeld);
+            }
+            const run = (await getRun(runId)).body;
+            expect(run.state).toBe('failed');
+            expect(run.failure.code).toBe('worker_lost');
+            const [steps] = await db().$queryRaw<{ n: number }[]>`
+              SELECT count(*)::int AS n FROM run_steps WHERE run_id = ${runId}::uuid`;
+            expect(steps!.n).toBe(0);
+          }
+        },
+        CASE_TIMEOUT,
+      );
+
+      it(
+        'is either finished by its report or failed as lost by the sweep that runs at the same moment, never both',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await runningRun();
+            expect((await step(runId, { outcome: 'done', summary: 'Done.' })).status).toBe(204);
+            pastTheLease();
+
+            const [reported] = await race(
+              report(runId, { state: 'succeeded', delivery: { outcome: 'none' } }),
+              claim(),
+            );
+
+            const run = (await getRun(runId)).body;
+            if (reported.status === 204) {
+              expect(run.state).toBe('succeeded');
+              expect(run).not.toHaveProperty('failure');
+            } else {
+              expect(reported.status).toBe(409);
+              expect(reported.body.type).toBe(PROBLEM.runNotHeld);
+              expect(run.state).toBe('failed');
+              expect(run.failure.code).toBe('worker_lost');
+            }
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
+
+    describe('a heartbeat', () => {
+      it(
+        'either keeps the Run or finds it failed as lost when the sweep runs at the same moment',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await runningRun();
+            pastTheLease();
+
+            const [beat] = await race(heartbeat(runId), claim());
+
+            const run = (await getRun(runId)).body;
+            if (beat.status === 200) {
+              expect(beat.body).toEqual({ cancelRequested: false });
+              expect(run.state).toBe('running');
+            } else {
+              expect(beat.status).toBe(409);
+              expect(beat.body.type).toBe(PROBLEM.runNotHeld);
+              expect(run.state).toBe('failed');
+              expect(run.failure.code).toBe('worker_lost');
+            }
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
+
+    describe('the outcome of a delivery retry', () => {
+      /** The delivery failed, a retry was requested and the worker holds the Run for it. */
+      async function retryingRun() {
+        const runId = await failedDeliveryRun();
+        expect((await retryDelivery(runId)).status).toBe(202);
+        const claimed = await claim();
+        expect(claimed.status).toBe(200);
+        expect(claimed.body).toMatchObject({ runId, kind: 'deliver' });
+        return runId;
+      }
+
+      it(
+        'finishes the Run when the operator asks for the retry again at the same moment',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await retryingRun();
+
+            const [requested, reported] = await race(
+              retryDelivery(runId),
+              report(runId, {
+                state: 'succeeded',
+                delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
+              }),
+            );
+
+            expect(reported.status).toBe(204);
+            // Asked again while the retry is under way, nothing changes; asked after it, the
+            // Run has no failed delivery any more.
+            expect([202, 409]).toContain(requested.status);
+            const run = (await getRun(runId)).body;
+            expect(run.state).toBe('succeeded');
+            expect(run.deliveryRetryRequested).not.toBe(true);
+            expect((await claim()).status).toBe(204);
+          }
+        },
+        CASE_TIMEOUT,
+      );
+
+      it(
+        'leaves exactly one pending retry or none when the retry fails again at the same moment',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const runId = await retryingRun();
+
+            const [requested, reported] = await race(
+              retryDelivery(runId),
+              report(runId, {
+                state: 'failed',
+                failure: { code: 'delivery_failed', detail: 'Pushing was refused again.' },
+              }),
+            );
+
+            expect(reported.status).toBe(204);
+            expect(requested.status).toBe(202);
+            const run = (await getRun(runId)).body;
+            expect(run.state).toBe('failed');
+            // Asked before the outcome: the outcome ends the request. Asked after: it is a new one.
+            const next = await claim();
+            if (run.deliveryRetryRequested === true) {
+              expect(next.status).toBe(200);
+              expect(next.body).toMatchObject({ runId, kind: 'deliver' });
+              expect((await claim()).status).toBe(204);
+            } else {
+              expect(next.status).toBe(204);
+            }
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
   });
 });
