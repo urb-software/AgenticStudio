@@ -282,15 +282,16 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
         expect(deletedLines()).toEqual([deletedLine(orphan)]);
       });
 
-      it('retries the delete in the sweep that follows the failure, once past the grace period', async () => {
+      it('leaves the key to the next start-up sweep: Connect does not sweep after the failure', async () => {
         await start(0);
         const projectId = await createProject('Replaced now');
         const orphan = await failedSshRepository(projectId);
+        const deletedAtStart = deletedLines().length;
 
         await replaceOverHttpsWithFailingDelete(projectId);
 
-        expect(await exists(orphan)).toBe(false);
-        expect(deletedLines()).toEqual([deletedLine(orphan)]);
+        expect(await exists(orphan)).toBe(true);
+        expect(deletedLines()).toHaveLength(deletedAtStart);
       });
     },
   );
