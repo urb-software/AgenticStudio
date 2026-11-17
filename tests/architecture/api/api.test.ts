@@ -506,9 +506,9 @@ describeGate('api', apiGate, 'apps/api', [
   },
   // Aggregate roots and handler results (Issue #182): `projects`; `executions` is added by #183.
   {
-    fixture: 'entry-point-imports-entity-type-and-error',
+    fixture: 'entry-point-imports-entity-type',
     expected: [],
-    qualityRow: '`entry-points/` imports a type or an error from `domain/entities/`',
+    qualityRow: '`entry-points/` imports a type from `domain/entities/`',
   },
   {
     fixture: 'entry-point-imports-entity-class',

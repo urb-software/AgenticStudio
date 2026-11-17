@@ -31,6 +31,8 @@ function uint32(value: number): Buffer {
  * key.
  */
 export class DeployKey {
+  private constructor() {}
+
   /**
    * Generates an ed25519 Deploy key with Node's crypto, serialised to the formats OpenSSH
    * reads: the `openssh-key-v1` private key (no passphrase: it lives in the secret store and

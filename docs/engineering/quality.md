@@ -54,7 +54,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 
 **Structural rules** (Vitest assertions or equivalent):
 
-- Nothing under `entry-points/` imports a class from `domain/entities/`; types and errors are allowed (rule 10; added by #182 for `projects`, extended to `executions` by #183, general by #170).
+- Nothing under `entry-points/` imports a class from `domain/entities/`; types and errors are allowed; in `projects` no entity file exports an error since #185, so the error half of the exemption is re-proved when `executions` is added (#183/#184), where `run.ts` still exports errors until #184 (rule 10; added by #182 for `projects`, extended to `executions` by #183, general by #170).
 - No handler's return type is an entity class, and every handler file exports its input type (when it takes input) and its result type (when it returns something) (rule 10; added by #182, extended by #183, general by #170).
 - Each repository interface refers to exactly one file in `domain/entities/`, and no type under `domain/value-objects/` is the main type a repository returns (rule 11; added by #182, extended by #183, general by #170).
 - No entity file imports another entity file except for an id type (rule 12; added by #182, extended by #183, general by #170).
@@ -133,7 +133,7 @@ Positive and negative fixtures prove the rules catch violations:
 | A test file imports a test helper | PASS |
 | `domain/entities/` file exports a class with a non-public constructor | PASS (`executions`, `projects`; all modules by #170) |
 | `domain/entities/` file exports a class with a public constructor, or no class | FAIL (`executions`, `projects`; all modules by #170) |
-| `entry-points/` imports a type or an error from `domain/entities/` | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
+| `entry-points/` imports a type from `domain/entities/` | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
 | `entry-points/` imports a class from `domain/entities/` | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |
 | A handler returns a snapshot, ids, values or a view type, and exports its input and result types | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
 | A handler returns an entity class, or does not export its result type | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |

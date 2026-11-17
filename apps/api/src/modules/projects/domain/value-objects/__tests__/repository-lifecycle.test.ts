@@ -8,8 +8,7 @@ import { REPOSITORY_STATES, type RepositoryState } from '../repository-state.js'
 const lifecycle = (state: RepositoryState, hasClone = false, hasDeployKey = false) =>
   RepositoryLifecycle.of({ state, hasClone, hasDeployKey });
 
-const only = (state: RepositoryState, ...accepting: RepositoryState[]) =>
-  REPOSITORY_STATES.filter((candidate) => accepting.includes(candidate)).includes(state);
+const only = (state: RepositoryState, ...accepting: RepositoryState[]) => accepting.includes(state);
 
 describe('RepositoryLifecycle', () => {
   it('starts in awaiting_key with a Deploy key and in connecting without one', () => {

@@ -32,7 +32,7 @@ modules/{module}/
     <collaborator>.ts      rare, specifically named, last resort (rule 3)
   domain/
     entities/              aggregate roots and their child entities: classes
-    value-objects/         classes that validate on creation; policies; records of a root with no behaviour
+    value-objects/         classes that validate on creation; policies; records of a root with no behaviour; an aggregate's errors and fact types
     repositories/          interfaces only
   entry-points/
     http/

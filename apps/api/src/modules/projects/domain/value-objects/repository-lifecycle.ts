@@ -13,9 +13,9 @@ export interface LifecycleFacts {
 
 /**
  * The lifecycle of a Repository connection: which state it starts in, which operations each
- * state accepts, and which combinations of state and fields a store may hold. The
- * `RepositoryConnection` class asks it before every transition, so the allowed transitions
- * live here and nowhere else:
+ * state accepts (the guards), and which combinations of state and fields a store may hold.
+ * The `RepositoryConnection` class asks it before every transition and sets the target state
+ * in its own methods, so which state allows which transition lives here and nowhere else:
  *
  * - `awaiting_key` / `awaiting_host_key` / `failed` without a Clone of an SSH Repository
  *   → verified (`connecting`) or `awaiting_host_key`;

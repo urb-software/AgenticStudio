@@ -168,6 +168,8 @@ function inetAtonPart(part: string): number | null {
  * the Git adapter, which checks every address a host name resolves to.
  */
 export class RemoteAddress {
+  private constructor() {}
+
   /**
    * The range of an IP address as a resolver returns it (dotted IPv4 or IPv6 text, no
    * brackets). Anything that is not an address is `blocked`: the check fails closed.

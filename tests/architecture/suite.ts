@@ -84,7 +84,7 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: '`entry-points/` imports a type or an error from `domain/entities/`',
+    row: '`entry-points/` imports a type from `domain/entities/`',
     expected: 'PASS',
     gate: 'api',
   },
