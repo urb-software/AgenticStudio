@@ -83,7 +83,7 @@ logging/    # Structured logs, correlation/tracing
 - The publishing module owns and publicly exports the versioned event contract (e.g. `ExecutionCompletedV1`); prefer a Zod schema + inferred TypeScript type.
 - The application handler changes business state and writes the event to a **PostgreSQL transactional outbox** in one DB transaction (when both writes use the same DB).
 - The outbox dispatcher delivers **at-least-once**; consumers use an inbox / processed-event marker for idempotency and per-consumer delivery tracking. Never claim exactly-once delivery.
-- `consumers/<event>/consumer.ts` validates/maps the event and delegates to a local feature handler, where business logic lives. Read projection handlers may update a projection directly when appropriate.
+- `entry-points/consumers/<event>/consumer.ts` validates/maps the event and calls a handler of its own module, where business logic lives. Read projection handlers may update a projection directly when appropriate.
 - Git/Docker/CLI side effects are **not** transactionally atomic with PostgreSQL: model state transitions, retries, reconciliation, and partial failure explicitly.
 - BullMQ delivers long-running jobs. Durable execution history and live SSE progress are separate from outbox retention.
 
@@ -114,7 +114,7 @@ The decision table (approach, exclusions, rationale) is canonical in [Bootstrap]
 
 **Auth:** the API owns login, session validation and authorization. Next.js is presentation only and calls a same-origin `/api` route through a trusted proxy. Story 1 excludes OAuth, SSO, registration, multi-user identity and RBAC. The password and its hash never enter the repository. Session, cookie, CSRF and rate-limit requirements are canonical in [Security](../engineering/security.md) §8.
 
-**Persistence and contracts:** Prisma lives under `packages/database/` and infrastructure adapters; generated Prisma types do not enter `domain/`. Zod schemas are owned by each feature, not by the generated client; an HTTP schema shared by several features of one module lives in that module's `contracts/http/` and is not consumed by other modules ([Backend](backend.md) §2). `packages/contracts` stays reserved for justified cross-process runtime contracts; generated browser API code can live in `apps/web/src/platform/api/generated/`.
+**Persistence and contracts:** Prisma lives under `packages/database/` and infrastructure adapters; generated Prisma types do not enter `domain/`. Zod schemas are owned by each endpoint or contract, not by the generated client; an HTTP shape shared by several endpoints of one module lives in that module's `entry-points/http/shared/` ([Backend](backend.md) §2). `packages/contracts` stays reserved for justified cross-process runtime contracts; generated browser API code can live in `apps/web/src/platform/api/generated/`.
 
 Sequencing, exact bootstrap commands and role ownership: [Bootstrap](../engineering/bootstrap-plan.md), [Agent roles](../engineering/agent-roles.md).
 

@@ -34,6 +34,7 @@ Refs #
 - [ ] Changed behavior has appropriate tests.
 - [ ] No secrets or unauthorized permissions have been introduced.
 - [ ] Applicable architecture rules and public contracts have been checked.
+- [ ] New shared backend logic or a new repository method is justified in the review notes (or not applicable).
 - [ ] Failed and skipped checks are reported transparently.
 - [ ] The PR targets `dev` (or an approved exception is documented).
 

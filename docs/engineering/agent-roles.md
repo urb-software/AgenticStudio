@@ -56,4 +56,5 @@ Claude Code project skills in `.claude/skills/studio-*` (adapted from mattpocock
 - The domain glossary lives at `docs/architecture/glossary.md` and ADRs at `docs/architecture/adr/NNNN-slug.md`, both created lazily and changed only through PRs.
 - Skill changes are documentation changes: small, reviewed PRs.
 - **Model per role**, when a role runs as a Claude Code sub-agent: the independent reviewer and its two review sub-agents use `model: opus`; the reviewer is never a weaker model than the implementer. The implementer uses `model: sonnet`.
+- **Architecture review at the end of each Epic.** Run `studio-improve-codebase-architecture` once the last child of an Epic is merged, to find drift that the architecture gate cannot check; its candidates become Technical Tasks through the normal flow.
 - A second or later review round covers the changes since the previously reviewed SHA and the earlier findings, not the whole PR again (`studio-code-review` step 7).

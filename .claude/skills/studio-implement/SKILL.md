@@ -32,6 +32,7 @@ For a meaningful change, write a short plan before coding: affected business mod
 ## 3. Build
 
 - Call the Skill tool with "studio-tdd" at the seams the handoff or Issue already agreed. If no seams were agreed, propose them and confirm before writing tests.
+- Backend code goes where `docs/architecture/backend.md` §2 puts it: handlers in `application/features/<feature>/`, ports in `application/ports/`, rules on the entity or value object in `domain/`, endpoints, jobs, schedulers and consumers in `entry-points/`, adapters in `infrastructure/`. Apply the nine rules of §3: entry points call handlers and handlers never call each other; for logic two features share, work through the six steps of rule 3 in order and say which one applied in the handoff.
 - Follow the architecture rules (AGENTS.md §2, `docs/architecture/backend.md` / `frontend.md`): six business modules only, imports through public entry points, Prisma adapters behind ports, one canonical definition per public contract, no feature logic in `shared/`, no speculative layers.
 - During the loop, run typechecking and the affected test file together in one command. Run the full relevant suite once at the end, not after every slice.
 

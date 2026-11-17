@@ -18,6 +18,7 @@
 - Implement the smallest coherent outcome that meets the Issue's acceptance criteria: BE + FE + tests **when applicable**, without unnecessary layers.
 - Backend: NestJS Modular Monolith + VSA + Lightweight Clean Architecture; six modules only: `projects`, `agents`, `workflows`, `executions`, `environments`, `mcp`.
 - Frontend: Next.js App Router + Modular Frontend + Feature-First + Clean Boundaries.
+- Backend structure (full rules in `docs/architecture/backend.md` §2–§3): entry points (HTTP endpoints, job processors, schedulers, start-up routines, event consumers) call handlers, and handlers never call each other; behaviour lives on the entity it is about, not in handlers or the database adapter; shared application logic follows the six ordered steps of rule 3 (domain, port, one use case, job or event, repeat, named collaborator last).
 - Import other modules only through their public entry points/contracts. No cross-module shortcuts, and no feature business logic in `shared/`.
 - Follow the repository's current conventions. No mandatory empty layers, command bus, or domain events in an MVP slice.
 - Agree on API/event contracts before splitting BE/FE work, with one canonical definition per public contract. HTTP: Zod 4 → `nestjs-zod`/Swagger OpenAPI → generated Fetch client. Persistence: Prisma adapters behind ports. See the backend/frontend architecture and bootstrap plan.
