@@ -6,6 +6,7 @@ import {
   type StoredRepositoryConnection,
 } from '../../entities/repository.js';
 import type { Project } from '../../value-objects/project.js';
+import { RepositoryFailure } from '../../value-objects/repository-failure.js';
 import type { ProjectName } from '../../value-objects/project-name.js';
 import {
   ProjectNotFoundError,
@@ -109,7 +110,12 @@ export class InMemoryProjectRepository implements ProjectRepository {
     if (!stored) return null;
     const { identity, ...repository } = stored;
     void identity; // stored for the uniqueness rule, not part of a RepositoryConnection
-    return RepositoryConnection.restore(structuredClone(repository));
+    const { failure } = repository;
+    return RepositoryConnection.restore({
+      ...structuredClone({ ...repository, failure: null }),
+      failure:
+        failure && RepositoryFailure.of(failure.code, failure.detail, failure.remoteDefaultBranch),
+    });
   }
 
   /** Saves what the Repository changed: its fields, its identity, or its removal. */

@@ -26,6 +26,9 @@ import {
   type RepositoryFailureCode,
 } from '../../domain/value-objects/repository-failure.js';
 
+/** A change waits for the row lock under pool pressure as a single UPDATE did (as the Run store). */
+const LOCKED_TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;
+
 const PROJECT_FIELDS = { id: true, name: true, createdAt: true } as const;
 
 const REPOSITORY_FIELDS = {
@@ -208,7 +211,7 @@ export class PrismaProjectRepository implements ProjectRepository {
         const created = RepositoryConnection.start(attempt);
         await tx.repository.create({ data: createColumns(created, attempt.identity) });
         return created;
-      });
+      }, LOCKED_TRANSACTION);
     } catch (error) {
       // A kept key whose Repository is gone or holds another key, a Repository that is not
       // failed, or a unique index of a concurrent connect or of another project's remote.
@@ -238,7 +241,7 @@ export class PrismaProjectRepository implements ProjectRepository {
         await tx.repository.update({ where: { projectId }, data: changedColumns(changes) });
       }
       return repository;
-    });
+    }, LOCKED_TRANSACTION);
   }
 
   async listIdsInState(state: RepositoryState): Promise<string[]> {
