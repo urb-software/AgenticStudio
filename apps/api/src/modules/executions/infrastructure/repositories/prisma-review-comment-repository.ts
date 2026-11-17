@@ -3,9 +3,10 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type {
-  ReviewCommentScope,
+import {
+  type ReviewCommentScope,
   ReviewComments,
+  ReviewCommentSet,
 } from '../../domain/value-objects/review-comments.js';
 import type { ReviewCommentRepository } from '../../domain/repositories/review-comment-repository.js';
 import { commentsSchema } from './review-comment-json.js';
@@ -40,23 +41,23 @@ export class PrismaReviewCommentRepository implements ReviewCommentRepository {
     if (row) {
       const comments = commentsSchema.safeParse(row.comments);
       if (comments.success) {
-        set = {
+        set = ReviewCommentSet.restore({
           // The CHECK constraint fixes the scope.
           scope: row.scope as ReviewCommentScope,
           comments: comments.data,
           truncated: row.truncated,
           loadedAt: row.loadedAt,
-        };
+        });
       } else {
         this.logger.warn(`The stored review comments of run ${runId} are not valid: left out.`);
       }
     }
-    return {
+    return ReviewComments.restore({
       set,
       load: {
         loading: open !== null,
         error: open?.error ?? (latest?.status === 'failed' ? latest.error : null),
       },
-    };
+    });
   }
 }

@@ -15,6 +15,7 @@ import {
   PreparedFollowUpNotFoundError,
 } from '../../get-prepared-follow-up/handler.js';
 import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
+import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { NoFailingChecksError, PrepareFailingChecksHandler } from '../handler.js';
 
 class Workers implements WorkerStatusStore {
@@ -43,12 +44,19 @@ describe('preparing a Follow-up from failing checks', () => {
     runs = new InMemoryRunRepository();
     lookups = new InMemoryRunLookupRepository(runs);
     workers = new Workers();
-    prepare = new PrepareFailingChecksHandler(runs, lookups, { now: () => T0 }, workers, LEASE, {
-      days: 7,
-      maxPerProject: 10,
-      openPullRequestIdleDays: 30,
-      hoursAfterPullRequestEnd: 24,
-    });
+    prepare = new PrepareFailingChecksHandler(
+      runs,
+      lookups,
+      { now: () => T0 },
+      workers,
+      LEASE,
+      RetentionPolicy.of({
+        days: 7,
+        maxPerProject: 10,
+        openPullRequestIdleDays: 30,
+        hoursAfterPullRequestEnd: 24,
+      }),
+    );
   });
 
   const connect = () =>

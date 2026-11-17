@@ -38,7 +38,7 @@ import {
   stepLimitFailure,
   UNDER_WAY_RUN_STATES,
 } from '../../domain/entities/run.js';
-import type { ReviewCommentSet } from '../../domain/value-objects/review-comments.js';
+import { ReviewCommentSet } from '../../domain/value-objects/review-comments.js';
 import { commentsSchema } from './review-comment-json.js';
 import type {
   AppendStepOutcome,
@@ -783,12 +783,12 @@ export class PrismaRunRepository implements RunRepository {
       mutate(
         run,
         stored && parsed?.success
-          ? {
+          ? ReviewCommentSet.restore({
               scope: stored.scope as ReviewCommentSet['scope'],
               comments: parsed.data,
               truncated: stored.truncated,
               loadedAt: stored.loadedAt,
-            }
+            })
           : null,
       );
     });

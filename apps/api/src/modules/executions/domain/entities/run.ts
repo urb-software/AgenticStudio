@@ -7,10 +7,11 @@
 
 import {
   ReviewCommentsNotLoadedError,
-  type ReviewCommentSet,
+  ReviewCommentSet,
 } from '../value-objects/review-comments.js';
-import { distinctAuthors, selectReviewComments } from '../services/review-comments.js';
+import { PROVIDERS, type Provider } from '../value-objects/provider.js';
 import type { Task } from '../value-objects/task.js';
+import { type RecordedWorkerStatus, WorkerStatus } from '../value-objects/worker-status.js';
 
 export const RUN_STATES = [
   'queued',
@@ -55,8 +56,7 @@ export const FINAL_RUN_STATES = [
 /** At most this many active Runs across the server (ADR 0002). */
 export const MAX_ACTIVE_RUNS = 2;
 
-export const PROVIDERS = ['claude_code', 'codex'] as const;
-export type Provider = (typeof PROVIDERS)[number];
+export { PROVIDERS, type Provider } from '../value-objects/provider.js';
 
 /** Why a Run failed: the fixed codes of Issue #96. */
 export const RUN_FAILURE_CODES = [
@@ -963,6 +963,36 @@ export interface FollowUpFacts {
 }
 
 /**
+ * What the Run's handler fetched about the agent workers, as values (Issue #141): when the worker
+ * that holds the Run's Working copy (its last claimer) last reported, and the latest report of
+ * any worker.
+ */
+export interface WorkerFacts {
+  /** The last report of the Run's last claimer; `undefined`: none, or the Run was never claimed. */
+  holderLastSeen: Date | undefined;
+  /** The latest report of any agent worker; `undefined`: none. */
+  latest: RecordedWorkerStatus | undefined;
+}
+
+/** What Studio knows about a Run that decides how long its Working copy is kept (Issue #143). */
+export interface RetentionFacts {
+  state: RunState;
+  /** Set exactly in a final state. */
+  finishedAt: Date | null;
+  /** Whether the Run has a pull request (it was delivered). */
+  hasPullRequest: boolean;
+  /**
+   * The pull request's state as last read. `null` (never read, or a lookup that never succeeded)
+   * counts as open: a Git host outage never causes removal.
+   */
+  pullRequestState: PullRequestState | null;
+  /** When the pull request was first read as merged, closed or missing; `null` while it is not. */
+  pullRequestEndedAt: Date | null;
+  /** The latest Run step, Answer or Follow-up (or the Run's creation). */
+  lastActivityAt: Date;
+}
+
+/**
  * What the Run needs to know about the places held, and about its Environment file snapshot, to
  * be resumed after the usage limit (Issue #105, review R1 of #129). The store reads them under
  * the lock that serializes claims, so they cannot change before the change is saved.
@@ -1205,6 +1235,39 @@ export class Run {
   }
 
   /**
+   * What the Run's Follow-up needs of the agent worker (Issue #141): whether the worker that
+   * holds its Working copy has reported within the lease, and whether its Provider is available
+   * on the connected worker (the same rule as starting a Run, Issue #101). The facts are values
+   * the handler fetched.
+   */
+  followUpFacts(workers: WorkerFacts, now: Date, leaseSeconds: number): FollowUpFacts {
+    const provider = WorkerStatus.providerAvailability(workers.latest, now, leaseSeconds).find(
+      (candidate) => candidate.id === this.provider,
+    );
+    return {
+      workerAvailable: WorkerStatus.isWithinLease(workers.holderLastSeen, now, leaseSeconds),
+      providerAvailable: provider?.available === true,
+    };
+  }
+
+  /** Whether the operator may send the Run a Follow-up now, with the reason when not (Issue #141). */
+  followUpAvailability(workers: WorkerFacts, now: Date, leaseSeconds: number): FollowUpEligibility {
+    return followUpEligibility(this, this.followUpFacts(workers, now, leaseSeconds));
+  }
+
+  /** What decides how long the Run's Working copy is kept (Issue #143). */
+  retentionFacts(): RetentionFacts {
+    return {
+      state: this.state,
+      finishedAt: this.finishedAt,
+      hasPullRequest: this.pullRequest !== null,
+      pullRequestState: this.pullRequestStatus.state,
+      pullRequestEndedAt: this.pullRequestStatus.endedAt,
+      lastActivityAt: this.lastActivityAt,
+    };
+  }
+
+  /**
    * The operator sends a Follow-up to the finished Run (Issue #141): how the part before it ended
    * is recorded first (a `part_end` message, review S1 of #150), then `text` as a `follow_up`
    * message, and the Run goes back to `queued` with its earlier result cleared, its pull request
@@ -1229,9 +1292,9 @@ export class Run {
     const source = typeof origin === 'object' ? origin.source : origin;
     let comments: FollowUpComments | undefined;
     if (typeof origin === 'object') {
-      const chosen = loaded === null ? null : selectReviewComments(loaded, origin.commentIds);
+      const chosen = loaded === null ? null : loaded.select(origin.commentIds);
       if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
-      comments = { count: chosen.length, authors: distinctAuthors(chosen) };
+      comments = { count: chosen.length, authors: ReviewCommentSet.distinctAuthors(chosen) };
     }
     this.append({ kind: 'part_end', ...partEndOf(this)!, at: now });
     this.append({

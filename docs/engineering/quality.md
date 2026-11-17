@@ -48,8 +48,8 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - `entry-points/` imports nothing from `infrastructure/`, and from a repository interface or port file only domain error classes (imported names ending in `Error`), so an entry point reaches the application through handlers.
 - No production file of a module imports a test file (a file in `__tests__/` or named `*.test.ts`); this keeps the `__tests__/` exemption of the feature check from reaching production code.
 - No import from one feature folder into another feature folder of the same module, for `executions` and `projects` (by path pattern; #170 adds all modules). The tests of a feature (`__tests__/`) are not checked: a round-trip test may build the handler that produces what the handler under test reads.
-- `domain/` imports nothing from `application/ports/` (added by #168).
-- Domain tests import no database client or container tooling (added by #168).
+- `domain/` imports nothing from `application/ports/`, in every module (by path pattern).
+- Domain tests import no database client or container tooling (the ORM, concrete clients, `testcontainers`, `@testcontainers/*`, `@agentic-studio/database` and `@agentic-studio/testing`), in every module.
 - An application collaborator never imports `application/features/` (added by #170).
 
 **Structural rules** (Vitest assertions or equivalent):
@@ -60,7 +60,7 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - `contracts/` holds only `index.ts` and `events/`.
 - No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/`.
 - Every file in `domain/entities/` exports a class with a non-public constructor (`executions`; `projects` added by #165; all modules, by path pattern, by #170; records without behaviour live in `domain/value-objects/`).
-- No `domain/services/` directory (added by #168).
+- No `domain/services/` directory, in every module (by path pattern).
 - The list of repository methods is pinned: a new method fails until the list is changed in review (added by #170).
 - The list of application collaborators is pinned: a new one fails until the list is changed in review (added by #170).
 - Do **not** require empty folders, mandatory `command.ts`/`query.ts`, or `domain/events/`.
@@ -125,12 +125,12 @@ Positive and negative fixtures prove the rules catch violations:
 | A test file imports a test helper | PASS |
 | `domain/entities/` file exports a class with a non-public constructor | PASS (`executions`; `projects` added by #165; all modules by #170) |
 | `domain/entities/` file exports a class with a public constructor, or no class | FAIL (`executions`; `projects` added by #165; all modules by #170) |
-| A module has no `domain/services/` directory | PASS (added by #168) |
-| A module has a `domain/services/` directory | FAIL (added by #168) |
-| `domain/` imports only `domain/` and plain libraries | PASS (added by #168) |
-| `domain/` imports from `application/ports/` | FAIL (added by #168) |
-| A domain test imports only the domain and test helpers | PASS (added by #168) |
-| A domain test imports a database client or container tooling | FAIL (added by #168) |
+| A module has no `domain/services/` directory | PASS |
+| A module has a `domain/services/` directory | FAIL |
+| `domain/` imports only `domain/` and plain libraries | PASS |
+| `domain/` imports from `application/ports/` | FAIL |
+| A domain test imports only the domain and test helpers | PASS |
+| A domain test imports a database client or container tooling | FAIL |
 | An application collaborator imports ports and the domain | PASS (added by #170) |
 | An application collaborator imports `application/features/` | FAIL (added by #170) |
 | Repository methods and application collaborators match the pinned lists | PASS (added by #170) |
@@ -152,8 +152,8 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1 (`executions` and `projects`), and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule |
 | 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features (added by #170); pinned test: the list of application collaborators (added by #170); the six-step order is review only |
 | 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (`executions`; `projects` added by #165; all modules by #170); where a rule sits is review only |
-| 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory (added by #168) |
-| 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests (added by #168); pinned test: the list of repository methods (added by #170); that no business rule is written in the database adapter is review only |
+| 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory |
+| 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests; pinned test: the list of repository methods (added by #170); that no business rule is written in the database adapter is review only |
 | 7 | Validation has two homes | Review only |
 | 8 | `contracts/` is a module's public face | Gate check: `contracts/` holds only `index.ts` and `events/`, and the existing check that other modules import only `contracts/index.ts` |
 | 9 | Same role, same form | Review only; entity classes are also covered by the check of rule 4 |

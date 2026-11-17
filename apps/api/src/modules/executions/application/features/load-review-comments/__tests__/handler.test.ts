@@ -5,6 +5,8 @@ import {
 } from '../../../../entry-points/http/shared/review-comments-response.js';
 import {
   type ReviewComment,
+  ReviewComments,
+  ReviewCommentSet,
   ReviewCommentsLoadRunningError,
 } from '../../../../domain/value-objects/review-comments.js';
 import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
@@ -16,9 +18,8 @@ import {
 import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { REDACTED } from '../../../../domain/services/log-redaction.js';
+import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
-import { reviewCommentsView } from '../../../../domain/services/review-comments.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { GetReviewCommentsHandler } from '../../get-review-comments/handler.js';
@@ -293,13 +294,15 @@ describe('review comments', () => {
 
   describe('what the operator is shown', () => {
     const view = (comments: ReviewComment[], operatorLogin: string | null = 'Octo-Cat') =>
-      reviewCommentsView(
-        {
-          set: { scope: 'unresolved', comments, truncated: false, loadedAt: T1 },
-          load: { loading: false, error: null },
-        },
-        operatorLogin,
-      );
+      ReviewComments.restore({
+        set: ReviewCommentSet.restore({
+          scope: 'unresolved',
+          comments,
+          truncated: false,
+          loadedAt: T1,
+        }),
+        load: { loading: false, error: null },
+      }).view(operatorLogin);
 
     it('marks only comments by the configured login, exactly and ignoring case', () => {
       const response = toReviewCommentsResponse(
@@ -336,7 +339,9 @@ describe('review comments', () => {
 
     it('says nothing is loaded yet, and what the latest load is doing', () => {
       const empty = (loading: boolean, error: string | null) =>
-        toReviewCommentsResponse(reviewCommentsView({ set: null, load: { loading, error } }, null));
+        toReviewCommentsResponse(
+          ReviewComments.restore({ set: null, load: { loading, error } }).view(null),
+        );
 
       expect(empty(true, null)).toEqual({ comments: [], truncated: false, loading: true });
       expect(empty(false, 'Failed.')).toEqual({

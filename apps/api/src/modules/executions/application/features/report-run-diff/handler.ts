@@ -19,7 +19,7 @@ import {
   RunNotHeldError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
-import { redactLogText } from '../../../domain/services/log-redaction.js';
+import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
@@ -55,8 +55,8 @@ export class ReportRunDiffHandler {
   async execute(input: ReportRunDiffInput): Promise<void> {
     const run = isRunId(input.runId) ? await this.runs.findById(input.runId) : null;
     if (!run) throw new RunNotFoundError();
-    const known = await this.secrets.forRun(input.runId);
-    const redact = (text: string) => redactLogText(text, known);
+    const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
+    const redact = (text: string) => redaction.text(text);
     const environmentFile = run.environmentFilePath;
     const stored = (diff: RunDiff): NewRunDiff => ({
       kind: 'computed',

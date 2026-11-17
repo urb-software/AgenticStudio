@@ -16,6 +16,7 @@ export const LAYOUT_RULES = [
   'api-contracts-only-index-and-events',
   'api-no-shared-common-utils-helpers-directory',
   'api-entities-are-classes-with-non-public-constructors',
+  'api-no-domain-services-directory',
 ];
 
 /**
@@ -117,6 +118,7 @@ export function layoutViolations(baseDir: string): Violation[] {
     ...files.flatMap((path) => entityClassViolations(baseDir, path)),
     ...contractsViolations(baseDir),
     ...directoryViolations(baseDir),
+    ...domainServicesViolations(baseDir),
   ];
 }
 
@@ -281,6 +283,22 @@ function directoryViolations(baseDir: string): Violation[] {
     .map((directory) => ({
       rule: 'api-no-shared-common-utils-helpers-directory',
       from: `${directory}/`,
+    }));
+}
+
+/**
+ * No module has a `domain/services/` directory, even an empty one (rule 5): a rule that seems to
+ * belong to no object means a concept is missing from the model, so it goes on the entity, policy
+ * or value object it is about. A folder that is permitted and nearly empty gets filled again.
+ */
+function domainServicesViolations(baseDir: string): Violation[] {
+  return listDirectories(baseDir, 'src/modules')
+    .filter((module) =>
+      listDirectories(baseDir, `src/modules/${module}/domain`).includes('services'),
+    )
+    .map((module) => ({
+      rule: 'api-no-domain-services-directory',
+      from: `src/modules/${module}/domain/services/`,
     }));
 }
 

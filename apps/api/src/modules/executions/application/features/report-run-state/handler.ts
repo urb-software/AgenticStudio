@@ -15,7 +15,7 @@ import {
   type RunWorkingCopy,
 } from '../../../domain/entities/run.js';
 import { keepsSnapshotForRetry } from '../../../domain/value-objects/run-environment-file.js';
-import { redactFailure, redactWorkingCopy } from '../../../domain/services/log-redaction.js';
+import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
@@ -179,16 +179,14 @@ export class ReportRunStateHandler {
   /** The worker's free text (failure detail, commit subjects) redacted like the log (#104). */
   private async redacted(input: ReportRunStateInput): Promise<ReportRunStateInput> {
     if (!input.failure && !input.workingCopy && !input.unchangedDetail) return input;
-    const known = await this.secrets.forRun(input.runId);
+    const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
     return {
       ...input,
       unchangedDetail: input.unchangedDetail
-        ? cutDetail(redactFailure({ code: 'unknown', detail: input.unchangedDetail }, known)).detail
+        ? cutDetail(redaction.failure({ code: 'unknown', detail: input.unchangedDetail })).detail
         : input.unchangedDetail,
-      failure: input.failure && cutDetail(redactFailure(input.failure, known)),
-      workingCopy: input.workingCopy
-        ? redactWorkingCopy(input.workingCopy, known)
-        : input.workingCopy,
+      failure: input.failure && cutDetail(redaction.failure(input.failure)),
+      workingCopy: input.workingCopy ? redaction.workingCopy(input.workingCopy) : input.workingCopy,
     };
   }
 

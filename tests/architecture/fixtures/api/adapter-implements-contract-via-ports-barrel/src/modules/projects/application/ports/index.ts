@@ -1,1 +1,1 @@
-export type { GitClient } from '../../domain/services/git-client.js';
+export type { GitClient } from '../../domain/value-objects/git-client.js';

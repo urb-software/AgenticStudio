@@ -14,8 +14,8 @@ import {
   RunNotFoundError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
-import { type FollowUpView, runView } from '../../../domain/services/follow-up-context.js';
-import { isLimited, overLimit, retentionFactsOf } from '../../../domain/services/retention.js';
+import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
+import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -53,17 +53,24 @@ export class RefreshPullRequestHandler {
       if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     }
     const run = (await this.runs.findById(found.id)) ?? found;
-    return runView(
-      run,
-      this.workers,
+    const facts = run.retentionFacts();
+    const over =
+      this.retention.isLimited(facts) &&
+      this.retention.overLimit(await this.runs.findLimitedRuns([run.projectId])).has(run.id);
+    const latest = this.workers.latest();
+    const eligibility = run.followUpAvailability(
+      {
+        holderLastSeen:
+          run.lastClaimedBy === null ? undefined : this.workers.lastSeen(run.lastClaimedBy),
+        latest,
+      },
       now,
       this.lease.seconds,
-      this.retention,
-      isLimited(retentionFactsOf(run)) &&
-        overLimit(
-          await this.runs.findLimitedRuns([run.projectId]),
-          this.retention.maxPerProject,
-        ).has(run.id),
     );
+    return {
+      run,
+      followUp: this.retention.followUpView(eligibility, facts, over, now),
+      workerConnected: WorkerStatus.isAnyConnected(latest, now, this.lease.seconds),
+    };
   }
 }

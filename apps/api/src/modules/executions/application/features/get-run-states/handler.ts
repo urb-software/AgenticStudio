@@ -5,7 +5,6 @@ import {
   type RunStateView,
 } from '../../../domain/repositories/run-repository.js';
 import type { Provider } from '../../../domain/entities/run.js';
-import { isLimited, keepUntil, overLimit } from '../../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 
@@ -59,16 +58,15 @@ export class GetRunStatesHandler {
     const views = await this.runs.findStates([...new Set(runIds)]);
     const limited = views.filter(
       (view): view is RunStateView & { finishedAt: Date } =>
-        view.finishedAt !== null && isLimited(view),
+        view.finishedAt !== null && this.policy.isLimited(view),
     );
     // The limit counts every such Run of the Project that still has its Working copy, not only
     // the ones this request asks about (the worker asks in batches).
-    const over = overLimit(
+    const over = this.policy.overLimit(
       await this.runs.findLimitedRuns([...new Set(limited.map((view) => view.projectId))]),
-      this.policy.maxPerProject,
     );
     return views.map((view) => {
-      const until = keepUntil(view, this.policy);
+      const until = this.policy.keepUntil(view);
       const answer = { runId: view.runId, state: view.state, finishedAt: view.finishedAt };
       if (until === null) return answer;
       const removable = until.getTime() <= now.getTime() || over.has(view.runId);

@@ -1,4 +1,4 @@
-import type { RetentionPolicy } from '../../domain/services/retention.js';
+import type { RetentionPolicy } from '../../domain/value-objects/retention-policy.js';
 
 export type { RetentionPolicy };
 

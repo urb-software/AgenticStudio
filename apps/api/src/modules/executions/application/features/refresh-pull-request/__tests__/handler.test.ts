@@ -10,6 +10,7 @@ import { RunNotFoundError } from '../../../../domain/repositories/run-repository
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
+import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { RefreshPullRequestHandler } from '../handler.js';
 
 class Workers implements WorkerStatusStore {
@@ -41,12 +42,19 @@ describe('RefreshPullRequestHandler', () => {
     lookups = new InMemoryRunLookupRepository(runs);
     workers = new Workers();
     now = T0;
-    handler = new RefreshPullRequestHandler(runs, lookups, { now: () => now }, workers, LEASE, {
-      days: 7,
-      maxPerProject: 10,
-      openPullRequestIdleDays: 30,
-      hoursAfterPullRequestEnd: 24,
-    });
+    handler = new RefreshPullRequestHandler(
+      runs,
+      lookups,
+      { now: () => now },
+      workers,
+      LEASE,
+      RetentionPolicy.of({
+        days: 7,
+        maxPerProject: 10,
+        openPullRequestIdleDays: 30,
+        hoursAfterPullRequestEnd: 24,
+      }),
+    );
   });
 
   const connect = (at = now) =>

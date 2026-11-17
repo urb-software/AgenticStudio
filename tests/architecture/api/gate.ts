@@ -123,6 +123,38 @@ export const apiGate: Gate = {
       },
     },
     {
+      name: 'api-domain-no-ports',
+      comment:
+        'domain/ receives facts as values and never fetches them (backend.md §3 rule 6): it ' +
+        'imports nothing from application/ports/, which hold the interfaces a handler uses to ' +
+        'look things up.',
+      severity: 'error',
+      from: { path: '^src/modules/[^/]+/domain/' },
+      to: { path: '^src/modules/[^/]+/application/ports/' },
+    },
+    {
+      name: 'api-domain-tests-no-database-or-containers',
+      comment:
+        'The tests of domain/ need no database and no container (backend.md §3 rule 6, ' +
+        'quality.md §4): they import no ORM, database client, concrete client, container ' +
+        'tooling or the shared test containers package.',
+      severity: 'error',
+      from: { path: '^src/modules/[^/]+/domain/.*(__tests__/|\\.test\\.tsx?$)' },
+      to: {
+        path: [
+          npmPackages(
+            ...ORM_PACKAGES,
+            'testcontainers',
+            '@testcontainers',
+            '@agentic-studio/testing',
+          ),
+          CONCRETE_CLIENTS,
+          '(^|/)packages/(database|testing)/',
+          '^src/platform/database/',
+        ],
+      },
+    },
+    {
       name: 'api-ports-independent',
       comment:
         'application/ports/ are interfaces: they never import (or re-export) infrastructure/, ' +

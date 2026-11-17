@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { isPullRequestEnded, type PullRequestState } from '../../entities/run.js';
 import type { PreparedFollowUp } from '../../value-objects/prepared-follow-up.js';
-import type {
-  ReviewCommentScope,
+import {
+  type ReviewCommentScope,
   ReviewComments,
-  ReviewCommentsRequest,
+  ReviewCommentSet,
+  type ReviewCommentsRequest,
 } from '../../value-objects/review-comments.js';
 import type {
   ClaimedLookup,
@@ -231,12 +232,15 @@ export class InMemoryRunLookupRepository
     lookup.status = 'done';
     lookup.finishedAt = now;
     lookup.error = null;
-    this.runs.reviewSets.set(lookup.runId, {
-      scope: lookup.scope ?? 'unresolved',
-      comments: result.comments,
-      truncated: result.truncated,
-      loadedAt: now,
-    });
+    this.runs.reviewSets.set(
+      lookup.runId,
+      ReviewCommentSet.restore({
+        scope: lookup.scope ?? 'unresolved',
+        comments: result.comments,
+        truncated: result.truncated,
+        loadedAt: now,
+      }),
+    );
     return Promise.resolve('stored');
   }
 
@@ -253,13 +257,15 @@ export class InMemoryRunLookupRepository
           : best,
       undefined,
     );
-    return Promise.resolve({
-      set: this.runs.reviewSets.get(runId) ?? null,
-      load: {
-        loading: open !== undefined,
-        error: open?.error ?? (latest?.status === 'failed' ? latest.error : null),
-      },
-    });
+    return Promise.resolve(
+      ReviewComments.restore({
+        set: this.runs.reviewSets.get(runId) ?? null,
+        load: {
+          loading: open !== undefined,
+          error: open?.error ?? (latest?.status === 'failed' ? latest.error : null),
+        },
+      }),
+    );
   }
 
   find(runId: string): Promise<PreparedFollowUp | null> {

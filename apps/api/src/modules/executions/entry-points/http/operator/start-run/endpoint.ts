@@ -17,7 +17,7 @@ import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
 } from '../../../../domain/entities/run.js';
-import { ProviderUnavailableError } from '../../../../domain/services/provider-availability.js';
+import { ProviderUnavailableError } from '../../../../domain/value-objects/worker-status.js';
 import { InvalidTaskError } from '../../../../domain/value-objects/task.js';
 import { StartRunHandler } from '../../../../application/features/start-run/handler.js';
 import { startRunRequestSchema, StartRunRequestDto } from './schema.js';

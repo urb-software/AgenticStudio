@@ -83,6 +83,20 @@ export const QUALITY_TABLE = [
     expected: 'FAIL',
     gate: 'api',
   },
+  { row: 'A module has no `domain/services/` directory', expected: 'PASS', gate: 'api' },
+  { row: 'A module has a `domain/services/` directory', expected: 'FAIL', gate: 'api' },
+  { row: '`domain/` imports only `domain/` and plain libraries', expected: 'PASS', gate: 'api' },
+  { row: '`domain/` imports from `application/ports/`', expected: 'FAIL', gate: 'api' },
+  {
+    row: 'A domain test imports only the domain and test helpers',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A domain test imports a database client or container tooling',
+    expected: 'FAIL',
+    gate: 'api',
+  },
 ] as const;
 
 export interface FixtureCase {

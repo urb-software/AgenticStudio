@@ -14,13 +14,9 @@ import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../../domain/repositories/run-lookup-repository.js';
-import {
-  followUpContext,
-  type FollowUpView,
-  runView,
-} from '../../../domain/services/follow-up-context.js';
+import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
+import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import { isLimited, overLimit, retentionFactsOf } from '../../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -65,7 +61,15 @@ export class FollowUpRunHandler {
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
     const now = this.clock.now();
-    const facts = followUpContext(run, this.workers, now, this.lease.seconds);
+    const facts = run.followUpFacts(
+      {
+        holderLastSeen:
+          run.lastClaimedBy === null ? undefined : this.workers.lastSeen(run.lastClaimedBy),
+        latest: this.workers.latest(),
+      },
+      now,
+      this.lease.seconds,
+    );
     // Issue #146: the selected comments are checked against the loaded set under the lock.
     const origin: FollowUpOrigin | undefined =
       source === 'review_comments' ? { source, commentIds: reviewCommentIds } : source;
@@ -86,17 +90,29 @@ export class FollowUpRunHandler {
         );
       });
     const refreshed = (await this.runs.findById(queued.id)) ?? queued;
-    return runView(
-      refreshed,
-      this.workers,
-      this.clock.now(),
+    const viewedAt = this.clock.now();
+    const retention = refreshed.retentionFacts();
+    const over =
+      this.retention.isLimited(retention) &&
+      this.retention
+        .overLimit(await this.runs.findLimitedRuns([refreshed.projectId]))
+        .has(refreshed.id);
+    const latest = this.workers.latest();
+    const eligibility = refreshed.followUpAvailability(
+      {
+        holderLastSeen:
+          refreshed.lastClaimedBy === null
+            ? undefined
+            : this.workers.lastSeen(refreshed.lastClaimedBy),
+        latest,
+      },
+      viewedAt,
       this.lease.seconds,
-      this.retention,
-      isLimited(retentionFactsOf(refreshed)) &&
-        overLimit(
-          await this.runs.findLimitedRuns([refreshed.projectId]),
-          this.retention.maxPerProject,
-        ).has(refreshed.id),
     );
+    return {
+      run: refreshed,
+      followUp: this.retention.followUpView(eligibility, retention, over, viewedAt),
+      workerConnected: WorkerStatus.isAnyConnected(latest, viewedAt, this.lease.seconds),
+    };
   }
 }
