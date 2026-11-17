@@ -83,7 +83,7 @@ The `@modules/*` alias is conceptual; define aliases in tooling before using the
 
 ### The nine structure rules
 
-Approved by the operator on 2026-11-17 (Epic #160, [ADR 0003](adr/0003-api-module-layout.md)). How each is enforced is in [Quality](../engineering/quality.md) §4.
+Approved by the operator on 2026-11-17 (Epic #160, [ADR 0003](adr/0003-api-module-layout.md)). How each is enforced is in [Quality](../engineering/quality.md) §5.
 
 1. **Features are independent.** A feature never imports another feature of its module.
 2. **Entry points call handlers; handlers never call each other.** Everything that receives outside input (HTTP endpoints, job processors, schedulers, start-up routines, event consumers) lives in `entry-points/`, is thin, and holds no business rules. The application layer knows nothing about HTTP, queues or timers. Entry points are what clean architecture calls interface adapters and hexagonal architecture calls driving adapters.

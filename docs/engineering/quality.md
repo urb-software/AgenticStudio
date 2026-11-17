@@ -46,7 +46,7 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
 - `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API (added by #162).
 - `entry-points/` imports no repository interface, port or infrastructure file (added by #162).
-- No import from one feature folder into another feature folder of the same module (added by #164).
+- No import from one feature folder into another feature folder of the same module (added by #164 for `projects`; for `executions` by #166; for all modules, by path pattern, by #170).
 - `domain/` imports nothing from `application/ports/` (added by #168).
 - Domain tests import no database client or container tooling (added by #168).
 - An application collaborator never imports `application/features/` (added by #170).
@@ -57,14 +57,15 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - Concrete read/write repository implementations belong in `infrastructure/repositories/`, adapters in `infrastructure/adapters/`.
 - Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
 - `contracts/` holds only `index.ts` and `events/` (added by #162).
-- No directory named `shared`, `common`, `utils` or `helpers` inside a module, except `entry-points/http/shared/` (added by #162).
-- Every file in `domain/entities/` exports a class with a non-public constructor (added by #165).
+- No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/` (added by #162).
+- Every file in `domain/entities/` exports a class with a non-public constructor (added by #165 for `projects`; for `executions` by #167; for all modules, by path pattern, by #170).
 - No `domain/services/` directory (added by #168).
 - The list of repository methods is pinned: a new method fails until the list is changed in review (added by #170).
 - The list of application collaborators is pinned: a new one fails until the list is changed in review (added by #170).
-- A structure report (counts of collaborators, repository methods and feature sizes) is printed; it is informative and never blocks (added by #170).
 - Do **not** require empty folders, mandatory `command.ts`/`query.ts`, or `domain/events/`.
 - Static checks cannot prove where all business logic lives; thin consumer/endpoint rules need behavior tests and review.
+
+**Structure report** (not a check; added by #170): a script prints, for the API, the largest source files, the number of methods per repository interface, the number of public methods per handler, the number of collaborators per module and the number of files per feature. CI shows it in the pull request's job summary, with the change against the base branch, and it never fails the build (§7); it runs locally with one command that #170 documents here.
 
 ### `architecture:web` — Next.js
 
@@ -111,16 +112,23 @@ Positive and negative fixtures prove the rules catch violations:
 | `entry-points/` imports a repository interface, port or infrastructure file | FAIL (added by #162) |
 | `contracts/` holds `index.ts` and `events/` only | PASS (added by #162) |
 | `contracts/` holds another file or directory | FAIL (added by #162) |
-| A module has a `shared`, `common`, `utils` or `helpers` directory | FAIL (added by #162) |
-| A feature imports another feature of its module | FAIL (added by #164) |
-| A feature imports a port, the domain or its own files | PASS (added by #164) |
-| `domain/entities/` file exports a class with a non-public constructor | PASS (added by #165) |
-| `domain/entities/` file exports a class with a public constructor, or no class | FAIL (added by #165) |
+| A module has `entry-points/http/shared/` (the one exemption) | PASS (added by #162) |
+| A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/` | FAIL (added by #162) |
+| A feature imports another feature of its module | FAIL (added by #164 for `projects`; `executions` by #166; all modules by #170) |
+| A feature imports a port, the domain or its own files | PASS (added by #164 for `projects`; `executions` by #166; all modules by #170) |
+| `domain/entities/` file exports a class with a non-public constructor | PASS (added by #165 for `projects`; `executions` by #167; all modules by #170) |
+| `domain/entities/` file exports a class with a public constructor, or no class | FAIL (added by #165 for `projects`; `executions` by #167; all modules by #170) |
+| A module has no `domain/services/` directory | PASS (added by #168) |
 | A module has a `domain/services/` directory | FAIL (added by #168) |
+| `domain/` imports only `domain/` and plain libraries | PASS (added by #168) |
 | `domain/` imports from `application/ports/` | FAIL (added by #168) |
+| A domain test imports only the domain and test helpers | PASS (added by #168) |
 | A domain test imports a database client or container tooling | FAIL (added by #168) |
+| An application collaborator imports ports and the domain | PASS (added by #170) |
 | An application collaborator imports `application/features/` | FAIL (added by #170) |
-| A new repository method or application collaborator is not in the pinned list | FAIL (added by #170) |
+| Repository methods and application collaborators match the pinned lists | PASS (added by #170) |
+| A repository method or application collaborator is added, renamed or removed without updating its pinned list | FAIL (added by #170) |
+| The reference module fixture (the complete approved layout) | PASS with every check (added by #170) |
 | Web imports `@/modules/agents` public entrypoint | PASS |
 | Web deep-imports another module's private Zustand store | FAIL |
 | Two modules introduce a dependency cycle | FAIL |
@@ -133,10 +141,10 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 
 | # | Rule | Enforcement |
 | --- | --- | --- |
-| 1 | Features are independent | Gate check: no import between feature folders (added by #164) |
-| 2 | Entry points call handlers; handlers never call each other | Gate check: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure (added by #162), and handlers never call each other through the check of rule 1 (added by #164); that an entry point holds no business rule is review only |
+| 1 | Features are independent | Gate check: no import between feature folders (added by #164 for `projects`; `executions` by #166; all modules by #170) |
+| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file (added by #162); handlers never call each other, through the check of rule 1 (added by #164). Review only: that an entry point holds no business rule |
 | 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory (added by #162), collaborators never import features (added by #170); pinned test: the list of application collaborators (added by #170); the six-step order is review only |
-| 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (added by #165); where a rule sits is review only |
+| 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (added by #165 for `projects`; `executions` by #167; all modules by #170); where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory (added by #168) |
 | 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests (added by #168); pinned test: the list of repository methods (added by #170); that no business rule is written in the database adapter is review only |
 | 7 | Validation has two homes | Review only |
