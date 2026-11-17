@@ -13,13 +13,18 @@ import {
   type DatabaseClient,
 } from '../../../../../platform/database/database.module.js';
 import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
-import { RemoteAlreadyConnectedError } from '../../../domain/repositories/project-repository.js';
+import { RemoteAlreadyConnectedError } from '../../../domain/repositories/repository-connection-repository.js';
+import { ConnectRepositoryHandler } from '../../../application/features/connect-repository/handler.js';
+import { FakeRepositoryGit } from '../../../application/ports/__tests__/fake-repository-git.js';
+import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memory-deploy-keys.js';
+import { RecordingRepositoryJobs } from '../../../application/ports/__tests__/recording-repository-jobs.js';
 import {
   RepositoryAlreadyConnectedError,
   type RepositoryConnection,
 } from '../../../domain/entities/repository.js';
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 import { PrismaProjectRepository } from '../prisma-project-repository.js';
+import { PrismaRepositoryConnectionRepository } from '../prisma-repository-connection-repository.js';
 
 // Against real PostgreSQL.
 //
@@ -57,17 +62,18 @@ async function migrationStatements(migration: string): Promise<string[]> {
 }
 const SSH_IDENTITY = 'github.com/acme/shop';
 
-describe('PrismaProjectRepository (PostgreSQL)', () => {
+describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
   let postgres: TestService;
   let app: INestApplication;
   let db: DatabaseClient;
   let projects: PrismaProjectRepository;
+  let connections: PrismaRepositoryConnectionRepository;
   let projectId: string;
 
   /** Runs `write` on the stored Repository, in the store's locked change; what it returned. */
   async function applied(write: (repository: RepositoryConnection) => boolean): Promise<boolean> {
     let result = false;
-    await projects.change(projectId, (repository) => {
+    await connections.change(projectId, (repository) => {
       result = write(repository);
     });
     return result;
@@ -75,7 +81,7 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
 
   /** A failed SSH Repository holding `secretRef` (its host was unreachable). */
   async function failedSsh(secretRef: string) {
-    await projects.connect({
+    await connections.connect({
       projectId,
       url: SSH_URL,
       identity: SSH_IDENTITY,
@@ -91,7 +97,7 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
 
   /** The Retry over SSH that keeps `secretRef`, as Connect sends it. */
   const retryKeeping = (secretRef: string) =>
-    projects.connect({
+    connections.connect({
       projectId,
       url: SSH_URL,
       identity: SSH_IDENTITY,
@@ -107,6 +113,7 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
     await app.init();
     db = app.get<DatabaseClient>(DATABASE_CLIENT);
     projects = new PrismaProjectRepository(db);
+    connections = new PrismaRepositoryConnectionRepository(db);
   });
 
   afterAll(async () => {
@@ -138,18 +145,18 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       const key = randomUUID();
       await failedSsh(key);
       // Meanwhile another connect replaced it over HTTPS (releasing the key), and that failed.
-      await projects.connect({
+      await connections.connect({
         projectId,
         url: 'https://github.com/acme/shop.git',
         identity: SSH_IDENTITY,
         integrationBranch: 'dev',
       });
       await applied((repository) => repository.failClone(RepositoryFailure.of('unknown')));
-      const before = await projects.findRepository(projectId);
+      const before = await connections.find(projectId);
 
       await expect(retryKeeping(key)).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
 
-      expect(await projects.findRepository(projectId)).toEqual(before);
+      expect(await connections.find(projectId)).toEqual(before);
       expect(before).toMatchObject({ state: 'failed', deployKeySecret: null });
     });
 
@@ -157,13 +164,13 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       const key = randomUUID();
       await failedSsh(key);
       // Meanwhile a disconnect removed it (and deleted its key).
-      await projects.change(projectId, (repository) => repository.startDisconnect());
+      await connections.change(projectId, (repository) => repository.startDisconnect());
       expect(await applied((repository) => repository.finishDisconnect())).toBe(true);
 
       await expect(retryKeeping(key)).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
 
-      expect(await projects.findRepository(projectId)).toBeNull();
-      expect(await projects.listDeployKeySecretRefs()).toEqual([]);
+      expect(await connections.find(projectId)).toBeNull();
+      expect(await connections.listDeployKeySecretRefs()).toEqual([]);
     });
   });
 
@@ -172,13 +179,19 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       'connects exactly one; the other is told which project holds the remote (round %i)',
       async () => {
         const other = (await projects.add(ProjectName.parse('Other'))).id;
+        // The store names the holder by id and the Connect handler turns it into its name, so
+        // the race runs through the handler over the real stores.
+        const connect = new ConnectRepositoryHandler(
+          projects,
+          connections,
+          new FakeRepositoryGit(),
+          new RecordingRepositoryJobs(),
+          { allowFileRemotes: false, allowPrivateRemotes: false },
+          new InMemoryDeployKeys(),
+          { gracePeriodMs: 0 },
+        );
         const attempt = (id: string, url: string) =>
-          projects.connect({
-            projectId: id,
-            url,
-            identity: 'github.com/acme/shop',
-            integrationBranch: 'dev',
-          });
+          connect.execute({ projectId: id, url, integrationBranch: 'dev' });
 
         const results = await Promise.allSettled([
           attempt(projectId, 'https://github.com/acme/shop.git'),
@@ -191,14 +204,14 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
         const refusal = (firstWon ? second : first) as PromiseRejectedResult;
         expect(refusal.reason).toBeInstanceOf(RemoteAlreadyConnectedError);
         expect(refusal.reason.message).toBe(`Already connected to ${firstWon ? 'Shop' : 'Other'}`);
-        expect(await projects.findRepository(firstWon ? other : projectId)).toBeNull();
+        expect(await connections.find(firstWon ? other : projectId)).toBeNull();
       },
     );
   });
 
   describe('a remote default branch over 255 characters (#72)', () => {
     it('stores the failure without it, instead of failing the write', async () => {
-      await projects.connect({
+      await connections.connect({
         projectId,
         url: 'https://github.com/acme/shop.git',
         identity: 'github.com/acme/shop',
@@ -210,7 +223,7 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       );
 
       expect(stored).toBe(true);
-      expect((await projects.findRepository(projectId))?.failure).toEqual({
+      expect((await connections.find(projectId))?.failure).toEqual({
         code: 'branch_not_found',
         detail: '',
         remoteDefaultBranch: null,
@@ -231,12 +244,12 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
         await db.$executeRawUnsafe(statement);
       }
 
-      expect((await projects.findRepository(projectId))?.failure).toEqual({
+      expect((await connections.find(projectId))?.failure).toEqual({
         code: 'interrupted',
         detail: '',
         remoteDefaultBranch: null,
       });
-      expect((await projects.findRepository(other))?.failure).toEqual({
+      expect((await connections.find(other))?.failure).toEqual({
         code: 'unknown',
         detail: 'Interrupted by the host',
         remoteDefaultBranch: null,

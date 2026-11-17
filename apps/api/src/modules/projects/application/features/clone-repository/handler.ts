@@ -6,9 +6,9 @@ import {
   type UnfinishedJob,
 } from '../../../domain/value-objects/repository-failure.js';
 import {
-  PROJECT_REPOSITORY,
-  type ProjectRepository,
-} from '../../../domain/repositories/project-repository.js';
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import {
   GitOperationError,
   REPOSITORY_GIT,
@@ -35,6 +35,12 @@ function gitStepFailure(error: unknown): RepositoryFailure | undefined {
   return undefined;
 }
 
+export interface CloneRepositoryInput {
+  projectId: string;
+  /** The job's abort signal. */
+  signal: AbortSignal;
+}
+
 /**
  * Feature: the background clone of a connecting Repository, run by the Repository's job
  * (the job processor under `entry-points/jobs/` calls this for a `connecting` Repository).
@@ -53,15 +59,17 @@ export class CloneRepositoryHandler {
   private readonly logger = new Logger('CloneRepository');
 
   constructor(
-    @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
     @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
   ) {}
 
   /** Runs one clone. Aborts propagate, so the queue reports them through `onFailed`. */
-  async process(projectId: string, signal: AbortSignal): Promise<void> {
+  async execute(input: CloneRepositoryInput): Promise<void> {
+    const { projectId, signal } = input;
     signal.throwIfAborted();
-    const repository = await this.projects.findRepository(projectId);
+    const repository = await this.repositories.find(projectId);
     // A job left over from before a restart, whose attempt reconciliation already failed.
     if (repository?.pendingOperation !== 'clone') return;
     const { url, integrationBranch } = repository;
@@ -81,7 +89,7 @@ export class CloneRepositoryHandler {
       const { commit } = await this.git.clone(projectId, url, integrationBranch, { signal, ssh });
       signal.throwIfAborted();
       const clone = { headSha: commit, fetchedAt: new Date() };
-      await this.projects.change(projectId, (stored) => {
+      await this.repositories.change(projectId, (stored) => {
         stored.completeClone(clone);
       });
     } catch (error) {
@@ -108,8 +116,8 @@ export class CloneRepositoryHandler {
   /** Idempotent: failing what is already failed changes nothing. */
   async reconcile(): Promise<void> {
     let failed = 0;
-    for (const projectId of await this.projects.listIdsInState('connecting')) {
-      await this.projects.change(projectId, (stored) => {
+    for (const projectId of await this.repositories.listIdsInState('connecting')) {
+      await this.repositories.change(projectId, (stored) => {
         if (stored.failClone(RepositoryFailure.interrupted())) failed += 1;
       });
     }
@@ -120,7 +128,7 @@ export class CloneRepositoryHandler {
 
   /** A late write changes nothing: only a Repository still `connecting` takes the failure. */
   private async fail(projectId: string, failure: RepositoryFailure): Promise<void> {
-    await this.projects.change(projectId, (stored) => {
+    await this.repositories.change(projectId, (stored) => {
       stored.failClone(failure);
     });
   }

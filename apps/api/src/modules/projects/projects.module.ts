@@ -5,6 +5,7 @@ import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_ENVIRONMENT_FILES, RUN_START_POINTS } from './contracts/index.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
+import { REPOSITORY_CONNECTION_REPOSITORY } from './domain/repositories/repository-connection-repository.js';
 import { CloneRepositoryHandler } from './application/features/clone-repository/handler.js';
 import { ConnectRepositoryEndpoint } from './entry-points/http/operator/connect-repository/endpoint.js';
 import {
@@ -47,6 +48,7 @@ import {
   systemGitSettings,
 } from './infrastructure/adapters/git/system-git-adapter.js';
 import { PrismaProjectRepository } from './infrastructure/repositories/prisma-project-repository.js';
+import { PrismaRepositoryConnectionRepository } from './infrastructure/repositories/prisma-repository-connection-repository.js';
 import { SecretStoreEnvironmentFileContents } from './infrastructure/adapters/secret-store-environment-file-contents.js';
 import { ENVIRONMENT_FILE_CONTENTS } from './application/ports/environment-file-contents.js';
 import { PrismaEnvironmentFileRepository } from './infrastructure/repositories/prisma-environment-file-repository.js';
@@ -123,6 +125,10 @@ export class ProjectsModule {
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
+        {
+          provide: REPOSITORY_CONNECTION_REPOSITORY,
+          useClass: PrismaRepositoryConnectionRepository,
+        },
         { provide: ENVIRONMENT_FILE_REPOSITORY, useClass: PrismaEnvironmentFileRepository },
         { provide: ENVIRONMENT_FILE_CONTENTS, useClass: SecretStoreEnvironmentFileContents },
         {

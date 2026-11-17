@@ -30,7 +30,7 @@ export class RepositoryStartupRecovery {
     await this.clone.reconcile();
     await this.fetchClone.reconcile();
     await this.disconnect.resumeAll();
-    await this.orphanedKeys.sweep();
-    await this.orphanedEnvironmentFiles.sweep();
+    await this.orphanedKeys.execute();
+    await this.orphanedEnvironmentFiles.execute();
   }
 }

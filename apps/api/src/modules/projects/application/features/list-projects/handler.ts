@@ -1,16 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Project } from '../../../domain/value-objects/project.js';
+import type { ProjectSnapshot } from '../../../domain/entities/project.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+
+/** Every project, newest first. */
+export type ListProjectsResult = readonly ProjectSnapshot[];
 
 /** Query: every project, newest first. No pagination (out of scope for Story #16). */
 @Injectable()
 export class ListProjectsHandler {
   constructor(@Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository) {}
 
-  execute(): Promise<Project[]> {
-    return this.projects.listNewestFirst();
+  async execute(): Promise<ListProjectsResult> {
+    const projects = await this.projects.listNewestFirst();
+    return projects.map((project) => project.snapshot());
   }
 }

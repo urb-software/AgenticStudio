@@ -504,4 +504,63 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entities-are-classes-with-non-public-constructors'],
     qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
   },
+  // Aggregate roots and handler results (Issue #182): `projects`; `executions` is added by #183.
+  {
+    fixture: 'entry-point-imports-entity-type-and-error',
+    expected: [],
+    qualityRow: '`entry-points/` imports a type or an error from `domain/entities/`',
+  },
+  {
+    fixture: 'entry-point-imports-entity-class',
+    expected: ['api-entry-points-no-entity-classes'],
+    qualityRow: '`entry-points/` imports a class from `domain/entities/`',
+  },
+  {
+    fixture: 'handler-returns-snapshot-and-exports-input-and-result',
+    expected: [],
+    qualityRow:
+      'A handler returns a snapshot, ids, values or a view type, and exports its input and result types',
+  },
+  {
+    fixture: 'handler-returns-entity-class',
+    expected: ['api-handlers-return-plain-data'],
+    qualityRow: 'A handler returns an entity class, or does not export its result type',
+  },
+  {
+    fixture: 'handler-result-wraps-entity-class',
+    expected: ['api-handlers-return-plain-data'],
+    qualityRow: 'A handler returns an entity class, or does not export its result type',
+  },
+  {
+    fixture: 'handler-does-not-export-result-type',
+    expected: ['api-handlers-return-plain-data'],
+    qualityRow: 'A handler returns an entity class, or does not export its result type',
+  },
+  {
+    fixture: 'repository-refers-to-one-entity-file',
+    expected: [],
+    qualityRow: 'A repository interface refers to one entity file',
+  },
+  {
+    fixture: 'repository-refers-to-two-entity-files',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow:
+      'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
+  },
+  {
+    fixture: 'repository-returns-value-object-type',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow:
+      'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
+  },
+  {
+    fixture: 'entity-imports-entity-id-type',
+    expected: [],
+    qualityRow: 'An entity file imports another entity file for an id type',
+  },
+  {
+    fixture: 'entity-imports-another-entity',
+    expected: ['api-entities-do-not-import-entities'],
+    qualityRow: 'An entity file imports another entity file for anything else',
+  },
 ]);

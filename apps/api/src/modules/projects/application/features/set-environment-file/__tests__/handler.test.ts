@@ -7,6 +7,7 @@ import {
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import {
   GitCloneMissingError,
   GitUnsupportedPlatformError,
@@ -28,6 +29,7 @@ const CONTENT = 'DB_PASSWORD=test-only-pw-1\nexport API_KEY="test-only-key-2"\n'
 
 describe('Environment file handlers', () => {
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let files: InMemoryEnvironmentFileRepository;
   let secrets: InMemoryEnvironmentFileContents;
   let git: FakeRepositoryGit;
@@ -37,24 +39,25 @@ describe('Environment file handlers', () => {
   let snapshot: GetRunEnvironmentFileHandler;
 
   async function readyRepository() {
-    await projects.connect({
+    await connections.connect({
       projectId: PROJECT,
       url: 'https://github.com/acme/shop.git',
       identity: 'github.com/acme/shop',
       integrationBranch: 'dev',
     });
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: SHA, fetchedAt: new Date() });
     });
   }
 
   beforeEach(() => {
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     projects.addProject(PROJECT, 'Shop');
     files = new InMemoryEnvironmentFileRepository();
     secrets = new InMemoryEnvironmentFileContents();
     git = new FakeRepositoryGit();
-    set = new SetEnvironmentFileHandler(projects, files, secrets, git);
+    set = new SetEnvironmentFileHandler(projects, connections, files, secrets, git);
     get = new GetEnvironmentFileHandler(projects, files);
     remove = new RemoveEnvironmentFileHandler(projects, files, secrets);
     snapshot = new GetRunEnvironmentFileHandler(files, secrets);
@@ -66,7 +69,7 @@ describe('Environment file handlers', () => {
     expect(info).toEqual({ path: '.env', sizeBytes: 60, updatedAt: files.now });
     expect(JSON.stringify(info)).not.toContain('test-only');
     expect([...secrets.values.values()]).toEqual([CONTENT]);
-    await expect(get.execute(PROJECT)).resolves.toEqual(info);
+    await expect(get.execute({ projectId: PROJECT })).resolves.toEqual(info);
   });
 
   it('counts the size in UTF-8 bytes', async () => {
@@ -94,11 +97,11 @@ describe('Environment file handlers', () => {
   it('removes the file and its stored content; removing again changes nothing', async () => {
     await set.execute({ projectId: PROJECT, path: '.env', content: CONTENT });
 
-    await remove.execute(PROJECT);
-    await remove.execute(PROJECT);
+    await remove.execute({ projectId: PROJECT });
+    await remove.execute({ projectId: PROJECT });
 
     expect(secrets.values.size).toBe(0);
-    await expect(get.execute(PROJECT)).resolves.toBeNull();
+    await expect(get.execute({ projectId: PROJECT })).resolves.toBeNull();
     await expect(snapshot.forProject(PROJECT)).resolves.toBeNull();
   });
 
@@ -109,8 +112,8 @@ describe('Environment file handlers', () => {
     await expect(
       set.execute({ projectId: 'not-a-uuid', path: '.env', content: CONTENT }),
     ).rejects.toThrow(ProjectNotFoundError);
-    await expect(get.execute(UNKNOWN)).rejects.toThrow(ProjectNotFoundError);
-    await expect(remove.execute(UNKNOWN)).rejects.toThrow(ProjectNotFoundError);
+    await expect(get.execute({ projectId: UNKNOWN })).rejects.toThrow(ProjectNotFoundError);
+    await expect(remove.execute({ projectId: UNKNOWN })).rejects.toThrow(ProjectNotFoundError);
     expect(secrets.values.size).toBe(0);
   });
 

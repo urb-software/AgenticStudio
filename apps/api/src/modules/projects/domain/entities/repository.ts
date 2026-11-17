@@ -127,6 +127,9 @@ export interface RepositoryConnectionData extends StoredRepositoryConnection {
   hostKeyFingerprint: string | null;
 }
 
+/** A Repository's current values as read-only plain data: what a handler returns of it. */
+export type RepositoryConnectionSnapshot = Readonly<RepositoryConnectionData>;
+
 /** What a Connect (or a Retry) stores before the Clone is made. */
 export interface ConnectAttempt {
   projectId: string;
@@ -254,7 +257,7 @@ export class RepositoryConnection {
   }
 
   /** The state as a plain record (a copy), for what crosses a boundary. */
-  snapshot(): RepositoryConnectionData {
+  snapshot(): RepositoryConnectionSnapshot {
     return withDerived(this.stored());
   }
 

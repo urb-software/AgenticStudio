@@ -1,7 +1,4 @@
-import type {
-  EnvironmentFileInfo,
-  StoredEnvironmentFile,
-} from '../value-objects/environment-file.js';
+import type { EnvironmentFile } from '../entities/environment-file.js';
 
 /** DI token for the {@link EnvironmentFileRepository} adapter. */
 export const ENVIRONMENT_FILE_REPOSITORY = Symbol('ENVIRONMENT_FILE_REPOSITORY');
@@ -13,7 +10,7 @@ export const ENVIRONMENT_FILE_REPOSITORY = Symbol('ENVIRONMENT_FILE_REPOSITORY')
  */
 export interface EnvironmentFileRepository {
   /** The project's Environment file, or `null`. */
-  find(projectId: string): Promise<StoredEnvironmentFile | null>;
+  find(projectId: string): Promise<EnvironmentFile | null>;
 
   /**
    * Stores the project's Environment file, new or replacing the one there, with `updatedAt`
@@ -23,7 +20,7 @@ export interface EnvironmentFileRepository {
   save(
     projectId: string,
     record: { path: string; sizeBytes: number; secretRef: string },
-  ): Promise<{ saved: EnvironmentFileInfo; replacedSecretRef: string | null }>;
+  ): Promise<{ saved: EnvironmentFile; replacedSecretRef: string | null }>;
 
   /** Deletes the project's Environment file; returns its content's reference, or `null`. */
   delete(projectId: string): Promise<string | null>;

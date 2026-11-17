@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Project } from '../../../../domain/value-objects/project.js';
+import { Project } from '../../../../domain/entities/project.js';
 import {
   ProjectNameTakenError,
   type ProjectRepository,
@@ -22,24 +22,20 @@ class InMemoryProjectRepository implements ProjectRepository {
       return Promise.reject(new ProjectNameTakenError());
     }
     this.stored.push({ name: name.value, uniquenessKey: name.uniquenessKey });
-    return Promise.resolve({
-      id: `id-${this.stored.length}`,
-      name: name.value,
-      createdAt: new Date('2026-11-12T10:00:00.000Z'),
-    });
+    return Promise.resolve(
+      Project.restore({
+        id: `id-${this.stored.length}`,
+        name: name.value,
+        createdAt: new Date('2026-11-12T10:00:00.000Z'),
+      }),
+    );
   }
 
   listNewestFirst(): Promise<Project[]> {
     return Promise.reject(new Error('not used by create-project'));
   }
 
-  // The Repository transitions are not used by create-project.
   findById = notUsed;
-  findRepository = notUsed;
-  connect = notUsed;
-  change = notUsed;
-  listIdsInState = notUsed;
-  listDeployKeySecretRefs = notUsed;
 }
 
 function notUsed(): Promise<never> {

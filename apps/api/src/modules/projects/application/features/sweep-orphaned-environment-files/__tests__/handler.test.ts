@@ -31,7 +31,7 @@ describe('SweepOrphanedEnvironmentFilesHandler', () => {
     contents.ageAll();
     const fresh = await contents.store('C=test-only-3');
 
-    await sweep.sweep();
+    await sweep.execute();
 
     expect([...contents.values.keys()].sort()).toEqual([referenced, fresh].sort());
     expect(contents.values.has(orphan)).toBe(false);
@@ -39,6 +39,6 @@ describe('SweepOrphanedEnvironmentFilesHandler', () => {
 
   it('never throws when the store is unavailable', async () => {
     contents.failWith = new Error('down');
-    await expect(sweep.sweep()).resolves.toBeUndefined();
+    await expect(sweep.execute()).resolves.toBeUndefined();
   });
 });

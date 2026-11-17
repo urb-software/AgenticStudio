@@ -1,9 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  type EnvironmentFileInfo,
-  EnvironmentFilePathTrackedError,
-} from '../../../domain/value-objects/environment-file.js';
-import { isProjectId } from '../../../domain/value-objects/project.js';
+import type { EnvironmentFileSnapshot } from '../../../domain/entities/environment-file.js';
+import { EnvironmentFilePathTrackedError } from '../../../domain/value-objects/environment-file.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import { checkEnvironmentFile } from './check.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
@@ -14,6 +12,10 @@ import {
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+import {
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import {
   ENVIRONMENT_FILE_CONTENTS,
   type EnvironmentFileContents,
@@ -32,6 +34,9 @@ export interface SetEnvironmentFileInput {
   content: string;
 }
 
+/** What the operator may see of the file that was set. */
+export type SetEnvironmentFileResult = EnvironmentFileSnapshot;
+
 /**
  * Command (Issue #104): sets the project's Environment file, new or replacing the one there.
  * The content is stored in the secret store ({@link EnvironmentFileContents}); the project keeps the
@@ -45,12 +50,14 @@ export interface SetEnvironmentFileInput {
 export class SetEnvironmentFileHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
     @Inject(ENVIRONMENT_FILE_REPOSITORY) private readonly files: EnvironmentFileRepository,
     @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
   ) {}
 
-  async execute(input: SetEnvironmentFileInput): Promise<EnvironmentFileInfo> {
+  async execute(input: SetEnvironmentFileInput): Promise<SetEnvironmentFileResult> {
     if (!isProjectId(input.projectId) || !(await this.projects.findById(input.projectId))) {
       throw new ProjectNotFoundError();
     }
@@ -66,12 +73,12 @@ export class SetEnvironmentFileHandler {
       throw error;
     }
     if (result.replacedSecretRef !== null) await this.contents.discard(result.replacedSecretRef);
-    return result.saved;
+    return result.saved.snapshot();
   }
 
   /** The tracked-path check of a ready Clone; skipped without one (the worker re-checks). */
   private async refuseTrackedPath(projectId: string, path: string): Promise<void> {
-    const repository = await this.projects.findRepository(projectId);
+    const repository = await this.repositories.find(projectId);
     if (!repository || repository.state !== 'ready' || repository.headSha === null) return;
     let tracked: boolean;
     try {

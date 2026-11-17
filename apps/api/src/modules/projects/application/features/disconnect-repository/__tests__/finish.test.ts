@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RepositoryConnection } from '../../../../domain/entities/repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { GitOperationError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
@@ -19,13 +20,14 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let logs: string[];
   let cleanup: DisconnectRepositoryHandler;
 
   async function connect(projectId: string, name: string) {
     projects.addProject(projectId, name);
-    await projects.connect({
+    await connections.connect({
       projectId,
       url: `https://github.com/acme/${name}.git`,
       identity: `github.com/acme/${name}`,
@@ -41,6 +43,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     secrets = new InMemorySecretStore();
     deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     git = new FakeRepositoryGit();
     logs = [];
     vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
@@ -48,6 +51,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     });
     cleanup = new DisconnectRepositoryHandler(
       projects,
+      connections,
       git,
       new RecordingRepositoryJobs(),
       deployKeys,
@@ -58,18 +62,18 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     await connect(A, 'a');
     await connect(B, 'b');
     await connect(C, 'c');
-    await projects.change(A, (r) => {
+    await connections.change(A, (r) => {
       r.startDisconnect();
     });
-    await projects.change(C, (r) => {
+    await connections.change(C, (r) => {
       r.startDisconnect();
     });
 
     await cleanup.resumeAll();
 
-    expect(await projects.findRepository(A)).toBeNull();
-    expect(await projects.findRepository(C)).toBeNull();
-    expect((await projects.findRepository(B))?.state).toBe('connecting');
+    expect(await connections.find(A)).toBeNull();
+    expect(await connections.find(C)).toBeNull();
+    expect((await connections.find(B))?.state).toBe('connecting');
     expect(git.removeClone.mock.calls.map(([projectId]) => projectId).sort()).toEqual(
       [A, C].sort(),
     );
@@ -78,10 +82,10 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
   it('keeps a Repository whose Clone cannot be removed disconnecting, logs it and goes on', async () => {
     await connect(A, 'a');
     await connect(B, 'b');
-    await projects.change(A, (r) => {
+    await connections.change(A, (r) => {
       r.startDisconnect();
     });
-    await projects.change(B, (r) => {
+    await connections.change(B, (r) => {
       r.startDisconnect();
     });
     git.removeClone.mockImplementation((projectId) =>
@@ -92,22 +96,22 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
 
     await cleanup.resumeAll();
 
-    expect((await projects.findRepository(A))?.state).toBe('disconnecting');
-    expect(await projects.findRepository(B)).toBeNull();
+    expect((await connections.find(A))?.state).toBe('disconnecting');
+    expect(await connections.find(B)).toBeNull();
     expect(logs).toEqual([expect.stringContaining(A)]);
   });
 
   it('keeps going when the store fails for one Repository', async () => {
     await connect(A, 'a');
     await connect(B, 'b');
-    await projects.change(A, (r) => {
+    await connections.change(A, (r) => {
       r.startDisconnect();
     });
-    await projects.change(B, (r) => {
+    await connections.change(B, (r) => {
       r.startDisconnect();
     });
-    const change = projects.change.bind(projects);
-    projects.change = (projectId, mutate) =>
+    const change = connections.change.bind(connections);
+    connections.change = (projectId, mutate) =>
       change(projectId, (repository) => {
         mutate(repository);
         if (projectId === A && repository.pendingChanges().removed) {
@@ -117,22 +121,22 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
 
     await cleanup.resumeAll();
 
-    expect((await projects.findRepository(A))?.state).toBe('disconnecting');
-    expect(await projects.findRepository(B)).toBeNull();
+    expect((await connections.find(A))?.state).toBe('disconnecting');
+    expect(await connections.find(B)).toBeNull();
     expect(logs).toEqual([expect.stringContaining(A)]);
   });
 
   it.each([
-    ['reading the Repository', 'findRepository'],
+    ['reading the Repository', 'find'],
     ['deleting the record', 'change'],
   ] as const)(
     'reports a store failure while %s as pending (logged redacted), never as an error',
     async (_case, method) => {
       await connect(A, 'a');
-      await projects.change(A, (r) => {
+      await connections.change(A, (r) => {
         r.startDisconnect();
       });
-      vi.spyOn(projects, method).mockRejectedValue(
+      vi.spyOn(connections, method).mockRejectedValue(
         new Error('connect ECONNREFUSED postgres://studio:hunter2@db:5432'),
       );
 
@@ -147,7 +151,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     await connect(A, 'a');
 
     await expect(cleanup.finish(A)).resolves.toBe(false);
-    expect((await projects.findRepository(A))?.state).toBe('connecting');
+    expect((await connections.find(A))?.state).toBe('connecting');
     expect(git.removeClone).not.toHaveBeenCalled();
   });
 
@@ -155,7 +159,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     async function connectOverSsh(projectId: string) {
       projects.addProject(projectId, 'ssh');
       const deployKey = await deployKeys.create('ssh');
-      await projects.connect({
+      await connections.connect({
         projectId,
         url: 'git@git.example.com:acme/ssh.git',
         identity: 'git.example.com/acme/ssh',
@@ -163,10 +167,10 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
         deployKey,
       });
       const pending = generateDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
-      await projects.change(projectId, (r) => {
+      await connections.change(projectId, (r) => {
         r.awaitHostKey(pending);
       });
-      await projects.change(projectId, (r) => {
+      await connections.change(projectId, (r) => {
         r.startVerifiedClone({ pendingHostKey: pending });
       });
       return deployKey;
@@ -175,7 +179,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     it('deletes the private key from the secret store and forgets the pinned host key, then the record', async () => {
       await connectOverSsh(A);
       const forget = vi.spyOn(RepositoryConnection.prototype, 'forgetDeployKey');
-      await projects.change(A, (r) => {
+      await connections.change(A, (r) => {
         r.startDisconnect();
       });
 
@@ -183,18 +187,18 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
 
       expect(secrets.values.size).toBe(0);
       expect(forget).toHaveBeenCalledTimes(1);
-      expect(await projects.findRepository(A)).toBeNull();
+      expect(await connections.find(A)).toBeNull();
     });
 
     it('stays disconnecting when the secret cannot be deleted, and completes on a retry', async () => {
       await connectOverSsh(A);
-      await projects.change(A, (r) => {
+      await connections.change(A, (r) => {
         r.startDisconnect();
       });
       secrets.failWith = new SecretStoreUnavailableError();
 
       expect(await cleanup.finish(A)).toBe(false);
-      expect(await projects.findRepository(A)).toMatchObject({
+      expect(await connections.find(A)).toMatchObject({
         state: 'disconnecting',
         deployKeySecret: expect.any(String),
       });
@@ -208,7 +212,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     it('skips the Deploy key steps for an HTTPS Repository', async () => {
       await connect(B, 'b');
       const forget = vi.spyOn(RepositoryConnection.prototype, 'forgetDeployKey');
-      await projects.change(B, (r) => {
+      await connections.change(B, (r) => {
         r.startDisconnect();
       });
 

@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import {
-  PROJECT_REPOSITORY,
-  type ProjectRepository,
-} from '../../../domain/repositories/project-repository.js';
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import { DeployKeySweepPolicy } from '../../../domain/value-objects/deploy-key-sweep-policy.js';
 import {
   DEPLOY_KEY_SWEEP_SETTINGS,
@@ -34,18 +34,19 @@ export class SweepOrphanedDeployKeysHandler {
   private readonly logger = new Logger('DeployKeySweep');
 
   constructor(
-    @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
     @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
     @Inject(DEPLOY_KEY_SWEEP_SETTINGS) private readonly settings: DeployKeySweepSettings,
   ) {}
 
-  async sweep(): Promise<void> {
+  async execute(): Promise<void> {
     let orphans: string[];
     try {
       const policy = DeployKeySweepPolicy.of(this.settings.gracePeriodMs);
       const candidates = await this.deployKeys.listOlderThan(policy.gracePeriodMs);
       if (candidates.length === 0) return;
-      orphans = policy.orphans(candidates, await this.projects.listDeployKeySecretRefs());
+      orphans = policy.orphans(candidates, await this.repositories.listDeployKeySecretRefs());
     } catch (error) {
       this.logger.warn(
         `Could not sweep orphaned Deploy keys; the next sweep tries again. ${redactSecrets(String(error))}`,

@@ -1,21 +1,28 @@
-import type { EnvironmentFile } from '@agentic-studio/contracts';
+import type { EnvironmentFile as RunEnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import type { RunEnvironmentFiles } from '../../../contracts/index.js';
-import { isProjectId } from '../../../domain/value-objects/project.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
 } from '../../../domain/repositories/environment-file-repository.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import {
   ENVIRONMENT_FILE_CONTENTS,
   type EnvironmentFileContents,
 } from '../../ports/environment-file-contents.js';
 
+export interface GetRunEnvironmentFileInput {
+  projectId: string;
+}
+
+/** The project's Environment file with its content (a secret value), or `null` when none is set. */
+export type GetRunEnvironmentFileResult = RunEnvironmentFile | null;
+
 /**
  * Query (Issue #104): the project's Environment file with its content, for `executions` when a
- * Run is claimed (the public {@link RunEnvironmentFiles} contract); `null` when none is set.
- * Never used by an operator endpoint. A content replaced between reading the row and the
- * secret is read again from the new row.
+ * Run is claimed (the public {@link RunEnvironmentFiles} contract: `forProject` takes the id
+ * and calls `execute`); `null` when none is set. Never used by an operator endpoint. A content
+ * replaced between reading the row and the secret is read again from the new row.
  */
 @Injectable()
 export class GetRunEnvironmentFileHandler implements RunEnvironmentFiles {
@@ -24,7 +31,12 @@ export class GetRunEnvironmentFileHandler implements RunEnvironmentFiles {
     @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
   ) {}
 
-  async forProject(projectId: string): Promise<EnvironmentFile | null> {
+  forProject(projectId: string): Promise<GetRunEnvironmentFileResult> {
+    return this.execute({ projectId });
+  }
+
+  async execute(input: GetRunEnvironmentFileInput): Promise<GetRunEnvironmentFileResult> {
+    const { projectId } = input;
     if (!isProjectId(projectId)) return null;
     // Twice at most: a content replaced between reading the row and the content is read again
     // from the new row.

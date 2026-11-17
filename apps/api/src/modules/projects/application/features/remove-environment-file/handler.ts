@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isProjectId } from '../../../domain/value-objects/project.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
@@ -14,6 +14,10 @@ import {
   type EnvironmentFileContents,
 } from '../../ports/environment-file-contents.js';
 
+export interface RemoveEnvironmentFileInput {
+  projectId: string;
+}
+
 /**
  * Command (Issue #104): removes the project's Environment file and deletes its content from
  * the secret store. Runs claimed earlier keep their own snapshot; later Runs get none.
@@ -27,7 +31,8 @@ export class RemoveEnvironmentFileHandler {
     @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
   ) {}
 
-  async execute(projectId: string): Promise<void> {
+  async execute(input: RemoveEnvironmentFileInput): Promise<void> {
+    const { projectId } = input;
     if (!isProjectId(projectId) || !(await this.projects.findById(projectId))) {
       throw new ProjectNotFoundError();
     }

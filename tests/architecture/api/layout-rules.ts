@@ -122,7 +122,7 @@ export function layoutViolations(baseDir: string): Violation[] {
   ];
 }
 
-interface ModuleImport {
+export interface ModuleImport {
   /** The module specifier, e.g. `../ports/clock.js`. */
   specifier: string;
   /** Imported names; `*` for a namespace import, `default` for a default import. */
@@ -130,7 +130,7 @@ interface ModuleImport {
 }
 
 /** Every `import … from` and `export … from` of a file (type-only ones included). */
-function moduleImports(baseDir: string, path: string): ModuleImport[] {
+export function moduleImports(baseDir: string, path: string): ModuleImport[] {
   const source = ts.createSourceFile(
     path,
     readFileSync(join(baseDir, path), 'utf8'),
@@ -170,7 +170,7 @@ function moduleImports(baseDir: string, path: string): ModuleImport[] {
 }
 
 /** A relative specifier as a POSIX `.ts` path below the base directory (the file may not exist). */
-function target(from: string, specifier: string): string | undefined {
+export function target(from: string, specifier: string): string | undefined {
   if (!specifier.startsWith('.')) return undefined;
   const joined = posix.normalize(posix.join(posix.dirname(from), specifier));
   return `${joined.replace(/\.(js|ts)x?$/, '')}.ts`;
@@ -347,7 +347,7 @@ function entityClassViolations(baseDir: string, path: string): Violation[] {
     : [{ rule: 'api-entities-are-classes-with-non-public-constructors', from: path }];
 }
 
-function isErrorClass(declaration: ts.ClassDeclaration): boolean {
+export function isErrorClass(declaration: ts.ClassDeclaration): boolean {
   if (declaration.name && ERROR_NAME.test(declaration.name.text)) return true;
   return (declaration.heritageClauses ?? []).some(
     (clause) =>

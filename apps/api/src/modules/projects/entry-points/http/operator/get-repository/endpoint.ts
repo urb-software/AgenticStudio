@@ -24,7 +24,7 @@ export class GetRepositoryEndpoint {
   async get(@Param('id') id: string) {
     let repository;
     try {
-      repository = await this.handler.execute(id);
+      repository = await this.handler.execute({ projectId: id });
     } catch (error) {
       if (error instanceof ProjectNotFoundError) throw projectNotFound();
       throw error;

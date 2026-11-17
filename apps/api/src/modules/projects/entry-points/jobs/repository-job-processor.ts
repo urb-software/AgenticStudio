@@ -24,14 +24,14 @@ export class RepositoryJobProcessor {
 
   async process(projectId: string, signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
-    const operation = await this.operations.execute(projectId);
-    if (operation === 'clone') return this.clone.process(projectId, signal);
-    if (operation === 'fetch') return this.fetchClone.process(projectId, signal);
+    const operation = await this.operations.execute({ projectId });
+    if (operation === 'clone') return this.clone.execute({ projectId, signal });
+    if (operation === 'fetch') return this.fetchClone.execute({ projectId, signal });
     // Otherwise a job left over from before a restart, whose attempt reconciliation failed.
   }
 
   async onFailed(projectId: string, failure: UnfinishedJob): Promise<void> {
-    const operation = await this.operations.execute(projectId);
+    const operation = await this.operations.execute({ projectId });
     if (operation === 'clone') return this.clone.onFailed(projectId, failure);
     if (operation === 'fetch') return this.fetchClone.onFailed(projectId, failure);
   }

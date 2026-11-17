@@ -8,7 +8,7 @@ import { toRepositorySummary } from '../../shared/repository-response.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import {
   GetProjectHandler,
-  type ProjectDetail,
+  type GetProjectResult,
 } from '../../../../application/features/get-project/handler.js';
 import { ProjectDetailResponseDto } from './schema.js';
 
@@ -23,9 +23,9 @@ export class GetProjectEndpoint {
   @ZodResponse({ status: 200, type: ProjectDetailResponseDto })
   @ApiProblemResponses({ 404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})` })
   async get(@Param('id') id: string) {
-    let detail: ProjectDetail;
+    let detail: GetProjectResult;
     try {
-      detail = await this.handler.execute(id);
+      detail = await this.handler.execute({ projectId: id });
     } catch (error) {
       if (error instanceof ProjectNotFoundError) throw projectNotFound();
       throw error;

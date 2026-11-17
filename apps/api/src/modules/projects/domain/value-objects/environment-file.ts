@@ -1,22 +1,3 @@
-/**
- * A Project's Environment file (Issue #104): one file of test settings that Studio places in
- * each Run's Working copy. The content lives in the secret store; the operator sees only what
- * is here. Test values only (security.md §3): the agent can read the file.
- */
-export interface EnvironmentFileInfo {
-  /** Relative POSIX path in the repository. */
-  path: string;
-  /** UTF-8 bytes of the content. */
-  sizeBytes: number;
-  /** When it was last set. */
-  updatedAt: Date;
-}
-
-/** What the store holds: the visible fields and the secret store's reference to the content. */
-export interface StoredEnvironmentFile extends EnvironmentFileInfo {
-  secretRef: string;
-}
-
 /** The owner label of the content in the secret store (ADR 0001, Issue #76). */
 export const ENVIRONMENT_FILE_SECRET_OWNER = 'projects.environment-file';
 

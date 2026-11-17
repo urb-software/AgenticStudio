@@ -1,4 +1,4 @@
-import type { StoredEnvironmentFile } from '../../value-objects/environment-file.js';
+import { EnvironmentFile, type StoredEnvironmentFile } from '../../entities/environment-file.js';
 import type { EnvironmentFileRepository } from '../environment-file-repository.js';
 
 /**
@@ -9,18 +9,16 @@ export class InMemoryEnvironmentFileRepository implements EnvironmentFileReposit
   readonly files = new Map<string, StoredEnvironmentFile>();
   now = new Date('2026-11-15T10:00:00.000Z');
 
-  find(projectId: string): Promise<StoredEnvironmentFile | null> {
+  find(projectId: string): Promise<EnvironmentFile | null> {
     const file = this.files.get(projectId);
-    return Promise.resolve(file ? { ...file } : null);
+    return Promise.resolve(file ? EnvironmentFile.restore({ ...file }) : null);
   }
 
   save(projectId: string, record: { path: string; sizeBytes: number; secretRef: string }) {
     const replacedSecretRef = this.files.get(projectId)?.secretRef ?? null;
-    const stored = { ...record, updatedAt: this.now };
+    const stored = { ...record, projectId, updatedAt: this.now };
     this.files.set(projectId, stored);
-    const { secretRef, ...saved } = stored;
-    void secretRef;
-    return Promise.resolve({ saved, replacedSecretRef });
+    return Promise.resolve({ saved: EnvironmentFile.restore(stored), replacedSecretRef });
   }
 
   delete(projectId: string): Promise<string | null> {

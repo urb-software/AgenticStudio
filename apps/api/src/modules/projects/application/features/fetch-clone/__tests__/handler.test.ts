@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { JobAbortedError } from '../../../../../../platform/queue/job-queue.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import {
   GIT_FAILURE_REASONS,
   GitCloneMissingError,
@@ -34,24 +35,26 @@ describe('FetchCloneHandler', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let handler: FetchCloneHandler;
 
-  const run = (signal = new AbortController().signal) => handler.process(PROJECT, signal);
-  const stored = () => projects.findRepository(PROJECT);
+  const run = (signal = new AbortController().signal) =>
+    handler.execute({ projectId: PROJECT, signal });
+  const stored = () => connections.find(PROJECT);
 
   /** A Repository connected with commit OLD, now `fetching`. */
   async function fetching(integrationBranch = 'dev') {
-    await projects.connect({
+    await connections.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
       integrationBranch,
     });
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: OLD, fetchedAt: FETCHED_AT });
     });
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.startFetch();
     });
   }
@@ -60,9 +63,10 @@ describe('FetchCloneHandler', () => {
     secrets = new InMemorySecretStore();
     deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
-    handler = new FetchCloneHandler(projects, git, deployKeys);
+    handler = new FetchCloneHandler(connections, git, deployKeys);
   });
 
   it('fetches the Integration branch and marks the Repository ready with the new commit', async () => {
@@ -161,7 +165,7 @@ describe('FetchCloneHandler', () => {
 
   it('does nothing for a job whose Repository is no longer fetching', async () => {
     await fetching();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.failFetch(
         { code: 'interrupted', detail: '', remoteDefaultBranch: null },
         { cloneKept: true },
@@ -267,7 +271,7 @@ describe('FetchCloneHandler', () => {
 
     async function fetchingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');
-      await projects.connect({
+      await connections.connect({
         projectId: PROJECT,
         url: SSH_URL,
         identity: 'git.example.com:2222/acme/shop',
@@ -275,13 +279,13 @@ describe('FetchCloneHandler', () => {
         deployKey,
         pinnedHostKey,
       });
-      await projects.change(PROJECT, (r) => {
+      await connections.change(PROJECT, (r) => {
         r.startVerifiedClone(null);
       });
-      await projects.change(PROJECT, (r) => {
+      await connections.change(PROJECT, (r) => {
         r.completeClone({ headSha: OLD, fetchedAt: FETCHED_AT });
       });
-      await projects.change(PROJECT, (r) => {
+      await connections.change(PROJECT, (r) => {
         r.startFetch();
       });
       return deployKey;

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Project } from '../../../domain/value-objects/project.js';
+import type { ProjectSnapshot } from '../../../domain/entities/project.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -11,6 +11,9 @@ export interface CreateProjectInput {
   name: string;
 }
 
+/** The new project. */
+export type CreateProjectResult = ProjectSnapshot;
+
 /**
  * Command: creates a project. Throws `InvalidProjectNameError` for an empty or too long
  * name and `ProjectNameTakenError` when the name is taken (case-insensitively).
@@ -19,7 +22,8 @@ export interface CreateProjectInput {
 export class CreateProjectHandler {
   constructor(@Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository) {}
 
-  async execute(input: CreateProjectInput): Promise<Project> {
-    return this.projects.add(ProjectName.parse(input.name));
+  async execute(input: CreateProjectInput): Promise<CreateProjectResult> {
+    const project = await this.projects.add(ProjectName.parse(input.name));
+    return project.snapshot();
   }
 }

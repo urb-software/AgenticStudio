@@ -27,7 +27,7 @@ export class RemoveEnvironmentFileEndpoint {
   @ApiProblemResponses({ 404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})` })
   async remove(@Param('id') id: string): Promise<void> {
     try {
-      await this.handler.execute(id);
+      await this.handler.execute({ projectId: id });
     } catch (error) {
       if (error instanceof ProjectNotFoundError) throw projectNotFound();
       throw error;

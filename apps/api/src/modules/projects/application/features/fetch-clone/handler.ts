@@ -6,9 +6,9 @@ import {
   type UnfinishedJob,
 } from '../../../domain/value-objects/repository-failure.js';
 import {
-  PROJECT_REPOSITORY,
-  type ProjectRepository,
-} from '../../../domain/repositories/project-repository.js';
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import {
   GitCloneMissingError,
   GitOperationError,
@@ -40,6 +40,12 @@ function gitStepFailure(error: unknown): RepositoryFailure | undefined {
 export const CLONE_MISSING_DETAIL =
   "Studio's clone of the repository is missing. Retry to clone it again.";
 
+export interface FetchCloneInput {
+  projectId: string;
+  /** The job's abort signal. */
+  signal: AbortSignal;
+}
+
 /**
  * Feature: the background fetch of a `fetching` Repository, run by the Repository's job
  * (the job processor under `entry-points/jobs/` calls this for a `fetching` Repository).
@@ -63,15 +69,17 @@ export class FetchCloneHandler {
   private readonly logger = new Logger('FetchClone');
 
   constructor(
-    @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
     @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
   ) {}
 
   /** Runs one fetch. Aborts propagate, so the queue reports them through `onFailed`. */
-  async process(projectId: string, signal: AbortSignal): Promise<void> {
+  async execute(input: FetchCloneInput): Promise<void> {
+    const { projectId, signal } = input;
     signal.throwIfAborted();
-    const repository = await this.projects.findRepository(projectId);
+    const repository = await this.repositories.find(projectId);
     // A job left over from before a restart, whose fetch reconciliation already failed.
     if (repository?.pendingOperation !== 'fetch') return;
     const { url, integrationBranch } = repository;
@@ -80,7 +88,7 @@ export class FetchCloneHandler {
       const { commit } = await this.git.fetch(projectId, url, integrationBranch, { signal, ssh });
       signal.throwIfAborted();
       const clone = { headSha: commit, fetchedAt: new Date() };
-      await this.projects.change(projectId, (stored) => {
+      await this.repositories.change(projectId, (stored) => {
         stored.completeFetch(clone);
       });
     } catch (error) {
@@ -118,8 +126,8 @@ export class FetchCloneHandler {
   /** Idempotent: failing what is already failed changes nothing. */
   async reconcile(): Promise<void> {
     let failed = 0;
-    for (const projectId of await this.projects.listIdsInState('fetching')) {
-      await this.projects.change(projectId, (stored) => {
+    for (const projectId of await this.repositories.listIdsInState('fetching')) {
+      await this.repositories.change(projectId, (stored) => {
         if (stored.failFetch(RepositoryFailure.interrupted(), { cloneKept: true })) failed += 1;
       });
     }
@@ -134,7 +142,7 @@ export class FetchCloneHandler {
     failure: RepositoryFailure,
     outcome: { cloneKept: boolean },
   ): Promise<void> {
-    await this.projects.change(projectId, (stored) => {
+    await this.repositories.change(projectId, (stored) => {
       stored.failFetch(failure, outcome);
     });
   }

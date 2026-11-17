@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { EnvironmentFileInfo } from '../../../domain/value-objects/environment-file.js';
-import { isProjectId } from '../../../domain/value-objects/project.js';
+import type { EnvironmentFileSnapshot } from '../../../domain/entities/environment-file.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
@@ -10,6 +9,14 @@ import {
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
+
+export interface GetEnvironmentFileInput {
+  projectId: string;
+}
+
+/** What the operator may see of the project's Environment file, or `null` when none is set. */
+export type GetEnvironmentFileResult = EnvironmentFileSnapshot | null;
 
 /**
  * Query (Issue #104): what the operator may see of the project's Environment file (path, size,
@@ -22,11 +29,12 @@ export class GetEnvironmentFileHandler {
     @Inject(ENVIRONMENT_FILE_REPOSITORY) private readonly files: EnvironmentFileRepository,
   ) {}
 
-  async execute(projectId: string): Promise<EnvironmentFileInfo | null> {
+  async execute(input: GetEnvironmentFileInput): Promise<GetEnvironmentFileResult> {
+    const { projectId } = input;
     if (!isProjectId(projectId) || !(await this.projects.findById(projectId))) {
       throw new ProjectNotFoundError();
     }
     const file = await this.files.find(projectId);
-    return file ? { path: file.path, sizeBytes: file.sizeBytes, updatedAt: file.updatedAt } : null;
+    return file ? file.snapshot() : null;
   }
 }

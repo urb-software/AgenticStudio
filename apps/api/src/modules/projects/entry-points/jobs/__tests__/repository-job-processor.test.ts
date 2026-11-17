@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { FakeRepositoryGit } from '../../../application/ports/__tests__/fake-repository-git.js';
 import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
@@ -14,6 +15,7 @@ const COMMIT = 'a'.repeat(40);
 
 describe('RepositoryJobProcessor', () => {
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let clone: CloneRepositoryHandler;
   let fetchClone: FetchCloneHandler;
   let recovery: { run: ReturnType<typeof vi.fn> };
@@ -22,7 +24,7 @@ describe('RepositoryJobProcessor', () => {
   const running = () => ({ signal: new AbortController().signal });
 
   async function connecting() {
-    await projects.connect({
+    await connections.connect({
       projectId: PROJECT,
       url: 'https://github.com/acme/shop.git',
       identity: 'github.com/acme/shop',
@@ -32,10 +34,10 @@ describe('RepositoryJobProcessor', () => {
 
   async function fetching() {
     await connecting();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
     });
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.startFetch();
     });
   }
@@ -43,17 +45,18 @@ describe('RepositoryJobProcessor', () => {
   beforeEach(() => {
     const deployKeys = new InMemoryDeployKeys(new InMemorySecretStore());
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     projects.addProject(PROJECT, 'Shop');
     const git = new FakeRepositoryGit();
-    clone = new CloneRepositoryHandler(projects, git, deployKeys);
-    fetchClone = new FetchCloneHandler(projects, git, deployKeys);
+    clone = new CloneRepositoryHandler(connections, git, deployKeys);
+    fetchClone = new FetchCloneHandler(connections, git, deployKeys);
     for (const target of [clone, fetchClone]) {
-      vi.spyOn(target, 'process').mockResolvedValue();
+      vi.spyOn(target, 'execute').mockResolvedValue();
       vi.spyOn(target, 'onFailed');
     }
     recovery = { run: vi.fn().mockResolvedValue(undefined) };
     processor = new RepositoryJobProcessor(
-      new GetRepositoryOperationHandler(projects),
+      new GetRepositoryOperationHandler(connections),
       clone,
       fetchClone,
       recovery as unknown as RepositoryStartupRecovery,
@@ -66,8 +69,8 @@ describe('RepositoryJobProcessor', () => {
 
     await processor.process(PROJECT, current.signal);
 
-    expect(clone.process).toHaveBeenCalledWith(PROJECT, current.signal);
-    expect(fetchClone.process).not.toHaveBeenCalled();
+    expect(clone.execute).toHaveBeenCalledWith({ projectId: PROJECT, signal: current.signal });
+    expect(fetchClone.execute).not.toHaveBeenCalled();
   });
 
   it('runs a fetch for a fetching Repository', async () => {
@@ -76,20 +79,20 @@ describe('RepositoryJobProcessor', () => {
 
     await processor.process(PROJECT, current.signal);
 
-    expect(fetchClone.process).toHaveBeenCalledWith(PROJECT, current.signal);
-    expect(clone.process).not.toHaveBeenCalled();
+    expect(fetchClone.execute).toHaveBeenCalledWith({ projectId: PROJECT, signal: current.signal });
+    expect(clone.execute).not.toHaveBeenCalled();
   });
 
   it('does nothing for a Repository that is neither connecting nor fetching', async () => {
     await connecting();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
     });
 
     await processor.process(PROJECT, running().signal);
 
-    expect(clone.process).not.toHaveBeenCalled();
-    expect(fetchClone.process).not.toHaveBeenCalled();
+    expect(clone.execute).not.toHaveBeenCalled();
+    expect(fetchClone.execute).not.toHaveBeenCalled();
   });
 
   it('does not start a job whose signal is already aborted', async () => {
@@ -99,7 +102,7 @@ describe('RepositoryJobProcessor', () => {
 
     await expect(processor.process(PROJECT, controller.signal)).rejects.toThrow();
 
-    expect(clone.process).not.toHaveBeenCalled();
+    expect(clone.execute).not.toHaveBeenCalled();
   });
 
   it('reports a failure to the operation the Repository records', async () => {
@@ -109,7 +112,7 @@ describe('RepositoryJobProcessor', () => {
 
     expect(fetchClone.onFailed).toHaveBeenCalledWith(PROJECT, { reason: 'timeout' });
     expect(clone.onFailed).not.toHaveBeenCalled();
-    expect((await projects.findRepository(PROJECT))?.failure?.code).toBe('timeout');
+    expect((await connections.find(PROJECT))?.failure?.code).toBe('timeout');
   });
 
   it('reports a clone failure to the clone', async () => {
@@ -123,18 +126,18 @@ describe('RepositoryJobProcessor', () => {
 
   it('does nothing for a job of a disconnecting Repository: not run, no failure written', async () => {
     await fetching();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.startDisconnect();
     });
 
     await processor.process(PROJECT, running().signal);
     await processor.onFailed(PROJECT, { reason: 'cancelled' });
 
-    expect(clone.process).not.toHaveBeenCalled();
-    expect(fetchClone.process).not.toHaveBeenCalled();
+    expect(clone.execute).not.toHaveBeenCalled();
+    expect(fetchClone.execute).not.toHaveBeenCalled();
     expect(clone.onFailed).not.toHaveBeenCalled();
     expect(fetchClone.onFailed).not.toHaveBeenCalled();
-    expect((await projects.findRepository(PROJECT))?.state).toBe('disconnecting');
+    expect((await connections.find(PROJECT))?.state).toBe('disconnecting');
   });
 
   it('reconciles through the start-up recovery', async () => {

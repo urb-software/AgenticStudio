@@ -11,6 +11,7 @@ import {
   type Gate,
   type Violation,
 } from '../harness';
+import { AGGREGATE_RULES, aggregateViolations } from './aggregate-rules';
 import { LAYOUT_RULES, APPLICATION_FORBIDDEN_PACKAGES, layoutViolations } from './layout-rules';
 import { SECRETS_SOURCE_RULES, secretsViolations } from './secrets-rules';
 import { SOURCE_RULES, sourceViolations } from './source-rules';
@@ -345,6 +346,7 @@ export const apiGate: Gate = {
       'api-infrastructure-placement',
       ...SOURCE_RULES,
       ...LAYOUT_RULES,
+      ...AGGREGATE_RULES,
       ...SECRETS_SOURCE_RULES,
     ],
     check: (baseDir) => [
@@ -353,6 +355,7 @@ export const apiGate: Gate = {
       ...misplacedInfrastructure(baseDir),
       ...sourceViolations(baseDir),
       ...layoutViolations(baseDir),
+      ...aggregateViolations(baseDir),
       ...secretsViolations(baseDir),
     ],
   },

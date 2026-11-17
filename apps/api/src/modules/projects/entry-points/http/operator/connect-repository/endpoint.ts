@@ -20,10 +20,8 @@ import {
 } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
 import { RepositoryAlreadyConnectedError } from '../../../../domain/entities/repository.js';
-import {
-  ProjectNotFoundError,
-  RemoteAlreadyConnectedError,
-} from '../../../../domain/repositories/project-repository.js';
+import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
+import { RemoteAlreadyConnectedError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';
 import { InvalidRepositoryUrlError } from '../../../../domain/value-objects/repository-url.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
