@@ -1,12 +1,10 @@
 import { Body, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { WorkerController } from '../../../../../../platform/auth/worker-route.js';
 import { runNotFound, runNotHeld } from '../../shared/problems.js';
-import {
-  RunNotFoundError,
-  RunNotHeldError,
-} from '../../../../domain/repositories/run-repository.js';
+import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { ReportRunDiffHandler } from '../../../../application/features/report-run-diff/handler.js';
 import { ReportRunDiffRequestDto } from './schema.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `POST /api/worker/runs/:runId/diff` (Issue #144), worker token only: 204 once the Run's diffs

@@ -3,13 +3,10 @@ import { isFinalRunState } from '../../../domain/value-objects/run-state.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import type { RunEvent } from '../../../domain/value-objects/run-event.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
-import {
-  RUN_REPOSITORY,
-  RunNotFoundError,
-  type RunRepository,
-} from '../../../domain/repositories/run-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 /** Yielded when the stream was idle for the keep-alive interval. */
 export const KEEP_ALIVE = 'keep-alive';

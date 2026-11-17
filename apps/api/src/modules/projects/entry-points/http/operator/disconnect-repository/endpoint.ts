@@ -14,10 +14,10 @@ import {
   repositoryResponseSchema,
   toRepositoryResponse,
 } from '../../shared/repository-response.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
-import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
 import { DisconnectRepositoryHandler } from '../../../../application/features/disconnect-repository/handler.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { NoRepositoryError } from '../../../../domain/value-objects/repository-connection-errors.js';
 
 /** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {

@@ -3,10 +3,10 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { FieldProblemException } from '../../../../../../platform/http/problem-details.js';
 import { ProjectResponseDto, toProjectResponse } from '../../shared/project-response.js';
-import { ProjectNameTakenError } from '../../../../domain/repositories/project-repository.js';
 import { InvalidProjectNameError } from '../../../../domain/value-objects/project-name.js';
 import { CreateProjectHandler } from '../../../../application/features/create-project/handler.js';
 import { CreateProjectRequestDto } from './schema.js';
+import { ProjectNameTakenError } from '../../../../domain/value-objects/project-errors.js';
 
 /** `POST /api/projects`, behind the global session and mutation Origin guards. */
 @ApiTags('projects')

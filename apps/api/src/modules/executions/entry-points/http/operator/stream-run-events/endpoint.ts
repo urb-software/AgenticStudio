@@ -6,7 +6,6 @@ import { ApiProblemResponses } from '../../../../../../platform/http/problem-det
 import { redactSecrets } from '../../../../../../platform/http/redact.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound, tooManyLogStreams } from '../../shared/problems.js';
 import { toRunEventResponse } from '../../shared/run-event-response.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import {
   KEEP_ALIVE,
@@ -16,6 +15,7 @@ import {
 import { LogStreamSlots } from '../../../../application/features/stream-run-events/log-stream-slots.js';
 import { StreamSession } from '../../../../application/features/stream-run-events/stream-session.js';
 import { StreamRunEventsQueryDto } from './schema.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /** A `Last-Event-ID` the stream itself sent: a seq (PostgreSQL INTEGER). */
 const SEQ = /^\d{1,10}$/;

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queue.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
-import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
-import { RepositoryNotVerifiableError } from '../../../../domain/value-objects/repository-connection-errors.js';
+import {
+  RepositoryNotVerifiableError,
+  NoRepositoryError,
+} from '../../../../domain/value-objects/repository-connection-errors.js';
 import {
   GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
@@ -19,6 +20,7 @@ import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-ke
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { VerifyRepositoryHandler } from '../handler.js';
 import { HostKeyFingerprintMismatchError } from '../../../../domain/value-objects/repository-connection-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const TRUSTED_URL = 'git@github.com:acme/shop.git';

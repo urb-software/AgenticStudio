@@ -6,11 +6,8 @@ import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
 } from '../../../domain/repositories/run-diff-repository.js';
-import {
-  RUN_REPOSITORY,
-  RunNotFoundError,
-  type RunRepository,
-} from '../../../domain/repositories/run-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 /** The Run's diff lists no file at that path (Issue #144). */
 export class RunDiffFileNotFoundError extends Error {

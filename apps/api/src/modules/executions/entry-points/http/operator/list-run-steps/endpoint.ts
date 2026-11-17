@@ -3,9 +3,9 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { ListRunStepsHandler } from '../../../../application/features/list-run-steps/handler.js';
 import { RunStepListDto } from './schema.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `GET /api/runs/:runId/steps` (Issue #99), behind the global session guard: the structured

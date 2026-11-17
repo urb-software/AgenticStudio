@@ -5,11 +5,9 @@ import {
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import { Project } from '../../domain/entities/project.js';
-import {
-  ProjectNameTakenError,
-  type ProjectRepository,
-} from '../../domain/repositories/project-repository.js';
+import { type ProjectRepository } from '../../domain/repositories/project-repository.js';
 import type { ProjectName } from '../../domain/value-objects/project-name.js';
+import { ProjectNameTakenError } from '../../domain/value-objects/project-errors.js';
 
 const PROJECT_FIELDS = { id: true, name: true, createdAt: true } as const;
 

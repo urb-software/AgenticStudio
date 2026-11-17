@@ -1,9 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queue.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
-import { RemoteAlreadyConnectedError } from '../../../../domain/repositories/repository-connection-repository.js';
-import { RepositoryAlreadyConnectedError } from '../../../../domain/value-objects/repository-connection-errors.js';
+import {
+  RepositoryAlreadyConnectedError,
+  RemoteAlreadyConnectedError,
+} from '../../../../domain/value-objects/repository-connection-errors.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';
@@ -19,6 +20,7 @@ import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-ke
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { SweepOrphanedDeployKeysHandler } from '../../sweep-orphaned-deploy-keys/handler.js';
 import { ConnectRepositoryHandler } from '../handler.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';

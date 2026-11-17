@@ -4,9 +4,12 @@ import { isRunId } from '../../../domain/value-objects/run-id.js';
 import {
   type ReviewComment,
   type ReviewCommentScope,
-  ReviewCommentsLoadRunningError,
 } from '../../../domain/value-objects/review-comments.js';
-import { FollowUpNotAllowedError } from '../../../domain/value-objects/run-errors.js';
+import {
+  FollowUpNotAllowedError,
+  RunNotFoundError,
+  PullRequestNotRefreshableError,
+} from '../../../domain/value-objects/run-errors.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import {
@@ -17,15 +20,11 @@ import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../../domain/repositories/run-lookup-repository.js';
-import {
-  RUN_REPOSITORY,
-  RunNotFoundError,
-  type RunRepository,
-} from '../../../domain/repositories/run-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RunLookupRequests } from '../../run-lookup-requests.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from '../../ports/operator-login.js';
-import { PullRequestNotRefreshableError } from '../../../domain/value-objects/run-lookup.js';
+import { ReviewCommentsLoadRunningError } from '../../../domain/value-objects/review-comments-errors.js';
 
 export interface LoadReviewCommentsInput {
   runId: string;

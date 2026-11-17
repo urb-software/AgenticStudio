@@ -6,11 +6,7 @@ import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
-import {
-  RUN_REPOSITORY,
-  RunNotFoundError,
-  type RunRepository,
-} from '../../../domain/repositories/run-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import type { FollowUpSource } from '../../../domain/value-objects/follow-up.js';
 import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
@@ -20,6 +16,7 @@ import { RUN_TRANSACTIONS, type RunTransactions } from '../../ports/run-transact
 import { RunLookupRequests } from '../../run-lookup-requests.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 export interface FollowUpRunInput {
   runId: string;

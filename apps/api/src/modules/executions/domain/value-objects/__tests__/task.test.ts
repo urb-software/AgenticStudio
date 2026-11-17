@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidTaskError, Task, TASK_MAX_LENGTH } from '../task.js';
+import { Task, TASK_MAX_LENGTH } from '../task.js';
+import { InvalidTaskError } from '../run-errors.js';
 
 // Issue #167: the Task enforces its own rules, so every entry point that starts a Run holds to them.
 describe('Task', () => {

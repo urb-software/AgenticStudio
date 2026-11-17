@@ -7,12 +7,12 @@ import {
   preparedFollowUpNotFound,
   runNotFound,
 } from '../../shared/problems.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import {
   GetPreparedFollowUpHandler,
   PreparedFollowUpNotFoundError,
 } from '../../../../application/features/get-prepared-follow-up/handler.js';
 import { PreparedFollowUpResponseDto } from './schema.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `GET /api/runs/:runId/pull-request/failing-checks/prepared` (Issue #145), behind the global

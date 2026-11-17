@@ -8,11 +8,7 @@ import { type RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { type RunState } from '../../../domain/value-objects/run-state.js';
 import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
-import {
-  RUN_REPOSITORY,
-  RunNotFoundError,
-  type RunRepository,
-} from '../../../domain/repositories/run-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
   ENVIRONMENT_FILE_SNAPSHOTS,
@@ -20,6 +16,7 @@ import {
 } from '../../ports/environment-file-snapshots.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 export interface ReportRunStateInput {
   runId: string;

@@ -4,10 +4,10 @@ import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
 import { RunEventPageDto, toRunEventResponse } from '../../shared/run-event-response.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ListRunEventsHandler } from '../../../../application/features/list-run-events/handler.js';
 import { ListRunEventsQueryDto } from './schema.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `GET /api/runs/:runId/events?after=&limit=` (Issue #99), behind the global session guard:

@@ -30,17 +30,6 @@ export interface ProviderAvailability {
   reason?: ProviderUnavailableReason;
 }
 
-/** A Run cannot start: Studio knows its provider is unavailable. */
-export class ProviderUnavailableError extends Error {
-  constructor(
-    readonly provider: Provider,
-    readonly reason: ProviderUnavailableReason,
-  ) {
-    super(reason);
-    this.name = 'ProviderUnavailableError';
-  }
-}
-
 /**
  * The agent worker's reported status (Issue #101) as an object that answers what it knows: whether
  * the worker is connected within the lease, and whether it offers a Provider. Studio takes the

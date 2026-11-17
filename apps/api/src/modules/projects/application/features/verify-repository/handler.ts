@@ -2,14 +2,15 @@ import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { type RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
-import { RepositoryNotVerifiableError } from '../../../domain/value-objects/repository-connection-errors.js';
+import {
+  RepositoryNotVerifiableError,
+  NoRepositoryError,
+} from '../../../domain/value-objects/repository-connection-errors.js';
 import {
   PROJECT_REPOSITORY,
-  ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import {
-  NoRepositoryError,
   REPOSITORY_CONNECTION_REPOSITORY,
   type RepositoryConnectionRepository,
 } from '../../../domain/repositories/repository-connection-repository.js';
@@ -21,6 +22,7 @@ import {
   type RepositoryGit,
 } from '../../ports/repository-git.js';
 import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
+import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
 
 export interface VerifyRepositoryInput {
   projectId: string;

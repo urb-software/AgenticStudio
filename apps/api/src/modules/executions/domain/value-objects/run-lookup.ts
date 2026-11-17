@@ -100,14 +100,6 @@ export class LookupFailure {
   }
 }
 
-/** The Run has no pull request (or no known Run branch) whose state could be read. */
-export class PullRequestNotRefreshableError extends Error {
-  constructor() {
-    super('The run has no pull request to refresh.');
-    this.name = 'PullRequestNotRefreshableError';
-  }
-}
-
 /** What requesting a lookup is made from. */
 export interface RunLookupRequest {
   id: string;

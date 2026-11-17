@@ -8,8 +8,10 @@ import {
   runNotFound,
 } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
-import { DeliveryNotRetryableError } from '../../../../domain/value-objects/run-errors.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
+import {
+  DeliveryNotRetryableError,
+  RunNotFoundError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { RetryDeliveryHandler } from '../../../../application/features/retry-delivery/handler.js';
 
 /**

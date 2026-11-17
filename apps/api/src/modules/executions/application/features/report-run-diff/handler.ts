@@ -8,15 +8,12 @@ import {
 import { type NewRunDiff, type RunDiffState } from '../../../domain/value-objects/run-diff.js';
 import { RunDiff } from '../../../domain/entities/run-diff.js';
 import { RunEnvironmentFile } from '../../../domain/value-objects/run-environment-file.js';
-import {
-  RUN_REPOSITORY,
-  RunNotFoundError,
-  type RunRepository,
-} from '../../../domain/repositories/run-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 import { RUN_TRANSACTIONS, type RunTransactions } from '../../ports/run-transactions.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 export interface ReportRunDiffInput {
   runId: string;

@@ -1,18 +1,19 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
-import { RepositoryAlreadyConnectedError } from '../../../domain/value-objects/repository-connection-errors.js';
+import {
+  RepositoryAlreadyConnectedError,
+  RemoteAlreadyConnectedError,
+  RemoteHeldByOtherProjectError,
+} from '../../../domain/value-objects/repository-connection-errors.js';
 import { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { type RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
-  ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import {
   REPOSITORY_CONNECTION_REPOSITORY,
-  RemoteAlreadyConnectedError,
-  RemoteHeldByOtherProjectError,
   type RepositoryConnectionRepository,
 } from '../../../domain/repositories/repository-connection-repository.js';
 import { IntegrationBranch } from '../../../domain/value-objects/integration-branch.js';
@@ -27,6 +28,7 @@ import {
   type DeployKeySweepSettings,
   type StoredDeployKey,
 } from '../../ports/deploy-keys.js';
+import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
 
 /** DI token for {@link ConnectRepositorySettings}. */
 export const CONNECT_REPOSITORY_SETTINGS = Symbol('CONNECT_REPOSITORY_SETTINGS');

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
+import {
+  FollowUpNotAllowedError,
+  RunNotFoundError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { type Run } from '../../../../domain/entities/run.js';
 import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';

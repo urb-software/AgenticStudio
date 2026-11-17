@@ -4,16 +4,16 @@ import type { RepositoryConnection } from '../../../domain/entities/repository-c
 import type { RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
-  ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import {
-  NoRepositoryError,
   REPOSITORY_CONNECTION_REPOSITORY,
   type RepositoryConnectionRepository,
 } from '../../../domain/repositories/repository-connection-repository.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
+import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
+import { NoRepositoryError } from '../../../domain/value-objects/repository-connection-errors.js';
 
 export interface FetchRepositoryInput {
   projectId: string;

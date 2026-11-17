@@ -1,13 +1,13 @@
 import { type ConnectAttempt } from '../../value-objects/repository-connection-facts.js';
-import { RepositoryAlreadyConnectedError } from '../../value-objects/repository-connection-errors.js';
+import {
+  RepositoryAlreadyConnectedError,
+  RemoteHeldByOtherProjectError,
+} from '../../value-objects/repository-connection-errors.js';
 import { RepositoryConnection } from '../../entities/repository-connection.js';
 import { type RepositoryState } from '../../value-objects/repository-state.js';
 import { type StoredRepositoryConnection } from '../../value-objects/repository-connection-snapshot.js';
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
-import {
-  RemoteHeldByOtherProjectError,
-  type RepositoryConnectionRepository,
-} from '../repository-connection-repository.js';
+import { type RepositoryConnectionRepository } from '../repository-connection-repository.js';
 
 /** What the in-memory store keeps of a Repository, and the remote's identity beside it. */
 export type StoredRepository = StoredRepositoryConnection & { identity: string };

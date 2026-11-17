@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RunAlreadyFinishedError } from '../../../../domain/value-objects/run-errors.js';
+import {
+  RunAlreadyFinishedError,
+  RunNotFoundError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { type RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { CancelRunHandler } from '../handler.js';
 
 // Issue #100: the operator cancels a Run. Unheld Runs (queued, waiting) are cancelled at once;

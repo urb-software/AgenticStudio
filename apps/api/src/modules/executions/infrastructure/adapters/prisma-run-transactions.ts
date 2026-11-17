@@ -7,13 +7,13 @@ import {
   type RunTransactionRepositories,
   type RunTransactions,
 } from '../../application/ports/run-transactions.js';
-import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
 import { isRunId } from '../../domain/value-objects/run-id.js';
 import { PrismaPreparedFollowUpRepository } from '../repositories/prisma-prepared-follow-up-repository.js';
 import { PrismaReviewCommentRepository } from '../repositories/prisma-review-comment-repository.js';
 import { PrismaRunDiffRepository } from '../repositories/prisma-run-diff-repository.js';
 import { PrismaRunLookupRepository } from '../repositories/prisma-run-lookup-repository.js';
 import { PrismaRunRepository } from '../repositories/prisma-run-repository.js';
+import { RunNotFoundError } from '../../domain/value-objects/run-errors.js';
 
 /** Generous limits, as the Run repository's own transactions: they wait for the Run's row lock. */
 const TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;

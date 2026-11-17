@@ -4,8 +4,8 @@ import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `GET /api/runs/:runId` (Issue #96), behind the global session guard: the Run with its

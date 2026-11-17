@@ -4,11 +4,12 @@ import {
   toReviewCommentsResponse,
 } from '../../../../entry-points/http/shared/review-comments-response.js';
 import { ReviewComments } from '../../../../domain/entities/review-comments.js';
+import { type ReviewComment } from '../../../../domain/value-objects/review-comments.js';
 import {
-  type ReviewComment,
-  ReviewCommentsLoadRunningError,
-} from '../../../../domain/value-objects/review-comments.js';
-import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
+  FollowUpNotAllowedError,
+  RunNotFoundError,
+  PullRequestNotRefreshableError,
+} from '../../../../domain/value-objects/run-errors.js';
 import {
   deliveredRun,
   T0,
@@ -17,19 +18,18 @@ import {
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { GetReviewCommentsHandler } from '../../get-review-comments/handler.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import {
   LookupKindMismatchError,
   LookupNotHeldError,
   ReportLookupResultHandler,
 } from '../../report-lookup-result/handler.js';
 import { LoadReviewCommentsHandler } from '../handler.js';
+import { ReviewCommentsLoadRunningError } from '../../../../domain/value-objects/review-comments-errors.js';
 
 // Issue #146: the operator loads the Review comments of a Run's pull request; a worker reads them.
 // Loading starts no agent and creates no Follow-up; the operator's own comments are the only ones
