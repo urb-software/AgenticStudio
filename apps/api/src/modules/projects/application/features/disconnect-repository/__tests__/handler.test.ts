@@ -4,7 +4,7 @@ import {
   JobStillRunningError,
   QueueUnavailableError,
 } from '../../../../../../platform/queue/job-queue.js';
-import type { RepositoryConnection } from '../../../../domain/entities/repository.js';
+import type { RepositoryConnection } from '../../../../domain/entities/repository-connection.js';
 import { RepositoryFailure } from '../../../../domain/value-objects/repository-failure.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';

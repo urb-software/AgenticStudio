@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidRepositoryUrlError, remoteIdentity, RepositoryUrl } from '../repository-url.js';
+import { InvalidRepositoryUrlError, RepositoryUrl } from '../repository-url.js';
 
 function rejection(input: string, options?: Parameters<typeof RepositoryUrl.parse>[1]): string {
   try {
@@ -11,7 +11,7 @@ function rejection(input: string, options?: Parameters<typeof RepositoryUrl.pars
   throw new Error(`expected ${JSON.stringify(input)} to be rejected`);
 }
 
-describe('remoteIdentity (Issue #60 clarification 6)', () => {
+describe('RepositoryUrl.identityOf (Issue #60 clarification 6)', () => {
   const SAME_REMOTE = [
     'https://github.com/acme/shop',
     'https://github.com/acme/shop.git',
@@ -26,37 +26,43 @@ describe('remoteIdentity (Issue #60 clarification 6)', () => {
   ];
 
   it.each(SAME_REMOTE)('maps %s to host plus path', (input) => {
-    expect(remoteIdentity(input)).toBe('github.com/acme/shop');
+    expect(RepositoryUrl.identityOf(input)).toBe('github.com/acme/shop');
   });
 
   it('keeps a non-default port: two servers on one host are different remotes', () => {
-    expect(remoteIdentity('https://git.example.com:8443/acme/shop.git')).toBe(
+    expect(RepositoryUrl.identityOf('https://git.example.com:8443/acme/shop.git')).toBe(
       'git.example.com:8443/acme/shop',
     );
-    expect(remoteIdentity('ssh://git@git.example.com:2222/acme/shop.git')).toBe(
+    expect(RepositoryUrl.identityOf('ssh://git@git.example.com:2222/acme/shop.git')).toBe(
       'git.example.com:2222/acme/shop',
     );
-    expect(remoteIdentity('https://git.example.com/acme/shop.git')).toBe(
+    expect(RepositoryUrl.identityOf('https://git.example.com/acme/shop.git')).toBe(
       'git.example.com/acme/shop',
     );
   });
 
   it('keeps the case of the path', () => {
-    expect(remoteIdentity('https://github.com/Acme/Shop.git')).toBe('github.com/Acme/Shop');
+    expect(RepositoryUrl.identityOf('https://github.com/Acme/Shop.git')).toBe(
+      'github.com/Acme/Shop',
+    );
   });
 
   it('tells different repositories and hosts apart', () => {
-    expect(remoteIdentity('https://github.com/acme/shop-api')).toBe('github.com/acme/shop-api');
-    expect(remoteIdentity('https://gitlab.com/acme/shop')).toBe('gitlab.com/acme/shop');
+    expect(RepositoryUrl.identityOf('https://github.com/acme/shop-api')).toBe(
+      'github.com/acme/shop-api',
+    );
+    expect(RepositoryUrl.identityOf('https://gitlab.com/acme/shop')).toBe('gitlab.com/acme/shop');
   });
 
   it('stays linear on many slashes (no polynomial backtracking)', () => {
     const started = performance.now();
 
-    expect(remoteIdentity(`https://github.com/acme/shop${'/'.repeat(200_000)}`)).toBe(
+    expect(RepositoryUrl.identityOf(`https://github.com/acme/shop${'/'.repeat(200_000)}`)).toBe(
       'github.com/acme/shop',
     );
-    expect(remoteIdentity(`https://github.com/${'/'.repeat(200_000)}x`)).toBe('github.com/x');
+    expect(RepositoryUrl.identityOf(`https://github.com/${'/'.repeat(200_000)}x`)).toBe(
+      'github.com/x',
+    );
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 
@@ -80,24 +86,26 @@ describe('remoteIdentity (Issue #60 clarification 6)', () => {
       'github.com:443/acme/shop',
     ],
   ])('%s', (_case, input, identity) => {
-    expect(remoteIdentity(input)).toBe(identity);
+    expect(RepositoryUrl.identityOf(input)).toBe(identity);
   });
 
   it('does not decode percent-encoding: a known limit of #60 (out of scope for #72)', () => {
-    expect(remoteIdentity('https://github.com/acme/%73hop')).toBe('github.com/acme/%73hop');
-    expect(remoteIdentity('https://github.com/acme/%73hop')).not.toBe(
-      remoteIdentity('https://github.com/acme/shop'),
+    expect(RepositoryUrl.identityOf('https://github.com/acme/%73hop')).toBe(
+      'github.com/acme/%73hop',
+    );
+    expect(RepositoryUrl.identityOf('https://github.com/acme/%73hop')).not.toBe(
+      RepositoryUrl.identityOf('https://github.com/acme/shop'),
     );
   });
 
   it('gives a file URL its path as identity', () => {
-    expect(remoteIdentity('file:///tmp/fixtures/shop.git')).toBe('/tmp/fixtures/shop');
+    expect(RepositoryUrl.identityOf('file:///tmp/fixtures/shop.git')).toBe('/tmp/fixtures/shop');
   });
 
   it.each(['', 'not a url', 'https://github.com', 'https://github.com/', 'https://x/.git'])(
     'has no identity for %j',
     (input) => {
-      expect(remoteIdentity(input)).toBeNull();
+      expect(RepositoryUrl.identityOf(input)).toBeNull();
     },
   );
 });

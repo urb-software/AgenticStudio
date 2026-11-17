@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { EnvironmentFileSnapshot } from '../../../domain/entities/environment-file.js';
+import type { EnvironmentFileSnapshot } from '../../../domain/value-objects/environment-file-snapshot.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,

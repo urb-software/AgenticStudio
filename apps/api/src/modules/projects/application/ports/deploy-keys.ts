@@ -1,4 +1,4 @@
-import type { RepositoryConnection } from '../../domain/entities/repository.js';
+import type { RepositoryConnection } from '../../domain/entities/repository-connection.js';
 import type { TrustedHostKeys } from '../../domain/value-objects/trusted-host-keys.js';
 import type { SshCredentials } from './repository-git.js';
 

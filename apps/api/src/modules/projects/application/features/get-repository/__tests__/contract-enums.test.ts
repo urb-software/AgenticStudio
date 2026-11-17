@@ -3,7 +3,7 @@ import {
   repositoryFailureCodeSchema,
   repositoryStateSchema,
 } from '../../../../entry-points/http/shared/repository-response.js';
-import { REPOSITORY_STATES } from '../../../../domain/entities/repository.js';
+import { REPOSITORY_STATES } from '../../../../domain/value-objects/repository-state.js';
 import { REPOSITORY_FAILURE_CODES } from '../../../../domain/value-objects/repository-failure.js';
 
 // contracts/http may not import the domain (backend.md §2), so the HTTP enums are a second

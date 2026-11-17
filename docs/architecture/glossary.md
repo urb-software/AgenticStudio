@@ -38,6 +38,18 @@ _Avoid_: Sync, pull, refresh
 The per-project SSH key pair Studio generates to reach a private Repository.
 _Avoid_: SSH key, access key, credential
 
+**Host key**:
+The public SSH key a Git host presents. Studio connects over SSH only to a host whose key it trusts: one configured for the host, or the one the operator confirmed by its fingerprint.
+_Avoid_: Server key, known host
+
+**Remote address**:
+The IP address of a Repository's Git host. Whether Studio may connect to it depends on its range (public, private or blocked).
+_Avoid_: Remote, IP
+
+**Repository lifecycle**:
+The states a connected Repository goes through (awaiting a key, awaiting a host key, connecting, ready, fetching, failed, disconnecting) and which operation each state accepts.
+_Avoid_: Status, workflow
+
 ### `executions`
 
 **Run**:

@@ -8,8 +8,7 @@ import {
 } from '../../../../domain/repositories/project-repository.js';
 import {
   InvalidProjectNameError,
-  normalizeProjectName,
-  type ProjectName,
+  ProjectName,
 } from '../../../../domain/value-objects/project-name.js';
 import { CreateProjectHandler } from '../handler.js';
 
@@ -49,11 +48,11 @@ const { cases: NORMALIZATION_CASES } = JSON.parse(readFileSync(VECTOR, 'utf8')) 
   cases: { name: string; input: string; expected: string }[];
 };
 
-describe('normalizeProjectName: shared project-name normalization vector', () => {
+describe('ProjectName.normalize: shared project-name normalization vector', () => {
   it.each(NORMALIZATION_CASES.map((c) => [c.name, c.input, c.expected] as const))(
     '%s',
     (_name, input, expected) => {
-      expect(normalizeProjectName(input)).toBe(expected);
+      expect(ProjectName.normalize(input)).toBe(expected);
     },
   );
 });

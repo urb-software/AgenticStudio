@@ -1,4 +1,5 @@
-import { EnvironmentFile, type StoredEnvironmentFile } from '../../entities/environment-file.js';
+import { EnvironmentFile } from '../../entities/environment-file.js';
+import { type StoredEnvironmentFile } from '../../value-objects/environment-file-snapshot.js';
 import type { EnvironmentFileRepository } from '../environment-file-repository.js';
 
 /**

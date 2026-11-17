@@ -1,10 +1,8 @@
-import {
-  type ConnectAttempt,
-  RepositoryAlreadyConnectedError,
-  RepositoryConnection,
-  type RepositoryState,
-  type StoredRepositoryConnection,
-} from '../../entities/repository.js';
+import { type ConnectAttempt } from '../../value-objects/repository-connection-facts.js';
+import { RepositoryAlreadyConnectedError } from '../../value-objects/repository-connection-errors.js';
+import { RepositoryConnection } from '../../entities/repository-connection.js';
+import { type RepositoryState } from '../../value-objects/repository-state.js';
+import { type StoredRepositoryConnection } from '../../value-objects/repository-connection-snapshot.js';
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
 import {
   RemoteHeldByOtherProjectError,

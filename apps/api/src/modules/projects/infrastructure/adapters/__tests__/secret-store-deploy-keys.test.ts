@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { knownHostName } from '../../../../../platform/config/ssh-known-hosts.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
-import {
-  NoTrustedHostKeyError,
-  type RepositoryConnectionData,
-} from '../../../domain/entities/repository.js';
-import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
-import { gitHostName } from '../../../domain/value-objects/trusted-host-keys.js';
+import { NoTrustedHostKeyError } from '../../../domain/value-objects/repository-connection-errors.js';
+import { type RepositoryConnectionData } from '../../../domain/value-objects/repository-connection-snapshot.js';
+import { DeployKey } from '../../../domain/value-objects/deploy-key.js';
+import { TrustedHostKeys } from '../../../domain/value-objects/trusted-host-keys.js';
 import { SecretStoreDeployKeys } from '../secret-store-deploy-keys.js';
 
-const hostKey = (): string => generateDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 const GITHUB_KEY = hostKey();
 const PORT_KEY = hostKey();
 const PINNED_KEY = hostKey();
@@ -89,8 +87,10 @@ describe('SecretStoreDeployKeys', () => {
     });
 
     it('names hosts the way the configuration does', () => {
-      expect(gitHostName('git@GitHub.com:acme/shop.git')).toBe(knownHostName('GitHub.com', 22));
-      expect(gitHostName('ssh://git@git.example.com:2222/a/b.git')).toBe(
+      expect(TrustedHostKeys.hostNameOf('git@GitHub.com:acme/shop.git')).toBe(
+        knownHostName('GitHub.com', 22),
+      );
+      expect(TrustedHostKeys.hostNameOf('ssh://git@git.example.com:2222/a/b.git')).toBe(
         knownHostName('git.example.com', 2222),
       );
     });

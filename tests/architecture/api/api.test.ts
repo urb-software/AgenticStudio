@@ -506,9 +506,9 @@ describeGate('api', apiGate, 'apps/api', [
   },
   // Aggregate roots and handler results (Issue #182): `projects`; `executions` is added by #183.
   {
-    fixture: 'entry-point-imports-entity-type-and-error',
+    fixture: 'entry-point-imports-entity-type',
     expected: [],
-    qualityRow: '`entry-points/` imports a type or an error from `domain/entities/`',
+    qualityRow: '`entry-points/` imports a type from `domain/entities/`',
   },
   {
     fixture: 'entry-point-imports-entity-class',
@@ -562,5 +562,58 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'entity-imports-another-entity',
     expected: ['api-entities-do-not-import-entities'],
     qualityRow: 'An entity file imports another entity file for anything else',
+  }, // Rule 13, one concept per file (Issue #185): `projects`; `executions` is added by #184.
+  {
+    fixture: 'entity-projects-one-class-and-nothing-else',
+    expected: [],
+    qualityRow: 'A `domain/entities/` file exports exactly one class and no function',
+  },
+  {
+    fixture: 'entity-projects-class-and-error-class',
+    expected: ['api-entity-file-exports-one-class-and-no-function'],
+    qualityRow: 'A `domain/entities/` file exports a second class or any function',
+  },
+  {
+    fixture: 'entity-projects-class-and-function',
+    expected: [
+      'api-entity-file-exports-one-class-and-no-function',
+      'api-domain-exports-no-function-but-type-guards',
+    ],
+    qualityRow: 'A `domain/entities/` file exports a second class or any function',
+  },
+  {
+    fixture: 'entity-projects-class-and-type-guard-function',
+    expected: ['api-entity-file-exports-one-class-and-no-function'],
+    qualityRow: 'A `domain/entities/` file exports a second class or any function',
+  },
+  {
+    fixture: 'domain-projects-exports-classes-types-constants-and-type-guards',
+    expected: [],
+    qualityRow: '`domain/` exports only classes, types, constants and type guards',
+  },
+  {
+    fixture: 'domain-projects-private-and-test-functions-are-not-checked',
+    expected: [],
+    qualityRow: '`domain/` exports only classes, types, constants and type guards',
+  },
+  {
+    fixture: 'domain-projects-exports-loose-function',
+    expected: ['api-domain-exports-no-function-but-type-guards'],
+    qualityRow: '`domain/` exports a function other than a type guard',
+  },
+  {
+    fixture: 'domain-projects-exports-arrow-function',
+    expected: ['api-domain-exports-no-function-but-type-guards'],
+    qualityRow: '`domain/` exports a function other than a type guard',
+  },
+  {
+    fixture: 'domain-projects-exports-function-in-a-list',
+    expected: ['api-domain-exports-no-function-but-type-guards'],
+    qualityRow: '`domain/` exports a function other than a type guard',
+  },
+  {
+    fixture: 'domain-executions-loose-function-is-not-checked-yet',
+    expected: [],
+    qualityRow: '`domain/` exports only classes, types, constants and type guards',
   },
 ]);

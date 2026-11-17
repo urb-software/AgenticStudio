@@ -84,7 +84,7 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: '`entry-points/` imports a type or an error from `domain/entities/`',
+    row: '`entry-points/` imports a type from `domain/entities/`',
     expected: 'PASS',
     gate: 'api',
   },
@@ -129,6 +129,22 @@ export const QUALITY_TABLE = [
     expected: 'FAIL',
     gate: 'api',
   },
+  {
+    row: 'A `domain/entities/` file exports exactly one class and no function',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/entities/` file exports a second class or any function',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: '`domain/` exports only classes, types, constants and type guards',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  { row: '`domain/` exports a function other than a type guard', expected: 'FAIL', gate: 'api' },
 ] as const;
 
 export interface FixtureCase {

@@ -21,10 +21,8 @@ import { ConnectRepositoryHandler } from '../../../application/features/connect-
 import { FakeRepositoryGit } from '../../../application/ports/__tests__/fake-repository-git.js';
 import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memory-deploy-keys.js';
 import { RecordingRepositoryJobs } from '../../../application/ports/__tests__/recording-repository-jobs.js';
-import {
-  RepositoryAlreadyConnectedError,
-  type RepositoryConnection,
-} from '../../../domain/entities/repository.js';
+import { RepositoryAlreadyConnectedError } from '../../../domain/value-objects/repository-connection-errors.js';
+import { type RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 import { PrismaProjectRepository } from '../prisma-project-repository.js';
 import { PrismaRepositoryConnectionRepository } from '../prisma-repository-connection-repository.js';

@@ -1,10 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
-import type {
-  RepositoryConnection,
-  RepositoryConnectionSnapshot,
-} from '../../../domain/entities/repository.js';
+import type { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
+import type { RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,

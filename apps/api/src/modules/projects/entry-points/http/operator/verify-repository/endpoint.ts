@@ -23,7 +23,7 @@ import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/reposi
 import {
   HostKeyFingerprintMismatchError,
   RepositoryNotVerifiableError,
-} from '../../../../domain/entities/repository.js';
+} from '../../../../domain/value-objects/repository-connection-errors.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';

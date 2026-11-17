@@ -18,7 +18,10 @@ import {
   unsupportedPlatform,
 } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
-import { NoUsableCloneError, RepositoryBusyError } from '../../../../domain/entities/repository.js';
+import {
+  NoUsableCloneError,
+  RepositoryBusyError,
+} from '../../../../domain/value-objects/repository-connection-errors.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';

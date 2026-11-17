@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RepositoryConnectionSnapshot } from '../../../domain/entities/repository.js';
+import type { RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,

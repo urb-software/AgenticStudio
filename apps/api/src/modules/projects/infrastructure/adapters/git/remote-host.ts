@@ -1,8 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import {
-  hostLiteral,
+  RemoteAddress,
   REFUSED_RANGE_REASON,
-  refusedRange,
 } from '../../../domain/value-objects/remote-address.js';
 import {
   GitOperationError,
@@ -32,7 +31,9 @@ export async function checkedAddresses(
   allowPrivate: boolean,
   resolve: ResolveHost,
 ): Promise<string[]> {
-  const literal = hostLiteral(host.includes(':') && !host.startsWith('[') ? `[${host}]` : host);
+  const literal = RemoteAddress.literalOf(
+    host.includes(':') && !host.startsWith('[') ? `[${host}]` : host,
+  );
   if (literal.kind === 'invalid') {
     throw new GitRequestRejectedError('Remote URL rejected: the host is not a valid host name.');
   }
@@ -56,7 +57,7 @@ export async function checkedAddresses(
     }
   }
   for (const address of addresses) {
-    const range = refusedRange(address, allowPrivate);
+    const range = RemoteAddress.refusedRange(address, allowPrivate);
     if (!range) continue;
     const what = literal.kind === 'address' ? `${address} is` : `${host} resolves to ${address},`;
     const kind =

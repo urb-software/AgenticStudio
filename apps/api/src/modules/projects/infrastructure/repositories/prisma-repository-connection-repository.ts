@@ -6,12 +6,14 @@ import {
 } from '../../../../platform/database/database.module.js';
 import {
   type ConnectAttempt,
-  REPOSITORY_STATES,
-  RepositoryAlreadyConnectedError,
   type RepositoryChanges,
-  RepositoryConnection,
+} from '../../domain/value-objects/repository-connection-facts.js';
+import {
+  REPOSITORY_STATES,
   type RepositoryState,
-} from '../../domain/entities/repository.js';
+} from '../../domain/value-objects/repository-state.js';
+import { RepositoryAlreadyConnectedError } from '../../domain/value-objects/repository-connection-errors.js';
+import { RepositoryConnection } from '../../domain/entities/repository-connection.js';
 import {
   RemoteHeldByOtherProjectError,
   type RepositoryConnectionRepository,
