@@ -186,3 +186,44 @@ export function isErrorClass(exported: ExportedClass): boolean {
       ),
   );
 }
+
+/** The names a file exports: declarations, variables, `export { A, B as C }` and re-exports by name. */
+export function exportedNames(source: ts.SourceFile): string[] {
+  const names: string[] = [];
+  for (const statement of source.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        names.push(...statement.exportClause.elements.map((element) => element.name.text));
+      } else if (statement.exportClause) names.push(statement.exportClause.name.text);
+    } else if (hasExportModifier(statement)) {
+      if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+          if (ts.isIdentifier(declaration.name)) names.push(declaration.name.text);
+        }
+      } else if (
+        (ts.isClassDeclaration(statement) ||
+          ts.isFunctionDeclaration(statement) ||
+          ts.isInterfaceDeclaration(statement) ||
+          ts.isTypeAliasDeclaration(statement) ||
+          ts.isEnumDeclaration(statement)) &&
+        statement.name
+      ) {
+        names.push(statement.name.text);
+      }
+    }
+  }
+  return names;
+}
+
+/** `interface X {}` or `type X = {}`: its name and members; undefined for any other statement. */
+export function repositoryContract(
+  statement: ts.Statement,
+): { name: string; members: readonly ts.TypeElement[] } | undefined {
+  if (ts.isInterfaceDeclaration(statement)) {
+    return { name: statement.name.text, members: statement.members };
+  }
+  if (ts.isTypeAliasDeclaration(statement) && ts.isTypeLiteralNode(statement.type)) {
+    return { name: statement.name.text, members: statement.type.members };
+  }
+  return undefined;
+}

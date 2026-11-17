@@ -12,7 +12,7 @@ export class AddProductEndpoint {
     const { name } = AddProductBodySchema.parse(body);
     try {
       const product = await this.handler.execute({ name });
-      return { name: product.name, addedAt: product.addedAt };
+      return { id: product.id, name: product.name, addedAt: product.addedAt };
     } catch (error) {
       if (error instanceof ProductNameTakenError) return 'conflict';
       throw error;

@@ -1,0 +1,16 @@
+{
+  "repositories": {
+    "notes/NoteRepository": {
+      "add": {
+        "kind": "save"
+      },
+      "findById": {
+        "kind": "load"
+      },
+      "deleteOlderThan": {
+        "kind": "set-wide",
+        "reason": "Removes every old note in one statement."
+      }
+    }
+  }
+}

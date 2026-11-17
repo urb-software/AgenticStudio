@@ -9,6 +9,7 @@ import {
   isErrorClass,
   moduleImports,
   parse,
+  repositoryContract,
   target,
 } from './syntax';
 
@@ -375,8 +376,8 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
     ),
   );
   const imported = importedNames(source);
-  for (const statement of source.statements.filter(ts.isInterfaceDeclaration)) {
-    for (const member of statement.members) {
+  for (const statement of source.statements) {
+    for (const member of repositoryContract(statement)?.members ?? []) {
       // A method, or a property whose type is a function (`find: (id: string) => Promise<Run>`).
       const returned = ts.isMethodSignature(member)
         ? member.type

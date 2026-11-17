@@ -6,6 +6,7 @@ export class ListProductsEndpoint {
 
   async list(): Promise<ProductResponse[]> {
     return (await this.handler.execute()).map((product) => ({
+      id: product.id,
       name: product.name,
       addedAt: product.addedAt,
     }));

@@ -78,6 +78,16 @@ const CASES: {
     expected: ['notes/application/note-numbering.ts has no "reason"'],
     qualityRow: DRIFT,
   },
+  {
+    fixture: 'repository-exported-later',
+    expected: ['Repository interface notes/TagRepository is not recorded'],
+    qualityRow: DRIFT,
+  },
+  {
+    fixture: 'repository-type-alias',
+    expected: ['Repository interface notes/TagRepository is not recorded'],
+    qualityRow: DRIFT,
+  },
   { fixture: 'roots-match', expected: [], qualityRow: ROOTS_MATCH },
   {
     fixture: 'root-added',

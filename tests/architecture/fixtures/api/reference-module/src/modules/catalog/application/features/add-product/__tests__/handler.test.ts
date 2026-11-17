@@ -2,6 +2,7 @@
 // never the concrete adapters.
 import type { Product } from '../../../../domain/entities/product.js';
 import type { ProductRepository } from '../../../../domain/repositories/product-repository.js';
+import { ProductNameTakenError } from '../../../../domain/value-objects/product-errors.js';
 import type { ProductSnapshot } from '../../../../domain/value-objects/product-snapshot.js';
 import { AddProductHandler } from '../handler.js';
 
@@ -9,11 +10,14 @@ class FakeProductRepository implements ProductRepository {
   readonly rows: Product[] = [];
 
   async add(product: Product): Promise<void> {
+    if (this.rows.some((row) => row.snapshot().name === product.snapshot().name)) {
+      throw new ProductNameTakenError();
+    }
     this.rows.push(product);
   }
 
-  async findByName(name: string): Promise<Product | null> {
-    return this.rows.find((row) => row.snapshot().name === name) ?? null;
+  async findById(id: string): Promise<Product | null> {
+    return this.rows.find((row) => row.id === id) ?? null;
   }
 
   async listNewestFirst(): Promise<ProductSnapshot[]> {

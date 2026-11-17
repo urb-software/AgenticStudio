@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import ts from 'typescript';
 import { listDirectories, listFiles } from '../harness';
 import { CHILD_ENTITIES, ENTITY_FILE } from './aggregate-rules';
-import { exportedClasses, isErrorClass, parse } from './syntax';
+import {
+  exportedClasses,
+  exportedLater,
+  hasExportModifier,
+  isErrorClass,
+  parse,
+  repositoryContract,
+} from './syntax';
 
 /**
  * The three pinned lists of `architecture:api` (docs/engineering/quality.md §4, Issue #170).
@@ -54,7 +61,8 @@ function isProductionTypeScript(path: string): boolean {
 }
 
 /**
- * The method names of every exported `…Repository` interface in `domain/repositories/`, keyed
+ * The method names of every exported `…Repository` interface (or type literal alias, exported where
+ * declared or by a later `export { X }`) in `domain/repositories/`, keyed
  * `<module>/<InterfaceName>`. A method is a method signature or a property typed as a function;
  * an overloaded method counts once.
  */
@@ -63,16 +71,19 @@ export function repositoryInterfaces(baseDir: string): Record<string, string[]> 
   for (const module of listDirectories(baseDir, 'src/modules')) {
     const directory = `src/modules/${module}/domain/repositories`;
     for (const path of listFiles(baseDir, directory).filter(isProductionTypeScript)) {
-      for (const statement of parse(baseDir, path).statements) {
+      const source = parse(baseDir, path);
+      const later = exportedLater(source);
+      for (const statement of source.statements) {
+        const repository = repositoryContract(statement);
         if (
-          !ts.isInterfaceDeclaration(statement) ||
-          !/Repository$/.test(statement.name.text) ||
-          !statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+          !repository ||
+          !/Repository$/.test(repository.name) ||
+          !(hasExportModifier(statement) || later.has(repository.name))
         ) {
           continue;
         }
-        found[`${module}/${statement.name.text}`] = [
-          ...new Set(statement.members.flatMap(memberName)),
+        found[`${module}/${repository.name}`] = [
+          ...new Set(repository.members.flatMap(memberName)),
         ].sort();
       }
     }

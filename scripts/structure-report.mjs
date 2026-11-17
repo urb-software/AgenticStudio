@@ -72,11 +72,15 @@ export function measure(apiDir) {
     for (const statement of source.statements) {
       if (
         repository &&
-        ts.isInterfaceDeclaration(statement) &&
+        (ts.isInterfaceDeclaration(statement) ||
+          (ts.isTypeAliasDeclaration(statement) && ts.isTypeLiteralNode(statement.type))) &&
         /Repository$/.test(statement.name.text)
       ) {
+        const members = ts.isInterfaceDeclaration(statement)
+          ? statement.members
+          : statement.type.members;
         repositoryMethods[`${repository[1]}/${statement.name.text}`] = new Set(
-          statement.members.flatMap((member) => {
+          members.flatMap((member) => {
             const method =
               ts.isMethodSignature(member) ||
               (ts.isPropertySignature(member) && member.type && ts.isFunctionTypeNode(member.type));
@@ -133,7 +137,7 @@ const delta = (now, before) => {
   return change === 0 ? '' : ` (${change > 0 ? '+' : ''}${change})`;
 };
 
-function table(title, unit, now, base, { top, keepAll = false } = {}) {
+function table(title, unit, now, base, { top, keepAll = false, quiet = false } = {}) {
   const rows = Object.entries(now).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const shown = keepAll ? rows : rows.slice(0, top);
   const lines = [`### ${title}`, '', `| Item | ${unit} |`, '| --- | ---: |'];
@@ -146,7 +150,7 @@ function table(title, unit, now, base, { top, keepAll = false } = {}) {
   }
   if (base) {
     const gone = Object.keys(base).filter((name) => !(name in now));
-    if (gone.length > 0 && keepAll)
+    if (gone.length > 0 && keepAll && !quiet)
       lines.push('', `Not in this tree any more: ${gone.map((n) => `\`${n}\``).join(', ')}.`);
   }
   return lines.join('\n');
@@ -167,8 +171,10 @@ export function report(current, base, top = 10) {
       `Files under a module's \`domain/\` over ${DOMAIN_LINE_LIMIT} lines (rule 13: reported, not enforced)`,
       'lines',
       current.domainOverLimit,
-      base?.domainOverLimit,
-      { keepAll: true },
+      // The change is against the file's size at the base, so a file that existed and just
+      // crossed the limit shows its growth, not "(new)".
+      base?.sizes,
+      { keepAll: true, quiet: true },
     ),
     '',
     table(

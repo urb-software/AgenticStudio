@@ -4,6 +4,7 @@ import ts from 'typescript';
 import { listDirectories, listFiles, type Violation } from '../harness';
 import {
   exportedClasses,
+  exportedNames,
   isErrorClass,
   moduleImports,
   parse,
@@ -221,12 +222,21 @@ function portReexports(
     const clause = statement.exportClause;
     if (specifier && (!clause || ts.isNamespaceExport(clause))) {
       const to = target(file, specifier);
-      const origin = to
-        ? REPOSITORY_OR_PORT_FILE.test(to)
-          ? to
-          : portReexports(baseDir, to, [...chain, file])[0]?.origin
-        : undefined;
-      if (origin) found.push({ name: clause ? clause.name.text : '*', origin });
+      if (!to) continue;
+      const inner = REPOSITORY_OR_PORT_FILE.test(to)
+        ? existsSync(join(baseDir, to))
+          ? exportedNames(parse(baseDir, to))
+              .filter((name) => !ERROR_NAME.test(name))
+              .map((name) => ({ name, origin: to }))
+          : []
+        : portReexports(baseDir, to, [...chain, file]);
+      if (clause) {
+        // `export * as ns`: one name, `ns`, for everything the file leads to.
+        if (inner[0]) found.push({ name: clause.name.text, origin: inner[0].origin });
+      } else {
+        // `export *`: the file's own non-error names, so an import of any of them is seen.
+        found.push(...inner);
+      }
     } else if (clause && ts.isNamedExports(clause)) {
       for (const element of clause.elements) {
         const from = (element.propertyName ?? element.name).text;

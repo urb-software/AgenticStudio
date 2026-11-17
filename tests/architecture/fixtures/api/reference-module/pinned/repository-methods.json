@@ -1,8 +1,11 @@
 {
   "repositories": {
     "catalog/ProductRepository": {
-      "add": { "kind": "save" },
-      "findByName": { "kind": "load" },
+      "add": {
+        "kind": "atomic",
+        "reason": "The unique index on the name decides a simultaneous create, because there is no row to lock before it exists."
+      },
+      "findById": { "kind": "load" },
       "listNewestFirst": { "kind": "query" }
     }
   }

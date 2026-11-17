@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ProjectNameTakenError } from '../../../domain/repositories/project-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
-import type { CreateProjectInput } from './input.js';
+import type { CreateProjectFields } from './input.js';
 
-export type CreateProjectInput = CreateProjectInput;
+export type CreateProjectInput = CreateProjectFields;
 
 @Injectable()
 export class CreateProjectHandler {

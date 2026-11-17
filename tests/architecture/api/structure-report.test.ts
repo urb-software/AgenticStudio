@@ -55,6 +55,11 @@ const FILES = {
   'src/modules/notes/application/note-numbering.ts': 'export class NoteNumbering {}\n',
   'src/modules/notes/domain/entities/note.ts': `${'// line\n'.repeat(401)}export class Note {}\n`,
   'src/modules/notes/domain/entities/tag.ts': '// line\n'.repeat(400),
+  'src/modules/notes/domain/repositories/tag-repository.ts': [
+    'type TagRepository = { add(tag: string): Promise<void>; find: () => Promise<string[]> };',
+    'export { TagRepository };',
+    '',
+  ].join('\n'),
   'src/modules/notes/domain/repositories/note-repository.ts': [
     'export interface NoteRepository {',
     '  add(note: string): Promise<void>;',
@@ -73,6 +78,8 @@ describe('scripts/structure-report.mjs', () => {
     try {
       const measured = measure(apiDir);
       expect(measured.repositoryMethods['notes/NoteRepository']).toBe(3);
+      // A type literal alias exported later is a repository interface too.
+      expect(measured.repositoryMethods['notes/TagRepository']).toBe(2);
       expect(measured.handlerMethods['notes/application/features/add-note']).toBe(2);
       expect(measured.collaborators).toEqual({ notes: 1 });
       // Rule 13: a file under `domain/` over 400 lines is flagged; one of exactly 400 is not.
@@ -92,7 +99,7 @@ describe('scripts/structure-report.mjs', () => {
   it('shows the change against a base, and "new" for what the base lacks', async () => {
     const { report } = await load();
     const now: Measured = {
-      sizes: { 'src/a.ts': 120, 'src/b.ts': 10 },
+      sizes: { 'src/a.ts': 120, 'src/b.ts': 10, 'src/modules/notes/domain/entities/note.ts': 450 },
       domainOverLimit: { 'src/modules/notes/domain/entities/note.ts': 450 },
       repositoryMethods: { 'notes/NoteRepository': 5 },
       handlerMethods: {},
@@ -101,8 +108,8 @@ describe('scripts/structure-report.mjs', () => {
     };
     const base: Measured = {
       ...now,
-      sizes: { 'src/a.ts': 100 },
-      domainOverLimit: { 'src/modules/notes/domain/entities/note.ts': 410 },
+      sizes: { 'src/a.ts': 100, 'src/modules/notes/domain/entities/note.ts': 410 },
+      domainOverLimit: {},
     };
     const text = report(now, base);
     expect(text).toMatch(/`src\/a\.ts` \| 120 \(\+20\)/);

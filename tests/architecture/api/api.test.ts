@@ -803,6 +803,11 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: ROW_PORT_ANY_ROUTE,
   },
   {
+    fixture: 'entry-point-imports-port-token-through-handler-export-star',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: ROW_PORT_ANY_ROUTE,
+  },
+  {
     fixture: 'entry-point-imports-error-class-through-handler',
     expected: [],
     qualityRow: ROW_ERROR_THROUGH_HANDLER,
