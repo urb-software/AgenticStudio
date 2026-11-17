@@ -8,7 +8,7 @@ import {
   type RunEvent,
   type RunEventKind,
 } from '../../domain/value-objects/run-event.js';
-import { CLAIMED_RUN_STATES } from '../../domain/entities/run.js';
+import { LogAppendRule } from '../../domain/value-objects/log-append-rule.js';
 import type { RunLog } from '../../application/ports/run-log.js';
 
 const EVENT_FIELDS = {
@@ -38,7 +38,7 @@ export class PrismaRunLog implements RunLog {
     return inTransaction(this.db, async (tx) => {
       const [run] = await tx.$queryRaw<{ log_bytes: number; log_truncated: boolean }[]>`
         SELECT log_bytes, log_truncated FROM runs
-        WHERE id = ${runId}::uuid AND state IN (${Prisma.join([...CLAIMED_RUN_STATES])})
+        WHERE id = ${runId}::uuid AND state IN (${Prisma.join([...LogAppendRule.STATES])})
           AND claimed_by = ${workerId}::uuid
         FOR UPDATE`;
       if (!run) return null;

@@ -640,4 +640,12 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'executions-entity-imports-another-entity',
     expected: ['api-entities-do-not-import-entities'],
   },
+  {
+    fixture: 'executions-entity-imports-run-step-from-another-root',
+    expected: ['api-entities-do-not-import-entities'],
+  },
+  {
+    fixture: 'executions-repository-refers-to-another-root-and-the-run-step',
+    expected: ['api-repository-refers-to-one-entity'],
+  },
 ]);

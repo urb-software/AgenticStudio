@@ -110,10 +110,10 @@ export class ReportLookupResultHandler {
           now,
         );
         if (outcome !== 'stored') return outcome;
-        await repositories.lookups.save(lookup);
         if (lookup.scope === null) {
           throw new Error('Unexpected review comment scope in the database: null');
         }
+        await repositories.lookups.save(lookup);
         // The latest load replaces the earlier one.
         await repositories.reviewComments.replace(
           runId,
@@ -228,7 +228,9 @@ export class ReportLookupResultHandler {
     ) => Promise<LookupAnswerOutcome>,
   ): Promise<void> {
     const outcome = await this.transactions.withRunLocked(runId, async (repositories) => {
-      const lookup = await repositories.lookups.findById(lookupId);
+      // Read under the row lock too: a claim does not take the Run's lock, so a lookup re-claimed
+      // meanwhile is seen as it is, not overwritten.
+      const lookup = await repositories.lookups.findByIdForUpdate(lookupId);
       return lookup === null ? 'not_held' : work(lookup, repositories);
     });
     if (outcome === 'not_held') throw new LookupNotHeldError();

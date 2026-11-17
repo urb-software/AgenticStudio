@@ -42,6 +42,10 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     return Promise.resolve(stored ? entity(stored) : null);
   }
 
+  findByIdForUpdate(id: string): Promise<RunLookup | null> {
+    return this.findById(id);
+  }
+
   findOpen(runId: string, kind: LookupKind): Promise<RunLookup | null> {
     const stored = this.lookups.find(
       (lookup) =>

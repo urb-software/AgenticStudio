@@ -66,6 +66,11 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     return row === null ? null : toLookup(row);
   }
 
+  async findByIdForUpdate(id: string): Promise<RunLookup | null> {
+    await this.db.$queryRaw`SELECT id FROM run_lookups WHERE id = ${id}::uuid FOR UPDATE`;
+    return this.findById(id);
+  }
+
   async findOpen(runId: string, kind: LookupKind): Promise<RunLookup | null> {
     const row = await this.db.runLookup.findFirst({
       where: { runId, kind, status: { in: OPEN } },

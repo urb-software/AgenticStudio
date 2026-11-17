@@ -1,5 +1,5 @@
 import { planLogAppend, type RunEvent } from '../../../domain/value-objects/run-event.js';
-import { CLAIMED_RUN_STATES } from '../../../domain/entities/run.js';
+import { LogAppendRule } from '../../../domain/value-objects/log-append-rule.js';
 import type { RunLog } from '../run-log.js';
 import type { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 
@@ -21,8 +21,7 @@ export class InMemoryRunLog implements RunLog {
     maxBytes: number,
   ): Promise<number | null> {
     const run = this.runs.runs.find((candidate) => candidate.id === runId);
-    const held = (CLAIMED_RUN_STATES as readonly string[]).includes(run?.state ?? '');
-    if (!run || !held || run.claimedBy !== workerId) {
+    if (!run || !LogAppendRule.allows(run, workerId)) {
       return Promise.resolve(null);
     }
     const stored = this.events.get(runId) ?? [];

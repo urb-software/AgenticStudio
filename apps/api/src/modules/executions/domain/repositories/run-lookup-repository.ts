@@ -26,6 +26,12 @@ export interface RunLookupRepository {
   /** The lookup with this id, or `null`. */
   findById(id: string): Promise<RunLookup | null>;
 
+  /**
+   * The lookup with this id, or `null`, read `FOR UPDATE`: for a transaction that decides from it
+   * and saves it, so a claim that lands between the read and the save is seen, not overwritten.
+   */
+  findByIdForUpdate(id: string): Promise<RunLookup | null>;
+
   /** The Run's open lookup (requested or claimed) of `kind`, or `null`. */
   findOpen(runId: string, kind: LookupKind): Promise<RunLookup | null>;
 
