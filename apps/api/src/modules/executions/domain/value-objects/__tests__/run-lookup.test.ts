@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NO_PULL_REQUEST_STATUS, type RunPullRequestStatus } from '../run.js';
+import { NO_PULL_REQUEST_STATUS, type RunPullRequestStatus } from '../../entities/run.js';
 import {
   canRefreshPullRequest,
   hasFailedPullRequestCheck,

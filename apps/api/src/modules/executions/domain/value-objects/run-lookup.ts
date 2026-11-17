@@ -1,5 +1,5 @@
 import type { ReviewComment, ReviewCommentScope } from './review-comments.js';
-import type { PullRequestCheck, PullRequestState, Run } from './run.js';
+import type { PullRequestCheck, PullRequestState, Run } from '../entities/run.js';
 
 /**
  * Lookups (Issue #142): Studio's questions for the Git host that only an agent worker can

@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import { followUpSourceSchema } from '../../shared/run-response.js';
-import { REVIEW_COMMENTS_MAX } from '../../../../domain/entities/review-comments.js';
+import { REVIEW_COMMENTS_MAX } from '../../../../domain/value-objects/review-comments.js';
 import { FOLLOW_UP_MAX_LENGTH } from '../../../../domain/entities/run.js';
 
 /**

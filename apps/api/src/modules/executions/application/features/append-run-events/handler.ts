@@ -1,7 +1,7 @@
 import { cutToBytes, RUN_EVENT_TEXT_MAX_BYTES } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
-import type { RunEvent, RunEventKind } from '../../../domain/entities/run-event.js';
+import type { RunEvent, RunEventKind } from '../../../domain/value-objects/run-event.js';
 import {
   RUN_LOG_REPOSITORY,
   type RunLogRepository,

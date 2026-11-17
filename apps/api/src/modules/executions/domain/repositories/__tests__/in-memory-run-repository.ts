@@ -1,17 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import {
   ACTIVE_RUN_STATES,
-  canResumeAfterUsageLimit,
   CLAIMED_RUN_STATES,
-  type FollowUpComments,
+  DeliveryNotRetryableError,
   type FollowUpOrigin,
+  FollowUpNotAllowedError,
   isFinal,
-  partEndOf,
   restoreEarlierResult,
   MAX_ACTIVE_RUNS,
   NO_PULL_REQUEST_STATUS,
-  type Run,
+  type ResumeFacts,
+  Run,
+  RunAlreadyFinishedError,
   type RunCancellation,
+  type RunData,
+  RunNotWaitingError,
   type RunDeliveryOutcome,
   type RunFailure,
   type RunState,
@@ -19,19 +22,14 @@ import {
   stepLimitFailure,
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
-import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
-import {
-  type ReviewCommentSet,
-  ReviewCommentsNotLoadedError,
-} from '../../entities/review-comments.js';
-import { distinctAuthors, selectReviewComments } from '../../services/review-comments.js';
+import type { PreparedFollowUp } from '../../value-objects/prepared-follow-up.js';
+import type { ReviewCommentSet } from '../../value-objects/review-comments.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
   DeliveryRetryOutcome,
   LimitedRunView,
   NewRun,
-  ResumeAfterLimitOutcome,
   RunRepository,
   RunsSummary,
   RunStateView,
@@ -39,16 +37,22 @@ import type {
   StoredRunStep,
 } from '../run-repository.js';
 
+/** A Run as the fake keeps it: the Run's fields, and what the database keeps beside them. */
+type StoredRun = RunData & {
+  heartbeatAt: Date | null;
+  environmentFileSecret: string | null;
+};
+
 const isActive = (state: RunState) => (ACTIVE_RUN_STATES as readonly RunState[]).includes(state);
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
 /** Queued with a session reference: the database adapter's test for a Run queued to resume. */
-const queuedToResume = (run: Run) => run.state === 'queued' && run.sessionRef !== null;
+const queuedToResume = (run: RunData) => run.state === 'queued' && run.sessionRef !== null;
 
 /**
  * Active for the limits: an active state, a failed Run held for a delivery retry (#102), or a
  * resumable Run waiting for its worker (#103); a queued Follow-up holds none (#141).
  */
-const holdsPlace = (run: Run) =>
+const holdsPlace = (run: RunData) =>
   isActive(run.state) || run.claimedBy !== null || (queuedToResume(run) && !run.followUpQueued);
 const deliveryFields = (delivery: RunDeliveryOutcome) => ({
   delivery: delivery.outcome,
@@ -62,17 +66,19 @@ const deliveryFields = (delivery: RunDeliveryOutcome) => ({
  * conditional on state and holder, steps are stored only for a held `running` Run.
  */
 export class InMemoryRunRepository implements RunRepository {
-  readonly runs: (Run & {
-    heartbeatAt: Date | null;
-    environmentFileSecret: string | null;
-  })[] = [];
+  readonly runs: StoredRun[] = [];
   readonly steps: { runId: string; index: number; step: RunStepRecord }[] = [];
   private sequence = 0;
 
   add(run: NewRun): Promise<Run> {
     const created = {
-      ...run,
-      id: randomUUID(),
+      id: run.id ?? randomUUID(),
+      projectId: run.projectId,
+      provider: run.provider,
+      task: run.task,
+      startCommit: run.startCommit,
+      remoteUrl: run.remoteUrl,
+      integrationBranch: run.integrationBranch,
       state: 'queued' as const,
       // Distinct, increasing creation times, like the database's clock.
       createdAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence++)),
@@ -141,7 +147,7 @@ export class InMemoryRunRepository implements RunRepository {
 
   claimNext(workerId: string, now: Date): Promise<Run | null> {
     // A candidate's own place does not count against it (a resumable Run keeps one, #103).
-    const others = (candidate: Run) =>
+    const others = (candidate: RunData) =>
       this.runs.filter((run) => run.id !== candidate.id && holdsPlace(run));
     const next = this.runs.find(
       (run) =>
@@ -201,15 +207,6 @@ export class InMemoryRunRepository implements RunRepository {
         ? { sessionRef: change.sessionRef }
         : {}),
     });
-    return Promise.resolve(this.view(run));
-  }
-
-  requestDeliveryRetry(runId: string): Promise<Run | null> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.state !== 'failed' || run.failure?.code !== 'delivery_failed') {
-      return Promise.resolve(null);
-    }
-    run.deliveryRequested = true;
     return Promise.resolve(this.view(run));
   }
 
@@ -290,13 +287,6 @@ export class InMemoryRunRepository implements RunRepository {
       waitingSince: null,
       followUpQueued: false,
     });
-    return Promise.resolve(this.view(run));
-  }
-
-  requestCancel(runId: string, now: Date): Promise<Run | null> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || !isClaimed(run.state)) return Promise.resolve(null);
-    run.cancelRequestedAt ??= now;
     return Promise.resolve(this.view(run));
   }
 
@@ -414,104 +404,11 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve({ status: 'stored', index });
   }
 
-  answer(runId: string, text: string, now: Date): Promise<Run | null> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.state !== 'waiting_for_operator' || run.messages.at(-1)?.kind !== 'question') {
-      return Promise.resolve(null);
-    }
-    run.messages.push({ kind: 'answer', text, at: now });
-    Object.assign(run, { state: 'queued', waitingSince: null, lastActivityAt: now });
-    return Promise.resolve(this.view(run));
-  }
-
-  resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<ResumeAfterLimitOutcome> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (
-      !run ||
-      !canResumeAfterUsageLimit(run) ||
-      (run.environmentFileSupplied && run.environmentFileSecret === null && run.followUpCount === 0)
-    ) {
-      return Promise.resolve({ status: 'not_resumable' });
-    }
-    const others = this.runs.filter((other) => other.id !== run.id && holdsPlace(other));
-    if (others.some((other) => other.projectId === run.projectId)) {
-      return Promise.resolve({ status: 'slot_taken', scope: 'project' });
-    }
-    if (others.length >= MAX_ACTIVE_RUNS) {
-      return Promise.resolve({ status: 'slot_taken', scope: 'server' });
-    }
-    run.messages.push({ kind: 'answer', text, at: now });
-    Object.assign(run, {
-      state: 'queued',
-      failure: null,
-      finishedAt: null,
-      lastActivityAt: now,
-    });
-    return Promise.resolve({ status: 'resumed', run: this.view(run) });
-  }
-
   /** Issue #145: the prepared Follow-ups, by Run id (shared with the lookup and prepared stores). */
   readonly prepared = new Map<string, PreparedFollowUp>();
 
   /** Issue #146: the loaded Review comments, by Run id (shared with the lookup store). */
   readonly reviewSets = new Map<string, ReviewCommentSet>();
-
-  queueFollowUp(
-    runId: string,
-    text: string,
-    now: Date,
-    origin?: FollowUpOrigin,
-  ): Promise<Run | null> {
-    const source = typeof origin === 'object' ? origin.source : origin;
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (
-      !run ||
-      !isFinal(run.state) ||
-      run.claimedBy !== null ||
-      run.deliveryRequested ||
-      run.followUpQueued ||
-      run.sessionRef === null ||
-      run.workingCopy === null ||
-      run.workingCopyRemovedAt !== null ||
-      run.stepCount >= run.limits.maxTotalSteps
-    ) {
-      return Promise.resolve(null);
-    }
-    let comments: FollowUpComments | undefined;
-    if (typeof origin === 'object') {
-      const set = this.reviewSets.get(runId);
-      const chosen = set ? selectReviewComments(set, origin.commentIds) : null;
-      if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
-      comments = { count: chosen.length, authors: distinctAuthors(chosen) };
-    }
-    run.messages.push({ kind: 'part_end', ...partEndOf(run)!, at: now });
-    run.messages.push({
-      kind: 'follow_up',
-      text,
-      at: now,
-      ...(source === undefined ? {} : { source }),
-      ...(comments === undefined ? {} : { sourceComments: comments }),
-    });
-    if (source === 'review_comments') this.reviewSets.delete(runId);
-    else if (source !== undefined && this.prepared.get(runId)?.source === source) {
-      this.prepared.delete(runId);
-    }
-    Object.assign(run, {
-      state: 'queued',
-      lastActivityAt: now,
-      followUpQueued: true,
-      followUpCount: run.followUpCount + 1,
-      stepsBeforePart: run.stepCount,
-      failure: null,
-      finishedAt: null,
-      cancellation: null,
-      cancelRequestedAt: null,
-      delivery: null,
-      waitingSince: null,
-      stepStartedAt: null,
-    });
-    return Promise.resolve(this.view(run));
-  }
 
   markWorkingCopiesRemoved(
     workerId: string,
@@ -602,6 +499,109 @@ export class InMemoryRunRepository implements RunRepository {
       stepStartedAt: null,
     });
     return Promise.resolve(this.view(run));
+  }
+
+  async change(runId: string, mutate: (run: Run) => void): Promise<Run | null> {
+    return this.changeStored(runId, (run) => mutate(run));
+  }
+
+  async changeWithReviewComments(
+    runId: string,
+    mutate: (run: Run, loaded: ReviewCommentSet | null) => void,
+  ): Promise<Run | null> {
+    return this.changeStored(runId, (run) => mutate(run, this.reviewSets.get(runId) ?? null));
+  }
+
+  async changeSerializedWithClaims(
+    runId: string,
+    mutate: (run: Run, facts: ResumeFacts) => void,
+  ): Promise<Run | null> {
+    return this.changeStored(runId, (run, stored) => {
+      const others = this.runs.filter((other) => other.id !== runId && holdsPlace(other));
+      mutate(run, {
+        projectPlaceTaken: others.some((other) => other.projectId === stored.projectId),
+        serverPlacesTaken: others.length,
+        environmentFileSnapshotKept: stored.environmentFileSecret !== null,
+      });
+    });
+  }
+
+  /**
+   * Runs `work` on a copy of the Run and keeps what it changed only when it did not throw, like
+   * the database adapter's transaction. Synchronous, so nothing else changes the Run meanwhile.
+   */
+  private changeStored(runId: string, work: (run: Run, stored: StoredRun) => void): Run | null {
+    const stored = this.runs.find((candidate) => candidate.id === runId);
+    if (!stored) return null;
+    const run = this.view(stored);
+    work(run, stored);
+    const changes = run.pendingChanges();
+    Object.assign(stored, structuredClone(changes.fields));
+    stored.messages.push(...structuredClone(changes.messages));
+    if (changes.discardReviewComments) this.reviewSets.delete(runId);
+    if (
+      changes.discardPreparedFollowUp !== undefined &&
+      this.prepared.get(runId)?.source === changes.discardPreparedFollowUp
+    ) {
+      this.prepared.delete(runId);
+    }
+    return this.view(stored);
+  }
+
+  // Test setup shortcuts, not part of the Run repository: the operator's operations as the Run's
+  // own methods apply them, returning `null` where the operation is refused.
+
+  /** The operator answers the open question; `null` if the Run is not waiting with one. */
+  async answer(runId: string, text: string, now: Date): Promise<Run | null> {
+    return this.refusedAsNull(
+      () => this.change(runId, (run) => run.answer(text, now)),
+      [RunNotWaitingError],
+    );
+  }
+
+  /** The operator cancels; `null` if the Run is finished. */
+  async requestCancel(runId: string, now: Date): Promise<Run | null> {
+    return this.refusedAsNull(
+      () => this.change(runId, (run) => run.cancel(now)),
+      [RunAlreadyFinishedError],
+    );
+  }
+
+  /** The operator requests a delivery retry; `null` if the delivery did not fail. */
+  async requestDeliveryRetry(runId: string): Promise<Run | null> {
+    return this.refusedAsNull(
+      () => this.change(runId, (run) => run.requestDeliveryRetry()),
+      [DeliveryNotRetryableError],
+    );
+  }
+
+  /** The operator sends a Follow-up with the agent worker and Provider available. */
+  async queueFollowUp(
+    runId: string,
+    text: string,
+    now: Date,
+    origin?: FollowUpOrigin,
+  ): Promise<Run | null> {
+    const available = { workerAvailable: true, providerAvailable: true };
+    return this.refusedAsNull(
+      () =>
+        this.changeWithReviewComments(runId, (run, loaded) =>
+          run.followUp(text, now, available, origin, loaded),
+        ),
+      [FollowUpNotAllowedError],
+    );
+  }
+
+  private async refusedAsNull(
+    operation: () => Promise<Run | null>,
+    refusals: (abstract new (...args: never[]) => Error)[],
+  ): Promise<Run | null> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (refusals.some((refusal) => error instanceof refusal)) return null;
+      throw error;
+    }
   }
 
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
@@ -701,7 +701,7 @@ export class InMemoryRunRepository implements RunRepository {
   listReleasableEnvironmentFileSecrets(
     retryableFinishedBefore: Date,
   ): Promise<{ runId: string; secretRef: string }[]> {
-    const retryable = (run: Run) =>
+    const retryable = (run: RunData) =>
       run.state === 'failed' &&
       (run.failure?.code === 'delivery_failed' || run.failure?.code === 'usage_limit') &&
       (run.deliveryRequested ||
@@ -727,16 +727,15 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   /** A Run as lists read it: without its conversation (Issue #103), like the database adapter. */
-  private listed(run: Parameters<InMemoryRunRepository['view']>[0]): Run {
-    return { ...this.view(run), messages: [] };
+  private listed(run: StoredRun): Run {
+    return Run.restore({ ...this.data(run), messages: [] });
   }
 
-  private view(
-    run: Run & {
-      heartbeatAt: Date | null;
-      environmentFileSecret: string | null;
-    },
-  ): Run {
+  private view(run: StoredRun): Run {
+    return Run.restore(this.data(run));
+  }
+
+  private data(run: StoredRun): RunData {
     const { heartbeatAt, environmentFileSecret, ...rest } = run;
     // Internal: not part of a Run.
     void heartbeatAt;

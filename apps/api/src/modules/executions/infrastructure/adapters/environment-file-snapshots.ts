@@ -4,7 +4,7 @@ import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/ind
 import {
   RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS,
   RUN_ENVIRONMENT_FILE_SECRET_OWNER,
-} from '../../domain/entities/run-environment-file.js';
+} from '../../domain/value-objects/run-environment-file.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../application/ports/clock.js';
 import {

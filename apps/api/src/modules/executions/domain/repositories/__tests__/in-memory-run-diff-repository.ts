@@ -5,7 +5,7 @@ import type {
   RunDiffScope,
   RunDiffState,
   StoredRunDiff,
-} from '../../entities/run-diff.js';
+} from '../../value-objects/run-diff.js';
 import type { RunDiffRepository } from '../run-diff-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 

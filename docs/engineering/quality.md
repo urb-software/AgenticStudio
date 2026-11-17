@@ -59,7 +59,7 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
 - `contracts/` holds only `index.ts` and `events/`.
 - No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/`.
-- Every file in `domain/entities/` exports a class with a non-public constructor (added by #165 for `projects`; for `executions` by #167; for all modules, by path pattern, by #170).
+- Every file in `domain/entities/` exports a class with a non-public constructor (`executions`; `projects` added by #165; all modules, by path pattern, by #170; records without behaviour live in `domain/value-objects/`).
 - No `domain/services/` directory (added by #168).
 - The list of repository methods is pinned: a new method fails until the list is changed in review (added by #170).
 - The list of application collaborators is pinned: a new one fails until the list is changed in review (added by #170).
@@ -123,8 +123,8 @@ Positive and negative fixtures prove the rules catch violations:
 | A test of `application/` imports `platform/queue/` (tests are not checked) | PASS |
 | A production file of a module imports a test file (`__tests__/` or `*.test.ts`) | FAIL |
 | A test file imports a test helper | PASS |
-| `domain/entities/` file exports a class with a non-public constructor | PASS (added by #165 for `projects`; `executions` by #167; all modules by #170) |
-| `domain/entities/` file exports a class with a public constructor, or no class | FAIL (added by #165 for `projects`; `executions` by #167; all modules by #170) |
+| `domain/entities/` file exports a class with a non-public constructor | PASS (`executions`; `projects` added by #165; all modules by #170) |
+| `domain/entities/` file exports a class with a public constructor, or no class | FAIL (`executions`; `projects` added by #165; all modules by #170) |
 | A module has no `domain/services/` directory | PASS (added by #168) |
 | A module has a `domain/services/` directory | FAIL (added by #168) |
 | `domain/` imports only `domain/` and plain libraries | PASS (added by #168) |
@@ -151,7 +151,7 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | 1 | Features are independent | Gate check: no import between feature folders (`executions` and `projects`; all modules by #170) |
 | 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1 (`executions` and `projects`), and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule |
 | 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features (added by #170); pinned test: the list of application collaborators (added by #170); the six-step order is review only |
-| 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (added by #165 for `projects`; `executions` by #167; all modules by #170); where a rule sits is review only |
+| 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (`executions`; `projects` added by #165; all modules by #170); where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory (added by #168) |
 | 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests (added by #168); pinned test: the list of repository methods (added by #170); that no business rule is written in the database adapter is review only |
 | 7 | Validation has two homes | Review only |

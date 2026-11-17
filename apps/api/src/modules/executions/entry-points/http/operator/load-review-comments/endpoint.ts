@@ -17,10 +17,10 @@ import {
   ReviewCommentsResponseDto,
   toReviewCommentsResponse,
 } from '../../shared/review-comments-response.js';
-import { ReviewCommentsLoadRunningError } from '../../../../domain/entities/review-comments.js';
+import { ReviewCommentsLoadRunningError } from '../../../../domain/value-objects/review-comments.js';
 import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import { LoadReviewCommentsHandler } from '../../../../application/features/load-review-comments/handler.js';
 import { loadReviewCommentsRequestSchema, LoadReviewCommentsRequestDto } from './schema.js';
 

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Run } from '../../../../domain/entities/run.js';
-import type { RunEvent } from '../../../../domain/entities/run-event.js';
+import type { RunEvent } from '../../../../domain/value-objects/run-event.js';
 import { InMemoryRunLogRepository } from '../../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';

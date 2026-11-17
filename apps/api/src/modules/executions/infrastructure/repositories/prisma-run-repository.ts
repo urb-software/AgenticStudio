@@ -15,7 +15,11 @@ import {
   RUN_CANCELLED_BY,
   RUN_FAILURE_CODES,
   RUN_STATES,
-  type Run,
+  isRunId,
+  type ResumeFacts,
+  Run,
+  RunSlotTakenError,
+  type RunChanges,
   type RunCancellation,
   type RunCancelledBy,
   RUN_DELIVERIES,
@@ -24,10 +28,7 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
-  type FollowUpComments,
-  type FollowUpOrigin,
   type FollowUpSource,
-  partEndOf,
   restoreEarlierResult,
   type RunPullRequestChecks,
   type PullRequestState,
@@ -37,13 +38,11 @@ import {
   stepLimitFailure,
   UNDER_WAY_RUN_STATES,
 } from '../../domain/entities/run.js';
-import { ReviewCommentsNotLoadedError } from '../../domain/entities/review-comments.js';
-import { distinctAuthors, selectReviewComments } from '../../domain/services/review-comments.js';
+import type { ReviewCommentSet } from '../../domain/value-objects/review-comments.js';
 import { commentsSchema } from './review-comment-json.js';
 import type {
   AppendStepOutcome,
   ClaimedRunChange,
-  ResumeAfterLimitOutcome,
   DeliveryRetryOutcome,
   LimitedRunView,
   NewRun,
@@ -331,7 +330,7 @@ function toRun(row: RunRow): Run {
   if (row.delivery !== null && !includes(RUN_DELIVERIES, row.delivery)) {
     throw new Error(`Unexpected run delivery in the database: ${row.delivery}`);
   }
-  return {
+  return Run.restore({
     id: row.id,
     projectId: row.projectId,
     provider: row.provider as Provider,
@@ -406,7 +405,79 @@ function toRun(row: RunRow): Run {
       endedAt: row.prEndedAt,
     },
     lastActivityAt: row.lastActivityAt,
-  };
+  });
+}
+
+/** A message as its row: the CHECK constraints fix the kinds (Issues #103, #141, #145, #146). */
+function messageRow(message: RunMessage) {
+  switch (message.kind) {
+    case 'answer':
+      return { kind: 'answer', text: message.text, at: message.at };
+    case 'follow_up':
+      return {
+        kind: 'follow_up',
+        text: message.text,
+        at: message.at,
+        ...(message.source === undefined ? {} : { source: message.source }),
+        ...(message.sourceComments === undefined
+          ? {}
+          : {
+              sourceCount: message.sourceComments.count,
+              sourceAuthors: message.sourceComments.authors,
+            }),
+      };
+    case 'part_end':
+      return {
+        kind: 'part_end',
+        text: message.detail,
+        endState: message.state,
+        endFailureCode: message.failureCode,
+        endDelivery: message.delivery,
+        at: message.at,
+      };
+    case 'question':
+      throw new Error('A question is added by the agent worker, not by an operator operation.');
+  }
+}
+
+type ChangedField = keyof RunChanges['fields'];
+
+/** The columns of the Run fields the operator's operations change; any other field is a bug. */
+const CHANGED_COLUMNS: {
+  [K in ChangedField]?: (
+    value: NonNullable<RunChanges['fields'][K]> | null,
+  ) => Prisma.RunUncheckedUpdateInput;
+} = {
+  state: (state) => ({ state: state! }),
+  waitingSince: (waitingSince) => ({ waitingSince }),
+  lastActivityAt: (lastActivityAt) => ({ lastActivityAt: lastActivityAt! }),
+  finishedAt: (finishedAt) => ({ finishedAt }),
+  failure: (failure) => ({
+    failureCode: failure?.code ?? null,
+    failureDetail: failure?.detail ?? null,
+  }),
+  cancellation: (cancellation) => ({
+    cancelledBy: cancellation?.by ?? null,
+    cancelReason: cancellation?.reason ?? null,
+  }),
+  cancelRequestedAt: (cancelRequestedAt) => ({ cancelRequestedAt }),
+  followUpQueued: (followUpQueued) => ({ followUpQueued: followUpQueued! }),
+  followUpCount: (followUpCount) => ({ followUpCount: followUpCount! }),
+  stepsBeforePart: (stepsBeforePart) => ({ stepsBeforePart: stepsBeforePart! }),
+  delivery: (delivery) => ({ delivery }),
+  stepStartedAt: (stepStartedAt) => ({ stepStartedAt }),
+  deliveryRequested: (deliveryRequested) => ({ deliveryRequested: deliveryRequested! }),
+};
+
+function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdateInput {
+  const data: Prisma.RunUncheckedUpdateInput = {};
+  for (const [field, value] of Object.entries(fields)) {
+    const column = CHANGED_COLUMNS[field as ChangedField] as
+      ((value: unknown) => Prisma.RunUncheckedUpdateInput) | undefined;
+    if (column === undefined) throw new Error(`The Run field ${field} cannot be saved here.`);
+    Object.assign(data, column(value));
+  }
+  return data;
 }
 
 /**
@@ -422,15 +493,21 @@ export class PrismaRunRepository implements RunRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
 
   async add(run: NewRun): Promise<Run> {
-    const { limits, ...fields } = run;
     const row = await this.db.run.create({
       data: {
-        ...fields,
+        // The creation time is the database's (ordering by it must not depend on the API's clock).
+        ...(run.id === undefined ? {} : { id: run.id }),
+        projectId: run.projectId,
+        provider: run.provider,
+        task: run.task,
+        startCommit: run.startCommit,
+        remoteUrl: run.remoteUrl,
+        integrationBranch: run.integrationBranch,
         state: 'queued',
-        limitStepMinutes: limits.stepMinutes,
-        limitMaxSteps: limits.maxSteps,
-        limitWaitingDays: limits.waitingDays,
-        limitMaxTotalSteps: limits.maxTotalSteps,
+        limitStepMinutes: run.limits.stepMinutes,
+        limitMaxSteps: run.limits.maxSteps,
+        limitWaitingDays: run.limits.waitingDays,
+        limitMaxTotalSteps: run.limits.maxTotalSteps,
       },
       select: RUN_FIELDS,
     });
@@ -561,15 +638,6 @@ export class PrismaRunRepository implements RunRepository {
     return count === 1 ? this.findById(change.runId) : null;
   }
 
-  async requestDeliveryRetry(runId: string): Promise<Run | null> {
-    await this.db.run.updateMany({
-      where: { id: runId, state: 'failed', failureCode: 'delivery_failed' },
-      data: { deliveryRequested: true },
-    });
-    const run = await this.findById(runId);
-    return run?.deliveryRequested ? run : null;
-  }
-
   async listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {
     const rows = await this.db.run.findMany({
       where: { state: 'failed', deliveryRequested: true, claimedBy: null },
@@ -662,16 +730,6 @@ export class PrismaRunRepository implements RunRepository {
     return count === 1 ? this.findById(runId) : null;
   }
 
-  async requestCancel(runId: string, now: Date): Promise<Run | null> {
-    // The first request's time is kept: a repeated cancel changes nothing.
-    await this.db.run.updateMany({
-      where: { id: runId, state: { in: [...CLAIMED_RUN_STATES] }, cancelRequestedAt: null },
-      data: { cancelRequestedAt: now },
-    });
-    const run = await this.findById(runId);
-    return run && includes(CLAIMED_RUN_STATES, run.state) && run.cancelRequestedAt ? run : null;
-  }
-
   async listWaiting(): Promise<Run[]> {
     const rows = await this.db.run.findMany({
       where: { state: 'waiting_for_operator' },
@@ -708,208 +766,117 @@ export class PrismaRunRepository implements RunRepository {
             < ${now}::timestamptz`;
   }
 
-  async answer(runId: string, text: string, now: Date): Promise<Run | null> {
-    return this.db.$transaction(async (tx) => {
-      // Locks the Run row: the state check, the open question and the answer hold together, so
-      // a second answer, a cancel or the long-wait sweep in between leaves this one refused.
-      const [run] = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM runs WHERE id = ${runId}::uuid AND state = 'waiting_for_operator'
-        FOR UPDATE`;
-      if (!run) return null;
-      const last = await tx.runMessage.findFirst({
-        where: { runId },
-        orderBy: { seq: 'desc' },
-        select: { seq: true, kind: true },
-      });
-      if (last?.kind !== 'question') return null;
-      await tx.runMessage.create({
-        data: { runId, seq: last.seq + 1, kind: 'answer', text, at: now },
-      });
-      const row = await tx.run.update({
-        where: { id: runId },
-        data: { state: 'queued', waitingSince: null, lastActivityAt: now },
-        select: RUN_FIELDS,
-      });
-      return toRun(row);
+  async change(runId: string, mutate: (run: Run) => void): Promise<Run | null> {
+    return this.changeLocked(runId, {}, (run) => {
+      mutate(run);
     });
   }
 
-  async resumeAfterUsageLimit(
+  async changeWithReviewComments(
     runId: string,
-    text: string,
-    now: Date,
-  ): Promise<ResumeAfterLimitOutcome> {
-    try {
-      return await this.db.$transaction(
-        (tx) => this.resumeInTransaction(tx, runId, text, now),
-        CLAIM_TRANSACTION,
+    mutate: (run: Run, loaded: ReviewCommentSet | null) => void,
+  ): Promise<Run | null> {
+    return this.changeLocked(runId, {}, async (run, tx) => {
+      const stored = await tx.runReviewCommentSet.findUnique({ where: { runId } });
+      const parsed = stored ? commentsSchema.safeParse(stored.comments) : undefined;
+      // A stored set that does not validate is no loaded set.
+      mutate(
+        run,
+        stored && parsed?.success
+          ? {
+              scope: stored.scope as ReviewCommentSet['scope'],
+              comments: parsed.data,
+              truncated: stored.truncated,
+              loadedAt: stored.loadedAt,
+            }
+          : null,
       );
+    });
+  }
+
+  async changeSerializedWithClaims(
+    runId: string,
+    mutate: (run: Run, facts: ResumeFacts) => void,
+  ): Promise<Run | null> {
+    try {
+      return await this.changeLocked(runId, { serializedWithClaims: true }, async (run, tx) => {
+        // Places held as for a claim: an active state, a failed Run held for a delivery retry, or
+        // a Run queued to resume.
+        const [places] = await tx.$queryRaw<{ project: number; server: number }[]>`
+          SELECT count(*) FILTER (WHERE a.project_id = ${run.projectId}::uuid)::int AS project,
+                 count(*)::int AS server
+          FROM runs a
+          WHERE a.id <> ${runId}::uuid AND ${HOLDS_PLACE}`;
+        const snapshot = await tx.run.findUnique({
+          where: { id: runId },
+          select: { environmentFileSecretId: true },
+        });
+        mutate(run, {
+          projectPlaceTaken: (places?.project ?? 0) > 0,
+          serverPlacesTaken: places?.server ?? 0,
+          environmentFileSnapshotKept: snapshot?.environmentFileSecretId != null,
+        });
+      });
     } catch (error) {
       // Backstop: the partial unique index on a project's active Run (Issue #103).
-      if (isUniqueConstraintViolation(error)) return { status: 'slot_taken', scope: 'project' };
+      if (isUniqueConstraintViolation(error)) throw new RunSlotTakenError('project');
       throw error;
     }
   }
 
-  private async resumeInTransaction(
-    tx: Prisma.TransactionClient,
+  /**
+   * Loads the Run FOR UPDATE, lets `work` change it, and saves its pending changes, all in one
+   * transaction. `serializedWithClaims`: takes the claim lock first, as a claim does (the lock
+   * order is the same everywhere, so claims and this change cannot deadlock).
+   */
+  private async changeLocked(
     runId: string,
-    text: string,
-    now: Date,
-  ): Promise<ResumeAfterLimitOutcome> {
-    // Serialized with claims: the places counted below cannot change until commit.
-    await tx.$queryRaw`
-        SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-    // Locks the Run row: the condition, the answer and the state change hold together, so a
-    // second click changes nothing.
-    const [run] = await tx.$queryRaw<{ id: string; project_id: string }[]>`
-        SELECT id, project_id FROM runs
-        WHERE id = ${runId}::uuid AND state = 'failed' AND failure_code = 'usage_limit'
-          AND session_ref IS NOT NULL AND run_branch IS NOT NULL
-          AND cancel_requested_at IS NULL
-          -- A supplied Environment file's snapshot must still be there: the resumed step's log
-          -- is redacted with it (Issue #104). Past the retention period it is gone. A Run in a
-          -- Follow-up works without it already (Issue #141, coordinator decision 5), so its
-          -- usage-limit resume does not need it either.
-          AND (NOT environment_file_supplied OR environment_file_secret_id IS NOT NULL
-               OR follow_up_count > 0)
-        FOR UPDATE`;
-    if (!run) return { status: 'not_resumable' };
-    // Places held as for a claim: an active state, a failed Run held for a delivery retry, or
-    // a Run queued to resume.
-    const [places] = await tx.$queryRaw<{ project: number; server: number }[]>`
-        SELECT count(*) FILTER (WHERE a.project_id = ${run.project_id}::uuid)::int AS project,
-               count(*)::int AS server
-        FROM runs a
-        WHERE a.id <> ${runId}::uuid AND ${HOLDS_PLACE}`;
-    if ((places?.project ?? 0) > 0) return { status: 'slot_taken', scope: 'project' };
-    if ((places?.server ?? 0) >= MAX_ACTIVE_RUNS) return { status: 'slot_taken', scope: 'server' };
-    const last = await tx.runMessage.findFirst({
-      where: { runId },
-      orderBy: { seq: 'desc' },
-      select: { seq: true },
-    });
-    await tx.runMessage.create({
-      data: { runId, seq: (last?.seq ?? 0) + 1, kind: 'answer', text, at: now },
-    });
-    const row = await tx.run.update({
-      where: { id: runId },
-      data: {
-        state: 'queued',
-        failureCode: null,
-        failureDetail: null,
-        finishedAt: null,
-        lastActivityAt: now,
-      },
-      select: RUN_FIELDS,
-    });
-    return { status: 'resumed', run: toRun(row) };
+    options: { serializedWithClaims?: boolean },
+    work: (run: Run, tx: Prisma.TransactionClient) => void | Promise<void>,
+  ): Promise<Run | null> {
+    if (!isRunId(runId)) return null;
+    return this.db.$transaction(async (tx) => {
+      if (options.serializedWithClaims) {
+        await tx.$queryRaw`
+          SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
+      }
+      // Locks the Run row until commit: what `work` decides from the Run it then reads holds
+      // until the change is saved, and a worker's conditional update waits for it.
+      const [locked] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM runs WHERE id = ${runId}::uuid FOR UPDATE`;
+      if (!locked) return null;
+      const read = () => tx.run.findUniqueOrThrow({ where: { id: runId }, select: RUN_FIELDS });
+      const run = toRun(await read());
+      await work(run, tx);
+      await this.save(tx, run);
+      return toRun(await read());
+    }, CLAIM_TRANSACTION);
   }
 
-  async queueFollowUp(
-    runId: string,
-    text: string,
-    now: Date,
-    origin?: FollowUpOrigin,
-  ): Promise<Run | null> {
-    const source = typeof origin === 'object' ? origin.source : origin;
-    return this.db.$transaction(async (tx) => {
-      // Locks the Run row: the conditions, the message and the state change hold together, so a
-      // second submission, a claim or a delivery retry in between leaves this one refused.
-      const [run] = await tx.$queryRaw<{ id: string; steps: number }[]>`
-        SELECT r.id,
-               (SELECT count(*) FROM run_steps s WHERE s.run_id = r.id)::int AS steps
-        FROM runs r
-        WHERE r.id = ${runId}::uuid
-          AND r.state IN (${Prisma.join([...FINAL_RUN_STATES])})
-          AND r.claimed_by IS NULL AND NOT r.delivery_requested AND NOT r.follow_up_queued
-          AND r.session_ref IS NOT NULL AND r.run_branch IS NOT NULL
-          AND r.working_copy_removed_at IS NULL
-        FOR UPDATE`;
-      if (!run) return null;
-      const current = toRun(
-        await tx.run.findUniqueOrThrow({ where: { id: runId }, select: RUN_FIELDS }),
-      );
-      if (run.steps >= current.limits.maxTotalSteps) return null;
-      // Issue #146: the selected comments must all be in the loaded set as it is now, under the
-      // Run's row lock, which a load's completion also takes first (`completeReviewComments`), so a
-      // load that completes meanwhile cannot be sent or dropped unseen.
-      let comments: FollowUpComments | undefined;
-      if (typeof origin === 'object') {
-        const stored = await tx.runReviewCommentSet.findUnique({ where: { runId } });
-        const parsed = stored ? commentsSchema.safeParse(stored.comments) : undefined;
-        const chosen = parsed?.success
-          ? selectReviewComments({ comments: parsed.data }, origin.commentIds)
-          : null;
-        if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
-        comments = { count: chosen.length, authors: distinctAuthors(chosen) };
-      }
+  /** Saves what an operator operation changed on the Run: its columns, messages and discards. */
+  private async save(tx: Prisma.TransactionClient, run: Run): Promise<void> {
+    const changes = run.pendingChanges();
+    const data = changedColumns(changes.fields);
+    if (changes.messages.length > 0) {
       const last = await tx.runMessage.findFirst({
-        where: { runId },
+        where: { runId: run.id },
         orderBy: { seq: 'desc' },
         select: { seq: true },
       });
-      const seq = (last?.seq ?? 0) + 1;
-      // Review S1 of #150: how the part before the Follow-up ended stays in the conversation.
-      const ended = partEndOf(current)!;
-      await tx.runMessage.create({
-        data: {
-          runId,
-          seq,
-          kind: 'part_end',
-          text: ended.detail,
-          endState: ended.state,
-          endFailureCode: ended.failureCode,
-          endDelivery: ended.delivery,
-          at: now,
-        },
-      });
-      await tx.runMessage.create({
-        data: {
-          runId,
-          seq: seq + 1,
-          kind: 'follow_up',
-          text,
-          at: now,
-          ...(source === undefined ? {} : { source }),
-          ...(comments === undefined
-            ? {}
-            : { sourceCount: comments.count, sourceAuthors: comments.authors }),
-        },
-      });
-      // Issue #145: what was prepared has been sent (as the operator left it).
-      if (source === 'review_comments') {
-        // Issue #146: the loaded comments were sent (those the operator selected): a new load
-        // follows the next result.
-        await tx.runReviewCommentSet.deleteMany({ where: { runId } });
-      } else if (source !== undefined) {
-        await tx.runPreparedFollowUp.deleteMany({ where: { runId, source } });
+      let seq = last?.seq ?? 0;
+      for (const message of changes.messages) {
+        await tx.runMessage.create({ data: { runId: run.id, seq: ++seq, ...messageRow(message) } });
       }
-      // Back to the queue: the earlier result is cleared (the Run's state reflects its latest
-      // result), its pull request stays (the same one is updated), and the new part gets its
-      // own Run step allowance.
-      const row = await tx.run.update({
-        where: { id: runId },
-        data: {
-          state: 'queued',
-          lastActivityAt: now,
-          followUpQueued: true,
-          followUpCount: { increment: 1 },
-          stepsBeforePart: run.steps,
-          failureCode: null,
-          failureDetail: null,
-          finishedAt: null,
-          cancelledBy: null,
-          cancelReason: null,
-          cancelRequestedAt: null,
-          delivery: null,
-          waitingSince: null,
-          stepStartedAt: null,
-        },
-        select: RUN_FIELDS,
+    }
+    if (changes.discardReviewComments) {
+      await tx.runReviewCommentSet.deleteMany({ where: { runId: run.id } });
+    }
+    if (changes.discardPreparedFollowUp !== undefined) {
+      await tx.runPreparedFollowUp.deleteMany({
+        where: { runId: run.id, source: changes.discardPreparedFollowUp },
       });
-      return toRun(row);
-    });
+    }
+    if (Object.keys(data).length > 0) await tx.run.update({ where: { id: run.id }, data });
   }
 
   async recordUpdateStart(

@@ -1,4 +1,4 @@
-import { planLogAppend, type RunEvent } from '../../entities/run-event.js';
+import { planLogAppend, type RunEvent } from '../../value-objects/run-event.js';
 import { CLAIMED_RUN_STATES } from '../../entities/run.js';
 import type { RunLogRepository } from '../run-log-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';

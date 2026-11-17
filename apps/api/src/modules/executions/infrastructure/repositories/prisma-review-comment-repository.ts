@@ -3,7 +3,10 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type { ReviewCommentScope, ReviewComments } from '../../domain/entities/review-comments.js';
+import type {
+  ReviewCommentScope,
+  ReviewComments,
+} from '../../domain/value-objects/review-comments.js';
 import type { ReviewCommentRepository } from '../../domain/repositories/review-comment-repository.js';
 import { commentsSchema } from './review-comment-json.js';
 

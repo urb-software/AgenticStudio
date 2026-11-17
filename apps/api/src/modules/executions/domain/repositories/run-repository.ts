@@ -1,7 +1,8 @@
+import type { ReviewCommentSet } from '../value-objects/review-comments.js';
 import type {
-  FollowUpOrigin,
   Provider,
   PullRequestState,
+  ResumeFacts,
   Run,
   RunCancellation,
   RunDeliveryOutcome,
@@ -16,6 +17,8 @@ import type {
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');
 
 export interface NewRun {
+  /** The Run's id when the caller assigned one (`Run.start`); otherwise the store assigns it. */
+  id?: string;
   projectId: string;
   provider: Provider;
   task: string;
@@ -77,14 +80,6 @@ export interface DeliveryRetryOutcome {
   pushedCommit?: string | null;
   now: Date;
 }
-
-/** What resuming a Run stopped at the usage limit did (Issue #105). */
-export type ResumeAfterLimitOutcome =
-  | { status: 'resumed'; run: Run }
-  /** Not (any more) a resumable Run stopped at the usage limit; nothing changed. */
-  | { status: 'not_resumable' }
-  /** Another Run holds the project's place, or the server's places are taken; nothing changed. */
-  | { status: 'slot_taken'; scope: 'project' | 'server' };
 
 /** What storing a Run step did (Issue #100: the API also enforces the step limit). */
 export type AppendStepOutcome =
@@ -163,6 +158,40 @@ export interface RunRepository {
   findById(id: string): Promise<Run | null>;
 
   /**
+   * Changes a Run the operator acts on (Issue #167), in one transaction: loads it `FOR UPDATE`,
+   * calls `mutate` with it, and saves what `mutate` changed ({@link Run.pendingChanges}); returns
+   * the saved Run, or `null` when no Run has this id (`mutate` is then not called). `mutate` is
+   * pure: it calls the Run's methods only and does no I/O; whatever it throws (a domain refusal)
+   * rolls the transaction back and reaches the caller. The row lock serializes this change with
+   * every other change of the Run: a worker's conditional update waits for it and then finds the
+   * state it checks as it is after this change, so two simultaneous changes cannot both win.
+   */
+  change(runId: string, mutate: (run: Run) => void): Promise<Run | null>;
+
+  /**
+   * {@link change} for a Follow-up (Issue #146): `mutate` also gets the Run's loaded Review
+   * comments, read under the Run's row lock, which the completion of a load also takes first. A
+   * Follow-up that sends them removes them in the same transaction (and the prepared Follow-up of
+   * its source, Issue #145), as the Run's pending changes say.
+   */
+  changeWithReviewComments(
+    runId: string,
+    mutate: (run: Run, loaded: ReviewCommentSet | null) => void,
+  ): Promise<Run | null>;
+
+  /**
+   * {@link change} for resuming after the usage limit (review R1 of #129): serialized with claims
+   * (it takes the lock a claim takes first), so `mutate` gets the places held, and whether the
+   * Run's Environment file snapshot is still there, as they stay until the change is saved. When
+   * the partial unique index on a Project's active Run refuses the saved change, it is reported
+   * as `RunSlotTakenError` (scope `project`).
+   */
+  changeSerializedWithClaims(
+    runId: string,
+    mutate: (run: Run, facts: ResumeFacts) => void,
+  ): Promise<Run | null>;
+
+  /**
    * Every Run, newest first: by creation time, then by id. Lists leave the conversation out
    * (`messages` is empty; Issue #103): `findById` reads it.
    */
@@ -210,6 +239,8 @@ export interface RunRepository {
   /**
    * Cancels a Run that no worker holds (`queued` or `waiting_for_operator`) if it is still in
    * `from`: → `cancelled` with `cancellation`, finished at `now` (Issue #100). `null` if not.
+   * Kept for the long-wait sweep that runs with a claim and as a scheduled sweep (Studio's own
+   * cancel, not the operator's): a sweep is not an operator-triggered operation (Issue #167).
    */
   cancelUnheld(
     runId: string,
@@ -217,12 +248,6 @@ export interface RunRepository {
     cancellation: RunCancellation,
     now: Date,
   ): Promise<Run | null>;
-
-  /**
-   * Records the operator's cancel request on a held Run (`preparing` or `running`), keeping
-   * the first request's time (Issue #100). `null` if the Run is not held any more.
-   */
-  requestCancel(runId: string, now: Date): Promise<Run | null>;
 
   /** Every Run waiting for the operator (Issue #100: the long-wait sweep); without messages. */
   listWaiting(): Promise<Run[]>;
@@ -243,12 +268,6 @@ export interface RunRepository {
    */
   timeOutOverdueSteps(now: Date, graceMinutes: number): Promise<number>;
 
-  /**
-   * Requests a retry of the Run's failed delivery (Issue #102) if it is still `failed` with
-   * `delivery_failed`; repeating it changes nothing. The Run, or `null` if the condition failed.
-   */
-  requestDeliveryRetry(runId: string): Promise<Run | null>;
-
   /** Requested delivery retries no worker holds, with the worker that started each (#102). */
   listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]>;
 
@@ -263,50 +282,6 @@ export interface RunRepository {
    * held by `outcome.workerId`; the request is cleared. `null` if the condition failed.
    */
   finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null>;
-
-  /**
-   * Stores the operator's answer to the open question of a `waiting_for_operator` Run (Issue
-   * #103) and queues the Run again, in one transaction. `null` if the Run is not waiting with an
-   * open question (any more): a second answer, or one after a cancel, changes nothing.
-   */
-  answer(runId: string, text: string, now: Date): Promise<Run | null>;
-
-  /**
-   * Resumes a Run stopped at the usage limit (Issue #105), in one transaction: if it is still
-   * `failed` with `usage_limit`, a session reference, a Working copy, no cancel request and,
-   * when it was given an Environment file, still its snapshot (the resumed step's redaction;
-   * not needed in a Follow-up, Issue #141, which works without it already),
-   * `text` is stored as the operator's answer and the Run goes back to `queued` (failure and
-   * finish time cleared), to be resumed like an answered Run by the worker that started it.
-   * A queued Run with a session reference holds its project's place and one of the server's
-   * (like an answered Run), so it is refused (`slot_taken`) while another Run of the project is
-   * active, held or queued to resume, or `MAX_ACTIVE_RUNS` other Runs are; serialized against
-   * claims (review R1 of #129).
-   */
-  resumeAfterUsageLimit(runId: string, text: string, now: Date): Promise<ResumeAfterLimitOutcome>;
-
-  /**
-   * Queues a Follow-up (Issue #141), in one transaction, recording first how the part before it
-   * ended (a `part_end` message, review S1 of #150): if the Run is still finished (a final
-   * state, held by no worker, no delivery retry requested, no Follow-up queued), has a session
-   * reference and a recorded Working copy that was not reported removed, and has taken fewer Run
-   * steps than its total, `text` is stored as a `follow_up` message and the Run goes back to
-   * `queued` (its earlier result cleared, its pull request kept), with a new Run step allowance
-   * from the steps it has taken. It is resumed like an answered Run by the worker that holds its
-   * Working copy, but holds no place while it waits: the claim starts it under the concurrency
-   * limits. With a `source` (Issue #145: the text was prepared from it) the message says so and
-   * the Run's prepared Follow-up of that source is removed in the same transaction. Issue #146:
-   * a Follow-up from `review_comments` names the selected comment ids: under the Run's row lock the
-   * store checks they are all in the Run's loaded set (throws {@link ReviewCommentsNotLoadedError}
-   * otherwise, nothing changed), records how many comments and whose, and removes that set in the
-   * same transaction. `null` if a condition failed (nothing changed).
-   */
-  queueFollowUp(
-    runId: string,
-    text: string,
-    now: Date,
-    origin?: FollowUpOrigin,
-  ): Promise<Run | null>;
 
   /**
    * Records where a bring-up-to-date merge started (Issue #147) on the Run's latest Follow-up:

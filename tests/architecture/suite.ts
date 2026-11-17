@@ -73,6 +73,16 @@ export const QUALITY_TABLE = [
     expected: 'FAIL',
     gate: 'api',
   },
+  {
+    row: '`domain/entities/` file exports a class with a non-public constructor',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: '`domain/entities/` file exports a class with a public constructor, or no class',
+    expected: 'FAIL',
+    gate: 'api',
+  },
 ] as const;
 
 export interface FixtureCase {

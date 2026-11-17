@@ -7,14 +7,14 @@ import {
 import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import type { RecordedWorkerStatus } from '../../../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { DiscardPreparedFollowUpHandler } from '../../discard-prepared-follow-up/handler.js';
 import {
   GetPreparedFollowUpHandler,
   PreparedFollowUpNotFoundError,
 } from '../../get-prepared-follow-up/handler.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import { NoFailingChecksError, PrepareFailingChecksHandler } from '../handler.js';
 
 class Workers implements WorkerStatusStore {

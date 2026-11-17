@@ -1,6 +1,6 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { RunDiffState } from '../../../domain/entities/run-diff.js';
+import type { RunDiffState } from '../../../domain/value-objects/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -10,12 +10,13 @@ import {
   RUN_ENVIRONMENT_FILES,
   type RunEnvironmentFiles,
 } from '../../../../projects/contracts/index.js';
-import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/entities/run-environment-file.js';
+import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects/run-environment-file.js';
 import {
   longWaitCancellation,
   lostWorkerRule,
   resumeMessage,
   type Run,
+  type RunData,
   type RunFailure,
   STEP_TIME_LIMIT_GRACE_MINUTES,
   takesNewEnvironmentFile,
@@ -83,7 +84,7 @@ const WORKING_COPY_REMOVED: RunFailure = {
  * it has taken and the seq of its next event (Issue #103: a resumed step continues after the
  * stored log).
  */
-export interface ClaimedRun extends Run {
+export interface ClaimedRun extends RunData {
   environmentFile: EnvironmentFile | null;
   /**
    * Review S3 of #150: the claim carries a new snapshot of the Project's Environment file (or

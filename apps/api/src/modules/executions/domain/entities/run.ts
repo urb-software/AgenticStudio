@@ -5,6 +5,13 @@
  * constraints are written from them.
  */
 
+import {
+  ReviewCommentsNotLoadedError,
+  type ReviewCommentSet,
+} from '../value-objects/review-comments.js';
+import { distinctAuthors, selectReviewComments } from '../services/review-comments.js';
+import type { Task } from '../value-objects/task.js';
+
 export const RUN_STATES = [
   'queued',
   'preparing',
@@ -69,9 +76,6 @@ export interface RunFailure {
   /** A short explanation; never a secret. */
   detail: string;
 }
-
-/** Longest Task, in characters. */
-export const TASK_MAX_LENGTH = 20_000;
 
 /**
  * Where a Run's pull request stands on the Git host (Issue #142): `draft` and `open` are open;
@@ -352,7 +356,11 @@ export function partEndOf(
   };
 }
 
-export interface Run {
+/**
+ * A Run's state as a plain record (what storage holds and what crosses a boundary). The
+ * {@link Run} class is built from it, with {@link Run.restore}, and exposes the same fields.
+ */
+export interface RunData {
   id: string;
   projectId: string;
   provider: Provider;
@@ -622,7 +630,10 @@ export function currentUpdateStart(
  * `waitingDays` is cancelled by Studio, with that stated as the reason. Returns the
  * cancellation when the rule applies at `now`, otherwise `null`.
  */
-export function longWaitCancellation(run: Run, now: Date): RunCancellation | null {
+export function longWaitCancellation(
+  run: Pick<Run, 'state' | 'waitingSince' | 'limits'>,
+  now: Date,
+): RunCancellation | null {
   if (run.state !== 'waiting_for_operator' || run.waitingSince === null) return null;
   const limitMs = run.limits.waitingDays * 24 * 60 * 60 * 1000;
   if (now.getTime() - run.waitingSince.getTime() <= limitMs) return null;
@@ -941,4 +952,323 @@ export function lostWorkerRule(
         'delivery. Retry the delivery.',
     },
   };
+}
+
+/** What the Run needs to know about the agent worker to take a Follow-up (Issue #141). */
+export interface FollowUpFacts {
+  /** The agent worker that holds the Run's Working copy reported within the lease. */
+  workerAvailable: boolean;
+  /** The Run's Provider is available on the connected agent worker. */
+  providerAvailable: boolean;
+}
+
+/**
+ * What the Run needs to know about the places held, and about its Environment file snapshot, to
+ * be resumed after the usage limit (Issue #105, review R1 of #129). The store reads them under
+ * the lock that serializes claims, so they cannot change before the change is saved.
+ */
+export interface ResumeFacts {
+  /** Another Run of the Run's Project holds a place: active, held for a retry, or queued to resume. */
+  projectPlaceTaken: boolean;
+  /** How many other Runs hold a place across the server. */
+  serverPlacesTaken: number;
+  /** The Run's Environment file snapshot (its secret) still exists. */
+  environmentFileSnapshotKept: boolean;
+}
+
+/** What a new Run is started from (Issue #96). */
+export interface RunStartInput {
+  id: string;
+  projectId: string;
+  provider: Provider;
+  task: Task;
+  startCommit: string;
+  remoteUrl: string;
+  integrationBranch: string;
+  /** The limits in force when the Run is started (Issue #100). */
+  limits: RunLimits;
+  now: Date;
+}
+
+/**
+ * What changed on a Run since it was started or restored, for the store to save in one step
+ * (Issue #167): the new values of the changed fields, the messages added to the conversation,
+ * and what the change removes beside the Run: the prepared Follow-up of a source (Issue #145), or
+ * the loaded Review comments (Issue #146) once they were sent.
+ */
+export interface RunChanges {
+  fields: Partial<Omit<RunData, 'messages'>>;
+  messages: RunMessage[];
+  discardPreparedFollowUp?: Exclude<FollowUpSource, 'review_comments'>;
+  discardReviewComments?: true;
+}
+
+const CHANGES = new WeakMap<Run, RunChanges>();
+
+const isOneOf = <T extends string>(list: readonly T[], value: string): value is T =>
+  (list as readonly string[]).includes(value);
+
+/**
+ * The Run (Issue #96): one Task carried out by a Provider on one Project. It owns the rules of
+ * what the operator can do with it: answer the agent's question, send a Follow-up, cancel, retry
+ * a failed delivery and resume after the usage limit (Issue #167). Each is a method that checks
+ * its preconditions against the Run's own state and the facts passed in, refuses with a domain
+ * error otherwise, and records what changed. The store saves {@link Run.pendingChanges} in one
+ * transaction under the Run's row lock, so two simultaneous requests cannot both succeed. What
+ * the agent worker reports (claims, states, steps, heartbeats) changes the Run in the store with
+ * conditional updates and is not a method here yet.
+ *
+ * It cannot be built in an invalid state: only {@link Run.start} and {@link Run.restore} make
+ * one. Its fields are readable and never assigned from outside.
+ */
+export class Run {
+  declare readonly id: RunData['id'];
+  declare readonly projectId: RunData['projectId'];
+  declare readonly provider: RunData['provider'];
+  declare readonly task: RunData['task'];
+  declare readonly state: RunData['state'];
+  declare readonly startCommit: RunData['startCommit'];
+  declare readonly remoteUrl: RunData['remoteUrl'];
+  declare readonly workingCopy: RunData['workingCopy'];
+  declare readonly integrationBranch: RunData['integrationBranch'];
+  declare readonly delivery: RunData['delivery'];
+  declare readonly pullRequest: RunData['pullRequest'];
+  declare readonly deliveryRequested: RunData['deliveryRequested'];
+  declare readonly failingChecks: RunData['failingChecks'];
+  declare readonly createdAt: RunData['createdAt'];
+  declare readonly startedAt: RunData['startedAt'];
+  declare readonly finishedAt: RunData['finishedAt'];
+  declare readonly failure: RunData['failure'];
+  declare readonly claimedBy: RunData['claimedBy'];
+  declare readonly environmentFileSupplied: RunData['environmentFileSupplied'];
+  declare readonly environmentFilePath: RunData['environmentFilePath'];
+  declare readonly limits: RunData['limits'];
+  declare readonly cancelRequestedAt: RunData['cancelRequestedAt'];
+  declare readonly cancellation: RunData['cancellation'];
+  declare readonly waitingSince: RunData['waitingSince'];
+  declare readonly stepStartedAt: RunData['stepStartedAt'];
+  declare readonly releasedBy: RunData['releasedBy'];
+  declare readonly sessionRef: RunData['sessionRef'];
+  declare readonly messages: RunData['messages'];
+  declare readonly lastClaimedBy: RunData['lastClaimedBy'];
+  declare readonly stepCount: RunData['stepCount'];
+  declare readonly followUpCount: RunData['followUpCount'];
+  declare readonly followUpQueued: RunData['followUpQueued'];
+  declare readonly stepsBeforePart: RunData['stepsBeforePart'];
+  declare readonly pushedCommit: RunData['pushedCommit'];
+  declare readonly workingCopyRemovedAt: RunData['workingCopyRemovedAt'];
+  declare readonly pullRequestStatus: RunData['pullRequestStatus'];
+  declare readonly lastActivityAt: RunData['lastActivityAt'];
+
+  private constructor(data: RunData) {
+    Object.assign(this, data);
+    CHANGES.set(this, { fields: {}, messages: [] });
+  }
+
+  /** A new Run, `queued`, for a valid Task (Issue #96); stored by the Run repository. */
+  static start(input: RunStartInput): Run {
+    if (!isOneOf(PROVIDERS, input.provider)) {
+      throw new TypeError(`Unknown provider: ${input.provider}`);
+    }
+    return new Run({
+      id: input.id,
+      projectId: input.projectId,
+      provider: input.provider,
+      task: input.task.value,
+      state: 'queued',
+      startCommit: input.startCommit,
+      remoteUrl: input.remoteUrl,
+      workingCopy: null,
+      integrationBranch: input.integrationBranch,
+      delivery: null,
+      pullRequest: null,
+      deliveryRequested: false,
+      failingChecks: [],
+      createdAt: input.now,
+      startedAt: null,
+      finishedAt: null,
+      failure: null,
+      claimedBy: null,
+      environmentFileSupplied: false,
+      environmentFilePath: null,
+      limits: { ...input.limits },
+      cancelRequestedAt: null,
+      cancellation: null,
+      waitingSince: null,
+      stepStartedAt: null,
+      releasedBy: null,
+      sessionRef: null,
+      messages: [],
+      lastClaimedBy: null,
+      stepCount: 0,
+      followUpCount: 0,
+      followUpQueued: false,
+      stepsBeforePart: 0,
+      pushedCommit: null,
+      workingCopyRemovedAt: null,
+      pullRequestStatus: NO_PULL_REQUEST_STATUS,
+      lastActivityAt: input.now,
+    });
+  }
+
+  /** A Run as storage holds it. Throws {@link TypeError} for state the store should never hold. */
+  static restore(data: RunData): Run {
+    if (!isOneOf(RUN_STATES, data.state)) throw new TypeError(`Unknown run state: ${data.state}`);
+    if ((data.state === 'failed') !== (data.failure !== null)) {
+      throw new TypeError('A Run has a failure exactly when it is failed.');
+    }
+    if ((data.state === 'cancelled') !== (data.cancellation !== null)) {
+      throw new TypeError('A Run has a cancellation exactly when it is cancelled.');
+    }
+    return new Run(data);
+  }
+
+  /** What changed since the Run was started or restored; the store saves exactly this. */
+  pendingChanges(): RunChanges {
+    const pending = CHANGES.get(this)!;
+    return { ...pending, fields: { ...pending.fields }, messages: [...pending.messages] };
+  }
+
+  /**
+   * The operator answers the agent's open question (Issue #103): the answer is stored after the
+   * question and the Run goes back to `queued`, to be resumed by the agent worker that holds its
+   * Working copy. Only a `waiting_for_operator` Run whose last message is a question takes an
+   * answer; a second answer, or one after a cancel, is refused with {@link RunNotWaitingError}.
+   */
+  answer(text: string, now: Date): void {
+    if (this.state !== 'waiting_for_operator' || this.messages.at(-1)?.kind !== 'question') {
+      throw new RunNotWaitingError(this.state);
+    }
+    assertTransition(this.state, 'queued');
+    this.append({ kind: 'answer', text, at: now });
+    this.apply({ state: 'queued', waitingSince: null, lastActivityAt: now });
+  }
+
+  /**
+   * The operator cancels the Run (Issue #100). A `queued` or `waiting_for_operator` Run (no
+   * worker holds it) is `cancelled` at once. A `preparing` or `running` Run only gets a cancel
+   * request, its first request's time kept: its state stays until the agent worker, told with its
+   * next heartbeat, has stopped and reports `cancelled`. Repeating it changes nothing. Throws
+   * {@link RunAlreadyFinishedError} for a finished Run.
+   */
+  cancel(now: Date): void {
+    if (isFinal(this.state)) throw new RunAlreadyFinishedError(this.state);
+    if (this.state === 'queued' || this.state === 'waiting_for_operator') {
+      assertTransition(this.state, 'cancelled');
+      this.apply({
+        state: 'cancelled',
+        cancellation: { ...OPERATOR_CANCELLATION },
+        waitingSince: null,
+        finishedAt: now,
+        followUpQueued: false,
+      });
+      return;
+    }
+    if (this.cancelRequestedAt === null) this.apply({ cancelRequestedAt: now });
+  }
+
+  /**
+   * The operator asks to repeat only the delivery of a Run whose delivery failed (Issue #102):
+   * the Run stays `failed` and is marked for a retry, which the next claim hands to the worker
+   * that holds its Working copy. Repeating the request changes nothing. Throws
+   * {@link DeliveryNotRetryableError} unless the Run is `failed` with `delivery_failed`.
+   */
+  requestDeliveryRetry(): void {
+    if (!canRetryDelivery(this)) throw new DeliveryNotRetryableError();
+    if (!this.deliveryRequested) this.apply({ deliveryRequested: true });
+  }
+
+  /**
+   * The operator resumes a Run stopped at the usage limit (Issue #105): "Continue where you
+   * stopped." is stored as the operator's answer and the Run goes back to `queued`, to be resumed
+   * like an answered Run by the worker that holds its Working copy (failure and finish time
+   * cleared). A queued Run with a session reference holds its Project's place and one of the
+   * server's, so it is refused while those are taken (review R1 of #129). Throws
+   * {@link RunNotResumableError} (also when a supplied Environment file's snapshot is gone, unless
+   * the Run is in a Follow-up, which works without it, Issue #141) or {@link RunSlotTakenError}.
+   */
+  resumeAfterUsageLimit(now: Date, facts: ResumeFacts): void {
+    if (
+      !canResumeAfterUsageLimit(this) ||
+      // The resumed step's log is redacted with the snapshot (Issue #104); a Run in a Follow-up
+      // works without it already (Issue #141, coordinator decision 5).
+      (this.environmentFileSupplied &&
+        !facts.environmentFileSnapshotKept &&
+        this.followUpCount === 0)
+    ) {
+      throw new RunNotResumableError();
+    }
+    if (facts.projectPlaceTaken) throw new RunSlotTakenError('project');
+    if (facts.serverPlacesTaken >= MAX_ACTIVE_RUNS) throw new RunSlotTakenError('server');
+    this.append({ kind: 'answer', text: USAGE_LIMIT_RESUME_TEXT, at: now });
+    this.apply({ state: 'queued', failure: null, finishedAt: null, lastActivityAt: now });
+  }
+
+  /**
+   * The operator sends a Follow-up to the finished Run (Issue #141): how the part before it ended
+   * is recorded first (a `part_end` message, review S1 of #150), then `text` as a `follow_up`
+   * message, and the Run goes back to `queued` with its earlier result cleared, its pull request
+   * kept and a new Run step allowance from the steps it has taken. Eligible as
+   * {@link followUpEligibility} says, with `facts` about the agent worker; otherwise
+   * {@link FollowUpNotAllowedError}. With an `origin` (Issue #145, #147: the text was prepared
+   * from a source) the message says so and the Run's prepared Follow-up of that source is to be
+   * removed with the change. Issue #146: a Follow-up from `review_comments` names the selected
+   * comments, which must all be in the loaded set `loaded` (otherwise
+   * {@link ReviewCommentsNotLoadedError}); it records how many and whose, and the loaded set is
+   * to be removed with the change.
+   */
+  followUp(
+    text: string,
+    now: Date,
+    facts: FollowUpFacts,
+    origin?: FollowUpOrigin,
+    loaded: ReviewCommentSet | null = null,
+  ): void {
+    const eligibility = followUpEligibility(this, facts);
+    if (!eligibility.allowed) throw new FollowUpNotAllowedError(eligibility.reason);
+    const source = typeof origin === 'object' ? origin.source : origin;
+    let comments: FollowUpComments | undefined;
+    if (typeof origin === 'object') {
+      const chosen = loaded === null ? null : selectReviewComments(loaded, origin.commentIds);
+      if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
+      comments = { count: chosen.length, authors: distinctAuthors(chosen) };
+    }
+    this.append({ kind: 'part_end', ...partEndOf(this)!, at: now });
+    this.append({
+      kind: 'follow_up',
+      text,
+      at: now,
+      ...(source === undefined ? {} : { source }),
+      ...(comments === undefined ? {} : { sourceComments: comments }),
+    });
+    const pending = CHANGES.get(this)!;
+    if (source === 'review_comments') pending.discardReviewComments = true;
+    else if (source !== undefined) pending.discardPreparedFollowUp = source;
+    // Back to the queue (the one way from a final state, next to a delivery retry and a usage
+    // limit resume): the Run's state reflects its latest result, so the earlier one is cleared.
+    this.apply({
+      state: 'queued',
+      lastActivityAt: now,
+      followUpQueued: true,
+      followUpCount: this.followUpCount + 1,
+      stepsBeforePart: this.stepCount,
+      failure: null,
+      finishedAt: null,
+      cancellation: null,
+      cancelRequestedAt: null,
+      delivery: null,
+      waitingSince: null,
+      stepStartedAt: null,
+    });
+  }
+
+  private apply(patch: Partial<Omit<RunData, 'messages'>>): void {
+    Object.assign(this, patch);
+    Object.assign(CHANGES.get(this)!.fields, patch);
+  }
+
+  private append(message: RunMessage): void {
+    CHANGES.get(this)!.messages.push(message);
+    Object.assign(this, { messages: [...this.messages, message] });
+  }
 }

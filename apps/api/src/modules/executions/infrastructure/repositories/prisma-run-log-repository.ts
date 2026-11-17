@@ -9,7 +9,7 @@ import {
   RUN_EVENT_KINDS,
   type RunEvent,
   type RunEventKind,
-} from '../../domain/entities/run-event.js';
+} from '../../domain/value-objects/run-event.js';
 import { CLAIMED_RUN_STATES } from '../../domain/entities/run.js';
 import type { RunLogRepository } from '../../domain/repositories/run-log-repository.js';
 

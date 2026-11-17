@@ -1,16 +1,6 @@
-import { PROVIDER_NAMES, type WorkerStatusReport } from '@agentic-studio/contracts';
+import { PROVIDER_NAMES } from '@agentic-studio/contracts';
 import { PROVIDERS, type Provider } from '../entities/run.js';
-
-/**
- * The latest status an agent worker reported (Issue #101): its runner mode and which providers
- * its own configuration enables (the shared protocol's report), with who sent it and when.
- * Studio keeps it in memory only; the switches themselves never leave the worker's
- * configuration, and the worker's own check stays authoritative.
- */
-export interface RecordedWorkerStatus extends WorkerStatusReport {
-  workerId: string;
-  reportedAt: Date;
-}
+import { type RecordedWorkerStatus, WorkerStatus } from '../value-objects/worker-status.js';
 
 /** Why a provider is unavailable; shown to the operator as is. */
 export const PROVIDER_UNAVAILABLE_REASONS = {
@@ -41,16 +31,16 @@ export function providerAvailability(
   now: Date,
   leaseSeconds: number,
 ): ProviderAvailability[] {
-  const connected =
-    latest !== undefined && now.getTime() - latest.reportedAt.getTime() <= leaseSeconds * 1000;
+  const status = latest === undefined ? undefined : WorkerStatus.restore(latest);
   return PROVIDERS.map((id) => {
     const name = PROVIDER_NAMES[id];
-    if (!connected)
+    if (status === undefined || !status.isConnected(now, leaseSeconds)) {
       return { id, name, available: false, reason: PROVIDER_UNAVAILABLE_REASONS.noWorker };
-    if (latest.providers[id] !== true) {
+    }
+    if (!status.hasSwitchedOn(id)) {
       return { id, name, available: false, reason: PROVIDER_UNAVAILABLE_REASONS.switchedOff };
     }
-    const workerReason = latest.providerReasons?.[id];
+    const workerReason = status.reasonFor(id);
     if (workerReason !== undefined) return { id, name, available: false, reason: workerReason };
     return { id, name, available: true };
   });

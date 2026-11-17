@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RecordedWorkerStatus } from '../../../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import { GetAgentWorkerHandler } from '../handler.js';
 
 const T0 = new Date('2026-11-16T12:00:00.000Z');

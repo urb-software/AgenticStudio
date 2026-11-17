@@ -1,17 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { isPullRequestEnded, type PullRequestState } from '../../entities/run.js';
-import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
+import type { PreparedFollowUp } from '../../value-objects/prepared-follow-up.js';
 import type {
   ReviewCommentScope,
   ReviewComments,
   ReviewCommentsRequest,
-} from '../../entities/review-comments.js';
+} from '../../value-objects/review-comments.js';
 import type {
   ClaimedLookup,
   LookupKind,
   PullRequestStateResult,
   ReviewCommentsResult,
-} from '../../entities/run-lookup.js';
+} from '../../value-objects/run-lookup.js';
 import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
 import type { ReviewCommentRepository } from '../review-comment-repository.js';
 import type {

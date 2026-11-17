@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FOLLOW_UP_MAX_LENGTH } from '../../entities/run.js';
-import type { FailedCheckLog } from '../../entities/run-lookup.js';
+import type { FailedCheckLog } from '../../value-objects/run-lookup.js';
 import { prepareFailingChecksDraft } from '../failing-checks-draft.js';
 
 const COMMIT = 'c'.repeat(40);

@@ -8,7 +8,7 @@ import {
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
   type RunDiffScope,
   type RunDiffState,
-} from '../../../domain/entities/run-diff.js';
+} from '../../../domain/value-objects/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,

@@ -35,7 +35,7 @@ import {
   REVIEW_COMMENT_TEXT_MAX_BYTES,
   REVIEW_COMMENTS_MAX,
   REVIEW_VERDICTS,
-} from '../../../../domain/entities/review-comments.js';
+} from '../../../../domain/value-objects/review-comments.js';
 import {
   followUpRefusalSchema,
   followUpSourceSchema,
@@ -60,14 +60,14 @@ import {
   RUN_DELIVERIES,
   RUN_FAILURE_CODES,
   RUN_STATES,
-  TASK_MAX_LENGTH,
 } from '../../../../domain/entities/run.js';
-import { RUN_EVENT_KINDS } from '../../../../domain/entities/run-event.js';
+import { TASK_MAX_LENGTH } from '../../../../domain/value-objects/task.js';
+import { RUN_EVENT_KINDS } from '../../../../domain/value-objects/run-event.js';
 import {
   LOOKUP_CLAIM_MAX,
   LOOKUP_KINDS,
   STORED_RETRY_DELAY_MAX_SECONDS,
-} from '../../../../domain/entities/run-lookup.js';
+} from '../../../../domain/value-objects/run-lookup.js';
 
 // contracts/http may not import the domain (backend.md §2), and the shared worker protocol
 // cannot import the API, so both carry their own lists; this pins them to the domain's.

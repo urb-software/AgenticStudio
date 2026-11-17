@@ -1,4 +1,4 @@
-import type { RunEvent } from '../entities/run-event.js';
+import type { RunEvent } from '../value-objects/run-event.js';
 
 /** DI token for the {@link RunLogRepository} adapter. */
 export const RUN_LOG_REPOSITORY = Symbol('RUN_LOG_REPOSITORY');

@@ -4,7 +4,7 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
+import type { PreparedFollowUp } from '../../domain/value-objects/prepared-follow-up.js';
 import {
   isPullRequestEnded,
   type PullRequestState,
@@ -14,14 +14,14 @@ import {
   REVIEW_COMMENT_SCOPES,
   type ReviewCommentScope,
   type ReviewCommentsRequest,
-} from '../../domain/entities/review-comments.js';
+} from '../../domain/value-objects/review-comments.js';
 import {
   type ClaimedLookup,
   LOOKUP_KINDS,
   type LookupKind,
   type PullRequestStateResult,
   type ReviewCommentsResult,
-} from '../../domain/entities/run-lookup.js';
+} from '../../domain/value-objects/run-lookup.js';
 import type {
   LookupAnswerOutcome,
   LookupRequestOutcome,

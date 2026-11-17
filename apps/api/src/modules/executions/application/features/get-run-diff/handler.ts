@@ -4,7 +4,7 @@ import type {
   RunDiffFileView,
   RunDiffScope,
   StoredRunDiff,
-} from '../../../domain/entities/run-diff.js';
+} from '../../../domain/value-objects/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,

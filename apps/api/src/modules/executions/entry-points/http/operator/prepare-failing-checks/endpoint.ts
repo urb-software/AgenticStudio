@@ -10,7 +10,7 @@ import {
 } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import {
   NoFailingChecksError,
   PrepareFailingChecksHandler,

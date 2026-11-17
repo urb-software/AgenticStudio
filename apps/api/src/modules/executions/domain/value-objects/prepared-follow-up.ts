@@ -1,4 +1,4 @@
-import type { FollowUpSource } from './run.js';
+import type { FollowUpSource } from '../entities/run.js';
 
 /** One part of a prepared Follow-up the operator can leave out (Issue #145). */
 export interface PreparedFollowUpItem {
