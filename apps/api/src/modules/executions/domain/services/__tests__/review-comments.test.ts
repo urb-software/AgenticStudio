@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ReviewComment } from '../../entities/review-comments.js';
+import type { ReviewComment } from '../../value-objects/review-comments.js';
 import { REDACTED } from '../log-redaction.js';
 import {
   distinctAuthors,

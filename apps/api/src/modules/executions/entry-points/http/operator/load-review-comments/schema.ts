@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { REVIEW_COMMENT_SCOPES } from '../../../../domain/entities/review-comments.js';
+import { REVIEW_COMMENT_SCOPES } from '../../../../domain/value-objects/review-comments.js';
 
 /**
  * `POST /api/runs/:runId/pull-request/review-comments/load` body (Issue #146): what to load, the

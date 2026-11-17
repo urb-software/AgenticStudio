@@ -1,6 +1,6 @@
 import { LOOKUP_ERROR_MAX_LENGTH, type LookupResultRequest } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import { retryDelaySeconds } from '../../../domain/entities/run-lookup.js';
+import { retryDelaySeconds } from '../../../domain/value-objects/run-lookup.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,

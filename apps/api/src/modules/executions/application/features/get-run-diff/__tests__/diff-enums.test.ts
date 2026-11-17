@@ -10,7 +10,7 @@ import {
   RUN_DIFF_FILE_STATUSES,
   RUN_DIFF_SCOPES,
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
-} from '../../../../domain/entities/run-diff.js';
+} from '../../../../domain/value-objects/run-diff.js';
 import {
   runDiffFileSummarySchema,
   runDiffScopeSchema,

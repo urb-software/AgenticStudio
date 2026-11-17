@@ -1,4 +1,4 @@
-import type { RecordedWorkerStatus } from '../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../application/ports/worker-status-store.js';
 
 /** The single API process keeps the latest worker status in memory (Issue #101). */

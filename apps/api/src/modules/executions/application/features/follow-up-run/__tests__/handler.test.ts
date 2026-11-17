@@ -7,7 +7,7 @@ import {
 import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import type { RecordedWorkerStatus } from '../../../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { runView } from '../../../../domain/services/follow-up-context.js';
 import type { RetentionPolicy } from '../../../ports/retention-policy.js';
@@ -15,7 +15,7 @@ import { FollowUpRunHandler } from '../handler.js';
 import {
   type ReviewComment,
   ReviewCommentsNotLoadedError,
-} from '../../../../domain/entities/review-comments.js';
+} from '../../../../domain/value-objects/review-comments.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {

@@ -7,7 +7,7 @@ import {
   REVIEW_COMMENTS_MAX,
   type ReviewComment,
   type ReviewCommentSet,
-} from '../entities/review-comments.js';
+} from '../value-objects/review-comments.js';
 import { redactLogText } from './log-redaction.js';
 
 /** Control characters other than the line break and the tab (PostgreSQL's JSON cannot hold NUL). */

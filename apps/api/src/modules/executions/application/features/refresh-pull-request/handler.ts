@@ -4,7 +4,7 @@ import {
   canRefreshPullRequest,
   pageRefreshDue,
   PullRequestNotRefreshableError,
-} from '../../../domain/entities/run-lookup.js';
+} from '../../../domain/value-objects/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,

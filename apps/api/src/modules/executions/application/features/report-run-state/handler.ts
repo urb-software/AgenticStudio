@@ -14,7 +14,7 @@ import {
   type RunState,
   type RunWorkingCopy,
 } from '../../../domain/entities/run.js';
-import { keepsSnapshotForRetry } from '../../../domain/entities/run-environment-file.js';
+import { keepsSnapshotForRetry } from '../../../domain/value-objects/run-environment-file.js';
 import { redactFailure, redactWorkingCopy } from '../../../domain/services/log-redaction.js';
 import {
   RUN_LOOKUP_REPOSITORY,

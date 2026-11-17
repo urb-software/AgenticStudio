@@ -1,7 +1,7 @@
 import { RUN_EVENT_TEXT_MAX_BYTES } from '@agentic-studio/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Run } from '../../../../domain/entities/run.js';
-import { LOG_TRUNCATED_NOTICE } from '../../../../domain/entities/run-event.js';
+import { LOG_TRUNCATED_NOTICE } from '../../../../domain/value-objects/run-event.js';
 import { InMemoryRunLogRepository } from '../../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {

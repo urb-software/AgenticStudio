@@ -18,6 +18,7 @@ import {
   RunProjectNotFoundError,
 } from '../../../../domain/entities/run.js';
 import { ProviderUnavailableError } from '../../../../domain/services/provider-availability.js';
+import { InvalidTaskError } from '../../../../domain/value-objects/task.js';
 import { StartRunHandler } from '../../../../application/features/start-run/handler.js';
 import { startRunRequestSchema, StartRunRequestDto } from './schema.js';
 
@@ -59,6 +60,14 @@ export class StartRunEndpoint {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
       if (error instanceof RepositoryNotReadyError) throw repositoryNotReady(error.message);
       if (error instanceof ProviderUnavailableError) throw providerUnavailable(error.reason);
+      // The schema reports these first; this keeps the Task's own rule the one that decides.
+      if (error instanceof InvalidTaskError) {
+        throw new FieldProblemException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          'The request is invalid.',
+          [{ path: 'task', message: error.message }],
+        );
+      }
       throw error;
     }
   }

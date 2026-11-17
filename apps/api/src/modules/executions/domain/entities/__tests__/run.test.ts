@@ -14,7 +14,7 @@ import {
   NO_PULL_REQUEST_STATUS,
   type RunPullRequestStatus,
   RUN_STATES,
-  type Run,
+  type RunData,
   type RunState,
   stepLimitFailure,
 } from '../run.js';
@@ -87,7 +87,7 @@ describe('Run transitions', () => {
 // Issue #100: the long-wait rule and the step-limit failure.
 describe('long-wait rule', () => {
   const since = new Date('2026-11-01T12:00:00.000Z');
-  const waiting = (waitingDays: number, overrides: Partial<Run> = {}): Run => ({
+  const waiting = (waitingDays: number, overrides: Partial<RunData> = {}): RunData => ({
     id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
     projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
     provider: 'codex',
@@ -170,7 +170,7 @@ describe('step-limit failure', () => {
 // Issue #103: the agent's open question and the operator's answer that resumes the session.
 describe('questions and answers', () => {
   const at = new Date('2026-11-15T12:00:00.000Z');
-  const base: Run = {
+  const base: RunData = {
     id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
     projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
     provider: 'codex',
@@ -210,8 +210,8 @@ describe('questions and answers', () => {
     lastActivityAt: at,
   };
   const question = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
-  const asked: Run = { ...base, messages: [{ kind: 'question', question, at }] };
-  const answered: Run = {
+  const asked: RunData = { ...base, messages: [{ kind: 'question', question, at }] };
+  const answered: RunData = {
     ...base,
     state: 'queued',
     waitingSince: null,
@@ -229,7 +229,7 @@ describe('questions and answers', () => {
     expect(isResumable(asked)).toBe(false);
     expect(resumeMessage(asked)).toBeNull();
     // Claimed to resume, it still carries the answer for the worker.
-    const claimed: Run = { ...answered, state: 'preparing' };
+    const claimed: RunData = { ...answered, state: 'preparing' };
     expect(resumeMessage(claimed)?.text).toBe('PostgreSQL');
     expect(isResumable(claimed)).toBe(false);
   });
@@ -245,7 +245,7 @@ describe('Follow-ups', () => {
     deliveryRequested: false,
     sessionRef: 'session-1' as string | null,
     workingCopy: { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false } as
-      Run['workingCopy'] | null,
+      RunData['workingCopy'] | null,
     workingCopyRemovedAt: null as Date | null,
     pullRequestStatus: NO_PULL_REQUEST_STATUS as RunPullRequestStatus,
     stepCount: 3,
@@ -334,7 +334,8 @@ describe('Follow-ups', () => {
     const answer = { kind: 'answer' as const, text: 'This one.', at };
     const followUp = { kind: 'follow_up' as const, text: 'Also add tests.', at };
     const resume = { kind: 'answer' as const, text: USAGE_LIMIT_RESUME_TEXT, at };
-    const of = (messages: Run['messages']) => resumeMessage({ sessionRef: 'session-1', messages });
+    const of = (messages: RunData['messages']) =>
+      resumeMessage({ sessionRef: 'session-1', messages });
 
     expect(of([followUp])).toEqual({ text: 'Also add tests.', reason: 'follow_up' });
     expect(of([question, answer])).toEqual({ text: 'This one.', reason: 'answer' });

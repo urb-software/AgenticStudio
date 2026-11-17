@@ -3,7 +3,7 @@ import {
   DAILY_REFRESH_AGE_HOURS,
   DAILY_REFRESH_BATCH,
   FINISHED_LOOKUPS_KEPT_DAYS,
-} from '../../../domain/entities/run-lookup.js';
+} from '../../../domain/value-objects/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,

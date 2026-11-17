@@ -3,7 +3,7 @@ import {
   type ClaimedLookup,
   LOOKUP_CLAIM_MAX,
   LOOKUP_LEASE_SECONDS,
-} from '../../../domain/entities/run-lookup.js';
+} from '../../../domain/value-objects/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { providerAvailability, type RecordedWorkerStatus } from '../provider-availability.js';
+import type { RecordedWorkerStatus } from '../../value-objects/worker-status.js';
+import { providerAvailability } from '../provider-availability.js';
 
 // Issue #101: which providers Studio offers, from the latest agent worker status.
 const NOW = new Date('2026-11-15T12:00:00.000Z');

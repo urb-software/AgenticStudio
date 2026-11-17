@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RecordedWorkerStatus } from '../../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 

@@ -14,7 +14,7 @@ import {
   type RunDiffScope,
   type RunDiffState,
   type StoredRunDiff,
-} from '../../domain/entities/run-diff.js';
+} from '../../domain/value-objects/run-diff.js';
 import type { RunDiffRepository } from '../../domain/repositories/run-diff-repository.js';
 
 /** The stored file list (`run_diffs.files`), checked when it is read back. */

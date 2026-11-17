@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { PROVIDERS, TASK_MAX_LENGTH } from '../../../../domain/entities/run.js';
+import { PROVIDERS } from '../../../../domain/entities/run.js';
+import { TASK_MAX_LENGTH } from '../../../../domain/value-objects/task.js';
 
 /**
  * `POST /api/projects/:id/runs` body (Issue #96). The Task is trimmed, then must hold 1–20 000

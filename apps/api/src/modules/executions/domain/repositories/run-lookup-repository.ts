@@ -1,12 +1,12 @@
 import type { PullRequestState } from '../entities/run.js';
-import type { PreparedFollowUp } from '../entities/prepared-follow-up.js';
-import type { ReviewCommentsRequest } from '../entities/review-comments.js';
+import type { PreparedFollowUp } from '../value-objects/prepared-follow-up.js';
+import type { ReviewCommentsRequest } from '../value-objects/review-comments.js';
 import type {
   ClaimedLookup,
   LookupKind,
   PullRequestStateResult,
   ReviewCommentsResult,
-} from '../entities/run-lookup.js';
+} from '../value-objects/run-lookup.js';
 
 /** DI token for the {@link RunLookupRepository} adapter. */
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');

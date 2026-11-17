@@ -14,7 +14,7 @@ import {
 import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import type { RecordedWorkerStatus } from '../../../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { RetentionPolicy } from '../../../ports/retention-policy.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FollowUpRunHandler } from '../handler.js';

@@ -1,5 +1,6 @@
 import { followUpEligibility, type FollowUpEligibility, type Run } from '../entities/run.js';
-import { providerAvailability, type RecordedWorkerStatus } from './provider-availability.js';
+import { providerAvailability } from './provider-availability.js';
+import { type RecordedWorkerStatus, WorkerStatus } from '../value-objects/worker-status.js';
 import { keepUntil, type RetentionPolicy, retentionFactsOf } from './retention.js';
 
 /**
@@ -17,8 +18,7 @@ export function followUpContext(
   leaseSeconds: number,
 ): { workerAvailable: boolean; providerAvailable: boolean } {
   const seen = run.lastClaimedBy === null ? undefined : workers.lastSeen(run.lastClaimedBy);
-  const workerAvailable =
-    seen !== undefined && now.getTime() - seen.getTime() <= leaseSeconds * 1000;
+  const workerAvailable = WorkerStatus.isWithinLease(seen, now, leaseSeconds);
   const provider = providerAvailability(workers.latest(), now, leaseSeconds).find(
     (candidate) => candidate.id === run.provider,
   );
@@ -35,7 +35,7 @@ export function anyWorkerConnected(
   leaseSeconds: number,
 ): boolean {
   const latest = workers.latest();
-  return latest !== undefined && now.getTime() - latest.reportedAt.getTime() <= leaseSeconds * 1000;
+  return latest !== undefined && WorkerStatus.restore(latest).isConnected(now, leaseSeconds);
 }
 
 /**

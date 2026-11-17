@@ -6,7 +6,7 @@ import {
 import {
   type ReviewComment,
   ReviewCommentsLoadRunningError,
-} from '../../../../domain/entities/review-comments.js';
+} from '../../../../domain/value-objects/review-comments.js';
 import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
 import {
   deliveredRun,
@@ -17,12 +17,12 @@ import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__t
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/services/log-redaction.js';
-import type { RecordedWorkerStatus } from '../../../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import { reviewCommentsView } from '../../../../domain/services/review-comments.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { GetReviewCommentsHandler } from '../../get-review-comments/handler.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/entities/run-lookup.js';
+import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import {
   LookupKindMismatchError,
   LookupNotHeldError,

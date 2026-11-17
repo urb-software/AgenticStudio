@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
-import type { RunEvent } from '../../../domain/entities/run-event.js';
+import type { RunEvent } from '../../../domain/value-objects/run-event.js';
 import {
   RUN_LOG_REPOSITORY,
   type RunLogRepository,

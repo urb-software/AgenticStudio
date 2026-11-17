@@ -5,7 +5,7 @@ import {
 } from '../../../../platform/database/database.module.js';
 import type { FollowUpSource } from '../../domain/entities/run.js';
 import { z } from 'zod';
-import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
+import type { PreparedFollowUp } from '../../domain/value-objects/prepared-follow-up.js';
 import type { PreparedFollowUpRepository } from '../../domain/repositories/prepared-follow-up-repository.js';
 
 /** What `items` holds, checked on read: the column is JSON, written by the preparation. */

@@ -1,4 +1,4 @@
-import type { RecordedWorkerStatus } from '../../domain/services/provider-availability.js';
+import type { RecordedWorkerStatus } from '../../domain/value-objects/worker-status.js';
 
 /** DI token of the {@link WorkerStatusStore}. */
 export const WORKER_STATUS_STORE = Symbol('WORKER_STATUS_STORE');

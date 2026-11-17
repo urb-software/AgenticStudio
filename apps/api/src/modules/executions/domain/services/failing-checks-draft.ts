@@ -1,6 +1,9 @@
 import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../entities/run.js';
-import type { PreparedFollowUp, PreparedFollowUpItem } from '../entities/prepared-follow-up.js';
-import type { FailingCheckLogsResult } from '../entities/run-lookup.js';
+import type {
+  PreparedFollowUp,
+  PreparedFollowUpItem,
+} from '../value-objects/prepared-follow-up.js';
+import type { FailingCheckLogsResult } from '../value-objects/run-lookup.js';
 import { safeCheckLink } from './check-links.js';
 import { redactLogText } from './log-redaction.js';
 

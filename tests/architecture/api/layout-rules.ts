@@ -15,6 +15,7 @@ export const LAYOUT_RULES = [
   'api-production-no-test-imports',
   'api-contracts-only-index-and-events',
   'api-no-shared-common-utils-helpers-directory',
+  'api-entities-are-classes-with-non-public-constructors',
 ];
 
 /**
@@ -77,7 +78,16 @@ const HTTP_DECORATORS = new Set([
  */
 const FEATURE_ISOLATED_MODULES = new Set(['executions', 'projects']);
 
+/**
+ * Modules in which every file in `domain/entities/` exports a class with a non-public
+ * constructor (rule 4). Issue #167 adds `executions`; the check is by path pattern, so #165 adds
+ * `projects` and #170 every module by listing it here (or dropping the list).
+ */
+const ENTITY_CLASS_MODULES = new Set(['executions']);
+
 const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
+/** `src/modules/<module>/domain/entities/<file>.ts` (not a file of a nested folder). */
+const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
 /** `src/modules/<module>/application/features/<feature>/…` (not the tests of a feature). */
 const FEATURE_FILE = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\/(?!__tests__\/)/;
 const FEATURE_PATH = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\//;
@@ -104,6 +114,7 @@ export function layoutViolations(baseDir: string): Violation[] {
       .flatMap((path) => entryPointViolations(baseDir, path)),
     ...files.flatMap((path) => featureImportViolations(baseDir, path)),
     ...files.flatMap((path) => testImportViolations(baseDir, path)),
+    ...files.flatMap((path) => entityClassViolations(baseDir, path)),
     ...contractsViolations(baseDir),
     ...directoryViolations(baseDir),
   ];
@@ -271,4 +282,76 @@ function directoryViolations(baseDir: string): Violation[] {
       rule: 'api-no-shared-common-utils-helpers-directory',
       from: `${directory}/`,
     }));
+}
+
+/**
+ * An entity file exports a class that nobody outside can construct (rule 4): a `private` or
+ * `protected` constructor, so only its factories make one and it cannot be built in an invalid
+ * state. A file may also export error classes (a class named `…Error` or extending `Error`), which
+ * are not entities. A file that exports no entity class (a plain record, a function), or one whose
+ * constructor is public or implicit, breaks the rule: such records belong in `domain/value-objects/`.
+ */
+function entityClassViolations(baseDir: string, path: string): Violation[] {
+  const match = ENTITY_FILE.exec(path);
+  if (!match || !ENTITY_CLASS_MODULES.has(match[1])) return [];
+  const source = ts.createSourceFile(
+    path,
+    readFileSync(join(baseDir, path), 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const exportedLater = new Set<string>();
+  for (const statement of source.statements) {
+    if (
+      ts.isExportDeclaration(statement) &&
+      !statement.moduleSpecifier &&
+      statement.exportClause &&
+      ts.isNamedExports(statement.exportClause)
+    ) {
+      for (const element of statement.exportClause.elements) {
+        exportedLater.add((element.propertyName ?? element.name).text);
+      }
+    }
+  }
+  const entityClasses = source.statements
+    .filter(ts.isClassDeclaration)
+    .filter(
+      (declaration) =>
+        ts
+          .getModifiers(declaration)
+          ?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ||
+        (declaration.name !== undefined && exportedLater.has(declaration.name.text)),
+    )
+    .filter((declaration) => !isErrorClass(declaration));
+  const sealed = entityClasses.length > 0 && entityClasses.every(hasNonPublicConstructor);
+  return sealed
+    ? []
+    : [{ rule: 'api-entities-are-classes-with-non-public-constructors', from: path }];
+}
+
+function isErrorClass(declaration: ts.ClassDeclaration): boolean {
+  if (declaration.name && ERROR_NAME.test(declaration.name.text)) return true;
+  return (declaration.heritageClauses ?? []).some(
+    (clause) =>
+      clause.token === ts.SyntaxKind.ExtendsKeyword &&
+      clause.types.some(
+        (type) => ts.isIdentifier(type.expression) && type.expression.text === 'Error',
+      ),
+  );
+}
+
+function hasNonPublicConstructor(declaration: ts.ClassDeclaration): boolean {
+  const constructors = declaration.members.filter(ts.isConstructorDeclaration);
+  return (
+    constructors.length > 0 &&
+    constructors.every((constructor) =>
+      ts
+        .getModifiers(constructor)
+        ?.some(
+          (modifier) =>
+            modifier.kind === ts.SyntaxKind.PrivateKeyword ||
+            modifier.kind === ts.SyntaxKind.ProtectedKeyword,
+        ),
+    )
+  );
 }

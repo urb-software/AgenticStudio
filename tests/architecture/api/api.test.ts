@@ -409,4 +409,49 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-application-no-http-decorators'],
     qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
   },
+  {
+    fixture: 'entity-class-with-private-constructor',
+    expected: [],
+    qualityRow: '`domain/entities/` file exports a class with a non-public constructor',
+  },
+  {
+    fixture: 'entity-class-with-protected-constructor',
+    expected: [],
+    qualityRow: '`domain/entities/` file exports a class with a non-public constructor',
+  },
+  {
+    fixture: 'entity-class-exported-in-a-list',
+    expected: [],
+    qualityRow: '`domain/entities/` file exports a class with a non-public constructor',
+  },
+  {
+    fixture: 'entity-tests-and-value-objects-are-not-checked',
+    expected: [],
+    qualityRow: '`domain/entities/` file exports a class with a non-public constructor',
+  },
+  {
+    fixture: 'entity-class-with-public-constructor',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
+  },
+  {
+    fixture: 'entity-class-with-implicit-constructor',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
+  },
+  {
+    fixture: 'entity-file-exports-a-plain-record',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
+  },
+  {
+    fixture: 'entity-file-exports-only-an-error-class',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
+  },
+  {
+    fixture: 'entity-class-with-private-constructor-and-a-public-one',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
+  },
 ]);

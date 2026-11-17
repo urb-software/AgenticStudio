@@ -1,4 +1,4 @@
-import type { ReviewComments } from '../entities/review-comments.js';
+import type { ReviewComments } from '../value-objects/review-comments.js';
 
 /** DI token for the {@link ReviewCommentRepository} adapter. */
 export const REVIEW_COMMENT_REPOSITORY = Symbol('REVIEW_COMMENT_REPOSITORY');

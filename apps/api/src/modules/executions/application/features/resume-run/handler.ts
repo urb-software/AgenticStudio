@@ -1,11 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  isRunId,
-  type Run,
-  RunNotResumableError,
-  RunSlotTakenError,
-  USAGE_LIMIT_RESUME_TEXT,
-} from '../../../domain/entities/run.js';
+import { isRunId, type Run } from '../../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -20,8 +14,10 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
  * copy then claims it and resumes the same agent session, exactly like an answered Run (Issue
  * #103). Only a `failed` Run with `usage_limit`, a session and a Working copy can be resumed;
  * a second request is refused. Like an answered Run it holds its project's place and one of the
- * server's, so it is refused while those are taken (review R1 of #129). Throws
- * {@link RunNotFoundError}, {@link RunNotResumableError} or {@link RunSlotTakenError}.
+ * server's, so it is refused while those are taken (review R1 of #129). The Run's
+ * `resumeAfterUsageLimit` method decides, with the places the repository reads under the lock
+ * that serializes claims. Throws
+ * `RunNotFoundError`, `RunNotResumableError` or `RunSlotTakenError`.
  */
 @Injectable()
 export class ResumeRunHandler {
@@ -31,15 +27,11 @@ export class ResumeRunHandler {
   ) {}
 
   async execute(runId: string): Promise<Run> {
-    const run = isRunId(runId) ? await this.runs.findById(runId) : null;
-    if (!run) throw new RunNotFoundError();
-    const outcome = await this.runs.resumeAfterUsageLimit(
-      run.id,
-      USAGE_LIMIT_RESUME_TEXT,
-      this.clock.now(),
+    if (!isRunId(runId)) throw new RunNotFoundError();
+    const resumed = await this.runs.changeSerializedWithClaims(runId, (run, facts) =>
+      run.resumeAfterUsageLimit(this.clock.now(), facts),
     );
-    if (outcome.status === 'slot_taken') throw new RunSlotTakenError(outcome.scope);
-    if (outcome.status === 'not_resumable') throw new RunNotResumableError();
-    return outcome.run;
+    if (!resumed) throw new RunNotFoundError();
+    return resumed;
   }
 }

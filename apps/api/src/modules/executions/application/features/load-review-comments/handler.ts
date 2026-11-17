@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
-import { canRefreshPullRequest } from '../../../domain/entities/run-lookup.js';
+import { canRefreshPullRequest } from '../../../domain/value-objects/run-lookup.js';
 import {
   type ReviewCommentScope,
   ReviewCommentsLoadRunningError,
   type ReviewCommentsView,
-} from '../../../domain/entities/review-comments.js';
+} from '../../../domain/value-objects/review-comments.js';
 import { followUpEligibility, FollowUpNotAllowedError } from '../../../domain/entities/run.js';
 import { followUpContext } from '../../../domain/services/follow-up-context.js';
 import { reviewCommentsView } from '../../../domain/services/review-comments.js';
@@ -26,7 +26,7 @@ import {
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from '../../ports/operator-login.js';
-import { PullRequestNotRefreshableError } from '../../../domain/entities/run-lookup.js';
+import { PullRequestNotRefreshableError } from '../../../domain/value-objects/run-lookup.js';
 
 /**
  * Command (Issue #146): the operator asks for the Review comments of the Run's pull request to be

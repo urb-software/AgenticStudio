@@ -3,7 +3,7 @@ import { isRunId, type Run } from '../../../domain/entities/run.js';
 import {
   canRefreshPullRequest,
   hasFailedPullRequestCheck,
-} from '../../../domain/entities/run-lookup.js';
+} from '../../../domain/value-objects/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
@@ -19,7 +19,7 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
-import { PullRequestNotRefreshableError } from '../../../domain/entities/run-lookup.js';
+import { PullRequestNotRefreshableError } from '../../../domain/value-objects/run-lookup.js';
 
 /** None of the Run's stored Pull request checks has failed: nothing to prepare (Issue #145). */
 export class NoFailingChecksError extends Error {
