@@ -84,3 +84,14 @@ peerDependencyRules:
 # Tracking task #19: https://github.com/urb-software/AgenticStudio/issues/19
 overrides:
   '@hey-api/json-schema-ref-parser>js-yaml': '4.3.2'
+
+# Temporary audit ignore, scoped to one advisory: GHSA-fc5q-39xc-vjpf (picomatch <=4.0.7, ReDoS
+# through single-branch repeated extglobs; high). It is reported through dependency-cruiser (the
+# architecture gate), a dev-only tool whose glob patterns come only from the repository's committed
+# gate configuration, so no untrusted input reaches picomatch. The patched 4.0.8 is not yet released.
+# Decision: operator, 2026-11-17. Review by 2027-02-17; remove once picomatch 4.0.8 (or a
+# dependency-cruiser release depending on it) is available.
+# Tracking Issue #191: https://github.com/urb-software/AgenticStudio/issues/191
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
