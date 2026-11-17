@@ -1,7 +1,7 @@
 import { runCheckSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
-import { isRunId } from '../../../domain/entities/run.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,

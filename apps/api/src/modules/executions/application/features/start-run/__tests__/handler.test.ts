@@ -3,7 +3,7 @@ import type { RunStartPoint, RunStartPoints } from '../../../../../projects/cont
 import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
-} from '../../../../domain/entities/run.js';
+} from '../../../../domain/value-objects/run-errors.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { ProviderUnavailableError } from '../../../../domain/value-objects/worker-status.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';

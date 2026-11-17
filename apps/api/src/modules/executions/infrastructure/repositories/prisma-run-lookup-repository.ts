@@ -8,14 +8,14 @@ import {
   REVIEW_COMMENT_SCOPES,
   type ReviewCommentScope,
 } from '../../domain/value-objects/review-comments.js';
-import { type ReviewCommentsLoad } from '../../domain/entities/run-lookup.js';
+import { type ReviewCommentsLoad } from '../../domain/repositories/run-lookup-repository.js';
 import {
   LOOKUP_KINDS,
   LOOKUP_STATUSES,
   type LookupKind,
   type LookupStatus,
 } from '../../domain/value-objects/run-lookup.js';
-import { type ClaimedLookup } from '../../domain/entities/run-lookup.js';
+import { type ClaimedLookup } from '../../domain/repositories/run-lookup-repository.js';
 import { type Executor, inTransaction } from './executor.js';
 
 const OPEN = ['requested', 'claimed'];

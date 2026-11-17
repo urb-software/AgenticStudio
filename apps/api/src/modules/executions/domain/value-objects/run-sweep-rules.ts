@@ -1,4 +1,6 @@
-import type { Run, RunCancellation, RunFailure } from '../entities/run.js';
+import type { RunSnapshot } from '../entities/run.js';
+import type { RunCancellation } from './run-cancellation.js';
+import type { RunFailure } from './run-failure.js';
 
 /**
  * The lost-worker rule (Issue #96, #102, #169): a Run a worker holds whose last heartbeat is older
@@ -33,12 +35,12 @@ export class LostWorkerRule {
   }
 
   /** Whether the Run has lost its worker. */
-  selects(run: Pick<Run, 'claimedBy' | 'heartbeatAt'>): boolean {
+  selects(run: Pick<RunSnapshot, 'claimedBy' | 'heartbeatAt'>): boolean {
     return run.claimedBy !== null && run.heartbeatAt !== null && run.heartbeatAt < this.staleBefore;
   }
 
   /** What happens to a selected Run. */
-  resultFor(run: Pick<Run, 'state'>): { failure: RunFailure; retryEnds: boolean } {
+  resultFor(run: Pick<RunSnapshot, 'state'>): { failure: RunFailure; retryEnds: boolean } {
     return run.state === 'failed'
       ? { failure: this.deliveryFailure, retryEnds: true }
       : { failure: this.failure, retryEnds: false };
@@ -67,7 +69,7 @@ export class OverdueStepRule {
     return new OverdueStepRule(now, graceMinutes);
   }
 
-  selects(run: Pick<Run, 'state' | 'stepStartedAt' | 'limits'>): boolean {
+  selects(run: Pick<RunSnapshot, 'state' | 'stepStartedAt' | 'limits'>): boolean {
     if (run.state !== 'running' || run.stepStartedAt === null) return false;
     const allowedMs = (run.limits.stepMinutes + this.graceMinutes) * 60_000;
     return this.now.getTime() - run.stepStartedAt.getTime() > allowedMs;
@@ -89,16 +91,18 @@ export class LongWaitRule {
   }
 
   /** The Runs the store lists for the sweep. */
-  static candidate(run: Pick<Run, 'state'>): boolean {
+  static candidate(run: Pick<RunSnapshot, 'state'>): boolean {
     return run.state === 'waiting_for_operator';
   }
 
-  selects(run: Pick<Run, 'state' | 'waitingSince' | 'limits'>): boolean {
+  selects(run: Pick<RunSnapshot, 'state' | 'waitingSince' | 'limits'>): boolean {
     return this.cancellationFor(run) !== null;
   }
 
   /** What happens to a selected Run: cancelled by Studio, with the reason stated; else `null`. */
-  cancellationFor(run: Pick<Run, 'state' | 'waitingSince' | 'limits'>): RunCancellation | null {
+  cancellationFor(
+    run: Pick<RunSnapshot, 'state' | 'waitingSince' | 'limits'>,
+  ): RunCancellation | null {
     if (run.state !== 'waiting_for_operator' || run.waitingSince === null) return null;
     const limitMs = run.limits.waitingDays * 24 * 60 * 60 * 1000;
     if (this.now.getTime() - run.waitingSince.getTime() <= limitMs) return null;
@@ -151,13 +155,13 @@ export class GoneWorkerRule {
 
   /** A `failed` Run whose delivery retry was requested and that nobody holds. */
   static pendingDeliveryRetry(
-    run: Pick<Run, 'state' | 'deliveryRequested' | 'claimedBy'>,
+    run: Pick<RunSnapshot, 'state' | 'deliveryRequested' | 'claimedBy'>,
   ): boolean {
     return run.state === 'failed' && run.deliveryRequested && run.claimedBy === null;
   }
 
   /** A `queued` Run with an agent session: answered, or sent a Follow-up, and not claimed yet. */
-  static pendingResume(run: Pick<Run, 'state' | 'sessionRef'>): boolean {
+  static pendingResume(run: Pick<RunSnapshot, 'state' | 'sessionRef'>): boolean {
     return run.state === 'queued' && run.sessionRef !== null;
   }
 }
@@ -179,7 +183,7 @@ export class LeaseRenewalRule {
   }
 
   /** Whether the Run's lease is renewed. */
-  renews(run: Pick<Run, 'state'>): boolean {
+  renews(run: Pick<RunSnapshot, 'state'>): boolean {
     return run.state === 'preparing' || run.state === 'running';
   }
 

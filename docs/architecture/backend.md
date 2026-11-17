@@ -134,7 +134,7 @@ This is the target model that the tickets of Epic #160 implement (#182 and #185 
 | Module | Aggregate roots | Child entities | Value objects and plain records |
 | --- | --- | --- | --- |
 | `projects` | Project; Repository connection; Environment file | none | Of the Repository connection (#185), classes: lifecycle (its states and allowed transitions), failure, URL, remote address, host key, trusted host keys, Deploy key, Deploy key sweep policy, integration branch; the Project's name and id. Plain types: snapshots and the stored record, connect attempt, changes, state list. Errors have their own file |
-| `executions` | Run; Run lookup (requested, claimed, completed, failed); Prepared Follow-up; Review comments of a Run; Run diff | Run step, bounded by the Run's step limit | Of the Run, classes: state with its transitions, delivery, pull request status, conversation, worker claim, progress and limits. Plain types: cancellation, working copy, failure, commit (as set by #184) |
+| `executions` | Run; Run lookup (requested, claimed, completed, failed); Prepared Follow-up; Review comments of a Run; Run diff | Run step, bounded by the Run's step limit | Of the Run (#184), classes: lifecycle (its state with the allowed transitions, and how it ended), delivery, pull request status, conversation, worker claim, progress (with its limits). Plain types: cancellation, failure, working copy, commit, limits and the reported failing checks. The Run keeps its identity and one field per concept; its snapshot stays flat, as storage holds it |
 
 The Run log's events are append-only records and not an aggregate: no rule changes or spans them, and nothing refers to one event on its own.
 

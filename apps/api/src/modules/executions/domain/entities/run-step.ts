@@ -1,5 +1,4 @@
-/** Which part of the Run a step belongs to: its first, or a resume of the agent session. */
-export type RunStepKind = 'start' | 'resume';
+import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
 /** A Run step's current values as read-only plain data (rule 10); {@link RunStep.snapshot}. */
 export interface RunStepSnapshot {

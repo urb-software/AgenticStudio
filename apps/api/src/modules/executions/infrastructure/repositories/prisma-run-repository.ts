@@ -5,31 +5,32 @@ import { type Executor, inTransaction } from './executor.js';
 import {
   CLAIMED_RUN_STATES,
   FINAL_RUN_STATES,
-  PROVIDERS,
-  type Provider,
-  RUN_CANCELLED_BY,
-  RUN_FAILURE_CODES,
   RUN_STATES,
-  isRunId,
-  type ResumeFacts,
-  Run,
-  RunSlotTakenError,
-  type RunChanges,
+  type RunState,
+  UNDER_WAY_RUN_STATES,
+} from '../../domain/value-objects/run-state.js';
+import { PROVIDERS, type Provider } from '../../domain/value-objects/provider.js';
+import {
+  RUN_CANCELLED_BY,
   type RunCancellation,
   type RunCancelledBy,
-  RUN_DELIVERIES,
-  type RunDeliveryState,
+} from '../../domain/value-objects/run-cancellation.js';
+import {
+  RUN_FAILURE_CODES,
   type RunFailure,
   type RunFailureCode,
-  type RunMessage,
+} from '../../domain/value-objects/run-failure.js';
+import { isRunId } from '../../domain/value-objects/run-id.js';
+import { type ResumeFacts, type RunChanges } from '../../domain/value-objects/run-facts.js';
+import { Run, type RunSnapshot } from '../../domain/entities/run.js';
+import { RunSlotTakenError } from '../../domain/value-objects/run-errors.js';
+import { RUN_DELIVERIES, type RunDeliveryState } from '../../domain/value-objects/run-delivery.js';
+import { type RunMessage, type RunPartEnd } from '../../domain/value-objects/run-conversation.js';
+import {
   type RunPullRequestChecks,
   type PullRequestState,
-  type RunPartEnd,
-  type RunState,
-  type RunSnapshot,
-  type RunWorkingCopy,
-  UNDER_WAY_RUN_STATES,
-} from '../../domain/entities/run.js';
+} from '../../domain/value-objects/run-pull-request-status.js';
+import { type RunWorkingCopy } from '../../domain/value-objects/run-working-copy.js';
 import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
 import { HandOutRule } from '../../domain/value-objects/hand-out-rule.js';
 import type { RunStepSnapshot } from '../../domain/entities/run-step.js';
@@ -515,12 +516,12 @@ export class PrismaRunRepository implements RunRepository {
         task: run.task,
         startCommit: run.startCommit,
         remoteUrl: run.remoteUrl,
-        integrationBranch: run.integrationBranch,
+        integrationBranch: run.delivery.integrationBranch,
         state: 'queued',
-        limitStepMinutes: run.limits.stepMinutes,
-        limitMaxSteps: run.limits.maxSteps,
-        limitWaitingDays: run.limits.waitingDays,
-        limitMaxTotalSteps: run.limits.maxTotalSteps,
+        limitStepMinutes: run.progress.limits.stepMinutes,
+        limitMaxSteps: run.progress.limits.maxSteps,
+        limitWaitingDays: run.progress.limits.waitingDays,
+        limitMaxTotalSteps: run.progress.limits.maxTotalSteps,
       },
       select: RUN_FIELDS,
     });

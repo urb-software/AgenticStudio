@@ -54,11 +54,11 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 
 **Structural rules** (Vitest assertions or equivalent):
 
-- Nothing under `entry-points/` imports a class from `domain/entities/`; types and errors are allowed; in `projects` no entity file exports an error since #185, so the error half of the exemption is re-proved when `executions` is added (#183/#184), where `run.ts` still exports errors until #184 (rule 10; added by #182 for `projects`, extended to `executions` by #183, general by #170).
+- Nothing under `entry-points/` imports a class from `domain/entities/`; types are allowed. The exemption for errors used to cover the errors an entity file exported; since rule 13 an entity file exports no error (`projects` since #185, `executions` since #184), so it now matters only for the errors file of a root under `domain/value-objects/`, which the check does not cover (it looks at classes in entity files only): a fixture proves that an entry point may import an error class from such a file (`executions`, #184; the `projects` fixture of #182 imports one too) (rule 10; added by #182 for `projects`, extended to `executions` by #183, general by #170).
 - No handler's return type is an entity class, and every handler file exports its input type (when it takes input) and its result type (when it returns something) (rule 10; added by #182, extended by #183, general by #170).
 - Each repository interface refers to exactly one file in `domain/entities/`, and no type under `domain/value-objects/` is the main type a repository returns (rule 11; added by #182, extended by #183, general by #170). A root's child entities, pinned in the check (the Run step of the Run), belong to its aggregate and do not count as another entity file.
 - No entity file imports another entity file except for an id type, or a root's own pinned child entity (rule 12; added by #182, extended by #183, general by #170).
-- Until #170 the four checks above cover only the modules on their list (`projects` since #182) and, within a listed module, apply once it has a `domain/entities/` directory, where its aggregate roots are.
+- Until #170 the four checks above cover only the modules on their list (`projects` since #182, `executions` since #183) and, within a listed module, apply once it has a `domain/entities/` directory, where its aggregate roots are.
 - A file under `domain/entities/` exports at most one class (error classes count) and no functions; a file with no class is refused by the entity-class check above (rule 13; added by #185 for `projects`, extended to `executions` by #184, general by #170; the module list is in `tests/architecture/api/file-rules.ts`).
 - No file under `domain/` exports a function other than a type guard, tests excluded (rule 13; added by #185 for `projects`, extended to `executions` by #184, general by #170).
 - The aggregate roots of each module are pinned, each with the one-line reason it is a root: adding or removing one fails until the record is changed in review (rule 11; added by #170).
@@ -135,6 +135,7 @@ Positive and negative fixtures prove the rules catch violations:
 | `domain/entities/` file exports a class with a public constructor, or no class | FAIL (`executions`, `projects`; all modules by #170) |
 | `entry-points/` imports a type from `domain/entities/` | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
 | `entry-points/` imports a class from `domain/entities/` | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |
+| `entry-points/` imports an error class from an errors file in `domain/value-objects/` | PASS (`executions` by #184, all modules by #170) |
 | A handler returns a snapshot, ids, values or a view type, and exports its input and result types | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
 | A handler returns an entity class, or does not export its result type | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |
 | A repository interface refers to one entity file | PASS (`projects` by #182, `executions` by #183, all modules by #170) |

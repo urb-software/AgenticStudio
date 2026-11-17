@@ -18,7 +18,7 @@ import {
   toReviewCommentsResponse,
 } from '../../shared/review-comments-response.js';
 import { ReviewCommentsLoadRunningError } from '../../../../domain/value-objects/review-comments.js';
-import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
+import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import { LoadReviewCommentsHandler } from '../../../../application/features/load-review-comments/handler.js';

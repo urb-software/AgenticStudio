@@ -63,7 +63,7 @@ describe('RunSweepsScheduler at API start', () => {
     clock.current = later(300 + 50);
 
     expect(await sweep()).toBe(0);
-    expect((await runs.findById(run.id))?.state).toBe('preparing');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('preparing');
   });
 
   it('does not renew again within a lease: a crash loop cannot keep a dead worker alive', async () => {
@@ -78,7 +78,7 @@ describe('RunSweepsScheduler at API start', () => {
     clock.current = later(300 + 61);
 
     expect(await sweep()).toBe(1);
-    expect((await runs.findById(run.id))?.failure?.code).toBe('worker_lost');
+    expect((await runs.findById(run.id))?.lifecycle.failure?.code).toBe('worker_lost');
   });
 });
 

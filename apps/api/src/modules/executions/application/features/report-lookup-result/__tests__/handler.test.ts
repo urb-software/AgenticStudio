@@ -10,7 +10,7 @@ import {
   LOOKUP_CLAIM_MAX,
   LOOKUP_LEASE_SECONDS,
 } from '../../../../domain/value-objects/run-lookup.js';
-import type { PullRequestStateResult } from '../../../../domain/entities/run.js';
+import type { PullRequestStateResult } from '../../../../domain/value-objects/run-pull-request-status.js';
 import {
   deliveredRun,
   PULL_REQUEST,

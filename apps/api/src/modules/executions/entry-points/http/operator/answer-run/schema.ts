@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { ANSWER_MAX_LENGTH } from '../../../../domain/entities/run.js';
+import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
 
 /**
  * `POST /api/runs/:runId/answer` body (Issue #103): the operator's answer, trimmed, then 1–10 000
@@ -13,7 +13,9 @@ export const answerRunRequestSchema = z
       .string()
       .trim()
       .min(1, { error: 'Enter an answer.' })
-      .max(ANSWER_MAX_LENGTH, { error: `Use at most ${ANSWER_MAX_LENGTH} characters.` }),
+      .max(RunConversation.ANSWER_MAX_LENGTH, {
+        error: `Use at most ${RunConversation.ANSWER_MAX_LENGTH} characters.`,
+      }),
   })
   .meta({ id: 'AnswerRunRequest' });
 

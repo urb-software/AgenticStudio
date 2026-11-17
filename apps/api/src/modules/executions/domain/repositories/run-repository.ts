@@ -1,16 +1,17 @@
-import type {
-  Provider,
-  PullRequestState,
-  ResumeFacts,
-  Run,
-  RunCancellation,
-  RunFailure,
-  RunSnapshot,
-  RunState,
-} from '../entities/run.js';
+import type { Provider } from '../value-objects/provider.js';
+import type { PullRequestState } from '../value-objects/run-pull-request-status.js';
+import type { ResumeFacts } from '../value-objects/run-facts.js';
+import type { Run, RunSnapshot } from '../entities/run.js';
+import type { RunCancellation } from '../value-objects/run-cancellation.js';
+import type { RunFailure } from '../value-objects/run-failure.js';
+import type { RunState } from '../value-objects/run-state.js';
 import type { RunStepSnapshot } from '../entities/run-step.js';
 
-export { RunNotHeldError, StepLimitReachedError, StepOutOfOrderError } from '../entities/run.js';
+export {
+  RunNotHeldError,
+  StepLimitReachedError,
+  StepOutOfOrderError,
+} from '../value-objects/run-errors.js';
 
 /** DI token for the {@link RunRepository} adapter. */
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');

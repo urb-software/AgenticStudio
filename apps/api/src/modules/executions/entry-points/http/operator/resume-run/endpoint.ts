@@ -9,7 +9,10 @@ import {
   runNotResumable,
 } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
-import { RunNotResumableError, RunSlotTakenError } from '../../../../domain/entities/run.js';
+import {
+  RunNotResumableError,
+  RunSlotTakenError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { ResumeRunHandler } from '../../../../application/features/resume-run/handler.js';
 

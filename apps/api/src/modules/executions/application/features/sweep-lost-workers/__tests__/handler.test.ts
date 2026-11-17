@@ -66,7 +66,7 @@ describe('SweepLostWorkersHandler', () => {
 
     expect(await handler.execute()).toEqual({ failed: 1 });
 
-    expect(await runs.findById(run.id)).toMatchObject({
+    expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
       state: 'failed',
       failure: {
         code: 'worker_lost',
@@ -91,7 +91,7 @@ describe('SweepLostWorkersHandler', () => {
     now = later(91);
 
     expect(await handler.execute()).toEqual({ failed: 1 });
-    expect((await runs.findById(run.id))?.state).toBe('failed');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('failed');
   });
 
   it('keeps a Run whose heartbeat is within the lease', async () => {
@@ -100,7 +100,7 @@ describe('SweepLostWorkersHandler', () => {
     now = later(100);
 
     expect(await handler.execute()).toEqual({ failed: 0 });
-    expect((await runs.findById(run.id))?.state).toBe('preparing');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('preparing');
   });
 
   it('never sweeps a Run waiting for the operator: no worker holds it', async () => {
@@ -126,7 +126,7 @@ describe('SweepLostWorkersHandler', () => {
     now = later(3600);
 
     expect(await handler.execute()).toEqual({ failed: 0 });
-    expect((await runs.findById(run.id))?.state).toBe('waiting_for_operator');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('waiting_for_operator');
   });
 
   it('leaves queued Runs alone', async () => {
@@ -181,7 +181,7 @@ describe('SweepLostWorkersHandler', () => {
 
       expect(await handler.execute()).toEqual({ failed: 1 });
 
-      expect(await runs.findById(run.id)).toMatchObject({
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
         state: 'failed',
         failure: {
           code: 'delivery_failed',
@@ -201,7 +201,7 @@ describe('SweepLostWorkersHandler', () => {
       now = later(100);
 
       expect(await handler.execute()).toEqual({ failed: 0 });
-      expect((await runs.findById(run.id))?.deliveryRequested).toBe(true);
+      expect((await runs.findById(run.id))?.delivery.requested).toBe(true);
     });
 
     it('counts a worker never seen since Studio started from that start, not before', async () => {
@@ -211,7 +211,7 @@ describe('SweepLostWorkersHandler', () => {
 
       now = later(61);
       expect(await handler.execute()).toEqual({ failed: 1 });
-      expect((await runs.findById(run.id))?.deliveryRequested).toBe(false);
+      expect((await runs.findById(run.id))?.delivery.requested).toBe(false);
     });
   });
   describe('an answered Run whose worker is gone (Issue #103)', () => {
@@ -267,7 +267,7 @@ describe('SweepLostWorkersHandler', () => {
 
       expect(await handler.execute()).toEqual({ failed: 1 });
 
-      expect(await runs.findById(run.id)).toMatchObject({
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
         state: 'failed',
         failure: {
           code: 'preparation_failed',
@@ -285,7 +285,7 @@ describe('SweepLostWorkersHandler', () => {
       now = later(100);
 
       expect(await handler.execute()).toEqual({ failed: 0 });
-      expect((await runs.findById(run.id))?.state).toBe('queued');
+      expect((await runs.findById(run.id))?.lifecycle.state).toBe('queued');
     });
   });
 });

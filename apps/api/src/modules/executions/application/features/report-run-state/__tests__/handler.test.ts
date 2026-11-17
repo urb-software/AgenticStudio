@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { IllegalRunTransitionError, type RunSnapshot } from '../../../../domain/entities/run.js';
+import { IllegalRunTransitionError } from '../../../../domain/value-objects/run-errors.js';
+import { type RunSnapshot } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   RunNotFoundError,
@@ -239,7 +240,7 @@ describe('ReportRunStateHandler', () => {
     await expect(report({ state: 'succeeded' })).rejects.toEqual(
       new IllegalRunTransitionError('preparing', 'succeeded'),
     );
-    expect((await runs.findById(run.id))?.state).toBe('preparing');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('preparing');
   });
 
   it('rejects a report from a worker that does not hold the Run', async () => {
@@ -372,7 +373,7 @@ describe('ReportRunStateHandler', () => {
       await expect(
         report({ state: 'failed', failure: { code: 'agent_failed', detail: 'x' } }),
       ).rejects.toBeInstanceOf(IllegalRunTransitionError);
-      expect((await runs.findById(run.id))?.claimedBy).toBe(WORKER);
+      expect((await runs.findById(run.id))?.claim.claimedBy).toBe(WORKER);
     });
 
     it('rejects a delivery outcome from a worker that does not hold the retry', async () => {
@@ -417,7 +418,7 @@ describe('ReportRunStateHandler', () => {
       await expect(report({ state: 'cancelled' })).rejects.toBeInstanceOf(
         IllegalRunTransitionError,
       );
-      expect((await runs.findById(run.id))?.state).toBe('running');
+      expect((await runs.findById(run.id))?.lifecycle.state).toBe('running');
     });
 
     it('ends the Run as cancelled when its step ends waiting for the operator after a cancel request', async () => {
@@ -668,7 +669,9 @@ describe('ReportRunStateHandler', () => {
       expect(await report({ state: 'succeeded', unchanged: true })).toMatchObject({
         state: 'succeeded',
       });
-      expect(restored.messages).toHaveLength((await runs.findById(run.id))!.messages.length);
+      expect(restored.messages).toHaveLength(
+        (await runs.findById(run.id))!.conversation.messages.length,
+      );
     });
 
     it('shows why nothing changed when the worker says so, as the conversation entry', async () => {

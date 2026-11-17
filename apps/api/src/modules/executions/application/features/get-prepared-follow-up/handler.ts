@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId } from '../../../domain/entities/run.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
 import type { PreparedFollowUpSnapshot } from '../../../domain/entities/prepared-follow-up.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,

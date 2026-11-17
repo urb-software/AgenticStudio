@@ -59,7 +59,7 @@ describe('CancelLongWaitingRunsHandler', () => {
 
     expect(await handler.execute()).toEqual({ cancelled: 1 });
 
-    expect(await runs.findById(run.id)).toMatchObject({
+    expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
       state: 'cancelled',
       cancellation: {
         by: 'system',
@@ -76,8 +76,8 @@ describe('CancelLongWaitingRunsHandler', () => {
 
     expect(await handler.execute()).toEqual({ cancelled: 1 });
 
-    expect((await runs.findById(short.id))?.state).toBe('cancelled');
-    expect((await runs.findById(long.id))?.state).toBe('waiting_for_operator');
+    expect((await runs.findById(short.id))?.lifecycle.state).toBe('cancelled');
+    expect((await runs.findById(long.id))?.lifecycle.state).toBe('waiting_for_operator');
   });
 
   it('cancels nothing when no Run waits', async () => {

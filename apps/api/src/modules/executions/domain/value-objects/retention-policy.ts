@@ -1,12 +1,8 @@
-import {
-  type FollowUpEligibility,
-  isFinal,
-  isPullRequestEnded,
-  type RetentionFacts,
-  type Run,
-  type RunSnapshot,
-  type WorkerFacts,
-} from '../entities/run.js';
+import type { Run, RunSnapshot } from '../entities/run.js';
+import type { FollowUpEligibility } from './follow-up.js';
+import type { RetentionFacts, WorkerFacts } from './run-facts.js';
+import { isEndedPullRequestState } from './run-pull-request-status.js';
+import { isFinalRunState } from './run-state.js';
 import { WorkerStatus } from './worker-status.js';
 
 /**
@@ -75,12 +71,12 @@ export class RetentionPolicy {
    *   ({@link RetentionPolicy.isLimited}, {@link RetentionPolicy.overLimit}).
    */
   keepUntil(facts: RetentionFacts): Date | null {
-    if (!isFinal(facts.state) || facts.finishedAt === null) return null;
+    if (!isFinalRunState(facts.state) || facts.finishedAt === null) return null;
     if (!facts.hasPullRequest) {
       return new Date(facts.finishedAt.getTime() + this.days * DAY_MS);
     }
     const idleEnd = facts.lastActivityAt.getTime() + this.openPullRequestIdleDays * DAY_MS;
-    if (!isPullRequestEnded(facts.pullRequestState) || facts.pullRequestEndedAt === null) {
+    if (!isEndedPullRequestState(facts.pullRequestState) || facts.pullRequestEndedAt === null) {
       return new Date(idleEnd);
     }
     return new Date(
@@ -93,7 +89,7 @@ export class RetentionPolicy {
 
   /** Whether the per-Project limit counts (and may remove) this Run: a final Run without a pull request. */
   isLimited(facts: Pick<RetentionFacts, 'state' | 'hasPullRequest'>): boolean {
-    return isFinal(facts.state) && !facts.hasPullRequest;
+    return isFinalRunState(facts.state) && !facts.hasPullRequest;
   }
 
   /**

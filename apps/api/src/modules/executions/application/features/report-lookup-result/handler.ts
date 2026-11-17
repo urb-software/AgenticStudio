@@ -3,7 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PreparedFollowUp } from '../../../domain/entities/prepared-follow-up.js';
 import { ReviewComments } from '../../../domain/entities/review-comments.js';
 import type { RunLookup } from '../../../domain/entities/run-lookup.js';
-import type { PullRequestStateResult } from '../../../domain/entities/run.js';
+import type { PullRequestStateResult } from '../../../domain/value-objects/run-pull-request-status.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,
@@ -13,7 +13,7 @@ import { CheckLink } from '../../../domain/value-objects/check-link.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import {
   type LookupAnswerOutcome,
-  retryDelaySeconds,
+  LookupFailure,
 } from '../../../domain/value-objects/run-lookup.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
@@ -92,7 +92,7 @@ export class ReportLookupResultHandler {
     // Text from CI jobs is redacted like the Run's log: with the Run's known secret values too.
     const redaction = LogRedaction.of(await this.secrets.forRun(runId));
     // A check's link that redaction would break is replaced by the pull request's checks page.
-    const pull = (await this.runs.findById(runId))?.pullRequest;
+    const pull = (await this.runs.findById(runId))?.delivery.pullRequest;
     const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
     if (answer.kind === 'review_comments') {
       // Comments are untrusted text from the Git host: redacted (with the Run's known secret
@@ -189,13 +189,11 @@ export class ReportLookupResultHandler {
     now: Date,
   ): Promise<void> {
     const error = LogRedaction.NONE.text(answer.error).slice(0, LOOKUP_ERROR_MAX_LENGTH);
-    const retry = retryDelaySeconds({
+    const retry = LookupFailure.of({
       code: answer.code,
       error,
-      ...(answer.retryAfterSeconds === undefined
-        ? {}
-        : { retryAfterSeconds: answer.retryAfterSeconds }),
-    });
+      retryAfterSeconds: answer.retryAfterSeconds,
+    }).retryDelaySeconds;
     await this.answer(runId, lookupId, async (lookup, repositories) => {
       const outcome = lookup.fail(answer.workerId, error, retry, now);
       if (outcome !== 'stored') return outcome;

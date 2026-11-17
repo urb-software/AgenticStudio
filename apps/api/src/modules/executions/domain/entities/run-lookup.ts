@@ -1,31 +1,10 @@
+import type { ReviewCommentScope } from '../value-objects/review-comments.js';
 import type {
-  ReviewCommentScope,
-  ReviewCommentsRequest,
-} from '../value-objects/review-comments.js';
-import type { LookupAnswerOutcome, LookupKind, LookupStatus } from '../value-objects/run-lookup.js';
-
-/** A lookup a worker claimed: what it needs to answer, nothing more. */
-export interface ClaimedLookup {
-  id: string;
-  kind: LookupKind;
-  runId: string;
-  remoteUrl: string;
-  pullRequestNumber: number;
-  runBranch: string;
-  integrationBranch: string;
-  /** Issue #146: what a `review_comments` lookup loads. */
-  reviewComments?: { scope: ReviewCommentScope; since?: Date };
-}
-
-/**
- * Where the latest load of a Run's Review comments stands, read from its lookups: under way (also
- * while it waits, or waits out a rate limit), or why the latest one failed.
- */
-export interface ReviewCommentsLoad {
-  loading: boolean;
-  /** The worker's words for the latest load when it failed (redacted); null otherwise. */
-  error: string | null;
-}
+  LookupAnswerOutcome,
+  LookupKind,
+  LookupStatus,
+  RunLookupRequest,
+} from '../value-objects/run-lookup.js';
 
 /** A lookup's current values as read-only plain data (rule 10); {@link RunLookup.snapshot}. */
 export interface RunLookupSnapshot {
@@ -48,16 +27,6 @@ export interface RunLookupSnapshot {
   /** Issue #146: what a `review_comments` lookup loads. */
   readonly scope: ReviewCommentScope | null;
   readonly since: Date | null;
-}
-
-/** What requesting a lookup is made from. */
-export interface RunLookupRequest {
-  id: string;
-  runId: string;
-  kind: LookupKind;
-  now: Date;
-  /** Issue #146: what a `review_comments` lookup loads. */
-  review?: ReviewCommentsRequest;
 }
 
 /**

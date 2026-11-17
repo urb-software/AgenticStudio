@@ -8,7 +8,7 @@ import {
   type ReviewComment,
   ReviewCommentsLoadRunningError,
 } from '../../../../domain/value-objects/review-comments.js';
-import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
+import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
 import {
   deliveredRun,
   T0,
@@ -146,7 +146,7 @@ describe('review comments', () => {
         runId: run.id,
         kind: 'review_comments',
         scope: 'since_last_result',
-        since: run.finishedAt,
+        since: run.lifecycle.finishedAt,
       });
       const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
       // No Follow-up, no message, no refresh of the state.
@@ -206,7 +206,7 @@ describe('review comments', () => {
 
       expect(lookup).toMatchObject({
         kind: 'review_comments',
-        reviewComments: { scope: 'since_last_result', since: run.finishedAt },
+        reviewComments: { scope: 'since_last_result', since: run.lifecycle.finishedAt },
       });
     });
   });

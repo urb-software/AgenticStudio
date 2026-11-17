@@ -1,13 +1,13 @@
 import { runStepResultSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
+import { type RunQuestion } from '../../../domain/value-objects/run-conversation.js';
 import {
-  isRunId,
-  type RunQuestion,
   type RunStepOutcome,
   type RunStepRecord,
-  type RunWorkingCopy,
-  StepLimitReachedError,
-} from '../../../domain/entities/run.js';
+} from '../../../domain/value-objects/run-facts.js';
+import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
+import { StepLimitReachedError } from '../../../domain/value-objects/run-errors.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,

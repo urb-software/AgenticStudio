@@ -1,4 +1,5 @@
-import { planLogAppend, type RunEvent } from '../../../domain/value-objects/run-event.js';
+import { LogCap } from '../../../domain/value-objects/log-cap.js';
+import type { RunEvent } from '../../../domain/value-objects/run-event.js';
 import { LogAppendRule } from '../../../domain/value-objects/log-append-rule.js';
 import type { RunLog } from '../run-log.js';
 import type { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
@@ -26,8 +27,7 @@ export class InMemoryRunLog implements RunLog {
     }
     const stored = this.events.get(runId) ?? [];
     const seqs = new Set(stored.map((event) => event.seq));
-    const plan = planLogAppend(
-      this.caps.get(runId) ?? { bytes: 0, truncated: false },
+    const plan = LogCap.of(this.caps.get(runId) ?? { bytes: 0, truncated: false }).plan(
       events.filter((event) => !seqs.has(event.seq)),
       maxBytes,
     );

@@ -47,18 +47,18 @@ import {
   runProviderSchema,
   runStateSchema,
 } from '../../../../entry-points/http/shared/run-response.js';
+import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
+import { FOLLOW_UP_REFUSALS } from '../../../../domain/value-objects/follow-up.js';
+import { PROVIDERS } from '../../../../domain/value-objects/provider.js';
 import {
-  ANSWER_MAX_LENGTH,
-  FOLLOW_UP_REFUSALS,
-  PROVIDERS,
   PULL_REQUEST_CHECK_STATES,
   PULL_REQUEST_STATES,
-  RESUME_REASONS,
-  RUN_CANCELLED_BY,
-  RUN_DELIVERIES,
-  RUN_FAILURE_CODES,
-  RUN_STATES,
-} from '../../../../domain/entities/run.js';
+} from '../../../../domain/value-objects/run-pull-request-status.js';
+import { RESUME_REASONS } from '../../../../domain/value-objects/run-resume.js';
+import { RUN_CANCELLED_BY } from '../../../../domain/value-objects/run-cancellation.js';
+import { RUN_DELIVERIES } from '../../../../domain/value-objects/run-delivery.js';
+import { RUN_FAILURE_CODES } from '../../../../domain/value-objects/run-failure.js';
+import { RUN_STATES } from '../../../../domain/value-objects/run-state.js';
 import {
   FOLLOW_UP_MAX_LENGTH,
   FOLLOW_UP_SOURCES,
@@ -128,7 +128,7 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(WORKER_TASK_MAX_LENGTH).toBe(TASK_MAX_LENGTH);
     // Issue #141: the Follow-up and the answer travel in the same payload field.
     expect(WORKER_FOLLOW_UP_MAX_LENGTH).toBe(FOLLOW_UP_MAX_LENGTH);
-    expect(WORKER_ANSWER_MAX_LENGTH).toBe(ANSWER_MAX_LENGTH);
+    expect(WORKER_ANSWER_MAX_LENGTH).toBe(RunConversation.ANSWER_MAX_LENGTH);
     // Review T3 of #150: the domain's resume reasons are the protocol's.
     expect([...WORKER_RESUME_REASONS]).toEqual([...RESUME_REASONS]);
   });

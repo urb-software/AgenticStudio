@@ -1,4 +1,5 @@
-import { CLAIMED_RUN_STATES, type Run } from '../entities/run.js';
+import type { RunSnapshot } from '../entities/run.js';
+import { CLAIMED_RUN_STATES } from './run-state.js';
 
 /**
  * The log append rule (Issue #99): an agent worker may append events to a Run's log only while it
@@ -14,7 +15,7 @@ export class LogAppendRule {
   static readonly STATES = CLAIMED_RUN_STATES;
 
   /** Whether `workerId` may append to the log of this Run now. */
-  static allows(run: Pick<Run, 'state' | 'claimedBy'>, workerId: string): boolean {
+  static allows(run: Pick<RunSnapshot, 'state' | 'claimedBy'>, workerId: string): boolean {
     return (
       (LogAppendRule.STATES as readonly string[]).includes(run.state) && run.claimedBy === workerId
     );

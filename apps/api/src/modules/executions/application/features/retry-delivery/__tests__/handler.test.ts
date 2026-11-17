@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DeliveryNotRetryableError, type RunSnapshot } from '../../../../domain/entities/run.js';
+import { DeliveryNotRetryableError } from '../../../../domain/value-objects/run-errors.js';
+import { type RunSnapshot } from '../../../../domain/entities/run.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
@@ -38,15 +39,17 @@ describe('RetryDeliveryHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     handler = new RetryDeliveryHandler(runs, new InMemoryPreparedFollowUpRepository(runs));
-    run = await runs.start({
-      projectId: PROJECT,
-      provider: 'codex',
-      task: 'x',
-      startCommit: 'a',
-      remoteUrl: 'https://github.com/acme/shop.git',
-      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
-      integrationBranch: 'dev',
-    });
+    run = (
+      await runs.start({
+        projectId: PROJECT,
+        provider: 'codex',
+        task: 'x',
+        startCommit: 'a',
+        remoteUrl: 'https://github.com/acme/shop.git',
+        limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
+        integrationBranch: 'dev',
+      })
+    ).snapshot();
   });
 
   it('requests a retry of a failed delivery; the Run stays failed until a worker delivers', async () => {
@@ -74,7 +77,7 @@ describe('RetryDeliveryHandler', () => {
     await expect(handler.execute({ runId: run.id })).rejects.toBeInstanceOf(
       DeliveryNotRetryableError,
     );
-    expect((await runs.findById(run.id))?.deliveryRequested).toBe(false);
+    expect((await runs.findById(run.id))?.delivery.requested).toBe(false);
   });
 
   it('refuses an unknown Run, also an id that is not a UUID', async () => {

@@ -1,14 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type RunSnapshot } from '../../../domain/entities/run.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
+import { type RunSnapshot } from '../../../domain/entities/run.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
-import {
-  canRefreshPullRequest,
-  pageRefreshDue,
-  PullRequestNotRefreshableError,
-} from '../../../domain/value-objects/run-lookup.js';
+import { PullRequestNotRefreshableError } from '../../../domain/value-objects/run-lookup.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -60,9 +57,9 @@ export class RefreshPullRequestHandler {
     const { runId, onOpen } = input;
     const found = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!found) throw new RunNotFoundError();
-    if (!canRefreshPullRequest(found)) throw new PullRequestNotRefreshableError();
+    if (!found.canRefreshPullRequest()) throw new PullRequestNotRefreshableError();
     const now = this.clock.now();
-    if (!onOpen || pageRefreshDue(found, now)) {
+    if (!onOpen || found.pullRequestStatus.pageRefreshDue(now)) {
       const outcome = await this.lookups.request(found.id, 'pull_request_state', now);
       if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     }
@@ -74,7 +71,9 @@ export class RefreshPullRequestHandler {
       run,
       {
         holderLastSeen:
-          run.lastClaimedBy === null ? undefined : this.workers.lastSeen(run.lastClaimedBy),
+          run.claim.lastClaimedBy === null
+            ? undefined
+            : this.workers.lastSeen(run.claim.lastClaimedBy),
         latest: this.workers.latest(),
       },
       now,

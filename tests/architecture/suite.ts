@@ -90,6 +90,11 @@ export const QUALITY_TABLE = [
   },
   { row: '`entry-points/` imports a class from `domain/entities/`', expected: 'FAIL', gate: 'api' },
   {
+    row: '`entry-points/` imports an error class from an errors file in `domain/value-objects/`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
     row: 'A handler returns a snapshot, ids, values or a view type, and exports its input and result types',
     expected: 'PASS',
     gate: 'api',

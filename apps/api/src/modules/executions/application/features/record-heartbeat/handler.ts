@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId } from '../../../domain/entities/run.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isFinal, isRunId } from '../../../domain/entities/run.js';
+import { isFinalRunState } from '../../../domain/value-objects/run-state.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
 import type { RunEvent } from '../../../domain/value-objects/run-event.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import {
@@ -77,7 +78,7 @@ export class StreamRunEventsHandler {
           yield page;
           if (page.length < READ_PAGE) break;
         }
-        if (!run || isFinal(run.state) || abort.aborted) return;
+        if (!run || isFinalRunState(run.state) || abort.aborted) return;
         if (!woken) {
           const timedOut = await new Promise<boolean>((resolve) => {
             const done = (value: boolean) => {

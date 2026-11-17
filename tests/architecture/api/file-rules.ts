@@ -20,7 +20,7 @@ export const FILE_RULES = [
  * Modules the two checks apply to. Issue #185 introduces them for `projects`, #184 adds
  * `executions`, and #170 removes the list so every module is checked by path pattern.
  */
-const FILE_RULE_MODULES = new Set(['projects']);
+const FILE_RULE_MODULES = new Set(['projects', 'executions']);
 
 const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
 const DOMAIN_FILE = /^src\/modules\/([^/]+)\/domain\//;

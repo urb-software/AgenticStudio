@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { type RunSnapshot, RunNotWaitingError } from '../../../../domain/entities/run.js';
+import { type RunSnapshot } from '../../../../domain/entities/run.js';
+import { RunNotWaitingError } from '../../../../domain/value-objects/run-errors.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
@@ -92,7 +93,7 @@ describe('AnswerRunHandler', () => {
 
     expect(error).toBeInstanceOf(RunNotWaitingError);
     expect((error as RunNotWaitingError).state).toBe('queued');
-    expect((await runs.findById(run.id))?.messages).toHaveLength(2);
+    expect((await runs.findById(run.id))?.conversation.messages).toHaveLength(2);
   });
 
   it('refuses an answer to a Run that is not waiting, e.g. running or cancelled', async () => {

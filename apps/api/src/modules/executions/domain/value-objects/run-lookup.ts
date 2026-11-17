@@ -1,5 +1,4 @@
-import type { ReviewComment } from './review-comments.js';
-import type { Run } from '../entities/run.js';
+import type { ReviewComment, ReviewCommentsRequest } from './review-comments.js';
 
 /**
  * Lookups (Issue #142): Studio's questions for the Git host that only an agent worker can
@@ -82,10 +81,26 @@ export interface FailingCheckLogsResult {
 export type LookupFailureCode = 'scope_mismatch' | 'rate_limited' | 'failed';
 
 /** Why a lookup failed, in the worker's words (redacted before it is stored). */
-export interface LookupFailure {
-  code: LookupFailureCode;
-  error: string;
-  retryAfterSeconds?: number;
+export class LookupFailure {
+  private constructor(
+    readonly code: LookupFailureCode,
+    readonly error: string,
+    readonly retryAfterSeconds: number | undefined,
+  ) {}
+
+  static of(input: {
+    code: LookupFailureCode;
+    error: string;
+    retryAfterSeconds?: number | undefined;
+  }): LookupFailure {
+    return new LookupFailure(input.code, input.error, input.retryAfterSeconds);
+  }
+
+  /** How long to wait before a rate-limited lookup is tried again, bounded; `null` otherwise. */
+  get retryDelaySeconds(): number | null {
+    if (this.code !== 'rate_limited') return null;
+    return Math.min(Math.max(this.retryAfterSeconds ?? 60, 1), STORED_RETRY_DELAY_MAX_SECONDS);
+  }
 }
 
 /** The Run has no pull request (or no known Run branch) whose state could be read. */
@@ -96,36 +111,12 @@ export class PullRequestNotRefreshableError extends Error {
   }
 }
 
-/**
- * Whether a Run's pull request can be looked up: it has one, and its Run branch is known (the
- * lookup is limited to that branch).
- */
-export function canRefreshPullRequest(run: Pick<Run, 'pullRequest' | 'workingCopy'>): boolean {
-  return run.pullRequest !== null && run.workingCopy !== null;
-}
-
-/** Whether the Run's stored Pull request checks include a failed one (Issue #145). */
-export function hasFailedPullRequestCheck(run: Pick<Run, 'pullRequestStatus'>): boolean {
-  const checks = run.pullRequestStatus.checks;
-  return checks !== null && !checks.unavailable && checks.checks.some((c) => c.state === 'failed');
-}
-
-/**
- * Whether opening the Run page should request a refresh (Issue #142): never more often than
- * once a minute per Run (from the last attempt, successful or not), and not while a lookup is open or a rate limit asks to wait.
- */
-export function pageRefreshDue(run: Pick<Run, 'pullRequestStatus'>, now: Date): boolean {
-  const status = run.pullRequestStatus;
-  if (status.refreshRequestedAt !== null) return false;
-  if (status.retryAt !== null && status.retryAt.getTime() > now.getTime()) return false;
-  // Counted from the last attempt, so a lookup that keeps failing is not repeated on every open.
-  const lastAttempt = status.lastAttemptAt ?? status.refreshedAt;
-  if (lastAttempt === null) return true;
-  return now.getTime() - lastAttempt.getTime() >= PAGE_REFRESH_MIN_AGE_SECONDS * 1000;
-}
-
-/** How long to wait before a rate-limited lookup is tried again, bounded. */
-export function retryDelaySeconds(failure: LookupFailure): number | null {
-  if (failure.code !== 'rate_limited') return null;
-  return Math.min(Math.max(failure.retryAfterSeconds ?? 60, 1), STORED_RETRY_DELAY_MAX_SECONDS);
+/** What requesting a lookup is made from. */
+export interface RunLookupRequest {
+  id: string;
+  runId: string;
+  kind: LookupKind;
+  now: Date;
+  /** Issue #146: what a `review_comments` lookup loads. */
+  review?: ReviewCommentsRequest;
 }

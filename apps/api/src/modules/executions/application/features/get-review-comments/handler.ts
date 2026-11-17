@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ReviewComments } from '../../../domain/entities/review-comments.js';
-import { isRunId } from '../../../domain/entities/run.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
 import type {
   ReviewComment,
   ReviewCommentScope,

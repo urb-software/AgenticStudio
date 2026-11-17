@@ -1,18 +1,17 @@
-import { ACTIVE_RUN_STATES, MAX_ACTIVE_RUNS, type Run } from '../entities/run.js';
+import type { RunState } from './run-state.js';
 
-/** What the hand-out rule reads of a Run. */
-export type HandOutView = Pick<
-  Run,
-  | 'id'
-  | 'projectId'
-  | 'state'
-  | 'claimedBy'
-  | 'sessionRef'
-  | 'followUpQueued'
-  | 'deliveryRequested'
-  | 'lastClaimedBy'
-  | 'createdAt'
->;
+/** What the hand-out rule reads of a Run (a flat record, as a snapshot or a stored row has it). */
+export interface HandOutView {
+  id: string;
+  projectId: string;
+  state: RunState;
+  claimedBy: string | null;
+  sessionRef: string | null;
+  followUpQueued: boolean;
+  deliveryRequested: boolean;
+  lastClaimedBy: string | null;
+  createdAt: Date;
+}
 
 /**
  * The hand-out rule (ADR 0002, Issues #96, #102, #103, #141, #169): which Run an agent worker is
@@ -36,11 +35,18 @@ export type HandOutView = Pick<
  * a test uses to prove the query follows it.
  */
 export class HandOutRule {
-  /** The states in which a Run holds a place, besides the held and the answered Runs below. */
-  static readonly PLACE_STATES = ACTIVE_RUN_STATES;
+  /**
+   * The states in which a Run holds a place, besides the held and the answered Runs below: an
+   * agent worker or the operator holds the Run (they count against the concurrency limits).
+   */
+  static readonly PLACE_STATES = [
+    'preparing',
+    'running',
+    'waiting_for_operator',
+  ] as const satisfies readonly RunState[];
 
   /** At most this many Runs hold a place across the server (ADR 0002). */
-  static readonly MAX_PLACES = MAX_ACTIVE_RUNS;
+  static readonly MAX_PLACES = 2;
 
   private constructor(readonly workerId: string) {}
 
@@ -51,7 +57,7 @@ export class HandOutRule {
 
   /** Whether the Run holds a place now: an active state, held for a retry, or answered and queued. */
   static holdsPlace(
-    run: Pick<Run, 'state' | 'claimedBy' | 'sessionRef' | 'followUpQueued'>,
+    run: Pick<HandOutView, 'state' | 'claimedBy' | 'sessionRef' | 'followUpQueued'>,
   ): boolean {
     return (
       (HandOutRule.PLACE_STATES as readonly string[]).includes(run.state) ||

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RunAlreadyFinishedError, type RunSnapshot } from '../../../../domain/entities/run.js';
+import { RunAlreadyFinishedError } from '../../../../domain/value-objects/run-errors.js';
+import { type RunSnapshot } from '../../../../domain/entities/run.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
@@ -38,15 +39,17 @@ describe('CancelRunHandler', () => {
     handler = new CancelRunHandler(runs, new InMemoryPreparedFollowUpRepository(runs), {
       now: () => now,
     });
-    run = await runs.start({
-      projectId: PROJECT,
-      provider: 'codex',
-      task: 'x',
-      startCommit: 'a',
-      remoteUrl: 'https://git.example.test/a.git',
-      integrationBranch: 'dev',
-      limits: LIMITS,
-    });
+    run = (
+      await runs.start({
+        projectId: PROJECT,
+        provider: 'codex',
+        task: 'x',
+        startCommit: 'a',
+        remoteUrl: 'https://git.example.test/a.git',
+        integrationBranch: 'dev',
+        limits: LIMITS,
+      })
+    ).snapshot();
   });
 
   it('cancels a queued Run at once, by the operator', async () => {
@@ -104,7 +107,7 @@ describe('CancelRunHandler', () => {
 
     expect(error).toBeInstanceOf(RunAlreadyFinishedError);
     expect((error as RunAlreadyFinishedError).state).toBe('cancelled');
-    expect((await runs.findById(run.id))?.finishedAt).toEqual(T1);
+    expect((await runs.findById(run.id))?.lifecycle.finishedAt).toEqual(T1);
   });
 
   it('reports an unknown Run, and an id that is not a UUID, as not found', async () => {
