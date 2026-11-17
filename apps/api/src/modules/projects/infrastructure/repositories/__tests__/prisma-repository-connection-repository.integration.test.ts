@@ -13,7 +13,10 @@ import {
   type DatabaseClient,
 } from '../../../../../platform/database/database.module.js';
 import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
-import { RemoteAlreadyConnectedError } from '../../../domain/repositories/repository-connection-repository.js';
+import {
+  RemoteAlreadyConnectedError,
+  RemoteHeldByOtherProjectError,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import { ConnectRepositoryHandler } from '../../../application/features/connect-repository/handler.js';
 import { FakeRepositoryGit } from '../../../application/ports/__tests__/fake-repository-git.js';
 import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memory-deploy-keys.js';
@@ -171,6 +174,31 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
 
       expect(await connections.find(projectId)).toBeNull();
       expect(await connections.listDeployKeySecretRefs()).toEqual([]);
+    });
+  });
+
+  describe('a remote held by another project', () => {
+    it('refuses the connect and names the holder by id', async () => {
+      const other = (await projects.add(ProjectName.parse('Other'))).id;
+      await connections.connect({
+        projectId,
+        url: 'https://github.com/acme/shop.git',
+        identity: 'github.com/acme/shop',
+        integrationBranch: 'dev',
+      });
+
+      const refusal = await connections
+        .connect({
+          projectId: other,
+          url: 'git@github.com:acme/shop.git',
+          identity: 'github.com/acme/shop',
+          integrationBranch: 'dev',
+        })
+        .catch((error: unknown) => error);
+
+      expect(refusal).toBeInstanceOf(RemoteHeldByOtherProjectError);
+      expect((refusal as RemoteHeldByOtherProjectError).ownerProjectId).toBe(projectId);
+      expect(await connections.find(other)).toBeNull();
     });
   });
 

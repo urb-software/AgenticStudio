@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import {
+  RepositoryAlreadyConnectedError,
   RepositoryConnection,
   type RepositoryConnectionSnapshot,
 } from '../../../domain/entities/repository.js';
@@ -95,21 +96,21 @@ export class ConnectRepositoryHandler {
     const previous = await this.repositories.find(input.projectId);
     const previousKey: StoredDeployKey | null = previous?.retainedDeployKey ?? null;
 
+    // The Repository's store does not read the Project's table: the Project must exist, and a
+    // missing one never leaves a created Deploy key behind.
+    const project = await this.projects.findById(input.projectId);
+    if (!project) throw new ProjectNotFoundError();
+
     let deployKey: StoredDeployKey | null = null;
     let createdKey = false;
     if (url.ssh) {
       if (previousKey) {
         deployKey = previousKey;
       } else {
-        const project = await this.projects.findById(input.projectId);
-        if (!project) throw new ProjectNotFoundError();
         deployKey = await this.deployKeys.create(project.name);
         createdKey = true;
       }
     }
-
-    // The Repository's store does not read the Project's table: the Project must exist.
-    if (!(await this.projects.findById(input.projectId))) throw new ProjectNotFoundError();
 
     let repository: RepositoryConnection;
     try {
@@ -153,7 +154,9 @@ export class ConnectRepositoryHandler {
   private async nameRemoteOwner(error: unknown): Promise<unknown> {
     if (!(error instanceof RemoteHeldByOtherProjectError)) return error;
     const owner = await this.projects.findById(error.ownerProjectId);
-    return owner ? new RemoteAlreadyConnectedError(owner.name) : error;
+    return owner
+      ? new RemoteAlreadyConnectedError(owner.name)
+      : new RepositoryAlreadyConnectedError();
   }
 
   /**
