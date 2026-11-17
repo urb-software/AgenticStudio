@@ -3,14 +3,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import type { RunDiff } from '../../domain/entities/run-diff.js';
+import { RUN_DIFF_FILE_STATUSES, type RunDiffScope } from '../../domain/value-objects/run-diff.js';
 import {
-  RUN_DIFF_FILE_STATUSES,
   type RunDiffFileSummary,
   type RunDiffFileView,
-  type RunDiffScope,
   type RunDiffState,
   type StoredRunDiff,
-} from '../../domain/value-objects/run-diff.js';
+} from '../../domain/entities/run-diff.js';
 import type { RunDiffRepository } from '../../domain/repositories/run-diff-repository.js';
 import { type Executor, inTransaction } from './executor.js';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { NewRunDiff } from '../../value-objects/run-diff.js';
+import type { NewRunDiff } from '../../entities/run-diff.js';
 import { RunDiff } from '../run-diff.js';
 
 // Issue #183: the Run diff is an aggregate root of its own: what a worker reported, replacing the

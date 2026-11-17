@@ -4,9 +4,9 @@ import {
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH as WORKER_UNAVAILABLE_MAX_LENGTH,
 } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
+import { RunDiff } from '../../../../domain/entities/run-diff.js';
 import {
   isEnvironmentFilePath,
-  isRunDiffState,
   RUN_DIFF_FILE_STATUSES,
   RUN_DIFF_SCOPES,
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
@@ -37,10 +37,10 @@ describe('diff state and Environment file path (review S-1, L-3 of #149)', () =>
   };
 
   it('takes full object ids only', () => {
-    expect(isRunDiffState(state)).toBe(true);
-    expect(isRunDiffState({ ...state, pushedCommit: 'e'.repeat(40) })).toBe(true);
-    expect(isRunDiffState({ ...state, resultTree: 'HEAD' })).toBe(false);
-    expect(isRunDiffState({ ...state, pushedCommit: 'E'.repeat(40) })).toBe(false);
+    expect(RunDiff.isState(state)).toBe(true);
+    expect(RunDiff.isState({ ...state, pushedCommit: 'e'.repeat(40) })).toBe(true);
+    expect(RunDiff.isState({ ...state, resultTree: 'HEAD' })).toBe(false);
+    expect(RunDiff.isState({ ...state, pushedCommit: 'E'.repeat(40) })).toBe(false);
   });
 
   it('matches the Environment file path in any leading spelling', () => {

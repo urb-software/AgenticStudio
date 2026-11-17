@@ -3,11 +3,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
 import {
   isEnvironmentFilePath,
-  type NewRunDiff,
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
   type RunDiffScope,
-  type RunDiffState,
 } from '../../../domain/value-objects/run-diff.js';
+import { type NewRunDiff, type RunDiffState } from '../../../domain/entities/run-diff.js';
 import { RunDiff } from '../../../domain/entities/run-diff.js';
 import {
   RUN_REPOSITORY,

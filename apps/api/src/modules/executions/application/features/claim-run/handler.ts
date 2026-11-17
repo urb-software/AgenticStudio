@@ -1,6 +1,6 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { RunDiffState } from '../../../domain/value-objects/run-diff.js';
+import type { RunDiffState } from '../../../domain/entities/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,

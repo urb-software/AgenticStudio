@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
-import type { RunDiffScope, StoredRunDiff } from '../../../domain/value-objects/run-diff.js';
+import type { RunDiffScope } from '../../../domain/value-objects/run-diff.js';
+import type { StoredRunDiff } from '../../../domain/entities/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,

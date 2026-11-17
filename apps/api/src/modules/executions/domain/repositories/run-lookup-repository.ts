@@ -1,7 +1,8 @@
 import type { RunLookup } from '../entities/run-lookup.js';
 import type { LookupHandOutRule } from '../value-objects/lookup-hand-out-rule.js';
-import type { ReviewCommentsLoad } from '../value-objects/review-comments.js';
-import type { ClaimedLookup, LookupKind } from '../value-objects/run-lookup.js';
+import type { ReviewCommentsLoad } from '../entities/run-lookup.js';
+import type { LookupKind } from '../value-objects/run-lookup.js';
+import type { ClaimedLookup } from '../entities/run-lookup.js';
 
 /** DI token for the {@link RunLookupRepository} adapter. */
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');

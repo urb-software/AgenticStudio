@@ -1,4 +1,4 @@
-import type { ReviewComment, ReviewCommentScope } from './review-comments.js';
+import type { ReviewComment } from './review-comments.js';
 import type { Run } from '../entities/run.js';
 
 /**
@@ -57,19 +57,6 @@ export type LookupAnswerOutcome =
   | 'duplicate'
   /** The lookup is not (any more) claimed by this worker; nothing changed. */
   | 'not_held';
-
-/** A lookup a worker claimed: what it needs to answer, nothing more. */
-export interface ClaimedLookup {
-  id: string;
-  kind: LookupKind;
-  runId: string;
-  remoteUrl: string;
-  pullRequestNumber: number;
-  runBranch: string;
-  integrationBranch: string;
-  /** Issue #146: what a `review_comments` lookup loads. */
-  reviewComments?: { scope: ReviewCommentScope; since?: Date };
-}
 
 /** What a worker read for a `review_comments` lookup (Issue #146), before Studio redacts it. */
 export interface ReviewCommentsResult {

@@ -7,15 +7,15 @@ import type { LookupHandOutRule } from '../../domain/value-objects/lookup-hand-o
 import {
   REVIEW_COMMENT_SCOPES,
   type ReviewCommentScope,
-  type ReviewCommentsLoad,
 } from '../../domain/value-objects/review-comments.js';
+import { type ReviewCommentsLoad } from '../../domain/entities/run-lookup.js';
 import {
-  type ClaimedLookup,
   LOOKUP_KINDS,
   LOOKUP_STATUSES,
   type LookupKind,
   type LookupStatus,
 } from '../../domain/value-objects/run-lookup.js';
+import { type ClaimedLookup } from '../../domain/entities/run-lookup.js';
 import { type Executor, inTransaction } from './executor.js';
 
 const OPEN = ['requested', 'claimed'];

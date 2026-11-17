@@ -57,13 +57,3 @@ export interface ReviewCommentsRequest {
   scope: ReviewCommentScope;
   since: Date | null;
 }
-
-/**
- * Where the latest load of a Run's Review comments stands, read from its lookups: under way (also
- * while it waits, or waits out a rate limit), or why the latest one failed.
- */
-export interface ReviewCommentsLoad {
-  loading: boolean;
-  /** The worker's words for the latest load when it failed (redacted); null otherwise. */
-  error: string | null;
-}
