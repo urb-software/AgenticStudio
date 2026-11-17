@@ -1,8 +1,30 @@
 import type { RunLookup } from '../entities/run-lookup.js';
 import type { LookupHandOutRule } from '../value-objects/lookup-hand-out-rule.js';
-import type { ReviewCommentsLoad } from '../entities/run-lookup.js';
+import type { ReviewCommentScope } from '../value-objects/review-comments.js';
 import type { LookupKind } from '../value-objects/run-lookup.js';
-import type { ClaimedLookup } from '../entities/run-lookup.js';
+
+/** A lookup a worker claimed: what it needs to answer, nothing more. */
+export interface ClaimedLookup {
+  id: string;
+  kind: LookupKind;
+  runId: string;
+  remoteUrl: string;
+  pullRequestNumber: number;
+  runBranch: string;
+  integrationBranch: string;
+  /** Issue #146: what a `review_comments` lookup loads. */
+  reviewComments?: { scope: ReviewCommentScope; since?: Date };
+}
+
+/**
+ * Where the latest load of a Run's Review comments stands, read from its lookups: under way (also
+ * while it waits, or waits out a rate limit), or why the latest one failed.
+ */
+export interface ReviewCommentsLoad {
+  loading: boolean;
+  /** The worker's words for the latest load when it failed (redacted); null otherwise. */
+  error: string | null;
+}
 
 /** DI token for the {@link RunLookupRepository} adapter. */
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');

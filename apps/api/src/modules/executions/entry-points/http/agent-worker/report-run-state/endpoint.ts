@@ -1,7 +1,7 @@
 import { Body, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { WorkerController } from '../../../../../../platform/auth/worker-route.js';
 import { illegalRunTransition, runNotFound, runNotHeld } from '../../shared/problems.js';
-import { IllegalRunTransitionError } from '../../../../domain/entities/run.js';
+import { IllegalRunTransitionError } from '../../../../domain/value-objects/run-errors.js';
 import {
   RunNotFoundError,
   RunNotHeldError,

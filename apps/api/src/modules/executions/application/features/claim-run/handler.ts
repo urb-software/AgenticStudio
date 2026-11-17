@@ -1,6 +1,6 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { RunDiffState } from '../../../domain/entities/run-diff.js';
+import type { RunDiffState } from '../../../domain/value-objects/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -13,12 +13,11 @@ import {
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects/run-environment-file.js';
 import {
   IllegalRunTransitionError,
-  resumeMessage,
   RunNotHeldError,
-  type RunFailure,
-  type RunSnapshot,
-  takesNewEnvironmentFile,
-} from '../../../domain/entities/run.js';
+} from '../../../domain/value-objects/run-errors.js';
+import type { RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import { RunConversation } from '../../../domain/value-objects/run-conversation.js';
+import { type RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
@@ -190,7 +189,7 @@ export class ClaimRunHandler {
       // from (nor an integration branch, Issue #102): it fails with preparation_failed here
       // instead of reaching a worker (review S6).
       const reachable = run.remoteUrl !== '' && run.integrationBranch !== '';
-      const resume = resumeMessage(run);
+      const resume = RunConversation.of(run.messages).resumeMessage(run.sessionRef !== null);
       if (resume !== null) {
         // Issue #103 (and a Follow-up, #141): the resumed step continues the Run's step
         // numbers and its log's seqs. Review S9 of #150: a Working copy the worker reported
@@ -200,7 +199,7 @@ export class ClaimRunHandler {
           await this.fail(run, workerId, failure, now);
           continue;
         }
-        if (!takesNewEnvironmentFile(run, resume.reason)) {
+        if (!resume.takesNewEnvironmentFile(run.followUpCount)) {
           return {
             ...run,
             environmentFile: null,

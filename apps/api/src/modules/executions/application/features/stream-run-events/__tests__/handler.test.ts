@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
 import type { RunEvent } from '../../../../domain/value-objects/run-event.js';
 import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';

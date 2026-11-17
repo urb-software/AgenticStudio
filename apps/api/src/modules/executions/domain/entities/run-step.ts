@@ -1,16 +1,5 @@
-/** Which part of the Run a step belongs to: its first, or a resume of the agent session. */
-export type RunStepKind = 'start' | 'resume';
-
-/** A Run step's current values as read-only plain data (rule 10); {@link RunStep.snapshot}. */
-export interface RunStepSnapshot {
-  /** The step's number within its Run, from 1, in report order. */
-  readonly index: number;
-  readonly kind: RunStepKind;
-  /** The structured result, as validated JSON (redacted before it is stored). */
-  readonly result: unknown;
-  /** When the store recorded it; absent for a step the Run has just created. */
-  readonly reportedAt?: Date;
-}
+import type { RunStepSnapshot } from '../value-objects/run-step-snapshot.js';
+import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
 /**
  * One reported Run step (Issue #96): a child entity of the Run. It has an identity only within its

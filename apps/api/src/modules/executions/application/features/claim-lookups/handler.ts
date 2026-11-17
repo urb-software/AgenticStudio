@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { LookupHandOutRule } from '../../../domain/value-objects/lookup-hand-out-rule.js';
-import type { ClaimedLookup } from '../../../domain/entities/run-lookup.js';
+import type { ClaimedLookup } from '../../../domain/repositories/run-lookup-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,

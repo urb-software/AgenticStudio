@@ -1,12 +1,7 @@
 import { type RunPayload, runPayloadSchema } from '@agentic-studio/contracts';
 import { Body, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
 import { WorkerController } from '../../../../../../platform/auth/worker-route.js';
-import {
-  currentUpdateStart,
-  latestMergedCommit,
-  pendingUpdate,
-  resumeMessage,
-} from '../../../../domain/entities/run.js';
+import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
 import {
   type ClaimedRun,
   ClaimRunHandler,
@@ -73,7 +68,7 @@ export class ClaimRunEndpoint {
  * the part can reset the branch or expect the merge).
  */
 function updateOf(run: ClaimedRun) {
-  const start = currentUpdateStart(run);
+  const start = RunConversation.of(run.messages).currentUpdateStart();
   return start === undefined ? {} : { bringUpToDate: true as const, ...start };
 }
 
@@ -83,10 +78,11 @@ function kindOf(run: ClaimedRun) {
   const pullRequest = run.pullRequest ? { pullRequestNumber: run.pullRequest.number } : {};
   // Issue #147 (review S1 of #154): the Run's own changes are counted from the integration branch
   // commit it last merged.
-  const merged = latestMergedCommit(run);
+  const conversation = RunConversation.of(run.messages);
+  const merged = conversation.latestMergedCommit();
   // Review R2-4: a delivery retry after a bring-up part counts from the commit it merged, which
   // is not recorded as merged until the part succeeds.
-  const counted = currentUpdateStart(run)?.updateTip ?? merged;
+  const counted = conversation.currentUpdateStart()?.updateTip ?? merged;
   const mergedBase = counted === undefined ? {} : { mergedIntegrationCommit: counted };
   if (run.state === 'failed') {
     return {
@@ -97,10 +93,10 @@ function kindOf(run: ClaimedRun) {
       ...pullRequest,
     };
   }
-  const resume = resumeMessage(run);
+  const resume = conversation.resumeMessage(run.sessionRef !== null);
   if (resume !== null && run.sessionRef !== null) {
     // Review R2-1: a merge an earlier bring-up part left behind is undone by the next part.
-    const pending = pendingUpdate(run);
+    const pending = conversation.pendingUpdate(run.pushedCommit);
     return {
       ...mergedBase,
       ...(pending === undefined ? {} : { pendingUpdate: pending }),

@@ -336,7 +336,8 @@ function importedNames(source: ts.SourceFile): Map<string, string> {
 /**
  * A repository interface serves one aggregate root (rule 11): the file refers to exactly one
  * file in `domain/entities/`, and no method returns a type taken from `domain/value-objects/`
- * (a record of a root with no behaviour is a value object, never the thing a store returns).
+ * (a record of a root with no behaviour is a value object, never the thing a store returns),
+ * except the snapshot of its own entity, `value-objects/<entity>-snapshot.ts`.
  */
 function repositoryViolations(baseDir: string, path: string): Violation[] {
   const source = parse(baseDir, path);
@@ -355,6 +356,13 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
   if (entityFiles.size !== 1) {
     found.push(violation(`refers to ${entityFiles.size} entity files, not exactly one`));
   }
+  // The one value object a repository may return: the snapshot of the entity it serves (or of
+  // that root's child entity), `value-objects/<entity>-snapshot.ts` in the same module.
+  const ownSnapshots = new Set(
+    [...referenced, ...children].map((entity) =>
+      entity.replace(/\/entities\/([^/]+)\.ts$/, '/value-objects/$1-snapshot.ts'),
+    ),
+  );
   const imported = importedNames(source);
   for (const statement of source.statements.filter(ts.isInterfaceDeclaration)) {
     for (const member of statement.members.filter(ts.isMethodSignature)) {
@@ -362,7 +370,7 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
       for (const name of referencedTypeNames(member.type)) {
         const specifier = imported.get(name);
         const to = specifier ? target(path, specifier) : undefined;
-        if (to && VALUE_OBJECT_FILE.test(to)) {
+        if (to && VALUE_OBJECT_FILE.test(to) && !ownSnapshots.has(to)) {
           found.push(violation(`${member.name.getText()} returns ${name} from ${to}`));
         }
       }

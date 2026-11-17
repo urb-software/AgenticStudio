@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUN_STATES } from '../../entities/run.js';
+import { RUN_STATES } from '../run-state.js';
 import { LogAppendRule } from '../log-append-rule.js';
 
 describe('LogAppendRule', () => {

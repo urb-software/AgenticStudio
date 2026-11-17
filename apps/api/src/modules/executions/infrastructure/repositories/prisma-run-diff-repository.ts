@@ -4,12 +4,11 @@ import { z } from 'zod';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import type { RunDiff } from '../../domain/entities/run-diff.js';
 import { RUN_DIFF_FILE_STATUSES, type RunDiffScope } from '../../domain/value-objects/run-diff.js';
+import { type RunDiffFileSummary, type RunDiffState } from '../../domain/value-objects/run-diff.js';
 import {
-  type RunDiffFileSummary,
   type RunDiffFileView,
-  type RunDiffState,
   type StoredRunDiff,
-} from '../../domain/entities/run-diff.js';
+} from '../../domain/repositories/run-diff-repository.js';
 import type { RunDiffRepository } from '../../domain/repositories/run-diff-repository.js';
 import { type Executor, inTransaction } from './executor.js';
 

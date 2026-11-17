@@ -8,7 +8,7 @@ import {
   type RunTransactions,
 } from '../../application/ports/run-transactions.js';
 import { RunNotFoundError } from '../../domain/repositories/run-repository.js';
-import { isRunId } from '../../domain/entities/run.js';
+import { isRunId } from '../../domain/value-objects/run-id.js';
 import { PrismaPreparedFollowUpRepository } from '../repositories/prisma-prepared-follow-up-repository.js';
 import { PrismaReviewCommentRepository } from '../repositories/prisma-review-comment-repository.js';
 import { PrismaRunDiffRepository } from '../repositories/prisma-run-diff-repository.js';

@@ -8,7 +8,7 @@ import {
   runNotFound,
 } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
-import { RunAlreadyFinishedError } from '../../../../domain/entities/run.js';
+import { RunAlreadyFinishedError } from '../../../../domain/value-objects/run-errors.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { CancelRunHandler } from '../../../../application/features/cancel-run/handler.js';
 

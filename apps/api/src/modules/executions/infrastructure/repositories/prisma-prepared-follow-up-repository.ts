@@ -2,10 +2,8 @@ import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
-import type {
-  PreparedFollowUp,
-  PreparedFollowUpSnapshot,
-} from '../../domain/entities/prepared-follow-up.js';
+import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
+import type { PreparedFollowUpSnapshot } from '../../domain/value-objects/prepared-follow-up-snapshot.js';
 import type { PreparedFollowUpRepository } from '../../domain/repositories/prepared-follow-up-repository.js';
 import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
 import type { Executor } from './executor.js';

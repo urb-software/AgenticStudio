@@ -1,35 +1,39 @@
 import { randomUUID } from 'node:crypto';
 import {
   CLAIMED_RUN_STATES,
+  type RunState,
+  UNDER_WAY_RUN_STATES,
+} from '../../value-objects/run-state.js';
+import {
   DeliveryNotRetryableError,
-  type FollowUpOrigin,
   FollowUpNotAllowedError,
   IllegalRunTransitionError,
-  isFinal,
-  NO_PULL_REQUEST_STATUS,
-  type ResumeFacts,
-  Run,
   RunAlreadyFinishedError,
-  type RunCancellation,
-  type RunData,
-  type RunSnapshot,
-  type RunLimits,
   RunNotHeldError,
   RunNotWaitingError,
-  type RunDeliveryOutcome,
-  type RunFailure,
-  type Provider,
-  type RunState,
-  type RunStepRecord,
-  type RunWorkingCopy,
   StepOutOfOrderError,
-  UNDER_WAY_RUN_STATES,
-} from '../../entities/run.js';
+} from '../../value-objects/run-errors.js';
+import {
+  type FollowUpOrigin,
+  type ResumeFacts,
+  type RunStepRecord,
+} from '../../value-objects/run-facts.js';
+import { Run } from '../../entities/run.js';
+import { type RunSnapshot } from '../../value-objects/run-snapshot.js';
+import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
+import { isFinalRunState } from '../../value-objects/run-state.js';
+import { type RunCancellation } from '../../value-objects/run-cancellation.js';
+import { type RunData } from '../../value-objects/run-data.js';
+import { type RunLimits } from '../../value-objects/run-limits.js';
+import { type RunDeliveryOutcome } from '../../value-objects/run-delivery.js';
+import { type RunFailure } from '../../value-objects/run-failure.js';
+import { type Provider } from '../../value-objects/provider.js';
+import { type RunWorkingCopy } from '../../value-objects/run-working-copy.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { Task } from '../../value-objects/task.js';
-import type { PreparedFollowUpSnapshot } from '../../entities/prepared-follow-up.js';
+import type { PreparedFollowUpSnapshot } from '../../value-objects/prepared-follow-up-snapshot.js';
 import type { ReviewComments } from '../../entities/review-comments.js';
-import type { RunStepSnapshot } from '../../entities/run-step.js';
+import type { RunStepSnapshot } from '../../value-objects/run-step-snapshot.js';
 import type {
   LimitedRunView,
   RunRepository,
@@ -102,7 +106,7 @@ export class InMemoryRunRepository implements RunRepository {
       task: run.task,
       startCommit: run.startCommit,
       remoteUrl: run.remoteUrl,
-      integrationBranch: run.integrationBranch,
+      integrationBranch: run.delivery.integrationBranch,
       state: 'queued' as const,
       // Distinct, increasing creation times, like the database's clock.
       createdAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence++)),
@@ -112,7 +116,7 @@ export class InMemoryRunRepository implements RunRepository {
       claimedBy: null,
       heartbeatAt: null,
       workingCopy: null,
-      limits: { ...run.limits },
+      limits: { ...run.progress.limits },
       cancelRequestedAt: null,
       cancellation: null,
       waitingSince: null,
@@ -134,7 +138,7 @@ export class InMemoryRunRepository implements RunRepository {
       stepsBeforePart: 0,
       pushedCommit: null,
       workingCopyRemovedAt: null,
-      pullRequestStatus: NO_PULL_REQUEST_STATUS,
+      pullRequestStatus: RunPullRequestStatus.none().toStored(),
       // Like the database's default: the Run's creation.
       lastActivityAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence - 1)),
     };
@@ -302,7 +306,7 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(
       this.runs.flatMap((run) =>
         projectIds.includes(run.projectId) &&
-        isFinal(run.state) &&
+        isFinalRunState(run.state) &&
         run.finishedAt !== null &&
         run.pullRequest === null &&
         run.workingCopy !== null &&
@@ -435,8 +439,8 @@ export class InMemoryRunRepository implements RunRepository {
       () =>
         this.change(change.runId, (run) => {
           if (
-            run.state !== change.from ||
-            (run.cancelRequestedAt !== null) !== change.cancelRequested
+            run.lifecycle.state !== change.from ||
+            (run.lifecycle.cancelRequestedAt !== null) !== change.cancelRequested
           ) {
             throw new RunNotHeldError();
           }
@@ -663,7 +667,7 @@ export class InMemoryRunRepository implements RunRepository {
         (run.finishedAt !== null && run.finishedAt >= retryableFinishedBefore));
     return Promise.resolve(
       this.runs
-        .filter((run) => isFinal(run.state) && run.environmentFileSecret !== null)
+        .filter((run) => isFinalRunState(run.state) && run.environmentFileSecret !== null)
         .filter((run) => !retryable(run))
         .map((run) => ({ runId: run.id, secretRef: run.environmentFileSecret! })),
     );

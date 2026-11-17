@@ -2,8 +2,6 @@ export type RunId = string;
 
 export type RunSnapshot = { readonly id: string; readonly state: string };
 
-export class RunNotFoundError extends Error {}
-
 export class Run {
   private constructor(
     readonly id: string,

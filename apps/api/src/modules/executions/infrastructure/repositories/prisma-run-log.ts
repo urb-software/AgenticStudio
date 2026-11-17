@@ -3,11 +3,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import { type Executor, inTransaction } from './executor.js';
 import {
-  planLogAppend,
   RUN_EVENT_KINDS,
   type RunEvent,
   type RunEventKind,
 } from '../../domain/value-objects/run-event.js';
+import { LogCap } from '../../domain/value-objects/log-cap.js';
 import { LogAppendRule } from '../../domain/value-objects/log-append-rule.js';
 import type { RunLog } from '../../application/ports/run-log.js';
 
@@ -47,8 +47,7 @@ export class PrismaRunLog implements RunLog {
         select: { seq: true },
       });
       const known = new Set(stored.map((event) => event.seq));
-      const plan = planLogAppend(
-        { bytes: run.log_bytes, truncated: run.log_truncated },
+      const plan = LogCap.of({ bytes: run.log_bytes, truncated: run.log_truncated }).plan(
         events.filter((event) => !known.has(event.seq)),
         maxBytes,
       );

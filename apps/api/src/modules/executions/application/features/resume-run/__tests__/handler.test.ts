@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
+import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
+import { type RunFailure } from '../../../../domain/value-objects/run-failure.js';
 import {
-  type RunSnapshot,
-  type RunFailure,
   RunNotResumableError,
   RunSlotTakenError,
-  USAGE_LIMIT_RESUME_TEXT,
-} from '../../../../domain/entities/run.js';
+} from '../../../../domain/value-objects/run-errors.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
@@ -89,7 +89,7 @@ describe('ResumeRunHandler', () => {
     expect(resumed.messages).toEqual([
       { kind: 'answer', text: 'Continue where you stopped.', at: T1 },
     ]);
-    expect(USAGE_LIMIT_RESUME_TEXT).toBe('Continue where you stopped.');
+    expect(RunConversation.USAGE_LIMIT_RESUME_TEXT).toBe('Continue where you stopped.');
   });
 
   it('hands it only to the worker that started it, as a resume', async () => {
@@ -114,7 +114,7 @@ describe('ResumeRunHandler', () => {
     await stop(failure, sessionRef);
 
     await expect(handler.execute({ runId: run.id })).rejects.toBeInstanceOf(RunNotResumableError);
-    expect((await runs.findById(run.id))?.state).toBe('failed');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('failed');
   });
 
   it("refuses once a supplied Environment file's snapshot is gone (no redaction for the step)", async () => {
@@ -143,7 +143,7 @@ describe('ResumeRunHandler', () => {
     await expect(handler.execute({ runId: run.id })).rejects.toThrow(
       'Another run of this project is active. Resume this run when that run has ended.',
     );
-    expect((await runs.findById(run.id))?.state).toBe('failed');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('failed');
 
     await runs.transitionClaimed({
       runId: other.id,

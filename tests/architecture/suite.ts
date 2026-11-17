@@ -90,6 +90,11 @@ export const QUALITY_TABLE = [
   },
   { row: '`entry-points/` imports a class from `domain/entities/`', expected: 'FAIL', gate: 'api' },
   {
+    row: '`entry-points/` imports an error class from an errors file in `domain/value-objects/`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
     row: 'A handler returns a snapshot, ids, values or a view type, and exports its input and result types',
     expected: 'PASS',
     gate: 'api',
@@ -102,6 +107,16 @@ export const QUALITY_TABLE = [
   { row: 'A repository interface refers to one entity file', expected: 'PASS', gate: 'api' },
   {
     row: 'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A repository interface returns another value object, or the snapshot of another root',
     expected: 'FAIL',
     gate: 'api',
   },

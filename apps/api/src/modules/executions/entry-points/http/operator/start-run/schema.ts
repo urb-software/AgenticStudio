@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { PROVIDERS } from '../../../../domain/entities/run.js';
+import { PROVIDERS } from '../../../../domain/value-objects/provider.js';
 import { TASK_MAX_LENGTH } from '../../../../domain/value-objects/task.js';
 
 /**

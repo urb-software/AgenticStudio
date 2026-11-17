@@ -105,15 +105,15 @@ describe('GetRunStatesHandler', () => {
       runIds: [finished.id],
       removed: { workerId: randomUUID(), runIds: [finished.id] },
     });
-    expect((await runs.findById(finished.id))!.workingCopyRemovedAt).toBeNull();
+    expect((await runs.findById(finished.id))!.claim.workingCopyRemovedAt).toBeNull();
 
     await handler.execute({
       runIds: [finished.id],
       removed: { workerId: WORKER, runIds: [finished.id, active.id] },
     });
-    expect((await runs.findById(finished.id))!.workingCopyRemovedAt).toEqual(T1);
+    expect((await runs.findById(finished.id))!.claim.workingCopyRemovedAt).toEqual(T1);
     // A Run the worker is carrying keeps its Working copy, whatever is reported.
-    expect((await runs.findById(active.id))!.workingCopyRemovedAt).toBeNull();
+    expect((await runs.findById(active.id))!.claim.workingCopyRemovedAt).toBeNull();
   });
 
   describe('what the worker does with a Working copy (Issue #143)', () => {

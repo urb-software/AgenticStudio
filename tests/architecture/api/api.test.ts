@@ -451,7 +451,10 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'entity-class-with-private-constructor-and-a-public-one',
-    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    expected: [
+      'api-entities-are-classes-with-non-public-constructors',
+      'api-entity-file-exports-one-class-and-no-function',
+    ],
     qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
   },
   // `domain/` has no services, imports no port, and its tests need no database (Issue #168).
@@ -554,6 +557,24 @@ describeGate('api', apiGate, 'apps/api', [
       'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
   },
   {
+    fixture: 'repository-returns-own-snapshot',
+    expected: [],
+    qualityRow:
+      "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
+  },
+  {
+    fixture: 'executions-repository-returns-root-child-snapshot',
+    expected: [],
+    qualityRow:
+      "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
+  },
+  {
+    fixture: 'repository-returns-other-roots-snapshot',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow:
+      'A repository interface returns another value object, or the snapshot of another root',
+  },
+  {
     fixture: 'entity-imports-entity-id-type',
     expected: [],
     qualityRow: 'An entity file imports another entity file for an id type',
@@ -562,7 +583,7 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'entity-imports-another-entity',
     expected: ['api-entities-do-not-import-entities'],
     qualityRow: 'An entity file imports another entity file for anything else',
-  }, // Rule 13, one concept per file (Issue #185): `projects`; `executions` is added by #184.
+  }, // Rule 13, one concept per file (Issues #185, #184): `projects` and `executions`.
   {
     fixture: 'entity-projects-one-class-and-nothing-else',
     expected: [],
@@ -612,13 +633,41 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: '`domain/` exports a function other than a type guard',
   },
   {
-    fixture: 'domain-executions-loose-function-is-not-checked-yet',
+    fixture: 'entity-executions-one-class-and-nothing-else',
+    expected: [],
+    qualityRow: 'A `domain/entities/` file exports exactly one class and no function',
+  },
+  {
+    fixture: 'entity-executions-class-and-error-class',
+    expected: ['api-entity-file-exports-one-class-and-no-function'],
+    qualityRow: 'A `domain/entities/` file exports a second class or any function',
+  },
+  {
+    fixture: 'entity-executions-class-and-function',
+    expected: [
+      'api-entity-file-exports-one-class-and-no-function',
+      'api-domain-exports-no-function-but-type-guards',
+    ],
+    qualityRow: 'A `domain/entities/` file exports a second class or any function',
+  },
+  {
+    fixture: 'domain-executions-exports-classes-types-constants-and-type-guards',
     expected: [],
     qualityRow: '`domain/` exports only classes, types, constants and type guards',
   },
   {
-    fixture: 'executions-entry-point-imports-type-and-error-from-entities',
+    fixture: 'domain-executions-exports-loose-function',
+    expected: ['api-domain-exports-no-function-but-type-guards'],
+    qualityRow: '`domain/` exports a function other than a type guard',
+  },
+  // The error half of the entry-point exemption (Issue #184): an entity file exports no error
+  // class any more, so an entry point takes an error from the root's errors file under
+  // `domain/value-objects/`, and a type from the entity file.
+  {
+    fixture: 'executions-entry-point-imports-type-from-entities-and-error-from-errors-file',
     expected: [],
+    qualityRow:
+      '`entry-points/` imports an error class from an errors file in `domain/value-objects/`',
   },
   {
     fixture: 'executions-entry-point-imports-entity-class',

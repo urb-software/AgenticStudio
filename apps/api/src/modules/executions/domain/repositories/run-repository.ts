@@ -1,16 +1,18 @@
-import type {
-  Provider,
-  PullRequestState,
-  ResumeFacts,
-  Run,
-  RunCancellation,
-  RunFailure,
-  RunSnapshot,
-  RunState,
-} from '../entities/run.js';
-import type { RunStepSnapshot } from '../entities/run-step.js';
+import type { Provider } from '../value-objects/provider.js';
+import type { PullRequestState } from '../value-objects/run-pull-request-status.js';
+import type { ResumeFacts } from '../value-objects/run-facts.js';
+import type { Run } from '../entities/run.js';
+import type { RunSnapshot } from '../value-objects/run-snapshot.js';
+import type { RunCancellation } from '../value-objects/run-cancellation.js';
+import type { RunFailure } from '../value-objects/run-failure.js';
+import type { RunState } from '../value-objects/run-state.js';
+import type { RunStepSnapshot } from '../value-objects/run-step-snapshot.js';
 
-export { RunNotHeldError, StepLimitReachedError, StepOutOfOrderError } from '../entities/run.js';
+export {
+  RunNotHeldError,
+  StepLimitReachedError,
+  StepOutOfOrderError,
+} from '../value-objects/run-errors.js';
 
 /** DI token for the {@link RunRepository} adapter. */
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');
@@ -119,7 +121,7 @@ export interface RunRepository {
    * Working copy; Issue #102, review R4 of #122) → held by `workerId` (heartbeat at `now`),
    * still `failed`. A resumable `queued` Run (answered, with a session reference; Issue #103)
    * goes only to the worker that started it, like a delivery retry, and keeps its first start
-   * time. Eligible: its project has no other active or held Run and fewer than `MAX_ACTIVE_RUNS`
+   * time. Eligible: its project has no other active or held Run and fewer than `HandOutRule.MAX_PLACES`
    * others are active or held across the server; a resumable Run keeps its place while it waits
    * for its worker. Serialized against concurrent claims, so they cannot exceed the limits.
    * `null` when nothing is eligible.

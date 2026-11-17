@@ -4,7 +4,7 @@ import {
   type RunRepository,
   type RunStateView,
 } from '../../../domain/repositories/run-repository.js';
-import type { Provider } from '../../../domain/entities/run.js';
+import type { Provider } from '../../../domain/value-objects/provider.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 

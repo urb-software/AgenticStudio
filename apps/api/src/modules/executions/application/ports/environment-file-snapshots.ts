@@ -5,7 +5,7 @@ export const ENVIRONMENT_FILE_SNAPSHOTS = Symbol('ENVIRONMENT_FILE_SNAPSHOTS');
  * The Runs' Environment file snapshots (Issue #104): copied into Run-scoped secrets at claim,
  * used by the Run's log redaction, and deleted once the Run needs no more redaction: when it is
  * final, except while its failed delivery can be retried or, stopped at the usage limit, it can
- * be resumed (`keepsSnapshotForRetry`, Issue #105); such a snapshot goes when the Run ends
+ * be resumed (`RunLifecycle.keepsEnvironmentFileForRetry`, Issue #105); such a snapshot goes when the Run ends
  * otherwise, when its retry or resume is given up, or after the retention period. Neither method throws: a failure is logged and retried at the next call.
  */
 export interface EnvironmentFileSnapshots {

@@ -97,8 +97,8 @@ describe('ClaimRunHandler', () => {
     expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(b1.id);
     expect(await handler.execute({ workerId: WORKER })).toBeNull();
 
-    expect((await runs.findById(a2.id))?.state).toBe('queued');
-    expect((await runs.findById(c1.id))?.state).toBe('queued');
+    expect((await runs.findById(a2.id))?.lifecycle.state).toBe('queued');
+    expect((await runs.findById(c1.id))?.lifecycle.state).toBe('queued');
   });
 
   it('fails a Run without a remote URL as preparation_failed and hands out the next (review of #117)', async () => {
@@ -116,7 +116,7 @@ describe('ClaimRunHandler', () => {
     const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed?.id).toBe(next.id);
-    expect(await runs.findById(orphan.id)).toMatchObject({
+    expect((await runs.findById(orphan.id))!.snapshot()).toMatchObject({
       state: 'failed',
       failure: { code: 'preparation_failed' },
       claimedBy: null,
@@ -280,7 +280,7 @@ describe('ClaimRunHandler', () => {
       await runs.requestDeliveryRetry(run.id);
 
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
-      expect(await runs.findById(run.id)).toMatchObject({
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
         state: 'failed',
         failure: {
           code: 'delivery_failed',
@@ -303,8 +303,8 @@ describe('ClaimRunHandler', () => {
 
       expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(b1.id);
       expect(await handler.execute({ workerId: OTHER_WORKER })).toBeNull();
-      expect((await runs.findById(a2.id))?.state).toBe('queued');
-      expect((await runs.findById(c1.id))?.state).toBe('queued');
+      expect((await runs.findById(a2.id))?.lifecycle.state).toBe('queued');
+      expect((await runs.findById(c1.id))?.lifecycle.state).toBe('queued');
     });
 
     it('keeps a retry whose worker was lost a failed delivery, so it can be retried again', async () => {
@@ -315,7 +315,7 @@ describe('ClaimRunHandler', () => {
 
       await handler.execute({ workerId: OTHER_WORKER });
 
-      expect(await runs.findById(run.id)).toMatchObject({
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
         state: 'failed',
         failure: {
           code: 'delivery_failed',
@@ -420,8 +420,8 @@ describe('ClaimRunHandler', () => {
 
       expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(b1.id);
       expect(await handler.execute({ workerId: OTHER_WORKER })).toBeNull();
-      expect((await runs.findById(a2.id))?.state).toBe('queued');
-      expect((await runs.findById(c1.id))?.state).toBe('queued');
+      expect((await runs.findById(a2.id))?.lifecycle.state).toBe('queued');
+      expect((await runs.findById(c1.id))?.lifecycle.state).toBe('queued');
     });
 
     it('fails at once a resume with no recorded Working copy, and hands out the next', async () => {
@@ -429,7 +429,7 @@ describe('ClaimRunHandler', () => {
       const next = await queue(B);
 
       expect((await handler.execute({ workerId: WORKER }))?.id).toBe(next.id);
-      expect(await runs.findById(run.id)).toMatchObject({
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
         state: 'failed',
         failure: { code: 'preparation_failed', detail: expect.stringContaining('run again') },
         claimedBy: null,
@@ -502,8 +502,8 @@ describe('ClaimRunHandler', () => {
     const claimed = await handler.execute({ workerId: OTHER_WORKER });
 
     expect(claimed?.id).toBe(c1.id);
-    expect((await runs.findById(a1.id))?.failure?.code).toBe('worker_lost');
-    expect((await runs.findById(b1.id))?.failure?.code).toBe('worker_lost');
+    expect((await runs.findById(a1.id))?.lifecycle.failure?.code).toBe('worker_lost');
+    expect((await runs.findById(b1.id))?.lifecycle.failure?.code).toBe('worker_lost');
   });
 
   it('cancels a Run left waiting too long before it hands out work (Issue #100)', async () => {
@@ -527,7 +527,7 @@ describe('ClaimRunHandler', () => {
     now = new Date(T0.getTime() + 15 * 24 * 60 * 60 * 1000);
 
     expect((await handler.execute({ workerId: WORKER }))?.id).toBe(next.id);
-    expect(await runs.findById(waiting.id)).toMatchObject({
+    expect((await runs.findById(waiting.id))!.snapshot()).toMatchObject({
       state: 'cancelled',
       cancellation: { by: 'system' },
     });
@@ -549,13 +549,13 @@ describe('ClaimRunHandler', () => {
     now = new Date(T0.getTime() + (60 + 5) * 60_000);
     await runs.heartbeat(stuck.id, WORKER, now);
     await handler.execute({ workerId: OTHER_WORKER });
-    expect((await runs.findById(stuck.id))?.state).toBe('running');
+    expect((await runs.findById(stuck.id))?.lifecycle.state).toBe('running');
 
     now = new Date(now.getTime() + 1000);
     await runs.heartbeat(stuck.id, WORKER, now);
     await handler.execute({ workerId: OTHER_WORKER });
 
-    expect(await runs.findById(stuck.id)).toMatchObject({
+    expect((await runs.findById(stuck.id))!.snapshot()).toMatchObject({
       state: 'timed_out',
       claimedBy: null,
       finishedAt: now,
@@ -587,7 +587,7 @@ describe('ClaimRunHandler', () => {
     await runs.heartbeat(delivering.id, WORKER, now);
     await handler.execute({ workerId: OTHER_WORKER });
 
-    expect((await runs.findById(delivering.id))?.state).toBe('running');
+    expect((await runs.findById(delivering.id))?.lifecycle.state).toBe('running');
   });
 });
 
@@ -721,7 +721,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     await runs.markWorkingCopiesRemoved(WORKER, [queued.id], T0);
 
     expect(await handler.execute({ workerId: WORKER })).toBeNull();
-    expect(await runs.findById(queued.id)).toMatchObject({
+    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
       state: 'failed',
       failure: {
         code: 'preparation_failed',
@@ -738,7 +738,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
 
     expect(claimed).toMatchObject({ id: queued.id, environmentFileSupplied: true });
     expect(claimed?.environmentFile).toEqual(FILE);
-    expect((await runs.findById(queued.id))?.environmentFileSupplied).toBe(true);
+    expect((await runs.findById(queued.id))?.claim.environmentFileSupplied).toBe(true);
     const snapshot = await runs.findEnvironmentFileSecret(queued.id);
     expect(secrets.values.get(snapshot!)).toBe(FILE.content);
     expect(secrets.owners.get(snapshot!)).toBe(RUN_ENVIRONMENT_FILE_SECRET_OWNER);
@@ -770,7 +770,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     const queued = await queue();
 
     expect(await handler.execute({ workerId: WORKER })).toBeNull();
-    expect(await runs.findById(queued.id)).toMatchObject({
+    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
       state: 'failed',
       failure: { code: 'preparation_failed' },
       environmentFileSupplied: false,
@@ -782,7 +782,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     const queued = await queue();
 
     expect(await handler.execute({ workerId: WORKER })).toBeNull();
-    expect((await runs.findById(queued.id))?.failure?.code).toBe('preparation_failed');
+    expect((await runs.findById(queued.id))?.lifecycle.failure?.code).toBe('preparation_failed');
     secrets.failWith = undefined;
     expect(secrets.values.size).toBe(0);
   });

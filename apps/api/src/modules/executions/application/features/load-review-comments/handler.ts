@@ -1,13 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ReviewComments } from '../../../domain/entities/review-comments.js';
-import { isRunId } from '../../../domain/entities/run.js';
-import { canRefreshPullRequest } from '../../../domain/value-objects/run-lookup.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
 import {
   type ReviewComment,
   type ReviewCommentScope,
   ReviewCommentsLoadRunningError,
 } from '../../../domain/value-objects/review-comments.js';
-import { FollowUpNotAllowedError } from '../../../domain/entities/run.js';
+import { FollowUpNotAllowedError } from '../../../domain/value-objects/run-errors.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import {
@@ -79,12 +78,14 @@ export class LoadReviewCommentsHandler {
     const { runId, scope } = input;
     const found = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!found) throw new RunNotFoundError();
-    if (!canRefreshPullRequest(found)) throw new PullRequestNotRefreshableError();
+    if (!found.canRefreshPullRequest()) throw new PullRequestNotRefreshableError();
     const now = this.clock.now();
     const eligibility = found.followUpAvailability(
       {
         holderLastSeen:
-          found.lastClaimedBy === null ? undefined : this.workers.lastSeen(found.lastClaimedBy),
+          found.claim.lastClaimedBy === null
+            ? undefined
+            : this.workers.lastSeen(found.claim.lastClaimedBy),
         latest: this.workers.latest(),
       },
       now,
@@ -93,7 +94,7 @@ export class LoadReviewCommentsHandler {
     if (!eligibility.allowed) throw new FollowUpNotAllowedError(eligibility.reason);
     const outcome = await this.lookupRequests.request(found.id, 'review_comments', now, {
       scope,
-      since: scope === 'since_last_result' ? found.finishedAt : null,
+      since: scope === 'since_last_result' ? found.lifecycle.finishedAt : null,
     });
     if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     if (outcome === 'open') throw new ReviewCommentsLoadRunningError();

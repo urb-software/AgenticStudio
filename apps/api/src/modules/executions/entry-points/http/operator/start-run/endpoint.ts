@@ -16,7 +16,7 @@ import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../share
 import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
-} from '../../../../domain/entities/run.js';
+} from '../../../../domain/value-objects/run-errors.js';
 import { ProviderUnavailableError } from '../../../../domain/value-objects/worker-status.js';
 import { InvalidTaskError } from '../../../../domain/value-objects/task.js';
 import { StartRunHandler } from '../../../../application/features/start-run/handler.js';

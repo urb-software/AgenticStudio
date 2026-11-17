@@ -5,8 +5,8 @@ import {
 } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
 import { RunDiff } from '../../../../domain/entities/run-diff.js';
+import { RunEnvironmentFile } from '../../../../domain/value-objects/run-environment-file.js';
 import {
-  isEnvironmentFilePath,
   RUN_DIFF_FILE_STATUSES,
   RUN_DIFF_SCOPES,
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
@@ -44,10 +44,10 @@ describe('diff state and Environment file path (review S-1, L-3 of #149)', () =>
   });
 
   it('matches the Environment file path in any leading spelling', () => {
-    expect(isEnvironmentFilePath('config/.env', 'config/.env')).toBe(true);
-    expect(isEnvironmentFilePath('./config/.env', 'config/.env')).toBe(true);
-    expect(isEnvironmentFilePath('config/.env', '/config/.env')).toBe(true);
-    expect(isEnvironmentFilePath('config/.env.example', 'config/.env')).toBe(false);
-    expect(isEnvironmentFilePath('config/.env', null)).toBe(false);
+    expect(RunEnvironmentFile.at('config/.env').covers('config/.env')).toBe(true);
+    expect(RunEnvironmentFile.at('config/.env').covers('./config/.env')).toBe(true);
+    expect(RunEnvironmentFile.at('/config/.env').covers('config/.env')).toBe(true);
+    expect(RunEnvironmentFile.at('config/.env').covers('config/.env.example')).toBe(false);
+    expect(RunEnvironmentFile.at(null).covers('config/.env')).toBe(false);
   });
 });

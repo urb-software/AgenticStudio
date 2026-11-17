@@ -3,11 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { RunLookup } from '../domain/entities/run-lookup.js';
 import { RunNotFoundError } from '../domain/repositories/run-repository.js';
 import type { ReviewCommentsRequest } from '../domain/value-objects/review-comments.js';
-import {
-  canRefreshPullRequest,
-  type LookupKind,
-  type LookupRequestOutcome,
-} from '../domain/value-objects/run-lookup.js';
+import { type LookupKind, type LookupRequestOutcome } from '../domain/value-objects/run-lookup.js';
 import { RUN_TRANSACTIONS, type RunTransactions } from './ports/run-transactions.js';
 
 /**
@@ -36,7 +32,7 @@ export class RunLookupRequests {
     try {
       return await this.transactions.withRunLocked(runId, async ({ runs, lookups }) => {
         const run = await runs.findById(runId);
-        if (!run || !canRefreshPullRequest(run)) return 'not_possible';
+        if (!run || !run.canRefreshPullRequest()) return 'not_possible';
         if ((await lookups.findOpen(runId, kind)) !== null) return 'open';
         await lookups.add(
           RunLookup.request({

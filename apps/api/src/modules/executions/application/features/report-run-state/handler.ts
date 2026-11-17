@@ -1,16 +1,12 @@
 import { FAILURE_DETAIL_MAX_LENGTH } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  isFinal,
-  isRunId,
-  type PullRequestState,
-  type RunDeliveryOutcome,
-  type RunFailure,
-  type RunSnapshot,
-  type RunState,
-  type RunWorkingCopy,
-} from '../../../domain/entities/run.js';
-import { keepsSnapshotForRetry } from '../../../domain/value-objects/run-environment-file.js';
+import type { RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
+import { type PullRequestState } from '../../../domain/value-objects/run-pull-request-status.js';
+import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
+import { type RunFailure } from '../../../domain/value-objects/run-failure.js';
+import { type RunState } from '../../../domain/value-objects/run-state.js';
+import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import {
   RUN_REPOSITORY,
@@ -132,9 +128,9 @@ export class ReportRunStateHandler {
     // request that changed nothing leaves the Run as it was, snapshot included.
     if (
       !input.unchanged &&
-      changed.environmentFileSupplied &&
-      isFinal(changed.state) &&
-      !keepsSnapshotForRetry(changed)
+      changed.claim.environmentFileSupplied &&
+      changed.lifecycle.isFinal &&
+      !changed.lifecycle.keepsEnvironmentFileForRetry
     ) {
       await this.snapshots.releaseFor(changed.id);
     }

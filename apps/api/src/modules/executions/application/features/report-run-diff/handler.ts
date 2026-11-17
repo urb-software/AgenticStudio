@@ -1,13 +1,13 @@
 import type { RunDiff as ReportedRunDiff } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId } from '../../../domain/entities/run.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
 import {
-  isEnvironmentFilePath,
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
   type RunDiffScope,
 } from '../../../domain/value-objects/run-diff.js';
-import { type NewRunDiff, type RunDiffState } from '../../../domain/entities/run-diff.js';
+import { type NewRunDiff, type RunDiffState } from '../../../domain/value-objects/run-diff.js';
 import { RunDiff } from '../../../domain/entities/run-diff.js';
+import { RunEnvironmentFile } from '../../../domain/value-objects/run-environment-file.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -57,7 +57,7 @@ export class ReportRunDiffHandler {
     if (!run) throw new RunNotFoundError();
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
     const redact = (text: string) => redaction.text(text);
-    const environmentFile = run.environmentFilePath;
+    const environmentFile = RunEnvironmentFile.at(run.claim.environmentFilePath);
     const stored = (diff: ReportedRunDiff): NewRunDiff => ({
       kind: 'computed',
       baseCommit: diff.baseCommit,
@@ -66,8 +66,8 @@ export class ReportRunDiffHandler {
       files: diff.files
         .filter(
           (file) =>
-            !isEnvironmentFilePath(file.path, environmentFile) &&
-            !(file.previousPath && isEnvironmentFilePath(file.previousPath, environmentFile)),
+            !environmentFile.covers(file.path) &&
+            !(file.previousPath && environmentFile.covers(file.previousPath)),
         )
         .map(({ patch, ...file }) => ({
           ...file,

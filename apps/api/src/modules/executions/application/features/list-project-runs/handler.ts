@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RUN_START_POINTS, type RunStartPoints } from '../../../../projects/contracts/index.js';
-import { type RunSnapshot, RunProjectNotFoundError } from '../../../domain/entities/run.js';
+import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import { RunProjectNotFoundError } from '../../../domain/value-objects/run-errors.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,

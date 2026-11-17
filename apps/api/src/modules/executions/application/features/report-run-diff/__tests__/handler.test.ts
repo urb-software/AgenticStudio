@@ -1,6 +1,6 @@
 import type { RunDiff } from '@agentic-studio/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
 import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {

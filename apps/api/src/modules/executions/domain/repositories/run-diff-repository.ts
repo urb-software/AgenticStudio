@@ -1,9 +1,26 @@
 import type { RunDiff } from '../entities/run-diff.js';
-import type { RunDiffScope } from '../value-objects/run-diff.js';
-import type { RunDiffFileView, RunDiffState, StoredRunDiff } from '../entities/run-diff.js';
+import type { RunDiffSnapshot } from '../value-objects/run-diff-snapshot.js';
+import type { RunDiffFileSummary, RunDiffScope } from '../value-objects/run-diff.js';
 
 /** DI token for the {@link RunDiffRepository} adapter. */
 export const RUN_DIFF_REPOSITORY = Symbol('RUN_DIFF_REPOSITORY');
+
+/** A stored diff: computed (with its base commit) or `unavailable` with the worker's reason. */
+export type StoredRunDiff =
+  | {
+      kind: 'computed';
+      baseCommit: string;
+      includesUnpushed: boolean;
+      truncated: boolean;
+      files: RunDiffFileSummary[];
+      reportedAt: Date;
+    }
+  | { kind: 'unavailable'; reason: string; reportedAt: Date };
+
+/** One file of a stored diff with its patch, if one is stored. */
+export interface RunDiffFileView extends RunDiffFileSummary {
+  patch?: string;
+}
 
 /** The store of Runs' diffs (Issue #144): the latest diff of each scope per Run, and its state. */
 export interface RunDiffRepository {
@@ -21,5 +38,5 @@ export interface RunDiffRepository {
   findFile(runId: string, scope: RunDiffScope, path: string): Promise<RunDiffFileView | null>;
 
   /** The Run's diff state, for a resume or delivery claim; `null` when none was reported. */
-  findState(runId: string): Promise<RunDiffState | null>;
+  findState(runId: string): Promise<RunDiffSnapshot['state']>;
 }

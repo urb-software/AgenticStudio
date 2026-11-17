@@ -1,4 +1,5 @@
-import type { PreparedFollowUp, PreparedFollowUpSnapshot } from '../entities/prepared-follow-up.js';
+import type { PreparedFollowUp } from '../entities/prepared-follow-up.js';
+import type { PreparedFollowUpSnapshot } from '../value-objects/prepared-follow-up-snapshot.js';
 import type { FollowUpSource } from '../value-objects/follow-up.js';
 
 /** DI token for the {@link PreparedFollowUpRepository} adapter. */

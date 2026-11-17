@@ -1,7 +1,5 @@
-import type {
-  PreparedFollowUp,
-  PreparedFollowUpSnapshot,
-} from '../../entities/prepared-follow-up.js';
+import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
+import type { PreparedFollowUpSnapshot } from '../../value-objects/prepared-follow-up-snapshot.js';
 import type { FollowUpSource } from '../../value-objects/follow-up.js';
 import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';

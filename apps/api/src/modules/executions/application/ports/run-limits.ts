@@ -1,4 +1,4 @@
-import type { RunLimits } from '../../domain/entities/run.js';
+import type { RunLimits } from '../../domain/value-objects/run-limits.js';
 
 /** DI token of the {@link RunLimitsSetting}. */
 export const RUN_LIMITS = Symbol('RUN_LIMITS');

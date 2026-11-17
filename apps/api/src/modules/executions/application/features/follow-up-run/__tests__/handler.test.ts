@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  FollowUpNotAllowedError,
-  type Run,
-  type RunState,
-} from '../../../../domain/entities/run.js';
+import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
+import { type Run } from '../../../../domain/entities/run.js';
+import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
@@ -14,7 +12,7 @@ import { RetentionPolicy } from '../../../../domain/value-objects/retention-poli
 import { FollowUpRunHandler } from '../handler.js';
 import { ReviewComments } from '../../../../domain/entities/review-comments.js';
 import type { ReviewComment } from '../../../../domain/value-objects/review-comments.js';
-import { ReviewCommentsNotLoadedError } from '../../../../domain/value-objects/review-comments-not-loaded-error.js';
+import { ReviewCommentsNotLoadedError } from '../../../../domain/value-objects/run-errors.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -53,7 +51,8 @@ const runView = (
   retention.runView(
     run,
     {
-      holderLastSeen: run.lastClaimedBy === null ? undefined : workers.lastSeen(run.lastClaimedBy),
+      holderLastSeen:
+        run.claim.lastClaimedBy === null ? undefined : workers.lastSeen(run.claim.lastClaimedBy),
       latest: workers.latest(),
     },
     now,
@@ -276,7 +275,7 @@ describe('FollowUpRunHandler', () => {
       }
 
       // Nothing was queued, and the set is still there.
-      expect((await runs.findById(run.id))?.followUpQueued).toBe(false);
+      expect((await runs.findById(run.id))?.progress.followUpQueued).toBe(false);
       expect(runs.reviewSets.has(run.id)).toBe(true);
     });
 
@@ -362,7 +361,7 @@ describe('FollowUpRunHandler', () => {
       new FollowUpNotAllowedError('not_finished'),
     );
     expect(
-      (await runs.findById(run.id))!.messages.filter((m) => m.kind === 'follow_up'),
+      (await runs.findById(run.id))!.conversation.messages.filter((m) => m.kind === 'follow_up'),
     ).toHaveLength(1);
   });
 
@@ -475,7 +474,7 @@ describe('FollowUpRunHandler', () => {
     await expect(handler.execute({ runId: run.id, text: 'Go on.' })).rejects.toEqual(
       new FollowUpNotAllowedError(reason),
     );
-    expect((await runs.findById(run.id))?.state).toBe('succeeded');
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('succeeded');
   });
 
   it.each(['draft', 'open', null] as const)(
@@ -580,7 +579,7 @@ describe('FollowUpRunHandler', () => {
     expect(
       await runs.appendStep(run.id, WORKER, { kind: 'resume', result: {} }, WORKING_COPY, [], T1),
     ).toEqual({ status: 'step_limit' });
-    expect((await runs.findById(run.id))!.failure).toEqual({
+    expect((await runs.findById(run.id))!.lifecycle.failure).toEqual({
       code: 'step_limit',
       detail: 'The Follow-up reached its limit of 10 run steps; no further step was started.',
     });
@@ -594,7 +593,7 @@ describe('FollowUpRunHandler', () => {
 
       expect(view(run).followUp).toEqual({
         allowed: true,
-        openUntil: new Date(run.lastActivityAt.getTime() + 30 * DAY),
+        openUntil: new Date(run.progress.lastActivityAt.getTime() + 30 * DAY),
       });
     });
 
@@ -605,11 +604,13 @@ describe('FollowUpRunHandler', () => {
       await runs.queueFollowUp(run.id, 'More.', new Date(T1.getTime() + 5 * DAY));
       const queued = (await runs.findById(run.id))!;
 
-      expect(queued.lastActivityAt).toEqual(new Date(T1.getTime() + 5 * DAY));
-      expect(queued.lastActivityAt.getTime()).toBeGreaterThan(run.lastActivityAt.getTime());
-      expect(new Date(queued.lastActivityAt.getTime() + 30 * DAY).getTime()).toBeGreaterThan(
-        before.getTime(),
+      expect(queued.progress.lastActivityAt).toEqual(new Date(T1.getTime() + 5 * DAY));
+      expect(queued.progress.lastActivityAt.getTime()).toBeGreaterThan(
+        run.progress.lastActivityAt.getTime(),
       );
+      expect(
+        new Date(queued.progress.lastActivityAt.getTime() + 30 * DAY).getTime(),
+      ).toBeGreaterThan(before.getTime());
     });
 
     it('counts a Run without a pull request seven days from when it finished', async () => {
@@ -617,13 +618,13 @@ describe('FollowUpRunHandler', () => {
 
       expect(view(run).followUp).toEqual({
         allowed: true,
-        openUntil: new Date(run.finishedAt!.getTime() + 7 * DAY),
+        openUntil: new Date(run.lifecycle.finishedAt!.getTime() + 7 * DAY),
       });
     });
 
     it('says removal is pending instead of a date that has passed', async () => {
       const run = await finished('succeeded');
-      const later = new Date(run.lastActivityAt.getTime() + 31 * DAY);
+      const later = new Date(run.progress.lastActivityAt.getTime() + 31 * DAY);
       connect(WORKER, later);
 
       const { followUp } = view(run, later);

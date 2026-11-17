@@ -101,6 +101,19 @@ _Avoid_: Worktree, workspace, checkout
 **Run branch**:
 The branch in a Working copy that holds a Run's commits.
 
+**Run lifecycle**:
+A Run's state with the transitions each state allows, and how it ended (its failure or its cancellation, the times it started and finished, a pending cancel request). Queued, preparing, running, waiting for the operator, and the final states succeeded, failed, cancelled and timed out.
+
+**Delivery**:
+How a Run's work reached the Git host: the Integration branch its pull request is based on, whether the Run branch was delivered with a draft pull request, delivered nothing (no changes) or failed, the commit last pushed, and whether the operator asked to retry a failed delivery.
+
+**Worker claim**:
+The claim an agent worker has on a Run: the worker holding it now, the one that held it last (only it has the Working copy and the agent session), the one that released it, its last heartbeat, the agent session, and what the claim handed over (the Environment file's path).
+_Avoid_: Lease (the lease is the time limit on the heartbeat)
+
+**Run progress**:
+How far a Run has come: the Run steps taken in total and before the current part, the Follow-ups sent, when the current Run step started and the Run began waiting, its latest activity, and the Run limits it was started with.
+
 **Run limits**:
 The limits a Run gets from Studio's configuration when it starts: the longest a Run step may work, the most Run steps the Run or a Follow-up may take, the most Run steps the Run may take in total before it accepts no more Follow-ups, and the longest it may wait for the operator. A Run step over its time limit ends the Run as timed out; one more Run step than allowed ends it as failed; a Run waiting too long is cancelled by Studio.
 _Avoid_: Quota, timeout (unqualified)

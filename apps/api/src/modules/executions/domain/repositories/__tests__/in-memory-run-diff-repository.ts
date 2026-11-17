@@ -1,11 +1,7 @@
 import type { RunDiff } from '../../entities/run-diff.js';
 import type { RunDiffScope } from '../../value-objects/run-diff.js';
-import type {
-  NewRunDiff,
-  RunDiffFileView,
-  RunDiffState,
-  StoredRunDiff,
-} from '../../entities/run-diff.js';
+import type { NewRunDiff, RunDiffState } from '../../value-objects/run-diff.js';
+import type { RunDiffFileView, StoredRunDiff } from '../run-diff-repository.js';
 import type { RunDiffRepository } from '../run-diff-repository.js';
 
 /**

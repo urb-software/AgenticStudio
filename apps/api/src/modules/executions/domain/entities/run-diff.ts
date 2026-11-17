@@ -1,71 +1,7 @@
-import type { RunDiffFileStatus, RunDiffScope } from '../value-objects/run-diff.js';
-
-/** One changed file of a stored diff; its patch, if it has one, is stored apart. */
-export interface RunDiffFileSummary {
-  path: string;
-  previousPath?: string;
-  status: RunDiffFileStatus;
-  additions: number;
-  deletions: number;
-  binary?: true;
-  tooLarge?: true;
-  /** Whether a patch is stored: false for a binary or too large file, or one over the total. */
-  hasPatch: boolean;
-}
-
-/** A stored diff: computed (with its base commit) or `unavailable` with the worker's reason. */
-export type StoredRunDiff =
-  | {
-      kind: 'computed';
-      baseCommit: string;
-      includesUnpushed: boolean;
-      truncated: boolean;
-      files: RunDiffFileSummary[];
-      reportedAt: Date;
-    }
-  | { kind: 'unavailable'; reason: string; reportedAt: Date };
-
-/** A diff as the store takes it: the file list with each file's patch (redacted). */
-export type NewRunDiff =
-  | {
-      kind: 'computed';
-      baseCommit: string;
-      includesUnpushed: boolean;
-      truncated: boolean;
-      files: (RunDiffFileSummary & { patch?: string })[];
-    }
-  | { kind: 'unavailable'; reason: string };
-
-/** One file of a stored diff with its patch, if one is stored. */
-export interface RunDiffFileView extends RunDiffFileSummary {
-  patch?: string;
-}
-
-/**
- * Where a Run's diffs stand (review S-1 of #149): the snapshot tree and commit of the latest
- * result and of the one before it, and the Run branch tip the worker last pushed. Studio keeps
- * it for the worker and hands it back with a resume or delivery claim; object ids only. Issue
- * #143: Studio stores the pushed commit once, on the Run (`Run.pushedCommit`); the claim fills
- * `pushedCommit` from there, and what a worker sends with its diff state is not stored.
- */
-export interface RunDiffState {
-  resultTree: string;
-  resultCommit: string;
-  previousTree: string;
-  previousCommit: string;
-  pushedCommit?: string;
-}
+import type { RunDiffSnapshot } from '../value-objects/run-diff-snapshot.js';
+import type { NewRunDiff, RunDiffScope, RunDiffState } from '../value-objects/run-diff.js';
 
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
-
-/** What a Run's reported diffs hold, as read-only plain data (rule 10); {@link RunDiff.snapshot}. */
-export interface RunDiffSnapshot {
-  readonly runId: string;
-  /** The latest diff of each scope, with each file's patch (redacted). */
-  readonly diffs: Readonly<Record<RunDiffScope, NewRunDiff>>;
-  /** Where the diffs stand for the next resume or delivery claim; `null` keeps the stored one. */
-  readonly state: RunDiffState | null;
-}
 
 /**
  * A Run's diffs as the agent worker last reported them (Issue #144): its two scopes and where they

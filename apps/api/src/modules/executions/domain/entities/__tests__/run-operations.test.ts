@@ -1,25 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
   DeliveryNotRetryableError,
-  FOLLOW_UP_REFUSALS,
-  type FollowUpFacts,
-  type FollowUpOrigin,
   FollowUpNotAllowedError,
-  MAX_ACTIVE_RUNS,
-  NO_PULL_REQUEST_STATUS,
-  type ResumeFacts,
-  Run,
   RunAlreadyFinishedError,
-  type RunData,
   RunNotResumableError,
   RunNotWaitingError,
-  type RunState,
   RunSlotTakenError,
-  USAGE_LIMIT_RESUME_TEXT,
-} from '../run.js';
+} from '../../value-objects/run-errors.js';
+import { FOLLOW_UP_REFUSALS } from '../../value-objects/follow-up.js';
+import {
+  type FollowUpFacts,
+  type FollowUpOrigin,
+  type ResumeFacts,
+} from '../../value-objects/run-facts.js';
+import { Run } from '../run.js';
+import { HandOutRule } from '../../value-objects/hand-out-rule.js';
+import { RunConversation } from '../../value-objects/run-conversation.js';
+import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
+import { type RunData } from '../../value-objects/run-data.js';
+import { type RunState } from '../../value-objects/run-state.js';
 import { ReviewComments } from '../review-comments.js';
 import type { ReviewComment } from '../../value-objects/review-comments.js';
-import { ReviewCommentsNotLoadedError } from '../../value-objects/review-comments-not-loaded-error.js';
+import { ReviewCommentsNotLoadedError } from '../../value-objects/run-errors.js';
 import { Task } from '../../value-objects/task.js';
 
 // Issue #167: the operator's operations are methods of the Run. Each allowed and each refused
@@ -84,7 +86,7 @@ function data(overrides: Partial<RunData> = {}): RunData {
     stepsBeforePart: 0,
     pushedCommit: null,
     workingCopyRemovedAt: null,
-    pullRequestStatus: NO_PULL_REQUEST_STATUS,
+    pullRequestStatus: RunPullRequestStatus.none().toStored(),
     lastActivityAt: T0,
     ...overrides,
   };
@@ -129,7 +131,7 @@ describe('Run.start and Run.restore', () => {
   it('starts a queued Run with the trimmed Task, the limits in force and nothing else set', () => {
     const run = Run.start(input);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       id: RUN_ID,
       state: 'queued',
       task: 'Add a health check',
@@ -151,7 +153,7 @@ describe('Run.start and Run.restore', () => {
     const run = Run.start({ ...input, limits });
     limits.maxSteps = 1;
 
-    expect(run.limits.maxSteps).toBe(LIMITS.maxSteps);
+    expect(run.progress.limits.maxSteps).toBe(LIMITS.maxSteps);
   });
 
   it('refuses a provider it does not know', () => {
@@ -159,7 +161,7 @@ describe('Run.start and Run.restore', () => {
   });
 
   it('restores a Run in every state, and refuses a state and failure that disagree', () => {
-    for (const state of ALL_STATES) expect(inState(state).state).toBe(state);
+    for (const state of ALL_STATES) expect(inState(state).lifecycle.state).toBe(state);
 
     expect(() => Run.restore(data({ state: 'failed', failure: null }))).toThrow(TypeError);
     expect(() =>
@@ -185,8 +187,12 @@ describe('Run.answer', () => {
 
     run.answer('PostgreSQL', T1);
 
-    expect(run).toMatchObject({ state: 'queued', waitingSince: null, lastActivityAt: T1 });
-    expect(run.messages).toEqual([
+    expect(run.snapshot()).toMatchObject({
+      state: 'queued',
+      waitingSince: null,
+      lastActivityAt: T1,
+    });
+    expect(run.conversation.messages).toEqual([
       { kind: 'question', question: QUESTION, at: T0 },
       { kind: 'answer', text: 'PostgreSQL', at: T1 },
     ]);
@@ -237,7 +243,9 @@ describe('Run.answer', () => {
     run.answer('first', T1);
 
     expect(() => run.answer('second', T2)).toThrow(RunNotWaitingError);
-    expect(run.messages.filter((message) => message.kind === 'answer')).toHaveLength(1);
+    expect(run.conversation.messages.filter((message) => message.kind === 'answer')).toHaveLength(
+      1,
+    );
   });
 });
 
@@ -249,7 +257,7 @@ describe('Run.cancel', () => {
 
       run.cancel(T1);
 
-      expect(run).toMatchObject({
+      expect(run.snapshot()).toMatchObject({
         state: 'cancelled',
         cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
         finishedAt: T1,
@@ -267,7 +275,7 @@ describe('Run.cancel', () => {
 
       run.cancel(T1);
 
-      expect(run).toMatchObject({
+      expect(run.snapshot()).toMatchObject({
         state,
         cancelRequestedAt: T1,
         claimedBy: WORKER,
@@ -283,7 +291,7 @@ describe('Run.cancel', () => {
 
     run.cancel(T2);
 
-    expect(run.cancelRequestedAt).toEqual(T0);
+    expect(run.lifecycle.cancelRequestedAt).toEqual(T0);
     noChanges(run);
   });
 
@@ -308,7 +316,7 @@ describe('Run.cancel', () => {
     run.cancel(T1);
 
     expect(() => run.cancel(T2)).toThrow(RunAlreadyFinishedError);
-    expect(run.finishedAt).toEqual(T1);
+    expect(run.lifecycle.finishedAt).toEqual(T1);
   });
 });
 
@@ -325,7 +333,7 @@ describe('Run.requestDeliveryRetry', () => {
 
     run.requestDeliveryRetry();
 
-    expect(run).toMatchObject({ state: 'failed', deliveryRequested: true });
+    expect(run.snapshot()).toMatchObject({ state: 'failed', deliveryRequested: true });
     expect(run.pendingChanges().fields).toEqual({ deliveryRequested: true });
   });
 
@@ -336,7 +344,7 @@ describe('Run.requestDeliveryRetry', () => {
     ]) {
       run.requestDeliveryRetry();
 
-      expect(run.deliveryRequested).toBe(true);
+      expect(run.delivery.requested).toBe(true);
       noChanges(run);
     }
   });
@@ -375,14 +383,16 @@ describe('Run.resumeAfterUsageLimit', () => {
 
     run.resumeAfterUsageLimit(T1, FREE);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'queued',
       failure: null,
       finishedAt: null,
       lastActivityAt: T1,
       sessionRef: 'session-9',
     });
-    expect(run.messages).toEqual([{ kind: 'answer', text: USAGE_LIMIT_RESUME_TEXT, at: T1 }]);
+    expect(run.conversation.messages).toEqual([
+      { kind: 'answer', text: RunConversation.USAGE_LIMIT_RESUME_TEXT, at: T1 },
+    ]);
     expect(run.pendingChanges().fields).toEqual({
       state: 'queued',
       failure: null,
@@ -396,7 +406,7 @@ describe('Run.resumeAfterUsageLimit', () => {
 
     run.resumeAfterUsageLimit(T1, FREE);
 
-    expect(run.state).toBe('queued');
+    expect(run.lifecycle.state).toBe('queued');
   });
 
   it('refuses a Run whose Environment file snapshot is gone, unless it is in a Follow-up', () => {
@@ -410,7 +420,7 @@ describe('Run.resumeAfterUsageLimit', () => {
     // A Run in a Follow-up works without it already (Issue #141).
     const inFollowUp = limited({ environmentFileSupplied: true, followUpCount: 1 });
     inFollowUp.resumeAfterUsageLimit(T1, gone);
-    expect(inFollowUp.state).toBe('queued');
+    expect(inFollowUp.lifecycle.state).toBe('queued');
   });
 
   it.each([
@@ -452,7 +462,7 @@ describe('Run.resumeAfterUsageLimit', () => {
     const full = limited();
     const error = (() => {
       try {
-        full.resumeAfterUsageLimit(T1, { ...FREE, serverPlacesTaken: MAX_ACTIVE_RUNS });
+        full.resumeAfterUsageLimit(T1, { ...FREE, serverPlacesTaken: HandOutRule.MAX_PLACES });
       } catch (caught) {
         return caught;
       }
@@ -461,8 +471,8 @@ describe('Run.resumeAfterUsageLimit', () => {
     noChanges(full);
 
     const room = limited();
-    room.resumeAfterUsageLimit(T1, { ...FREE, serverPlacesTaken: MAX_ACTIVE_RUNS - 1 });
-    expect(room.state).toBe('queued');
+    room.resumeAfterUsageLimit(T1, { ...FREE, serverPlacesTaken: HandOutRule.MAX_PLACES - 1 });
+    expect(room.lifecycle.state).toBe('queued');
   });
 
   it('refuses a Run that is not resumable before it looks at the places', () => {
@@ -478,7 +488,7 @@ describe('Run.resumeAfterUsageLimit', () => {
     run.resumeAfterUsageLimit(T1, FREE);
 
     expect(() => run.resumeAfterUsageLimit(T2, FREE)).toThrow(RunNotResumableError);
-    expect(run.messages).toHaveLength(1);
+    expect(run.conversation.messages).toHaveLength(1);
   });
 });
 
@@ -532,7 +542,7 @@ describe('Run.followUp', () => {
 
       const consumed = run.followUp('Also handle HEAD.', T1, AVAILABLE);
 
-      expect(run).toMatchObject({
+      expect(run.snapshot()).toMatchObject({
         state: 'queued',
         lastActivityAt: T1,
         followUpQueued: true,
@@ -550,9 +560,13 @@ describe('Run.followUp', () => {
         pullRequest: PULL_REQUEST,
         sessionRef: 'session-7',
       });
-      expect(run.messages).toHaveLength(2);
-      expect(run.messages[0]).toMatchObject({ kind: 'part_end', state, at: T1 });
-      expect(run.messages[1]).toEqual({ kind: 'follow_up', text: 'Also handle HEAD.', at: T1 });
+      expect(run.conversation.messages).toHaveLength(2);
+      expect(run.conversation.messages[0]).toMatchObject({ kind: 'part_end', state, at: T1 });
+      expect(run.conversation.messages[1]).toEqual({
+        kind: 'follow_up',
+        text: 'Also handle HEAD.',
+        at: T1,
+      });
       expect(consumed).toBeUndefined();
     },
   );
@@ -562,7 +576,7 @@ describe('Run.followUp', () => {
       failure: { code: 'agent_failed', detail: 'It broke.' },
     });
     failed.followUp('Retry.', T1, AVAILABLE);
-    expect(failed.messages[0]).toEqual({
+    expect(failed.conversation.messages[0]).toEqual({
       kind: 'part_end',
       state: 'failed',
       failureCode: 'agent_failed',
@@ -573,7 +587,7 @@ describe('Run.followUp', () => {
 
     const cancelled = finished('cancelled');
     cancelled.followUp('Go on.', T1, AVAILABLE);
-    expect(cancelled.messages[0]).toMatchObject({
+    expect(cancelled.conversation.messages[0]).toMatchObject({
       kind: 'part_end',
       state: 'cancelled',
       detail: 'Cancelled by the operator.',
@@ -587,7 +601,7 @@ describe('Run.followUp', () => {
 
     run.followUp('More.', T1, AVAILABLE);
 
-    expect(run.messages.map((message) => message.kind)).toEqual([
+    expect(run.conversation.messages.map((message) => message.kind)).toEqual([
       'question',
       'part_end',
       'follow_up',
@@ -599,7 +613,9 @@ describe('Run.followUp', () => {
     const run = finished('succeeded');
     run.followUp('First.', T1, AVAILABLE);
     expect(refusal(run)).toBe('follow_up_queued');
-    expect(run.messages.filter((message) => message.kind === 'follow_up')).toHaveLength(1);
+    expect(
+      run.conversation.messages.filter((message) => message.kind === 'follow_up'),
+    ).toHaveLength(1);
   });
 
   it.each(['queued', 'preparing', 'running', 'waiting_for_operator'] as const)(
@@ -629,7 +645,7 @@ describe('Run.followUp', () => {
     ['missing', 'pull_request_missing'],
   ] as const)('refuses a Run whose pull request is %s', (state, reason) => {
     const run = finished('succeeded', {
-      pullRequestStatus: { ...NO_PULL_REQUEST_STATUS, state },
+      pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state },
     });
 
     expect(refusal(run)).toBe(reason);
@@ -637,12 +653,12 @@ describe('Run.followUp', () => {
 
   it.each(['draft', 'open'] as const)('accepts a Run whose pull request is %s', (state) => {
     const run = finished('succeeded', {
-      pullRequestStatus: { ...NO_PULL_REQUEST_STATUS, state },
+      pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state },
     });
 
     run.followUp('More.', T1, AVAILABLE);
 
-    expect(run.state).toBe('queued');
+    expect(run.lifecycle.state).toBe('queued');
   });
 
   it('refuses a Run without an agent session or without a kept Working copy', () => {
@@ -659,7 +675,7 @@ describe('Run.followUp', () => {
     );
     const run = finished('succeeded', { stepCount: LIMITS.maxTotalSteps - 1 });
     run.followUp('More.', T1, AVAILABLE);
-    expect(run.stepsBeforePart).toBe(LIMITS.maxTotalSteps - 1);
+    expect(run.progress.stepsBeforePart).toBe(LIMITS.maxTotalSteps - 1);
   });
 
   it('refuses when the worker holding the Working copy or the Provider is unavailable', () => {
@@ -699,17 +715,17 @@ describe('Run.followUp', () => {
       refusal(inState('running')),
       refusal(
         finished('succeeded', {
-          pullRequestStatus: { ...NO_PULL_REQUEST_STATUS, state: 'merged' },
+          pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state: 'merged' },
         }),
       ),
       refusal(
         finished('succeeded', {
-          pullRequestStatus: { ...NO_PULL_REQUEST_STATUS, state: 'closed' },
+          pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state: 'closed' },
         }),
       ),
       refusal(
         finished('succeeded', {
-          pullRequestStatus: { ...NO_PULL_REQUEST_STATUS, state: 'missing' },
+          pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state: 'missing' },
         }),
       ),
       refusal(finished('succeeded', { workingCopyRemovedAt: T0 })),
@@ -735,7 +751,7 @@ describe('Run.followUp', () => {
           source,
         );
 
-        expect(run.messages[1]).toMatchObject({ kind: 'follow_up', source });
+        expect(run.conversation.messages[1]).toMatchObject({ kind: 'follow_up', source });
         // A request to bring the branch up to date has no prepared Follow-up to remove.
         expect(consumed).toBe(source === 'bring_up_to_date' ? undefined : source);
       },
@@ -756,7 +772,7 @@ describe('Run.followUp', () => {
         selecting(['conversation-1', 'review-3'], set),
       );
 
-      expect(run.messages[1]).toEqual({
+      expect(run.conversation.messages[1]).toEqual({
         kind: 'follow_up',
         text: 'Fix these.',
         at: T1,
@@ -785,7 +801,7 @@ describe('Run.followUp', () => {
         ),
       ).toThrow(ReviewCommentsNotLoadedError);
       noChanges(run);
-      expect(run.state).toBe('succeeded');
+      expect(run.lifecycle.state).toBe('succeeded');
     });
 
     it('checks the Run before the comments: a Run that cannot take it is refused as such', () => {

@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   IllegalRunTransitionError,
-  NO_PULL_REQUEST_STATUS,
+  RunNotHeldError,
+  StepOutOfOrderError,
+} from '../../value-objects/run-errors.js';
+import { Run } from '../run.js';
+import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
+import {
   OPERATOR_CANCELLATION,
   OPERATOR_CANCELLATION_BRANCH_PUSHED,
-  Run,
-  type RunData,
-  RunNotHeldError,
-  type RunState,
-  type RunStateReport,
-  StepOutOfOrderError,
-} from '../run.js';
+} from '../../value-objects/run-cancellation.js';
+import { type RunData } from '../../value-objects/run-data.js';
+import { type RunState } from '../../value-objects/run-state.js';
+import { type RunStateReport } from '../../value-objects/run-facts.js';
 
 // Issue #169: what the agent worker reports for a Run is a method of the Run. Each allowed and
 // each refused report is checked here without a database: the Run decides from its own state, the
@@ -68,7 +70,7 @@ function data(overrides: Partial<RunData> = {}): RunData {
     stepsBeforePart: 0,
     pushedCommit: null,
     workingCopyRemovedAt: null,
-    pullRequestStatus: NO_PULL_REQUEST_STATUS,
+    pullRequestStatus: RunPullRequestStatus.none().toStored(),
     lastActivityAt: T0,
     ...overrides,
   };
@@ -139,7 +141,7 @@ describe('a state the agent worker reports', () => {
 
     expect(run.reportState(WORKER, report(), T1)).toBe(true);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'running',
       claimedBy: WORKER,
       heartbeatAt: T1,
@@ -154,7 +156,7 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'waiting_for_operator' }), T1);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'waiting_for_operator',
       claimedBy: null,
       heartbeatAt: null,
@@ -175,7 +177,7 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'succeeded',
       claimedBy: null,
       heartbeatAt: null,
@@ -201,7 +203,7 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'failed',
       failure: { code: 'usage_limit', detail: 'The usage limit was reached.' },
       workingCopy: WORKING_COPY,
@@ -219,7 +221,7 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'failed',
       delivery: 'failed',
       pushedCommit: 'e'.repeat(40),
@@ -245,7 +247,7 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'cancelled' }), T1);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'cancelled',
       cancellation: OPERATOR_CANCELLATION,
       finishedAt: T1,
@@ -258,7 +260,7 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'waiting_for_operator' }), T1);
 
-    expect(run).toMatchObject({ state: 'cancelled', waitingSince: null });
+    expect(run.snapshot()).toMatchObject({ state: 'cancelled', waitingSince: null });
   });
 
   it('keeps the delivery of a Run cancelled during it, and says whether the branch was pushed', () => {
@@ -270,7 +272,7 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'cancelled',
       delivery: 'none',
       cancellation: OPERATOR_CANCELLATION_BRANCH_PUSHED,
@@ -282,7 +284,7 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'succeeded', delivery: { outcome: 'none' } }), T1);
 
-    expect(run).toMatchObject({ state: 'succeeded', delivery: 'none' });
+    expect(run.snapshot()).toMatchObject({ state: 'succeeded', delivery: 'none' });
   });
 
   it('refuses a cancelled report when the operator asked for nothing', () => {
@@ -291,7 +293,7 @@ describe('a state the agent worker reports', () => {
     expect(() => run.reportState(WORKER, report({ state: 'cancelled' }), T1)).toThrow(
       IllegalRunTransitionError,
     );
-    expect(run.state).toBe('running');
+    expect(run.lifecycle.state).toBe('running');
     expect(run.pendingChanges().fields).toEqual({});
   });
 
@@ -403,7 +405,7 @@ describe('the outcome of a delivery retry the agent worker reports', () => {
       ),
     ).toBe(true);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'succeeded',
       failure: null,
       delivery: 'delivered',
@@ -426,7 +428,7 @@ describe('the outcome of a delivery retry the agent worker reports', () => {
       T1,
     );
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'failed',
       failure: again,
       delivery: 'failed',
@@ -495,7 +497,7 @@ describe('a bring-up-to-date request that changed nothing', () => {
 
     expect(run.reportState(WORKER, unchanged('Nothing to merge.'), T1)).toBe(true);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'succeeded',
       delivery: 'delivered',
       claimedBy: null,
@@ -504,7 +506,7 @@ describe('a bring-up-to-date request that changed nothing', () => {
       finishedAt: T1,
       stepStartedAt: null,
     });
-    expect(run.messages.at(-1)).toEqual({
+    expect(run.conversation.messages.at(-1)).toEqual({
       kind: 'part_end',
       state: 'succeeded',
       failureCode: null,
@@ -519,7 +521,7 @@ describe('a bring-up-to-date request that changed nothing', () => {
 
     run.reportState(WORKER, unchanged(), T1);
 
-    expect(run.messages.at(-1)).toMatchObject({
+    expect(run.conversation.messages.at(-1)).toMatchObject({
       kind: 'part_end',
       detail: expect.stringContaining('already has everything dev has'),
     });
@@ -565,7 +567,7 @@ describe('a Run step the agent worker reports', () => {
     );
 
     expect(outcome).toEqual({ status: 'stored', index: 1 });
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       stepCount: 1,
       workingCopy: WORKING_COPY,
       failingChecks: ['lint'],
@@ -585,7 +587,7 @@ describe('a Run step the agent worker reports', () => {
 
     run.reportStep(WORKER, { ...step, question }, WORKING_COPY, [], T1);
 
-    expect(run.messages.at(-1)).toEqual({ kind: 'question', question, at: T1 });
+    expect(run.conversation.messages.at(-1)).toEqual({ kind: 'question', question, at: T1 });
     expect(run.pendingChanges().messages).toEqual([{ kind: 'question', question, at: T1 }]);
   });
 
@@ -625,7 +627,7 @@ describe('a Run step the agent worker reports', () => {
 
     expect(run.reportStep(WORKER, step, WORKING_COPY, [], T1)).toEqual({ status: 'step_limit' });
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'failed',
       failure: { code: 'step_limit' },
       claimedBy: null,
@@ -649,7 +651,9 @@ describe('a Run step the agent worker reports', () => {
       index: 4,
     });
     expect(run.reportStep(WORKER, step, WORKING_COPY, [], T1)).toEqual({ status: 'step_limit' });
-    expect(run.failure?.detail).toContain('The Follow-up reached its limit of 2 run steps');
+    expect(run.lifecycle.failure?.detail).toContain(
+      'The Follow-up reached its limit of 2 run steps',
+    );
   });
 
   it.each(['queued', 'preparing', 'waiting_for_operator', 'succeeded', 'failed'] as const)(
@@ -674,7 +678,7 @@ describe('a heartbeat the agent worker sends', () => {
 
     expect(run.recordHeartbeat(WORKER, T1)).toEqual({ cancelRequested: true });
 
-    expect(run.heartbeatAt).toEqual(T1);
+    expect(run.claim.heartbeatAt).toEqual(T1);
     expect(run.pendingChanges().fields).toEqual({ heartbeatAt: T1 });
   });
 
@@ -707,7 +711,7 @@ describe('the removal of a Working copy the agent worker reports', () => {
 
     expect(run.reportWorkingCopyRemoved(WORKER, T1)).toBe(true);
 
-    expect(run.workingCopyRemovedAt).toEqual(T1);
+    expect(run.claim.workingCopyRemovedAt).toEqual(T1);
   });
 
   it('also records it for a Run queued for a Follow-up meanwhile', () => {
@@ -740,7 +744,10 @@ describe('the Environment file the claim gives a Run', () => {
 
     run.recordEnvironmentFile(WORKER, file);
 
-    expect(run).toMatchObject({ environmentFileSupplied: true, environmentFilePath: '.env' });
+    expect(run.snapshot()).toMatchObject({
+      environmentFileSupplied: true,
+      environmentFilePath: '.env',
+    });
     expect(run.pendingChanges().environmentFileSecretRef).toBe('snapshot-1');
   });
 
@@ -752,7 +759,10 @@ describe('the Environment file the claim gives a Run', () => {
 
     run.recordEnvironmentFile(WORKER, null);
 
-    expect(run).toMatchObject({ environmentFileSupplied: false, environmentFilePath: null });
+    expect(run.snapshot()).toMatchObject({
+      environmentFileSupplied: false,
+      environmentFilePath: null,
+    });
     expect(run.pendingChanges().environmentFileSecretRef).toBeNull();
   });
 
@@ -775,7 +785,7 @@ describe('a claim that could not prepare the Run', () => {
 
     expect(run.failPreparation(WORKER, failure, T1)).toBe(true);
 
-    expect(run).toMatchObject({
+    expect(run.snapshot()).toMatchObject({
       state: 'failed',
       failure,
       claimedBy: null,

@@ -1,8 +1,4 @@
-export class RunNotWaitingError extends Error {
-  constructor(readonly state: string) {
-    super('The run is not waiting for an answer.');
-  }
-}
+import { RunNotWaitingError } from '../value-objects/run-errors.js';
 
 export class Run {
   private constructor(readonly state: string) {}

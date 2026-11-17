@@ -1,8 +1,9 @@
-import { RunLookup, type RunLookupSnapshot } from '../../entities/run-lookup.js';
+import { RunLookup } from '../../entities/run-lookup.js';
+import { type RunLookupSnapshot } from '../../value-objects/run-lookup-snapshot.js';
 import type { LookupHandOutRule } from '../../value-objects/lookup-hand-out-rule.js';
-import type { ReviewCommentsLoad } from '../../entities/run-lookup.js';
+import type { ReviewCommentsLoad } from '../run-lookup-repository.js';
 import type { LookupKind } from '../../value-objects/run-lookup.js';
-import type { ClaimedLookup } from '../../entities/run-lookup.js';
+import type { ClaimedLookup } from '../run-lookup-repository.js';
 import type { RunLookupRepository } from '../run-lookup-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 

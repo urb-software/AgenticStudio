@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { RUN_START_POINTS, type RunStartPoints } from '../../../../projects/contracts/index.js';
+import { type Provider } from '../../../domain/value-objects/provider.js';
 import {
-  type Provider,
   RepositoryNotReadyError,
-  Run,
   RunProjectNotFoundError,
-  type RunSnapshot,
-} from '../../../domain/entities/run.js';
+} from '../../../domain/value-objects/run-errors.js';
+import { Run } from '../../../domain/entities/run.js';
+import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
 import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type RunSnapshot } from '../../../domain/entities/run.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
+import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
@@ -55,7 +56,9 @@ export class GetRunHandler {
       run,
       {
         holderLastSeen:
-          run.lastClaimedBy === null ? undefined : this.workers.lastSeen(run.lastClaimedBy),
+          run.claim.lastClaimedBy === null
+            ? undefined
+            : this.workers.lastSeen(run.claim.lastClaimedBy),
         latest: this.workers.latest(),
       },
       now,

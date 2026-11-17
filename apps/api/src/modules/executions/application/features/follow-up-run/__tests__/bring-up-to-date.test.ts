@@ -1,16 +1,9 @@
 import { BRING_UP_TO_DATE_DEFAULT_TEXT as PROTOCOL_DEFAULT_TEXT } from '@agentic-studio/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  BRING_UP_TO_DATE_DEFAULT_TEXT,
-  FollowUpNotAllowedError,
-  currentUpdateStart,
-  inBringUpToDate,
-  latestMergedCommit,
-  pendingUpdate,
-  resumeMessage,
-  type Run,
-  type RunState,
-} from '../../../../domain/entities/run.js';
+import type { Run } from '../../../../domain/entities/run.js';
+import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
+import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
+import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
@@ -162,8 +155,8 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
       at: T1,
       source: 'bring_up_to_date',
     });
-    expect(inBringUpToDate(queued)).toBe(true);
-    expect(resumeMessage(queued)).toEqual({
+    expect(RunConversation.of(queued.messages).inBringUpToDate).toBe(true);
+    expect(RunConversation.of(queued.messages).resumeMessage(queued.sessionRef !== null)).toEqual({
       text: 'Keep our version of the config.',
       reason: 'bring_up_to_date',
     });
@@ -175,14 +168,14 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     const { run: queued } = await bringUp(run.id, undefined);
 
     expect(queued.messages.at(-1)).toMatchObject({ kind: 'follow_up', text: '' });
-    expect(resumeMessage(queued)).toEqual({
-      text: BRING_UP_TO_DATE_DEFAULT_TEXT,
+    expect(RunConversation.of(queued.messages).resumeMessage(queued.sessionRef !== null)).toEqual({
+      text: RunConversation.BRING_UP_TO_DATE_DEFAULT_TEXT,
       reason: 'bring_up_to_date',
     });
   });
 
   it("hands the worker the worker protocol's default text, not a copy that could drift", () => {
-    expect(BRING_UP_TO_DATE_DEFAULT_TEXT).toBe(PROTOCOL_DEFAULT_TEXT);
+    expect(RunConversation.BRING_UP_TO_DATE_DEFAULT_TEXT).toBe(PROTOCOL_DEFAULT_TEXT);
   });
 
   it('records how the part before it ended, like any Follow-up', async () => {
@@ -254,18 +247,21 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
       ).toBe(false);
 
       const stored = (await runs.findById(run.id))!;
-      expect(stored.messages.at(-1)).toMatchObject({
+      expect(stored.conversation.messages.at(-1)).toMatchObject({
         kind: 'follow_up',
         source: 'bring_up_to_date',
         updateBase: 'a'.repeat(40),
         updateTip: MERGED,
       });
-      expect(currentUpdateStart(stored)).toEqual({ updateBase: 'a'.repeat(40), updateTip: MERGED });
+      expect(stored.conversation.currentUpdateStart()).toEqual({
+        updateBase: 'a'.repeat(40),
+        updateTip: MERGED,
+      });
       // Not merged until the part succeeded.
-      expect(latestMergedCommit(stored)).toBeUndefined();
+      expect(stored.conversation.latestMergedCommit()).toBeUndefined();
       expect(await runs.recordMergedCommit(run.id)).toBe(true);
       expect(await runs.recordMergedCommit(run.id)).toBe(false);
-      expect(latestMergedCommit((await runs.findById(run.id))!)).toBe(MERGED);
+      expect((await runs.findById(run.id))!.conversation.latestMergedCommit()).toBe(MERGED);
     });
 
     it('records no merge on a Follow-up that is not a bring-up request or never started one', async () => {
@@ -279,7 +275,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
         }),
       ).toBe(false);
       expect(await runs.recordMergedCommit(run.id)).toBe(false);
-      expect(currentUpdateStart((await runs.findById(run.id))!)).toBeUndefined();
+      expect((await runs.findById(run.id))!.conversation.currentUpdateStart()).toBeUndefined();
     });
 
     describe('a merge an earlier part left behind (review R2-1 of #154)', () => {
@@ -305,14 +301,20 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
 
       it('offers the base of the part before the current one, until a part has gone by', async () => {
         const run = await failedPart();
-        expect(pendingUpdate((await runs.findById(run.id))!)).toBeUndefined();
+        const pending = async () => {
+          const stored = (await runs.findById(run.id))!;
+          return stored.conversation.pendingUpdate(stored.delivery.pushedCommit);
+        };
+        expect(await pending()).toBeUndefined();
 
         await runs.queueFollowUp(run.id, 'Plain.', T2);
         const queued = (await runs.findById(run.id))!;
-        expect(pendingUpdate(queued)).toEqual({ baseCommit: START.baseCommit });
+        expect(queued.conversation.pendingUpdate(queued.delivery.pushedCommit)).toEqual({
+          baseCommit: START.baseCommit,
+        });
 
         // The Run's pushed commit goes with it, so the worker never undoes what was pushed.
-        expect(pendingUpdate({ ...queued, pushedCommit: 'c'.repeat(40) })).toEqual({
+        expect(queued.conversation.pendingUpdate('c'.repeat(40))).toEqual({
           baseCommit: START.baseCommit,
           pushedCommit: 'c'.repeat(40),
         });
@@ -322,10 +324,10 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
         const run = await failedPart();
         await runs.queueFollowUp(run.id, 'Plain.', T2);
         const first = (await runs.findById(run.id))!;
-        expect(pendingUpdate(first)).toBeDefined();
+        expect(first.conversation.pendingUpdate(first.delivery.pushedCommit)).toBeDefined();
         // A third part: the base is no longer the part right before it.
-        const copy = structuredClone(first);
-        copy.messages.push(
+        const third = RunConversation.of([
+          ...first.conversation.messages,
           {
             kind: 'part_end',
             state: 'succeeded',
@@ -335,16 +337,18 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
             at: T2,
           },
           { kind: 'follow_up', text: 'Third.', at: T2 },
-        );
-        expect(pendingUpdate(copy)).toBeUndefined();
+        ]);
+        expect(third.pendingUpdate(first.delivery.pushedCommit)).toBeUndefined();
 
         // And a merge that succeeded is not pending.
-        const done = structuredClone(first);
-        const entry = done.messages.findLast(
-          (message) => message.kind === 'follow_up' && message.source,
+        const done = RunConversation.of(
+          first.conversation.messages.map((message) =>
+            message.kind === 'follow_up' && message.source
+              ? { ...message, mergedCommit: MERGED }
+              : message,
+          ),
         );
-        if (entry?.kind === 'follow_up') entry.mergedCommit = MERGED;
-        expect(pendingUpdate(done)).toBeUndefined();
+        expect(done.pendingUpdate(first.delivery.pushedCommit)).toBeUndefined();
       });
     });
 
@@ -370,7 +374,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
 
         const restored = await runs.finishBringUpToDate(run.id, WORKER, 'Already up to date.', T2);
 
-        expect(restored).toMatchObject({
+        expect(restored!.snapshot()).toMatchObject({
           state: end,
           claimedBy: null,
           releasedBy: WORKER,
@@ -381,15 +385,18 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
           stepCount: 1,
         });
         if (end === 'failed') {
-          expect(restored?.failure).toEqual({ code: 'agent_failed', detail: 'It failed.' });
+          expect(restored?.lifecycle.failure).toEqual({
+            code: 'agent_failed',
+            detail: 'It failed.',
+          });
         }
         if (end === 'cancelled') {
-          expect(restored?.cancellation).toEqual({
+          expect(restored?.lifecycle.cancellation).toEqual({
             by: 'operator',
             reason: 'Cancelled by the operator.',
           });
         }
-        expect(restored?.messages.at(-1)).toMatchObject({
+        expect(restored?.conversation.messages.at(-1)).toMatchObject({
           kind: 'part_end',
           state: end,
           detail: 'Already up to date.',

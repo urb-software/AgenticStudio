@@ -1,16 +1,9 @@
+import type { PreparedFollowUpSnapshot } from '../value-objects/prepared-follow-up-snapshot.js';
 import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../value-objects/follow-up.js';
 import { CheckLink } from '../value-objects/check-link.js';
+import type { PreparedFollowUpItem } from '../value-objects/prepared-follow-up-item.js';
 import type { LogRedaction } from '../value-objects/log-redaction.js';
 import type { FailingCheckLogsResult } from '../value-objects/run-lookup.js';
-
-/** One part of a prepared Follow-up the operator can leave out (Issue #145). */
-export interface PreparedFollowUpItem {
-  name: string;
-  url: string;
-  logAvailable: boolean;
-  /** Exactly the part of the text that belongs to this item. */
-  section: string;
-}
 
 /** What a Follow-up prepared from failing checks is prepared from. */
 const SOURCE: FollowUpSource = 'pull_request_checks';
@@ -74,13 +67,6 @@ function section(entry: Entry, excerpt: string | undefined, note = entry.note): 
     lines.push(note);
   }
   return lines.join('\n');
-}
-
-/** A prepared Follow-up's current values as read-only plain data (rule 10). */
-export interface PreparedFollowUpSnapshot {
-  readonly source: FollowUpSource;
-  readonly text: string;
-  readonly items: readonly PreparedFollowUpItem[];
 }
 
 /**

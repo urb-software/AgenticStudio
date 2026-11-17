@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   RunNotFoundError,
@@ -124,7 +124,7 @@ describe('ReportRunStepHandler', () => {
       checks: [{ name: 'unit', result: 'passed' }],
     });
     // The session reference is opaque: kept exactly, on the Run (Issue #103).
-    expect((await runs.findById(run.id))?.sessionRef).toBe('session-done');
+    expect((await runs.findById(run.id))?.claim.sessionRef).toBe('session-done');
   });
 
   it('stores the steps of a running Run, numbered in report order', async () => {
@@ -213,7 +213,7 @@ describe('ReportRunStepHandler', () => {
     await expect(report()).rejects.toBeInstanceOf(StepLimitReachedError);
 
     expect(runs.steps).toHaveLength(2);
-    expect(await runs.findById(run.id)).toMatchObject({
+    expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
       state: 'failed',
       failure: {
         code: 'step_limit',
@@ -249,7 +249,7 @@ describe('ReportRunStepHandler', () => {
       });
 
       const stored = await runs.findById(run.id);
-      expect(stored?.messages).toEqual([
+      expect(stored?.conversation.messages).toEqual([
         {
           kind: 'question',
           question: {
@@ -261,7 +261,7 @@ describe('ReportRunStepHandler', () => {
         },
       ]);
       // An opaque reference the resume needs exactly: never redacted, never in the stored result.
-      expect(stored?.sessionRef).toBe('session-known-secret-value');
+      expect(stored?.claim.sessionRef).toBe('session-known-secret-value');
       expect(runs.steps[0]!.step.result).toEqual({
         outcome: 'needs_input',
         summary: `Stuck on ${REDACTED}.`,
@@ -288,7 +288,7 @@ describe('ReportRunStepHandler', () => {
       await send();
       await send();
 
-      expect((await runs.findById(run.id))?.messages).toHaveLength(1);
+      expect((await runs.findById(run.id))?.conversation.messages).toHaveLength(1);
     });
 
     it('keeps the session a done step reports, and no message', async () => {
@@ -302,7 +302,10 @@ describe('ReportRunStepHandler', () => {
         workingCopy: WORKING_COPY,
       });
 
-      expect(await runs.findById(run.id)).toMatchObject({ sessionRef: 'session-2', messages: [] });
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
+        sessionRef: 'session-2',
+        messages: [],
+      });
     });
   });
 

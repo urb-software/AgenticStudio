@@ -5,7 +5,7 @@ export const RUN_LOG = Symbol('RUN_LOG');
 
 /**
  * The store of Run logs (Issue #99): each Run's events by sequence number, with the per-Run
- * cap applied atomically (`planLogAppend`) against concurrent appends. The events are append-only
+ * cap applied atomically (`LogCap.plan`) against concurrent appends. The events are append-only
  * records, not an aggregate: no rule changes or spans them and nothing refers to one event on its
  * own, so this is a port and not an aggregate repository. Its adapter keeps the Run's log size
  * (`log_bytes`, `log_truncated`) beside the events so that the holder check, the duplicate filter

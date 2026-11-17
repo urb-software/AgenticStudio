@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { PullRequestState } from '../../../../domain/entities/run.js';
+import type { PullRequestState } from '../../../../domain/value-objects/run-pull-request-status.js';
 import { deliveredRun, T0 } from '../../../../domain/repositories/__tests__/delivered-run.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
@@ -67,7 +67,7 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
 
   it('leaves out a Run without a pull request, and one that is being refreshed already', async () => {
     const none = await deliveredRun(runs, { delivered: false });
-    expect(none.pullRequest).toBeNull();
+    expect(none.delivery.pullRequest).toBeNull();
     const busy = await readRun('open', 30);
     await requests.request(busy, 'pull_request_state', now);
     const before = lookups.lookups.length;
