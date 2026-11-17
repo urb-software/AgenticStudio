@@ -635,8 +635,8 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
 
   // Issue #169 (Epic #160): what the agent worker triggers on a Run, against itself, against the
   // operator and against the sweeps. Written first against the code before the worker-triggered
-  // operations moved into the Run class; every case here but the one marked `fails` passed on it
-  // and keeps passing.
+  // operations moved into the Run class; every case here but the claim whose Run is cancelled in
+  // between (an expected failure on that code, fixed by the atomic hand-out) passed on it.
   describe('what the agent worker triggers', () => {
     const W2 = randomUUID();
     const claimAs = (workerId: string) => worker('runs/claim', { workerId });
@@ -748,7 +748,7 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
     // commits the cancel once the claim is done or waits for the row. Only the claim of dev's
     // code can fail here, with a database "not found" (Issue #167's review; Epic #160).
     describe('a claim and a cancel of the Run it would hand out', () => {
-      it.fails(
+      it(
         'gets the next eligible Run or nothing, never an error, when the cancel lands in between',
         async () => {
           for (let i = 0; i < ITERATIONS; i++) {
