@@ -81,10 +81,10 @@ const FEATURE_ISOLATED_MODULES = new Set(['executions', 'projects']);
 
 /**
  * Modules in which every file in `domain/entities/` exports a class with a non-public
- * constructor (rule 4). Issue #167 adds `executions`; the check is by path pattern, so #165 adds
- * `projects` and #170 every module by listing it here (or dropping the list).
+ * constructor (rule 4). Issue #167 added `executions`, #165 adds `projects`; the check is by path
+ * pattern, so #170 adds every module by listing it here (or dropping the list).
  */
-const ENTITY_CLASS_MODULES = new Set(['executions']);
+const ENTITY_CLASS_MODULES = new Set(['executions', 'projects']);
 
 const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
 /** `src/modules/<module>/domain/entities/<file>.ts` (not a file of a nested folder). */

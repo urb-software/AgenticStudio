@@ -1,20 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isProjectId } from '../../../domain/entities/project.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
 import {
-  gitOperationFailure,
-  isVerifiable,
-  NOT_STARTED_DETAIL,
-  type RepositoryConnection,
-  repositoryFailure,
+  RepositoryConnection,
+  RepositoryNotVerifiableError,
 } from '../../../domain/entities/repository.js';
 import {
   NoRepositoryError,
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
   type ProjectRepository,
-  RepositoryNotVerifiableError,
 } from '../../../domain/repositories/project-repository.js';
-import { hostKeyFingerprint } from '../../../domain/value-objects/ssh-key.js';
+import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import {
   GitOperationError,
@@ -29,20 +25,8 @@ export interface VerifyRepositoryInput {
   acceptHostKeyFingerprint?: string;
 }
 
-/** The confirmed fingerprint is not the one of the host key awaiting confirmation. */
-export class HostKeyFingerprintMismatchError extends Error {
-  constructor() {
-    super(
-      'The fingerprint does not match the host key Studio retrieved. Verify again to retrieve the host key again.',
-    );
-    this.name = 'HostKeyFingerprintMismatchError';
-  }
-}
-
 /** How long retrieving a host key may take; the request waits for it. */
 export const HOST_KEY_SCAN_TIMEOUT_MS = 30_000;
-
-const NOT_WAITING_FOR_HOST_KEY = 'No host key is waiting for confirmation. Verify again first.';
 
 /**
  * Command: Verify and clone (Issue #62), for an SSH Repository that is `awaiting_key`,
@@ -82,15 +66,11 @@ export class VerifyRepositoryHandler {
         ? new NoRepositoryError()
         : new ProjectNotFoundError();
     }
-    if (!isVerifiable(repository)) throw new RepositoryNotVerifiableError();
+    repository.assertVerifiable();
 
     if (acceptHostKeyFingerprint !== undefined) {
-      const pending = repository.state === 'awaiting_host_key' ? repository.pendingHostKey : null;
-      if (!pending) throw new RepositoryNotVerifiableError(NOT_WAITING_FOR_HOST_KEY);
-      if (hostKeyFingerprint(pending) !== acceptHostKeyFingerprint) {
-        throw new HostKeyFingerprintMismatchError();
-      }
-      return this.startClone(repository, { pendingHostKey: pending });
+      const pendingHostKey = repository.confirmedHostKey(acceptHostKeyFingerprint);
+      return this.startClone(repository, { pendingHostKey });
     }
 
     if (!this.deployKeys.trustedHostKeys(repository).isEmpty) {
@@ -104,13 +84,15 @@ export class VerifyRepositoryHandler {
       }));
     } catch (error) {
       if (!(error instanceof GitOperationError)) throw error;
-      await this.projects.failVerification(
-        projectId,
-        gitOperationFailure(error.reason, error.detail),
-      );
+      const failure = RepositoryFailure.fromGit(error.reason, error.detail);
+      await this.projects.change(projectId, (stored) => {
+        stored.failVerification(failure);
+      });
       return this.current(projectId);
     }
-    const awaiting = await this.projects.awaitHostKey(projectId, hostKey);
+    const awaiting = await this.projects.change(projectId, (stored) => {
+      stored.awaitHostKey(hostKey);
+    });
     if (!awaiting) throw new RepositoryNotVerifiableError();
     return awaiting;
   }
@@ -125,18 +107,18 @@ export class VerifyRepositoryHandler {
     confirmed: { pendingHostKey: string } | null,
   ): Promise<RepositoryConnection> {
     const { projectId } = previous;
-    const started = await this.projects.beginVerifiedClone(projectId, confirmed);
-    // Another request changed the Repository since it was read.
+    // A Repository another request changed since it was read refuses with the domain's error.
+    const started = await this.projects.change(projectId, (stored) => {
+      stored.startVerifiedClone(confirmed);
+    });
     if (!started) throw new RepositoryNotVerifiableError();
     try {
       await this.jobs.start(projectId, 'clone');
     } catch (error) {
-      await this.projects.markFailed(
-        projectId,
-        previous.state === 'failed' && previous.failure
-          ? previous.failure
-          : repositoryFailure('unknown', NOT_STARTED_DETAIL),
-      );
+      const failure = RepositoryConnection.failureWhenCloneNotScheduled(previous);
+      await this.projects.change(projectId, (stored) => {
+        stored.failClone(failure);
+      });
       throw error;
     }
     return started;

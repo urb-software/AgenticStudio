@@ -1,15 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
+import { NoTrustedHostKeyError } from '../../../domain/entities/repository.js';
 import {
-  gitOperationFailure,
-  interruptedFailure,
-  NO_TRUSTED_HOST_KEY_DETAIL,
-  NoTrustedHostKeyError,
-  type RepositoryFailure,
-  repositoryFailure,
+  RepositoryFailure,
   type UnfinishedJob,
-  unfinishedJobFailure,
-} from '../../../domain/entities/repository.js';
+} from '../../../domain/value-objects/repository-failure.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -34,9 +29,10 @@ function isAbortError(error: unknown): boolean {
  */
 function gitStepFailure(error: unknown): RepositoryFailure | undefined {
   if (error instanceof NoTrustedHostKeyError) {
-    return repositoryFailure('host_key_mismatch', NO_TRUSTED_HOST_KEY_DETAIL);
+    return RepositoryFailure.noTrustedHostKey();
   }
-  if (error instanceof GitOperationError) return gitOperationFailure(error.reason, error.detail);
+  if (error instanceof GitOperationError)
+    return RepositoryFailure.fromGit(error.reason, error.detail);
   return undefined;
 }
 
@@ -77,31 +73,30 @@ export class FetchCloneHandler {
     signal.throwIfAborted();
     const repository = await this.projects.findRepository(projectId);
     // A job left over from before a restart, whose fetch reconciliation already failed.
-    if (repository?.state !== 'fetching') return;
+    if (repository?.pendingOperation !== 'fetch') return;
     const { url, integrationBranch } = repository;
     try {
       const ssh = await this.deployKeys.credentials(repository);
       const { commit } = await this.git.fetch(projectId, url, integrationBranch, { signal, ssh });
       signal.throwIfAborted();
-      await this.projects.markFetched(projectId, { headSha: commit, fetchedAt: new Date() });
+      const clone = { headSha: commit, fetchedAt: new Date() };
+      await this.projects.change(projectId, (stored) => {
+        stored.completeFetch(clone);
+      });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) throw error;
       if (error instanceof GitCloneMissingError) {
         // The database said there was a Clone, but it is gone from disk: record that there is
         // no usable Clone, so the card offers Retry instead of a Fetch that always fails.
-        await this.projects.markFetchFailed(
-          projectId,
-          repositoryFailure('unknown', CLONE_MISSING_DETAIL),
-          { cloneKept: false },
-        );
+        await this.fail(projectId, RepositoryFailure.of('unknown', CLONE_MISSING_DETAIL), {
+          cloneKept: false,
+        });
         return;
       }
       const failure = gitStepFailure(error);
       if (failure) {
         // `size_limit`: the adapter removed the Clone (Issue #61 clarification 2).
-        await this.projects.markFetchFailed(projectId, failure, {
-          cloneKept: failure.code !== 'size_limit',
-        });
+        await this.fail(projectId, failure, { cloneKept: failure.code !== 'size_limit' });
         return;
       }
       // Unexpected (a rejected request, the database): `onFailed` stores `unknown`.
@@ -115,16 +110,32 @@ export class FetchCloneHandler {
         `Fetch of project ${projectId} failed unexpectedly: ${redactSecrets(String(failure.error))}`,
       );
     }
-    await this.projects.markFetchFailed(projectId, unfinishedJobFailure('fetch', failure), {
+    await this.fail(projectId, RepositoryFailure.fromUnfinishedJob('fetch', failure), {
       cloneKept: true,
     });
   }
 
   /** Idempotent: failing what is already failed changes nothing. */
   async reconcile(): Promise<void> {
-    const failed = await this.projects.failAllFetching(interruptedFailure());
+    let failed = 0;
+    for (const projectId of await this.projects.listIdsInState('fetching')) {
+      await this.projects.change(projectId, (stored) => {
+        if (stored.failFetch(RepositoryFailure.interrupted(), { cloneKept: true })) failed += 1;
+      });
+    }
     if (failed > 0) {
       this.logger.warn(`Marked ${failed} interrupted repository fetch(es) as failed.`);
     }
+  }
+
+  /** A late write changes nothing: only a Repository still `fetching` takes the failure. */
+  private async fail(
+    projectId: string,
+    failure: RepositoryFailure,
+    outcome: { cloneKept: boolean },
+  ): Promise<void> {
+    await this.projects.change(projectId, (stored) => {
+      stored.failFetch(failure, outcome);
+    });
   }
 }

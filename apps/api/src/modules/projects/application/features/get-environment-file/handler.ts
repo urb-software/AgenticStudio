@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { EnvironmentFileInfo } from '../../../domain/entities/environment-file.js';
-import { isProjectId } from '../../../domain/entities/project.js';
+import type { EnvironmentFileInfo } from '../../../domain/value-objects/environment-file.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,

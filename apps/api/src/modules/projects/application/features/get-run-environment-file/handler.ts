@@ -1,7 +1,7 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import type { RunEnvironmentFiles } from '../../../contracts/index.js';
-import { isProjectId } from '../../../domain/entities/project.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,

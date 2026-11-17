@@ -1,48 +1,28 @@
-import type { Project } from '../entities/project.js';
-import type { RepositoryConnection, RepositoryFailure } from '../entities/repository.js';
+import type { Project } from '../value-objects/project.js';
+import type {
+  ConnectAttempt,
+  RepositoryConnection,
+  RepositoryState,
+} from '../entities/repository.js';
 import type { ProjectName } from '../value-objects/project-name.js';
 
 /** DI token for the {@link ProjectRepository} adapter. */
 export const PROJECT_REPOSITORY = Symbol('PROJECT_REPOSITORY');
 
-/** What a Connect stores before the Clone is made. */
-export interface ConnectRepositoryRecord {
-  projectId: string;
-  /** The URL as entered (trimmed). */
-  url: string;
-  /** The remote's identity (`remoteIdentity`); unique across Projects. */
-  identity: string;
-  integrationBranch: string;
-  /**
-   * SSH only (Issue #62): the project's Deploy key. With it the Repository is stored
-   * `awaiting_key` (the operator adds the key on the Git host, then verifies); without it,
-   * `connecting`.
-   */
-  deployKey?: { publicKey: string; secretRef: string } | null;
-  /** SSH only: a host key already confirmed for this host, kept across a Retry. */
-  pinnedHostKey?: string | null;
-  /**
-   * True when `deployKey` is the failed Repository's own key, kept by a Retry (Issue #76): the
-   * replacement then applies only while the Repository still exists and references that key;
-   * otherwise nothing is written and {@link RepositoryAlreadyConnectedError} (or
-   * {@link RemoteAlreadyConnectedError}) is thrown. A key a concurrent Connect or Disconnect
-   * released may already be deleted, so it is never saved again.
-   */
-  keepsDeployKey?: boolean;
-}
-
 /**
- * The Project aggregate's store. A Project owns at most one Repository, so the Repository's
- * state transitions live here too. Every transition out of `connecting` or `fetching` is
- * conditional on the stored state still being that state, so a late or repeated write
- * changes nothing. Starting a connect or a fetch is the duplicate guard: only one of them
- * runs per Repository at a time.
+ * The Project aggregate's store. A Project owns at most one Repository, whose rules are the
+ * {@link RepositoryConnection} class's: a use case loads it, calls a method and saves it
+ * (backend.md §3 rule 6). Besides `findRepository`, the store offers the locked
+ * {@link ProjectRepository.change} and the operations that must be one atomic database step.
  */
 export interface ProjectRepository {
   /**
    * Persists a new project; the store assigns its id and creation time. Throws
    * {@link ProjectNameTakenError} when a project with the same `uniquenessKey` exists,
    * also when a concurrent request created it first.
+   *
+   * Atomic operation: the unique index on the normalized name decides a simultaneous create;
+   * there is no row to lock before it exists.
    */
   add(name: ProjectName): Promise<Project>;
 
@@ -56,96 +36,35 @@ export interface ProjectRepository {
   findRepository(projectId: string): Promise<RepositoryConnection | null>;
 
   /**
-   * Stores the Repository in state `connecting` (or `awaiting_key` with a Deploy key): a new
-   * one, or a `failed` one replaced by the new attempt (with `keepsDeployKey`, only while it
-   * still references that key). The store, not a prior read, decides conflicts, so concurrent
-   * connects cannot both succeed. Throws {@link ProjectNotFoundError},
-   * {@link RepositoryAlreadyConnectedError} (a Repository that is not `failed` exists) or
-   * {@link RemoteAlreadyConnectedError} (another Project holds the same remote identity).
+   * Stores a Repository for a Connect: a new one ({@link RepositoryConnection.start}), or a
+   * `failed` one replaced by the new attempt ({@link RepositoryConnection.restart}, under the
+   * row's lock), and returns it. Throws {@link ProjectNotFoundError},
+   * {@link RepositoryAlreadyConnectedError} (a Repository that is not `failed` exists, or a
+   * kept Deploy key is gone) or {@link RemoteAlreadyConnectedError} (another Project holds the
+   * same remote identity).
+   *
+   * Atomic operation: a Repository that does not exist yet cannot be locked, so the unique
+   * indexes (one Repository per Project, one Project per remote identity) decide simultaneous
+   * connects, as they do for a new Project's name.
    */
-  beginConnect(record: ConnectRepositoryRecord): Promise<RepositoryConnection>;
+  connect(attempt: ConnectAttempt): Promise<RepositoryConnection>;
 
   /**
-   * A verifiable Repository (`isVerifiable`) → `awaiting_host_key` with the retrieved host key
-   * awaiting confirmation (the failure is cleared); `null` if it was not verifiable.
+   * Changes the project's Repository in one transaction: loads it `FOR UPDATE`, calls `mutate`
+   * with it, and saves what `mutate` changed ({@link RepositoryConnection.pendingChanges});
+   * returns the saved Repository, or `null` when the project has none (`mutate` is then not
+   * called). `mutate` is pure: it calls the Repository's methods only and does no I/O; whatever
+   * it throws (a domain refusal) rolls the transaction back and reaches the caller. The row
+   * lock serializes this change with every other change of the Repository, so a late write of
+   * a job waits for a Disconnect and then finds the state it checks as the Disconnect left it.
    */
-  awaitHostKey(projectId: string, hostKey: string): Promise<RepositoryConnection | null>;
-
-  /**
-   * Starts the clone of a verified SSH Repository: → `connecting`, the failure and any
-   * pending host key cleared. Without `confirmed`, from any verifiable state. With it, only
-   * from `awaiting_host_key` with exactly that pending host key, which is then pinned. In one
-   * conditional write; `null` if the condition did not hold.
-   */
-  beginVerifiedClone(
+  change(
     projectId: string,
-    confirmed: { pendingHostKey: string } | null,
+    mutate: (repository: RepositoryConnection) => void,
   ): Promise<RepositoryConnection | null>;
 
-  /** A verifiable Repository → `failed` (its host could not be reached); false if it was not. */
-  failVerification(projectId: string, failure: RepositoryFailure): Promise<boolean>;
-
-  /**
-   * A `disconnecting` Repository forgets its Deploy key reference, public key and host keys
-   * (a Disconnect step, after the secret itself is deleted); false if it is not
-   * `disconnecting`.
-   */
-  forgetDeployKey(projectId: string): Promise<boolean>;
-
-  /** `connecting` → `ready` with the Clone's commit; false if the state was not `connecting`. */
-  markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean>;
-
-  /** `connecting` → `failed`; false if the state was not `connecting`. */
-  markFailed(projectId: string, failure: RepositoryFailure): Promise<boolean>;
-
-  /** Every `connecting` Repository → `failed` (start-up reconciliation); returns how many. */
-  failAllConnecting(failure: RepositoryFailure): Promise<number>;
-
-  /**
-   * `ready`, or `failed` with a usable Clone → `fetching` (the failure is cleared; the
-   * Clone's commit and fetch time are kept), in one conditional write. Throws
-   * {@link ProjectNotFoundError}, {@link NoRepositoryError}, {@link RepositoryBusyError}
-   * (`connecting` or `fetching`) or {@link NoUsableCloneError}.
-   */
-  beginFetch(projectId: string): Promise<RepositoryConnection>;
-
-  /** `fetching` → `ready` with the Clone's commit; false if the state was not `fetching`. */
-  markFetched(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean>;
-
-  /**
-   * `fetching` → `failed`; false if the state was not `fetching`. With `cloneKept`, the
-   * previous commit and fetch time stay; without it (the Clone was removed, `size_limit`)
-   * they are cleared, so the Repository has no usable Clone until a Retry.
-   */
-  markFetchFailed(
-    projectId: string,
-    failure: RepositoryFailure,
-    outcome: { cloneKept: boolean },
-  ): Promise<boolean>;
-
-  /**
-   * Every `fetching` Repository → `failed`, Clone kept (start-up reconciliation); returns
-   * how many.
-   */
-  failAllFetching(failure: RepositoryFailure): Promise<number>;
-
-  /**
-   * Any state → `disconnecting`, in one write: the failure and the Clone's commit and fetch
-   * time are cleared (the Clone is about to be removed). Repeating it on a `disconnecting`
-   * Repository changes nothing. From then on no transition out of `connecting` or `fetching`
-   * applies, so a job still running cannot overwrite it. Throws {@link ProjectNotFoundError}
-   * or {@link NoRepositoryError}.
-   */
-  beginDisconnect(projectId: string): Promise<RepositoryConnection>;
-
-  /**
-   * Deletes the Repository record if it is `disconnecting` (the last step of a Disconnect),
-   * which frees its remote for another connect; false if nothing was deleted.
-   */
-  deleteDisconnecting(projectId: string): Promise<boolean>;
-
-  /** The project ids of every `disconnecting` Repository (start-up resumes their cleanup). */
-  listDisconnecting(): Promise<string[]>;
+  /** The project ids of every Repository in this state (start-up resumes or fails them). */
+  listIdsInState(state: RepositoryState): Promise<string[]>;
 
   /**
    * The secret store reference of every Repository's Deploy key, in any state (a
@@ -171,14 +90,6 @@ export class ProjectNotFoundError extends Error {
   }
 }
 
-/** The project already has a Repository that is connecting or connected. */
-export class RepositoryAlreadyConnectedError extends Error {
-  constructor() {
-    super('The project already has a repository.');
-    this.name = 'RepositoryAlreadyConnectedError';
-  }
-}
-
 /** The same remote is connected to another project, named here for the operator. */
 export class RemoteAlreadyConnectedError extends Error {
   constructor(readonly projectName: string) {
@@ -192,33 +103,5 @@ export class NoRepositoryError extends Error {
   constructor() {
     super('The project has no repository.');
     this.name = 'NoRepositoryError';
-  }
-}
-
-/** A connect or fetch of the Repository is still running (`connecting` or `fetching`). */
-export class RepositoryBusyError extends Error {
-  constructor() {
-    super('A connect or fetch of the repository is still running.');
-    this.name = 'RepositoryBusyError';
-  }
-}
-
-/**
- * The Repository is not waiting for its Deploy key or host key to be verified (it is not an
- * SSH Repository, or not `awaiting_key`, `awaiting_host_key` or `failed` without a Clone), or
- * a fingerprint was confirmed while no host key awaits confirmation.
- */
-export class RepositoryNotVerifiableError extends Error {
-  constructor(message = 'The repository is not waiting to be verified.') {
-    super(message);
-    this.name = 'RepositoryNotVerifiableError';
-  }
-}
-
-/** The Repository has no usable Clone to fetch into; a Retry (connect) makes a new one. */
-export class NoUsableCloneError extends Error {
-  constructor() {
-    super('The repository has no usable clone.');
-    this.name = 'NoUsableCloneError';
   }
 }

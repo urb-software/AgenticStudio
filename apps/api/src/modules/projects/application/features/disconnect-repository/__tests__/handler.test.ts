@@ -4,7 +4,8 @@ import {
   JobStillRunningError,
   QueueUnavailableError,
 } from '../../../../../../platform/queue/job-queue.js';
-import { repositoryFailure } from '../../../../domain/entities/repository.js';
+import type { RepositoryConnection } from '../../../../domain/entities/repository.js';
+import { RepositoryFailure } from '../../../../domain/value-objects/repository-failure.js';
 import {
   NoRepositoryError,
   ProjectNotFoundError,
@@ -25,7 +26,7 @@ const URL = 'https://github.com/acme/shop.git';
 const IDENTITY = 'github.com/acme/shop';
 const SHA = 'a'.repeat(40);
 const FETCHED_AT = new Date('2026-11-13T10:00:00.000Z');
-const FAILURE = repositoryFailure('host_unreachable', 'fatal: x');
+const FAILURE = RepositoryFailure.of('host_unreachable', 'fatal: x');
 const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 
 describe('DisconnectRepositoryHandler', () => {
@@ -40,7 +41,7 @@ describe('DisconnectRepositoryHandler', () => {
   const stored = () => projects.findRepository(PROJECT);
 
   async function connecting(projectId = PROJECT) {
-    await projects.beginConnect({
+    await projects.connect({
       projectId,
       url: URL,
       identity: IDENTITY,
@@ -50,12 +51,25 @@ describe('DisconnectRepositoryHandler', () => {
 
   async function ready() {
     await connecting();
-    await projects.markReady(PROJECT, { headSha: SHA, fetchedAt: FETCHED_AT });
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: SHA, fetchedAt: FETCHED_AT });
+    });
   }
 
   async function fetching() {
     await ready();
-    await projects.beginFetch(PROJECT);
+    await projects.change(PROJECT, (r) => {
+      r.startFetch();
+    });
+  }
+
+  /** A late write of an aborted job: whether the transition applied. */
+  async function late(write: (repository: RepositoryConnection) => boolean): Promise<boolean> {
+    let applied = false;
+    await projects.change(PROJECT, (repository) => {
+      applied = write(repository);
+    });
+    return applied;
   }
 
   afterEach(() => {
@@ -110,14 +124,18 @@ describe('DisconnectRepositoryHandler', () => {
       'failed (no Clone)',
       async () => {
         await connecting();
-        await projects.markFailed(PROJECT, FAILURE);
+        await projects.change(PROJECT, (r) => {
+          r.failClone(FAILURE);
+        });
       },
     ],
     [
       'failed (Clone kept)',
       async () => {
         await fetching();
-        await projects.markFetchFailed(PROJECT, FAILURE, { cloneKept: true });
+        await projects.change(PROJECT, (r) => {
+          r.failFetch(FAILURE, { cloneKept: true });
+        });
       },
     ],
   ])('disconnects a Repository that is %s', async (_case, arrange) => {
@@ -132,18 +150,18 @@ describe('DisconnectRepositoryHandler', () => {
       [
         'connecting: the clone ends well',
         connecting,
-        () => projects.markReady(PROJECT, { headSha: SHA, fetchedAt: FETCHED_AT }),
+        () => late((r) => r.completeClone({ headSha: SHA, fetchedAt: FETCHED_AT })),
       ],
-      ['connecting: the clone fails', connecting, () => projects.markFailed(PROJECT, FAILURE)],
+      ['connecting: the clone fails', connecting, () => late((r) => r.failClone(FAILURE))],
       [
         'fetching: the fetch ends well',
         fetching,
-        () => projects.markFetched(PROJECT, { headSha: SHA, fetchedAt: FETCHED_AT }),
+        () => late((r) => r.completeFetch({ headSha: SHA, fetchedAt: FETCHED_AT })),
       ],
       [
         'fetching: the fetch fails',
         fetching,
-        () => projects.markFetchFailed(PROJECT, FAILURE, { cloneKept: true }),
+        () => late((r) => r.failFetch(FAILURE, { cloneKept: true })),
       ],
     ])('%s', async (_case, arrange, lateWrite) => {
       await arrange();
@@ -207,8 +225,12 @@ describe('DisconnectRepositoryHandler', () => {
 
     it('the database fails during cleanup: pending (202), not an error', async () => {
       await ready();
-      const deleteDisconnecting = projects.deleteDisconnecting.bind(projects);
-      projects.deleteDisconnecting = () => Promise.reject(new Error('database down'));
+      const change = projects.change.bind(projects);
+      projects.change = (projectId, mutate) =>
+        change(projectId, (repository) => {
+          mutate(repository);
+          if (repository.pendingChanges().removed) throw new Error('database down');
+        });
 
       await expect(handler.execute(PROJECT)).resolves.toMatchObject({
         disconnected: false,
@@ -216,7 +238,7 @@ describe('DisconnectRepositoryHandler', () => {
       });
       expect(logs).toEqual([expect.stringContaining(PROJECT)]);
 
-      projects.deleteDisconnecting = deleteDisconnecting;
+      projects.change = change;
       await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
     });
 

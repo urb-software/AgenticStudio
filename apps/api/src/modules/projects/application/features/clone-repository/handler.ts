@@ -1,15 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
+import { NoTrustedHostKeyError } from '../../../domain/entities/repository.js';
 import {
-  gitOperationFailure,
-  interruptedFailure,
-  NO_TRUSTED_HOST_KEY_DETAIL,
-  NoTrustedHostKeyError,
-  type RepositoryFailure,
-  repositoryFailure,
+  RepositoryFailure,
   type UnfinishedJob,
-  unfinishedJobFailure,
-} from '../../../domain/entities/repository.js';
+} from '../../../domain/value-objects/repository-failure.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -33,9 +28,10 @@ function isAbortError(error: unknown): boolean {
  */
 function gitStepFailure(error: unknown): RepositoryFailure | undefined {
   if (error instanceof NoTrustedHostKeyError) {
-    return repositoryFailure('host_key_mismatch', NO_TRUSTED_HOST_KEY_DETAIL);
+    return RepositoryFailure.noTrustedHostKey();
   }
-  if (error instanceof GitOperationError) return gitOperationFailure(error.reason, error.detail);
+  if (error instanceof GitOperationError)
+    return RepositoryFailure.fromGit(error.reason, error.detail);
   return undefined;
 }
 
@@ -67,7 +63,7 @@ export class CloneRepositoryHandler {
     signal.throwIfAborted();
     const repository = await this.projects.findRepository(projectId);
     // A job left over from before a restart, whose attempt reconciliation already failed.
-    if (repository?.state !== 'connecting') return;
+    if (repository?.pendingOperation !== 'clone') return;
     const { url, integrationBranch } = repository;
     try {
       const ssh = await this.deployKeys.credentials(repository);
@@ -75,21 +71,24 @@ export class CloneRepositoryHandler {
       await this.git.removeClone(projectId, { signal });
       const remote = await this.git.inspectRemote(url, integrationBranch, { signal, ssh });
       if (!remote.branchExists) {
-        await this.projects.markFailed(
+        // No Git output to show: the code and the default branch say it all (#72).
+        await this.fail(
           projectId,
-          // No Git output to show: the code and the default branch say it all (#72).
-          repositoryFailure('branch_not_found', '', remote.defaultBranch),
+          RepositoryFailure.of('branch_not_found', '', remote.defaultBranch),
         );
         return;
       }
       const { commit } = await this.git.clone(projectId, url, integrationBranch, { signal, ssh });
       signal.throwIfAborted();
-      await this.projects.markReady(projectId, { headSha: commit, fetchedAt: new Date() });
+      const clone = { headSha: commit, fetchedAt: new Date() };
+      await this.projects.change(projectId, (stored) => {
+        stored.completeClone(clone);
+      });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) throw error;
       const failure = gitStepFailure(error);
       if (failure) {
-        await this.projects.markFailed(projectId, failure);
+        await this.fail(projectId, failure);
         return;
       }
       // Unexpected (a rejected request, the database): `onFailed` stores `unknown`.
@@ -103,14 +102,26 @@ export class CloneRepositoryHandler {
         `Clone of project ${projectId} failed unexpectedly: ${redactSecrets(String(failure.error))}`,
       );
     }
-    await this.projects.markFailed(projectId, unfinishedJobFailure('clone', failure));
+    await this.fail(projectId, RepositoryFailure.fromUnfinishedJob('clone', failure));
   }
 
   /** Idempotent: failing what is already failed changes nothing. */
   async reconcile(): Promise<void> {
-    const failed = await this.projects.failAllConnecting(interruptedFailure());
+    let failed = 0;
+    for (const projectId of await this.projects.listIdsInState('connecting')) {
+      await this.projects.change(projectId, (stored) => {
+        if (stored.failClone(RepositoryFailure.interrupted())) failed += 1;
+      });
+    }
     if (failed > 0) {
       this.logger.warn(`Marked ${failed} interrupted repository connection(s) as failed.`);
     }
+  }
+
+  /** A late write changes nothing: only a Repository still `connecting` takes the failure. */
+  private async fail(projectId: string, failure: RepositoryFailure): Promise<void> {
+    await this.projects.change(projectId, (stored) => {
+      stored.failClone(failure);
+    });
   }
 }

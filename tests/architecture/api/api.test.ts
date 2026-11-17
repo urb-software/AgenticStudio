@@ -494,4 +494,14 @@ describeGate('api', apiGate, 'apps/api', [
     ],
     qualityRow: 'A domain test imports a database client or container tooling',
   },
+  {
+    fixture: 'entity-projects-class-with-private-constructor',
+    expected: [],
+    qualityRow: '`domain/entities/` file exports a class with a non-public constructor',
+  },
+  {
+    fixture: 'entity-projects-file-exports-a-plain-record',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
+  },
 ]);

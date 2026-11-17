@@ -3,21 +3,22 @@ import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queu
 import {
   NoRepositoryError,
   ProjectNotFoundError,
-  RepositoryNotVerifiableError,
 } from '../../../../domain/repositories/project-repository.js';
+import { RepositoryNotVerifiableError } from '../../../../domain/entities/repository.js';
 import {
   GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
-} from '../../../../domain/entities/repository.js';
+} from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { generateDeployKey, hostKeyFingerprint } from '../../../../domain/value-objects/ssh-key.js';
 import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
-import { NOT_STARTED_DETAIL } from '../../../../domain/entities/repository.js';
+import { NOT_STARTED_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
-import { HostKeyFingerprintMismatchError, VerifyRepositoryHandler } from '../handler.js';
+import { VerifyRepositoryHandler } from '../handler.js';
+import { HostKeyFingerprintMismatchError } from '../../../../domain/entities/repository.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const TRUSTED_URL = 'git@github.com:acme/shop.git';
@@ -46,7 +47,7 @@ describe('VerifyRepositoryHandler', () => {
   /** An SSH Repository awaiting its key, as connect stores it. */
   async function awaitingKey(url: string) {
     const deployKey = await deployKeys.create('Shop');
-    return projects.beginConnect({
+    return projects.connect({
       projectId: PROJECT,
       url,
       identity: 'identity',
@@ -76,10 +77,12 @@ describe('VerifyRepositoryHandler', () => {
     it('is Retry after a failed clone (auth_failed): the same key pair, no change on the host', async () => {
       const before = await awaitingKey(TRUSTED_URL);
       await handler.execute({ projectId: PROJECT });
-      await projects.markFailed(PROJECT, {
-        code: 'auth_failed',
-        detail: 'Permission denied (publickey).',
-        remoteDefaultBranch: null,
+      await projects.change(PROJECT, (r) => {
+        r.failClone({
+          code: 'auth_failed',
+          detail: 'Permission denied (publickey).',
+          remoteDefaultBranch: null,
+        });
       });
 
       const retried = await handler.execute({ projectId: PROJECT });
@@ -189,10 +192,12 @@ describe('VerifyRepositoryHandler', () => {
         projectId: PROJECT,
         acceptHostKeyFingerprint: hostKeyFingerprint(presented),
       });
-      await projects.markFailed(PROJECT, {
-        code: 'auth_failed',
-        detail: '',
-        remoteDefaultBranch: null,
+      await projects.change(PROJECT, (r) => {
+        r.failClone({
+          code: 'auth_failed',
+          detail: '',
+          remoteDefaultBranch: null,
+        });
       });
 
       const retried = await handler.execute({ projectId: PROJECT });
@@ -240,16 +245,18 @@ describe('VerifyRepositoryHandler', () => {
     });
 
     it('refuses an HTTPS Repository', async () => {
-      await projects.beginConnect({
+      await projects.connect({
         projectId: PROJECT,
         url: 'https://github.com/acme/shop.git',
         identity: 'github.com/acme/shop',
         integrationBranch: 'dev',
       });
-      await projects.markFailed(PROJECT, {
-        code: 'unknown',
-        detail: '',
-        remoteDefaultBranch: null,
+      await projects.change(PROJECT, (r) => {
+        r.failClone({
+          code: 'unknown',
+          detail: '',
+          remoteDefaultBranch: null,
+        });
       });
 
       await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
@@ -264,7 +271,9 @@ describe('VerifyRepositoryHandler', () => {
       await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
         RepositoryNotVerifiableError,
       );
-      await projects.markReady(PROJECT, { headSha: 'a'.repeat(40), fetchedAt: new Date() });
+      await projects.change(PROJECT, (r) => {
+        r.completeClone({ headSha: 'a'.repeat(40), fetchedAt: new Date() });
+      });
       await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
         RepositoryNotVerifiableError,
       );
@@ -297,7 +306,9 @@ describe('VerifyRepositoryHandler', () => {
         detail: 'Permission denied (publickey).',
         remoteDefaultBranch: null,
       };
-      await projects.markFailed(PROJECT, authFailed);
+      await projects.change(PROJECT, (r) => {
+        r.failClone(authFailed);
+      });
       const busy = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
       jobs.failWith = busy;
 

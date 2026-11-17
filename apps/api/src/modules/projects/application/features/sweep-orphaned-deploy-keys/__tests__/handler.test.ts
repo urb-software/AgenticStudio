@@ -27,7 +27,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
   /** A Repository holding `key`, stored the way a Connect over SSH stores it. */
   async function sshRepository(projectId: string, key: StoredDeployKey) {
     projects.addProject(projectId, projectId.slice(0, 4));
-    await projects.beginConnect({
+    await projects.connect({
       projectId,
       url: `git@github.com:acme/${projectId}.git`,
       identity: `github.com/acme/${projectId}`,
@@ -66,7 +66,9 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     const disconnecting = await deployKeys.create('B');
     await sshRepository(A, awaiting);
     await sshRepository(B, disconnecting);
-    await projects.beginDisconnect(B);
+    await projects.change(B, (r) => {
+      r.startDisconnect();
+    });
     secrets.now += 30 * 24 * HOUR_MS;
 
     await sweeper.sweep();

@@ -1,4 +1,7 @@
-import type { EnvironmentFileInfo, StoredEnvironmentFile } from '../entities/environment-file.js';
+import type {
+  EnvironmentFileInfo,
+  StoredEnvironmentFile,
+} from '../value-objects/environment-file.js';
 
 /** DI token for the {@link EnvironmentFileRepository} adapter. */
 export const ENVIRONMENT_FILE_REPOSITORY = Symbol('ENVIRONMENT_FILE_REPOSITORY');

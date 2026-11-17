@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { RunStartPoint, RunStartPoints } from '../../../contracts/index.js';
-import { isProjectId } from '../../../domain/entities/project.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,

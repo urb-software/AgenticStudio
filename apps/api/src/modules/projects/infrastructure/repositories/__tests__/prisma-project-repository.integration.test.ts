@@ -12,11 +12,12 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../../platform/database/database.module.js';
-import { repositoryFailure } from '../../../domain/entities/repository.js';
+import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
+import { RemoteAlreadyConnectedError } from '../../../domain/repositories/project-repository.js';
 import {
-  RemoteAlreadyConnectedError,
   RepositoryAlreadyConnectedError,
-} from '../../../domain/repositories/project-repository.js';
+  type RepositoryConnection,
+} from '../../../domain/entities/repository.js';
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 import { PrismaProjectRepository } from '../prisma-project-repository.js';
 
@@ -63,23 +64,34 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
   let projects: PrismaProjectRepository;
   let projectId: string;
 
+  /** Runs `write` on the stored Repository, in the store's locked change; what it returned. */
+  async function applied(write: (repository: RepositoryConnection) => boolean): Promise<boolean> {
+    let result = false;
+    await projects.change(projectId, (repository) => {
+      result = write(repository);
+    });
+    return result;
+  }
+
   /** A failed SSH Repository holding `secretRef` (its host was unreachable). */
   async function failedSsh(secretRef: string) {
-    await projects.beginConnect({
+    await projects.connect({
       projectId,
       url: SSH_URL,
       identity: SSH_IDENTITY,
       integrationBranch: 'dev',
       deployKey: { publicKey: 'placeholder public key', secretRef },
     });
-    expect(await projects.failVerification(projectId, repositoryFailure('host_unreachable'))).toBe(
-      true,
-    );
+    expect(
+      await applied((repository) =>
+        repository.failVerification(RepositoryFailure.of('host_unreachable')),
+      ),
+    ).toBe(true);
   }
 
   /** The Retry over SSH that keeps `secretRef`, as Connect sends it. */
   const retryKeeping = (secretRef: string) =>
-    projects.beginConnect({
+    projects.connect({
       projectId,
       url: SSH_URL,
       identity: SSH_IDENTITY,
@@ -126,13 +138,13 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       const key = randomUUID();
       await failedSsh(key);
       // Meanwhile another connect replaced it over HTTPS (releasing the key), and that failed.
-      await projects.beginConnect({
+      await projects.connect({
         projectId,
         url: 'https://github.com/acme/shop.git',
         identity: SSH_IDENTITY,
         integrationBranch: 'dev',
       });
-      await projects.markFailed(projectId, repositoryFailure('unknown'));
+      await applied((repository) => repository.failClone(RepositoryFailure.of('unknown')));
       const before = await projects.findRepository(projectId);
 
       await expect(retryKeeping(key)).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
@@ -145,8 +157,8 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       const key = randomUUID();
       await failedSsh(key);
       // Meanwhile a disconnect removed it (and deleted its key).
-      await projects.beginDisconnect(projectId);
-      expect(await projects.deleteDisconnecting(projectId)).toBe(true);
+      await projects.change(projectId, (repository) => repository.startDisconnect());
+      expect(await applied((repository) => repository.finishDisconnect())).toBe(true);
 
       await expect(retryKeeping(key)).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
 
@@ -161,7 +173,7 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
       async () => {
         const other = (await projects.add(ProjectName.parse('Other'))).id;
         const attempt = (id: string, url: string) =>
-          projects.beginConnect({
+          projects.connect({
             projectId: id,
             url,
             identity: 'github.com/acme/shop',
@@ -186,16 +198,15 @@ describe('PrismaProjectRepository (PostgreSQL)', () => {
 
   describe('a remote default branch over 255 characters (#72)', () => {
     it('stores the failure without it, instead of failing the write', async () => {
-      await projects.beginConnect({
+      await projects.connect({
         projectId,
         url: 'https://github.com/acme/shop.git',
         identity: 'github.com/acme/shop',
         integrationBranch: 'dev',
       });
 
-      const stored = await projects.markFailed(
-        projectId,
-        repositoryFailure('branch_not_found', '', 'b'.repeat(256)),
+      const stored = await applied((repository) =>
+        repository.failClone(RepositoryFailure.of('branch_not_found', '', 'b'.repeat(256))),
       );
 
       expect(stored).toBe(true);

@@ -3,7 +3,7 @@ import { knownHostName } from '../../../../../platform/config/ssh-known-hosts.js
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import {
   NoTrustedHostKeyError,
-  type RepositoryConnection,
+  type RepositoryConnectionData,
 } from '../../../domain/entities/repository.js';
 import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
 import { gitHostName } from '../../../domain/value-objects/trusted-host-keys.js';
@@ -14,7 +14,7 @@ const GITHUB_KEY = hostKey();
 const PORT_KEY = hostKey();
 const PINNED_KEY = hostKey();
 
-function repository(overrides: Partial<RepositoryConnection>): RepositoryConnection {
+function repository(overrides: Partial<RepositoryConnectionData>): RepositoryConnectionData {
   return {
     projectId: '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
     url: 'git@github.com:acme/shop.git',

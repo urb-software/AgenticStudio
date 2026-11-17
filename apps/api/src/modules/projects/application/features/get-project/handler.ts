@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isProjectId, type Project } from '../../../domain/entities/project.js';
+import { isProjectId, type Project } from '../../../domain/value-objects/project.js';
 import type { RepositoryConnection } from '../../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,

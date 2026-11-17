@@ -3,14 +3,12 @@ import type { SshKnownHost } from '../../../../platform/config/ssh-known-hosts.j
 import { SECRET_STORE, type SecretStore } from '../../../../platform/secrets/index.js';
 import {
   DEPLOY_KEY_SECRET_OWNER,
+  type DeployKeyHolder,
   type DeployKeys,
   type StoredDeployKey,
 } from '../../application/ports/deploy-keys.js';
 import type { SshCredentials } from '../../application/ports/repository-git.js';
-import {
-  NoTrustedHostKeyError,
-  type RepositoryConnection,
-} from '../../domain/entities/repository.js';
+import { NoTrustedHostKeyError } from '../../domain/entities/repository.js';
 import { deployKeyComment, generateDeployKey } from '../../domain/value-objects/ssh-key.js';
 import { TrustedHostKeys } from '../../domain/value-objects/trusted-host-keys.js';
 
@@ -38,7 +36,7 @@ export class SecretStoreDeployKeys implements DeployKeys {
     };
   }
 
-  async credentials(repository: RepositoryConnection): Promise<SshCredentials | undefined> {
+  async credentials(repository: DeployKeyHolder): Promise<SshCredentials | undefined> {
     if (repository.deployKeySecret === null) return undefined;
     const trusted = this.trustedHostKeys(repository);
     if (trusted.isEmpty) throw new NoTrustedHostKeyError();
@@ -48,7 +46,7 @@ export class SecretStoreDeployKeys implements DeployKeys {
     };
   }
 
-  trustedHostKeys(repository: RepositoryConnection): TrustedHostKeys {
+  trustedHostKeys(repository: DeployKeyHolder): TrustedHostKeys {
     return TrustedHostKeys.of(repository, this.settings.knownHosts);
   }
 

@@ -5,10 +5,10 @@ import {
 } from '../../../../../../platform/queue/job-queue.js';
 import {
   NoRepositoryError,
-  NoUsableCloneError,
   ProjectNotFoundError,
-  RepositoryBusyError,
 } from '../../../../domain/repositories/project-repository.js';
+import { NoUsableCloneError, RepositoryBusyError } from '../../../../domain/entities/repository.js';
+import { RepositoryConnection } from '../../../../domain/entities/repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
@@ -34,7 +34,7 @@ describe('FetchRepositoryHandler', () => {
   const stored = () => projects.findRepository(PROJECT);
 
   async function connecting() {
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
@@ -44,14 +44,20 @@ describe('FetchRepositoryHandler', () => {
 
   async function ready() {
     await connecting();
-    await projects.markReady(PROJECT, { headSha: OLD, fetchedAt: FETCHED_AT });
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: OLD, fetchedAt: FETCHED_AT });
+    });
   }
 
   /** `failed` after a fetch that kept the Clone. */
   async function failedFetch() {
     await ready();
-    await projects.beginFetch(PROJECT);
-    await projects.markFetchFailed(PROJECT, FAILURE, { cloneKept: true });
+    await projects.change(PROJECT, (r) => {
+      r.startFetch();
+    });
+    await projects.change(PROJECT, (r) => {
+      r.failFetch(FAILURE, { cloneKept: true });
+    });
   }
 
   beforeEach(() => {
@@ -102,7 +108,9 @@ describe('FetchRepositoryHandler', () => {
       'fetching',
       async () => {
         await ready();
-        await projects.beginFetch(PROJECT);
+        await projects.change(PROJECT, (r) => {
+          r.startFetch();
+        });
       },
     ],
   ])('refuses while %s with RepositoryBusyError', async (_state, arrange) => {
@@ -114,7 +122,9 @@ describe('FetchRepositoryHandler', () => {
 
   it('refuses a failed Repository without a usable Clone (failed connect)', async () => {
     await connecting();
-    await projects.markFailed(PROJECT, FAILURE);
+    await projects.change(PROJECT, (r) => {
+      r.failClone(FAILURE);
+    });
 
     await expect(handler.execute(PROJECT)).rejects.toBeInstanceOf(NoUsableCloneError);
     expect((await stored())?.state).toBe('failed');
@@ -159,21 +169,21 @@ describe('FetchRepositoryHandler', () => {
   it('never leaves the Repository fetching when the read before the transition was stale', async () => {
     await ready();
     // The read sees the Repository as it was a moment earlier (still connecting).
-    vi.spyOn(projects, 'findRepository').mockResolvedValueOnce({
-      projectId: PROJECT,
-      url: URL,
-      integrationBranch: 'dev',
-      state: 'connecting',
-      hasClone: false,
-      headSha: null,
-      lastFetchedAt: null,
-      failure: null,
-      publicKey: null,
-      deployKeySecret: null,
-      pinnedHostKey: null,
-      pendingHostKey: null,
-      hostKeyFingerprint: null,
-    });
+    vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(
+      RepositoryConnection.restore({
+        projectId: PROJECT,
+        url: URL,
+        integrationBranch: 'dev',
+        state: 'connecting',
+        headSha: null,
+        lastFetchedAt: null,
+        failure: null,
+        publicKey: null,
+        deployKeySecret: null,
+        pinnedHostKey: null,
+        pendingHostKey: null,
+      }),
+    );
     const error = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = error;
 

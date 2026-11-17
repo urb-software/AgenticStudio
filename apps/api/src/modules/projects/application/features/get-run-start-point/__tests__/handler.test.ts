@@ -18,7 +18,7 @@ describe('GetRunStartPointHandler', () => {
 
   async function connect() {
     projects.addProject(PROJECT, 'Shop');
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: 'https://github.com/acme/shop.git',
       identity: 'github.com/acme/shop',
@@ -28,7 +28,9 @@ describe('GetRunStartPointHandler', () => {
 
   it('starts from the integration branch commit of a ready Repository, at its remote', async () => {
     await connect();
-    await projects.markReady(PROJECT, { headSha: HEAD, fetchedAt: new Date() });
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
+    });
 
     // Issue #98: the remote URL as the operator connected it, so the agent worker can fetch it.
     expect(await handler.forProject(PROJECT)).toEqual({
@@ -55,8 +57,12 @@ describe('GetRunStartPointHandler', () => {
     await connect();
     expect(await handler.forProject(PROJECT)).toEqual({ status: 'repository_not_ready' });
 
-    await projects.markReady(PROJECT, { headSha: HEAD, fetchedAt: new Date() });
-    await projects.beginFetch(PROJECT);
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
+    });
+    await projects.change(PROJECT, (r) => {
+      r.startFetch();
+    });
     expect(await handler.forProject(PROJECT)).toEqual({ status: 'repository_not_ready' });
   });
 });

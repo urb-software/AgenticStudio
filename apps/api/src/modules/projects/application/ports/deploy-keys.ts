@@ -2,6 +2,12 @@ import type { RepositoryConnection } from '../../domain/entities/repository.js';
 import type { TrustedHostKeys } from '../../domain/value-objects/trusted-host-keys.js';
 import type { SshCredentials } from './repository-git.js';
 
+/** What the Deploy key rules need to know of a Repository: its host, key and pinned host key. */
+export type DeployKeyHolder = Pick<
+  RepositoryConnection,
+  'url' | 'deployKeySecret' | 'pinnedHostKey'
+>;
+
 /** DI token of the {@link DeployKeys} port. */
 export const DEPLOY_KEYS = Symbol('DEPLOY_KEYS');
 
@@ -39,9 +45,9 @@ export interface DeployKeys {
    * Deploy key (HTTPS). Throws `NoTrustedHostKeyError` when no host key is trusted, and the
    * secret store's errors.
    */
-  credentials(repository: RepositoryConnection): Promise<SshCredentials | undefined>;
+  credentials(repository: DeployKeyHolder): Promise<SshCredentials | undefined>;
   /** The host keys trusted for the Repository (configured hosts and its pinned key). */
-  trustedHostKeys(repository: RepositoryConnection): TrustedHostKeys;
+  trustedHostKeys(repository: DeployKeyHolder): TrustedHostKeys;
   /** Deletes the private half; a no-op when it is already gone. */
   remove(secretRef: string): Promise<void>;
   /**

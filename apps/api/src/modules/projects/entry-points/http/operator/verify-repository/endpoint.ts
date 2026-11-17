@@ -21,15 +21,15 @@ import {
 } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
 import {
+  HostKeyFingerprintMismatchError,
+  RepositoryNotVerifiableError,
+} from '../../../../domain/entities/repository.js';
+import {
   NoRepositoryError,
   ProjectNotFoundError,
-  RepositoryNotVerifiableError,
 } from '../../../../domain/repositories/project-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
-import {
-  HostKeyFingerprintMismatchError,
-  VerifyRepositoryHandler,
-} from '../../../../application/features/verify-repository/handler.js';
+import { VerifyRepositoryHandler } from '../../../../application/features/verify-repository/handler.js';
 import { type VerifyRepositoryRequest, VerifyRepositoryRequestDto } from './schema.js';
 
 const INVALID_REQUEST = 'The request is invalid.';
