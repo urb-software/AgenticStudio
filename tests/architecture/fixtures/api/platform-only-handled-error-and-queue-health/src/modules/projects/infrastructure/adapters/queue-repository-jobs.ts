@@ -1,6 +1,6 @@
-import { JobQueues } from '../../../../../platform/queue/job-queue.js';
+import { JobQueues } from '../../../../platform/queue/job-queue.js';
 
-export class CloneRepositoryHandler {
+export class QueueRepositoryJobs {
   constructor(private readonly queues: JobQueues) {}
 
   start(): void {

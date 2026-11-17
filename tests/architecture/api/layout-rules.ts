@@ -72,10 +72,10 @@ const HTTP_DECORATORS = new Set([
 
 /**
  * Modules in which no feature folder imports another feature folder (backend.md §3 rule 1).
- * Issue #166 adds `executions`; the check is by path pattern, so #164 adds `projects` and #170
- * every module by listing it here (or dropping the list).
+ * Issue #166 adds `executions` and #164 `projects`; the check is by path pattern, so #170 adds
+ * every other module by listing it here (or dropping the list).
  */
-const FEATURE_ISOLATED_MODULES = new Set(['executions']);
+const FEATURE_ISOLATED_MODULES = new Set(['executions', 'projects']);
 
 const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
 /** `src/modules/<module>/application/features/<feature>/…` (not the tests of a feature). */

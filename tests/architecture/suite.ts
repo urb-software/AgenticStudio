@@ -49,6 +49,11 @@ export const QUALITY_TABLE = [
   { row: 'A feature imports another feature of its module', expected: 'FAIL', gate: 'api' },
   { row: 'A feature imports a port, the domain or its own files', expected: 'PASS', gate: 'api' },
   {
+    row: 'A test of `application/` imports `platform/queue/` (tests are not checked)',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
     row: 'A test of a feature imports another feature (tests are not checked)',
     expected: 'PASS',
     gate: 'api',
