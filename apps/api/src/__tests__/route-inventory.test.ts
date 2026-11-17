@@ -14,19 +14,25 @@ function guards(target: object): string[] {
   return Array.isArray(found) ? found.map((guard: { name: string }) => guard.name) : [];
 }
 
+/** A marker set on the method or the class, the method first, as `SessionGuard` reads it. */
+function flag(key: symbol, handler: object, controller: object): boolean {
+  const onMethod: unknown = Reflect.getMetadata(key, handler);
+  return (onMethod ?? Reflect.getMetadata(key, controller)) === true;
+}
+
 /** One line per route: `METHOD /path [flags; guards]`, read from the Nest decorator metadata. */
 function routes(controllers: Controller[]): string[] {
   return controllers
     .flatMap((controller) => {
       const base = String(Reflect.getMetadata('path', controller));
-      const worker = Reflect.getMetadata(IS_WORKER_ROUTE, controller) === true;
       return Object.getOwnPropertyNames(controller.prototype).flatMap((name) => {
         const handler = (controller.prototype as Record<string, unknown>)[name];
         if (typeof handler !== 'function') return [];
         const method: unknown = Reflect.getMetadata('method', handler);
         if (typeof method !== 'number') return [];
         const path = String(Reflect.getMetadata('path', handler));
-        const isPublic = Reflect.getMetadata(IS_PUBLIC, handler) === true;
+        const worker = flag(IS_WORKER_ROUTE, handler, controller);
+        const isPublic = flag(IS_PUBLIC, handler, controller);
         const flags = [
           worker ? 'worker-token' : 'session',
           ...(isPublic ? ['public'] : []),

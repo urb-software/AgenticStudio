@@ -247,7 +247,12 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: '`entry-points/` imports a handler',
   },
   {
-    fixture: 'entry-point-imports-repository-interface-and-port-token',
+    fixture: 'entry-point-imports-repository-interface',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
+  },
+  {
+    fixture: 'entry-point-imports-port-token',
     expected: ['api-entry-points-no-ports-or-infrastructure'],
     qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
   },
@@ -263,8 +268,14 @@ describeGate('api', apiGate, 'apps/api', [
   // The one pinned exemption, removed by #166, and proof that it does not widen.
   { fixture: 'entry-point-pinned-exemption-stream-run-events', expected: [] },
   {
-    fixture: 'entry-point-pinned-exemption-does-not-widen',
+    fixture: 'entry-point-other-file-imports-pinned-port',
     expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: 'An entry-point file other than the pinned one imports a pinned port',
+  },
+  {
+    fixture: 'entry-point-pinned-file-imports-third-port',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: 'The pinned entry-point file imports a port other than its two',
   },
   {
     fixture: 'contracts-index-and-events-only',
@@ -272,9 +283,14 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: '`contracts/` holds `index.ts` and `events/` only',
   },
   {
-    fixture: 'contracts-holds-other-file-and-directory',
+    fixture: 'contracts-holds-extra-file',
     expected: ['api-contracts-only-index-and-events'],
-    qualityRow: '`contracts/` holds another file or directory',
+    qualityRow: '`contracts/` holds another file',
+  },
+  {
+    fixture: 'contracts-holds-extra-directory',
+    expected: ['api-contracts-only-index-and-events'],
+    qualityRow: '`contracts/` holds another directory',
   },
   {
     fixture: 'http-shared-directory-is-the-one-exemption',
@@ -288,7 +304,34 @@ describeGate('api', apiGate, 'apps/api', [
       'A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/`',
   },
   {
-    fixture: 'utils-helpers-and-common-directories-in-module',
+    fixture: 'http-shared-subdirectory-utils',
     expected: ['api-no-shared-common-utils-helpers-directory'],
+    qualityRow:
+      'A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers`',
+  },
+  {
+    fixture: 'entry-points-shared-directory-outside-http',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'http-caller-shared-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'domain-helpers-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'infrastructure-common-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'feature-utils-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'application-imports-nestjs-common-as-namespace',
+    expected: ['api-application-no-http-decorators'],
+    qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
   },
 ]);

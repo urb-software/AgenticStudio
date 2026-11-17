@@ -42,7 +42,23 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   { row: '`contracts/` holds `index.ts` and `events/` only', expected: 'PASS', gate: 'api' },
-  { row: '`contracts/` holds another file or directory', expected: 'FAIL', gate: 'api' },
+  { row: '`contracts/` holds another file', expected: 'FAIL', gate: 'api' },
+  { row: '`contracts/` holds another directory', expected: 'FAIL', gate: 'api' },
+  {
+    row: 'An entry-point file other than the pinned one imports a pinned port',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'The pinned entry-point file imports a port other than its two',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
   {
     row: 'A module has `entry-points/http/shared/` (the one exemption)',
     expected: 'PASS',

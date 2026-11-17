@@ -168,13 +168,13 @@ function target(from: string, specifier: string): string | undefined {
 
 /**
  * `application/` imports no controller, route or parameter decorator of `@nestjs/common`
- * (rule 2: it knows nothing about HTTP). Its other HTTP, schema, OpenAPI, queue and
+ * (rule 2: it knows nothing about HTTP); a namespace import of it is refused too, since members could not be checked. Its other HTTP, schema, OpenAPI, queue and
  * scheduler imports are the dependency rule `api-application-no-http-queue-scheduler-libraries`.
  */
 function applicationDecoratorViolations(baseDir: string, path: string): Violation[] {
   return moduleImports(baseDir, path)
     .filter((entry) => entry.specifier === '@nestjs/common')
-    .flatMap((entry) => entry.names.filter((name) => HTTP_DECORATORS.has(name)))
+    .flatMap((entry) => entry.names.filter((name) => name === '*' || HTTP_DECORATORS.has(name)))
     .map((name) => ({
       rule: 'api-application-no-http-decorators',
       from: path,

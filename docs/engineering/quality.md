@@ -110,10 +110,14 @@ Positive and negative fixtures prove the rules catch violations:
 | `application/` imports only domain, ports and its own files | PASS |
 | `entry-points/` imports a handler | PASS |
 | `entry-points/` imports a repository interface, port or infrastructure file | FAIL |
+| An entry-point file other than the pinned one imports a pinned port (one pinned exemption, removed by #166) | FAIL |
+| The pinned entry-point file imports a port other than its two (removed by #166) | FAIL |
 | `contracts/` holds `index.ts` and `events/` only | PASS |
-| `contracts/` holds another file or directory | FAIL |
+| `contracts/` holds another file | FAIL |
+| `contracts/` holds another directory | FAIL |
 | A module has `entry-points/http/shared/` (the one exemption) | PASS |
 | A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/` | FAIL |
+| A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers` | FAIL |
 | A feature imports another feature of its module | FAIL (added by #164 for `projects`; `executions` by #166; all modules by #170) |
 | A feature imports a port, the domain or its own files | PASS (added by #164 for `projects`; `executions` by #166; all modules by #170) |
 | `domain/entities/` file exports a class with a non-public constructor | PASS (added by #165 for `projects`; `executions` by #167; all modules by #170) |
