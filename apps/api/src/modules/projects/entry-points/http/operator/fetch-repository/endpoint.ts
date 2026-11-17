@@ -19,10 +19,8 @@ import {
 } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
 import { NoUsableCloneError, RepositoryBusyError } from '../../../../domain/entities/repository.js';
-import {
-  NoRepositoryError,
-  ProjectNotFoundError,
-} from '../../../../domain/repositories/project-repository.js';
+import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
+import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
 import { FetchRepositoryHandler } from '../../../../application/features/fetch-repository/handler.js';
 
@@ -73,7 +71,7 @@ export class FetchRepositoryEndpoint {
   })
   async fetch(@Param('id') id: string) {
     try {
-      return toRepositoryResponse(await this.handler.execute(id));
+      return toRepositoryResponse(await this.handler.execute({ projectId: id }));
     } catch (error) {
       throw toHttpError(error);
     }

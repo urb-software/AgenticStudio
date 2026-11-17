@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import type { StoredDeployKey } from '../../../ports/deploy-keys.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
@@ -20,6 +21,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let sweeper: SweepOrphanedDeployKeysHandler;
   let logs: string[];
   let warnings: string[];
@@ -27,7 +29,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
   /** A Repository holding `key`, stored the way a Connect over SSH stores it. */
   async function sshRepository(projectId: string, key: StoredDeployKey) {
     projects.addProject(projectId, projectId.slice(0, 4));
-    await projects.connect({
+    await connections.connect({
       projectId,
       url: `git@github.com:acme/${projectId}.git`,
       identity: `github.com/acme/${projectId}`,
@@ -44,7 +46,8 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     secrets = new InMemorySecretStore();
     deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
-    sweeper = new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
+    connections = new InMemoryRepositoryConnectionRepository();
+    sweeper = new SweepOrphanedDeployKeysHandler(connections, deployKeys, {
       gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
     });
     logs = [];
@@ -66,12 +69,12 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     const disconnecting = await deployKeys.create('B');
     await sshRepository(A, awaiting);
     await sshRepository(B, disconnecting);
-    await projects.change(B, (r) => {
+    await connections.change(B, (r) => {
       r.startDisconnect();
     });
     secrets.now += 30 * 24 * HOUR_MS;
 
-    await sweeper.sweep();
+    await sweeper.execute();
 
     expect([...secrets.values.keys()].sort()).toEqual(
       [awaiting.secretRef, disconnecting.secretRef].sort(),
@@ -83,11 +86,11 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     const orphan = await deployKeys.create('Shop');
 
     secrets.now += HOUR_MS - 1;
-    await sweeper.sweep();
+    await sweeper.execute();
     expect(secrets.values.has(orphan.secretRef)).toBe(true);
 
     secrets.now += 1;
-    await sweeper.sweep();
+    await sweeper.execute();
     expect(secrets.values.has(orphan.secretRef)).toBe(false);
   });
 
@@ -96,7 +99,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     const unowned = await secrets.put('a value under the reserved label', { owner: 'unowned' });
     secrets.now += 30 * 24 * HOUR_MS;
 
-    await sweeper.sweep();
+    await sweeper.execute();
 
     expect([...secrets.values.keys()].sort()).toEqual([other, unowned].sort());
   });
@@ -108,7 +111,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     await sshRepository(A, kept);
     secrets.now += 2 * HOUR_MS;
 
-    await sweeper.sweep();
+    await sweeper.execute();
 
     expect(secrets.values.has(crashed.secretRef)).toBe(false);
     expect([...secrets.values.keys()]).toEqual([kept.secretRef]);
@@ -120,7 +123,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     const privateKeys = [...secrets.values.values()];
     secrets.now += 2 * HOUR_MS;
 
-    await sweeper.sweep();
+    await sweeper.execute();
 
     expect(logs).toEqual([
       `Deleted the orphaned Deploy key secret ${first.secretRef}.`,
@@ -137,7 +140,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     secrets.now += 2 * HOUR_MS;
     secrets.failNextDeleteWith = new SecretStoreUnavailableError();
 
-    await sweeper.sweep();
+    await sweeper.execute();
 
     expect([...secrets.values.keys()]).toEqual([failing.secretRef]);
     expect(warnings).toEqual([
@@ -148,7 +151,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
       ),
     ]);
 
-    await sweeper.sweep();
+    await sweeper.execute();
     expect(secrets.values.size).toBe(0);
   });
 
@@ -157,7 +160,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
     secrets.now += 2 * HOUR_MS;
     secrets.failWith = new SecretStoreUnavailableError();
 
-    await expect(sweeper.sweep()).resolves.toBeUndefined();
+    await expect(sweeper.execute()).resolves.toBeUndefined();
 
     secrets.failWith = undefined;
     expect(secrets.values.size).toBe(1);
@@ -167,9 +170,9 @@ describe('SweepOrphanedDeployKeysHandler', () => {
   it('deletes nothing when the Repositories cannot be read, and never throws', async () => {
     await deployKeys.create('Shop');
     secrets.now += 2 * HOUR_MS;
-    vi.spyOn(projects, 'listDeployKeySecretRefs').mockRejectedValue(new Error('database down'));
+    vi.spyOn(connections, 'listDeployKeySecretRefs').mockRejectedValue(new Error('database down'));
 
-    await expect(sweeper.sweep()).resolves.toBeUndefined();
+    await expect(sweeper.execute()).resolves.toBeUndefined();
 
     expect(secrets.values.size).toBe(1);
     expect(warnings).toEqual([expect.stringMatching(/^Could not sweep orphaned Deploy keys; /)]);

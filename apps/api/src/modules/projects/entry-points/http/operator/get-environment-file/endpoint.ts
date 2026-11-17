@@ -40,7 +40,7 @@ export class GetEnvironmentFileEndpoint {
   ): Promise<void> {
     let info;
     try {
-      info = await this.handler.execute(id);
+      info = await this.handler.execute({ projectId: id });
     } catch (error) {
       if (error instanceof ProjectNotFoundError) throw projectNotFound();
       throw error;

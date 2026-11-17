@@ -83,6 +83,38 @@ export const QUALITY_TABLE = [
     expected: 'FAIL',
     gate: 'api',
   },
+  {
+    row: '`entry-points/` imports a type or an error from `domain/entities/`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  { row: '`entry-points/` imports a class from `domain/entities/`', expected: 'FAIL', gate: 'api' },
+  {
+    row: 'A handler returns a snapshot, ids, values or a view type, and exports its input and result types',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A handler returns an entity class, or does not export its result type',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  { row: 'A repository interface refers to one entity file', expected: 'PASS', gate: 'api' },
+  {
+    row: 'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'An entity file imports another entity file for an id type',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'An entity file imports another entity file for anything else',
+    expected: 'FAIL',
+    gate: 'api',
+  },
   { row: 'A module has no `domain/services/` directory', expected: 'PASS', gate: 'api' },
   { row: 'A module has a `domain/services/` directory', expected: 'FAIL', gate: 'api' },
   { row: '`domain/` imports only `domain/` and plain libraries', expected: 'PASS', gate: 'api' },

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { GetRunStartPointHandler } from '../handler.js';
 
 // Issue #96: the commit a Run starts from, offered to `executions` through the public
@@ -9,16 +10,18 @@ const HEAD = 'c'.repeat(40);
 
 describe('GetRunStartPointHandler', () => {
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let handler: GetRunStartPointHandler;
 
   beforeEach(() => {
     projects = new InMemoryProjectRepository();
-    handler = new GetRunStartPointHandler(projects);
+    connections = new InMemoryRepositoryConnectionRepository();
+    handler = new GetRunStartPointHandler(projects, connections);
   });
 
   async function connect() {
     projects.addProject(PROJECT, 'Shop');
-    await projects.connect({
+    await connections.connect({
       projectId: PROJECT,
       url: 'https://github.com/acme/shop.git',
       identity: 'github.com/acme/shop',
@@ -28,7 +31,7 @@ describe('GetRunStartPointHandler', () => {
 
   it('starts from the integration branch commit of a ready Repository, at its remote', async () => {
     await connect();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
     });
 
@@ -57,10 +60,10 @@ describe('GetRunStartPointHandler', () => {
     await connect();
     expect(await handler.forProject(PROJECT)).toEqual({ status: 'repository_not_ready' });
 
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
     });
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.startFetch();
     });
     expect(await handler.forProject(PROJECT)).toEqual({ status: 'repository_not_ready' });

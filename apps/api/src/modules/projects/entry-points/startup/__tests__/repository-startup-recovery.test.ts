@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryProjectRepository } from '../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { InMemoryEnvironmentFileRepository } from '../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
 import { FakeRepositoryGit } from '../../../application/ports/__tests__/fake-repository-git.js';
 import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memory-deploy-keys.js';
@@ -17,27 +18,29 @@ describe('RepositoryStartupRecovery', () => {
   it('reconciles interrupted clones and fetches, resumes pending disconnects, then sweeps orphaned Deploy keys', async () => {
     const deployKeys = new InMemoryDeployKeys(new InMemorySecretStore());
     const projects = new InMemoryProjectRepository();
+    const connections = new InMemoryRepositoryConnectionRepository();
     const git = new FakeRepositoryGit();
-    const clone = new CloneRepositoryHandler(projects, git, deployKeys);
-    const fetchClone = new FetchCloneHandler(projects, git, deployKeys);
+    const clone = new CloneRepositoryHandler(connections, git, deployKeys);
+    const fetchClone = new FetchCloneHandler(connections, git, deployKeys);
     vi.spyOn(clone, 'reconcile');
     vi.spyOn(fetchClone, 'reconcile');
     const cleanup = new DisconnectRepositoryHandler(
       projects,
+      connections,
       git,
       new RecordingRepositoryJobs(),
       deployKeys,
     );
     vi.spyOn(cleanup, 'resumeAll');
-    const orphanedKeys = new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
+    const orphanedKeys = new SweepOrphanedDeployKeysHandler(connections, deployKeys, {
       gracePeriodMs: 0,
     });
-    vi.spyOn(orphanedKeys, 'sweep');
+    vi.spyOn(orphanedKeys, 'execute');
     const orphanedFiles = new SweepOrphanedEnvironmentFilesHandler(
       new InMemoryEnvironmentFileRepository(),
       new InMemoryEnvironmentFileContents(),
     );
-    vi.spyOn(orphanedFiles, 'sweep');
+    vi.spyOn(orphanedFiles, 'execute');
     const recovery = new RepositoryStartupRecovery(
       clone,
       fetchClone,
@@ -51,12 +54,12 @@ describe('RepositoryStartupRecovery', () => {
     expect(clone.reconcile).toHaveBeenCalledOnce();
     expect(fetchClone.reconcile).toHaveBeenCalledOnce();
     expect(cleanup.resumeAll).toHaveBeenCalledOnce();
-    expect(orphanedKeys.sweep).toHaveBeenCalledOnce();
-    expect(orphanedFiles.sweep).toHaveBeenCalledOnce();
+    expect(orphanedKeys.execute).toHaveBeenCalledOnce();
+    expect(orphanedFiles.execute).toHaveBeenCalledOnce();
     const order = (spy: unknown) => vi.mocked(spy as () => unknown).mock.invocationCallOrder[0]!;
     expect(order(fetchClone.reconcile)).toBeGreaterThan(order(clone.reconcile));
     expect(order(cleanup.resumeAll)).toBeGreaterThan(order(fetchClone.reconcile));
-    expect(order(orphanedKeys.sweep)).toBeGreaterThan(order(cleanup.resumeAll));
-    expect(order(orphanedFiles.sweep)).toBeGreaterThan(order(orphanedKeys.sweep));
+    expect(order(orphanedKeys.execute)).toBeGreaterThan(order(cleanup.resumeAll));
+    expect(order(orphanedFiles.execute)).toBeGreaterThan(order(orphanedKeys.execute));
   });
 });

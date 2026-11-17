@@ -1,15 +1,25 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isProjectId, type Project } from '../../../domain/value-objects/project.js';
-import type { RepositoryConnection } from '../../../domain/entities/repository.js';
+import type { ProjectSnapshot } from '../../../domain/entities/project.js';
+import type { RepositoryConnectionSnapshot } from '../../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+import {
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
 
-export interface ProjectDetail {
-  project: Project;
-  repository: RepositoryConnection | null;
+export interface GetProjectInput {
+  projectId: string;
+}
+
+/** One project with its Repository (`null` when none is connected). */
+export interface GetProjectResult {
+  project: ProjectSnapshot;
+  repository: RepositoryConnectionSnapshot | null;
 }
 
 /**
@@ -18,12 +28,18 @@ export interface ProjectDetail {
  */
 @Injectable()
 export class GetProjectHandler {
-  constructor(@Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository) {}
+  constructor(
+    @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
+  ) {}
 
-  async execute(projectId: string): Promise<ProjectDetail> {
+  async execute(input: GetProjectInput): Promise<GetProjectResult> {
+    const { projectId } = input;
     if (!isProjectId(projectId)) throw new ProjectNotFoundError();
     const project = await this.projects.findById(projectId);
     if (!project) throw new ProjectNotFoundError();
-    return { project, repository: await this.projects.findRepository(projectId) };
+    const repository = await this.repositories.find(projectId);
+    return { project: project.snapshot(), repository: repository?.snapshot() ?? null };
   }
 }

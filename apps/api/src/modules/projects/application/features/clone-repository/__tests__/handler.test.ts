@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { JobAbortedError } from '../../../../../../platform/queue/job-queue.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import {
   GIT_FAILURE_REASONS,
   GitOperationError,
@@ -32,13 +33,15 @@ describe('CloneRepositoryHandler', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let handler: CloneRepositoryHandler;
 
-  const run = (signal = new AbortController().signal) => handler.process(PROJECT, signal);
+  const run = (signal = new AbortController().signal) =>
+    handler.execute({ projectId: PROJECT, signal });
 
   async function connecting(integrationBranch = 'dev') {
-    await projects.connect({
+    await connections.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
@@ -50,9 +53,10 @@ describe('CloneRepositoryHandler', () => {
     secrets = new InMemorySecretStore();
     deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
-    handler = new CloneRepositoryHandler(projects, git, deployKeys);
+    handler = new CloneRepositoryHandler(connections, git, deployKeys);
   });
 
   it('removes any leftover Clone, inspects the remote, clones, and marks the Repository ready', async () => {
@@ -63,7 +67,7 @@ describe('CloneRepositoryHandler', () => {
 
     expect(git.calls).toEqual(['removeClone', 'inspectRemote', 'clone']);
     expect(git.clone).toHaveBeenCalledWith(PROJECT, URL, 'dev', expect.anything());
-    expect(await projects.findRepository(PROJECT)).toMatchObject({
+    expect(await connections.find(PROJECT)).toMatchObject({
       state: 'ready',
       hasClone: true,
       headSha: COMMIT,
@@ -91,7 +95,7 @@ describe('CloneRepositoryHandler', () => {
 
     expect(git.clone).not.toHaveBeenCalled();
     // No Git output to show: the code and the default branch say it all (#72).
-    expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+    expect((await connections.find(PROJECT))?.failure).toEqual({
       code: 'branch_not_found',
       detail: '',
       remoteDefaultBranch: 'main',
@@ -108,7 +112,7 @@ describe('CloneRepositoryHandler', () => {
 
     await run();
 
-    expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+    expect((await connections.find(PROJECT))?.failure).toEqual({
       code: 'branch_not_found',
       detail: '',
       remoteDefaultBranch: named ? defaultBranch : null,
@@ -121,7 +125,7 @@ describe('CloneRepositoryHandler', () => {
 
     await run();
 
-    expect((await projects.findRepository(PROJECT))?.failure?.remoteDefaultBranch).toBeNull();
+    expect((await connections.find(PROJECT))?.failure?.remoteDefaultBranch).toBeNull();
   });
 
   it.each(GIT_FAILURE_REASONS)(
@@ -132,7 +136,7 @@ describe('CloneRepositoryHandler', () => {
 
       await run();
 
-      expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+      expect((await connections.find(PROJECT))?.failure).toEqual({
         code: reason,
         // A host key mismatch leads with Studio's explanation (Issue #62).
         detail:
@@ -150,7 +154,7 @@ describe('CloneRepositoryHandler', () => {
 
     await run();
 
-    expect(await projects.findRepository(PROJECT)).toMatchObject({
+    expect(await connections.find(PROJECT)).toMatchObject({
       state: 'failed',
       hasClone: false,
       headSha: null,
@@ -164,12 +168,12 @@ describe('CloneRepositoryHandler', () => {
 
     await run();
 
-    expect((await projects.findRepository(PROJECT))?.failure?.detail).toHaveLength(2000);
+    expect((await connections.find(PROJECT))?.failure?.detail).toHaveLength(2000);
   });
 
   it('does nothing for a job whose Repository is no longer connecting', async () => {
     await connecting();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.failClone({
         code: 'interrupted',
         detail: '',
@@ -200,10 +204,10 @@ describe('CloneRepositoryHandler', () => {
     });
 
     await expect(run(controller.signal)).rejects.toThrow('aborted');
-    expect((await projects.findRepository(PROJECT))?.state).toBe('connecting');
+    expect((await connections.find(PROJECT))?.state).toBe('connecting');
 
     await handler.onFailed(PROJECT, { reason: 'timeout' });
-    expect((await projects.findRepository(PROJECT))?.failure).toMatchObject({ code: 'timeout' });
+    expect((await connections.find(PROJECT))?.failure).toMatchObject({ code: 'timeout' });
   });
 
   it('rethrows an unexpected error, so onFailed stores unknown', async () => {
@@ -223,7 +227,7 @@ describe('CloneRepositoryHandler', () => {
 
     await handler.onFailed(PROJECT, { reason });
 
-    expect((await projects.findRepository(PROJECT))?.failure).toMatchObject(failure);
+    expect((await connections.find(PROJECT))?.failure).toMatchObject(failure);
   });
 
   it('onFailed stores an unexpected error as unknown with a generic detail, never the error', async () => {
@@ -231,7 +235,7 @@ describe('CloneRepositoryHandler', () => {
 
     await handler.onFailed(PROJECT, { reason: 'error', error: new Error('db down at 10.0.0.7') });
 
-    expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+    expect((await connections.find(PROJECT))?.failure).toEqual({
       code: 'unknown',
       detail: UNEXPECTED_FAILURE_DETAIL,
       remoteDefaultBranch: null,
@@ -244,7 +248,7 @@ describe('CloneRepositoryHandler', () => {
 
     await run();
 
-    expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+    expect((await connections.find(PROJECT))?.failure).toEqual({
       code: 'unknown',
       detail: GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
       remoteDefaultBranch: null,
@@ -255,25 +259,25 @@ describe('CloneRepositoryHandler', () => {
     await connecting();
     const other = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
     projects.addProject(other, 'Ready one');
-    await projects.connect({
+    await connections.connect({
       projectId: other,
       url: 'https://github.com/acme/ready.git',
       identity: 'github.com/acme/ready',
       integrationBranch: 'dev',
     });
-    await projects.change(other, (r) => {
+    await connections.change(other, (r) => {
       r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
     });
 
     await handler.reconcile();
     await handler.reconcile();
 
-    expect((await projects.findRepository(PROJECT))?.failure).toEqual({
+    expect((await connections.find(PROJECT))?.failure).toEqual({
       code: 'interrupted',
       detail: '',
       remoteDefaultBranch: null,
     });
-    expect((await projects.findRepository(other))?.state).toBe('ready');
+    expect((await connections.find(other))?.state).toBe('ready');
   });
 
   describe('an SSH Repository (Issue #62)', () => {
@@ -283,7 +287,7 @@ describe('CloneRepositoryHandler', () => {
 
     async function connectingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');
-      await projects.connect({
+      await connections.connect({
         projectId: PROJECT,
         url: SSH_URL,
         identity: 'github.com/acme/shop',
@@ -291,7 +295,7 @@ describe('CloneRepositoryHandler', () => {
         deployKey,
         pinnedHostKey,
       });
-      await projects.change(PROJECT, (r) => {
+      await connections.change(PROJECT, (r) => {
         r.startVerifiedClone(null);
       });
       return deployKey;
@@ -299,7 +303,7 @@ describe('CloneRepositoryHandler', () => {
 
     it('clones with the Deploy key from the secret store and the trusted host keys only', async () => {
       deployKeys = new InMemoryDeployKeys(secrets, [{ hosts: ['github.com'], key: trusted }]);
-      handler = new CloneRepositoryHandler(projects, git, deployKeys);
+      handler = new CloneRepositoryHandler(connections, git, deployKeys);
       const { secretRef } = await connectingOverSsh(pinned);
       git.clone.mockResolvedValueOnce({ commit: COMMIT });
 
@@ -317,7 +321,7 @@ describe('CloneRepositoryHandler', () => {
         'dev',
         expect.objectContaining({ ssh }),
       );
-      expect(await projects.findRepository(PROJECT)).toMatchObject({ state: 'ready' });
+      expect(await connections.find(PROJECT)).toMatchObject({ state: 'ready' });
     });
 
     it('fails with host_key_mismatch before Git runs when no host key is trusted', async () => {
@@ -326,7 +330,7 @@ describe('CloneRepositoryHandler', () => {
       await run();
 
       expect(git.calls).toEqual([]);
-      expect(await projects.findRepository(PROJECT)).toMatchObject({
+      expect(await connections.find(PROJECT)).toMatchObject({
         state: 'failed',
         failure: { code: 'host_key_mismatch', detail: NO_TRUSTED_HOST_KEY_DETAIL },
       });
@@ -340,7 +344,7 @@ describe('CloneRepositoryHandler', () => {
 
       await run();
 
-      expect(await projects.findRepository(PROJECT)).toMatchObject({
+      expect(await connections.find(PROJECT)).toMatchObject({
         state: 'failed',
         failure: {
           code: 'host_key_mismatch',
@@ -357,7 +361,7 @@ describe('CloneRepositoryHandler', () => {
 
       await run();
 
-      expect(await projects.findRepository(PROJECT)).toMatchObject({
+      expect(await connections.find(PROJECT)).toMatchObject({
         state: 'failed',
         failure: { code: 'auth_failed' },
         publicKey,

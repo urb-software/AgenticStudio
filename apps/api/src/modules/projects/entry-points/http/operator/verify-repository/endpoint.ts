@@ -24,10 +24,8 @@ import {
   HostKeyFingerprintMismatchError,
   RepositoryNotVerifiableError,
 } from '../../../../domain/entities/repository.js';
-import {
-  NoRepositoryError,
-  ProjectNotFoundError,
-} from '../../../../domain/repositories/project-repository.js';
+import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
+import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
 import { VerifyRepositoryHandler } from '../../../../application/features/verify-repository/handler.js';
 import { type VerifyRepositoryRequest, VerifyRepositoryRequestDto } from './schema.js';

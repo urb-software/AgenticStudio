@@ -28,7 +28,7 @@ export class SweepOrphanedEnvironmentFilesHandler {
     @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
   ) {}
 
-  async sweep(): Promise<void> {
+  async execute(): Promise<void> {
     let orphans: string[];
     try {
       const candidates = await this.contents.listOld();

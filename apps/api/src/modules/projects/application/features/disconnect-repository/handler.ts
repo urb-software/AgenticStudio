@@ -1,20 +1,31 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import { isProjectId } from '../../../domain/value-objects/project.js';
-import type { RepositoryConnection } from '../../../domain/entities/repository.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
+import type {
+  RepositoryConnection,
+  RepositoryConnectionSnapshot,
+} from '../../../domain/entities/repository.js';
 import {
-  NoRepositoryError,
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+import {
+  NoRepositoryError,
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 
+export interface DisconnectRepositoryInput {
+  projectId: string;
+}
+
 /** What a disconnect achieved: everything removed, or cleanup still pending. */
-export type DisconnectOutcome =
-  { disconnected: true } | { disconnected: false; repository: RepositoryConnection };
+export type DisconnectRepositoryResult =
+  { disconnected: true } | { disconnected: false; repository: RepositoryConnectionSnapshot };
 
 /** One thing a Disconnect removes; each step is idempotent, so a retry runs them all again. */
 interface CleanupStep {
@@ -60,6 +71,8 @@ export class DisconnectRepositoryHandler {
 
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
     @Inject(REPOSITORY_JOBS) private readonly jobs: RepositoryJobs,
     @Inject(DEPLOY_KEYS) deployKeys: DeployKeys,
@@ -76,7 +89,7 @@ export class DisconnectRepositoryHandler {
         name: 'forget the Deploy key and the pinned host key',
         run: async (repository) => {
           if (repository.holdsDeployKeyMaterial) {
-            await projects.change(repository.projectId, (stored) => {
+            await repositories.change(repository.projectId, (stored) => {
               stored.forgetDeployKey();
             });
           }
@@ -85,11 +98,12 @@ export class DisconnectRepositoryHandler {
     ];
   }
 
-  async execute(projectId: string): Promise<DisconnectOutcome> {
+  async execute(input: DisconnectRepositoryInput): Promise<DisconnectRepositoryResult> {
+    const { projectId } = input;
     if (!isProjectId(projectId)) throw new ProjectNotFoundError();
     this.git.assertSupported();
 
-    const repository = await this.projects.change(projectId, (stored) => {
+    const repository = await this.repositories.change(projectId, (stored) => {
       stored.startDisconnect();
     });
     if (!repository) {
@@ -101,10 +115,10 @@ export class DisconnectRepositoryHandler {
       await this.jobs.cancel(projectId);
     } catch (error) {
       this.logPending(projectId, 'could not cancel its running operation', error);
-      return { disconnected: false, repository };
+      return { disconnected: false, repository: repository.snapshot() };
     }
     if (await this.finish(projectId)) return { disconnected: true };
-    return { disconnected: false, repository };
+    return { disconnected: false, repository: repository.snapshot() };
   }
 
   /**
@@ -116,7 +130,7 @@ export class DisconnectRepositoryHandler {
   async finish(projectId: string): Promise<boolean> {
     let repository: RepositoryConnection | null;
     try {
-      repository = await this.projects.findRepository(projectId);
+      repository = await this.repositories.find(projectId);
       if (!repository) return true;
       if (!repository.isDisconnecting) return false;
     } catch (error) {
@@ -133,7 +147,7 @@ export class DisconnectRepositoryHandler {
     }
     try {
       // Zero rows means a concurrent cleanup deleted it first: nothing is left either way.
-      await this.projects.change(projectId, (stored) => {
+      await this.repositories.change(projectId, (stored) => {
         stored.finishDisconnect();
       });
     } catch (error) {
@@ -149,7 +163,7 @@ export class DisconnectRepositoryHandler {
    * that still cannot be cleaned up does not stop the others or the start-up.
    */
   async resumeAll(): Promise<void> {
-    for (const projectId of await this.projects.listIdsInState('disconnecting')) {
+    for (const projectId of await this.repositories.listIdsInState('disconnecting')) {
       try {
         await this.finish(projectId);
       } catch (error) {

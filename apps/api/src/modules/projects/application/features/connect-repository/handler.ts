@@ -1,12 +1,22 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import { isProjectId } from '../../../domain/value-objects/project.js';
-import { RepositoryConnection } from '../../../domain/entities/repository.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
+import {
+  RepositoryAlreadyConnectedError,
+  RepositoryConnection,
+  type RepositoryConnectionSnapshot,
+} from '../../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+import {
+  REPOSITORY_CONNECTION_REPOSITORY,
+  RemoteAlreadyConnectedError,
+  RemoteHeldByOtherProjectError,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import { IntegrationBranch } from '../../../domain/value-objects/integration-branch.js';
 import { RepositoryUrl } from '../../../domain/value-objects/repository-url.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
@@ -36,6 +46,9 @@ export interface ConnectRepositoryInput {
   integrationBranch: string;
 }
 
+/** The Repository as the connect stored it. */
+export type ConnectRepositoryResult = RepositoryConnectionSnapshot;
+
 /**
  * Command: Connect (glossary). Over HTTPS, stores the Repository as `connecting` and
  * schedules the background clone; returns at once. Over SSH (Issue #62), stores it as
@@ -57,6 +70,8 @@ export interface ConnectRepositoryInput {
 export class ConnectRepositoryHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
     @Inject(REPOSITORY_JOBS) private readonly jobs: RepositoryJobs,
     @Inject(CONNECT_REPOSITORY_SETTINGS) private readonly settings: ConnectRepositorySettings,
@@ -67,7 +82,7 @@ export class ConnectRepositoryHandler {
   private readonly logger = new Logger('ConnectRepository');
   private readonly sweepLogger = new Logger('DeployKeySweep');
 
-  async execute(input: ConnectRepositoryInput): Promise<RepositoryConnection> {
+  async execute(input: ConnectRepositoryInput): Promise<ConnectRepositoryResult> {
     if (!isProjectId(input.projectId)) throw new ProjectNotFoundError();
     const url = RepositoryUrl.parse(input.url, {
       allowFileRemotes: this.settings.allowFileRemotes,
@@ -78,8 +93,13 @@ export class ConnectRepositoryHandler {
 
     // A Retry replaces a failed Repository; if the clone cannot be scheduled with the same
     // settings, its failure is kept (with others, it would describe another attempt).
-    const previous = await this.projects.findRepository(input.projectId);
+    const previous = await this.repositories.find(input.projectId);
     const previousKey: StoredDeployKey | null = previous?.retainedDeployKey ?? null;
+
+    // The Repository's store does not read the Project's table: the Project must exist, and a
+    // missing one never leaves a created Deploy key behind.
+    const project = await this.projects.findById(input.projectId);
+    if (!project) throw new ProjectNotFoundError();
 
     let deployKey: StoredDeployKey | null = null;
     let createdKey = false;
@@ -87,8 +107,6 @@ export class ConnectRepositoryHandler {
       if (previousKey) {
         deployKey = previousKey;
       } else {
-        const project = await this.projects.findById(input.projectId);
-        if (!project) throw new ProjectNotFoundError();
         deployKey = await this.deployKeys.create(project.name);
         createdKey = true;
       }
@@ -96,7 +114,7 @@ export class ConnectRepositoryHandler {
 
     let repository: RepositoryConnection;
     try {
-      repository = await this.projects.connect({
+      repository = await this.repositories.connect({
         projectId: input.projectId,
         url: url.value,
         identity: url.identity,
@@ -107,13 +125,13 @@ export class ConnectRepositoryHandler {
       });
     } catch (error) {
       if (createdKey && deployKey) await this.deleteKey(input.projectId, deployKey.secretRef);
-      throw error;
+      throw await this.nameRemoteOwner(error);
     }
     // The replaced Repository's key is no longer referenced (it was replaced over HTTPS).
     if (previousKey && previousKey !== deployKey) {
       await this.deleteKey(input.projectId, previousKey.secretRef);
     }
-    if (url.ssh) return repository;
+    if (url.ssh) return repository.snapshot();
     try {
       await this.jobs.start(input.projectId, 'clone');
     } catch (error) {
@@ -121,12 +139,24 @@ export class ConnectRepositoryHandler {
         url: url.value,
         integrationBranch: branch.value,
       });
-      await this.projects.change(input.projectId, (stored) => {
+      await this.repositories.change(input.projectId, (stored) => {
         stored.failClone(failure);
       });
       throw error;
     }
-    return repository;
+    return repository.snapshot();
+  }
+
+  /**
+   * The store names the Project that holds a remote by its id; the operator is told its name,
+   * so the id is turned into it here. Any other error passes through.
+   */
+  private async nameRemoteOwner(error: unknown): Promise<unknown> {
+    if (!(error instanceof RemoteHeldByOtherProjectError)) return error;
+    const owner = await this.projects.findById(error.ownerProjectId);
+    return owner
+      ? new RemoteAlreadyConnectedError(owner.name)
+      : new RepositoryAlreadyConnectedError();
   }
 
   /**
@@ -153,7 +183,7 @@ export class ConnectRepositoryHandler {
       const policy = DeployKeySweepPolicy.of(this.sweepSettings.gracePeriodMs);
       const candidates = await this.deployKeys.listOlderThan(policy.gracePeriodMs);
       if (candidates.length === 0) return;
-      orphans = policy.orphans(candidates, await this.projects.listDeployKeySecretRefs());
+      orphans = policy.orphans(candidates, await this.repositories.listDeployKeySecretRefs());
     } catch (error) {
       this.sweepLogger.warn(
         `Could not sweep orphaned Deploy keys; the next sweep tries again. ${redactSecrets(String(error))}`,

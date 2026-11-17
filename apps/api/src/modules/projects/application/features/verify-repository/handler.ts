@@ -1,15 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isProjectId } from '../../../domain/value-objects/project.js';
+import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import {
   RepositoryConnection,
+  type RepositoryConnectionSnapshot,
   RepositoryNotVerifiableError,
 } from '../../../domain/entities/repository.js';
 import {
-  NoRepositoryError,
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+import {
+  NoRepositoryError,
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from '../../../domain/repositories/repository-connection-repository.js';
 import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import {
@@ -24,6 +29,9 @@ export interface VerifyRepositoryInput {
   /** The fingerprint the operator confirmed, when the Repository is `awaiting_host_key`. */
   acceptHostKeyFingerprint?: string;
 }
+
+/** The Repository as the verify left it. */
+export type VerifyRepositoryResult = RepositoryConnectionSnapshot;
 
 /** How long retrieving a host key may take; the request waits for it. */
 export const HOST_KEY_SCAN_TIMEOUT_MS = 30_000;
@@ -50,17 +58,19 @@ export const HOST_KEY_SCAN_TIMEOUT_MS = 30_000;
 export class VerifyRepositoryHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
+    @Inject(REPOSITORY_CONNECTION_REPOSITORY)
+    private readonly repositories: RepositoryConnectionRepository,
     @Inject(REPOSITORY_GIT) private readonly git: RepositoryGit,
     @Inject(REPOSITORY_JOBS) private readonly jobs: RepositoryJobs,
     @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
   ) {}
 
-  async execute(input: VerifyRepositoryInput): Promise<RepositoryConnection> {
+  async execute(input: VerifyRepositoryInput): Promise<VerifyRepositoryResult> {
     const { projectId, acceptHostKeyFingerprint } = input;
     if (!isProjectId(projectId)) throw new ProjectNotFoundError();
     this.git.assertSupported();
 
-    const repository = await this.projects.findRepository(projectId);
+    const repository = await this.repositories.find(projectId);
     if (!repository) {
       throw (await this.projects.findById(projectId))
         ? new NoRepositoryError()
@@ -70,11 +80,11 @@ export class VerifyRepositoryHandler {
 
     if (acceptHostKeyFingerprint !== undefined) {
       const pendingHostKey = repository.confirmedHostKey(acceptHostKeyFingerprint);
-      return this.startClone(repository, { pendingHostKey });
+      return (await this.startClone(repository, { pendingHostKey })).snapshot();
     }
 
     if (!this.deployKeys.trustedHostKeys(repository).isEmpty) {
-      return this.startClone(repository, null);
+      return (await this.startClone(repository, null)).snapshot();
     }
 
     let hostKey: string;
@@ -85,16 +95,16 @@ export class VerifyRepositoryHandler {
     } catch (error) {
       if (!(error instanceof GitOperationError)) throw error;
       const failure = RepositoryFailure.fromGit(error.reason, error.detail);
-      await this.projects.change(projectId, (stored) => {
+      await this.repositories.change(projectId, (stored) => {
         stored.failVerification(failure);
       });
-      return this.current(projectId);
+      return (await this.current(projectId)).snapshot();
     }
-    const awaiting = await this.projects.change(projectId, (stored) => {
+    const awaiting = await this.repositories.change(projectId, (stored) => {
       stored.awaitHostKey(hostKey);
     });
     if (!awaiting) throw new RepositoryNotVerifiableError();
-    return awaiting;
+    return awaiting.snapshot();
   }
 
   /**
@@ -108,7 +118,7 @@ export class VerifyRepositoryHandler {
   ): Promise<RepositoryConnection> {
     const { projectId } = previous;
     // A Repository another request changed since it was read refuses with the domain's error.
-    const started = await this.projects.change(projectId, (stored) => {
+    const started = await this.repositories.change(projectId, (stored) => {
       stored.startVerifiedClone(confirmed);
     });
     if (!started) throw new RepositoryNotVerifiableError();
@@ -116,7 +126,7 @@ export class VerifyRepositoryHandler {
       await this.jobs.start(projectId, 'clone');
     } catch (error) {
       const failure = RepositoryConnection.failureWhenCloneNotScheduled(previous);
-      await this.projects.change(projectId, (stored) => {
+      await this.repositories.change(projectId, (stored) => {
         stored.failClone(failure);
       });
       throw error;
@@ -125,7 +135,7 @@ export class VerifyRepositoryHandler {
   }
 
   private async current(projectId: string): Promise<RepositoryConnection> {
-    const repository = await this.projects.findRepository(projectId);
+    const repository = await this.repositories.find(projectId);
     if (!repository) throw new NoRepositoryError();
     return repository;
   }

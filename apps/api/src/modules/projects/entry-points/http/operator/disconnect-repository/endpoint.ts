@@ -14,10 +14,8 @@ import {
   repositoryResponseSchema,
   toRepositoryResponse,
 } from '../../shared/repository-response.js';
-import {
-  NoRepositoryError,
-  ProjectNotFoundError,
-} from '../../../../domain/repositories/project-repository.js';
+import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
+import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
 import { DisconnectRepositoryHandler } from '../../../../application/features/disconnect-repository/handler.js';
 
@@ -72,13 +70,13 @@ export class DisconnectRepositoryEndpoint {
     @Res({ passthrough: true }) response: ServerResponse,
   ): Promise<RepositoryResponse | undefined> {
     try {
-      const outcome = await this.handler.execute(id);
-      if (outcome.disconnected) {
+      const result = await this.handler.execute({ projectId: id });
+      if (result.disconnected) {
         response.statusCode = HttpStatus.NO_CONTENT;
         return undefined;
       }
       // Closed object: unknown keys are stripped, as the response serializer does elsewhere.
-      return repositoryResponseSchema.parse(toRepositoryResponse(outcome.repository));
+      return repositoryResponseSchema.parse(toRepositoryResponse(result.repository));
     } catch (error) {
       throw toHttpError(error);
     }

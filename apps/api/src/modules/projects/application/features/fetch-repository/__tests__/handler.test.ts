@@ -3,13 +3,12 @@ import {
   JobAlreadyActiveError,
   QueueUnavailableError,
 } from '../../../../../../platform/queue/job-queue.js';
-import {
-  NoRepositoryError,
-  ProjectNotFoundError,
-} from '../../../../domain/repositories/project-repository.js';
+import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
+import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { NoUsableCloneError, RepositoryBusyError } from '../../../../domain/entities/repository.js';
 import { RepositoryConnection } from '../../../../domain/entities/repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
@@ -27,14 +26,15 @@ const FAILURE = {
 
 describe('FetchRepositoryHandler', () => {
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let jobs: RecordingRepositoryJobs;
   let handler: FetchRepositoryHandler;
 
-  const stored = () => projects.findRepository(PROJECT);
+  const stored = () => connections.find(PROJECT);
 
   async function connecting() {
-    await projects.connect({
+    await connections.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
@@ -44,7 +44,7 @@ describe('FetchRepositoryHandler', () => {
 
   async function ready() {
     await connecting();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: OLD, fetchedAt: FETCHED_AT });
     });
   }
@@ -52,26 +52,27 @@ describe('FetchRepositoryHandler', () => {
   /** `failed` after a fetch that kept the Clone. */
   async function failedFetch() {
     await ready();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.startFetch();
     });
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.failFetch(FAILURE, { cloneKept: true });
     });
   }
 
   beforeEach(() => {
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
     jobs = new RecordingRepositoryJobs();
-    handler = new FetchRepositoryHandler(projects, git, jobs);
+    handler = new FetchRepositoryHandler(projects, connections, git, jobs);
   });
 
   it('marks a ready Repository fetching, schedules the fetch and returns at once', async () => {
     await ready();
 
-    const repository = await handler.execute(PROJECT);
+    const repository = await handler.execute({ projectId: PROJECT });
 
     expect(repository).toEqual({
       projectId: PROJECT,
@@ -96,7 +97,7 @@ describe('FetchRepositoryHandler', () => {
   it('fetches again after a failed fetch that kept the Clone, clearing the failure', async () => {
     await failedFetch();
 
-    const repository = await handler.execute(PROJECT);
+    const repository = await handler.execute({ projectId: PROJECT });
 
     expect(repository).toMatchObject({ state: 'fetching', headSha: OLD, failure: null });
     expect(jobs.started).toEqual([[PROJECT, 'fetch']]);
@@ -108,7 +109,7 @@ describe('FetchRepositoryHandler', () => {
       'fetching',
       async () => {
         await ready();
-        await projects.change(PROJECT, (r) => {
+        await connections.change(PROJECT, (r) => {
           r.startFetch();
         });
       },
@@ -116,28 +117,32 @@ describe('FetchRepositoryHandler', () => {
   ])('refuses while %s with RepositoryBusyError', async (_state, arrange) => {
     await arrange();
 
-    await expect(handler.execute(PROJECT)).rejects.toBeInstanceOf(RepositoryBusyError);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
+      RepositoryBusyError,
+    );
     expect(jobs.started).toEqual([]);
   });
 
   it('refuses a failed Repository without a usable Clone (failed connect)', async () => {
     await connecting();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.failClone(FAILURE);
     });
 
-    await expect(handler.execute(PROJECT)).rejects.toBeInstanceOf(NoUsableCloneError);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
+      NoUsableCloneError,
+    );
     expect((await stored())?.state).toBe('failed');
   });
 
   it('refuses a project without a Repository', async () => {
-    await expect(handler.execute(PROJECT)).rejects.toBeInstanceOf(NoRepositoryError);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(NoRepositoryError);
   });
 
   it.each(['00000000-0000-4000-8000-000000000000', 'not-a-uuid'])(
     'refuses the unknown project %s',
     async (id) => {
-      await expect(handler.execute(id)).rejects.toBeInstanceOf(ProjectNotFoundError);
+      await expect(handler.execute({ projectId: id })).rejects.toBeInstanceOf(ProjectNotFoundError);
     },
   );
 
@@ -145,7 +150,9 @@ describe('FetchRepositoryHandler', () => {
     await ready();
     git.supported = false;
 
-    await expect(handler.execute(PROJECT)).rejects.toBeInstanceOf(GitUnsupportedPlatformError);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
+      GitUnsupportedPlatformError,
+    );
     expect((await stored())?.state).toBe('ready');
   });
 
@@ -156,7 +163,7 @@ describe('FetchRepositoryHandler', () => {
     await ready();
     jobs.failWith = error;
 
-    await expect(handler.execute(PROJECT)).rejects.toBe(error);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBe(error);
     expect(await stored()).toMatchObject({
       state: 'ready',
       hasClone: true,
@@ -169,7 +176,7 @@ describe('FetchRepositoryHandler', () => {
   it('never leaves the Repository fetching when the read before the transition was stale', async () => {
     await ready();
     // The read sees the Repository as it was a moment earlier (still connecting).
-    vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(
+    vi.spyOn(connections, 'find').mockResolvedValueOnce(
       RepositoryConnection.restore({
         projectId: PROJECT,
         url: URL,
@@ -187,7 +194,7 @@ describe('FetchRepositoryHandler', () => {
     const error = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = error;
 
-    await expect(handler.execute(PROJECT)).rejects.toBe(error);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBe(error);
     expect(await stored()).toMatchObject({
       state: 'ready',
       hasClone: true,
@@ -202,7 +209,7 @@ describe('FetchRepositoryHandler', () => {
     const error = new QueueUnavailableError();
     jobs.failWith = error;
 
-    await expect(handler.execute(PROJECT)).rejects.toBe(error);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBe(error);
     expect(await stored()).toMatchObject({
       state: 'failed',
       hasClone: true,

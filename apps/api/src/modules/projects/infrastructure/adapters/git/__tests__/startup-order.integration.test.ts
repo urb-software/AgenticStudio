@@ -11,6 +11,8 @@ import {
 import { SECRET_STORE } from '../../../../../../platform/secrets/index.js';
 import { PROJECT_REPOSITORY } from '../../../../domain/repositories/project-repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { REPOSITORY_CONNECTION_REPOSITORY } from '../../../../domain/repositories/repository-connection-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { REPOSITORY_GIT } from '../../../../application/ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../../application/ports/__tests__/fake-repository-git.js';
 import { DisconnectRepositoryHandler } from '../../../../application/features/disconnect-repository/handler.js';
@@ -55,8 +57,10 @@ class SlowSweepGit extends FakeRepositoryGit implements OnModuleInit {
   }
 }
 
-class RecordingProjects extends InMemoryProjectRepository {
-  override listIdsInState(...args: Parameters<InMemoryProjectRepository['listIdsInState']>) {
+class RecordingConnections extends InMemoryRepositoryConnectionRepository {
+  override listIdsInState(
+    ...args: Parameters<InMemoryRepositoryConnectionRepository['listIdsInState']>
+  ) {
     const events_: Record<string, string> = {
       connecting: 'projects: interrupted connections failed',
       fetching: 'projects: interrupted fetches failed',
@@ -72,9 +76,9 @@ class RecordingProjects extends InMemoryProjectRepository {
    * the start-up path reads a Repository here (no Repository is connecting, fetching or
    * disconnecting), so this marks the job; the test also checks it happens at all.
    */
-  override findRepository(...args: Parameters<InMemoryProjectRepository['findRepository']>) {
+  override find(...args: Parameters<InMemoryRepositoryConnectionRepository['find']>) {
     events.push('queue: job ran');
-    return super.findRepository(...args);
+    return super.find(...args);
   }
 }
 
@@ -94,7 +98,8 @@ function startupContext(
     imports: [ConfigModule.forRoot(testConfig({ redisUrl })), QueueModule.forRoot(tuning)],
     providers: [
       { provide: REPOSITORY_GIT, useClass: SlowSweepGit },
-      { provide: PROJECT_REPOSITORY, useClass: RecordingProjects },
+      { provide: PROJECT_REPOSITORY, useClass: InMemoryProjectRepository },
+      { provide: REPOSITORY_CONNECTION_REPOSITORY, useClass: RecordingConnections },
       { provide: SECRET_STORE, useClass: RecordingSecrets },
       { provide: SSH_TRUST_SETTINGS, useValue: { knownHosts: [] } },
       { provide: DEPLOY_KEY_SWEEP_SETTINGS, useValue: { gracePeriodMs: 0 } },

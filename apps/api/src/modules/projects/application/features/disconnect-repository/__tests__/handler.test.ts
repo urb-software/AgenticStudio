@@ -6,11 +6,10 @@ import {
 } from '../../../../../../platform/queue/job-queue.js';
 import type { RepositoryConnection } from '../../../../domain/entities/repository.js';
 import { RepositoryFailure } from '../../../../domain/value-objects/repository-failure.js';
-import {
-  NoRepositoryError,
-  ProjectNotFoundError,
-} from '../../../../domain/repositories/project-repository.js';
+import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
+import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
@@ -33,15 +32,16 @@ describe('DisconnectRepositoryHandler', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let jobs: RecordingRepositoryJobs;
   let logs: string[];
   let handler: DisconnectRepositoryHandler;
 
-  const stored = () => projects.findRepository(PROJECT);
+  const stored = () => connections.find(PROJECT);
 
   async function connecting(projectId = PROJECT) {
-    await projects.connect({
+    await connections.connect({
       projectId,
       url: URL,
       identity: IDENTITY,
@@ -51,14 +51,14 @@ describe('DisconnectRepositoryHandler', () => {
 
   async function ready() {
     await connecting();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: SHA, fetchedAt: FETCHED_AT });
     });
   }
 
   async function fetching() {
     await ready();
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.startFetch();
     });
   }
@@ -66,7 +66,7 @@ describe('DisconnectRepositoryHandler', () => {
   /** A late write of an aborted job: whether the transition applied. */
   async function late(write: (repository: RepositoryConnection) => boolean): Promise<boolean> {
     let applied = false;
-    await projects.change(PROJECT, (repository) => {
+    await connections.change(PROJECT, (repository) => {
       applied = write(repository);
     });
     return applied;
@@ -80,6 +80,7 @@ describe('DisconnectRepositoryHandler', () => {
     secrets = new InMemorySecretStore();
     deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     projects.addProject(PROJECT, 'Shop');
     projects.addProject(OTHER, 'Other');
     git = new FakeRepositoryGit();
@@ -88,7 +89,7 @@ describe('DisconnectRepositoryHandler', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
       logs.push(String(message));
     });
-    handler = new DisconnectRepositoryHandler(projects, git, jobs, deployKeys);
+    handler = new DisconnectRepositoryHandler(projects, connections, git, jobs, deployKeys);
   });
 
   it('marks the Repository disconnecting, cancels its job, removes the Clone, then deletes the record', async () => {
@@ -101,7 +102,7 @@ describe('DisconnectRepositoryHandler', () => {
       seen.push(`removeClone while ${(await stored())?.state}`);
     });
 
-    await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
+    await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({ disconnected: true });
 
     expect(seen).toEqual(['cancel while disconnecting', 'removeClone while disconnecting']);
     expect(jobs.cancelled).toEqual([PROJECT]);
@@ -112,7 +113,7 @@ describe('DisconnectRepositoryHandler', () => {
   it('removes the Clone by project id only: no URL or path reaches the Git adapter', async () => {
     await ready();
 
-    await handler.execute(PROJECT);
+    await handler.execute({ projectId: PROJECT });
 
     expect(git.removeClone).toHaveBeenCalledTimes(1);
     expect(git.removeClone.mock.calls[0]![0]).toBe(PROJECT);
@@ -124,7 +125,7 @@ describe('DisconnectRepositoryHandler', () => {
       'failed (no Clone)',
       async () => {
         await connecting();
-        await projects.change(PROJECT, (r) => {
+        await connections.change(PROJECT, (r) => {
           r.failClone(FAILURE);
         });
       },
@@ -133,7 +134,7 @@ describe('DisconnectRepositoryHandler', () => {
       'failed (Clone kept)',
       async () => {
         await fetching();
-        await projects.change(PROJECT, (r) => {
+        await connections.change(PROJECT, (r) => {
           r.failFetch(FAILURE, { cloneKept: true });
         });
       },
@@ -141,7 +142,7 @@ describe('DisconnectRepositoryHandler', () => {
   ])('disconnects a Repository that is %s', async (_case, arrange) => {
     await arrange();
 
-    await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
+    await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({ disconnected: true });
     expect(await stored()).toBeNull();
   });
 
@@ -172,7 +173,9 @@ describe('DisconnectRepositoryHandler', () => {
         expect((await stored())?.state).toBe('disconnecting');
       };
 
-      await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
+      await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
+        disconnected: true,
+      });
 
       expect(writes).toEqual([false]);
       expect(await stored()).toBeNull();
@@ -190,7 +193,7 @@ describe('DisconnectRepositoryHandler', () => {
       await ready();
       jobs.cancelFailsWith = error;
 
-      const outcome = await handler.execute(PROJECT);
+      const outcome = await handler.execute({ projectId: PROJECT });
 
       expect(outcome).toEqual({
         disconnected: false,
@@ -201,7 +204,9 @@ describe('DisconnectRepositoryHandler', () => {
       expect(logs).toEqual([expect.stringContaining(PROJECT)]);
 
       jobs.cancelFailsWith = undefined;
-      await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
+      await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
+        disconnected: true,
+      });
       expect(await stored()).toBeNull();
     });
 
@@ -209,7 +214,7 @@ describe('DisconnectRepositoryHandler', () => {
       await ready();
       git.removeClone.mockRejectedValueOnce(new Error(`EACCES token=${TOKEN}`));
 
-      const outcome = await handler.execute(PROJECT);
+      const outcome = await handler.execute({ projectId: PROJECT });
 
       expect(outcome).toMatchObject({
         disconnected: false,
@@ -219,55 +224,63 @@ describe('DisconnectRepositoryHandler', () => {
       expect(logs).toEqual([expect.stringContaining(PROJECT)]);
       expect(logs[0]).not.toContain(TOKEN);
 
-      await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
+      await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
+        disconnected: true,
+      });
       expect(await stored()).toBeNull();
     });
 
     it('the database fails during cleanup: pending (202), not an error', async () => {
       await ready();
-      const change = projects.change.bind(projects);
-      projects.change = (projectId, mutate) =>
+      const change = connections.change.bind(connections);
+      connections.change = (projectId, mutate) =>
         change(projectId, (repository) => {
           mutate(repository);
           if (repository.pendingChanges().removed) throw new Error('database down');
         });
 
-      await expect(handler.execute(PROJECT)).resolves.toMatchObject({
+      await expect(handler.execute({ projectId: PROJECT })).resolves.toMatchObject({
         disconnected: false,
         repository: { state: 'disconnecting' },
       });
       expect(logs).toEqual([expect.stringContaining(PROJECT)]);
 
-      projects.change = change;
-      await expect(handler.execute(PROJECT)).resolves.toEqual({ disconnected: true });
+      connections.change = change;
+      await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
+        disconnected: true,
+      });
     });
 
     it('a Git failure of the removal is pending too', async () => {
       await ready();
       git.removeClone.mockRejectedValueOnce(new GitOperationError('unknown', 'EBUSY'));
 
-      await expect(handler.execute(PROJECT)).resolves.toMatchObject({ disconnected: false });
+      await expect(handler.execute({ projectId: PROJECT })).resolves.toMatchObject({
+        disconnected: false,
+      });
       expect((await stored())?.state).toBe('disconnecting');
     });
   });
 
   it('frees the remote: it can be connected again to this or another project', async () => {
     await ready();
-    await handler.execute(PROJECT);
+    await handler.execute({ projectId: PROJECT });
 
     await connecting(OTHER);
-    expect((await projects.findRepository(OTHER))?.state).toBe('connecting');
-    await handler.execute(OTHER);
+    expect((await connections.find(OTHER))?.state).toBe('connecting');
+    await handler.execute({ projectId: OTHER });
     await connecting(PROJECT);
     expect((await stored())?.state).toBe('connecting');
   });
 
   it('refuses an unknown project, an id that is not a UUID and a project without a Repository', async () => {
-    await expect(handler.execute('00000000-0000-4000-8000-000000000000')).rejects.toThrow(
+    await expect(
+      handler.execute({ projectId: '00000000-0000-4000-8000-000000000000' }),
+    ).rejects.toThrow(ProjectNotFoundError);
+    await expect(handler.execute({ projectId: 'not-a-uuid' })).rejects.toThrow(
       ProjectNotFoundError,
     );
-    await expect(handler.execute('not-a-uuid')).rejects.toThrow(ProjectNotFoundError);
-    await expect(handler.execute(PROJECT)).rejects.toThrow(NoRepositoryError);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toThrow(NoRepositoryError);
     expect(jobs.cancelled).toEqual([]);
     expect(git.removeClone).not.toHaveBeenCalled();
   });
@@ -276,7 +289,9 @@ describe('DisconnectRepositoryHandler', () => {
     await ready();
     git.supported = false;
 
-    await expect(handler.execute(PROJECT)).rejects.toThrow(GitUnsupportedPlatformError);
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toThrow(
+      GitUnsupportedPlatformError,
+    );
     expect((await stored())?.state).toBe('ready');
     expect(jobs.cancelled).toEqual([]);
   });
@@ -284,6 +299,7 @@ describe('DisconnectRepositoryHandler', () => {
   it("removes an SSH Repository's Deploy key; connecting again generates a new key pair (Issue #62)", async () => {
     const connect = new ConnectRepositoryHandler(
       projects,
+      connections,
       git,
       jobs,
       { allowFileRemotes: false, allowPrivateRemotes: false },
@@ -298,9 +314,9 @@ describe('DisconnectRepositoryHandler', () => {
     const first = await connect.execute(input);
     expect(secrets.values.size).toBe(1);
 
-    expect(await handler.execute(PROJECT)).toEqual({ disconnected: true });
+    expect(await handler.execute({ projectId: PROJECT })).toEqual({ disconnected: true });
     expect(secrets.values.size).toBe(0);
-    expect(await projects.findRepository(PROJECT)).toBeNull();
+    expect(await connections.find(PROJECT)).toBeNull();
 
     const second = await connect.execute(input);
     expect(second.state).toBe('awaiting_key');

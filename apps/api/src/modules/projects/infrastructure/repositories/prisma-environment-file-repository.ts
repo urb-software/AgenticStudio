@@ -3,10 +3,7 @@ import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type {
-  EnvironmentFileInfo,
-  StoredEnvironmentFile,
-} from '../../domain/value-objects/environment-file.js';
+import { EnvironmentFile } from '../../domain/entities/environment-file.js';
 import type { EnvironmentFileRepository } from '../../domain/repositories/environment-file-repository.js';
 
 /**
@@ -17,22 +14,23 @@ import type { EnvironmentFileRepository } from '../../domain/repositories/enviro
 export class PrismaEnvironmentFileRepository implements EnvironmentFileRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
 
-  async find(projectId: string): Promise<StoredEnvironmentFile | null> {
+  async find(projectId: string): Promise<EnvironmentFile | null> {
     const row = await this.db.environmentFile.findUnique({ where: { projectId } });
     return row
-      ? {
+      ? EnvironmentFile.restore({
+          projectId: row.projectId,
           path: row.path,
           sizeBytes: row.sizeBytes,
           updatedAt: row.updatedAt,
           secretRef: row.secretId,
-        }
+        })
       : null;
   }
 
   async save(
     projectId: string,
     record: { path: string; sizeBytes: number; secretRef: string },
-  ): Promise<{ saved: EnvironmentFileInfo; replacedSecretRef: string | null }> {
+  ): Promise<{ saved: EnvironmentFile; replacedSecretRef: string | null }> {
     // The old row is locked before it is read and replaced, so two concurrent replacements each
     // return the reference the other one replaced, never the same one twice. (Two concurrent
     // first saves can leave one content unreferenced; the orphan sweep deletes it.)
@@ -51,7 +49,13 @@ export class PrismaEnvironmentFileRepository implements EnvironmentFileRepositor
           updated_at = EXCLUDED.updated_at
         RETURNING path, size_bytes, updated_at`;
       return {
-        saved: { path: row!.path, sizeBytes: row!.size_bytes, updatedAt: row!.updated_at },
+        saved: EnvironmentFile.restore({
+          projectId,
+          path: row!.path,
+          sizeBytes: row!.size_bytes,
+          updatedAt: row!.updated_at,
+          secretRef: record.secretRef,
+        }),
         replacedSecretRef: old[0]?.secret_id ?? null,
       };
     });

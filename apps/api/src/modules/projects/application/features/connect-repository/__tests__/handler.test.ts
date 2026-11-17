@@ -1,12 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queue.js';
-import {
-  ProjectNotFoundError,
-  RemoteAlreadyConnectedError,
-} from '../../../../domain/repositories/project-repository.js';
+import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
+import { RemoteAlreadyConnectedError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { RepositoryAlreadyConnectedError } from '../../../../domain/entities/repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';
 import { InvalidRepositoryUrlError } from '../../../../domain/value-objects/repository-url.js';
 import { GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
@@ -29,6 +28,7 @@ const hostKey = (): string => generateDeployKey('host').publicKey.split(' ').sli
 
 describe('ConnectRepositoryHandler', () => {
   let projects: InMemoryProjectRepository;
+  let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let jobs: RecordingRepositoryJobs;
   let secrets: InMemorySecretStore;
@@ -37,6 +37,7 @@ describe('ConnectRepositoryHandler', () => {
     const deployKeys = new InMemoryDeployKeys(secrets);
     return new ConnectRepositoryHandler(
       projects,
+      connections,
       git,
       jobs,
       { allowFileRemotes, allowPrivateRemotes },
@@ -51,6 +52,7 @@ describe('ConnectRepositoryHandler', () => {
 
   beforeEach(() => {
     projects = new InMemoryProjectRepository();
+    connections = new InMemoryRepositoryConnectionRepository();
     projects.addProject(PROJECT, 'Shop');
     git = new FakeRepositoryGit();
     jobs = new RecordingRepositoryJobs();
@@ -79,7 +81,7 @@ describe('ConnectRepositoryHandler', () => {
       pendingHostKey: null,
       hostKeyFingerprint: null,
     });
-    expect(projects.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
+    expect(connections.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
     expect(jobs.started).toEqual([[PROJECT, 'clone']]);
     // No Git runs in the request: the clone happens in the background job.
     expect(git.calls).toEqual([]);
@@ -94,7 +96,7 @@ describe('ConnectRepositoryHandler', () => {
       handler().execute({ projectId: PROJECT, url, integrationBranch: 'dev' }),
     ).rejects.toBeInstanceOf(InvalidRepositoryUrlError);
 
-    expect(projects.repositories.size).toBe(0);
+    expect(connections.repositories.size).toBe(0);
     expect(jobs.started).toEqual([]);
     expect(secrets.values.size).toBe(0);
   });
@@ -119,7 +121,7 @@ describe('ConnectRepositoryHandler', () => {
 
         expect(error).toBeInstanceOf(InvalidRepositoryUrlError);
         expect((error as Error).message).toMatch(/^This address is not allowed/);
-        expect(projects.repositories.size).toBe(0);
+        expect(connections.repositories.size).toBe(0);
         expect(jobs.started).toEqual([]);
         expect(secrets.values.size).toBe(0);
       },
@@ -147,7 +149,7 @@ describe('ConnectRepositoryHandler', () => {
     await expect(
       handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'a..b' }),
     ).rejects.toBeInstanceOf(InvalidIntegrationBranchError);
-    expect(projects.repositories.size).toBe(0);
+    expect(connections.repositories.size).toBe(0);
   });
 
   it('refuses a valid request on an unsupported platform, storing nothing', async () => {
@@ -156,7 +158,7 @@ describe('ConnectRepositoryHandler', () => {
     await expect(
       handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'dev' }),
     ).rejects.toBeInstanceOf(GitUnsupportedPlatformError);
-    expect(projects.repositories.size).toBe(0);
+    expect(connections.repositories.size).toBe(0);
     expect(jobs.started).toEqual([]);
   });
 
@@ -195,7 +197,7 @@ describe('ConnectRepositoryHandler', () => {
       expect(JSON.stringify(repository)).not.toMatch(/PRIVATE KEY/);
       expect(jobs.started).toEqual([]);
       expect(git.calls).toEqual([]);
-      expect(projects.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
+      expect(connections.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
     });
 
     it('refuses on an unsupported platform before generating a key (same 501 as HTTPS)', async () => {
@@ -205,7 +207,7 @@ describe('ConnectRepositoryHandler', () => {
         handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
       ).rejects.toBeInstanceOf(GitUnsupportedPlatformError);
       expect(secrets.values.size).toBe(0);
-      expect(projects.repositories.size).toBe(0);
+      expect(connections.repositories.size).toBe(0);
     });
 
     it('stores nothing when the secret store is unavailable', async () => {
@@ -214,7 +216,7 @@ describe('ConnectRepositoryHandler', () => {
       await expect(
         handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
       ).rejects.toBeInstanceOf(SecretStoreUnavailableError);
-      expect(projects.repositories.size).toBe(0);
+      expect(connections.repositories.size).toBe(0);
     });
 
     it('deletes the new key when the store refuses the Repository (remote held elsewhere)', async () => {
@@ -233,7 +235,7 @@ describe('ConnectRepositoryHandler', () => {
         url: SSH_URL,
         integrationBranch: 'dev',
       });
-      const stored = projects.repositories.get(PROJECT)!;
+      const stored = connections.repositories.get(PROJECT)!;
       Object.assign(stored, {
         state: 'failed',
         pinnedHostKey,
@@ -296,23 +298,23 @@ describe('ConnectRepositoryHandler', () => {
 
     it('never saves again a kept key a concurrent connect released (Retry read a stale Repository)', async () => {
       const first = await failedSsh(hostKey());
-      const stale = (await projects.findRepository(PROJECT))!;
+      const stale = (await connections.find(PROJECT))!;
       // Meanwhile another connect replaced it over HTTPS (deleting the key), and that failed.
       await handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'dev' });
-      await projects.change(PROJECT, (r) => {
+      await connections.change(PROJECT, (r) => {
         r.failClone({
           code: 'unknown',
           detail: '',
           remoteDefaultBranch: null,
         });
       });
-      vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
+      vi.spyOn(connections, 'find').mockResolvedValueOnce(stale);
 
       await expect(
         handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
       ).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
 
-      expect(projects.repositories.get(PROJECT)).toMatchObject({
+      expect(connections.repositories.get(PROJECT)).toMatchObject({
         state: 'failed',
         deployKeySecret: null,
       });
@@ -321,20 +323,20 @@ describe('ConnectRepositoryHandler', () => {
 
     it('never recreates a Repository a concurrent disconnect removed (Retry read a stale Repository)', async () => {
       await failedSsh(hostKey());
-      const stale = (await projects.findRepository(PROJECT))!;
-      await projects.change(PROJECT, (r) => {
+      const stale = (await connections.find(PROJECT))!;
+      await connections.change(PROJECT, (r) => {
         r.startDisconnect();
       });
-      await projects.change(PROJECT, (r) => {
+      await connections.change(PROJECT, (r) => {
         r.finishDisconnect();
       });
-      vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
+      vi.spyOn(connections, 'find').mockResolvedValueOnce(stale);
 
       await expect(
         handler().execute({ projectId: PROJECT, url: SSH_URL, integrationBranch: 'dev' }),
       ).rejects.toBeInstanceOf(RepositoryAlreadyConnectedError);
 
-      expect(projects.repositories.has(PROJECT)).toBe(false);
+      expect(connections.repositories.has(PROJECT)).toBe(false);
       expect(jobs.started).toEqual([]);
     });
 
@@ -382,9 +384,9 @@ describe('ConnectRepositoryHandler', () => {
         // Fresh, so the sweep that follows keeps it; it is deleted once past the grace period.
         expect(secrets.values.size).toBe(1);
         secrets.now += DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS;
-        await new SweepOrphanedDeployKeysHandler(projects, new InMemoryDeployKeys(secrets), {
+        await new SweepOrphanedDeployKeysHandler(connections, new InMemoryDeployKeys(secrets), {
           gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
-        }).sweep();
+        }).execute();
         expect(secrets.values.size).toBe(0);
       });
 
@@ -397,9 +399,9 @@ describe('ConnectRepositoryHandler', () => {
         expect(secrets.values.has(first.deployKeySecret!)).toBe(true);
 
         secrets.now += 1;
-        await new SweepOrphanedDeployKeysHandler(projects, new InMemoryDeployKeys(secrets), {
+        await new SweepOrphanedDeployKeysHandler(connections, new InMemoryDeployKeys(secrets), {
           gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
-        }).sweep();
+        }).execute();
         expect(secrets.values.size).toBe(0);
       });
     });
@@ -416,13 +418,13 @@ describe('ConnectRepositoryHandler', () => {
   );
 
   it('keeps the failure a Retry replaced when the old clone is still active, and rethrows', async () => {
-    await projects.connect({
+    await connections.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
       integrationBranch: 'release',
     });
-    await projects.change(PROJECT, (r) => {
+    await connections.change(PROJECT, (r) => {
       r.failClone({
         code: 'branch_not_found',
         detail: 'Branch "release" was not found on the remote.',
@@ -436,7 +438,7 @@ describe('ConnectRepositoryHandler', () => {
       handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'release' }),
     ).rejects.toBe(busy);
 
-    expect(await projects.findRepository(PROJECT)).toMatchObject({
+    expect(await connections.find(PROJECT)).toMatchObject({
       state: 'failed',
       failure: {
         code: 'branch_not_found',
@@ -452,13 +454,13 @@ describe('ConnectRepositoryHandler', () => {
   ])(
     'stores "could not be started", not the replaced failure, when the Retry changed %s',
     async (_, url, integrationBranch) => {
-      await projects.connect({
+      await connections.connect({
         projectId: PROJECT,
         url: URL,
         identity: 'github.com/acme/shop',
         integrationBranch: 'release',
       });
-      await projects.change(PROJECT, (r) => {
+      await connections.change(PROJECT, (r) => {
         r.failClone({
           code: 'branch_not_found',
           detail: '',
@@ -472,7 +474,7 @@ describe('ConnectRepositoryHandler', () => {
       ).rejects.toBeInstanceOf(JobAlreadyActiveError);
 
       // The new settings are stored, so the replaced failure would describe another attempt.
-      expect(await projects.findRepository(PROJECT)).toMatchObject({
+      expect(await connections.find(PROJECT)).toMatchObject({
         state: 'failed',
         url,
         integrationBranch,
@@ -489,7 +491,7 @@ describe('ConnectRepositoryHandler', () => {
       handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'dev' }),
     ).rejects.toBe(busy);
 
-    expect(await projects.findRepository(PROJECT)).toMatchObject({
+    expect(await connections.find(PROJECT)).toMatchObject({
       state: 'failed',
       failure: { code: 'unknown', detail: NOT_STARTED_DETAIL, remoteDefaultBranch: null },
     });
