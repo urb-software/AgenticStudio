@@ -124,6 +124,28 @@ describe('selecting comments', () => {
     expect(set.select(['review-1', 'review-1'])).toBeNull();
   });
 
+  it('says what a selection comes to as values for the Follow-up: how many, and whose', () => {
+    expect(set.selection(['conversation-3', 'review-1'])).toEqual({ count: 2, authors: ['a'] });
+    expect(set.selection(['inline-2', 'review-1'])).toEqual({ count: 2, authors: ['a', 'b'] });
+  });
+
+  it('says nothing for a selection that is not all in the set: it is not loaded', () => {
+    expect(set.selection(['review-1', 'review-9'])).toBeNull();
+    expect(set.selection(['review-1', 'review-1'])).toBeNull();
+  });
+
+  it('is a plain snapshot, a copy of its values', () => {
+    const snapshot = set.snapshot();
+
+    expect(snapshot).toEqual({
+      scope: 'unresolved',
+      truncated: false,
+      loadedAt: new Date('2026-11-16T12:00:00.000Z'),
+      comments: set.comments,
+    });
+    expect(snapshot.comments[0]).not.toBe(set.comments[0]);
+  });
+
   it('lists the distinct authors in order of appearance', () => {
     expect(ReviewComments.distinctAuthors(set.comments)).toEqual(['a', 'b']);
     const many = Array.from({ length: 30 }, (_, index) => comment({ author: `user-${index}` }));
