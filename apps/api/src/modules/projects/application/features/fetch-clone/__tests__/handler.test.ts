@@ -12,9 +12,9 @@ import { CLONE_MISSING_DETAIL, FetchCloneHandler } from '../handler.js';
 import {
   HOST_KEY_CHANGED_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
-} from '../../../../domain/entities/repository.js';
+} from '../../../../domain/value-objects/repository-failure.js';
 import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
-import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/entities/repository.js';
+import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 
@@ -42,14 +42,18 @@ describe('FetchCloneHandler', () => {
 
   /** A Repository connected with commit OLD, now `fetching`. */
   async function fetching(integrationBranch = 'dev') {
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
       integrationBranch,
     });
-    await projects.markReady(PROJECT, { headSha: OLD, fetchedAt: FETCHED_AT });
-    await projects.beginFetch(PROJECT);
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: OLD, fetchedAt: FETCHED_AT });
+    });
+    await projects.change(PROJECT, (r) => {
+      r.startFetch();
+    });
   }
 
   beforeEach(() => {
@@ -157,11 +161,12 @@ describe('FetchCloneHandler', () => {
 
   it('does nothing for a job whose Repository is no longer fetching', async () => {
     await fetching();
-    await projects.markFetchFailed(
-      PROJECT,
-      { code: 'interrupted', detail: '', remoteDefaultBranch: null },
-      { cloneKept: true },
-    );
+    await projects.change(PROJECT, (r) => {
+      r.failFetch(
+        { code: 'interrupted', detail: '', remoteDefaultBranch: null },
+        { cloneKept: true },
+      );
+    });
 
     await run();
 
@@ -262,7 +267,7 @@ describe('FetchCloneHandler', () => {
 
     async function fetchingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');
-      await projects.beginConnect({
+      await projects.connect({
         projectId: PROJECT,
         url: SSH_URL,
         identity: 'git.example.com:2222/acme/shop',
@@ -270,9 +275,15 @@ describe('FetchCloneHandler', () => {
         deployKey,
         pinnedHostKey,
       });
-      await projects.beginVerifiedClone(PROJECT, null);
-      await projects.markReady(PROJECT, { headSha: OLD, fetchedAt: FETCHED_AT });
-      await projects.beginFetch(PROJECT);
+      await projects.change(PROJECT, (r) => {
+        r.startVerifiedClone(null);
+      });
+      await projects.change(PROJECT, (r) => {
+        r.completeClone({ headSha: OLD, fetchedAt: FETCHED_AT });
+      });
+      await projects.change(PROJECT, (r) => {
+        r.startFetch();
+      });
       return deployKey;
     }
 

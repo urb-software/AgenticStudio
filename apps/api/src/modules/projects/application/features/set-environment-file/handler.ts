@@ -2,8 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   type EnvironmentFileInfo,
   EnvironmentFilePathTrackedError,
-} from '../../../domain/entities/environment-file.js';
-import { isProjectId } from '../../../domain/entities/project.js';
+} from '../../../domain/value-objects/environment-file.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
 import { checkEnvironmentFile } from './check.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,

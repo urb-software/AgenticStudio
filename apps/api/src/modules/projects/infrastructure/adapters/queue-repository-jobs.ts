@@ -1,6 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { type JobQueue, JobQueues } from '../../../../platform/queue/job-queue.js';
-import type { UnfinishedJob } from '../../domain/entities/repository.js';
+import type { UnfinishedJob } from '../../domain/value-objects/repository-failure.js';
 import type {
   RepositoryJobs,
   RepositoryOperation,

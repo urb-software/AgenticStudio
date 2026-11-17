@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Project } from '../../../../domain/entities/project.js';
+import type { Project } from '../../../../domain/value-objects/project.js';
 import {
   ProjectNameTakenError,
   type ProjectRepository,
@@ -36,22 +36,10 @@ class InMemoryProjectRepository implements ProjectRepository {
   // The Repository transitions are not used by create-project.
   findById = notUsed;
   findRepository = notUsed;
-  beginConnect = notUsed;
-  markReady = notUsed;
-  markFailed = notUsed;
-  failAllConnecting = notUsed;
-  beginFetch = notUsed;
-  markFetched = notUsed;
-  markFetchFailed = notUsed;
-  failAllFetching = notUsed;
-  beginDisconnect = notUsed;
-  deleteDisconnecting = notUsed;
-  listDisconnecting = notUsed;
+  connect = notUsed;
+  change = notUsed;
+  listIdsInState = notUsed;
   listDeployKeySecretRefs = notUsed;
-  awaitHostKey = notUsed;
-  beginVerifiedClone = notUsed;
-  failVerification = notUsed;
-  forgetDeployKey = notUsed;
 }
 
 function notUsed(): Promise<never> {

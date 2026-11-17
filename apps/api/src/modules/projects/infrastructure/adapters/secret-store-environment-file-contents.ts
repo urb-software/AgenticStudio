@@ -5,7 +5,7 @@ import {
   SecretNotFoundError,
   type SecretStore,
 } from '../../../../platform/secrets/index.js';
-import { ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/entities/environment-file.js';
+import { ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/value-objects/environment-file.js';
 import type { EnvironmentFileContents } from '../../application/ports/environment-file-contents.js';
 
 /**

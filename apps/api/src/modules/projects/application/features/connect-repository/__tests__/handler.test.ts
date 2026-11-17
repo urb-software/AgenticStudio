@@ -4,8 +4,8 @@ import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queu
 import {
   ProjectNotFoundError,
   RemoteAlreadyConnectedError,
-  RepositoryAlreadyConnectedError,
 } from '../../../../domain/repositories/project-repository.js';
+import { RepositoryAlreadyConnectedError } from '../../../../domain/entities/repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';
 import { InvalidRepositoryUrlError } from '../../../../domain/value-objects/repository-url.js';
@@ -14,7 +14,7 @@ import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
 import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
-import { NOT_STARTED_DETAIL } from '../../../../domain/entities/repository.js';
+import { NOT_STARTED_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from '../../../../domain/value-objects/deploy-key-sweep-policy.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
@@ -299,10 +299,12 @@ describe('ConnectRepositoryHandler', () => {
       const stale = (await projects.findRepository(PROJECT))!;
       // Meanwhile another connect replaced it over HTTPS (deleting the key), and that failed.
       await handler().execute({ projectId: PROJECT, url: URL, integrationBranch: 'dev' });
-      await projects.markFailed(PROJECT, {
-        code: 'unknown',
-        detail: '',
-        remoteDefaultBranch: null,
+      await projects.change(PROJECT, (r) => {
+        r.failClone({
+          code: 'unknown',
+          detail: '',
+          remoteDefaultBranch: null,
+        });
       });
       vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
 
@@ -320,8 +322,12 @@ describe('ConnectRepositoryHandler', () => {
     it('never recreates a Repository a concurrent disconnect removed (Retry read a stale Repository)', async () => {
       await failedSsh(hostKey());
       const stale = (await projects.findRepository(PROJECT))!;
-      await projects.beginDisconnect(PROJECT);
-      await projects.deleteDisconnecting(PROJECT);
+      await projects.change(PROJECT, (r) => {
+        r.startDisconnect();
+      });
+      await projects.change(PROJECT, (r) => {
+        r.finishDisconnect();
+      });
       vi.spyOn(projects, 'findRepository').mockResolvedValueOnce(stale);
 
       await expect(
@@ -410,16 +416,18 @@ describe('ConnectRepositoryHandler', () => {
   );
 
   it('keeps the failure a Retry replaced when the old clone is still active, and rethrows', async () => {
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
       integrationBranch: 'release',
     });
-    await projects.markFailed(PROJECT, {
-      code: 'branch_not_found',
-      detail: 'Branch "release" was not found on the remote.',
-      remoteDefaultBranch: 'main',
+    await projects.change(PROJECT, (r) => {
+      r.failClone({
+        code: 'branch_not_found',
+        detail: 'Branch "release" was not found on the remote.',
+        remoteDefaultBranch: 'main',
+      });
     });
     const busy = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
     jobs.failWith = busy;
@@ -444,16 +452,18 @@ describe('ConnectRepositoryHandler', () => {
   ])(
     'stores "could not be started", not the replaced failure, when the Retry changed %s',
     async (_, url, integrationBranch) => {
-      await projects.beginConnect({
+      await projects.connect({
         projectId: PROJECT,
         url: URL,
         identity: 'github.com/acme/shop',
         integrationBranch: 'release',
       });
-      await projects.markFailed(PROJECT, {
-        code: 'branch_not_found',
-        detail: '',
-        remoteDefaultBranch: 'main',
+      await projects.change(PROJECT, (r) => {
+        r.failClone({
+          code: 'branch_not_found',
+          detail: '',
+          remoteDefaultBranch: 'main',
+        });
       });
       jobs.failWith = new JobAlreadyActiveError('repository-git', `repository-${PROJECT}`);
 

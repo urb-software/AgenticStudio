@@ -6,7 +6,7 @@ import {
 import type {
   EnvironmentFileInfo,
   StoredEnvironmentFile,
-} from '../../domain/entities/environment-file.js';
+} from '../../domain/value-objects/environment-file.js';
 import type { EnvironmentFileRepository } from '../../domain/repositories/environment-file-repository.js';
 
 /**

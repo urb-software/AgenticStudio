@@ -22,7 +22,7 @@ describe('RepositoryJobProcessor', () => {
   const running = () => ({ signal: new AbortController().signal });
 
   async function connecting() {
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: 'https://github.com/acme/shop.git',
       identity: 'github.com/acme/shop',
@@ -32,8 +32,12 @@ describe('RepositoryJobProcessor', () => {
 
   async function fetching() {
     await connecting();
-    await projects.markReady(PROJECT, { headSha: COMMIT, fetchedAt: new Date() });
-    await projects.beginFetch(PROJECT);
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
+    });
+    await projects.change(PROJECT, (r) => {
+      r.startFetch();
+    });
   }
 
   beforeEach(() => {
@@ -78,7 +82,9 @@ describe('RepositoryJobProcessor', () => {
 
   it('does nothing for a Repository that is neither connecting nor fetching', async () => {
     await connecting();
-    await projects.markReady(PROJECT, { headSha: COMMIT, fetchedAt: new Date() });
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
+    });
 
     await processor.process(PROJECT, running().signal);
 
@@ -117,7 +123,9 @@ describe('RepositoryJobProcessor', () => {
 
   it('does nothing for a job of a disconnecting Repository: not run, no failure written', async () => {
     await fetching();
-    await projects.beginDisconnect(PROJECT);
+    await projects.change(PROJECT, (r) => {
+      r.startDisconnect();
+    });
 
     await processor.process(PROJECT, running().signal);
     await processor.onFailed(PROJECT, { reason: 'cancelled' });

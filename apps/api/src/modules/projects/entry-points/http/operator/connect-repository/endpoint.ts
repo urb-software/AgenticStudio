@@ -19,10 +19,10 @@ import {
   unsupportedPlatform,
 } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
+import { RepositoryAlreadyConnectedError } from '../../../../domain/entities/repository.js';
 import {
   ProjectNotFoundError,
   RemoteAlreadyConnectedError,
-  RepositoryAlreadyConnectedError,
 } from '../../../../domain/repositories/project-repository.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';
 import { InvalidRepositoryUrlError } from '../../../../domain/value-objects/repository-url.js';

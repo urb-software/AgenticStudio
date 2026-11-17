@@ -3,7 +3,7 @@ import {
   EnvironmentFilePathTrackedError,
   InvalidEnvironmentFileContentError,
   InvalidEnvironmentFilePathError,
-} from '../../../../domain/entities/environment-file.js';
+} from '../../../../domain/value-objects/environment-file.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
@@ -37,13 +37,15 @@ describe('Environment file handlers', () => {
   let snapshot: GetRunEnvironmentFileHandler;
 
   async function readyRepository() {
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: 'https://github.com/acme/shop.git',
       identity: 'github.com/acme/shop',
       integrationBranch: 'dev',
     });
-    await projects.markReady(PROJECT, { headSha: SHA, fetchedAt: new Date() });
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: SHA, fetchedAt: new Date() });
+    });
   }
 
   beforeEach(() => {

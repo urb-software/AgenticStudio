@@ -7,7 +7,7 @@
 import {
   REPOSITORY_FAILURE_CODES,
   type RepositoryFailureCode,
-} from '../../domain/entities/repository.js';
+} from '../../domain/value-objects/repository-failure.js';
 
 /** DI token for the {@link RepositoryGit} adapter. */
 export const REPOSITORY_GIT = Symbol('REPOSITORY_GIT');

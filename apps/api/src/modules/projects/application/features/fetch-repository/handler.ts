@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isProjectId } from '../../../domain/entities/project.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
 import type { RepositoryConnection } from '../../../domain/entities/repository.js';
 import {
+  NoRepositoryError,
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
   type ProjectRepository,
@@ -35,31 +36,34 @@ export class FetchRepositoryHandler {
 
     // Only for the failure a restore puts back; the transition below is the real guard.
     const before = await this.projects.findRepository(projectId);
-    const repository = await this.projects.beginFetch(projectId);
+    const repository = await this.projects.change(projectId, (stored) => {
+      stored.startFetch();
+    });
+    if (!repository) {
+      throw (await this.projects.findById(projectId))
+        ? new NoRepositoryError()
+        : new ProjectNotFoundError();
+    }
     try {
       await this.jobs.start(projectId, 'fetch');
     } catch (error) {
-      await this.restore(repository, before);
+      await this.leaveFetching(projectId, before);
       throw error;
     }
     return repository;
   }
 
   /**
-   * Leaves `fetching` again, with the Clone's commit and fetch time from the transition itself
-   * (always set: only a Repository with a Clone can start a fetch). The failure comes from the
-   * read before it; if that read is stale (the Repository changed in between), the
-   * Repository goes back to `ready`, never stays `fetching`.
+   * Leaves `fetching` again, with the Clone's commit and fetch time the transition kept. The
+   * failure comes from the read before it; if that read is stale (the Repository changed in
+   * between), the Repository goes back to `ready`, never stays `fetching`.
    */
-  private async restore(
-    repository: RepositoryConnection,
+  private async leaveFetching(
+    projectId: string,
     before: RepositoryConnection | null,
   ): Promise<void> {
-    const { projectId, headSha, lastFetchedAt } = repository;
-    if (before?.state === 'failed' && before.failure) {
-      await this.projects.markFetchFailed(projectId, before.failure, { cloneKept: true });
-    } else if (headSha && lastFetchedAt) {
-      await this.projects.markFetched(projectId, { headSha, fetchedAt: lastFetchedAt });
-    }
+    await this.projects.change(projectId, (stored) => {
+      stored.revertFetch(before?.failure ?? null);
+    });
   }
 }

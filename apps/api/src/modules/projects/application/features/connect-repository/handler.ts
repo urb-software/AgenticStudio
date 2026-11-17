@@ -1,11 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import { isProjectId } from '../../../domain/entities/project.js';
-import {
-  NOT_STARTED_DETAIL,
-  type RepositoryConnection,
-  repositoryFailure,
-} from '../../../domain/entities/repository.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
+import { RepositoryConnection } from '../../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
@@ -13,7 +9,6 @@ import {
 } from '../../../domain/repositories/project-repository.js';
 import { IntegrationBranch } from '../../../domain/value-objects/integration-branch.js';
 import { RepositoryUrl } from '../../../domain/value-objects/repository-url.js';
-import { gitHostName } from '../../../domain/value-objects/trusted-host-keys.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 import { DeployKeySweepPolicy } from '../../../domain/value-objects/deploy-key-sweep-policy.js';
@@ -84,10 +79,7 @@ export class ConnectRepositoryHandler {
     // A Retry replaces a failed Repository; if the clone cannot be scheduled with the same
     // settings, its failure is kept (with others, it would describe another attempt).
     const previous = await this.projects.findRepository(input.projectId);
-    const previousKey: StoredDeployKey | null =
-      previous?.state === 'failed' && previous.deployKeySecret && previous.publicKey
-        ? { secretRef: previous.deployKeySecret, publicKey: previous.publicKey }
-        : null;
+    const previousKey: StoredDeployKey | null = previous?.retainedDeployKey ?? null;
 
     let deployKey: StoredDeployKey | null = null;
     let createdKey = false;
@@ -101,18 +93,16 @@ export class ConnectRepositoryHandler {
         createdKey = true;
       }
     }
-    const samePinnedHost =
-      url.ssh !== null && previous !== null && gitHostName(previous.url) === gitHostName(url.value);
 
     let repository: RepositoryConnection;
     try {
-      repository = await this.projects.beginConnect({
+      repository = await this.projects.connect({
         projectId: input.projectId,
         url: url.value,
         identity: url.identity,
         integrationBranch: branch.value,
         deployKey,
-        pinnedHostKey: deployKey && samePinnedHost ? (previous?.pinnedHostKey ?? null) : null,
+        pinnedHostKey: deployKey ? (previous?.pinnedHostKeyFor(url.value) ?? null) : null,
         keepsDeployKey: previousKey !== null && deployKey === previousKey,
       });
     } catch (error) {
@@ -127,14 +117,13 @@ export class ConnectRepositoryHandler {
     try {
       await this.jobs.start(input.projectId, 'clone');
     } catch (error) {
-      const sameSettings =
-        previous?.url === url.value && previous.integrationBranch === branch.value;
-      await this.projects.markFailed(
-        input.projectId,
-        previous?.state === 'failed' && previous.failure && sameSettings
-          ? previous.failure
-          : repositoryFailure('unknown', NOT_STARTED_DETAIL),
-      );
+      const failure = RepositoryConnection.failureWhenCloneNotScheduled(previous, {
+        url: url.value,
+        integrationBranch: branch.value,
+      });
+      await this.projects.change(input.projectId, (stored) => {
+        stored.failClone(failure);
+      });
       throw error;
     }
     return repository;

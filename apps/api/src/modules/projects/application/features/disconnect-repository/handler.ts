@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import { isProjectId } from '../../../domain/entities/project.js';
+import { isProjectId } from '../../../domain/value-objects/project.js';
 import type { RepositoryConnection } from '../../../domain/entities/repository.js';
 import {
+  NoRepositoryError,
   PROJECT_REPOSITORY,
   ProjectNotFoundError,
   type ProjectRepository,
@@ -74,13 +75,10 @@ export class DisconnectRepositoryHandler {
       {
         name: 'forget the Deploy key and the pinned host key',
         run: async (repository) => {
-          if (
-            repository.deployKeySecret !== null ||
-            repository.publicKey !== null ||
-            repository.pinnedHostKey !== null ||
-            repository.pendingHostKey !== null
-          ) {
-            await projects.forgetDeployKey(repository.projectId);
+          if (repository.holdsDeployKeyMaterial) {
+            await projects.change(repository.projectId, (stored) => {
+              stored.forgetDeployKey();
+            });
           }
         },
       },
@@ -91,7 +89,14 @@ export class DisconnectRepositoryHandler {
     if (!isProjectId(projectId)) throw new ProjectNotFoundError();
     this.git.assertSupported();
 
-    const repository = await this.projects.beginDisconnect(projectId);
+    const repository = await this.projects.change(projectId, (stored) => {
+      stored.startDisconnect();
+    });
+    if (!repository) {
+      throw (await this.projects.findById(projectId))
+        ? new NoRepositoryError()
+        : new ProjectNotFoundError();
+    }
     try {
       await this.jobs.cancel(projectId);
     } catch (error) {
@@ -113,7 +118,7 @@ export class DisconnectRepositoryHandler {
     try {
       repository = await this.projects.findRepository(projectId);
       if (!repository) return true;
-      if (repository.state !== 'disconnecting') return false;
+      if (!repository.isDisconnecting) return false;
     } catch (error) {
       this.logPending(projectId, 'could not read the repository', error);
       return false;
@@ -128,7 +133,9 @@ export class DisconnectRepositoryHandler {
     }
     try {
       // Zero rows means a concurrent cleanup deleted it first: nothing is left either way.
-      await this.projects.deleteDisconnecting(projectId);
+      await this.projects.change(projectId, (stored) => {
+        stored.finishDisconnect();
+      });
     } catch (error) {
       this.logPending(projectId, 'could not delete the repository record', error);
       return false;
@@ -142,7 +149,7 @@ export class DisconnectRepositoryHandler {
    * that still cannot be cleaned up does not stop the others or the start-up.
    */
   async resumeAll(): Promise<void> {
-    for (const projectId of await this.projects.listDisconnecting()) {
+    for (const projectId of await this.projects.listIdsInState('disconnecting')) {
       try {
         await this.finish(projectId);
       } catch (error) {

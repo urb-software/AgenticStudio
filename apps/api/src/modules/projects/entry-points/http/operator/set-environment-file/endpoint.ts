@@ -14,7 +14,7 @@ import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.j
 import {
   InvalidEnvironmentFileContentError,
   InvalidEnvironmentFilePathError,
-} from '../../../../domain/entities/environment-file.js';
+} from '../../../../domain/value-objects/environment-file.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { SetEnvironmentFileHandler } from '../../../../application/features/set-environment-file/handler.js';
 import { type SetEnvironmentFileRequest, SetEnvironmentFileRequestDto } from './schema.js';

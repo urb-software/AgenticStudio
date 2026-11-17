@@ -1,31 +1,33 @@
-import { isUniqueConstraintViolation } from '@agentic-studio/database';
+import { isUniqueConstraintViolation, type Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DATABASE_CLIENT,
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
-import type { Project } from '../../domain/entities/project.js';
 import {
-  REPOSITORY_FAILURE_CODES,
+  type ConnectAttempt,
   REPOSITORY_STATES,
-  type RepositoryConnection,
-  restoreRepository,
-  type RepositoryFailure,
-  type RepositoryFailureCode,
+  RepositoryAlreadyConnectedError,
+  type RepositoryChanges,
+  RepositoryConnection,
   type RepositoryState,
 } from '../../domain/entities/repository.js';
 import {
-  type ConnectRepositoryRecord,
-  NoRepositoryError,
-  NoUsableCloneError,
   ProjectNameTakenError,
   ProjectNotFoundError,
   type ProjectRepository,
   RemoteAlreadyConnectedError,
-  RepositoryAlreadyConnectedError,
-  RepositoryBusyError,
 } from '../../domain/repositories/project-repository.js';
+import type { Project } from '../../domain/value-objects/project.js';
 import type { ProjectName } from '../../domain/value-objects/project-name.js';
+import {
+  REPOSITORY_FAILURE_CODES,
+  RepositoryFailure,
+  type RepositoryFailureCode,
+} from '../../domain/value-objects/repository-failure.js';
+
+/** A change waits for the row lock under pool pressure as a single UPDATE did (as the Run store). */
+const LOCKED_TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;
 
 const PROJECT_FIELDS = { id: true, name: true, createdAt: true } as const;
 
@@ -75,22 +77,16 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
     throw new Error(`Unexpected repository state in the database: ${row.state}`);
   }
   const code = row.failureCode;
-  return restoreRepository({
+  return RepositoryConnection.restore({
     projectId: row.projectId,
     url: row.url,
     integrationBranch: row.integrationBranch,
     state: row.state,
-    // The Clone's commit is kept exactly while a usable Clone exists.
-    hasClone: row.headSha !== null,
     headSha: row.headSha,
     lastFetchedAt: row.lastFetchedAt,
     failure:
       row.state === 'failed' && code !== null && isFailureCode(code)
-        ? {
-            code,
-            detail: row.failureDetail ?? '',
-            remoteDefaultBranch: row.failureRemoteDefaultBranch,
-          }
+        ? RepositoryFailure.of(code, row.failureDetail ?? '', row.failureRemoteDefaultBranch)
         : null,
     publicKey: row.publicKey,
     deployKeySecret: row.deployKeySecretId,
@@ -99,28 +95,42 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
   });
 }
 
-const NO_FAILURE = {
-  failureCode: null,
-  failureDetail: null,
-  failureRemoteDefaultBranch: null,
-} as const;
-
-/**
- * Where a verification transition applies (`isVerifiable`): an SSH Repository (it has a
- * Deploy key) without a Clone, waiting for its key or host key, or failed (Retry).
- */
-const VERIFIABLE = {
-  state: { in: ['awaiting_key', 'awaiting_host_key', 'failed'] as string[] },
-  deployKeySecretId: { not: null },
-  headSha: null,
-};
-
-function failureColumns(failure: RepositoryFailure) {
+/** The columns of the fields a change of the Repository sets (and of the identity, when it is replaced). */
+function changedColumns(changes: RepositoryChanges) {
+  const { failure, deployKeySecret, ...plain } = changes.fields;
   return {
-    state: 'failed',
-    failureCode: failure.code,
-    failureDetail: failure.detail,
-    failureRemoteDefaultBranch: failure.remoteDefaultBranch,
+    ...plain,
+    ...(changes.identity === undefined ? {} : { urlNormalized: changes.identity }),
+    ...(failure === undefined
+      ? {}
+      : {
+          failureCode: failure?.code ?? null,
+          failureDetail: failure?.detail ?? null,
+          failureRemoteDefaultBranch: failure?.remoteDefaultBranch ?? null,
+        }),
+    ...(deployKeySecret === undefined ? {} : { deployKeySecretId: deployKeySecret }),
+    updatedAt: new Date(),
+  };
+}
+
+/** The columns of a new Repository: every stored field and the remote's identity. */
+function createColumns(repository: RepositoryConnection, identity: string) {
+  const stored = repository.snapshot();
+  return {
+    projectId: stored.projectId,
+    url: stored.url,
+    urlNormalized: identity,
+    integrationBranch: stored.integrationBranch,
+    state: stored.state,
+    headSha: stored.headSha,
+    lastFetchedAt: stored.lastFetchedAt,
+    failureCode: stored.failure?.code ?? null,
+    failureDetail: stored.failure?.detail ?? null,
+    failureRemoteDefaultBranch: stored.failure?.remoteDefaultBranch ?? null,
+    publicKey: stored.publicKey,
+    deployKeySecretId: stored.deployKeySecret,
+    pinnedHostKey: stored.pinnedHostKey,
+    pendingHostKey: stored.pendingHostKey,
     updatedAt: new Date(),
   };
 }
@@ -128,10 +138,12 @@ function failureColumns(failure: RepositoryFailure) {
 /**
  * PostgreSQL adapter of {@link ProjectRepository}. Unique indexes, not prior reads, decide
  * duplicates: `projects.name_normalized` for names, the `repositories` primary key (one per
- * project) and `repositories.url_normalized` (one project per remote) for Connect. Every
- * Repository transition is a conditional update on the current state, and a usable Clone is
- * recorded by its commit: `head_sha` is set exactly while one exists. Only a `disconnecting`
- * Repository is ever deleted (the last step of a Disconnect).
+ * project) and `repositories.url_normalized` (one project per remote) for Connect. Every change
+ * of an existing Repository locks its row `FOR UPDATE`, lets the {@link RepositoryConnection}
+ * class change itself, and saves what it changed in the same transaction; the rules are the
+ * class's, none is written in a query. A usable Clone is recorded by its commit: `head_sha` is
+ * set exactly while one exists. Only a `disconnecting` Repository is ever deleted (the last
+ * step of a Disconnect).
  */
 @Injectable()
 export class PrismaProjectRepository implements ProjectRepository {
@@ -171,223 +183,70 @@ export class PrismaProjectRepository implements ProjectRepository {
     return row ? toRepository(row) : null;
   }
 
-  async beginConnect(record: ConnectRepositoryRecord): Promise<RepositoryConnection> {
+  async connect(attempt: ConnectAttempt): Promise<RepositoryConnection> {
     const project = await this.db.project.findUnique({
-      where: { id: record.projectId },
+      where: { id: attempt.projectId },
       select: { id: true },
     });
     if (!project) throw new ProjectNotFoundError();
 
-    const attempt = {
-      url: record.url,
-      urlNormalized: record.identity,
-      integrationBranch: record.integrationBranch,
-      state: record.deployKey ? 'awaiting_key' : 'connecting',
-      publicKey: record.deployKey?.publicKey ?? null,
-      deployKeySecretId: record.deployKey?.secretRef ?? null,
-      pinnedHostKey: record.deployKey ? (record.pinnedHostKey ?? null) : null,
-      pendingHostKey: null,
-      headSha: null,
-      lastFetchedAt: null,
-      failureCode: null,
-      failureDetail: null,
-      failureRemoteDefaultBranch: null,
-      updatedAt: new Date(),
-    };
     try {
-      // Retry: only a failed Repository is replaced, in one conditional statement; a Retry
-      // that keeps the Deploy key only while the Repository still references it.
-      const replaced = await this.db.repository.updateMany({
-        where: {
-          projectId: record.projectId,
-          state: 'failed',
-          ...(record.keepsDeployKey
-            ? { deployKeySecretId: record.deployKey?.secretRef ?? null }
-            : {}),
-        },
-        data: attempt,
-      });
-      if (replaced.count === 0) {
-        // A kept key belongs to a Repository that must still exist: with it gone (a disconnect
-        // deleted it and its key) or holding another key, nothing is created (PR #77, S-1).
-        if (record.keepsDeployKey) throw await this.conflictFor(record);
-        await this.db.repository.create({ data: { projectId: record.projectId, ...attempt } });
-      }
+      return await this.db.$transaction(async (tx) => {
+        const locked = await lockRepository(tx, attempt.projectId);
+        if (locked) {
+          // Retry: only a failed Repository is replaced, under its lock; a second Retry waits
+          // for the first and finds the Repository no longer failed.
+          const row = await tx.repository.findUnique({
+            where: { projectId: attempt.projectId },
+            select: REPOSITORY_FIELDS,
+          });
+          const existing = toRepository(row!);
+          existing.restart(attempt);
+          await tx.repository.update({
+            where: { projectId: attempt.projectId },
+            data: changedColumns(existing.pendingChanges()),
+          });
+          return existing;
+        }
+        const created = RepositoryConnection.start(attempt);
+        await tx.repository.create({ data: createColumns(created, attempt.identity) });
+        return created;
+      }, LOCKED_TRANSACTION);
     } catch (error) {
-      if (isUniqueConstraintViolation(error)) {
-        throw await this.conflictFor(record);
+      // A kept key whose Repository is gone or holds another key, a Repository that is not
+      // failed, or a unique index of a concurrent connect or of another project's remote.
+      if (error instanceof RepositoryAlreadyConnectedError || isUniqueConstraintViolation(error)) {
+        throw await this.conflictFor(attempt);
       }
       throw error;
     }
-    const stored = await this.findRepository(record.projectId);
-    if (!stored) throw new Error('The repository vanished right after it was stored.');
-    return stored;
   }
 
-  async awaitHostKey(projectId: string, hostKey: string): Promise<RepositoryConnection | null> {
-    const { count } = await this.db.repository.updateMany({
-      where: { projectId, ...VERIFIABLE },
-      data: {
-        state: 'awaiting_host_key',
-        pendingHostKey: hostKey,
-        ...NO_FAILURE,
-        updatedAt: new Date(),
-      },
-    });
-    return count === 1 ? this.findRepository(projectId) : null;
-  }
-
-  async beginVerifiedClone(
+  async change(
     projectId: string,
-    confirmed: { pendingHostKey: string } | null,
+    mutate: (repository: RepositoryConnection) => void,
   ): Promise<RepositoryConnection | null> {
-    const { count } = await this.db.repository.updateMany({
-      where: confirmed
-        ? {
-            projectId,
-            ...VERIFIABLE,
-            state: 'awaiting_host_key',
-            pendingHostKey: confirmed.pendingHostKey,
-          }
-        : { projectId, ...VERIFIABLE },
-      data: {
-        state: 'connecting',
-        pendingHostKey: null,
-        ...(confirmed ? { pinnedHostKey: confirmed.pendingHostKey } : {}),
-        ...NO_FAILURE,
-        updatedAt: new Date(),
-      },
-    });
-    return count === 1 ? this.findRepository(projectId) : null;
+    return this.db.$transaction(async (tx) => {
+      if (!(await lockRepository(tx, projectId))) return null;
+      const row = await tx.repository.findUnique({
+        where: { projectId },
+        select: REPOSITORY_FIELDS,
+      });
+      const repository = toRepository(row!);
+      mutate(repository);
+      const changes = repository.pendingChanges();
+      if (changes.removed) {
+        await tx.repository.delete({ where: { projectId } });
+      } else if (Object.keys(changes.fields).length > 0) {
+        await tx.repository.update({ where: { projectId }, data: changedColumns(changes) });
+      }
+      return repository;
+    }, LOCKED_TRANSACTION);
   }
 
-  async failVerification(projectId: string, failure: RepositoryFailure): Promise<boolean> {
-    const { count } = await this.db.repository.updateMany({
-      where: { projectId, ...VERIFIABLE },
-      data: { ...failureColumns(failure), pendingHostKey: null },
-    });
-    return count === 1;
-  }
-
-  async forgetDeployKey(projectId: string): Promise<boolean> {
-    const { count } = await this.db.repository.updateMany({
-      where: { projectId, state: 'disconnecting' },
-      data: {
-        publicKey: null,
-        deployKeySecretId: null,
-        pinnedHostKey: null,
-        pendingHostKey: null,
-        updatedAt: new Date(),
-      },
-    });
-    return count === 1;
-  }
-
-  markReady(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
-    return this.transition(projectId, {
-      state: 'ready',
-      headSha: clone.headSha,
-      lastFetchedAt: clone.fetchedAt,
-      failureCode: null,
-      failureDetail: null,
-      failureRemoteDefaultBranch: null,
-      updatedAt: new Date(),
-    });
-  }
-
-  markFailed(projectId: string, failure: RepositoryFailure): Promise<boolean> {
-    return this.transition(projectId, failureColumns(failure));
-  }
-
-  async failAllConnecting(failure: RepositoryFailure): Promise<number> {
-    const { count } = await this.db.repository.updateMany({
-      where: { state: 'connecting' },
-      data: failureColumns(failure),
-    });
-    return count;
-  }
-
-  async beginFetch(projectId: string): Promise<RepositoryConnection> {
-    // One conditional statement: only a Repository with a usable Clone that is not busy.
-    const { count } = await this.db.repository.updateMany({
-      where: { projectId, state: { in: ['ready', 'failed'] }, headSha: { not: null } },
-      data: { state: 'fetching', ...NO_FAILURE, updatedAt: new Date() },
-    });
-    const stored = await this.findRepository(projectId);
-    if (count === 1 && stored) return stored;
-    throw await this.fetchRefusal(projectId, stored);
-  }
-
-  markFetched(projectId: string, clone: { headSha: string; fetchedAt: Date }): Promise<boolean> {
-    return this.transition(
-      projectId,
-      {
-        state: 'ready',
-        headSha: clone.headSha,
-        lastFetchedAt: clone.fetchedAt,
-        ...NO_FAILURE,
-        updatedAt: new Date(),
-      },
-      'fetching',
-    );
-  }
-
-  markFetchFailed(
-    projectId: string,
-    failure: RepositoryFailure,
-    { cloneKept }: { cloneKept: boolean },
-  ): Promise<boolean> {
-    return this.transition(
-      projectId,
-      {
-        ...failureColumns(failure),
-        // The Clone was removed: no usable Clone, so neither its commit nor its fetch time.
-        ...(cloneKept ? {} : { headSha: null, lastFetchedAt: null }),
-      },
-      'fetching',
-    );
-  }
-
-  async failAllFetching(failure: RepositoryFailure): Promise<number> {
-    const { count } = await this.db.repository.updateMany({
-      where: { state: 'fetching' },
-      data: failureColumns(failure),
-    });
-    return count;
-  }
-
-  async beginDisconnect(projectId: string): Promise<RepositoryConnection> {
-    // Any state, one statement: the failure and the Clone's commit go (the Clone is removed).
-    const { count } = await this.db.repository.updateMany({
-      where: { projectId },
-      data: {
-        state: 'disconnecting',
-        headSha: null,
-        lastFetchedAt: null,
-        pendingHostKey: null,
-        ...NO_FAILURE,
-        updatedAt: new Date(),
-      },
-    });
-    const stored = count === 1 ? await this.findRepository(projectId) : null;
-    if (stored) return stored;
-    const project = await this.db.project.findUnique({
-      where: { id: projectId },
-      select: { id: true },
-    });
-    throw project ? new NoRepositoryError() : new ProjectNotFoundError();
-  }
-
-  async deleteDisconnecting(projectId: string): Promise<boolean> {
-    const { count } = await this.db.repository.deleteMany({
-      where: { projectId, state: 'disconnecting' },
-    });
-    return count === 1;
-  }
-
-  async listDisconnecting(): Promise<string[]> {
+  async listIdsInState(state: RepositoryState): Promise<string[]> {
     const rows = await this.db.repository.findMany({
-      where: { state: 'disconnecting' },
+      where: { state },
       select: { projectId: true },
       orderBy: { updatedAt: 'asc' },
     });
@@ -402,46 +261,28 @@ export class PrismaProjectRepository implements ProjectRepository {
     return rows.flatMap((row) => (row.deployKeySecretId === null ? [] : [row.deployKeySecretId]));
   }
 
-  private async transition(
-    projectId: string,
-    data: Parameters<DatabaseClient['repository']['updateMany']>[0]['data'],
-    from: 'connecting' | 'fetching' = 'connecting',
-  ): Promise<boolean> {
-    const { count } = await this.db.repository.updateMany({
-      where: { projectId, state: from },
-      data,
-    });
-    return count === 1;
-  }
-
-  /** Why a fetch could not start, read after the conditional update changed nothing. */
-  private async fetchRefusal(
-    projectId: string,
-    repository: RepositoryConnection | null,
-  ): Promise<Error> {
-    if (!repository) {
-      const project = await this.db.project.findUnique({
-        where: { id: projectId },
-        select: { id: true },
-      });
-      return project ? new NoRepositoryError() : new ProjectNotFoundError();
-    }
-    if (repository.state === 'failed' && !repository.hasClone) return new NoUsableCloneError();
-    return new RepositoryBusyError();
-  }
-
   /**
    * Which unique constraint a Connect hit: the project already has a Repository (the primary
    * key, also when a concurrent connect won), or another project holds the remote.
    */
-  private async conflictFor(record: ConnectRepositoryRecord): Promise<Error> {
+  private async conflictFor(attempt: ConnectAttempt): Promise<Error> {
     const owner = await this.db.repository.findUnique({
-      where: { urlNormalized: record.identity },
+      where: { urlNormalized: attempt.identity },
       select: { projectId: true, project: { select: { name: true } } },
     });
-    if (owner && owner.projectId !== record.projectId) {
+    if (owner && owner.projectId !== attempt.projectId) {
       return new RemoteAlreadyConnectedError(owner.project.name);
     }
     return new RepositoryAlreadyConnectedError();
   }
+}
+
+/**
+ * Locks the project's Repository row until the transaction ends; false when there is none. A
+ * statement after the lock reads the row as the last committed change left it.
+ */
+async function lockRepository(tx: Prisma.TransactionClient, projectId: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ project_id: string }[]>`
+    SELECT project_id FROM repositories WHERE project_id = ${projectId}::uuid FOR UPDATE`;
+  return rows.length > 0;
 }

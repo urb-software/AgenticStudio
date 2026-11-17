@@ -17,8 +17,6 @@ export class GetRepositoryOperationHandler {
 
   async execute(projectId: string): Promise<RepositoryOperation | null> {
     const repository = await this.projects.findRepository(projectId);
-    if (repository?.state === 'connecting') return 'clone';
-    if (repository?.state === 'fetching') return 'fetch';
-    return null;
+    return repository?.pendingOperation ?? null;
   }
 }

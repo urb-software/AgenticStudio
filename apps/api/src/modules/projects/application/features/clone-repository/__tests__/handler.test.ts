@@ -12,9 +12,9 @@ import {
   GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
   HOST_KEY_CHANGED_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
-} from '../../../../domain/entities/repository.js';
+} from '../../../../domain/value-objects/repository-failure.js';
 import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
-import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/entities/repository.js';
+import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 
@@ -38,7 +38,7 @@ describe('CloneRepositoryHandler', () => {
   const run = (signal = new AbortController().signal) => handler.process(PROJECT, signal);
 
   async function connecting(integrationBranch = 'dev') {
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: URL,
       identity: 'github.com/acme/shop',
@@ -169,10 +169,12 @@ describe('CloneRepositoryHandler', () => {
 
   it('does nothing for a job whose Repository is no longer connecting', async () => {
     await connecting();
-    await projects.markFailed(PROJECT, {
-      code: 'interrupted',
-      detail: '',
-      remoteDefaultBranch: null,
+    await projects.change(PROJECT, (r) => {
+      r.failClone({
+        code: 'interrupted',
+        detail: '',
+        remoteDefaultBranch: null,
+      });
     });
 
     await run();
@@ -253,13 +255,15 @@ describe('CloneRepositoryHandler', () => {
     await connecting();
     const other = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
     projects.addProject(other, 'Ready one');
-    await projects.beginConnect({
+    await projects.connect({
       projectId: other,
       url: 'https://github.com/acme/ready.git',
       identity: 'github.com/acme/ready',
       integrationBranch: 'dev',
     });
-    await projects.markReady(other, { headSha: COMMIT, fetchedAt: new Date() });
+    await projects.change(other, (r) => {
+      r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
+    });
 
     await handler.reconcile();
     await handler.reconcile();
@@ -279,7 +283,7 @@ describe('CloneRepositoryHandler', () => {
 
     async function connectingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');
-      await projects.beginConnect({
+      await projects.connect({
         projectId: PROJECT,
         url: SSH_URL,
         identity: 'github.com/acme/shop',
@@ -287,7 +291,9 @@ describe('CloneRepositoryHandler', () => {
         deployKey,
         pinnedHostKey,
       });
-      await projects.beginVerifiedClone(PROJECT, null);
+      await projects.change(PROJECT, (r) => {
+        r.startVerifiedClone(null);
+      });
       return deployKey;
     }
 

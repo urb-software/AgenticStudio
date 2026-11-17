@@ -56,19 +56,15 @@ class SlowSweepGit extends FakeRepositoryGit implements OnModuleInit {
 }
 
 class RecordingProjects extends InMemoryProjectRepository {
-  override failAllConnecting(...args: Parameters<InMemoryProjectRepository['failAllConnecting']>) {
-    events.push('projects: interrupted connections failed');
-    return super.failAllConnecting(...args);
-  }
-
-  override failAllFetching(...args: Parameters<InMemoryProjectRepository['failAllFetching']>) {
-    events.push('projects: interrupted fetches failed');
-    return super.failAllFetching(...args);
-  }
-
-  override listDisconnecting() {
-    events.push('projects: pending disconnects resumed');
-    return super.listDisconnecting();
+  override listIdsInState(...args: Parameters<InMemoryProjectRepository['listIdsInState']>) {
+    const events_: Record<string, string> = {
+      connecting: 'projects: interrupted connections failed',
+      fetching: 'projects: interrupted fetches failed',
+      disconnecting: 'projects: pending disconnects resumed',
+    };
+    const event = events_[args[0]];
+    if (event) events.push(event);
+    return super.listIdsInState(...args);
   }
 
   /**

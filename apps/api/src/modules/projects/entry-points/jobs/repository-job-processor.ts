@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { UnfinishedJob } from '../../domain/entities/repository.js';
+import type { UnfinishedJob } from '../../domain/value-objects/repository-failure.js';
 import { CloneRepositoryHandler } from '../../application/features/clone-repository/handler.js';
 import { FetchCloneHandler } from '../../application/features/fetch-clone/handler.js';
 import { GetRepositoryOperationHandler } from '../../application/features/get-repository-operation/handler.js';

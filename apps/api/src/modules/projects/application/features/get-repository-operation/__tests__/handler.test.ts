@@ -10,7 +10,7 @@ describe('GetRepositoryOperationHandler', () => {
   let handler: GetRepositoryOperationHandler;
 
   async function connecting() {
-    await projects.beginConnect({
+    await projects.connect({
       projectId: PROJECT,
       url: 'https://github.com/acme/shop.git',
       identity: 'github.com/acme/shop',
@@ -32,8 +32,12 @@ describe('GetRepositoryOperationHandler', () => {
 
   it('is the fetch for a fetching Repository', async () => {
     await connecting();
-    await projects.markReady(PROJECT, { headSha: COMMIT, fetchedAt: new Date() });
-    await projects.beginFetch(PROJECT);
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
+    });
+    await projects.change(PROJECT, (r) => {
+      r.startFetch();
+    });
 
     await expect(handler.execute(PROJECT)).resolves.toBe('fetch');
   });
@@ -41,9 +45,13 @@ describe('GetRepositoryOperationHandler', () => {
   it('is nothing for a Repository that is neither connecting nor fetching, or none', async () => {
     await expect(handler.execute(PROJECT)).resolves.toBeNull();
     await connecting();
-    await projects.markReady(PROJECT, { headSha: COMMIT, fetchedAt: new Date() });
+    await projects.change(PROJECT, (r) => {
+      r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
+    });
     await expect(handler.execute(PROJECT)).resolves.toBeNull();
-    await projects.beginDisconnect(PROJECT);
+    await projects.change(PROJECT, (r) => {
+      r.startDisconnect();
+    });
     await expect(handler.execute(PROJECT)).resolves.toBeNull();
   });
 });
