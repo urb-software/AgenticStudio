@@ -1,5 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { type JobFailure, type JobQueue, JobQueues } from '../../../../platform/queue/job-queue.js';
+import { type JobQueue, JobQueues } from '../../../../platform/queue/job-queue.js';
+import type { UnfinishedJob } from '../../domain/entities/repository.js';
 import type {
   RepositoryJobs,
   RepositoryOperation,
@@ -48,7 +49,7 @@ export function repositoryJobId(projectId: string): string {
  */
 export interface RepositoryJobEvents {
   process(projectId: string, signal: AbortSignal): Promise<void>;
-  onFailed(projectId: string, failure: JobFailure): Promise<void>;
+  onFailed(projectId: string, failure: UnfinishedJob): Promise<void>;
   reconcile(): Promise<void>;
 }
 
