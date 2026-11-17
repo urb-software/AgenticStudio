@@ -237,6 +237,17 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
   },
   {
+    fixture: 'application-imports-platform-queue',
+    expected: ['api-application-no-platform-queue'],
+    qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
+  },
+  // A test of `application/` may import the queue port's error classes (Issue #164).
+  {
+    fixture: 'application-test-imports-platform-queue',
+    expected: [],
+    qualityRow: 'A test of `application/` imports `platform/queue/` (tests are not checked)',
+  },
+  {
     fixture: 'application-imports-http-decorators',
     expected: ['api-application-no-http-decorators'],
     qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
@@ -270,7 +281,17 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entry-points-no-ports-or-infrastructure'],
     qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
   },
-  // Features are independent, in `executions` (Issue #166).
+  // Features are independent, in `executions` (Issue #166) and `projects` (Issue #164).
+  {
+    fixture: 'projects-feature-imports-own-files-ports-and-domain',
+    expected: [],
+    qualityRow: 'A feature imports a port, the domain or its own files',
+  },
+  {
+    fixture: 'projects-feature-imports-another-feature',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
   {
     fixture: 'feature-imports-own-files-ports-and-domain',
     expected: [],

@@ -1,22 +1,47 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import type { JobFailure } from '../../../../../platform/queue/job-queue.js';
-import { interruptedFailure, repositoryFailure } from '../../../domain/entities/repository.js';
+import {
+  gitOperationFailure,
+  interruptedFailure,
+  NO_TRUSTED_HOST_KEY_DETAIL,
+  NoTrustedHostKeyError,
+  type RepositoryFailure,
+  repositoryFailure,
+  type UnfinishedJob,
+  unfinishedJobFailure,
+} from '../../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
-import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
-import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 import {
-  gitStepFailure,
-  isAbortError,
-  unfinishedJobFailure,
-} from '../repository-jobs/job-failures.js';
+  GitOperationError,
+  REPOSITORY_GIT,
+  type RepositoryGit,
+} from '../../ports/repository-git.js';
+import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
+
+/** Whether `error` is the abort of the job's signal; a processor rethrows it to the queue. */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+/**
+ * The failure of a Git step of the job, or `undefined` when `error` is not a Git failure (it
+ * is then unexpected, and the queue reports it). No trusted host key is a `host_key_mismatch`
+ * before Git runs (Issue #62); a Git failure keeps its reason and redacted output.
+ */
+function gitStepFailure(error: unknown): RepositoryFailure | undefined {
+  if (error instanceof NoTrustedHostKeyError) {
+    return repositoryFailure('host_key_mismatch', NO_TRUSTED_HOST_KEY_DETAIL);
+  }
+  if (error instanceof GitOperationError) return gitOperationFailure(error.reason, error.detail);
+  return undefined;
+}
 
 /**
  * Feature: the background clone of a connecting Repository, run by the Repository's job
- * (`repository-jobs`, which owns the queue and calls this for a `connecting` Repository).
+ * (the job processor under `entry-points/jobs/` calls this for a `connecting` Repository).
  *
  * - `reconcile` (start-up, before the worker) fails every Repository still `connecting`:
  *   those whose job was interrupted and those whose job never ran (#60 clarification 4).
@@ -72,7 +97,7 @@ export class CloneRepositoryHandler {
     }
   }
 
-  async onFailed(projectId: string, failure: JobFailure): Promise<void> {
+  async onFailed(projectId: string, failure: UnfinishedJob): Promise<void> {
     if (failure.reason === 'error') {
       this.logger.error(
         `Clone of project ${projectId} failed unexpectedly: ${redactSecrets(String(failure.error))}`,

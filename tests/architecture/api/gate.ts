@@ -196,8 +196,8 @@ export const apiGate: Gate = {
         'application/ knows nothing about HTTP, request schemas, OpenAPI, queues or timers: it ' +
         'imports no request-schema or OpenAPI library, no HTTP server or client, no queue or ' +
         'scheduler API (backend.md §3 rule 2). Controller and parameter decorators from ' +
-        '@nestjs/common are covered by api-application-no-http-decorators. Plain zod and ' +
-        'platform/queue/ stay allowed here: #164 tightens platform/queue/ for application/.',
+        '@nestjs/common are covered by api-application-no-http-decorators, and platform/queue/ ' +
+        'by api-application-no-platform-queue. Plain zod stays allowed here.',
       severity: 'error',
       from: { path: '^src/modules/[^/]+/application/' },
       to: {
@@ -206,6 +206,21 @@ export const apiGate: Gate = {
           coreModules('http', 'https', 'http2'),
         ],
       },
+    },
+    {
+      name: 'api-application-no-platform-queue',
+      comment:
+        'application/ knows nothing about queues (backend.md §3 rule 2): it imports nothing from ' +
+        'platform/queue/. A job is started and cancelled through a port whose adapter lives in ' +
+        "infrastructure/, and the job's events reach a handler through an entry point. The tests " +
+        "of application/ (__tests__/) may import the queue port's error classes, to make a " +
+        'fake adapter fail the way the real one does.',
+      severity: 'error',
+      from: {
+        path: '^src/modules/[^/]+/application/',
+        pathNot: '(^|/)__tests__/|\\.test\\.ts$',
+      },
+      to: { path: '^src/platform/queue/' },
     },
     {
       name: 'api-orm-only-in-infrastructure-repositories',

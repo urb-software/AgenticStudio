@@ -15,7 +15,7 @@ import {
  * the process stops between storing it and saving the project's reference, when deleting a
  * replaced or removed content fails, or when two first saves race. Only secrets under the
  * Environment file owner label and older than the grace period are candidates; a referenced
- * one is never deleted. Runs at start-up, after the Deploy-key sweep (`repository-jobs`); never
+ * one is never deleted. Runs at start-up, after the Deploy-key sweep (`RepositoryStartupRecovery`); never
  * throws (a failure is logged, redacted, and the next start-up tries again). Each delete is
  * logged by the secret's id only.
  */
