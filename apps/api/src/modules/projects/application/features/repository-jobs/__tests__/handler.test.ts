@@ -18,8 +18,8 @@ import {
   REPOSITORY_QUEUE,
   RepositoryJobsHandler,
 } from '../handler.js';
-import { DeployKeyHandler } from '../../deploy-key/handler.js';
-import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
+import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
+import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { SweepOrphanedDeployKeysHandler } from '../../sweep-orphaned-deploy-keys/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../../sweep-orphaned-environment-files/handler.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
@@ -51,7 +51,7 @@ class RecordingJobQueues extends JobQueues {
 
 describe('RepositoryJobsHandler', () => {
   let secrets: InMemorySecretStore;
-  let deployKeys: DeployKeyHandler;
+  let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
   let queues: RecordingJobQueues;
   let clone: CloneRepositoryHandler;
@@ -80,7 +80,7 @@ describe('RepositoryJobsHandler', () => {
 
   beforeEach(() => {
     secrets = new InMemorySecretStore();
-    deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
+    deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     const git = new FakeRepositoryGit();

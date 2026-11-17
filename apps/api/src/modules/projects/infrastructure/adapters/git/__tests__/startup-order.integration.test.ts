@@ -15,11 +15,9 @@ import { REPOSITORY_GIT } from '../../../../application/ports/repository-git.js'
 import { FakeRepositoryGit } from '../../../../application/ports/__tests__/fake-repository-git.js';
 import { CleanUpRepositoryHandler } from '../../../../application/features/clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from '../../../../application/features/clone-repository/handler.js';
-import {
-  DeployKeyHandler,
-  SSH_TRUST_SETTINGS,
-} from '../../../../application/features/deploy-key/handler.js';
-import { InMemorySecretStore } from '../../../../application/features/deploy-key/__tests__/in-memory-secret-store.js';
+import { DEPLOY_KEYS } from '../../../../application/ports/deploy-keys.js';
+import { InMemorySecretStore } from '../../../../application/ports/__tests__/in-memory-secret-store.js';
+import { SecretStoreDeployKeys, SSH_TRUST_SETTINGS } from '../../secret-store-deploy-keys.js';
 import { FetchCloneHandler } from '../../../../application/features/fetch-clone/handler.js';
 import {
   DEPLOY_KEY_SWEEP_SETTINGS,
@@ -100,7 +98,7 @@ function startupContext(
       { provide: SECRET_STORE, useClass: RecordingSecrets },
       { provide: SSH_TRUST_SETTINGS, useValue: { knownHosts: [] } },
       { provide: DEPLOY_KEY_SWEEP_SETTINGS, useValue: { gracePeriodMs: 0 } },
-      DeployKeyHandler,
+      { provide: DEPLOY_KEYS, useClass: SecretStoreDeployKeys },
       SweepOrphanedDeployKeysHandler,
       // Issue #104: the Environment file orphan sweep runs in the same reconciliation.
       { provide: ENVIRONMENT_FILE_REPOSITORY, useClass: InMemoryEnvironmentFileRepository },

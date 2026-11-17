@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RepositoryConnection } from '../../../../domain/entities/repository.js';
-import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
-import { DeployKeyHandler, NoTrustedHostKeyError } from '../handler.js';
-import { InMemorySecretStore } from './in-memory-secret-store.js';
+import { knownHostName } from '../../../../../platform/config/ssh-known-hosts.js';
+import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
+import {
+  NoTrustedHostKeyError,
+  type RepositoryConnection,
+} from '../../../domain/entities/repository.js';
+import { generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
+import { gitHostName } from '../../../domain/value-objects/trusted-host-keys.js';
+import { SecretStoreDeployKeys } from '../secret-store-deploy-keys.js';
 
 const hostKey = (): string => generateDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
 const GITHUB_KEY = hostKey();
@@ -28,13 +33,13 @@ function repository(overrides: Partial<RepositoryConnection>): RepositoryConnect
   };
 }
 
-describe('DeployKeyHandler', () => {
+describe('SecretStoreDeployKeys', () => {
   let secrets: InMemorySecretStore;
-  let keys: DeployKeyHandler;
+  let keys: SecretStoreDeployKeys;
 
   beforeEach(() => {
     secrets = new InMemorySecretStore();
-    keys = new DeployKeyHandler(secrets, {
+    keys = new SecretStoreDeployKeys(secrets, {
       knownHosts: [
         { hosts: ['github.com'], key: GITHUB_KEY },
         { hosts: ['[git.example.com]:2222'], key: PORT_KEY },
@@ -61,38 +66,43 @@ describe('DeployKeyHandler', () => {
   it('deletes a Deploy key; deleting a missing one is a no-op', async () => {
     const { secretRef } = await keys.create('Shop');
 
-    await keys.delete(secretRef);
-    await keys.delete(secretRef);
+    await keys.remove(secretRef);
+    await keys.remove(secretRef);
 
     expect(secrets.values.size).toBe(0);
   });
 
   describe('trustedHostKeys', () => {
-    it('lists the configured keys of the host', () => {
-      expect(keys.trustedHostKeys(repository({}))).toEqual([GITHUB_KEY]);
+    it('applies the configured known hosts and the pinned key to the Repository', () => {
+      expect(keys.trustedHostKeys(repository({})).keys).toEqual([GITHUB_KEY]);
       expect(
-        keys.trustedHostKeys(repository({ url: 'ssh://git@git.example.com:2222/acme/shop.git' })),
+        keys.trustedHostKeys(repository({ url: 'ssh://git@git.example.com:2222/acme/shop.git' }))
+          .keys,
       ).toEqual([PORT_KEY]);
-    });
-
-    it('adds the key pinned for the Repository', () => {
-      expect(keys.trustedHostKeys(repository({ pinnedHostKey: PINNED_KEY }))).toEqual([
+      expect(keys.trustedHostKeys(repository({ pinnedHostKey: PINNED_KEY })).keys).toEqual([
         GITHUB_KEY,
         PINNED_KEY,
       ]);
       expect(
-        keys.trustedHostKeys(
-          repository({ url: 'git@gitlab.com:acme/shop.git', pinnedHostKey: PINNED_KEY }),
-        ),
-      ).toEqual([PINNED_KEY]);
+        keys.trustedHostKeys(repository({ url: 'git@gitlab.com:acme/shop.git' })).isEmpty,
+      ).toBe(true);
     });
 
-    it('trusts nothing for an unlisted host without a pinned key, nor for HTTPS', () => {
-      expect(keys.trustedHostKeys(repository({ url: 'git@gitlab.com:acme/shop.git' }))).toEqual([]);
-      expect(keys.trustedHostKeys(repository({ url: 'https://github.com/acme/shop.git' }))).toEqual(
-        [],
+    it('names hosts the way the configuration does', () => {
+      expect(gitHostName('git@GitHub.com:acme/shop.git')).toBe(knownHostName('GitHub.com', 22));
+      expect(gitHostName('ssh://git@git.example.com:2222/a/b.git')).toBe(
+        knownHostName('git.example.com', 2222),
       );
     });
+  });
+
+  it("lists the Deploy keys older than an age, never another owner's secrets", async () => {
+    const { secretRef } = await keys.create('Shop');
+    await secrets.put('another module value', { owner: 'agents.token' });
+    secrets.now += 1000;
+
+    await expect(keys.listOlderThan(1000)).resolves.toEqual([secretRef]);
+    await expect(keys.listOlderThan(1001)).resolves.toEqual([]);
   });
 
   describe('credentials', () => {

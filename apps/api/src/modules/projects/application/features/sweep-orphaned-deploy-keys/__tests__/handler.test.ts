@@ -2,9 +2,11 @@ import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
-import { DeployKeyHandler, type StoredDeployKey } from '../../deploy-key/handler.js';
-import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
-import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS, SweepOrphanedDeployKeysHandler } from '../handler.js';
+import type { StoredDeployKey } from '../../../ports/deploy-keys.js';
+import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
+import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
+import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from '../../../../domain/value-objects/deploy-key-sweep-policy.js';
+import { SweepOrphanedDeployKeysHandler } from '../handler.js';
 
 // Issue #76: deleting Deploy-key secrets no Repository references. The safety cases come first:
 // a referenced secret, a fresh one and another owner's are never deleted.
@@ -16,7 +18,7 @@ const HOUR_MS = 60 * MINUTE_MS;
 
 describe('SweepOrphanedDeployKeysHandler', () => {
   let secrets: InMemorySecretStore;
-  let deployKeys: DeployKeyHandler;
+  let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
   let sweeper: SweepOrphanedDeployKeysHandler;
   let logs: string[];
@@ -40,7 +42,7 @@ describe('SweepOrphanedDeployKeysHandler', () => {
 
   beforeEach(() => {
     secrets = new InMemorySecretStore();
-    deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
+    deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
     sweeper = new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
       gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,

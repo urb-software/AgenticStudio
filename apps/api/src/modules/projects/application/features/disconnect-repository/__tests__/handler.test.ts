@@ -15,12 +15,8 @@ import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { CleanUpRepositoryHandler } from '../../clean-up-repository/handler.js';
 import { DisconnectRepositoryHandler } from '../handler.js';
-import { DeployKeyHandler } from '../../deploy-key/handler.js';
-import { InMemorySecretStore } from '../../deploy-key/__tests__/in-memory-secret-store.js';
-import {
-  DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
-  SweepOrphanedDeployKeysHandler,
-} from '../../sweep-orphaned-deploy-keys/handler.js';
+import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
+import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { ConnectRepositoryHandler } from '../../connect-repository/handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -34,7 +30,7 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 
 describe('DisconnectRepositoryHandler', () => {
   let secrets: InMemorySecretStore;
-  let deployKeys: DeployKeyHandler;
+  let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
   let jobs: RecordingRepositoryJobs;
@@ -68,7 +64,7 @@ describe('DisconnectRepositoryHandler', () => {
 
   beforeEach(() => {
     secrets = new InMemorySecretStore();
-    deployKeys = new DeployKeyHandler(secrets, { knownHosts: [] });
+    deployKeys = new InMemoryDeployKeys(secrets);
     projects = new InMemoryProjectRepository();
     projects.addProject(PROJECT, 'Shop');
     projects.addProject(OTHER, 'Other');
@@ -271,9 +267,6 @@ describe('DisconnectRepositoryHandler', () => {
       jobs,
       { allowFileRemotes: false, allowPrivateRemotes: false },
       deployKeys,
-      new SweepOrphanedDeployKeysHandler(projects, deployKeys, {
-        gracePeriodMs: DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
-      }),
     );
     const input = {
       projectId: PROJECT,

@@ -4,7 +4,7 @@ import {
   type SecretOwner,
   type SecretReference,
   type SecretStore,
-} from '../../../../../../platform/secrets/index.js';
+} from '../../../../../platform/secrets/index.js';
 
 /**
  * An in-memory {@link SecretStore} for handler tests: values and owner labels by reference,

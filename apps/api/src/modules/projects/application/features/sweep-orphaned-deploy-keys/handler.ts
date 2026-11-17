@@ -4,20 +4,14 @@ import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
-import { DeployKeyHandler } from '../deploy-key/handler.js';
-
-/**
- * How old an unreferenced Deploy key must be before the sweep deletes it (Issue #76): far
- * longer than a Connect takes between storing a new key and saving the Repository that
- * references it, so the sweep never races a Connect in flight.
- */
-export const DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS = 60 * 60 * 1000;
+import { DeployKeySweepPolicy } from '../../../domain/value-objects/deploy-key-sweep-policy.js';
+import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 
 /** DI token for {@link DeployKeySweepSettings}. */
 export const DEPLOY_KEY_SWEEP_SETTINGS = Symbol('DEPLOY_KEY_SWEEP_SETTINGS');
 
 export interface DeployKeySweepSettings {
-  /** {@link DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS} in production; tests may pass a shorter one. */
+  /** `DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS` in production; tests may pass a shorter one. */
   gracePeriodMs: number;
 }
 
@@ -34,7 +28,7 @@ export interface DeployKeySweepSettings {
  * unreferenced is never saved again.
  *
  * Runs at start-up, after the repository queue is reconciled and before its worker starts
- * (`repository-jobs`), and after a Connect fails to delete a replaced key. Each delete is
+ * (`repository-jobs`). Each delete is
  * logged by the secret's id only. Never throws: a failure is logged (redacted) and the next
  * sweep tries again.
  */
@@ -44,17 +38,17 @@ export class SweepOrphanedDeployKeysHandler {
 
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
-    private readonly deployKeys: DeployKeyHandler,
+    @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
     @Inject(DEPLOY_KEY_SWEEP_SETTINGS) private readonly settings: DeployKeySweepSettings,
   ) {}
 
   async sweep(): Promise<void> {
     let orphans: string[];
     try {
-      const candidates = await this.deployKeys.listOlderThan(this.settings.gracePeriodMs);
+      const policy = DeployKeySweepPolicy.of(this.settings.gracePeriodMs);
+      const candidates = await this.deployKeys.listOlderThan(policy.gracePeriodMs);
       if (candidates.length === 0) return;
-      const referenced = new Set(await this.projects.listDeployKeySecretRefs());
-      orphans = candidates.filter((secretRef) => !referenced.has(secretRef));
+      orphans = policy.orphans(candidates, await this.projects.listDeployKeySecretRefs());
     } catch (error) {
       this.logger.warn(
         `Could not sweep orphaned Deploy keys; the next sweep tries again. ${redactSecrets(String(error))}`,
@@ -63,7 +57,7 @@ export class SweepOrphanedDeployKeysHandler {
     }
     for (const secretRef of orphans) {
       try {
-        await this.deployKeys.delete(secretRef);
+        await this.deployKeys.remove(secretRef);
         this.logger.log(`Deleted the orphaned Deploy key secret ${secretRef}.`);
       } catch (error) {
         this.logger.warn(
