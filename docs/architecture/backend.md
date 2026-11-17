@@ -31,8 +31,8 @@ modules/{module}/
     ports/                 interfaces the handlers need from outside
     <collaborator>.ts      rare, specifically named, last resort (rule 3)
   domain/
-    entities/              classes with a lifecycle and behaviour
-    value-objects/         classes that validate on creation; policies
+    entities/              aggregate roots and their child entities: classes
+    value-objects/         classes that validate on creation; policies; records of a root with no behaviour
     repositories/          interfaces only
   entry-points/
     http/
@@ -79,9 +79,9 @@ import { ExecutionCompletedV1Schema } from '@modules/executions/contracts';
 
 The `@modules/*` alias is conceptual; define aliases in tooling before using them.
 
-### The nine structure rules
+### The thirteen structure rules
 
-Approved by the operator on 2026-11-17 (Epic #160, [ADR 0003](adr/0003-api-module-layout.md)). How each is enforced is in [Quality](../engineering/quality.md) §5.
+Rules 1 to 9 and rules 10 to 13 were approved by the operator on 2026-11-17 (Epic #160, [ADR 0003](adr/0003-api-module-layout.md)). How each is enforced is in [Quality](../engineering/quality.md) §5.
 
 1. **Features are independent.** A feature never imports another feature of its module.
 2. **Entry points call handlers; handlers never call each other.** Everything that receives outside input (HTTP endpoints, job processors, schedulers, start-up routines, event consumers) lives in `entry-points/`, is thin, and holds no business rules. The application layer knows nothing about HTTP, queues or timers. Entry points are what clean architecture calls interface adapters and hexagonal architecture calls driving adapters.
@@ -92,6 +92,51 @@ Approved by the operator on 2026-11-17 (Epic #160, [ADR 0003](adr/0003-api-modul
 7. **Validation has two homes.** A schema beside its endpoint validates the shape of a request and produces field errors; it contains no business rule of its own, and where it repeats a limit it takes it from the domain. Business rules are enforced by the entity or value object they belong to, so they hold for every entry point.
 8. **`contracts/` is a module's public face** for other modules, and nothing else.
 9. **Same role, same form** (API): state with rules or with dependencies gets a class; everything else is a function or plain data. The table is in §10.
+10. **Handlers own their input and result.** Every handler declares its own input type and result type and builds the result itself. A result contains plain data only: snapshots, ids, values and view types. An entity class never leaves the application layer, and a handler never builds an HTTP shape. A snapshot is the entity's current values as read-only plain data, produced by the entity; where a result contains a whole aggregate it reuses the snapshot type and does not repeat its fields. What each kind of handler returns is in the table below.
+11. **One aggregate root, one file, one repository.** Anything with its own repository is an aggregate root and lives in `domain/entities/`. A repository interface serves exactly one root.
+12. **Aggregates refer to each other by id.** A root never holds or loads another root. A rule that needs facts from another aggregate receives them as values (consistent with rule 6).
+13. **One concept per file.** An entity file holds the entity class and nothing else. Each value object, an aggregate's errors and its fact types have their own files. `domain/` exports no loose functions other than type guards. There is no line limit; size is reported, not enforced.
+
+Rules 10 to 13 apply to the API only, as rules 1 to 9 do.
+
+### What a handler returns (rule 10)
+
+| Handler | Returns |
+| --- | --- |
+| A command the caller needs the result of | The snapshot of the aggregate it changed, or the ids and values the caller needs |
+| A command with nothing to show | Nothing, or only the id of what it created |
+| A query for one aggregate | That aggregate's snapshot, read from the repository directly where it can return one, without building the entity class to read it |
+| A query that combines or computes | A view type owned by the feature that produces it (a read shape is not a domain concept) |
+
+The entry point (endpoint, job processor, scheduler, start-up routine or consumer) maps from the result to its own shape; the handler never does.
+
+### Aggregate root, child entity or value object
+
+The deciding question: **is there a rule that must hold at every moment across both objects?** If yes, they are one aggregate, and one of them is its root. If no, they are separate roots, and each refers to the other by id (rule 12).
+
+Practical tests for a candidate root:
+
+- It has its own id that other objects use to refer to it.
+- It has its own repository.
+- It is changed in its own transaction.
+- Other aggregates refer to it.
+
+A **child entity** has an identity only within its root and is created, changed and bounded through that root. A **value object** has no identity: it is defined by its values, is immutable (a change returns a new value) and validates on creation; where it owns no rule beyond its shape it may be a plain type (§10).
+
+**An aggregate root is always a class in `domain/entities/`**; at minimum it produces its snapshot. A record with no behaviour that is not a root lives in `domain/value-objects/`.
+
+**When unsure, make them separate roots.** Joining two things into one aggregate needs a stated rule that spans them; keeping them apart needs none.
+
+### Current aggregates (target)
+
+This is the target model that the tickets of Epic #160 implement (#182 and #185 for `projects`, #183 and #184 for `executions`). Until they are merged the code differs: some of these still sit under `domain/value-objects/`, and the groupings of the Run's and the Repository connection's value objects are confirmed against the code in their tickets.
+
+| Module | Aggregate roots | Child entities | Value objects and plain records |
+| --- | --- | --- | --- |
+| `projects` | Project; Repository connection; Environment file | none | The concepts that are part of a Repository connection, listed by #185 |
+| `executions` | Run; Run lookup (requested, claimed, completed, failed); Prepared Follow-up; Review comments of a Run; Run diff | Run step, bounded by the Run's step limit | Of the Run, classes: state with its transitions, delivery, pull request status, conversation, worker claim, progress and limits. Plain types: cancellation, working copy, failure, commit (as set by #184) |
+
+The Run log's events are append-only records and not an aggregate: no rule changes or spans them, and nothing refers to one event on its own.
 
 ## 4. Feature boundaries and CQRS semantics
 
@@ -171,17 +216,17 @@ No mandatory generic `BaseRepository`, mediator/message bus for every feature, s
 
 ## 10. Code conventions
 
-**Same role, same form** (rule 9). State with rules or with dependencies gets a class; everything else is a function or plain data.
+**Same role, same form** (rule 9). State with rules or with dependencies gets a class; everything else is a function or plain data. A file holds one concept (rule 13).
 
 | Role | Form |
 | --- | --- |
-| Entity with a lifecycle; value object; policy | Class |
+| Aggregate root; child entity; value object that owns rules; policy | Class (a root at minimum produces its snapshot) |
 | Handler; endpoint, job processor, scheduler, start-up routine, consumer | Class with injected dependencies |
 | Adapter, repository implementation | Class implementing an interface |
 | Port, repository contract | Interface |
 | Error | Class extending `Error` |
 | Record with no behaviour; data crossing a boundary | Plain type |
-| Pure helper | Function |
+| Pure helper | Function (not in `domain/`: rule 13 allows only type guards there; the rule goes on the object it is about) |
 
 Naming follows §4 (repository and port contracts: `<Aggregate>Repository`, `<Name>Reader`) and §6 (events: `<EventName>V<n>`).
 
