@@ -24,9 +24,6 @@ export const LOOKUP_LEASE_SECONDS = 120;
 /** Most lookups one claim hands out. */
 export const LOOKUP_CLAIM_MAX = 5;
 
-/** Opening the Run page requests a refresh only if the state is older than this. */
-export const PAGE_REFRESH_MIN_AGE_SECONDS = 60;
-
 /** The daily refresh looks again at a Run whose last lookup was requested longer ago than this. */
 export const DAILY_REFRESH_AGE_HOURS = 24;
 

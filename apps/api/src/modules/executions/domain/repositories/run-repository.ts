@@ -121,7 +121,7 @@ export interface RunRepository {
    * Working copy; Issue #102, review R4 of #122) → held by `workerId` (heartbeat at `now`),
    * still `failed`. A resumable `queued` Run (answered, with a session reference; Issue #103)
    * goes only to the worker that started it, like a delivery retry, and keeps its first start
-   * time. Eligible: its project has no other active or held Run and fewer than `MAX_ACTIVE_RUNS`
+   * time. Eligible: its project has no other active or held Run and fewer than `HandOutRule.MAX_PLACES`
    * others are active or held across the server; a resumable Run keeps its place while it waits
    * for its worker. Serialized against concurrent claims, so they cannot exceed the limits.
    * `null` when nothing is eligible.

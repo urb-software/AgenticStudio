@@ -500,7 +500,7 @@ export function toRunResponse(
         }
       : {}),
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
-    // The domain's canResumeAfterUsageLimit, on the plain shape (Issue #105).
+    // The Run's `canResumeAfterUsageLimit` rule (private), on the plain shape (Issue #105).
     ...(run.state === 'failed' &&
     run.failure?.code === 'usage_limit' &&
     run.sessionRef !== null &&

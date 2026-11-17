@@ -808,7 +808,10 @@ export class Run {
   }
 
   private updateFollowUpEntry(details: BringUpDetails): void {
-    Object.assign(this, { conversation: this.conversation.withFollowUpDetails(details) });
+    const conversation = this.conversation.withFollowUpDetails(details);
+    // No Follow-up message to record on: nothing is recorded.
+    if (conversation === this.conversation) return;
+    Object.assign(this, { conversation });
     const pending = CHANGES.get(this)!;
     pending.followUpEntry = { ...pending.followUpEntry, ...details };
   }

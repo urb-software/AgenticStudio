@@ -559,7 +559,14 @@ describeGate('api', apiGate, 'apps/api', [
   {
     fixture: 'repository-returns-own-snapshot',
     expected: [],
-    qualityRow: 'A repository interface returns the snapshot of its own entity',
+    qualityRow:
+      "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
+  },
+  {
+    fixture: 'executions-repository-returns-root-child-snapshot',
+    expected: [],
+    qualityRow:
+      "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
   },
   {
     fixture: 'repository-returns-other-roots-snapshot',

@@ -111,7 +111,7 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: 'A repository interface returns the snapshot of its own entity',
+    row: "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
     expected: 'PASS',
     gate: 'api',
   },
