@@ -19,8 +19,6 @@ Superseded: earlier proposals that separated `git` or `skills`, used Python/Fast
 
 ## 2. Canonical directory convention
 
-> **Status of this layout.** The code of `projects` and `executions` does not yet have this layout; the staged conversion is tracked under Epic #160, and this sentence is removed by the ticket that completes the move.
-
 ```text
 apps/api/src/
   modules/     # projects, agents, workflows, executions, environments, mcp

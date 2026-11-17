@@ -11,6 +11,7 @@ import {
   type Gate,
   type Violation,
 } from '../harness';
+import { LAYOUT_RULES, APPLICATION_FORBIDDEN_PACKAGES, layoutViolations } from './layout-rules';
 import { SECRETS_SOURCE_RULES, secretsViolations } from './secrets-rules';
 import { SOURCE_RULES, sourceViolations } from './source-rules';
 
@@ -19,6 +20,11 @@ const SECRETS_DIR = '^src/platform/secrets/';
 /** The secrets capability's two entry points (backend.md §2): the port and the Nest wiring. */
 const SECRETS_ENTRY_POINTS = '^src/platform/secrets/(index|secrets\\.module)\\.ts$';
 const CONTRACTS = '^src/modules/[^/]+/contracts/';
+/**
+ * Feature handlers and application collaborators (not the interfaces in application/ports/,
+ * which api-ports-independent covers), and the entry points that call them.
+ */
+const APPLICATION_AND_ENTRY_POINTS = '^src/modules/[^/]+/(application/(?!ports/)|entry-points/)';
 /** Test files, which may boot the whole app. */
 const TESTS = '(^|/)__tests__/';
 // Workspace packages resolve to their source (`../../packages/database/src/` from apps/api).
@@ -53,9 +59,10 @@ export const apiGate: Gate = {
     {
       name: 'api-cross-module-contracts-index-only',
       comment:
-        'Another module is reached only through its public contracts/index.ts: its contracts/http/ ' +
-        'schemas are shared within that module only (backend.md §2, Issue #96). Deep imports of ' +
-        'contracts/events/ are covered by api-events-imported-via-contracts-index.',
+        'Another module is reached only through its public contracts/index.ts. The shared HTTP ' +
+        'shapes of a module live in its entry-points/http/shared/, which api-no-cross-module-private ' +
+        'keeps private (backend.md §2, Issue #96). Deep imports of contracts/events/ are covered by ' +
+        'api-events-imported-via-contracts-index.',
       severity: 'error',
       from: { path: '^src/modules/([^/]+)/' },
       to: {
@@ -110,7 +117,7 @@ export const apiGate: Gate = {
             'fs/promises',
           ),
           '^src/platform/',
-          '^src/modules/[^/]+/(features|consumers|infrastructure)/',
+          '^src/modules/[^/]+/(application/(?!ports/)|entry-points/|infrastructure/)',
           MODULE_FILE,
         ],
       },
@@ -118,14 +125,14 @@ export const apiGate: Gate = {
     {
       name: 'api-ports-independent',
       comment:
-        'ports/ are interfaces: they never import (or re-export) infrastructure/, features/ or ' +
-        'consumers/, the database client, the ORM or concrete clients, so no adapter can be ' +
-        'reached through a port.',
+        'application/ports/ are interfaces: they never import (or re-export) infrastructure/, ' +
+        'entry-points/ or the rest of application/, the database client, the ORM or concrete ' +
+        'clients, so no adapter can be reached through a port.',
       severity: 'error',
-      from: { path: '^src/modules/[^/]+/ports/' },
+      from: { path: '^src/modules/[^/]+/application/ports/' },
       to: {
         path: [
-          '^src/modules/[^/]+/(features|consumers|infrastructure)/',
+          '^src/modules/[^/]+/(application/(?!ports/)|entry-points/|infrastructure/)',
           '^src/platform/database/',
           ...ORM,
           CONCRETE_CLIENTS,
@@ -136,13 +143,13 @@ export const apiGate: Gate = {
       name: 'api-contracts-self-contained',
       comment:
         'A public contracts/ (publisher-owned event schemas and public exports, system.md §6) is ' +
-        "self-contained: it never imports or re-exports its own module's domain/, features/, " +
-        'consumers/, infrastructure/ or ports/, nor the ORM or concrete clients.',
+        "self-contained: it never imports or re-exports its own module's domain/, application/, " +
+        'entry-points/ or infrastructure/, nor the ORM or concrete clients.',
       severity: 'error',
       from: { path: '^src/modules/([^/]+)/contracts/' },
       to: {
         path: [
-          '^src/modules/$1/(domain|features|consumers|infrastructure|ports)/',
+          '^src/modules/$1/(domain|application|entry-points|infrastructure)/',
           ...ORM,
           CONCRETE_CLIENTS,
         ],
@@ -151,10 +158,11 @@ export const apiGate: Gate = {
     {
       name: 'api-features-no-concrete-adapters',
       comment:
-        'Feature handlers and event consumers depend on domain repository contracts and ports, ' +
-        'never on concrete repositories, adapters, the database client or concrete infrastructure clients.',
+        'Feature handlers, entry points (endpoints, event consumers) depend on domain repository ' +
+        'contracts and ports, never on concrete repositories, adapters, the database client or ' +
+        'concrete infrastructure clients.',
       severity: 'error',
-      from: { path: '^src/modules/[^/]+/(features|consumers)/' },
+      from: { path: APPLICATION_AND_ENTRY_POINTS },
       to: {
         path: [
           '^src/modules/[^/]+/infrastructure/',
@@ -168,10 +176,10 @@ export const apiGate: Gate = {
       name: 'api-features-no-reachable-adapters',
       comment:
         'Closes the re-export class of bypasses: no chain of imports (through shared/, platform/, ' +
-        'contracts/ or anything else) may lead a feature or consumer to a concrete repository, ' +
-        'adapter, the database client, the ORM or a concrete client.',
+        'contracts/ or anything else) may lead a feature or an entry point to a concrete ' +
+        'repository, adapter, the database client, the ORM or a concrete client.',
       severity: 'error',
-      from: { path: '^src/modules/[^/]+/(features|consumers)/' },
+      from: { path: APPLICATION_AND_ENTRY_POINTS },
       to: {
         path: [
           '^src/modules/[^/]+/infrastructure/',
@@ -180,6 +188,23 @@ export const apiGate: Gate = {
           CONCRETE_CLIENTS,
         ],
         reachable: true,
+      },
+    },
+    {
+      name: 'api-application-no-http-queue-scheduler-libraries',
+      comment:
+        'application/ knows nothing about HTTP, request schemas, OpenAPI, queues or timers: it ' +
+        'imports no request-schema or OpenAPI library, no HTTP server or client, no queue or ' +
+        'scheduler API (backend.md §3 rule 2). Controller and parameter decorators from ' +
+        '@nestjs/common are covered by api-application-no-http-decorators. Plain zod and ' +
+        'platform/queue/ stay allowed here: #164 tightens platform/queue/ for application/.',
+      severity: 'error',
+      from: { path: '^src/modules/[^/]+/application/' },
+      to: {
+        path: [
+          npmPackages(...APPLICATION_FORBIDDEN_PACKAGES),
+          coreModules('http', 'https', 'http2'),
+        ],
       },
     },
     {
@@ -272,6 +297,7 @@ export const apiGate: Gate = {
       'api-feature-has-handler',
       'api-infrastructure-placement',
       ...SOURCE_RULES,
+      ...LAYOUT_RULES,
       ...SECRETS_SOURCE_RULES,
     ],
     check: (baseDir) => [
@@ -279,13 +305,14 @@ export const apiGate: Gate = {
       ...featuresWithoutHandler(baseDir),
       ...misplacedInfrastructure(baseDir),
       ...sourceViolations(baseDir),
+      ...layoutViolations(baseDir),
       ...secretsViolations(baseDir),
     ],
   },
 };
 
 /** Folders allowed directly under src/modules/<m>/ (backend.md §2), besides <m>.module.ts. */
-const MODULE_FOLDERS = ['features', 'consumers', 'domain', 'ports', 'infrastructure', 'contracts'];
+const MODULE_FOLDERS = ['application', 'domain', 'entry-points', 'infrastructure', 'contracts'];
 
 /**
  * A business module contains only the documented folders and its <m>.module.ts, so no
@@ -304,10 +331,10 @@ function undocumentedModuleEntries(baseDir: string): Violation[] {
   });
 }
 
-/** A present use-case feature has a handler.ts (endpoint.ts, schema.ts, input.ts are optional). */
+/** A present use-case feature has a handler.ts (input.ts and __tests__/ are optional). */
 function featuresWithoutHandler(baseDir: string): Violation[] {
   return listDirectories(baseDir, 'src/modules').flatMap((module) => {
-    const features = `src/modules/${module}/features`;
+    const features = `src/modules/${module}/application/features`;
     return listDirectories(baseDir, features)
       .map((feature) => `${features}/${feature}`)
       .filter((feature) => !listFiles(baseDir, feature).includes(`${feature}/handler.ts`))

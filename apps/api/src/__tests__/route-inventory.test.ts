@@ -1,10 +1,10 @@
 import 'reflect-metadata';
-import { RequestMethod } from '@nestjs/common';
+import { type DynamicModule, RequestMethod } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
+import { AppModule } from '../app.module.js';
 import { IS_PUBLIC } from '../platform/auth/public.decorator.js';
 import { IS_WORKER_ROUTE } from '../platform/auth/worker-route.js';
-import { ExecutionsModule } from '../modules/executions/executions.module.js';
-import { ProjectsModule } from '../modules/projects/projects.module.js';
+import { testConfig } from './test-config.js';
 
 type Controller = new (...args: never[]) => object;
 
@@ -42,9 +42,14 @@ function routes(controllers: Controller[]): string[] {
 
 describe('route and guard inventory (Epic #160, Issue #162)', () => {
   it('lists every route of projects and executions with its authentication and guards', () => {
-    const projects = ProjectsModule.register();
-    const executions = ExecutionsModule.register(projects);
-    const controllers = [...(projects.controllers ?? []), ...(executions.controllers ?? [])];
+    // Reached through the composition root: nothing outside a module imports its internals.
+    // Only the two modules under test are listed; the platform's controllers are not.
+    const modules = (AppModule.register(testConfig()).imports ?? []).filter(
+      (entry): entry is DynamicModule =>
+        'module' in entry && ['ProjectsModule', 'ExecutionsModule'].includes(entry.module.name),
+    );
+    expect(modules).toHaveLength(2);
+    const controllers = modules.flatMap((entry) => entry.controllers ?? []);
     expect(routes(controllers as Controller[])).toMatchInlineSnapshot(`
       [
         "DELETE /api/projects/:id/environment-file [session]",

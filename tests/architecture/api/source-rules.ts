@@ -38,8 +38,8 @@ const EVENT_FILE =
   /^src\/modules\/([^/]+)\/contracts\/events\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-v([1-9][0-9]*)\.ts$/;
 /** An event definition name: `<EventName>V<n>` or `<EventName>V<n>Schema`. */
 const EVENT_NAME = /^([A-Z][A-Za-z0-9]*?)V[1-9][0-9]*(Schema)?$/;
-/** A module's contracts/ outside events/ and the within-module HTTP/SSE DTOs of http/. */
-const CONTRACTS_OUTSIDE_EVENTS = /^src\/modules\/[^/]+\/contracts\/(?!events\/|http\/)/;
+/** A module's contracts/ outside events/ (its HTTP and SSE shapes live in entry-points/http/shared/). */
+const CONTRACTS_OUTSIDE_EVENTS = /^src\/modules\/[^/]+\/contracts\/(?!events\/)/;
 /** The public entry point of a module's contracts: `src/modules/<module>/contracts/index.ts`. */
 const CONTRACTS_INDEX = /^src\/modules\/([^/]+)\/contracts\/index\.ts$/;
 const MODULE_CONTRACTS = /^src\/modules\/([^/]+)\/contracts\//;
@@ -50,7 +50,7 @@ const EVENT_LIKE_NAME = /Event(Schema)?$/;
  * Integration events (backend.md §6): each version of an event is defined once, by its
  * publisher, in `contracts/events/<event-name>-v<n>.ts`, which exports only
  * `<EventName>V<n>` and/or `<EventName>V<n>Schema`, declared in that file. An event-like
- * declaration elsewhere in `contracts/` (except `contracts/http/`), a competing definition of
+ * declaration elsewhere in `contracts/`, a competing definition of
  * a published event anywhere else, a published event exposed under another name or by
  * any file but its publisher's `contracts/index.ts`, and the same event in two modules are
  * rejected.
@@ -215,12 +215,12 @@ function eventExposureViolations(
 }
 
 const DOMAIN_REPOSITORIES = /^src\/modules\/[^/]+\/domain\/repositories\//;
-const PORTS = /^src\/modules\/[^/]+\/ports\//;
+const PORTS = /^src\/modules\/[^/]+\/application\/ports\//;
 const BUSINESS_MODULES = /^src\/modules\//;
 
 /**
  * Contract names (backend.md §4), inside business modules: an interface, type alias or abstract class named
- * `…ReadRepository` or `…Reader` is a read port and lives in `ports/`; any other
+ * `…ReadRepository` or `…Reader` is a read port and lives in `application/ports/`; any other
  * `…Repository` contract is an aggregate repository and lives in `domain/repositories/`.
  * Concrete classes (`PrismaProjectRepository`) are implementations, not contracts.
  */
@@ -243,7 +243,7 @@ const INFRASTRUCTURE = /^src\/modules\/[^/]+\/infrastructure\//;
 /**
  * Every contract an infrastructure adapter implements (`implements X`, or `extends X` for an
  * abstract class X) that is declared in a business module is declared in
- * `domain/repositories/` or `ports/`, so no service interface hides in `features/`,
+ * `domain/repositories/` or `application/ports/`, so no service interface hides in `application/features/`,
  * `domain/entities/` or the adapter itself. Contracts from npm packages
  * (`OnModuleInit`) or from `platform/` are not business-module contracts.
  */
