@@ -102,7 +102,7 @@ The operator's reply to a Question. It queues the Run again, and the agent worke
 _Avoid_: Reply (for the stored record)
 
 **Conversation**:
-The ordered list of a Run's Questions, Answers and Follow-ups, from the Task to the Run's latest result. It is distinct from a part of a Run, which is one segment between two ends of the agent's work (the Task, or a Follow-up, up to the result it ends with). The name "conversation" is proposed; the operator confirms it in review.
+The ordered list of a Run's Questions, Answers and Follow-ups, from the Task to the Run's latest result. It is distinct from a part of a Run, which is one segment between two ends of the agent's work (the Task, or a Follow-up, up to the result it ends with).
 _Avoid_: Thread, history
 
 **Cancel**:
@@ -132,7 +132,7 @@ The one object through which a group of objects that must stay consistent is cre
 An object with an identity that outlives its values, and rules about what can happen to it. A root is an entity; a child entity has its identity only within its root (a Run step within its Run).
 
 **Value object**:
-An immutable object defined by its values, with no identity of its own; a change returns a new value. It owns the rules about the concept it names (a Run's state with its transitions).
+An immutable object defined by its values, with no identity of its own; a change returns a new value. It validates on creation and owns the rules about the concept it names (a Run's state with its transitions); where it owns no rule beyond its shape it may be a plain type.
 
 **Snapshot**:
 An entity's current values as read-only plain data, produced by the entity. It is what a handler returns where its result contains a whole aggregate; an entity class itself never leaves the application layer.

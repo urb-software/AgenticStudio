@@ -58,15 +58,15 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - No handler's return type is an entity class, and every handler file exports its input type (when it takes input) and its result type (when it returns something) (rule 10; added by #182, extended by #183, general by #170).
 - Each repository interface refers to exactly one file in `domain/entities/`, and no type under `domain/value-objects/` is the main type a repository returns (rule 11; added by #182, extended by #183, general by #170).
 - No entity file imports another entity file except for an id type (rule 12; added by #182, extended by #183, general by #170).
-- A file under `domain/entities/` exports exactly one class and no functions (rule 13; added by #184 for `executions`, extended to `projects` by #185, general by #170).
-- No file under `domain/` exports a function other than a type guard (rule 13; added by #184 for `executions`, extended to `projects` by #185, general by #170).
+- A file under `domain/entities/` exports exactly one class and no functions (rule 13; added by #184 for `executions`, extended to `projects` by #185, general by #170; whichever of #184/#185 lands first introduces it).
+- No file under `domain/` exports a function other than a type guard (rule 13; added by #184 for `executions`, extended to `projects` by #185, general by #170; whichever of #184/#185 lands first introduces it).
 - The aggregate roots of each module are pinned, each with the one-line reason it is a root: adding or removing one fails until the record is changed in review (rule 11; added by #170).
 - A present use-case feature has a `handler.ts`; `endpoint.ts`, `schema.ts`, `input.ts`, `__tests__/` are optional.
 - Concrete read/write repository implementations belong in `infrastructure/repositories/`, adapters in `infrastructure/adapters/`.
 - Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
 - `contracts/` holds only `index.ts` and `events/`.
 - No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/`.
-- Every file in `domain/entities/` exports a class with a non-public constructor (`executions`, `projects`; all modules, by path pattern, by #170; records without behaviour live in `domain/value-objects/`).
+- Every file in `domain/entities/` exports a class with a non-public constructor (`executions`, `projects`; all modules, by path pattern, by #170; an aggregate root is always such a class; records without behaviour that are not roots live in `domain/value-objects/`).
 - No `domain/services/` directory, in every module (by path pattern).
 - The list of repository methods is pinned: adding, renaming or removing a method fails until the list is changed in review, and each atomic or set-wide operation carries a one-line reason (added by #170).
 - The list of application collaborators is pinned: a new one fails until the list is changed in review (added by #170).
@@ -142,10 +142,10 @@ Positive and negative fixtures prove the rules catch violations:
 | An entity file imports another entity file for anything else | FAIL (added by #182) |
 | The four checks above applied to `executions` | PASS and FAIL with fixtures (added by #183) |
 | The four checks above in every module, by path pattern | PASS and FAIL with fixtures (added by #170) |
-| A `domain/entities/` file exports exactly one class and no function | PASS (`executions` by #184, `projects` by #185, all modules by #170) |
-| A `domain/entities/` file exports a second class or any function | FAIL (`executions` by #184, `projects` by #185, all modules by #170) |
-| `domain/` exports only classes, types, constants and type guards | PASS (`executions` by #184, `projects` by #185, all modules by #170) |
-| `domain/` exports a function other than a type guard | FAIL (`executions` by #184, `projects` by #185, all modules by #170) |
+| A `domain/entities/` file exports exactly one class and no function | PASS (`executions` by #184, `projects` by #185, all modules by #170; whichever of #184/#185 lands first introduces it) |
+| A `domain/entities/` file exports a second class or any function | FAIL (`executions` by #184, `projects` by #185, all modules by #170; whichever of #184/#185 lands first introduces it) |
+| `domain/` exports only classes, types, constants and type guards | PASS (`executions` by #184, `projects` by #185, all modules by #170; whichever of #184/#185 lands first introduces it) |
+| `domain/` exports a function other than a type guard | FAIL (`executions` by #184, `projects` by #185, all modules by #170; whichever of #184/#185 lands first introduces it) |
 | The aggregate roots match the pinned record | PASS (added by #170) |
 | An aggregate root is added or removed without updating its pinned record | FAIL (added by #170) |
 | A module has no `domain/services/` directory | PASS |
@@ -183,7 +183,7 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | 10 | Handlers own their input and result | Gate checks: nothing under `entry-points/` imports an entity class, no handler returns an entity class, and every handler exports its input and result types (`projects` by #182, `executions` by #183, all modules by #170); that a handler builds no HTTP shape is review only (rule 2 keeps HTTP APIs out of `application/`) |
 | 11 | One aggregate root, one file, one repository | Gate check: a repository interface refers to exactly one entity file and no value object is its main type (added by #182, extended by #183, general by #170); pinned test: the aggregate roots of each module (added by #170); that anything with its own repository is a root is review only |
 | 12 | Aggregates refer to each other by id | Gate check: no entity file imports another entity file except for an id type (added by #182, extended by #183, general by #170); that no root loads another is review only |
-| 13 | One concept per file | Gate checks: an entity file exports exactly one class and no function; `domain/` exports no function other than a type guard (`executions` by #184, `projects` by #185, all modules by #170). Size is reported by the structure report (added by #170), not enforced; that each file is one named concept is review only |
+| 13 | One concept per file | Gate checks: an entity file exports exactly one class and no function; `domain/` exports no function other than a type guard (`executions` by #184, `projects` by #185, all modules by #170; whichever of #184/#185 lands first introduces it). Size is reported by the structure report (added by #170), not enforced; that each file is one named concept is review only |
 
 Rules that are review only are covered by the specific backend items of the review report ([template](../templates/review-report.md) §2) and by the review skill's third brief, which checks only the thirteen rules against the diff. The architecture review skill (`studio-improve-codebase-architecture`) runs at the end of each Epic ([Agent roles](agent-roles.md) §6).
 

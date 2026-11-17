@@ -31,8 +31,8 @@ modules/{module}/
     ports/                 interfaces the handlers need from outside
     <collaborator>.ts      rare, specifically named, last resort (rule 3)
   domain/
-    entities/              classes with a lifecycle and behaviour
-    value-objects/         classes that validate on creation; policies
+    entities/              aggregate roots and their child entities: classes
+    value-objects/         classes that validate on creation; policies; records of a root with no behaviour
     repositories/          interfaces only
   entry-points/
     http/
@@ -108,7 +108,7 @@ Rules 10 to 13 apply to the API only, as rules 1 to 9 do.
 | A query for one aggregate | That aggregate's snapshot, read from the repository directly where it can return one, without building the entity class to read it |
 | A query that combines or computes | A view type owned by the feature that produces it (a read shape is not a domain concept) |
 
-The endpoint, job or start-up entry point maps from the result to its own shape; the handler never does.
+The entry point (endpoint, job processor, scheduler, start-up routine or consumer) maps from the result to its own shape; the handler never does.
 
 ### Aggregate root, child entity or value object
 
@@ -121,7 +121,9 @@ Practical tests for a candidate root:
 - It is changed in its own transaction.
 - Other aggregates refer to it.
 
-A **child entity** has an identity only within its root and is created, changed and bounded through that root. A **value object** has no identity: it is defined by its values, is immutable (a change returns a new value), and is a class where it owns rules and a plain type where it does not (§10).
+A **child entity** has an identity only within its root and is created, changed and bounded through that root. A **value object** has no identity: it is defined by its values, is immutable (a change returns a new value) and validates on creation; where it owns no rule beyond its shape it may be a plain type (§10).
+
+**An aggregate root is always a class in `domain/entities/`**; at minimum it produces its snapshot. A record with no behaviour that is not a root lives in `domain/value-objects/`.
 
 **When unsure, make them separate roots.** Joining two things into one aggregate needs a stated rule that spans them; keeping them apart needs none.
 
@@ -218,13 +220,13 @@ No mandatory generic `BaseRepository`, mediator/message bus for every feature, s
 
 | Role | Form |
 | --- | --- |
-| Entity with a lifecycle; value object; policy | Class |
+| Aggregate root; child entity; value object that owns rules; policy | Class (a root at minimum produces its snapshot) |
 | Handler; endpoint, job processor, scheduler, start-up routine, consumer | Class with injected dependencies |
 | Adapter, repository implementation | Class implementing an interface |
 | Port, repository contract | Interface |
 | Error | Class extending `Error` |
 | Record with no behaviour; data crossing a boundary | Plain type |
-| Pure helper | Function |
+| Pure helper | Function (not in `domain/`: rule 13 allows only type guards there; the rule goes on the object it is about) |
 
 Naming follows §4 (repository and port contracts: `<Aggregate>Repository`, `<Name>Reader`) and §6 (events: `<EventName>V<n>`).
 
