@@ -29,6 +29,14 @@
 //      `disableAllHooks`, a hook, an allow rule and an `env` with NODE_OPTIONS (agent code)
 //      in the per-Run --settings file take no effect, and the managed
 //      hook still blocks (review H1 of #136). ~/.claude/settings.json is restored afterwards.
+//   8. a Follow-up after the finished step 1 (Issue #158): the runner resumes the same session with
+//      `reason: 'follow_up'` and a small instruction; the result is done, the session is the same
+//      and hello.txt follows the instruction;
+//   9. bring up to date with a conflict (Issue #158): a local `integration` branch and the Run
+//      branch change the same line of conflict.txt; the worker's own BranchUpdates merges it (the
+//      repository itself stands in for the Project's cache), the runner resumes the session with
+//      the worker's bring-up instruction, then the worker's complete() finishes the merge. Checked:
+//      no unmerged paths, no conflict markers, a merge commit with both parents, nothing pushed.
 // It prints only redacted summary lines: outcomes, counts and yes/no checks. Never the agent's
 // output, the session id, the environment or file content. The CLI uses the agent user's own
 // subscription login; this script never reads it.
@@ -49,6 +57,8 @@ import { ClaudeCodeRunner, probeClaudeCode } from '../dist/claude-code/runner.js
 import { ClaudeStream } from '../dist/claude-code/stream.js';
 import { ManagedGuardrails } from '../dist/managed-guardrails.js';
 import { DEFAULT_PROVIDER_BINARIES } from '../dist/config.js';
+import { BranchUpdates } from '../dist/branch-update.js';
+import { bringUpToDateInstruction } from '../dist/agent-definition/bring-up-to-date.js';
 import { GitRunner } from '../dist/git.js';
 import { ProviderGate, readProviderSwitches } from '../dist/provider-gate.js';
 import { composeProjectName } from '../dist/run-layout.js';
@@ -300,6 +310,8 @@ const check = (label, ok) => {
   if (!ok) failures += 1;
   line(`  ${label}: ${ok ? 'yes' : 'NO'}`);
 };
+/** A finding to record, not a pass/fail check. */
+const finding = (label, value) => line(`  finding, ${label}: ${value ? 'yes' : 'no'}`);
 const read = (path) => {
   try {
     return readFileSync(join(repoDir, path), 'utf8');
@@ -307,6 +319,152 @@ const read = (path) => {
     return undefined;
   }
 };
+
+/**
+ * Step 8: a Follow-up after a step that ended `done` resumes the same session (Issue #141), as
+ * the worker does for a Follow-up: the runner's `resume` with `reason: 'follow_up'`.
+ */
+async function followUpStep(finished) {
+  if (!finished.result?.sessionRef) {
+    failures += 1;
+    line('step 8 (Follow-up after done): SKIPPED, no session from step 1');
+    return;
+  }
+  const followed = await step('step 8 (Follow-up after a finished step)', (input) =>
+    runner.resume({
+      ...input,
+      run: { ...input.run, kind: 'resume', resumeReason: 'follow_up', followUpNumber: 1 },
+      answer:
+        'Append a second line containing exactly the word again to hello.txt. Do not commit. ' +
+        'End the step as done.',
+      sessionRef: finished.result.sessionRef,
+      reason: 'follow_up',
+    }),
+  );
+  check('outcome done after the Follow-up', followed.result?.outcome === 'done');
+  check('same session resumed', followed.result?.sessionRef === finished.result.sessionRef);
+  check(
+    'hello.txt follows the Follow-up (hello, then again)',
+    read('hello.txt')?.trim().split('\n').join('|') === 'hello|again',
+  );
+}
+
+/**
+ * Step 9: bring the Run branch up to date with a conflict (Issue #147). A local branch
+ * `integration` and the Run branch `smoke-run` change the same line of conflict.txt; the worker's
+ * own BranchUpdates (dist/branch-update.js) fetches `integration` from this repository (the stand-in
+ * for the Project's cache), merges it and leaves the conflict open; the runner resumes the session
+ * with the worker's bring-up instruction; then the worker's own complete() finishes the merge.
+ * Nothing is pushed.
+ */
+async function bringUpToDateStep(finished) {
+  if (!finished.result?.sessionRef) {
+    failures += 1;
+    line('step 9 (bring up to date): SKIPPED, no session from step 1');
+    return;
+  }
+  const gitIn = (args) => git.run(args, local);
+  const commitAll = async (message) => {
+    await gitIn(['add', '--all']);
+    await gitIn([...identity, 'commit', '--quiet', '--allow-empty', '-m', message]);
+  };
+  const write = (text) => writeFileSync(join(repoDir, 'conflict.txt'), text);
+  await commitAll('Smoke: save the earlier steps');
+  write('one\ntwo\nthree\n');
+  await commitAll('Smoke: conflict.txt base');
+  await gitIn(['branch', 'integration']);
+  await gitIn(['checkout', '--quiet', 'integration']);
+  write('one\ntwo from integration\nthree\n');
+  await commitAll('Smoke: integration side');
+  await gitIn(['checkout', '--quiet', '-b', 'smoke-run', 'main']);
+  write('one\ntwo from the run\nthree\n');
+  await commitAll('Smoke: run side');
+  const tip = (await gitIn(['rev-parse', 'integration'])).trim();
+  const runTip = (await gitIn(['rev-parse', 'HEAD'])).trim();
+
+  const updates = new BranchUpdates({
+    dataDir: root,
+    git,
+    workingCopies: { refreshProjectCache: async () => repoDir },
+    agentGitName: 'Studio Smoke',
+    agentGitEmail: 'smoke@example.test',
+    logger: { error: () => undefined },
+  });
+  const prepared = {
+    runId: RUN_ID,
+    runDir,
+    repoDir,
+    runBranch: 'smoke-run',
+    startCommit,
+    env: { COMPOSE_PROJECT_NAME: composeProjectName(RUN_ID) },
+  };
+  let update;
+  let run;
+  const resumed = await step('step 9 (bring up to date, conflict)', (input) =>
+    (async function* () {
+      run = {
+        ...input.run,
+        kind: 'resume',
+        resumeReason: 'bring_up_to_date',
+        followUpNumber: 2,
+        integrationBranch: 'integration',
+      };
+      update = await updates.start(prepared, run, input.signal);
+      if (update.outcome !== 'conflicts') throw new Error(`the merge ended ${update.outcome}`);
+      return yield* runner.resume({
+        ...input,
+        run,
+        answer: bringUpToDateInstruction({
+          integrationBranch: 'integration',
+          start: update,
+          note: '',
+        }),
+        sessionRef: finished.result.sessionRef,
+        reason: 'bring_up_to_date',
+      });
+    })(),
+  );
+  if (update === undefined) return;
+  check(
+    'the worker left the merge open with conflict.txt listed',
+    update.files.join() === 'conflict.txt',
+  );
+  check('outcome done after the bring-up instruction', resumed.result?.outcome === 'done');
+  let completed = null;
+  try {
+    completed = await updates.complete(prepared, run, AbortSignal.timeout(60_000), tip);
+  } catch (error) {
+    failures += 1;
+    line(`  the worker completing the merge: FAILED (${error?.name ?? 'Error'})`);
+    await updates.abort(prepared, update.baseCommit).catch(() => false);
+  }
+  if (completed === null) return;
+  line(
+    `  merge commit made by: ${completed.completed ? 'the worker (agent left the files in the tree)' : 'the agent'}`,
+  );
+  const unmerged = (await gitIn(['diff', '--name-only', '--diff-filter=U'])).trim();
+  const parents = (await gitIn(['rev-list', '--parents', '-n', '1', 'HEAD'])).trim().split(' ');
+  const text = read('conflict.txt') ?? '';
+  check('no unmerged paths remain', unmerged === '');
+  check('no conflict markers remain in conflict.txt', text !== '' && !/^(<{7}|>{7})/m.test(text));
+  check(
+    'the merge commit has both parents (the Run branch, then integration)',
+    parents.length === 3 && parents[1] === runTip && parents[2] === tip,
+  );
+  check(
+    'nothing was pushed',
+    (
+      await git.run(['--git-dir', remote, 'for-each-ref', '--format=%(refname)'], {
+        cwd: root,
+        timeoutMs: 60_000,
+      })
+    ).trim() === '',
+  );
+  finding(
+    'conflict.txt keeps both sides (agent report is not used; file content)',
+    /integration/.test(text) && /run/.test(text),
+  );
+}
 
 try {
   // 2. A trivial change.
@@ -402,6 +560,11 @@ try {
 
   // 7. Hooks and rules planted at user level and in the per-Run --settings file take no effect.
   await plantedSettingsProbe();
+  // 8. A Follow-up after the finished step 1 resumes the same session.
+  await followUpStep(first);
+
+  // 9. Bring the Run branch up to date: the worker merges, the agent resolves the conflict.
+  await bringUpToDateStep(first);
 } finally {
   if (keep) line(`kept: ${root}`);
   else rmSync(root, { recursive: true, force: true });
