@@ -1,17 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HandOutRule } from '../modules/executions/domain/value-objects/hand-out-rule.js';
+import { HandOutRule } from '../../../domain/value-objects/hand-out-rule.js';
+import { LostWorkerRule, OverdueStepRule } from '../../../domain/value-objects/run-sweep-rules.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
-  LostWorkerRule,
-  OverdueStepRule,
-} from '../modules/executions/domain/value-objects/run-sweep-rules.js';
+  DATABASE_CLIENT,
+  type DatabaseClient,
+} from '../../../../../platform/database/database.module.js';
 import {
-  RUN_REPOSITORY,
-  type RunRepository,
-} from '../modules/executions/domain/repositories/run-repository.js';
-import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
-import { startStudioApp, startStudioServices, type StudioServices } from './studio-test-app.js';
+  startStudioApp,
+  startStudioServices,
+  type StudioServices,
+} from '../../../../../__tests__/studio-test-app.js';
 
 // Issue #169 (Epic #160): the Run repository keeps the hand-out and the sweeps over many Runs, each
 // paired with a named rule in the domain. Here the store's statements are run over fixture rows of
