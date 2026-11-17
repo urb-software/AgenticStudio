@@ -71,7 +71,7 @@ export class DailyPullRequestRefreshScheduler
     if (this.running) return;
     this.running = true;
     try {
-      const requested = await this.daily.execute();
+      const { requested } = await this.daily.execute();
       if (requested > 0) {
         this.logger.log(`Asked for the state of ${requested} pull request(s) to be read again.`);
       }

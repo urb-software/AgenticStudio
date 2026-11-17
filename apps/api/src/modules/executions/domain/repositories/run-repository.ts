@@ -1,4 +1,3 @@
-import type { ReviewCommentSet } from '../value-objects/review-comments.js';
 import type {
   Provider,
   PullRequestState,
@@ -6,25 +5,15 @@ import type {
   Run,
   RunCancellation,
   RunFailure,
+  RunSnapshot,
   RunState,
-  RunStepRecord,
 } from '../entities/run.js';
+import type { RunStepSnapshot } from '../entities/run-step.js';
 
-export {
-  RunNotHeldError,
-  type RunStepRecord,
-  StepLimitReachedError,
-  StepOutOfOrderError,
-} from '../entities/run.js';
+export { RunNotHeldError, StepLimitReachedError, StepOutOfOrderError } from '../entities/run.js';
 
 /** DI token for the {@link RunRepository} adapter. */
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');
-
-/** A stored Run step: its number, kind, report time and the result as stored JSON. */
-export interface StoredRunStep extends RunStepRecord {
-  index: number;
-  reportedAt: Date;
-}
 
 /**
  * A Run's state for the agent worker's retention (Issue #98), with what Studio decides the
@@ -78,6 +67,16 @@ export interface RunRepository {
   /** The Run with this id, or `null`. */
   findById(id: string): Promise<Run | null>;
 
+  /** Whether a Run has this id; reads no Run. */
+  exists(id: string): Promise<boolean>;
+
+  /**
+   * Saves what the Run's methods changed ({@link Run.pendingChanges}): its fields, the messages it
+   * added and the steps it created. Only for a caller that holds the Run's row lock, as the
+   * module's `RunTransactions` does, so that what it decided from the Run holds until the save.
+   */
+  save(run: Run): Promise<void>;
+
   /**
    * Changes a Run the operator acts on (Issue #167), in one transaction: loads it `FOR UPDATE`,
    * calls `mutate` with it, and saves what `mutate` changed ({@link Run.pendingChanges}); returns
@@ -88,17 +87,6 @@ export interface RunRepository {
    * state it checks as it is after this change, so two simultaneous changes cannot both win.
    */
   change(runId: string, mutate: (run: Run) => void): Promise<Run | null>;
-
-  /**
-   * {@link change} for a Follow-up (Issue #146): `mutate` also gets the Run's loaded Review
-   * comments, read under the Run's row lock, which the completion of a load also takes first. A
-   * Follow-up that sends them removes them in the same transaction (and the prepared Follow-up of
-   * its source, Issue #145), as the Run's pending changes say.
-   */
-  changeWithReviewComments(
-    runId: string,
-    mutate: (run: Run, loaded: ReviewCommentSet | null) => void,
-  ): Promise<Run | null>;
 
   /**
    * {@link change} for resuming after the usage limit (review R1 of #129): serialized with claims
@@ -113,13 +101,13 @@ export interface RunRepository {
   ): Promise<Run | null>;
 
   /**
-   * Every Run, newest first: by creation time, then by id. Lists leave the conversation out
-   * (`messages` is empty; Issue #103): `findById` reads it.
+   * Every Run, newest first: by creation time, then by id, as snapshots. Lists leave the
+   * conversation out (`messages` is empty; Issue #103): `findById` reads it.
    */
-  listNewestFirst(): Promise<Run[]>;
+  listNewestFirst(): Promise<RunSnapshot[]>;
 
   /** A project's Runs, newest first: by creation time, then by id; without their messages. */
-  listByProjectNewestFirst(projectId: string): Promise<Run[]>;
+  listByProjectNewestFirst(projectId: string): Promise<RunSnapshot[]>;
 
   /** The counts of Runs under way and waiting for the operator, read in one query (Issue #115). */
   summarize(): Promise<RunsSummary>;
@@ -136,7 +124,7 @@ export interface RunRepository {
    * for its worker. Serialized against concurrent claims, so they cannot exceed the limits.
    * `null` when nothing is eligible.
    */
-  claimNext(workerId: string, now: Date): Promise<Run | null>;
+  claimNext(workerId: string, now: Date): Promise<RunSnapshot | null>;
 
   /**
    * Cancels a Run that no worker holds (`queued` or `waiting_for_operator`) if it is still in
@@ -149,10 +137,10 @@ export interface RunRepository {
     from: 'queued' | 'waiting_for_operator',
     cancellation: RunCancellation,
     now: Date,
-  ): Promise<Run | null>;
+  ): Promise<RunSnapshot | null>;
 
   /** Every Run waiting for the operator (Issue #100: the long-wait sweep); without messages. */
-  listWaiting(): Promise<Run[]>;
+  listWaiting(): Promise<RunSnapshot[]>;
 
   /**
    * Renews the lease of every held Run to `now` (Issue #100), run when the API starts so a short
@@ -197,8 +185,16 @@ export interface RunRepository {
    */
   findLimitedRuns(projectIds: readonly string[]): Promise<LimitedRunView[]>;
 
-  /** The Run's stored steps, by number (Issue #99). */
-  listSteps(runId: string): Promise<StoredRunStep[]>;
+  /** The Run's stored steps, by number (Issue #99), as their snapshots. */
+  listSteps(runId: string): Promise<(RunStepSnapshot & { reportedAt: Date })[]>;
+
+  /**
+   * Ids of Runs with a pull request whose state is `draft`, `open` or unknown, whose last lookup
+   * was requested before `attemptedBefore` (or never; a read before it counts when no attempt is
+   * recorded) and that are not being refreshed, oldest attempt first (Issue #142: the daily
+   * refresh; review S2 of #152: counted from the attempt, not from the last success).
+   */
+  listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]>;
 
   /**
    * Every held Run whose last heartbeat is before `staleBefore`: a `preparing` or `running` one

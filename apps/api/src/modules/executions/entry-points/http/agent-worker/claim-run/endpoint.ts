@@ -30,7 +30,7 @@ export class ClaimRunEndpoint {
     @Body() body: ClaimRunRequestDto,
     @Res({ passthrough: true }) response: { status(code: number): unknown },
   ): Promise<RunPayload | undefined> {
-    const run = await this.handler.execute(body.workerId);
+    const run = await this.handler.execute({ workerId: body.workerId });
     if (!run) {
       response.status(HttpStatus.NO_CONTENT);
       return undefined;

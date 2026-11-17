@@ -15,7 +15,7 @@ describe('TimeOutOverdueStepsHandler (review of #121)', () => {
       },
     } as unknown as RunRepository;
 
-    const timedOut = await new TimeOutOverdueStepsHandler(runs, { now: () => NOW }).execute();
+    const { timedOut } = await new TimeOutOverdueStepsHandler(runs, { now: () => NOW }).execute();
 
     expect(timedOut).toBe(2);
     expect(calls).toEqual([[NOW, OverdueStepRule.GRACE_MINUTES]]);

@@ -4,7 +4,8 @@ import {
   T0,
   WORKER,
 } from '../../../../domain/repositories/__tests__/delivered-run.js';
-import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
+import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
+import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
@@ -37,16 +38,19 @@ const LEASE = { seconds: 60 };
 describe('preparing a Follow-up from failing checks', () => {
   let runs: InMemoryRunRepository;
   let lookups: InMemoryRunLookupRepository;
+  let executions: ReturnType<typeof inMemoryExecutions>;
   let workers: Workers;
   let prepare: PrepareFailingChecksHandler;
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
-    lookups = new InMemoryRunLookupRepository(runs);
+    executions = inMemoryExecutions(runs);
+    lookups = executions.lookups;
     workers = new Workers();
     prepare = new PrepareFailingChecksHandler(
       runs,
-      lookups,
+      executions.requests,
+      executions.preparedFollowUps,
       { now: () => T0 },
       workers,
       LEASE,
@@ -90,7 +94,7 @@ describe('preparing a Follow-up from failing checks', () => {
     connect();
     const run = await runWithChecks('passed', 'failed');
 
-    const answer = await prepare.execute(run.id);
+    const answer = await prepare.execute({ runId: run.id });
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'failing_check_logs' });
@@ -104,25 +108,31 @@ describe('preparing a Follow-up from failing checks', () => {
   it('is the open preparation when asked twice', async () => {
     const run = await runWithChecks('failed');
 
-    await prepare.execute(run.id);
-    await prepare.execute(run.id);
+    await prepare.execute({ runId: run.id });
+    await prepare.execute({ runId: run.id });
 
     expect(lookups.lookups).toHaveLength(1);
   });
 
   it('refuses a Run none of whose checks is known to have failed', async () => {
     const passing = await runWithChecks('passed', 'running');
-    await expect(prepare.execute(passing.id)).rejects.toBeInstanceOf(NoFailingChecksError);
+    await expect(prepare.execute({ runId: passing.id })).rejects.toBeInstanceOf(
+      NoFailingChecksError,
+    );
 
     const unread = await deliveredRun(runs);
-    await expect(prepare.execute(unread.id)).rejects.toBeInstanceOf(NoFailingChecksError);
+    await expect(prepare.execute({ runId: unread.id })).rejects.toBeInstanceOf(
+      NoFailingChecksError,
+    );
     expect(lookups.lookups).toHaveLength(0);
   });
 
   it('refuses a Run without a pull request, and an unknown one', async () => {
     const none = await deliveredRun(runs, { delivered: false });
-    await expect(prepare.execute(none.id)).rejects.toBeInstanceOf(PullRequestNotRefreshableError);
-    await expect(prepare.execute('not-a-run')).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(prepare.execute({ runId: none.id })).rejects.toBeInstanceOf(
+      PullRequestNotRefreshableError,
+    );
+    await expect(prepare.execute({ runId: 'not-a-run' })).rejects.toBeInstanceOf(RunNotFoundError);
   });
 
   describe('reviewing the prepared Follow-up', () => {
@@ -133,28 +143,32 @@ describe('preparing a Follow-up from failing checks', () => {
     };
 
     it('reads the prepared Follow-up, and says when there is none', async () => {
-      const get = new GetPreparedFollowUpHandler(lookups);
+      const get = new GetPreparedFollowUpHandler(executions.preparedFollowUps);
       const run = await runWithChecks('failed');
-      await expect(get.execute(run.id)).rejects.toBeInstanceOf(PreparedFollowUpNotFoundError);
+      await expect(get.execute({ runId: run.id })).rejects.toBeInstanceOf(
+        PreparedFollowUpNotFoundError,
+      );
 
       runs.prepared.set(run.id, draft);
 
-      expect(await get.execute(run.id)).toEqual(draft);
-      await expect(get.execute('not-a-run')).rejects.toBeInstanceOf(RunNotFoundError);
+      expect(await get.execute({ runId: run.id })).toEqual(draft);
+      await expect(get.execute({ runId: 'not-a-run' })).rejects.toBeInstanceOf(RunNotFoundError);
     });
 
     it('discards it without sending anything, and a missing one is fine', async () => {
-      const discard = new DiscardPreparedFollowUpHandler(lookups);
+      const discard = new DiscardPreparedFollowUpHandler(executions.preparedFollowUps);
       const run = await runWithChecks('failed');
       runs.prepared.set(run.id, draft);
       const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
 
-      await discard.execute(run.id);
-      await discard.execute(run.id);
+      await discard.execute({ runId: run.id });
+      await discard.execute({ runId: run.id });
 
       expect(runs.prepared.has(run.id)).toBe(false);
       expect(stored.followUpQueued).toBe(false);
-      await expect(discard.execute('not-a-run')).rejects.toBeInstanceOf(RunNotFoundError);
+      await expect(discard.execute({ runId: 'not-a-run' })).rejects.toBeInstanceOf(
+        RunNotFoundError,
+      );
     });
   });
 });

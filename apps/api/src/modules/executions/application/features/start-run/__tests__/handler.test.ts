@@ -64,14 +64,14 @@ describe('StartRunHandler', () => {
   });
 
   it('copies the limits in force onto the Run (Issue #100)', async () => {
-    const run = await start();
+    const { run } = await start();
 
     expect(run.limits).toEqual(LIMITS);
     expect(run).toMatchObject({ cancelRequestedAt: null, cancellation: null, waitingSince: null });
   });
 
   it('queues a Run that starts from the current integration branch commit', async () => {
-    const run = await start();
+    const { run } = await start();
 
     expect(run).toMatchObject({
       projectId: PROJECT,
@@ -91,7 +91,7 @@ describe('StartRunHandler', () => {
       finishedAt: null,
       failure: null,
     });
-    expect(await runs.findById(run.id)).toEqual(run);
+    expect((await runs.findById(run.id))?.snapshot()).toEqual(run);
   });
 
   it('rejects an unknown project', async () => {

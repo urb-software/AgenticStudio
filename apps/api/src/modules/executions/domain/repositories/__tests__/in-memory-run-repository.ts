@@ -12,6 +12,7 @@ import {
   RunAlreadyFinishedError,
   type RunCancellation,
   type RunData,
+  type RunSnapshot,
   type RunLimits,
   RunNotHeldError,
   RunNotWaitingError,
@@ -26,14 +27,14 @@ import {
 } from '../../entities/run.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { Task } from '../../value-objects/task.js';
-import type { PreparedFollowUp } from '../../value-objects/prepared-follow-up.js';
-import type { ReviewCommentSet } from '../../value-objects/review-comments.js';
+import type { PreparedFollowUpSnapshot } from '../../entities/prepared-follow-up.js';
+import type { ReviewComments } from '../../entities/review-comments.js';
+import type { RunStepSnapshot } from '../../entities/run-step.js';
 import type {
   LimitedRunView,
   RunRepository,
   RunsSummary,
   RunStateView,
-  StoredRunStep,
 } from '../run-repository.js';
 
 /** A Run as the fake keeps it: the Run's fields, and what the database keeps beside them. */
@@ -146,8 +147,18 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(run ? this.view(run) : null);
   }
 
-  listNewestFirst(): Promise<Run[]> {
-    return Promise.resolve([...this.runs].reverse().map((run) => this.listed(run)));
+  exists(id: string): Promise<boolean> {
+    return Promise.resolve(this.runs.some((candidate) => candidate.id === id));
+  }
+
+  save(run: Run): Promise<void> {
+    const stored = this.runs.find((candidate) => candidate.id === run.id);
+    if (stored) this.apply(stored, run);
+    return Promise.resolve();
+  }
+
+  listNewestFirst(): Promise<RunSnapshot[]> {
+    return Promise.resolve([...this.runs].reverse().map((run) => this.listed(run).snapshot()));
   }
 
   summarize(): Promise<RunsSummary> {
@@ -159,16 +170,16 @@ export class InMemoryRunRepository implements RunRepository {
     });
   }
 
-  listByProjectNewestFirst(projectId: string): Promise<Run[]> {
+  listByProjectNewestFirst(projectId: string): Promise<RunSnapshot[]> {
     return Promise.resolve(
       [...this.runs]
         .reverse()
         .filter((run) => run.projectId === projectId)
-        .map((run) => this.listed(run)),
+        .map((run) => this.listed(run).snapshot()),
     );
   }
 
-  claimNext(workerId: string, now: Date): Promise<Run | null> {
+  claimNext(workerId: string, now: Date): Promise<RunSnapshot | null> {
     // The hand-out rule over the Runs in creation order, as the database adapter's query follows it.
     const next = HandOutRule.for(workerId).next(this.runs);
     if (!next) return Promise.resolve(null);
@@ -185,7 +196,7 @@ export class InMemoryRunRepository implements RunRepository {
     } else {
       Object.assign(next, { claimedBy: workerId, heartbeatAt: now });
     }
-    return Promise.resolve(this.view(next));
+    return Promise.resolve(this.view(next).snapshot());
   }
 
   listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {
@@ -215,7 +226,7 @@ export class InMemoryRunRepository implements RunRepository {
     from: 'queued' | 'waiting_for_operator',
     cancellation: RunCancellation,
     now: Date,
-  ): Promise<Run | null> {
+  ): Promise<RunSnapshot | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (!run || run.state !== from) return Promise.resolve(null);
     Object.assign(run, {
@@ -225,14 +236,14 @@ export class InMemoryRunRepository implements RunRepository {
       waitingSince: null,
       followUpQueued: false,
     });
-    return Promise.resolve(this.view(run));
+    return Promise.resolve(this.view(run).snapshot());
   }
 
-  listWaiting(): Promise<Run[]> {
+  listWaiting(): Promise<RunSnapshot[]> {
     return Promise.resolve(
       this.runs
         .filter((run) => run.state === 'waiting_for_operator')
-        .map((run) => this.listed(run)),
+        .map((run) => this.listed(run).snapshot()),
     );
   }
 
@@ -302,21 +313,14 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  /** Issue #145: the prepared Follow-ups, by Run id (shared with the lookup and prepared stores). */
-  readonly prepared = new Map<string, PreparedFollowUp>();
+  /** Issue #145: the prepared Follow-ups, by Run id (the storage of the prepared store's fake). */
+  readonly prepared = new Map<string, PreparedFollowUpSnapshot>();
 
-  /** Issue #146: the loaded Review comments, by Run id (shared with the lookup store). */
-  readonly reviewSets = new Map<string, ReviewCommentSet>();
+  /** Issue #146: the loaded Review comments, by Run id (the storage of the Review comments' fake). */
+  readonly reviewSets = new Map<string, ReviewComments>();
 
   async change(runId: string, mutate: (run: Run) => void): Promise<Run | null> {
     return this.changeStored(runId, (run) => mutate(run));
-  }
-
-  async changeWithReviewComments(
-    runId: string,
-    mutate: (run: Run, loaded: ReviewCommentSet | null) => void,
-  ): Promise<Run | null> {
-    return this.changeStored(runId, (run) => mutate(run, this.reviewSets.get(runId) ?? null));
   }
 
   async changeSerializedWithClaims(
@@ -344,6 +348,13 @@ export class InMemoryRunRepository implements RunRepository {
     if (!stored) return null;
     const run = this.view(stored);
     work(run, stored);
+    this.apply(stored, run);
+    return this.view(stored);
+  }
+
+  /** Keeps what the Run's methods changed, as the database adapter's save does. */
+  private apply(stored: StoredRun, run: Run): void {
+    const runId = stored.id;
     const changes = run.pendingChanges();
     Object.assign(stored, structuredClone(changes.fields));
     const entry = stored.messages.findLast((message) => message.kind === 'follow_up');
@@ -358,14 +369,6 @@ export class InMemoryRunRepository implements RunRepository {
       stored.environmentFileSecret = changes.environmentFileSecretRef;
     }
     stored.messages.push(...structuredClone(changes.messages));
-    if (changes.discardReviewComments) this.reviewSets.delete(runId);
-    if (
-      changes.discardPreparedFollowUp !== undefined &&
-      this.prepared.get(runId)?.source === changes.discardPreparedFollowUp
-    ) {
-      this.prepared.delete(runId);
-    }
-    return this.view(stored);
   }
 
   /** Test setup: starts a Run as `StartRunHandler` does (`Run.start`) and stores it. */
@@ -418,10 +421,7 @@ export class InMemoryRunRepository implements RunRepository {
   ): Promise<Run | null> {
     const available = { workerAvailable: true, providerAvailable: true };
     return this.refusedAsNull(
-      () =>
-        this.changeWithReviewComments(runId, (run, loaded) =>
-          run.followUp(text, now, available, origin, loaded),
-        ),
+      () => this.change(runId, (run) => void run.followUp(text, now, available, origin)),
       [FollowUpNotAllowedError],
     );
   }
@@ -613,7 +613,7 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(true);
   }
 
-  listSteps(runId: string): Promise<StoredRunStep[]> {
+  listSteps(runId: string): Promise<(RunStepSnapshot & { reportedAt: Date })[]> {
     return Promise.resolve(
       this.steps
         .filter((stored) => stored.runId === runId)
@@ -678,6 +678,25 @@ export class InMemoryRunRepository implements RunRepository {
   listEnvironmentFileSecretRefs(): Promise<string[]> {
     return Promise.resolve(
       this.runs.flatMap((run) => (run.environmentFileSecret ? [run.environmentFileSecret] : [])),
+    );
+  }
+
+  listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]> {
+    return Promise.resolve(
+      this.runs
+        .filter((run) => {
+          const status = run.pullRequestStatus;
+          const attempt = status.lastAttemptAt ?? status.refreshedAt;
+          return (
+            run.pullRequest !== null &&
+            run.workingCopy !== null &&
+            status.refreshRequestedAt === null &&
+            (status.state === null || status.state === 'draft' || status.state === 'open') &&
+            (attempt === null || attempt < attemptedBefore)
+          );
+        })
+        .slice(0, limit)
+        .map((run) => run.id),
     );
   }
 

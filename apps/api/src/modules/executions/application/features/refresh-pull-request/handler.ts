@@ -1,14 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type Run } from '../../../domain/entities/run.js';
+import { isRunId, type RunSnapshot } from '../../../domain/entities/run.js';
+import {
+  PREPARED_FOLLOW_UP_REPOSITORY,
+  type PreparedFollowUpRepository,
+} from '../../../domain/repositories/prepared-follow-up-repository.js';
 import {
   canRefreshPullRequest,
   pageRefreshDue,
   PullRequestNotRefreshableError,
 } from '../../../domain/value-objects/run-lookup.js';
-import {
-  RUN_LOOKUP_REPOSITORY,
-  type RunLookupRepository,
-} from '../../../domain/repositories/run-lookup-repository.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -16,9 +16,24 @@ import {
 } from '../../../domain/repositories/run-repository.js';
 import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RunLookupRequests } from '../../run-lookup-requests.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
+
+export interface RefreshPullRequestInput {
+  runId: string;
+  /** The Run page's own request on opening: at most one a minute per Run is recorded. */
+  onOpen: boolean;
+}
+
+export interface RefreshPullRequestResult {
+  run: RunSnapshot;
+  followUp: FollowUpView;
+  workerConnected: boolean;
+  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
+  preparedFollowUp: boolean;
+}
 
 /**
  * Command (Issue #142): the operator, or the Run page when it opens, asks for the state of the
@@ -32,22 +47,22 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 export class RefreshPullRequestHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
-    @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
+    private readonly lookups: RunLookupRequests,
+    @Inject(PREPARED_FOLLOW_UP_REPOSITORY)
+    private readonly preparedFollowUps: PreparedFollowUpRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_STATUS_STORE) private readonly workers: WorkerStatusStore,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
   ) {}
 
-  async execute(
-    runId: string,
-    options: { onOpen: boolean },
-  ): Promise<{ run: Run; followUp: FollowUpView; workerConnected: boolean }> {
+  async execute(input: RefreshPullRequestInput): Promise<RefreshPullRequestResult> {
+    const { runId, onOpen } = input;
     const found = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!found) throw new RunNotFoundError();
     if (!canRefreshPullRequest(found)) throw new PullRequestNotRefreshableError();
     const now = this.clock.now();
-    if (!options.onOpen || pageRefreshDue(found, now)) {
+    if (!onOpen || pageRefreshDue(found, now)) {
       const outcome = await this.lookups.request(found.id, 'pull_request_state', now);
       if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     }
@@ -55,7 +70,7 @@ export class RefreshPullRequestHandler {
     const over =
       this.retention.isLimited(run.retentionFacts()) &&
       this.retention.overLimit(await this.runs.findLimitedRuns([run.projectId])).has(run.id);
-    return this.retention.runView(
+    const view = this.retention.runView(
       run,
       {
         holderLastSeen:
@@ -66,5 +81,9 @@ export class RefreshPullRequestHandler {
       this.lease.seconds,
       over,
     );
+    return {
+      ...view,
+      preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([run.id])).has(run.id),
+    };
   }
 }

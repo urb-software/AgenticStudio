@@ -3,6 +3,11 @@ import { LongWaitRule } from '../../../domain/value-objects/run-sweep-rules.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 
+export interface CancelLongWaitingRunsResult {
+  /** How many Runs were cancelled. */
+  cancelled: number;
+}
+
 /**
  * Command (Issue #100): every Run left waiting for the operator longer than its own
  * `waitingDays` → `cancelled` by the system, with that stated as the reason. Time spent
@@ -17,7 +22,7 @@ export class CancelLongWaitingRunsHandler {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async execute(): Promise<number> {
+  async execute(): Promise<CancelLongWaitingRunsResult> {
     const now = this.clock.now();
     const rule = LongWaitRule.at(now);
     let cancelled = 0;
@@ -29,6 +34,6 @@ export class CancelLongWaitingRunsHandler {
         cancelled++;
       }
     }
-    return cancelled;
+    return { cancelled };
   }
 }

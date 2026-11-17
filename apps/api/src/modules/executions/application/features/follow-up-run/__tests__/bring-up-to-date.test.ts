@@ -11,8 +11,8 @@ import {
   type Run,
   type RunState,
 } from '../../../../domain/entities/run.js';
-import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
@@ -69,10 +69,10 @@ const newRun = (maxTotalSteps = 50) => ({
 describe('bringing the branch up to date (the Follow-up handler with its source)', () => {
   let runs: InMemoryRunRepository;
   let workers: InMemoryWorkerStatusStore;
-  let lookups: InMemoryRunLookupRepository;
+  let executions: ReturnType<typeof inMemoryExecutions>;
   let handler: FollowUpRunHandler;
   const bringUp = (runId: string, note: string | undefined) =>
-    handler.execute(runId, note ?? '', 'bring_up_to_date');
+    handler.execute({ runId, text: note ?? '', source: 'bring_up_to_date' });
 
   function connect(providers = { claude_code: true, codex: true }) {
     workers.record({ workerId: WORKER, runner: 'fake', providers, reportedAt: T1 });
@@ -130,8 +130,17 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
-    lookups = new InMemoryRunLookupRepository(runs);
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
+    executions = inMemoryExecutions(runs);
+    handler = new FollowUpRunHandler(
+      runs,
+      { now: () => T1 },
+      workers,
+      LEASE,
+      executions.requests,
+      RETENTION,
+      executions.transactions,
+      executions.preparedFollowUps,
+    );
     connect();
   });
 

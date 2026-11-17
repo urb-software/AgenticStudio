@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Run } from '../../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   RunNotFoundError,
@@ -25,10 +25,11 @@ const WORKING_COPY = {
 describe('ReportRunStepHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: ReportRunStepHandler;
-  let run: Run;
+  let run: RunSnapshot;
 
-  const report = (workerId = WORKER, workingCopy = WORKING_COPY) =>
-    handler.execute({ runId: run.id, workerId, kind: 'start', result: RESULT, workingCopy });
+  const report = async (workerId = WORKER, workingCopy = WORKING_COPY) =>
+    (await handler.execute({ runId: run.id, workerId, kind: 'start', result: RESULT, workingCopy }))
+      .index;
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
@@ -307,15 +308,17 @@ describe('ReportRunStepHandler', () => {
 
   // Review of #121: the worker numbers its steps; a re-sent number is not stored twice.
   describe('step numbers', () => {
-    const numbered = (index: number) =>
-      handler.execute({
-        runId: run.id,
-        workerId: WORKER,
-        index,
-        kind: 'start',
-        result: RESULT,
-        workingCopy: WORKING_COPY,
-      });
+    const numbered = async (index: number) =>
+      (
+        await handler.execute({
+          runId: run.id,
+          workerId: WORKER,
+          index,
+          kind: 'start',
+          result: RESULT,
+          workingCopy: WORKING_COPY,
+        })
+      ).index;
 
     it('acknowledges a re-sent step without storing it again', async () => {
       await running();

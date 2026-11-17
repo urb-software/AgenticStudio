@@ -99,7 +99,7 @@ export class StreamRunEventsEndpoint {
     response.on('close', () => abort.abort());
     let stream: AsyncGenerator<RunLogStreamItem>;
     try {
-      stream = await this.handler.open(runId, after, abort.signal);
+      ({ stream } = await this.handler.execute({ runId, after, abort: abort.signal }));
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       throw error;

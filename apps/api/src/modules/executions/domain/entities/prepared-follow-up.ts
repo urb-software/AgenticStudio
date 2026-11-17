@@ -1,7 +1,7 @@
-import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../entities/run.js';
-import { CheckLink } from './check-link.js';
-import type { LogRedaction } from './log-redaction.js';
-import type { FailingCheckLogsResult } from './run-lookup.js';
+import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../value-objects/follow-up.js';
+import { CheckLink } from '../value-objects/check-link.js';
+import type { LogRedaction } from '../value-objects/log-redaction.js';
+import type { FailingCheckLogsResult } from '../value-objects/run-lookup.js';
 
 /** One part of a prepared Follow-up the operator can leave out (Issue #145). */
 export interface PreparedFollowUpItem {
@@ -76,9 +76,16 @@ function section(entry: Entry, excerpt: string | undefined, note = entry.note): 
   return lines.join('\n');
 }
 
+/** A prepared Follow-up's current values as read-only plain data (rule 10). */
+export interface PreparedFollowUpSnapshot {
+  readonly source: FollowUpSource;
+  readonly text: string;
+  readonly items: readonly PreparedFollowUpItem[];
+}
+
 /**
  * The Follow-up Studio prepared for the operator to review (Issue #145): never sent by itself.
- * One per Run; a new preparation replaces it.
+ * One per Run (the Run's id is the key it is stored and found by); a new preparation replaces it.
  */
 export class PreparedFollowUp {
   private constructor(
@@ -86,6 +93,11 @@ export class PreparedFollowUp {
     readonly text: string,
     readonly items: PreparedFollowUpItem[],
   ) {}
+
+  /** The current values as read-only plain data. */
+  snapshot(): PreparedFollowUpSnapshot {
+    return { source: this.source, text: this.text, items: this.items.map((item) => ({ ...item })) };
+  }
 
   /** A stored prepared Follow-up, read back by a repository. */
   static restore(data: {

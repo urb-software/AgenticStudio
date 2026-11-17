@@ -27,7 +27,7 @@ export class GetReviewCommentsEndpoint {
   @ApiProblemResponses({ 404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})` })
   async get(@Param('runId') runId: string) {
     try {
-      return toReviewCommentsResponse(await this.handler.execute(runId));
+      return toReviewCommentsResponse(await this.handler.execute({ runId }));
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       throw error;

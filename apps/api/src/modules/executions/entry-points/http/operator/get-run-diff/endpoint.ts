@@ -11,9 +11,12 @@ import {
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import {
   GetRunDiffHandler,
-  RunDiffFileNotFoundError,
   RunDiffNotFoundError,
 } from '../../../../application/features/get-run-diff/handler.js';
+import {
+  GetRunDiffFileHandler,
+  RunDiffFileNotFoundError,
+} from '../../../../application/features/get-run-diff-file/handler.js';
 import {
   GetRunDiffFileQueryDto,
   GetRunDiffQueryDto,
@@ -29,7 +32,10 @@ import {
 @ApiTags('runs')
 @Controller('runs')
 export class GetRunDiffEndpoint {
-  constructor(private readonly handler: GetRunDiffHandler) {}
+  constructor(
+    private readonly diffHandler: GetRunDiffHandler,
+    private readonly fileHandler: GetRunDiffFileHandler,
+  ) {}
 
   @Get(':runId/diff')
   @ApiOperation({ operationId: 'getRunDiff' })
@@ -40,7 +46,7 @@ export class GetRunDiffEndpoint {
   })
   async diff(@Param('runId') runId: string, @Query() query: GetRunDiffQueryDto) {
     try {
-      const diff = await this.handler.diff(runId, query.scope);
+      const diff = await this.diffHandler.execute({ runId, scope: query.scope });
       if (diff.kind === 'unavailable') {
         // No pushed state for a diff that was not computed (review S-3 of #149).
         return {
@@ -76,7 +82,11 @@ export class GetRunDiffEndpoint {
   })
   async file(@Param('runId') runId: string, @Query() query: GetRunDiffFileQueryDto) {
     try {
-      const file = await this.handler.file(runId, query.scope, query.path);
+      const file = await this.fileHandler.execute({
+        runId,
+        scope: query.scope,
+        path: query.path,
+      });
       return {
         path: file.path,
         ...(file.previousPath === undefined ? {} : { previousPath: file.previousPath }),

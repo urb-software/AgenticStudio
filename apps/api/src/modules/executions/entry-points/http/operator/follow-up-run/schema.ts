@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import { followUpSourceSchema } from '../../shared/run-response.js';
 import { REVIEW_COMMENTS_MAX } from '../../../../domain/value-objects/review-comments.js';
-import { FOLLOW_UP_MAX_LENGTH } from '../../../../domain/entities/run.js';
+import { FOLLOW_UP_MAX_LENGTH } from '../../../../domain/value-objects/follow-up.js';
 
 /**
  * `POST /api/runs/:runId/follow-up` body (Issue #141): the operator's further instruction,

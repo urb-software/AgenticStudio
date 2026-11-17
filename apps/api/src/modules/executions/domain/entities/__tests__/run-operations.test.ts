@@ -3,6 +3,7 @@ import {
   DeliveryNotRetryableError,
   FOLLOW_UP_REFUSALS,
   type FollowUpFacts,
+  type FollowUpOrigin,
   FollowUpNotAllowedError,
   MAX_ACTIVE_RUNS,
   NO_PULL_REQUEST_STATUS,
@@ -16,11 +17,9 @@ import {
   RunSlotTakenError,
   USAGE_LIMIT_RESUME_TEXT,
 } from '../run.js';
-import {
-  type ReviewComment,
-  ReviewCommentsNotLoadedError,
-  ReviewCommentSet,
-} from '../../value-objects/review-comments.js';
+import { ReviewComments } from '../review-comments.js';
+import type { ReviewComment } from '../../value-objects/review-comments.js';
+import { ReviewCommentsNotLoadedError } from '../../value-objects/review-comments-not-loaded-error.js';
 import { Task } from '../../value-objects/task.js';
 
 // Issue #167: the operator's operations are methods of the Run. Each allowed and each refused
@@ -112,8 +111,6 @@ const noChanges = (run: Run) => {
   const changes = run.pendingChanges();
   expect(changes.fields).toEqual({});
   expect(changes.messages).toEqual([]);
-  expect(changes.discardPreparedFollowUp).toBeUndefined();
-  expect(changes.discardReviewComments).toBeUndefined();
 };
 
 describe('Run.start and Run.restore', () => {
@@ -513,13 +510,18 @@ describe('Run.followUp', () => {
     text: `Comment ${id}`,
     createdAt: T0.toISOString(),
   });
-  const loaded = (...comments: ReviewComment[]): ReviewCommentSet =>
-    ReviewCommentSet.restore({
+  const loaded = (...comments: ReviewComment[]): ReviewComments =>
+    ReviewComments.restore({
       scope: 'unresolved',
       comments,
       truncated: false,
       loadedAt: T0,
     });
+  /** What the handler passes the Run: the selection's facts, read from the loaded set as values. */
+  const selecting = (ids: string[], set: ReviewComments | null): FollowUpOrigin => ({
+    source: 'review_comments',
+    comments: set?.selection(ids) ?? null,
+  });
 
   it.each(FINAL_STATES)(
     'queues a Follow-up for a %s Run: the earlier part is recorded, the earlier result cleared',
@@ -528,7 +530,7 @@ describe('Run.followUp', () => {
       const ended = run.pendingChanges();
       expect(ended.messages).toEqual([]);
 
-      run.followUp('Also handle HEAD.', T1, AVAILABLE);
+      const consumed = run.followUp('Also handle HEAD.', T1, AVAILABLE);
 
       expect(run).toMatchObject({
         state: 'queued',
@@ -551,8 +553,7 @@ describe('Run.followUp', () => {
       expect(run.messages).toHaveLength(2);
       expect(run.messages[0]).toMatchObject({ kind: 'part_end', state, at: T1 });
       expect(run.messages[1]).toEqual({ kind: 'follow_up', text: 'Also handle HEAD.', at: T1 });
-      expect(run.pendingChanges().discardPreparedFollowUp).toBeUndefined();
-      expect(run.pendingChanges().discardReviewComments).toBeUndefined();
+      expect(consumed).toBeUndefined();
     },
   );
 
@@ -723,15 +724,20 @@ describe('Run.followUp', () => {
 
   describe('prepared from a source', () => {
     it.each(['pull_request_checks', 'bring_up_to_date'] as const)(
-      'says it came from %s and removes the prepared Follow-up of that source',
+      'says it came from %s and says what it used up: the prepared Follow-up of that source',
       (source) => {
         const run = finished('succeeded');
 
-        run.followUp(source === 'bring_up_to_date' ? '' : 'Fix the checks.', T1, AVAILABLE, source);
+        const consumed = run.followUp(
+          source === 'bring_up_to_date' ? '' : 'Fix the checks.',
+          T1,
+          AVAILABLE,
+          source,
+        );
 
         expect(run.messages[1]).toMatchObject({ kind: 'follow_up', source });
-        expect(run.pendingChanges().discardPreparedFollowUp).toBe(source);
-        expect(run.pendingChanges().discardReviewComments).toBeUndefined();
+        // A request to bring the branch up to date has no prepared Follow-up to remove.
+        expect(consumed).toBe(source === 'bring_up_to_date' ? undefined : source);
       },
     );
 
@@ -743,15 +749,11 @@ describe('Run.followUp', () => {
         comment('review-3', 'octocat'),
       );
 
-      run.followUp(
+      const consumed = run.followUp(
         'Fix these.',
         T1,
         AVAILABLE,
-        {
-          source: 'review_comments',
-          commentIds: ['conversation-1', 'review-3'],
-        },
-        set,
+        selecting(['conversation-1', 'review-3'], set),
       );
 
       expect(run.messages[1]).toEqual({
@@ -761,33 +763,25 @@ describe('Run.followUp', () => {
         source: 'review_comments',
         sourceComments: { count: 2, authors: ['octocat'] },
       });
-      expect(run.pendingChanges().discardReviewComments).toBe(true);
-      expect(run.pendingChanges().discardPreparedFollowUp).toBeUndefined();
+      expect(consumed).toBe('review_comments');
     });
 
     it('refuses selected comments that are not all in the loaded set, and changes nothing', () => {
       const run = finished('succeeded');
-      const origin = {
-        source: 'review_comments' as const,
-        commentIds: ['conversation-1', 'conversation-9'],
-      };
+      const refused = (origin: FollowUpOrigin) => () => run.followUp('x', T1, AVAILABLE, origin);
 
-      expect(() =>
-        run.followUp('x', T1, AVAILABLE, origin, loaded(comment('conversation-1', 'a'))),
+      expect(
+        refused(
+          selecting(['conversation-1', 'conversation-9'], loaded(comment('conversation-1', 'a'))),
+        ),
       ).toThrow(ReviewCommentsNotLoadedError);
-      expect(() => run.followUp('x', T1, AVAILABLE, origin, null)).toThrow(
+      expect(refused(selecting(['conversation-1', 'conversation-9'], null))).toThrow(
         ReviewCommentsNotLoadedError,
       );
-      expect(() =>
-        run.followUp('x', T1, AVAILABLE, { source: 'review_comments', commentIds: [] }, loaded()),
-      ).toThrow(ReviewCommentsNotLoadedError);
-      expect(() =>
-        run.followUp(
-          'x',
-          T1,
-          AVAILABLE,
-          { source: 'review_comments', commentIds: ['conversation-1', 'conversation-1'] },
-          loaded(comment('conversation-1', 'a')),
+      expect(refused(selecting([], loaded()))).toThrow(ReviewCommentsNotLoadedError);
+      expect(
+        refused(
+          selecting(['conversation-1', 'conversation-1'], loaded(comment('conversation-1', 'a'))),
         ),
       ).toThrow(ReviewCommentsNotLoadedError);
       noChanges(run);
@@ -798,7 +792,7 @@ describe('Run.followUp', () => {
       const run = inState('running');
 
       expect(() =>
-        run.followUp('x', T1, AVAILABLE, { source: 'review_comments', commentIds: ['nope'] }, null),
+        run.followUp('x', T1, AVAILABLE, { source: 'review_comments', comments: null }),
       ).toThrow(FollowUpNotAllowedError);
     });
   });

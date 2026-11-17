@@ -22,7 +22,7 @@ export class ListRunStepsEndpoint {
   @ApiProblemResponses({ 404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})` })
   async list(@Param('runId') runId: string) {
     try {
-      const steps = await this.handler.execute(runId);
+      const steps = await this.handler.execute({ runId });
       return {
         steps: steps.map((step) => ({ ...step, reportedAt: step.reportedAt.toISOString() })),
       };

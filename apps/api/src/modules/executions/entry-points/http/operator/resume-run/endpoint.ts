@@ -8,7 +8,7 @@ import {
   runNotFound,
   runNotResumable,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { RunNotResumableError, RunSlotTakenError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { ResumeRunHandler } from '../../../../application/features/resume-run/handler.js';
@@ -36,7 +36,8 @@ export class ResumeRunEndpoint {
   })
   async resume(@Param('runId') runId: string) {
     try {
-      return toRunResponse(await this.handler.execute(runId));
+      const { run, preparedFollowUp } = await this.handler.execute({ runId });
+      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp));
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof RunNotResumableError) throw runNotResumable();

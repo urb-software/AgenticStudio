@@ -4,18 +4,14 @@ import {
   isFinal,
   isRunId,
   type PullRequestState,
-  type Run,
   type RunDeliveryOutcome,
   type RunFailure,
+  type RunSnapshot,
   type RunState,
   type RunWorkingCopy,
 } from '../../../domain/entities/run.js';
 import { keepsSnapshotForRetry } from '../../../domain/value-objects/run-environment-file.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
-import {
-  RUN_LOOKUP_REPOSITORY,
-  type RunLookupRepository,
-} from '../../../domain/repositories/run-lookup-repository.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -63,6 +59,11 @@ export interface ReportRunStateInput {
   unchangedDetail?: string | null;
 }
 
+export interface ReportRunStateResult {
+  /** The Run as it is now. */
+  run: RunSnapshot;
+}
+
 /**
  * Command (Issue #96): the agent worker holding a Run reports a change of state, with how a
  * succeeded Run was delivered (Issue #102). For a `failed` Run it holds for a delivery retry
@@ -88,10 +89,9 @@ export class ReportRunStateHandler {
     @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
     @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
-    @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
   ) {}
 
-  async execute(input: ReportRunStateInput): Promise<Run> {
+  async execute(input: ReportRunStateInput): Promise<ReportRunStateResult> {
     if (!isRunId(input.runId)) throw new RunNotFoundError();
     input = await this.redacted(input);
     let applied = false;
@@ -117,11 +117,13 @@ export class ReportRunStateHandler {
     if (!changed) throw new RunNotFoundError();
     // A repeat of the change that already applied (the worker retried a report whose answer it
     // never got): nothing to wake or release.
-    if (!applied) return changed;
+    if (!applied) return { run: changed.snapshot() };
     // Review S4 of #152: what the worker read about the pull request before it refused a
     // Follow-up is what the page shows.
     if (input.failure?.code === 'preparation_failed' && input.pullRequestState) {
-      await this.lookups.recordObservedState(changed.id, input.pullRequestState, this.clock.now());
+      const observed = input.pullRequestState;
+      const at = this.clock.now();
+      await this.runs.change(changed.id, (run) => run.recordObservedPullRequestState(observed, at));
     }
     // Live log streams re-read the state: a final Run ends them (Issue #99).
     this.signal.notify(changed.id);
@@ -136,7 +138,7 @@ export class ReportRunStateHandler {
     ) {
       await this.snapshots.releaseFor(changed.id);
     }
-    return changed;
+    return { run: changed.snapshot() };
   }
 
   /** The worker's free text (failure detail, commit subjects) redacted like the log (#104). */

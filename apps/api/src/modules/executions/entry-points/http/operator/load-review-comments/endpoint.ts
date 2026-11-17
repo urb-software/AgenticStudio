@@ -59,7 +59,9 @@ export class LoadReviewCommentsEndpoint {
       );
     }
     try {
-      return toReviewCommentsResponse(await this.handler.execute(runId, parsed.data.scope));
+      return toReviewCommentsResponse(
+        await this.handler.execute({ runId, scope: parsed.data.scope }),
+      );
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof PullRequestNotRefreshableError) throw pullRequestNotRefreshable();

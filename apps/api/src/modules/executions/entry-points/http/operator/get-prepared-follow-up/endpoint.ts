@@ -32,7 +32,7 @@ export class GetPreparedFollowUpEndpoint {
   })
   async get(@Param('runId') runId: string) {
     try {
-      const draft = await this.handler.execute(runId);
+      const draft = await this.handler.execute({ runId });
       return {
         source: draft.source,
         text: draft.text,

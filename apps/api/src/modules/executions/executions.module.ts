@@ -4,7 +4,6 @@ import { AuthModule } from '../../platform/auth/auth.module.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_DIFF_REPOSITORY } from './domain/repositories/run-diff-repository.js';
-import { RUN_LOG_REPOSITORY } from './domain/repositories/run-log-repository.js';
 import { PREPARED_FOLLOW_UP_REPOSITORY } from './domain/repositories/prepared-follow-up-repository.js';
 import { REVIEW_COMMENT_REPOSITORY } from './domain/repositories/review-comment-repository.js';
 import { RUN_LOOKUP_REPOSITORY } from './domain/repositories/run-lookup-repository.js';
@@ -26,6 +25,7 @@ import { GetRunsSummaryHandler } from './application/features/get-runs-summary/h
 import { GetRunHandler } from './application/features/get-run/handler.js';
 import { GetRunDiffEndpoint } from './entry-points/http/operator/get-run-diff/endpoint.js';
 import { GetRunDiffHandler } from './application/features/get-run-diff/handler.js';
+import { GetRunDiffFileHandler } from './application/features/get-run-diff-file/handler.js';
 import { ListRunEventsEndpoint } from './entry-points/http/operator/list-run-events/endpoint.js';
 import { ListRunEventsHandler } from './application/features/list-run-events/handler.js';
 import { ListRunStepsEndpoint } from './entry-points/http/operator/list-run-steps/endpoint.js';
@@ -103,7 +103,8 @@ import {
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunDiffRepository } from './infrastructure/repositories/prisma-run-diff-repository.js';
-import { PrismaRunLogRepository } from './infrastructure/repositories/prisma-run-log-repository.js';
+import { PrismaRunLog } from './infrastructure/repositories/prisma-run-log.js';
+import { PrismaRunTransactions } from './infrastructure/adapters/prisma-run-transactions.js';
 import { PrismaPreparedFollowUpRepository } from './infrastructure/repositories/prisma-prepared-follow-up-repository.js';
 import { PrismaReviewCommentRepository } from './infrastructure/repositories/prisma-review-comment-repository.js';
 import { PrismaRunLookupRepository } from './infrastructure/repositories/prisma-run-lookup-repository.js';
@@ -114,7 +115,10 @@ import { OPERATOR_LOGIN, type OperatorLogin } from './application/ports/operator
 import { RUN_LIMITS, type RunLimitsSetting } from './application/ports/run-limits.js';
 import { OPERATOR_SESSIONS } from './application/ports/operator-sessions.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './application/ports/run-log-settings.js';
+import { RUN_LOG } from './application/ports/run-log.js';
 import { RUN_LOG_SIGNAL } from './application/ports/run-log-signal.js';
+import { RUN_TRANSACTIONS } from './application/ports/run-transactions.js';
+import { RunLookupRequests } from './application/run-lookup-requests.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from './application/ports/run-secret-values.js';
 import { RETENTION_POLICY } from './application/ports/retention-policy.js';
 import { RetentionPolicy } from './domain/value-objects/retention-policy.js';
@@ -200,7 +204,9 @@ export class ExecutionsModule {
       ],
       providers: [
         { provide: RUN_REPOSITORY, useClass: PrismaRunRepository },
-        { provide: RUN_LOG_REPOSITORY, useClass: PrismaRunLogRepository },
+        { provide: RUN_LOG, useClass: PrismaRunLog },
+        { provide: RUN_TRANSACTIONS, useClass: PrismaRunTransactions },
+        RunLookupRequests,
         { provide: RUN_DIFF_REPOSITORY, useClass: PrismaRunDiffRepository },
         { provide: RUN_LOOKUP_REPOSITORY, useClass: PrismaRunLookupRepository },
         { provide: PREPARED_FOLLOW_UP_REPOSITORY, useClass: PrismaPreparedFollowUpRepository },
@@ -272,6 +278,7 @@ export class ExecutionsModule {
         StreamSession,
         ListRunStepsHandler,
         GetRunDiffHandler,
+        GetRunDiffFileHandler,
         ReportRunDiffHandler,
         GetRunStatesHandler,
         ReportWorkerStatusHandler,

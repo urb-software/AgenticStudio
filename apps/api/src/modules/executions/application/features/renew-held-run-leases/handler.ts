@@ -4,6 +4,11 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { LeaseRenewalRule } from '../../../domain/value-objects/run-sweep-rules.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
+export interface RenewHeldRunLeasesResult {
+  /** How many leases were renewed, or `null` when they were renewed less than a lease ago. */
+  renewed: number | null;
+}
+
 /**
  * Command (Issue #100, review of #121): when the API starts, it renews the lease of every held
  * Run, so a short outage does not fail Runs whose agent workers kept going as `worker_lost`;
@@ -19,8 +24,8 @@ export class RenewHeldRunLeasesHandler {
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
   ) {}
 
-  execute(): Promise<number | null> {
+  async execute(): Promise<RenewHeldRunLeasesResult> {
     const rule = LeaseRenewalRule.at(this.clock.now(), this.lease.seconds);
-    return this.runs.renewClaimsOncePerLease(rule.now, rule.leaseSeconds);
+    return { renewed: await this.runs.renewClaimsOncePerLease(rule.now, rule.leaseSeconds) };
   }
 }

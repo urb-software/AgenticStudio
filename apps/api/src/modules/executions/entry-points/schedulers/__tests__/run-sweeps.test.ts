@@ -49,8 +49,9 @@ describe('RunSweepsScheduler at API start', () => {
       schedule.onApplicationShutdown();
       return schedule;
     };
-    const sweep = () =>
-      new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES, NO_SNAPSHOTS).execute();
+    const sweep = async () =>
+      (await new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES, NO_SNAPSHOTS).execute())
+        .failed;
     return { runs, run, clock, start, sweep };
   }
 
@@ -84,17 +85,17 @@ describe('RunSweepsScheduler at API start', () => {
 describe('RunSweepsScheduler tick', () => {
   it('runs the sweeps in order and keeps going to the last one', async () => {
     const calls: string[] = [];
-    const sweep = (name: string, result: number | void) => ({
+    const sweep = (name: string, result: object | void) => ({
       execute: () => {
         calls.push(name);
         return Promise.resolve(result);
       },
     });
     const scheduler = new RunSweepsScheduler(
-      sweep('lost-workers', 0) as unknown as SweepLostWorkersHandler,
-      sweep('overdue-steps', 0) as unknown as TimeOutOverdueStepsHandler,
-      sweep('long-waits', 0) as unknown as CancelLongWaitingRunsHandler,
-      sweep('leases', 0) as unknown as RenewHeldRunLeasesHandler,
+      sweep('lost-workers', { failed: 0 }) as unknown as SweepLostWorkersHandler,
+      sweep('overdue-steps', { timedOut: 0 }) as unknown as TimeOutOverdueStepsHandler,
+      sweep('long-waits', { cancelled: 0 }) as unknown as CancelLongWaitingRunsHandler,
+      sweep('leases', { renewed: 0 }) as unknown as RenewHeldRunLeasesHandler,
       sweep('snapshots', undefined) as unknown as ReleaseFinalSnapshotsHandler,
       { intervalMs: 30_000 },
     );
@@ -112,7 +113,9 @@ describe('RunSweepsScheduler tick', () => {
         return Promise.reject(new Error('The database is down'));
       },
     } as unknown as SweepLostWorkersHandler;
-    const idle = { execute: () => Promise.resolve(0) };
+    const idle = {
+      execute: () => Promise.resolve({ failed: 0, timedOut: 0, cancelled: 0, renewed: 0 }),
+    };
     const scheduler = new RunSweepsScheduler(
       failing,
       idle as unknown as TimeOutOverdueStepsHandler,

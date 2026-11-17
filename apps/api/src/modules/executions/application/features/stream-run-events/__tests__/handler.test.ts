@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Run } from '../../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../../domain/entities/run.js';
 import type { RunEvent } from '../../../../domain/value-objects/run-event.js';
-import { InMemoryRunLogRepository } from '../../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
+import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RunLogSignal } from '../../../ports/run-log-signal.js';
@@ -50,9 +50,9 @@ async function take(stream: AsyncGenerator<RunLogStreamItem>, count: number) {
 
 describe('a Run log, paged and live (Issue #99)', () => {
   let runs: InMemoryRunRepository;
-  let log: InMemoryRunLogRepository;
+  let log: InMemoryRunLog;
   let signal: TestSignal;
-  let run: Run;
+  let run: RunSnapshot;
 
   const append = async (...seqs: number[]) => {
     await log.append(run.id, WORKER, seqs.map(event), 1_000_000);
@@ -80,7 +80,7 @@ describe('a Run log, paged and live (Issue #99)', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    log = new InMemoryRunLogRepository(runs);
+    log = new InMemoryRunLog(runs);
     signal = new TestSignal();
     await runs.start({
       projectId: PROJECT,
@@ -99,17 +99,19 @@ describe('a Run log, paged and live (Issue #99)', () => {
       await append(1, 2, 3, 4, 5);
       const pages = new ListRunEventsHandler(runs, log);
 
-      const first = await pages.execute(run.id, 0, 2);
+      const first = await pages.execute({ runId: run.id, after: 0, limit: 2 });
       expect(first.events.map((stored) => stored.seq)).toEqual([1, 2]);
       expect(first.next).toBe(2);
-      const last = await pages.execute(run.id, 4, 2);
+      const last = await pages.execute({ runId: run.id, after: 4, limit: 2 });
       expect(last).toEqual({ events: [event(5)] });
-      expect(await pages.execute(run.id, 2, 3)).toEqual({ events: [event(3), event(4), event(5)] });
+      expect(await pages.execute({ runId: run.id, after: 2, limit: 3 })).toEqual({
+        events: [event(3), event(4), event(5)],
+      });
     });
 
     it('rejects an unknown Run', async () => {
       await expect(
-        new ListRunEventsHandler(runs, log).execute('nope', 0, 1),
+        new ListRunEventsHandler(runs, log).execute({ runId: 'nope', after: 0, limit: 1 }),
       ).rejects.toBeInstanceOf(RunNotFoundError);
     });
   });
@@ -117,7 +119,9 @@ describe('a Run log, paged and live (Issue #99)', () => {
   describe('streaming', () => {
     it('catches up from the store, then follows new events live until the Run is final', async () => {
       await append(1, 2);
-      const stream = await streams().open(run.id, 0, new AbortController().signal);
+      const stream = (
+        await streams().execute({ runId: run.id, after: 0, abort: new AbortController().signal })
+      ).stream;
 
       expect(await take(stream, 2)).toEqual([1, 2]);
       const live = take(stream, 2);
@@ -133,13 +137,17 @@ describe('a Run log, paged and live (Issue #99)', () => {
       await append(1, 2, 3);
       await finish();
 
-      const stream = await streams().open(run.id, 2, new AbortController().signal);
+      const stream = (
+        await streams().execute({ runId: run.id, after: 2, abort: new AbortController().signal })
+      ).stream;
 
       expect(await take(stream, 10)).toEqual([3]);
     });
 
     it('sends events appended between the state read and the wait (no lost wake-up)', async () => {
-      const stream = await streams().open(run.id, 0, new AbortController().signal);
+      const stream = (
+        await streams().execute({ runId: run.id, after: 0, abort: new AbortController().signal })
+      ).stream;
       const first = stream.next();
       await append(1);
       expect(await first).toMatchObject({ value: [event(1)] });
@@ -147,7 +155,7 @@ describe('a Run log, paged and live (Issue #99)', () => {
 
     it('sends a keep-alive when idle, and stops when the client goes away', async () => {
       const abort = new AbortController();
-      const stream = await streams(5).open(run.id, 0, abort.signal);
+      const { stream } = await streams(5).execute({ runId: run.id, after: 0, abort: abort.signal });
 
       expect((await stream.next()).value).toBe(KEEP_ALIVE);
       abort.abort();
@@ -156,9 +164,9 @@ describe('a Run log, paged and live (Issue #99)', () => {
     });
 
     it('rejects an unknown Run before streaming', async () => {
-      await expect(streams().open('nope', 0, new AbortController().signal)).rejects.toBeInstanceOf(
-        RunNotFoundError,
-      );
+      await expect(
+        streams().execute({ runId: 'nope', after: 0, abort: new AbortController().signal }),
+      ).rejects.toBeInstanceOf(RunNotFoundError);
     });
   });
 });

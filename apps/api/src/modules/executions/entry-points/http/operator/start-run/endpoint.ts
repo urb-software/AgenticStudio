@@ -12,7 +12,7 @@ import {
   providerUnavailable,
   repositoryNotReady,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
@@ -55,7 +55,9 @@ export class StartRunEndpoint {
       );
     }
     try {
-      return toRunResponse(await this.handler.execute({ projectId, ...parsed.data }));
+      const { run } = await this.handler.execute({ projectId, ...parsed.data });
+      // A Run that was just started has no prepared Follow-up.
+      return toRunResponse(withPreparedFollowUp(run, false));
     } catch (error) {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
       if (error instanceof RepositoryNotReadyError) throw repositoryNotReady(error.message);

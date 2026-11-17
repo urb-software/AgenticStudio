@@ -7,6 +7,8 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
+export type ListProvidersResult = ProviderAvailability[];
+
 /** Query (Issue #101): every provider and whether a Run can be started with it now. */
 @Injectable()
 export class ListProvidersHandler {
@@ -16,7 +18,7 @@ export class ListProvidersHandler {
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
   ) {}
 
-  execute(): ProviderAvailability[] {
+  async execute(): Promise<ListProvidersResult> {
     return WorkerStatus.providerAvailability(
       this.statuses.latest(),
       this.clock.now(),

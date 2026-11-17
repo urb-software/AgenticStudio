@@ -29,32 +29,36 @@ function handler(status: Partial<RecordedWorkerStatus> | undefined, now = T0) {
 }
 
 describe('GetAgentWorkerHandler (Issue #143)', () => {
-  it('says nothing is connected before any report, and when the report is stale', () => {
-    expect(handler(undefined).execute()).toEqual({ connected: false });
-    expect(handler({ disk: DISK }, new Date(T0.getTime() + 61_000)).execute()).toEqual({
+  it('says nothing is connected before any report, and when the report is stale', async () => {
+    expect(await handler(undefined).execute()).toEqual({ connected: false });
+    expect(await handler({ disk: DISK }, new Date(T0.getTime() + 61_000)).execute()).toEqual({
       connected: false,
     });
   });
 
-  it('gives the figures and whether free space is below the threshold', () => {
-    expect(handler({ disk: DISK }).execute()).toEqual({
+  it('gives the figures and whether free space is below the threshold', async () => {
+    expect(await handler({ disk: DISK }).execute()).toEqual({
       connected: true,
       disk: { ...DISK, low: false },
     });
-    expect(handler({ disk: { ...DISK, freeBytes: 9 * GIB } }).execute().disk?.low).toBe(true);
+    expect((await handler({ disk: { ...DISK, freeBytes: 9 * GIB } }).execute()).disk?.low).toBe(
+      true,
+    );
   });
 
-  it('never calls the space low with a threshold of zero', () => {
-    const view = handler({ disk: { ...DISK, freeBytes: 0, minFreeBytes: 0 } }).execute();
+  it('never calls the space low with a threshold of zero', async () => {
+    const view = await handler({ disk: { ...DISK, freeBytes: 0, minFreeBytes: 0 } }).execute();
 
     expect(view.disk?.low).toBe(false);
   });
 
-  it('passes on that the figures are partial', () => {
-    expect(handler({ disk: { ...DISK, partial: true } }).execute().disk?.partial).toBe(true);
+  it('passes on that the figures are partial', async () => {
+    expect((await handler({ disk: { ...DISK, partial: true } }).execute()).disk?.partial).toBe(
+      true,
+    );
   });
 
-  it('gives no figures before the worker measured', () => {
-    expect(handler({}).execute()).toEqual({ connected: true });
+  it('gives no figures before the worker measured', async () => {
+    expect(await handler({}).execute()).toEqual({ connected: true });
   });
 });

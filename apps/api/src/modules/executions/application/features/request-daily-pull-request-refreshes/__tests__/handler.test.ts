@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { PullRequestState } from '../../../../domain/entities/run.js';
 import { deliveredRun, T0 } from '../../../../domain/repositories/__tests__/delivered-run.js';
-import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
+import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
+import type { RunLookupRequests } from '../../../run-lookup-requests.js';
 import { RequestDailyPullRequestRefreshesHandler } from '../handler.js';
 
 // Issue #142: the daily refresh asks only about Runs with an open pull request, or one of unknown
@@ -12,14 +14,17 @@ const HOUR = 60 * 60 * 1000;
 describe('RequestDailyPullRequestRefreshesHandler', () => {
   let runs: InMemoryRunRepository;
   let lookups: InMemoryRunLookupRepository;
+  let requests: RunLookupRequests;
   let now: Date;
   let handler: RequestDailyPullRequestRefreshesHandler;
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
-    lookups = new InMemoryRunLookupRepository(runs);
+    ({ lookups, requests } = inMemoryExecutions(runs));
     now = new Date(T0.getTime() + 48 * HOUR);
-    handler = new RequestDailyPullRequestRefreshesHandler(lookups, { now: () => now });
+    handler = new RequestDailyPullRequestRefreshesHandler(lookups, runs, requests, {
+      now: () => now,
+    });
   });
 
   /** A delivered Run whose pull request was read as `state` `hoursAgo` hours before `now`. */
@@ -40,7 +45,7 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     const open = await readRun('open', 30);
     const unknown = await readRun(null, null);
 
-    expect(await handler.execute()).toBe(3);
+    expect(await handler.execute()).toEqual({ requested: 3 });
 
     expect(new Set(asked())).toEqual(new Set([draft, open, unknown]));
   });
@@ -50,24 +55,24 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     await readRun('closed', 72);
     await readRun('missing', 72);
 
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ requested: 0 });
     expect(asked()).toEqual([]);
   });
 
   it('leaves out a state that was read within the day', async () => {
     await readRun('open', 23);
 
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ requested: 0 });
   });
 
   it('leaves out a Run without a pull request, and one that is being refreshed already', async () => {
     const none = await deliveredRun(runs, { delivered: false });
     expect(none.pullRequest).toBeNull();
     const busy = await readRun('open', 30);
-    await lookups.request(busy, 'pull_request_state', now);
+    await requests.request(busy, 'pull_request_state', now);
     const before = lookups.lookups.length;
 
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ requested: 0 });
     expect(lookups.lookups).toHaveLength(before);
   });
 
@@ -80,13 +85,13 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
       lastAttemptAt: new Date(now.getTime() - 2 * HOUR),
     };
 
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ requested: 0 });
 
     stored.pullRequestStatus = {
       ...stored.pullRequestStatus,
       lastAttemptAt: new Date(now.getTime() - 25 * HOUR),
     };
-    expect(await handler.execute()).toBe(1);
+    expect(await handler.execute()).toEqual({ requested: 1 });
   });
 
   it('removes finished lookups older than a week and keeps the rest (review S10 of #152)', async () => {
@@ -118,8 +123,8 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
   it('asks once for a Run, however often it runs', async () => {
     await readRun('open', 30);
 
-    expect(await handler.execute()).toBe(1);
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ requested: 1 });
+    expect(await handler.execute()).toEqual({ requested: 0 });
     expect(lookups.lookups).toHaveLength(1);
   });
 

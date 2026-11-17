@@ -1,13 +1,17 @@
-import type { RunEvent } from '../value-objects/run-event.js';
+import type { RunEvent } from '../../domain/value-objects/run-event.js';
 
-/** DI token for the {@link RunLogRepository} adapter. */
-export const RUN_LOG_REPOSITORY = Symbol('RUN_LOG_REPOSITORY');
+/** DI token for the {@link RunLog} adapter. */
+export const RUN_LOG = Symbol('RUN_LOG');
 
 /**
  * The store of Run logs (Issue #99): each Run's events by sequence number, with the per-Run
- * cap applied atomically (`planLogAppend`) against concurrent appends.
+ * cap applied atomically (`planLogAppend`) against concurrent appends. The events are append-only
+ * records, not an aggregate: no rule changes or spans them and nothing refers to one event on its
+ * own, so this is a port and not an aggregate repository. Its adapter keeps the Run's log size
+ * (`log_bytes`, `log_truncated`) beside the events so that the holder check, the duplicate filter
+ * and the cap see one consistent state.
  */
-export interface RunLogRepository {
+export interface RunLog {
   /**
    * Stores `events` (redacted and cut, in seq order) for a Run that `workerId` holds
    * (`preparing` or `running`). Events whose seq is already stored are ignored, so a re-sent

@@ -3,6 +3,11 @@ import { OverdueStepRule } from '../../../domain/value-objects/run-sweep-rules.j
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 
+export interface TimeOutOverdueStepsResult {
+  /** How many Runs timed out. */
+  timedOut: number;
+}
+
 /**
  * Command (review of #121): Studio's backstop for the step time limit. A `running` Run whose
  * current step has run longer than its `stepMinutes` plus {@link OverdueStepRule.GRACE_MINUTES}
@@ -17,8 +22,8 @@ export class TimeOutOverdueStepsHandler {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  execute(): Promise<number> {
+  async execute(): Promise<TimeOutOverdueStepsResult> {
     const rule = OverdueStepRule.at(this.clock.now());
-    return this.runs.timeOutOverdueSteps(rule.now, rule.graceMinutes);
+    return { timedOut: await this.runs.timeOutOverdueSteps(rule.now, rule.graceMinutes) };
   }
 }

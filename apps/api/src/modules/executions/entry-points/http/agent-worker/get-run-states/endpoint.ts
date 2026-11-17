@@ -17,10 +17,12 @@ export class GetRunStatesEndpoint {
   @Post('states')
   @HttpCode(HttpStatus.OK)
   async states(@Body() body: RunStatesRequestDto): Promise<RunStatesResponse> {
-    const states = await this.handler.execute(
-      body.runIds,
-      body.removedRunIds ? { workerId: body.workerId, runIds: body.removedRunIds } : undefined,
-    );
+    const states = await this.handler.execute({
+      runIds: body.runIds,
+      ...(body.removedRunIds
+        ? { removed: { workerId: body.workerId, runIds: body.removedRunIds } }
+        : {}),
+    });
     return runStatesResponseSchema.parse(
       states.map((run) => ({
         runId: run.runId,

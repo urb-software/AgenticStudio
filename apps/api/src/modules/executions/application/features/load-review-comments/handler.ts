@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ReviewComments } from '../../../domain/entities/review-comments.js';
 import { isRunId } from '../../../domain/entities/run.js';
 import { canRefreshPullRequest } from '../../../domain/value-objects/run-lookup.js';
 import {
+  type ReviewComment,
   type ReviewCommentScope,
   ReviewCommentsLoadRunningError,
-  type ReviewCommentsView,
 } from '../../../domain/value-objects/review-comments.js';
 import { FollowUpNotAllowedError } from '../../../domain/entities/run.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -23,8 +24,31 @@ import {
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RunLookupRequests } from '../../run-lookup-requests.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from '../../ports/operator-login.js';
 import { PullRequestNotRefreshableError } from '../../../domain/value-objects/run-lookup.js';
+
+export interface LoadReviewCommentsInput {
+  runId: string;
+  scope: ReviewCommentScope;
+}
+
+/** One comment with whether the operator's own account wrote it (Issue #146). */
+export type LoadReviewCommentsComment = ReviewComment & { byOperator: boolean };
+
+/**
+ * What the Run page is shown after the request (Issue #146): the loaded comments (each marked as
+ * the operator's or not), the configured login, and the state of the latest load.
+ */
+export interface LoadReviewCommentsResult {
+  operatorLogin: string | null;
+  comments: LoadReviewCommentsComment[];
+  truncated: boolean;
+  scope: ReviewCommentScope | null;
+  loadedAt: Date | null;
+  loading: boolean;
+  error: string | null;
+}
 
 /**
  * Command (Issue #146): the operator asks for the Review comments of the Run's pull request to be
@@ -42,6 +66,7 @@ import { PullRequestNotRefreshableError } from '../../../domain/value-objects/ru
 export class LoadReviewCommentsHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    private readonly lookupRequests: RunLookupRequests,
     @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
     @Inject(REVIEW_COMMENT_REPOSITORY) private readonly comments: ReviewCommentRepository,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -50,7 +75,8 @@ export class LoadReviewCommentsHandler {
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
   ) {}
 
-  async execute(runId: string, scope: ReviewCommentScope): Promise<ReviewCommentsView> {
+  async execute(input: LoadReviewCommentsInput): Promise<LoadReviewCommentsResult> {
+    const { runId, scope } = input;
     const found = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!found) throw new RunNotFoundError();
     if (!canRefreshPullRequest(found)) throw new PullRequestNotRefreshableError();
@@ -65,12 +91,28 @@ export class LoadReviewCommentsHandler {
       this.lease.seconds,
     );
     if (!eligibility.allowed) throw new FollowUpNotAllowedError(eligibility.reason);
-    const outcome = await this.lookups.request(found.id, 'review_comments', now, {
+    const outcome = await this.lookupRequests.request(found.id, 'review_comments', now, {
       scope,
       since: scope === 'since_last_result' ? found.finishedAt : null,
     });
     if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     if (outcome === 'open') throw new ReviewCommentsLoadRunningError();
-    return (await this.comments.findReviewComments(found.id)).view(this.operator.login);
+    const [set, load] = await Promise.all([
+      this.comments.findSnapshot(found.id),
+      this.lookups.findReviewCommentsLoad(found.id),
+    ]);
+    const operatorLogin = this.operator.login;
+    return {
+      operatorLogin,
+      comments: (set?.comments ?? []).map((comment) => ({
+        ...comment,
+        byOperator: ReviewComments.isByOperator(comment.author, operatorLogin),
+      })),
+      truncated: set?.truncated ?? false,
+      scope: set?.scope ?? null,
+      loadedAt: set?.loadedAt ?? null,
+      loading: load.loading,
+      error: load.error,
+    };
   }
 }

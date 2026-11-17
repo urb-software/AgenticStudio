@@ -27,7 +27,11 @@ export class ListRunEventsEndpoint {
   })
   async list(@Param('runId') runId: string, @Query() query: ListRunEventsQueryDto) {
     try {
-      const page = await this.handler.execute(runId, query.after, query.limit);
+      const page = await this.handler.execute({
+        runId,
+        after: query.after,
+        limit: query.limit,
+      });
       return {
         events: page.events.map((event) =>
           toRunEventResponse({ ...event, redacted: event.text.includes(REDACTED) }),

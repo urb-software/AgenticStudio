@@ -1,10 +1,25 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type Run } from '../../../domain/entities/run.js';
+import { isRunId, type RunSnapshot } from '../../../domain/entities/run.js';
+import {
+  PREPARED_FOLLOW_UP_REPOSITORY,
+  type PreparedFollowUpRepository,
+} from '../../../domain/repositories/prepared-follow-up-repository.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
+
+export interface RetryDeliveryInput {
+  runId: string;
+}
+
+export interface RetryDeliveryResult {
+  /** The Run as it is now, marked for the retry. */
+  run: RunSnapshot;
+  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
+  preparedFollowUp: boolean;
+}
 
 /**
  * Command (Issue #102): the operator asks to repeat only the delivery of a Run whose delivery
@@ -16,12 +31,21 @@ import {
  */
 @Injectable()
 export class RetryDeliveryHandler {
-  constructor(@Inject(RUN_REPOSITORY) private readonly runs: RunRepository) {}
+  constructor(
+    @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(PREPARED_FOLLOW_UP_REPOSITORY)
+    private readonly preparedFollowUps: PreparedFollowUpRepository,
+  ) {}
 
-  async execute(runId: string): Promise<Run> {
-    if (!isRunId(runId)) throw new RunNotFoundError();
-    const requested = await this.runs.change(runId, (run) => run.requestDeliveryRetry());
+  async execute(input: RetryDeliveryInput): Promise<RetryDeliveryResult> {
+    if (!isRunId(input.runId)) throw new RunNotFoundError();
+    const requested = await this.runs.change(input.runId, (run) => run.requestDeliveryRetry());
     if (!requested) throw new RunNotFoundError();
-    return requested;
+    return {
+      run: requested.snapshot(),
+      preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([requested.id])).has(
+        requested.id,
+      ),
+    };
   }
 }

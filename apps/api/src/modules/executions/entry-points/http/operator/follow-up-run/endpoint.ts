@@ -11,10 +11,10 @@ import {
   followUpNotAllowed,
   runNotFound,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { ReviewCommentsNotLoadedError } from '../../../../domain/value-objects/review-comments.js';
+import { ReviewCommentsNotLoadedError } from '../../../../domain/value-objects/review-comments-not-loaded-error.js';
 import { FollowUpRunHandler } from '../../../../application/features/follow-up-run/handler.js';
 import { followUpRunRequestSchema, FollowUpRunRequestDto } from './schema.js';
 
@@ -52,13 +52,15 @@ export class FollowUpRunEndpoint {
       );
     }
     try {
-      const { run, followUp, workerConnected } = await this.handler.execute(
+      const { run, followUp, workerConnected, preparedFollowUp } = await this.handler.execute({
         runId,
-        parsed.data.text,
-        parsed.data.source,
-        parsed.data.reviewCommentIds,
-      );
-      return toRunResponse(run, followUp, workerConnected);
+        text: parsed.data.text,
+        ...(parsed.data.source === undefined ? {} : { source: parsed.data.source }),
+        ...(parsed.data.reviewCommentIds === undefined
+          ? {}
+          : { reviewCommentIds: parsed.data.reviewCommentIds }),
+      });
+      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof FollowUpNotAllowedError) throw followUpNotAllowed(error.reason);

@@ -1,9 +1,7 @@
 import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  DATABASE_CLIENT,
-  type DatabaseClient,
-} from '../../../../platform/database/database.module.js';
+import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
+import { type Executor, inTransaction } from './executor.js';
 import {
   planLogAppend,
   RUN_EVENT_KINDS,
@@ -11,7 +9,7 @@ import {
   type RunEventKind,
 } from '../../domain/value-objects/run-event.js';
 import { CLAIMED_RUN_STATES } from '../../domain/entities/run.js';
-import type { RunLogRepository } from '../../domain/repositories/run-log-repository.js';
+import type { RunLog } from '../../application/ports/run-log.js';
 
 const EVENT_FIELDS = {
   seq: true,
@@ -23,13 +21,13 @@ const EVENT_FIELDS = {
 } as const;
 
 /**
- * PostgreSQL adapter of {@link RunLogRepository} (Issue #99). An append locks the Run row, so
+ * PostgreSQL adapter of {@link RunLog} (Issue #99). An append locks the Run row, so
  * the holder check, the duplicate filter and the cap accounting (`runs.log_bytes`,
  * `runs.log_truncated`) see one consistent state, also against concurrent appends.
  */
 @Injectable()
-export class PrismaRunLogRepository implements RunLogRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
+export class PrismaRunLog implements RunLog {
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
   async append(
     runId: string,
@@ -37,7 +35,7 @@ export class PrismaRunLogRepository implements RunLogRepository {
     events: readonly RunEvent[],
     maxBytes: number,
   ): Promise<number | null> {
-    return this.db.$transaction(async (tx) => {
+    return inTransaction(this.db, async (tx) => {
       const [run] = await tx.$queryRaw<{ log_bytes: number; log_truncated: boolean }[]>`
         SELECT log_bytes, log_truncated FROM runs
         WHERE id = ${runId}::uuid AND state IN (${Prisma.join([...CLAIMED_RUN_STATES])})

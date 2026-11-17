@@ -1,5 +1,5 @@
 import type { ReviewComment, ReviewCommentScope } from './review-comments.js';
-import type { PullRequestCheck, PullRequestState, Run } from '../entities/run.js';
+import type { Run } from '../entities/run.js';
 
 /**
  * Lookups (Issue #142): Studio's questions for the Git host that only an agent worker can
@@ -40,6 +40,24 @@ export const DAILY_REFRESH_BATCH = 200;
 /** Longest a rate-limited lookup waits before it is tried again, whatever the Git host asks. */
 export const STORED_RETRY_DELAY_MAX_SECONDS = 60 * 60;
 
+/** What requesting a lookup did. */
+export type LookupRequestOutcome =
+  /** A new request was recorded. */
+  | 'requested'
+  /** A request for this Run and kind is open already (waiting, or being answered). */
+  | 'open'
+  /** The Run has no pull request (or no known Run branch) to look up. */
+  | 'not_possible';
+
+/** What a worker's answer did. */
+export type LookupAnswerOutcome =
+  /** Stored now. */
+  | 'stored'
+  /** Already stored by an earlier delivery of the same answer. */
+  | 'duplicate'
+  /** The lookup is not (any more) claimed by this worker; nothing changed. */
+  | 'not_held';
+
 /** A lookup a worker claimed: what it needs to answer, nothing more. */
 export interface ClaimedLookup {
   id: string;
@@ -57,19 +75,6 @@ export interface ClaimedLookup {
 export interface ReviewCommentsResult {
   comments: ReviewComment[];
   truncated: boolean;
-}
-
-/** What a worker found out about a pull request. */
-export interface PullRequestStateResult {
-  state: PullRequestState;
-  behindBy?: number;
-  aheadBy?: number;
-  mergeable?: boolean;
-  /** Issue #145: the checks of the latest commit `checksCommit`, for a draft or open pull request. */
-  checksCommit?: string;
-  checks?: PullRequestCheck[];
-  /** Issue #145: the Git host refused to tell the checks. */
-  checksUnavailable?: true;
 }
 
 /** One failed check with the end of its log, as a worker read it (Issue #145). */

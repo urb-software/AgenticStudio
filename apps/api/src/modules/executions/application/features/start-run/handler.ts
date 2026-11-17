@@ -6,6 +6,7 @@ import {
   RepositoryNotReadyError,
   Run,
   RunProjectNotFoundError,
+  type RunSnapshot,
 } from '../../../domain/entities/run.js';
 import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
@@ -24,6 +25,11 @@ export interface StartRunInput {
   provider: Provider;
   /** The operator's text; the Run's `Task` trims and bounds it (1–20 000 characters). */
   task: string;
+}
+
+export interface StartRunResult {
+  /** The Run, queued. */
+  run: RunSnapshot;
 }
 
 /**
@@ -45,7 +51,7 @@ export class StartRunHandler {
     @Inject(RUN_LIMITS) private readonly limits: RunLimitsSetting,
   ) {}
 
-  async execute(input: StartRunInput): Promise<Run> {
+  async execute(input: StartRunInput): Promise<StartRunResult> {
     const startPoint = await this.startPoints.forProject(input.projectId);
     switch (startPoint.status) {
       case 'project_not_found':
@@ -56,19 +62,23 @@ export class StartRunHandler {
         throw new RepositoryNotReadyError('not_ready');
       case 'ready':
         this.assertAvailable(input.provider);
-        return this.runs.add(
-          Run.start({
-            id: randomUUID(),
-            projectId: input.projectId,
-            provider: input.provider,
-            task: Task.of(input.task),
-            startCommit: startPoint.startCommit,
-            remoteUrl: startPoint.remoteUrl,
-            integrationBranch: startPoint.integrationBranch,
-            limits: { ...this.limits },
-            now: this.clock.now(),
-          }),
-        );
+        return {
+          run: (
+            await this.runs.add(
+              Run.start({
+                id: randomUUID(),
+                projectId: input.projectId,
+                provider: input.provider,
+                task: Task.of(input.task),
+                startCommit: startPoint.startCommit,
+                remoteUrl: startPoint.remoteUrl,
+                integrationBranch: startPoint.integrationBranch,
+                limits: { ...this.limits },
+                now: this.clock.now(),
+              }),
+            )
+          ).snapshot(),
+        };
     }
   }
 

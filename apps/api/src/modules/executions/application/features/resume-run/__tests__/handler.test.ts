@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  type Run,
+  type RunSnapshot,
   type RunFailure,
   RunNotResumableError,
   RunSlotTakenError,
   USAGE_LIMIT_RESUME_TEXT,
 } from '../../../../domain/entities/run.js';
+import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { ResumeRunHandler } from '../handler.js';
@@ -38,7 +39,7 @@ const NEW_RUN = {
 describe('ResumeRunHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: ResumeRunHandler;
-  let run: Run;
+  let run: RunSnapshot;
 
   /** WORKER's step stops at `failure`, reporting the session and the Working copy. */
   async function stop(failure: RunFailure, sessionRef: string | null = 'session-1') {
@@ -66,7 +67,9 @@ describe('ResumeRunHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new ResumeRunHandler(runs, { now: () => T1 });
+    handler = new ResumeRunHandler(runs, new InMemoryPreparedFollowUpRepository(runs), {
+      now: () => T1,
+    });
     await runs.start(NEW_RUN);
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -74,7 +77,7 @@ describe('ResumeRunHandler', () => {
   it('queues the Run to resume its session with "Continue where you stopped."', async () => {
     await stop(USAGE_LIMIT);
 
-    const resumed = await handler.execute(run.id);
+    const { run: resumed } = await handler.execute({ runId: run.id });
 
     expect(resumed).toMatchObject({
       state: 'queued',
@@ -91,7 +94,7 @@ describe('ResumeRunHandler', () => {
 
   it('hands it only to the worker that started it, as a resume', async () => {
     await stop(USAGE_LIMIT);
-    await handler.execute(run.id);
+    await handler.execute({ runId: run.id });
 
     expect(await runs.claimNext(OTHER_WORKER, T1)).toBeNull();
     expect(await runs.claimNext(WORKER, T1)).toMatchObject({ id: run.id, state: 'preparing' });
@@ -99,9 +102,9 @@ describe('ResumeRunHandler', () => {
 
   it('refuses a second resume once the Run is queued', async () => {
     await stop(USAGE_LIMIT);
-    await handler.execute(run.id);
+    await handler.execute({ runId: run.id });
 
-    await expect(handler.execute(run.id)).rejects.toBeInstanceOf(RunNotResumableError);
+    await expect(handler.execute({ runId: run.id })).rejects.toBeInstanceOf(RunNotResumableError);
   });
 
   it.each<[string, RunFailure, string | null]>([
@@ -110,7 +113,7 @@ describe('ResumeRunHandler', () => {
   ])('refuses a Run with %s', async (_case, failure, sessionRef) => {
     await stop(failure, sessionRef);
 
-    await expect(handler.execute(run.id)).rejects.toBeInstanceOf(RunNotResumableError);
+    await expect(handler.execute({ runId: run.id })).rejects.toBeInstanceOf(RunNotResumableError);
     expect((await runs.findById(run.id))?.state).toBe('failed');
   });
 
@@ -119,14 +122,14 @@ describe('ResumeRunHandler', () => {
     await stop(USAGE_LIMIT);
     await runs.clearEnvironmentFileSecret(run.id, 'snapshot-1');
 
-    await expect(handler.execute(run.id)).rejects.toBeInstanceOf(RunNotResumableError);
+    await expect(handler.execute({ runId: run.id })).rejects.toBeInstanceOf(RunNotResumableError);
   });
 
   it('resumes while the snapshot is kept', async () => {
     await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot-1' });
     await stop(USAGE_LIMIT);
 
-    expect((await handler.execute(run.id)).state).toBe('queued');
+    expect((await handler.execute({ runId: run.id })).run.state).toBe('queued');
   });
 
   it("refuses while another Run holds the project's place, and resumes once it has ended", async () => {
@@ -134,8 +137,10 @@ describe('ResumeRunHandler', () => {
     await runs.start({ ...NEW_RUN, task: 'other' });
     const other = (await runs.claimNext(WORKER, T1))!;
 
-    await expect(handler.execute(run.id)).rejects.toEqual(new RunSlotTakenError('project'));
-    await expect(handler.execute(run.id)).rejects.toThrow(
+    await expect(handler.execute({ runId: run.id })).rejects.toEqual(
+      new RunSlotTakenError('project'),
+    );
+    await expect(handler.execute({ runId: run.id })).rejects.toThrow(
       'Another run of this project is active. Resume this run when that run has ended.',
     );
     expect((await runs.findById(run.id))?.state).toBe('failed');
@@ -149,7 +154,7 @@ describe('ResumeRunHandler', () => {
       cancelRequested: false,
       now: T1,
     });
-    expect((await handler.execute(run.id)).state).toBe('queued');
+    expect((await handler.execute({ runId: run.id })).run.state).toBe('queued');
   });
 
   it("refuses while the server's places are taken", async () => {
@@ -159,14 +164,16 @@ describe('ResumeRunHandler', () => {
       await runs.claimNext(OTHER_WORKER, T1);
     }
 
-    await expect(handler.execute(run.id)).rejects.toEqual(new RunSlotTakenError('server'));
+    await expect(handler.execute({ runId: run.id })).rejects.toEqual(
+      new RunSlotTakenError('server'),
+    );
   });
 
   it('refuses a Run that has not failed', async () => {
-    await expect(handler.execute(run.id)).rejects.toBeInstanceOf(RunNotResumableError);
+    await expect(handler.execute({ runId: run.id })).rejects.toBeInstanceOf(RunNotResumableError);
   });
 
   it.each([UNKNOWN_RUN, 'not-a-uuid'])('404s an unknown Run: %s', async (id) => {
-    await expect(handler.execute(id)).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(handler.execute({ runId: id })).rejects.toBeInstanceOf(RunNotFoundError);
   });
 });

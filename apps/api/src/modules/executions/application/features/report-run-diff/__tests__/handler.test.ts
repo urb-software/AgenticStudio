@@ -1,6 +1,6 @@
 import type { RunDiff } from '@agentic-studio/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Run } from '../../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../../domain/entities/run.js';
 import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
@@ -9,10 +9,11 @@ import {
 } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import {
-  GetRunDiffHandler,
+  GetRunDiffFileHandler,
   RunDiffFileNotFoundError,
-  RunDiffNotFoundError,
-} from '../../get-run-diff/handler.js';
+} from '../../get-run-diff-file/handler.js';
+import { GetRunDiffHandler, RunDiffNotFoundError } from '../../get-run-diff/handler.js';
+import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { ReportRunDiffHandler } from '../handler.js';
 
 // Issue #144: the worker's diff report through the handlers, against in-memory stores with the
@@ -43,12 +44,14 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
   let diffs: InMemoryRunDiffRepository;
   let secrets: string[];
   let report: ReportRunDiffHandler;
-  let read: GetRunDiffHandler;
-  let run: Run;
+  let readDiff: GetRunDiffHandler;
+  let readFile: GetRunDiffFileHandler;
+  let run: RunSnapshot;
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    diffs = new InMemoryRunDiffRepository(runs);
+    const executions = inMemoryExecutions(runs);
+    diffs = executions.diffs;
     secrets = [];
     await runs.start({
       projectId: PROJECT,
@@ -62,11 +65,12 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     run = (await runs.claimNext(WORKER, T0))!;
     report = new ReportRunDiffHandler(
       runs,
-      diffs,
+      executions.transactions,
       { forRun: (runId) => Promise.resolve(runId === run.id ? secrets : []) },
       { now: () => T0 },
     );
-    read = new GetRunDiffHandler(runs, diffs);
+    readDiff = new GetRunDiffHandler(runs, diffs);
+    readFile = new GetRunDiffFileHandler(runs, diffs);
   });
 
   it('stores both diffs; the file list comes without patches, each patch per file', async () => {
@@ -84,7 +88,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
       },
     });
 
-    const whole = await read.diff(run.id, 'run');
+    const whole = await readDiff.execute({ runId: run.id, scope: 'run' });
     expect(whole).toMatchObject({
       kind: 'computed',
       baseCommit: 'a'.repeat(40),
@@ -96,9 +100,14 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
       'logo.png',
     ]);
     expect(JSON.stringify(whole)).not.toContain('@@');
-    expect(await read.file(run.id, 'run', 'a.ts')).toMatchObject({ path: 'a.ts', patch });
-    expect(await read.file(run.id, 'run', 'logo.png')).not.toHaveProperty('patch');
-    expect((await read.diff(run.id, 'last')).kind).toBe('computed');
+    expect(await readFile.execute({ runId: run.id, scope: 'run', path: 'a.ts' })).toMatchObject({
+      path: 'a.ts',
+      patch,
+    });
+    expect(
+      await readFile.execute({ runId: run.id, scope: 'run', path: 'logo.png' }),
+    ).not.toHaveProperty('patch');
+    expect((await readDiff.execute({ runId: run.id, scope: 'last' })).kind).toBe('computed');
   });
 
   it('redacts known secret values and token-shaped strings in every patch before storing', async () => {
@@ -116,7 +125,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     });
 
     for (const scope of ['run', 'last'] as const) {
-      const stored = (await read.file(run.id, scope, 'conf.ts')).patch!;
+      const stored = (await readFile.execute({ runId: run.id, scope, path: 'conf.ts' })).patch!;
       expect(stored).toBe(`@@ -0,0 +1,2 @@\n+DB=${REDACTED}\n+TOKEN=${REDACTED}\n`);
     }
   });
@@ -135,9 +144,11 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
       diffs: { run: diffOf(files), last: diffOf(files), state: STATE },
     });
 
-    const whole = await read.diff(run.id, 'run');
+    const whole = await readDiff.execute({ runId: run.id, scope: 'run' });
     expect(whole.kind === 'computed' && whole.files.map((file) => file.path)).toEqual(['a.ts']);
-    await expect(read.file(run.id, 'run', 'config/.env')).rejects.toThrow(RunDiffFileNotFoundError);
+    await expect(
+      readFile.execute({ runId: run.id, scope: 'run', path: 'config/.env' }),
+    ).rejects.toThrow(RunDiffFileNotFoundError);
   });
 
   it('replaces the stored diffs with each report', async () => {
@@ -154,7 +165,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
       diffs: { run: second, last: second, state: STATE },
     });
 
-    const whole = await read.diff(run.id, 'run');
+    const whole = await readDiff.execute({ runId: run.id, scope: 'run' });
     expect(whole.kind === 'computed' && whole.files.map((file) => file.path)).toEqual(['b.ts']);
   });
 
@@ -167,7 +178,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     });
 
     for (const scope of ['run', 'last'] as const) {
-      expect(await read.diff(run.id, scope)).toMatchObject({
+      expect(await readDiff.execute({ runId: run.id, scope })).toMatchObject({
         kind: 'unavailable',
         reason: `git failed near ${REDACTED}`,
       });
@@ -204,7 +215,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
       diffs: { unavailable: 'true '.repeat(100) },
     });
 
-    const stored = await read.diff(run.id, 'run');
+    const stored = await readDiff.execute({ runId: run.id, scope: 'run' });
     expect(stored.kind === 'unavailable' && stored.reason.length).toBe(500);
     expect(stored.kind === 'unavailable' && stored.reason.startsWith(REDACTED)).toBe(true);
   });
@@ -225,11 +236,17 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
         diffs: { run: diff, last: diff, state: STATE },
       }),
     ).rejects.toThrow(RunNotFoundError);
-    await expect(read.diff(run.id, 'run')).rejects.toThrow(RunDiffNotFoundError);
+    await expect(readDiff.execute({ runId: run.id, scope: 'run' })).rejects.toThrow(
+      RunDiffNotFoundError,
+    );
   });
 
   it('reads no diff of an unknown Run', async () => {
-    await expect(read.diff('not-a-uuid', 'run')).rejects.toThrow(RunNotFoundError);
-    await expect(read.file('not-a-uuid', 'run', 'a.ts')).rejects.toThrow(RunNotFoundError);
+    await expect(readDiff.execute({ runId: 'not-a-uuid', scope: 'run' })).rejects.toThrow(
+      RunNotFoundError,
+    );
+    await expect(
+      readFile.execute({ runId: 'not-a-uuid', scope: 'run', path: 'a.ts' }),
+    ).rejects.toThrow(RunNotFoundError);
   });
 });

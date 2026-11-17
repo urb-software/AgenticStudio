@@ -4,6 +4,7 @@ import {
   isPullRequestEnded,
   type RetentionFacts,
   type Run,
+  type RunSnapshot,
   type WorkerFacts,
 } from '../entities/run.js';
 import { WorkerStatus } from './worker-status.js';
@@ -127,9 +128,9 @@ export class RetentionPolicy {
     now: Date,
     leaseSeconds: number,
     overLimit: boolean,
-  ): { run: Run; followUp: FollowUpView; workerConnected: boolean } {
+  ): { run: RunSnapshot; followUp: FollowUpView; workerConnected: boolean } {
     return {
-      run,
+      run: run.snapshot(),
       followUp: this.followUpView(
         run.followUpAvailability(workers, now, leaseSeconds),
         run.retentionFacts(),

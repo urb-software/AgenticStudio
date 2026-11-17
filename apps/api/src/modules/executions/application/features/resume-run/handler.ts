@@ -1,11 +1,26 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type Run } from '../../../domain/entities/run.js';
+import { isRunId, type RunSnapshot } from '../../../domain/entities/run.js';
+import {
+  PREPARED_FOLLOW_UP_REPOSITORY,
+  type PreparedFollowUpRepository,
+} from '../../../domain/repositories/prepared-follow-up-repository.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+
+export interface ResumeRunInput {
+  runId: string;
+}
+
+export interface ResumeRunResult {
+  /** The Run as it is now, queued again. */
+  run: RunSnapshot;
+  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
+  preparedFollowUp: boolean;
+}
 
 /**
  * Command (Issue #105): the operator resumes a Run that stopped at the subscription's usage
@@ -23,16 +38,23 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 export class ResumeRunHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(PREPARED_FOLLOW_UP_REPOSITORY)
+    private readonly preparedFollowUps: PreparedFollowUpRepository,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async execute(runId: string): Promise<Run> {
-    if (!isRunId(runId)) throw new RunNotFoundError();
+  async execute(input: ResumeRunInput): Promise<ResumeRunResult> {
+    if (!isRunId(input.runId)) throw new RunNotFoundError();
     const now = this.clock.now();
-    const resumed = await this.runs.changeSerializedWithClaims(runId, (run, facts) =>
+    const resumed = await this.runs.changeSerializedWithClaims(input.runId, (run, facts) =>
       run.resumeAfterUsageLimit(now, facts),
     );
     if (!resumed) throw new RunNotFoundError();
-    return resumed;
+    return {
+      run: resumed.snapshot(),
+      preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([resumed.id])).has(
+        resumed.id,
+      ),
+    };
   }
 }

@@ -7,7 +7,7 @@ import {
   zodFieldErrors,
 } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound, runNotWaiting } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { RunNotWaitingError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { AnswerRunHandler } from '../../../../application/features/answer-run/handler.js';
@@ -45,7 +45,11 @@ export class AnswerRunEndpoint {
       );
     }
     try {
-      return toRunResponse(await this.handler.execute(runId, parsed.data.text));
+      const { run, preparedFollowUp } = await this.handler.execute({
+        runId,
+        text: parsed.data.text,
+      });
+      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp));
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof RunNotWaitingError) throw runNotWaiting(error.state);
