@@ -25,7 +25,8 @@ export class CancelRunHandler {
 
   async execute(runId: string): Promise<Run> {
     if (!isRunId(runId)) throw new RunNotFoundError();
-    const cancelled = await this.runs.change(runId, (run) => run.cancel(this.clock.now()));
+    const now = this.clock.now();
+    const cancelled = await this.runs.change(runId, (run) => run.cancel(now));
     if (!cancelled) throw new RunNotFoundError();
     return cancelled;
   }

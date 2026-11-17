@@ -37,18 +37,6 @@ export class WorkerStatus {
     return WorkerStatus.isWithinLease(this.recorded.reportedAt, now, leaseSeconds);
   }
 
-  /**
-   * Whether the worker offers the Provider: switched on in its configuration, and with no reason
-   * the worker gave for not being able to run it (Issue #105, e.g. an unsupported CLI version).
-   * Says nothing about the connection: ask {@link isConnected} as well.
-   */
-  offers(provider: Provider): boolean {
-    return (
-      this.recorded.providers[provider] === true &&
-      this.recorded.providerReasons?.[provider] === undefined
-    );
-  }
-
   /** The worker's reason for a switched-on Provider it cannot run, if it gave one. */
   reasonFor(provider: Provider): string | undefined {
     return this.recorded.providerReasons?.[provider];

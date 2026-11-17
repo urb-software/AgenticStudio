@@ -38,22 +38,18 @@ describe('WorkerStatus', () => {
     expect(status.reportedAt).toEqual(at(5));
   });
 
-  it('offers a Provider that is switched on and has no reason against it', () => {
+  it('has a Provider switched on and no reason against it', () => {
     const status = WorkerStatus.restore(recorded());
-
-    expect(status.offers('claude_code')).toBe(true);
     expect(status.hasSwitchedOn('claude_code')).toBe(true);
     expect(status.reasonFor('claude_code')).toBeUndefined();
   });
 
-  it('does not offer a Provider that is switched off', () => {
+  it('has a Provider switched off', () => {
     const status = WorkerStatus.restore(recorded());
-
-    expect(status.offers('codex')).toBe(false);
     expect(status.hasSwitchedOn('codex')).toBe(false);
   });
 
-  it('does not offer a switched-on Provider the worker gave a reason against, and says it', () => {
+  it('gives a reason against a switched-on Provider it cannot run, and says it', () => {
     const status = WorkerStatus.restore(
       recorded({
         providers: { claude_code: true, codex: true },
@@ -62,9 +58,7 @@ describe('WorkerStatus', () => {
     );
 
     expect(status.hasSwitchedOn('codex')).toBe(true);
-    expect(status.offers('codex')).toBe(false);
     expect(status.reasonFor('codex')).toBe('Unsupported CLI version');
-    expect(status.offers('claude_code')).toBe(true);
   });
 
   describe('isWithinLease', () => {

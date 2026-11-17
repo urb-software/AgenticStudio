@@ -28,8 +28,9 @@ export class ResumeRunHandler {
 
   async execute(runId: string): Promise<Run> {
     if (!isRunId(runId)) throw new RunNotFoundError();
+    const now = this.clock.now();
     const resumed = await this.runs.changeSerializedWithClaims(runId, (run, facts) =>
-      run.resumeAfterUsageLimit(this.clock.now(), facts),
+      run.resumeAfterUsageLimit(now, facts),
     );
     if (!resumed) throw new RunNotFoundError();
     return resumed;

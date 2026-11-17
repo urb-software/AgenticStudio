@@ -25,7 +25,8 @@ export class AnswerRunHandler {
 
   async execute(runId: string, text: string): Promise<Run> {
     if (!isRunId(runId)) throw new RunNotFoundError();
-    const answered = await this.runs.change(runId, (run) => run.answer(text, this.clock.now()));
+    const now = this.clock.now();
+    const answered = await this.runs.change(runId, (run) => run.answer(text, now));
     if (!answered) throw new RunNotFoundError();
     return answered;
   }
