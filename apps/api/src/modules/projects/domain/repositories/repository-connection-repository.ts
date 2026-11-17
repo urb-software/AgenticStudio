@@ -1,8 +1,6 @@
-import type {
-  ConnectAttempt,
-  RepositoryConnection,
-  RepositoryState,
-} from '../entities/repository.js';
+import type { ConnectAttempt } from '../value-objects/repository-connection-facts.js';
+import type { RepositoryConnection } from '../entities/repository-connection.js';
+import type { RepositoryState } from '../value-objects/repository-state.js';
 
 /** DI token for the {@link RepositoryConnectionRepository} adapter. */
 export const REPOSITORY_CONNECTION_REPOSITORY = Symbol('REPOSITORY_CONNECTION_REPOSITORY');

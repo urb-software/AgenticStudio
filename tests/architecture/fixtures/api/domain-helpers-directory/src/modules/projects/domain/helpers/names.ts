@@ -1,1 +1,1 @@
-export const normalise = (value: string): string => value.toLowerCase();
+export const NAME_PATTERN = /\s+/g;

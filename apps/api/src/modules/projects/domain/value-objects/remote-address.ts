@@ -145,35 +145,6 @@ function classifyIpv6(groups: number[]): RemoteAddressRange {
   return 'public';
 }
 
-/**
- * The range of an IP address as a resolver returns it (dotted IPv4 or IPv6 text, no
- * brackets). Anything that is not an address is `blocked`: the check fails closed.
- */
-export function classifyAddress(address: string): RemoteAddressRange {
-  const v4 = parseDottedIpv4(address);
-  if (v4 !== null) return classifyIpv4(v4);
-  const v6 = address.includes(':') ? parseIpv6(address) : null;
-  return v6 === null ? 'blocked' : classifyIpv6(v6);
-}
-
-/**
- * Why `address` is refused under the opt-in setting's value: `private` when the opt-in would
- * allow it, `blocked` when nothing would, `null` when it is allowed.
- */
-export function refusedRange(
-  address: string,
-  allowPrivate: boolean,
-): Exclude<RemoteAddressRange, 'public'> | null {
-  const range = classifyAddress(address);
-  if (range === 'public' || (range === 'private' && allowPrivate)) return null;
-  return range;
-}
-
-/** Whether Studio may connect to `address` under the opt-in setting's value. */
-export function addressAllowed(address: string, allowPrivate: boolean): boolean {
-  return refusedRange(address, allowPrivate) === null;
-}
-
 /** What the host part of a remote URL names. */
 export type HostLiteral =
   | { kind: 'name' }
@@ -192,29 +163,65 @@ function inetAtonPart(part: string): number | null {
 }
 
 /**
- * Normalizes the host of a remote URL. A bracketed IPv6 literal, or a host whose labels are
- * all numbers, is an address: the numeric forms the system resolver accepts (`inet_aton`:
- * `127.1`, `0x7f.1`, `2130706433`, `0177.0.0.1`) become dotted decimal, so the policy sees
- * the address the connection would really use. Anything else is a host name.
+ * An IP address of a Git remote, as the address policy sees it (Issue #69, security.md §4):
+ * which range it is in and whether Studio may connect to it. Shared by URL validation and by
+ * the Git adapter, which checks every address a host name resolves to.
  */
-export function hostLiteral(host: string): HostLiteral {
-  if (host.startsWith('[') && host.endsWith(']')) {
-    const inner = host.slice(1, -1).toLowerCase();
-    return parseIpv6(inner) === null ? { kind: 'invalid' } : { kind: 'address', address: inner };
+export class RemoteAddress {
+  /**
+   * The range of an IP address as a resolver returns it (dotted IPv4 or IPv6 text, no
+   * brackets). Anything that is not an address is `blocked`: the check fails closed.
+   */
+  static classify(address: string): RemoteAddressRange {
+    const v4 = parseDottedIpv4(address);
+    if (v4 !== null) return classifyIpv4(v4);
+    const v6 = address.includes(':') ? parseIpv6(address) : null;
+    return v6 === null ? 'blocked' : classifyIpv6(v6);
   }
-  const labels = host.split('.');
-  if (!labels.every((label) => NUMERIC_LABEL.test(label))) return { kind: 'name' };
-  if (labels.length > 4) return { kind: 'invalid' };
-  const values = labels.map(inetAtonPart);
-  if (values.some((value) => value === null)) return { kind: 'invalid' };
-  const numbers = values as number[];
-  const last = numbers.pop()!;
-  if (numbers.some((value) => value > 255)) return { kind: 'invalid' };
-  if (last >= 2 ** (8 * (4 - numbers.length))) return { kind: 'invalid' };
-  let address = last;
-  numbers.forEach((value, index) => {
-    address += value * 2 ** (8 * (3 - index));
-  });
-  const bytes = [address >>> 24, (address >>> 16) & 255, (address >>> 8) & 255, address & 255];
-  return { kind: 'address', address: bytes.join('.') };
+
+  /**
+   * Why `address` is refused under the opt-in setting's value: `private` when the opt-in would
+   * allow it, `blocked` when nothing would, `null` when it is allowed.
+   */
+  static refusedRange(
+    address: string,
+    allowPrivate: boolean,
+  ): Exclude<RemoteAddressRange, 'public'> | null {
+    const range = RemoteAddress.classify(address);
+    if (range === 'public' || (range === 'private' && allowPrivate)) return null;
+    return range;
+  }
+
+  /** Whether Studio may connect to `address` under the opt-in setting's value. */
+  static isAllowed(address: string, allowPrivate: boolean): boolean {
+    return RemoteAddress.refusedRange(address, allowPrivate) === null;
+  }
+
+  /**
+   * Normalizes the host of a remote URL. A bracketed IPv6 literal, or a host whose labels are
+   * all numbers, is an address: the numeric forms the system resolver accepts (`inet_aton`:
+   * `127.1`, `0x7f.1`, `2130706433`, `0177.0.0.1`) become dotted decimal, so the policy sees
+   * the address the connection would really use. Anything else is a host name.
+   */
+  static literalOf(host: string): HostLiteral {
+    if (host.startsWith('[') && host.endsWith(']')) {
+      const inner = host.slice(1, -1).toLowerCase();
+      return parseIpv6(inner) === null ? { kind: 'invalid' } : { kind: 'address', address: inner };
+    }
+    const labels = host.split('.');
+    if (!labels.every((label) => NUMERIC_LABEL.test(label))) return { kind: 'name' };
+    if (labels.length > 4) return { kind: 'invalid' };
+    const values = labels.map(inetAtonPart);
+    if (values.some((value) => value === null)) return { kind: 'invalid' };
+    const numbers = values as number[];
+    const last = numbers.pop()!;
+    if (numbers.some((value) => value > 255)) return { kind: 'invalid' };
+    if (last >= 2 ** (8 * (4 - numbers.length))) return { kind: 'invalid' };
+    let address = last;
+    numbers.forEach((value, index) => {
+      address += value * 2 ** (8 * (3 - index));
+    });
+    const bytes = [address >>> 24, (address >>> 16) & 255, (address >>> 8) & 255, address & 255];
+    return { kind: 'address', address: bytes.join('.') };
+  }
 }

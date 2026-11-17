@@ -1,5 +1,3 @@
-export class RepositoryNotVerifiableError extends Error {}
-
 export class Repository {
   private constructor(readonly state: string) {}
 
@@ -8,6 +6,6 @@ export class Repository {
   }
 
   fetch(): void {
-    if (this.state !== 'ready') throw new RepositoryNotVerifiableError();
+    if (this.state !== 'ready') throw new Error('The repository is not ready.');
   }
 }

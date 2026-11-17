@@ -1,3 +1,5 @@
-export function isValidProjectName(name: string): boolean {
-  return name.trim().length > 0;
+export class NamePolicy {
+  isValid(name: string): boolean {
+    return name.trim().length > 0;
+  }
 }

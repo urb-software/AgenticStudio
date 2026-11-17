@@ -1,8 +1,6 @@
-import {
-  NoTrustedHostKeyError,
-  type RepositoryConnection,
-} from '../../../domain/entities/repository.js';
-import { deployKeyComment, generateDeployKey } from '../../../domain/value-objects/ssh-key.js';
+import { NoTrustedHostKeyError } from '../../../domain/value-objects/repository-connection-errors.js';
+import { type RepositoryConnection } from '../../../domain/entities/repository-connection.js';
+import { DeployKey } from '../../../domain/value-objects/deploy-key.js';
 import {
   type KnownHost,
   TrustedHostKeys,
@@ -23,7 +21,7 @@ export class InMemoryDeployKeys implements DeployKeys {
   ) {}
 
   async create(projectName: string): Promise<StoredDeployKey> {
-    const { privateKey, publicKey } = generateDeployKey(deployKeyComment(projectName));
+    const { privateKey, publicKey } = DeployKey.generate(DeployKey.commentFor(projectName));
     return {
       publicKey,
       secretRef: await this.secrets.put(privateKey, { owner: DEPLOY_KEY_SECRET_OWNER }),

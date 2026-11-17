@@ -1,10 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
-import {
-  RepositoryConnection,
-  type RepositoryConnectionSnapshot,
-  RepositoryNotVerifiableError,
-} from '../../../domain/entities/repository.js';
+import { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
+import { type RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
+import { RepositoryNotVerifiableError } from '../../../domain/value-objects/repository-connection-errors.js';
 import {
   PROJECT_REPOSITORY,
   ProjectNotFoundError,

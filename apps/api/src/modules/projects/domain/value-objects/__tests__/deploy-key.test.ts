@@ -1,6 +1,6 @@
-import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
+import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { deployKeyComment, generateDeployKey, hostKeyFingerprint } from '../ssh-key.js';
+import { DeployKey } from '../deploy-key.js';
 
 /** Reads SSH wire-format fields (uint32, and strings as uint32 length + bytes) in order. */
 class WireReader {
@@ -74,9 +74,9 @@ function decodePrivateKey(armoured: string) {
   };
 }
 
-describe('generateDeployKey', () => {
+describe('DeployKey.generate', () => {
   it('generates an ed25519 key pair: OpenSSH private key and a one-line public key', () => {
-    const { privateKey, publicKey } = generateDeployKey('studio-acme-shop');
+    const { privateKey, publicKey } = DeployKey.generate('studio-acme-shop');
 
     const [type, data, comment, ...rest] = publicKey.split(' ');
     expect(type).toBe('ssh-ed25519');
@@ -123,14 +123,14 @@ describe('generateDeployKey', () => {
   });
 
   it('generates a new key pair every time', () => {
-    const a = generateDeployKey('studio-a');
-    const b = generateDeployKey('studio-a');
+    const a = DeployKey.generate('studio-a');
+    const b = DeployKey.generate('studio-a');
     expect(a.publicKey).not.toBe(b.publicKey);
     expect(a.privateKey).not.toBe(b.privateKey);
   });
 });
 
-describe('deployKeyComment', () => {
+describe('DeployKey.commentFor', () => {
   it.each([
     ['Acme Shop', 'studio-Acme-Shop'],
     ['  shop  ', 'studio-shop'],
@@ -140,19 +140,6 @@ describe('deployKeyComment', () => {
     ['ü', 'studio-project'],
     ['x'.repeat(100), `studio-${'x'.repeat(64)}`],
   ])('turns %j into %j', (name, comment) => {
-    expect(deployKeyComment(name)).toBe(comment);
-  });
-});
-
-describe('hostKeyFingerprint', () => {
-  it('is SHA256 of the key blob in unpadded base64, as ssh-keygen -l prints it', () => {
-    const { publicKey } = generateDeployKey('host');
-    const [type, data] = publicKey.split(' ') as [string, string];
-    const expected = createHash('sha256')
-      .update(Buffer.from(data, 'base64'))
-      .digest('base64')
-      .replace(/=+$/, '');
-    expect(hostKeyFingerprint(`${type} ${data}`)).toBe(`SHA256:${expected}`);
-    expect(hostKeyFingerprint(`${type} ${data}`)).toMatch(/^SHA256:[A-Za-z0-9+/]{43}$/);
+    expect(DeployKey.commentFor(name)).toBe(comment);
   });
 });

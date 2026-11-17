@@ -5,8 +5,6 @@ export interface ProjectSnapshot {
   readonly name: string;
 }
 
-export class ProjectNotFoundError extends Error {}
-
 export class Project {
   private constructor(
     readonly id: ProjectId,

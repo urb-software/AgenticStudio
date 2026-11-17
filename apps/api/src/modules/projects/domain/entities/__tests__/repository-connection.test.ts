@@ -1,23 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { generateDeployKey, hostKeyFingerprint } from '../../value-objects/ssh-key.js';
+import { DeployKey } from '../../value-objects/deploy-key.js';
+import { HostKey } from '../../value-objects/host-key.js';
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
+import { type ConnectAttempt } from '../../value-objects/repository-connection-facts.js';
 import {
-  type ConnectAttempt,
   HostKeyFingerprintMismatchError,
   NoUsableCloneError,
   RepositoryAlreadyConnectedError,
   RepositoryBusyError,
-  RepositoryConnection,
   RepositoryNotVerifiableError,
-  type StoredRepositoryConnection,
-} from '../repository.js';
+} from '../../value-objects/repository-connection-errors.js';
+import { RepositoryConnection } from '../repository-connection.js';
+import { type StoredRepositoryConnection } from '../../value-objects/repository-connection-snapshot.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const SHA = 'a'.repeat(40);
 const NEW_SHA = 'b'.repeat(40);
 const AT = new Date('2026-11-13T10:00:00.000Z');
 const FAILURE = RepositoryFailure.of('host_unreachable', 'fatal: x');
-const hostKey = (): string => generateDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 const DEPLOY_KEY = { publicKey: 'ssh-ed25519 AAAA studio', secretRef: 'secret-1' };
 
 const attempt = (overrides: Partial<ConnectAttempt> = {}): ConnectAttempt => ({
@@ -97,7 +98,7 @@ describe('RepositoryConnection', () => {
         publicKey: DEPLOY_KEY.publicKey,
         deployKeySecret: DEPLOY_KEY.secretRef,
         pinnedHostKey: pinned,
-        hostKeyFingerprint: hostKeyFingerprint(pinned),
+        hostKeyFingerprint: HostKey.of(pinned).fingerprint,
       });
     });
 
@@ -145,10 +146,10 @@ describe('RepositoryConnection', () => {
         sshStored({ state: 'awaiting_host_key', pendingHostKey: pending, pinnedHostKey: pinned }),
       );
 
-      expect(awaiting.hostKeyFingerprint).toBe(hostKeyFingerprint(pending));
+      expect(awaiting.hostKeyFingerprint).toBe(HostKey.of(pending).fingerprint);
       expect(ready().hasClone).toBe(true);
       expect(restore(sshStored({ pinnedHostKey: pinned })).hostKeyFingerprint).toBe(
-        hostKeyFingerprint(pinned),
+        HostKey.of(pinned).fingerprint,
       );
     });
 
@@ -268,7 +269,7 @@ describe('RepositoryConnection', () => {
         state: 'awaiting_host_key',
         pendingHostKey: key,
         failure: null,
-        hostKeyFingerprint: hostKeyFingerprint(key),
+        hostKeyFingerprint: HostKey.of(key).fingerprint,
       });
     });
 
@@ -297,7 +298,7 @@ describe('RepositoryConnection', () => {
 
       it('pins exactly the key the operator saw, and starts the clone', () => {
         const repository = awaitingHostKey(pending);
-        const confirmed = repository.confirmedHostKey(hostKeyFingerprint(pending));
+        const confirmed = repository.confirmedHostKey(HostKey.of(pending).fingerprint);
 
         repository.startVerifiedClone({ pendingHostKey: confirmed });
 
@@ -310,7 +311,7 @@ describe('RepositoryConnection', () => {
 
       it('refuses another fingerprint, and a confirmation while no host key awaits it', () => {
         expect(() =>
-          awaitingHostKey(pending).confirmedHostKey(hostKeyFingerprint(hostKey())),
+          awaitingHostKey(pending).confirmedHostKey(HostKey.of(hostKey()).fingerprint),
         ).toThrow(HostKeyFingerprintMismatchError);
         expect(() => awaitingKey().confirmedHostKey('SHA256:x')).toThrow(
           RepositoryNotVerifiableError,

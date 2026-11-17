@@ -1,4 +1,5 @@
-import { ProjectNotFoundError, type ProjectSnapshot } from '../../../../domain/entities/project.js';
+import type { ProjectSnapshot } from '../../../../domain/entities/project.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 export const notFound = ProjectNotFoundError;
 

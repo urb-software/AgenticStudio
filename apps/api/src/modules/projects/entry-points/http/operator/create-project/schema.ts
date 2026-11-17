@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import {
-  normalizeProjectName,
+  ProjectName,
   PROJECT_NAME_MAX_LENGTH,
   PROJECT_NAME_MIN_LENGTH,
 } from '../../../../domain/value-objects/project-name.js';
@@ -17,7 +17,7 @@ export const createProjectRequestSchema = z
   .strictObject({
     name: z
       .string()
-      .overwrite(normalizeProjectName)
+      .overwrite(ProjectName.normalize)
       .min(PROJECT_NAME_MIN_LENGTH, { error: 'Enter a project name.' })
       .max(PROJECT_NAME_MAX_LENGTH, {
         error: `Use at most ${PROJECT_NAME_MAX_LENGTH} characters.`,

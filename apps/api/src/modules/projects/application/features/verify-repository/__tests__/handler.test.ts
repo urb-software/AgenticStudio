@@ -2,14 +2,15 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queue.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
-import { RepositoryNotVerifiableError } from '../../../../domain/entities/repository.js';
+import { RepositoryNotVerifiableError } from '../../../../domain/value-objects/repository-connection-errors.js';
 import {
   GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
 } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
-import { generateDeployKey, hostKeyFingerprint } from '../../../../domain/value-objects/ssh-key.js';
+import { DeployKey } from '../../../../domain/value-objects/deploy-key.js';
+import { HostKey } from '../../../../domain/value-objects/host-key.js';
 import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
@@ -17,12 +18,12 @@ import { NOT_STARTED_DETAIL } from '../../../../domain/value-objects/repository-
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { VerifyRepositoryHandler } from '../handler.js';
-import { HostKeyFingerprintMismatchError } from '../../../../domain/entities/repository.js';
+import { HostKeyFingerprintMismatchError } from '../../../../domain/value-objects/repository-connection-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const TRUSTED_URL = 'git@github.com:acme/shop.git';
 const UNLISTED_URL = 'ssh://git@git.example.com:2222/acme/shop.git';
-const hostKey = (): string => generateDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 const GITHUB_KEY = hostKey();
 
 describe('VerifyRepositoryHandler', () => {
@@ -112,7 +113,7 @@ describe('VerifyRepositoryHandler', () => {
         state: 'awaiting_host_key',
         pendingHostKey: presented,
         pinnedHostKey: null,
-        hostKeyFingerprint: hostKeyFingerprint(presented),
+        hostKeyFingerprint: HostKey.of(presented).fingerprint,
       });
       expect(jobs.started).toEqual([]);
     });
@@ -125,14 +126,14 @@ describe('VerifyRepositoryHandler', () => {
 
       const repository = await handler.execute({
         projectId: PROJECT,
-        acceptHostKeyFingerprint: hostKeyFingerprint(presented),
+        acceptHostKeyFingerprint: HostKey.of(presented).fingerprint,
       });
 
       expect(repository).toMatchObject({
         state: 'connecting',
         pinnedHostKey: presented,
         pendingHostKey: null,
-        hostKeyFingerprint: hostKeyFingerprint(presented),
+        hostKeyFingerprint: HostKey.of(presented).fingerprint,
       });
       expect(jobs.started).toEqual([[PROJECT, 'clone']]);
     });
@@ -146,7 +147,7 @@ describe('VerifyRepositoryHandler', () => {
       await expect(
         handler.execute({
           projectId: PROJECT,
-          acceptHostKeyFingerprint: hostKeyFingerprint(hostKey()),
+          acceptHostKeyFingerprint: HostKey.of(hostKey()).fingerprint,
         }),
       ).rejects.toBeInstanceOf(HostKeyFingerprintMismatchError);
       expect(await stored()).toMatchObject({
@@ -166,7 +167,7 @@ describe('VerifyRepositoryHandler', () => {
       await expect(
         handler.execute({
           projectId: PROJECT,
-          acceptHostKeyFingerprint: hostKeyFingerprint(presented).toLowerCase(),
+          acceptHostKeyFingerprint: HostKey.of(presented).fingerprint.toLowerCase(),
         }),
       ).rejects.toBeInstanceOf(HostKeyFingerprintMismatchError);
     });
@@ -191,7 +192,7 @@ describe('VerifyRepositoryHandler', () => {
       await handler.execute({ projectId: PROJECT });
       await handler.execute({
         projectId: PROJECT,
-        acceptHostKeyFingerprint: hostKeyFingerprint(presented),
+        acceptHostKeyFingerprint: HostKey.of(presented).fingerprint,
       });
       await connections.change(PROJECT, (r) => {
         r.failClone({

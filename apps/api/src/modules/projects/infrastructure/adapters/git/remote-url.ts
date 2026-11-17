@@ -1,4 +1,4 @@
-import { hostLiteral } from '../../../domain/value-objects/remote-address.js';
+import { RemoteAddress } from '../../../domain/value-objects/remote-address.js';
 import { GitRequestRejectedError } from '../../../application/ports/repository-git.js';
 
 /** Transports a remote URL may use. Production allows exactly `ssh` and `https`. */
@@ -30,7 +30,7 @@ function checkHost(host: string): void {
     reject('the host is not a valid host name');
   }
   // A numeric host the resolver would read some other way than intended (Issue #69).
-  if (hostLiteral(host).kind === 'invalid') reject('the host is not a valid host name');
+  if (RemoteAddress.literalOf(host).kind === 'invalid') reject('the host is not a valid host name');
 }
 
 function checkPath(path: string): void {

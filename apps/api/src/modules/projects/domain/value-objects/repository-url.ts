@@ -1,4 +1,4 @@
-import { hostLiteral, REFUSED_RANGE_REASON, refusedRange } from './remote-address.js';
+import { REFUSED_RANGE_REASON, RemoteAddress } from './remote-address.js';
 
 /** Longest accepted Repository URL, in characters (the Git adapter's own limit). */
 export const REPOSITORY_URL_MAX_LENGTH = 2048;
@@ -57,10 +57,10 @@ export interface RepositoryUrlOptions {
  * adapter once resolved.
  */
 function checkAddress(host: string, policy: AddressPolicy | undefined, example: string): void {
-  const literal = hostLiteral(host);
+  const literal = RemoteAddress.literalOf(host);
   if (literal.kind === 'invalid') invalid(`Enter a valid host name, ${example}.`);
   if (!policy || literal.kind !== 'address') return;
-  const range = refusedRange(literal.address, policy.allowPrivate);
+  const range = RemoteAddress.refusedRange(literal.address, policy.allowPrivate);
   if (range) invalid(`This address is not allowed: ${REFUSED_RANGE_REASON[range]}`);
 }
 
@@ -77,37 +77,6 @@ function trimSlashes(path: string): string {
 function normalizePath(path: string): string {
   const trimmed = trimSlashes(path);
   return trimmed.toLowerCase().endsWith('.git') ? trimSlashes(trimmed.slice(0, -4)) : trimmed;
-}
-
-/**
- * The identity of a remote (Issue #60 clarification 6): host (lower-cased) plus repository
- * path, without the scheme, user, default port, trailing `/` or `.git`. So the `https://`,
- * `ssh://git@` and scp-like (`git@host:owner/repo.git`) forms of one repository are the same
- * remote. A non-default port stays (`host:8443/owner/repo`): two servers on one host are
- * different remotes. The path keeps its case. Returns `null` for input that names no host
- * and path.
- */
-export function remoteIdentity(input: string): string | null {
-  const scp = SCHEME.test(input) ? null : SCP_LIKE.exec(input);
-  if (scp) {
-    const [, , host = '', path = ''] = scp;
-    const normalized = normalizePath(path);
-    return host && normalized ? `${host.toLowerCase()}/${normalized}` : null;
-  }
-  let url: URL;
-  try {
-    url = new URL(input);
-  } catch {
-    return null;
-  }
-  const path = normalizePath(url.pathname);
-  if (!path) return null;
-  // A file URL (test-only fixture remotes) has no host: its identity is the path.
-  if (url.protocol === 'file:') return `/${path}`;
-  // The URL parser already drops https' default 443; ssh's default 22 is dropped here.
-  const port =
-    url.port === '' || (url.port === '22' && SSH_SCHEMES.has(url.protocol)) ? '' : `:${url.port}`;
-  return `${url.hostname.toLowerCase()}${port}/${path}`;
 }
 
 /** Where an SSH URL's Git host listens: its host (lower case) and port (22 by default). */
@@ -128,7 +97,7 @@ function parseScpLike(
   if (path.split('/').some((segment) => segment.startsWith('-'))) {
     invalid('A path segment must not start with "-".');
   }
-  if (!remoteIdentity(input)) invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
+  if (!RepositoryUrl.identityOf(input)) invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
   return { host: host.toLowerCase(), port: 22 };
 }
 
@@ -140,10 +109,50 @@ function parseScpLike(
  * field-error messages.
  */
 export class RepositoryUrl {
+  /**
+   * The identity of a remote (Issue #60 clarification 6): host (lower-cased) plus repository
+   * path, without the scheme, user, default port, trailing `/` or `.git`. So the `https://`,
+   * `ssh://git@` and scp-like (`git@host:owner/repo.git`) forms of one repository are the same
+   * remote. A non-default port stays (`host:8443/owner/repo`): two servers on one host are
+   * different remotes. The path keeps its case. Returns `null` for input that names no host
+   * and path.
+   */
+  static identityOf(input: string): string | null {
+    const scp = SCHEME.test(input) ? null : SCP_LIKE.exec(input);
+    if (scp) {
+      const [, , host = '', path = ''] = scp;
+      const normalized = normalizePath(path);
+      return host && normalized ? `${host.toLowerCase()}/${normalized}` : null;
+    }
+    let url: URL;
+    try {
+      url = new URL(input);
+    } catch {
+      return null;
+    }
+    const path = normalizePath(url.pathname);
+    if (!path) return null;
+    // A file URL (test-only fixture remotes) has no host: its identity is the path.
+    if (url.protocol === 'file:') return `/${path}`;
+    // The URL parser already drops https' default 443; ssh's default 22 is dropped here.
+    const port =
+      url.port === '' || (url.port === '22' && SSH_SCHEMES.has(url.protocol)) ? '' : `:${url.port}`;
+    return `${url.hostname.toLowerCase()}${port}/${path}`;
+  }
+
+  /** The Git host of a stored Repository URL, or `null` when it is not an SSH URL. */
+  static sshRemoteOf(url: string): SshRemote | null {
+    try {
+      return RepositoryUrl.parse(url).ssh;
+    } catch {
+      return null;
+    }
+  }
+
   private constructor(
     /** The URL as entered (trimmed); what Git is given and what the operator sees. */
     readonly value: string,
-    /** {@link remoteIdentity}: what makes two URLs the same remote. */
+    /** {@link RepositoryUrl.identityOf}: what makes two URLs the same remote. */
     readonly identity: string,
     /** Set exactly for an SSH URL. */
     readonly ssh: SshRemote | null = null,
@@ -164,7 +173,7 @@ export class RepositoryUrl {
       const scp = SCP_LIKE.exec(input);
       if (scp) {
         const ssh = parseScpLike(input, scp, options.addressPolicy);
-        return new RepositoryUrl(input, remoteIdentity(input)!, ssh);
+        return new RepositoryUrl(input, RepositoryUrl.identityOf(input)!, ssh);
       }
       if (LOCAL_PATH.test(input)) {
         invalid(`Local paths are not allowed. Enter an https:// URL, ${EXAMPLE}.`);
@@ -206,7 +215,7 @@ export class RepositoryUrl {
     if (url.pathname.split('/').some((segment) => segment.startsWith('-'))) {
       invalid('A path segment must not start with "-".');
     }
-    const identity = remoteIdentity(input);
+    const identity = RepositoryUrl.identityOf(input);
     if (!identity) invalid(`Enter the full repository URL, ${EXAMPLE}.`);
     return new RepositoryUrl(input, identity);
   }
@@ -237,20 +246,11 @@ export class RepositoryUrl {
     if (url.pathname.split('/').some((segment) => segment.startsWith('-'))) {
       invalid('A path segment must not start with "-".');
     }
-    const identity = remoteIdentity(input);
+    const identity = RepositoryUrl.identityOf(input);
     if (!identity) invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
     return new RepositoryUrl(input, identity, {
       host: url.hostname.toLowerCase(),
       port: url.port === '' ? 22 : Number(url.port),
     });
-  }
-}
-
-/** The Git host of a stored Repository URL, or `null` when it is not an SSH URL. */
-export function sshRemoteOf(url: string): SshRemote | null {
-  try {
-    return RepositoryUrl.parse(url).ssh;
-  } catch {
-    return null;
   }
 }

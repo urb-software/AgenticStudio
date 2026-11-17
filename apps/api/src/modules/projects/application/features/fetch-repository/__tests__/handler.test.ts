@@ -5,8 +5,11 @@ import {
 } from '../../../../../../platform/queue/job-queue.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
-import { NoUsableCloneError, RepositoryBusyError } from '../../../../domain/entities/repository.js';
-import { RepositoryConnection } from '../../../../domain/entities/repository.js';
+import {
+  NoUsableCloneError,
+  RepositoryBusyError,
+} from '../../../../domain/value-objects/repository-connection-errors.js';
+import { RepositoryConnection } from '../../../../domain/entities/repository-connection.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../ports/repository-git.js';

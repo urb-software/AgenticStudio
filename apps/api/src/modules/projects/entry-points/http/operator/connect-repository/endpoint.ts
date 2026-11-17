@@ -19,7 +19,7 @@ import {
   unsupportedPlatform,
 } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
-import { RepositoryAlreadyConnectedError } from '../../../../domain/entities/repository.js';
+import { RepositoryAlreadyConnectedError } from '../../../../domain/value-objects/repository-connection-errors.js';
 import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { RemoteAlreadyConnectedError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';

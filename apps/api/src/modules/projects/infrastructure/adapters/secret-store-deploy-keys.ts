@@ -8,8 +8,8 @@ import {
   type StoredDeployKey,
 } from '../../application/ports/deploy-keys.js';
 import type { SshCredentials } from '../../application/ports/repository-git.js';
-import { NoTrustedHostKeyError } from '../../domain/entities/repository.js';
-import { deployKeyComment, generateDeployKey } from '../../domain/value-objects/ssh-key.js';
+import { NoTrustedHostKeyError } from '../../domain/value-objects/repository-connection-errors.js';
+import { DeployKey } from '../../domain/value-objects/deploy-key.js';
 import { TrustedHostKeys } from '../../domain/value-objects/trusted-host-keys.js';
 
 /** DI token for {@link SshTrustSettings}. */
@@ -29,7 +29,7 @@ export class SecretStoreDeployKeys implements DeployKeys {
   ) {}
 
   async create(projectName: string): Promise<StoredDeployKey> {
-    const { privateKey, publicKey } = generateDeployKey(deployKeyComment(projectName));
+    const { privateKey, publicKey } = DeployKey.generate(DeployKey.commentFor(projectName));
     return {
       publicKey,
       secretRef: await this.secrets.put(privateKey, { owner: DEPLOY_KEY_SECRET_OWNER }),
