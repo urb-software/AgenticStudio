@@ -15,7 +15,6 @@ import {
   type RunLookupRepository,
 } from '../../../domain/repositories/run-lookup-repository.js';
 import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
-import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
@@ -91,28 +90,23 @@ export class FollowUpRunHandler {
       });
     const refreshed = (await this.runs.findById(queued.id)) ?? queued;
     const viewedAt = this.clock.now();
-    const retention = refreshed.retentionFacts();
     const over =
-      this.retention.isLimited(retention) &&
+      this.retention.isLimited(refreshed.retentionFacts()) &&
       this.retention
         .overLimit(await this.runs.findLimitedRuns([refreshed.projectId]))
         .has(refreshed.id);
-    const latest = this.workers.latest();
-    const eligibility = refreshed.followUpAvailability(
+    return this.retention.runView(
+      refreshed,
       {
         holderLastSeen:
           refreshed.lastClaimedBy === null
             ? undefined
             : this.workers.lastSeen(refreshed.lastClaimedBy),
-        latest,
+        latest: this.workers.latest(),
       },
       viewedAt,
       this.lease.seconds,
+      over,
     );
-    return {
-      run: refreshed,
-      followUp: this.retention.followUpView(eligibility, retention, over, viewedAt),
-      workerConnected: WorkerStatus.isAnyConnected(latest, viewedAt, this.lease.seconds),
-    };
   }
 }

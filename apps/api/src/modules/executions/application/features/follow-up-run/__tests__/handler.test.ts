@@ -7,10 +7,7 @@ import {
 import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import {
-  type RecordedWorkerStatus,
-  WorkerStatus,
-} from '../../../../domain/value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { FollowUpRunHandler } from '../handler.js';
@@ -45,7 +42,7 @@ const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
 const T0 = new Date('2026-11-16T12:00:00.000Z');
 const T1 = new Date('2026-11-16T12:30:00.000Z');
 const LEASE = { seconds: 60 };
-/** What the single-Run answers add to a Run, put together as the handlers do it. */
+/** What the single-Run answers add to a Run, with the facts fetched from the fake store. */
 const runView = (
   run: Run,
   workers: WorkerStatusStore,
@@ -53,27 +50,17 @@ const runView = (
   leaseSeconds: number,
   retention: RetentionPolicy,
   overLimit = false,
-) => {
-  const latest = workers.latest();
-  return {
+) =>
+  retention.runView(
     run,
-    followUp: retention.followUpView(
-      run.followUpAvailability(
-        {
-          holderLastSeen:
-            run.lastClaimedBy === null ? undefined : workers.lastSeen(run.lastClaimedBy),
-          latest,
-        },
-        now,
-        leaseSeconds,
-      ),
-      run.retentionFacts(),
-      overLimit,
-      now,
-    ),
-    workerConnected: WorkerStatus.isAnyConnected(latest, now, leaseSeconds),
-  };
-};
+    {
+      holderLastSeen: run.lastClaimedBy === null ? undefined : workers.lastSeen(run.lastClaimedBy),
+      latest: workers.latest(),
+    },
+    now,
+    leaseSeconds,
+    overLimit,
+  );
 const RETENTION = RetentionPolicy.of({
   days: 7,
   maxPerProject: 10,

@@ -3,7 +3,10 @@ import {
   isFinal,
   isPullRequestEnded,
   type RetentionFacts,
+  type Run,
+  type WorkerFacts,
 } from '../entities/run.js';
+import { WorkerStatus } from './worker-status.js';
 
 /**
  * The periods and limits of the `STUDIO_RETENTION_*` settings (Issue #143), as plain values to
@@ -109,6 +112,32 @@ export class RetentionPolicy {
       for (const run of projectRuns.slice(this.maxPerProject)) over.add(run.runId);
     }
     return over;
+  }
+
+  /**
+   * What the single-Run answers (the Run page, the refresh, the Follow-up command and the
+   * preparation of failing checks) add to a Run: whether it can take a Follow-up now and until
+   * when it stays open to one, and whether any agent worker is connected (Issues #141, #142,
+   * #143). The handler fetched `workers` (the holder's last report and the latest report) and
+   * `overLimit` (the per-Project limit removes the Run).
+   */
+  runView(
+    run: Run,
+    workers: WorkerFacts,
+    now: Date,
+    leaseSeconds: number,
+    overLimit: boolean,
+  ): { run: Run; followUp: FollowUpView; workerConnected: boolean } {
+    return {
+      run,
+      followUp: this.followUpView(
+        run.followUpAvailability(workers, now, leaseSeconds),
+        run.retentionFacts(),
+        overLimit,
+        now,
+      ),
+      workerConnected: WorkerStatus.isAnyConnected(workers.latest, now, leaseSeconds),
+    };
   }
 
   /**

@@ -14,7 +14,6 @@ import {
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
-import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -61,24 +60,19 @@ export class PrepareFailingChecksHandler {
     const outcome = await this.lookups.request(found.id, 'failing_check_logs', now);
     if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     const run = (await this.runs.findById(found.id)) ?? found;
-    const facts = run.retentionFacts();
     const over =
-      this.retention.isLimited(facts) &&
+      this.retention.isLimited(run.retentionFacts()) &&
       this.retention.overLimit(await this.runs.findLimitedRuns([run.projectId])).has(run.id);
-    const latest = this.workers.latest();
-    const eligibility = run.followUpAvailability(
+    return this.retention.runView(
+      run,
       {
         holderLastSeen:
           run.lastClaimedBy === null ? undefined : this.workers.lastSeen(run.lastClaimedBy),
-        latest,
+        latest: this.workers.latest(),
       },
       now,
       this.lease.seconds,
+      over,
     );
-    return {
-      run,
-      followUp: this.retention.followUpView(eligibility, facts, over, now),
-      workerConnected: WorkerStatus.isAnyConnected(latest, now, this.lease.seconds),
-    };
   }
 }

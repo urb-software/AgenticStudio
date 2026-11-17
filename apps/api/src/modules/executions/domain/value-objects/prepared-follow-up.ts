@@ -81,11 +81,20 @@ function section(entry: Entry, excerpt: string | undefined, note = entry.note): 
  * One per Run; a new preparation replaces it.
  */
 export class PreparedFollowUp {
-  constructor(
+  private constructor(
     readonly source: FollowUpSource,
     readonly text: string,
     readonly items: PreparedFollowUpItem[],
   ) {}
+
+  /** A stored prepared Follow-up, read back by a repository. */
+  static restore(data: {
+    source: FollowUpSource;
+    text: string;
+    items: PreparedFollowUpItem[];
+  }): PreparedFollowUp {
+    return new PreparedFollowUp(data.source, data.text, data.items);
+  }
 
   /**
    * The Follow-up prepared from the failed checks a worker read (Issue #145): an introduction, then
@@ -156,6 +165,6 @@ export class PreparedFollowUp {
     const text =
       [intro, ...items.map((item) => item.section)].join('\n\n') +
       closing(entries.length - fitting.length);
-    return new PreparedFollowUp(SOURCE, text, items);
+    return PreparedFollowUp.restore({ source: SOURCE, text, items });
   }
 }

@@ -1,8 +1,9 @@
 /**
  * Redaction of Run event text before it is stored (Issue #99, security.md §3), the one place
- * it is written, as a value object built from the Run's known secret values. **Best effort:** it catches the Run's known secret values, common token
- * shapes and credential-bearing URLs, never everything an agent might print. The log is
- * visible to the operator only. Over-masking is acceptable; every pattern runs in linear time.
+ * it is written, as a value object built from the Run's known secret values. **Best effort:**
+ * it catches the Run's known secret values, common token shapes and credential-bearing URLs,
+ * never everything an agent might print. The log is visible to the operator only. Over-masking is
+ * acceptable; every pattern runs in linear time.
  */
 
 /** What a redacted value is replaced with. */

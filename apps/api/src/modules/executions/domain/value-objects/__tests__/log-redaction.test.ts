@@ -8,7 +8,7 @@ const repeat = (alphabet: string, length: number) =>
   Array.from({ length }, (_, i) => alphabet[i % alphabet.length]).join('');
 const ALNUM = 'aB3dE5gH7jK9mN1pQ2rS4tU6vW8xY0z';
 
-describe('redactLogText', () => {
+describe('LogRedaction.text', () => {
   it('uses the agreed replacement', () => {
     expect(REDACTED).toBe('••••••[redacted]');
   });
