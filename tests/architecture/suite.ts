@@ -44,6 +44,8 @@ export const QUALITY_TABLE = [
   { row: '`contracts/` holds `index.ts` and `events/` only', expected: 'PASS', gate: 'api' },
   { row: '`contracts/` holds another file', expected: 'FAIL', gate: 'api' },
   { row: '`contracts/` holds another directory', expected: 'FAIL', gate: 'api' },
+  { row: 'A production file of a module imports a test file', expected: 'FAIL', gate: 'api' },
+  { row: 'A test file imports a test helper', expected: 'PASS', gate: 'api' },
   { row: 'A feature imports another feature of its module', expected: 'FAIL', gate: 'api' },
   { row: 'A feature imports a port, the domain or its own files', expected: 'PASS', gate: 'api' },
   {

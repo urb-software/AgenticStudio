@@ -12,6 +12,7 @@ export const LAYOUT_RULES = [
   'api-application-no-http-decorators',
   'api-entry-points-no-ports-or-infrastructure',
   'api-features-no-feature-imports',
+  'api-production-no-test-imports',
   'api-contracts-only-index-and-events',
   'api-no-shared-common-utils-helpers-directory',
 ];
@@ -70,14 +71,14 @@ const HTTP_DECORATORS = new Set([
 ]);
 
 /**
- * Modules in which no feature folder imports another feature folder (backend.md §3 rule 1).
+ * Modules in which no feature folder imports another feature folder (backend.md Â§3 rule 1).
  * Issue #166 adds `executions`; the check is by path pattern, so #164 adds `projects` and #170
  * every module by listing it here (or dropping the list).
  */
 const FEATURE_ISOLATED_MODULES = new Set(['executions']);
 
 const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
-/** `src/modules/<module>/application/features/<feature>/…` (not the tests of a feature). */
+/** `src/modules/<module>/application/features/<feature>/â€¦` (not the tests of a feature). */
 const FEATURE_FILE = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\/(?!__tests__\/)/;
 const FEATURE_PATH = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\//;
 const ENTRY_POINT_FILE = /^src\/modules\/[^/]+\/entry-points\//;
@@ -102,6 +103,7 @@ export function layoutViolations(baseDir: string): Violation[] {
       .filter((path) => ENTRY_POINT_FILE.test(path))
       .flatMap((path) => entryPointViolations(baseDir, path)),
     ...files.flatMap((path) => featureImportViolations(baseDir, path)),
+    ...files.flatMap((path) => testImportViolations(baseDir, path)),
     ...contractsViolations(baseDir),
     ...directoryViolations(baseDir),
   ];
@@ -214,6 +216,23 @@ function featureImportViolations(baseDir: string, path: string): Violation[] {
     const other = to ? FEATURE_PATH.exec(to) : null;
     if (!to || !other || other[1] !== own[1] || other[2] === own[2]) return [];
     return [{ rule: 'api-features-no-feature-imports', from: path, to }];
+  });
+}
+
+/** A test file: inside a `__tests__/` directory, or named `*.test.ts(x)`. */
+const TEST_FILE = /(^|\/)__tests__\/|\.test\.tsx?$/;
+
+/**
+ * No production file of a module imports a test file (a file in `__tests__/` or `*.test.ts`),
+ * so test helpers and fakes never reach the application. Tests may import tests.
+ */
+function testImportViolations(baseDir: string, path: string): Violation[] {
+  if (TEST_FILE.test(path)) return [];
+  return moduleImports(baseDir, path).flatMap((entry) => {
+    const to = target(path, entry.specifier);
+    return to && TEST_FILE.test(to)
+      ? [{ rule: 'api-production-no-test-imports', from: path, to }]
+      : [];
   });
 }
 

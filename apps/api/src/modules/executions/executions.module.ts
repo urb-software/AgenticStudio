@@ -71,7 +71,11 @@ import {
   DailyPullRequestRefreshScheduler,
   type DailyPullRequestRefreshSettings,
 } from './entry-points/schedulers/daily-pull-request-refresh.js';
-import { RunSweepsScheduler } from './entry-points/schedulers/run-sweeps.js';
+import {
+  RUN_SWEEPS_SETTINGS,
+  RunSweepsScheduler,
+  type RunSweepsSettings,
+} from './entry-points/schedulers/run-sweeps.js';
 import { ReleaseFinalSnapshotsHandler } from './application/features/release-final-snapshots/handler.js';
 import { RenewHeldRunLeasesHandler } from './application/features/renew-held-run-leases/handler.js';
 import { TimeOutOverdueStepsHandler } from './application/features/time-out-overdue-steps/handler.js';
@@ -281,6 +285,14 @@ export class ExecutionsModule {
           provide: RUN_SNAPSHOT_SETTINGS,
           useFactory: (config: AppConfig): RunSnapshotSettings => ({
             retentionDays: config.runSnapshotRetentionDays,
+          }),
+          inject: [APP_CONFIG],
+        },
+        {
+          provide: RUN_SWEEPS_SETTINGS,
+          // Half the lease, and at most every 30 s.
+          useFactory: (config: AppConfig): RunSweepsSettings => ({
+            intervalMs: Math.min(30_000, (config.workerLeaseSeconds * 1000) / 2),
           }),
           inject: [APP_CONFIG],
         },

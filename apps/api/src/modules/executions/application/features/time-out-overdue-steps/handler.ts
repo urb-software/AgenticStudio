@@ -7,8 +7,8 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
  * Command (review of #121): Studio's backstop for the step time limit. A `running` Run whose
  * current step has run longer than its `stepMinutes` plus {@link STEP_TIME_LIMIT_GRACE_MINUTES}
  * is `timed_out`. The agent worker stays the primary enforcer (it stops the step at
- * `stepMinutes`); this ends the Run when a live worker failed to. Run on the sweep interval,
- * and before every claim (`claim-run`). Returns how many Runs timed out.
+ * `stepMinutes`); this ends the Run when a live worker failed to. Run on the sweep interval
+ * (`claim-run` repeats the same call before every claim). Returns how many Runs timed out.
  */
 @Injectable()
 export class TimeOutOverdueStepsHandler {

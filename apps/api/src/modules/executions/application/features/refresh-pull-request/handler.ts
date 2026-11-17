@@ -15,7 +15,7 @@ import {
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { type FollowUpView, runView } from '../../../domain/services/follow-up-context.js';
-import { isOverLimit } from '../../../domain/services/retention.js';
+import { isLimited, overLimit, retentionFactsOf } from '../../../domain/services/retention.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -59,7 +59,11 @@ export class RefreshPullRequestHandler {
       now,
       this.lease.seconds,
       this.retention,
-      await isOverLimit(this.runs, run, this.retention),
+      isLimited(retentionFactsOf(run)) &&
+        overLimit(
+          await this.runs.findLimitedRuns([run.projectId]),
+          this.retention.maxPerProject,
+        ).has(run.id),
     );
   }
 }

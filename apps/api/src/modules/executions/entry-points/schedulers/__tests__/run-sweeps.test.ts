@@ -43,6 +43,7 @@ describe('RunSweepsScheduler at API start', () => {
         new CancelLongWaitingRunsHandler(runs, clock),
         new RenewHeldRunLeasesHandler(runs, clock, LEASE),
         new ReleaseFinalSnapshotsHandler(NO_SNAPSHOTS),
+        { intervalMs: 30_000 },
       );
       await schedule.onApplicationBootstrap();
       schedule.onApplicationShutdown();
@@ -95,6 +96,7 @@ describe('RunSweepsScheduler tick', () => {
       sweep('long-waits', 0) as unknown as CancelLongWaitingRunsHandler,
       sweep('leases', 0) as unknown as RenewHeldRunLeasesHandler,
       sweep('snapshots', undefined) as unknown as ReleaseFinalSnapshotsHandler,
+      { intervalMs: 30_000 },
     );
 
     await scheduler.tick();
@@ -117,6 +119,7 @@ describe('RunSweepsScheduler tick', () => {
       idle as unknown as CancelLongWaitingRunsHandler,
       idle as unknown as RenewHeldRunLeasesHandler,
       idle as unknown as ReleaseFinalSnapshotsHandler,
+      { intervalMs: 30_000 },
     );
 
     await scheduler.tick();

@@ -307,6 +307,26 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: 'A test of a feature imports another feature (tests are not checked)',
   },
   {
+    fixture: 'production-file-imports-test-helper',
+    expected: ['api-production-no-test-imports'],
+    qualityRow: 'A production file of a module imports a test file',
+  },
+  {
+    fixture: 'production-file-imports-test-file',
+    expected: ['api-production-no-test-imports'],
+    qualityRow: 'A production file of a module imports a test file',
+  },
+  {
+    fixture: 'production-file-reexports-test-helper',
+    expected: ['api-production-no-test-imports'],
+    qualityRow: 'A production file of a module imports a test file',
+  },
+  {
+    fixture: 'test-file-imports-test-helper',
+    expected: [],
+    qualityRow: 'A test file imports a test helper',
+  },
+  {
     fixture: 'entry-point-imports-several-features',
     expected: [],
     qualityRow: '`entry-points/` imports a handler',

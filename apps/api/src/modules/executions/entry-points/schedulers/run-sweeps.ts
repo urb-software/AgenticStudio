@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   type OnApplicationBootstrap,
@@ -10,6 +11,14 @@ import { ReleaseFinalSnapshotsHandler } from '../../application/features/release
 import { RenewHeldRunLeasesHandler } from '../../application/features/renew-held-run-leases/handler.js';
 import { SweepLostWorkersHandler } from '../../application/features/sweep-lost-workers/handler.js';
 import { TimeOutOverdueStepsHandler } from '../../application/features/time-out-overdue-steps/handler.js';
+
+/** DI token of the {@link RunSweepsSettings}. */
+export const RUN_SWEEPS_SETTINGS = Symbol('RUN_SWEEPS_SETTINGS');
+
+/** How long between two sweeps (the module derives it from the worker lease). */
+export interface RunSweepsSettings {
+  intervalMs: number;
+}
 
 /**
  * Runs the sweeps on an interval once the app has started (Issue #96, #100): the lost-worker
@@ -33,6 +42,7 @@ export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplication
     private readonly longWaits: CancelLongWaitingRunsHandler,
     private readonly leases: RenewHeldRunLeasesHandler,
     private readonly snapshots: ReleaseFinalSnapshotsHandler,
+    @Inject(RUN_SWEEPS_SETTINGS) private readonly settings: RunSweepsSettings,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -55,7 +65,7 @@ export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplication
         )}`,
       );
     }
-    this.timer = setInterval(() => void this.tick(), this.lostWorkers.intervalMs);
+    this.timer = setInterval(() => void this.tick(), this.settings.intervalMs);
     this.timer.unref();
   }
 

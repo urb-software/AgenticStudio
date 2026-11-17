@@ -13,9 +13,6 @@ import {
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
-/** Longest pause between two sweeps; shorter leases sweep at half the lease. */
-const MAX_SWEEP_INTERVAL_MS = 30_000;
-
 /**
  * Command (Issue #96): every held Run (`preparing` or `running`) whose last heartbeat is
  * older than the lease → `failed` with `worker_lost`. Runs waiting for the operator are not
@@ -31,11 +28,6 @@ export class SweepLostWorkersHandler {
     @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
   ) {
     this.since = clock.now();
-  }
-
-  /** How long between two sweeps: half the lease, and at most {@link MAX_SWEEP_INTERVAL_MS}. */
-  get intervalMs(): number {
-    return Math.min(MAX_SWEEP_INTERVAL_MS, (this.lease.seconds * 1000) / 2);
   }
 
   /** When this handler started: a worker that never reported since counts from here. */

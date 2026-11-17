@@ -46,6 +46,7 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
 - `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API: no `nestjs-zod`, `@nestjs/swagger`, `class-validator`, `class-transformer`, `express`, `@nestjs/platform-express`, `bullmq`, `@nestjs/bullmq`, `@nestjs/schedule`, `node-cron`, `cron`, Node `http`/`https`/`http2`, and no controller, route or parameter decorator from `@nestjs/common` (`Controller`, `Get`, `Body`, `UseGuards`, …). Plain `zod` and `platform/queue/` stay allowed for now; #164 tightens `platform/queue/` for `application/`.
 - `entry-points/` imports nothing from `infrastructure/`, and from a repository interface or port file only domain error classes (imported names ending in `Error`), so an entry point reaches the application through handlers.
+- No production file of a module imports a test file (a file in `__tests__/` or named `*.test.ts`); this keeps the `__tests__/` exemption of the feature check from reaching production code.
 - No import from one feature folder into another feature folder of the same module, for `executions` (by path pattern; #164 adds `projects`, #170 all modules). The tests of a feature (`__tests__/`) are not checked: a round-trip test may build the handler that produces what the handler under test reads.
 - `domain/` imports nothing from `application/ports/` (added by #168).
 - Domain tests import no database client or container tooling (added by #168).
@@ -119,6 +120,8 @@ Positive and negative fixtures prove the rules catch violations:
 | A feature imports another feature of its module | FAIL (`executions`; `projects` added by #164; all modules by #170) |
 | A feature imports a port, the domain or its own files | PASS (`executions`; `projects` added by #164; all modules by #170) |
 | A test of a feature imports another feature (tests are not checked) | PASS (`executions`) |
+| A production file of a module imports a test file (`__tests__/` or `*.test.ts`) | FAIL |
+| A test file imports a test helper | PASS |
 | `domain/entities/` file exports a class with a non-public constructor | PASS (added by #165 for `projects`; `executions` by #167; all modules by #170) |
 | `domain/entities/` file exports a class with a public constructor, or no class | FAIL (added by #165 for `projects`; `executions` by #167; all modules by #170) |
 | A module has no `domain/services/` directory | PASS (added by #168) |
