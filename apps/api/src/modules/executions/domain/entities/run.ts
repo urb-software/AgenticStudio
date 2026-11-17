@@ -398,6 +398,11 @@ export interface RunData {
    */
   claimedBy: string | null;
   /**
+   * When the worker holding the Run last reported (Issue #96): set exactly while `claimedBy` is.
+   * A held Run whose heartbeat is older than the lease has lost its worker ({@link LostWorkerRule}).
+   */
+  heartbeatAt: Date | null;
+  /**
    * Whether the Run was given its Project's Environment file when it was claimed (Issue #104):
    * a snapshot taken then; later changes to the file affect only later Runs. Never the content.
    */
@@ -626,32 +631,6 @@ export function currentUpdateStart(
 }
 
 /**
- * The long-wait rule (Issue #100): a Run waiting for the operator longer than its
- * `waitingDays` is cancelled by Studio, with that stated as the reason. Returns the
- * cancellation when the rule applies at `now`, otherwise `null`.
- */
-export function longWaitCancellation(
-  run: Pick<Run, 'state' | 'waitingSince' | 'limits'>,
-  now: Date,
-): RunCancellation | null {
-  if (run.state !== 'waiting_for_operator' || run.waitingSince === null) return null;
-  const limitMs = run.limits.waitingDays * 24 * 60 * 60 * 1000;
-  if (now.getTime() - run.waitingSince.getTime() <= limitMs) return null;
-  const days = run.limits.waitingDays;
-  return {
-    by: 'system',
-    reason: `Cancelled automatically: the run waited for the operator longer than ${days} ${days === 1 ? 'day' : 'days'}.`,
-  };
-}
-
-/**
- * Studio's backstop for the step time limit (review of #121): the agent worker stops a Run step
- * at `stepMinutes`; if a `running` Run's step is still going this much later, Studio itself ends
- * the Run as `timed_out`.
- */
-export const STEP_TIME_LIMIT_GRACE_MINUTES = 5;
-
-/**
  * The failure of a Run that would exceed its maximum number of Run steps (Issue #100); in a
  * Follow-up the allowance is the Follow-up's own (Issue #141).
  */
@@ -870,22 +849,105 @@ export class RunNotWaitingError extends Error {
 }
 
 /**
- * The gone-worker rule for a resume (Issue #103): only the agent worker that started the Run
- * has its Working copy and the agent's session; when it has not reported for longer than the
- * lease (counted from when Studio started, if it never reported since), the answered Run fails.
+ * The reporting agent worker does not hold the Run: another worker claimed it, it was released
+ * (waiting for the operator, or final), or it was failed as `worker_lost`.
  */
-export function goneResumeWorkerRule(
-  now: Date,
-  leaseSeconds: number,
-): { seenBefore: Date; failure: RunFailure } {
+export class RunNotHeldError extends Error {
+  constructor() {
+    super('This agent worker does not hold the run.');
+    this.name = 'RunNotHeldError';
+  }
+}
+
+/** A Run step's number is neither the last stored one nor the next (review of #121). */
+export class StepOutOfOrderError extends Error {
+  constructor(readonly expected: number) {
+    super(`The next run step is number ${expected}.`);
+    this.name = 'StepOutOfOrderError';
+  }
+}
+
+/** A Run step beyond the Run's maximum was reported; the Run is now `failed` (Issue #100). */
+export class StepLimitReachedError extends Error {
+  constructor() {
+    super('The run reached its maximum number of run steps.');
+    this.name = 'StepLimitReachedError';
+  }
+}
+
+/** One reported Run step: its kind and the structured result, as validated JSON. */
+export interface RunStepRecord {
+  kind: 'start' | 'resume';
+  result: unknown;
+  /** The step's number as the worker reports it (review of #121); the next one when absent. */
+  index?: number;
+  /** A `needs_input` step's question (Issue #103): stored as the Run's next message. */
+  question?: RunQuestion;
+  /** The agent session the step reported (Issue #103): becomes the Run's session reference. */
+  sessionRef?: string;
+}
+
+/** What storing a reported Run step did (Issue #100: the Run also enforces the step limit). */
+export type RunStepOutcome =
+  /** Stored now, or (`duplicate`) already stored by an earlier delivery of the same report. */
+  | { status: 'stored'; index: number; duplicate?: boolean }
+  /** The step would exceed the Run's `maxSteps`: it was not stored, and the Run is now `failed`. */
+  | { status: 'step_limit' };
+
+/**
+ * What an agent worker reports about a change of a Run's state (Issues #96, #102, #105, #147):
+ * the state it reached, with how it ended and what it knows of the Working copy.
+ */
+export interface RunStateReport {
+  /** One of the states a worker reports (the shared contract restricts it). */
+  state: RunState;
+  /** Exactly when `state` is `failed`. */
+  failure: RunFailure | null;
+  /** A failed Run's Working copy state, when the worker could read it (Issue #98). */
+  workingCopy?: RunWorkingCopy | null;
+  /** With `succeeded`: how the Run was delivered (Issue #102). */
+  delivery?: RunDeliveryOutcome | null;
+  /** With `failed` / `usage_limit`: the agent session to resume later (Issue #105). */
+  sessionRef?: string | null;
+  /** With `failed` / `delivery_failed`: what the delivery pushed before it failed (#141, S2). */
+  pushedCommit?: string | null;
+  /**
+   * With `running` of a bring-up-to-date Follow-up (Issue #147): where the merge started, kept on
+   * its conversation entry for the later claims of the part.
+   */
+  bringUpToDateStarted?: { baseCommit: string; integrationCommit: string } | null;
+  /**
+   * With `succeeded` and a bring-up-to-date Follow-up (Issue #147): the request changed nothing;
+   * the Run returns to the result it had before it. `unchangedDetail` says why (default: the
+   * branch was already up to date).
+   */
+  unchanged?: boolean;
+  unchangedDetail?: string | null;
+}
+
+/** What the conversation says when a bring-up-to-date request found nothing to merge (Issue #147). */
+export function alreadyUpToDateDetail(integrationBranch: string): string {
+  return (
+    `The Run branch already has everything ${integrationBranch} has, so nothing was changed: ` +
+    'no agent was started and nothing was pushed.'
+  );
+}
+
+/**
+ * The state a worker's report leads to: a cancel request turns a Run step that ended waiting for
+ * the operator into `cancelled`, so the operator's cancel holds. A `succeeded` report stays: it
+ * carries its delivery (Issue #102).
+ */
+function stateAfterReport(reported: RunState, cancelRequested: boolean): RunState {
+  return cancelRequested && reported === 'waiting_for_operator' ? 'cancelled' : reported;
+}
+
+/** The fields of a delivery outcome (Issue #102); an outcome without a pull request keeps the Run's. */
+function deliveryFields(delivery: RunDeliveryOutcome): Partial<Omit<RunData, 'messages'>> {
   return {
-    seenBefore: new Date(now.getTime() - leaseSeconds * 1000),
-    failure: {
-      code: 'preparation_failed',
-      detail:
-        `Working copy no longer exists (agent worker gone) — run again: the agent worker that ` +
-        `started this run has not reported for more than ${leaseSeconds} seconds.`,
-    },
+    delivery: delivery.outcome,
+    ...(delivery.outcome === 'delivered' ? { pullRequest: { ...delivery.pullRequest } } : {}),
+    ...(delivery.pushedCommit === undefined ? {} : { pushedCommit: delivery.pushedCommit }),
   };
 }
 
@@ -907,51 +969,6 @@ export class RepositoryNotReadyError extends Error {
     );
     this.name = 'RepositoryNotReadyError';
   }
-}
-
-/**
- * The gone-worker rule for a requested delivery retry (Issue #102, review N2 of #122): only the
- * agent worker that started the Run has its Working copy; when it has not reported for longer
- * than the lease (counted from when Studio started, if it never reported since), the retry
- * fails with this failure and is released.
- */
-export function goneWorkerRule(
-  now: Date,
-  leaseSeconds: number,
-): { seenBefore: Date; failure: RunFailure } {
-  return {
-    seenBefore: new Date(now.getTime() - leaseSeconds * 1000),
-    failure: {
-      code: 'delivery_failed',
-      detail:
-        `Working copy no longer exists (agent worker gone): the agent worker that started this ` +
-        `run has not reported for more than ${leaseSeconds} seconds.`,
-    },
-  };
-}
-
-/**
- * The lost-worker rule (Issue #96): a held Run whose last heartbeat is older than the lease
- * has lost its agent worker. Returns the cut-off and the failure it gets.
- */
-export function lostWorkerRule(
-  now: Date,
-  leaseSeconds: number,
-): { staleBefore: Date; failure: RunFailure; deliveryFailure: RunFailure } {
-  return {
-    staleBefore: new Date(now.getTime() - leaseSeconds * 1000),
-    failure: {
-      code: 'worker_lost',
-      detail: `The agent worker sent no heartbeat for ${leaseSeconds} seconds.`,
-    },
-    // A delivery retry whose worker was lost stays a failed delivery, so it can be retried.
-    deliveryFailure: {
-      code: 'delivery_failed',
-      detail:
-        `The agent worker sent no heartbeat for ${leaseSeconds} seconds while it retried the ` +
-        'delivery. Retry the delivery.',
-    },
-  };
 }
 
 /** What the Run needs to know about the agent worker to take a Follow-up (Issue #141). */
@@ -1017,6 +1034,11 @@ export interface RunStartInput {
   integrationBranch: string;
   /** The limits in force when the Run is started (Issue #100). */
   limits: RunLimits;
+  /**
+   * The Run's creation and first activity as the object sees them. The store does not take them:
+   * it assigns `created_at` itself, so the queue order (creation time, then id) uses one clock
+   * (Issue #169), and the Run it returns carries the stored time.
+   */
   now: Date;
 }
 
@@ -1031,6 +1053,12 @@ export interface RunChanges {
   messages: RunMessage[];
   discardPreparedFollowUp?: Exclude<FollowUpSource, 'review_comments'>;
   discardReviewComments?: true;
+  /** Run steps to store (Issue #169): a reported step's number, kind and structured result. */
+  steps?: { index: number; kind: RunStepRecord['kind']; result: unknown }[];
+  /** What a bring-up-to-date request records on its latest Follow-up entry (Issue #147). */
+  followUpEntry?: BringUpDetails;
+  /** The secret store's reference to the Run's Environment file snapshot (Issue #104). */
+  environmentFileSecretRef?: string | null;
 }
 
 const CHANGES = new WeakMap<Run, RunChanges>();
@@ -1045,8 +1073,10 @@ const isOneOf = <T extends string>(list: readonly T[], value: string): value is 
  * its preconditions against the Run's own state and the facts passed in, refuses with a domain
  * error otherwise, and records what changed. The store saves {@link Run.pendingChanges} in one
  * transaction under the Run's row lock, so two simultaneous requests cannot both succeed. What
- * the agent worker reports (claims, states, steps, heartbeats) changes the Run in the store with
- * conditional updates and is not a method here yet.
+ * the agent worker reports for the Run (a state, a Run step, a heartbeat, the removal of its
+ * Working copy, its Environment file; Issue #169) is a method too, which also checks that the
+ * reporting worker holds the Run; only the hand-out of the next Run and the sweeps over many Runs
+ * stay in the store, each with a named rule.
  *
  * It cannot be built in an invalid state: only {@link Run.start} and {@link Run.restore} make
  * one. Its fields are readable and never assigned from outside.
@@ -1070,6 +1100,7 @@ export class Run {
   declare readonly finishedAt: RunData['finishedAt'];
   declare readonly failure: RunData['failure'];
   declare readonly claimedBy: RunData['claimedBy'];
+  declare readonly heartbeatAt: RunData['heartbeatAt'];
   declare readonly environmentFileSupplied: RunData['environmentFileSupplied'];
   declare readonly environmentFilePath: RunData['environmentFilePath'];
   declare readonly limits: RunData['limits'];
@@ -1119,6 +1150,7 @@ export class Run {
       finishedAt: null,
       failure: null,
       claimedBy: null,
+      heartbeatAt: null,
       environmentFileSupplied: false,
       environmentFilePath: null,
       limits: { ...input.limits },
@@ -1156,7 +1188,15 @@ export class Run {
   /** What changed since the Run was started or restored; the store saves exactly this. */
   pendingChanges(): RunChanges {
     const pending = CHANGES.get(this)!;
-    return { ...pending, fields: { ...pending.fields }, messages: [...pending.messages] };
+    return {
+      ...pending,
+      fields: { ...pending.fields },
+      messages: [...pending.messages],
+      ...(pending.steps === undefined ? {} : { steps: [...pending.steps] }),
+      ...(pending.followUpEntry === undefined
+        ? {}
+        : { followUpEntry: { ...pending.followUpEntry } }),
+    };
   }
 
   /**
@@ -1323,6 +1363,323 @@ export class Run {
       waitingSince: null,
       stepStartedAt: null,
     });
+  }
+
+  /**
+   * The agent worker holding the Run reports a change of state, with how a succeeded Run was
+   * delivered (Issue #102, #96). For a `failed` Run it holds for a delivery retry it reports the
+   * retry's outcome: `succeeded` with the delivery, or `failed` with `delivery_failed` again. With
+   * a cancel request on the Run (Issue #100) the worker confirms the stop with `cancelled`; a Run
+   * step that ended with `waiting_for_operator` before the worker learned of the request also ends
+   * the Run as `cancelled`, so the operator's cancel holds. A `cancelled` report without a request
+   * is refused. A repeat of the change that already applied (the worker retried a report whose
+   * answer it never got) changes nothing and returns `false` (review of #121). A succeeded
+   * bring-up-to-date part has its merge in the pushed Run branch (Issue #147). Throws
+   * {@link RunNotHeldError} (another worker holds it, or nobody does) or
+   * {@link IllegalRunTransitionError}.
+   */
+  reportState(workerId: string, report: RunStateReport, now: Date): boolean {
+    if (report.unchanged) {
+      return this.reportUnchanged(
+        workerId,
+        report.unchangedDetail ?? alreadyUpToDateDetail(this.integrationBranch),
+        now,
+      );
+    }
+    if (this.state === 'failed' && this.deliveryRequested && this.claimedBy === workerId) {
+      return this.reportDeliveryRetry(workerId, report, now);
+    }
+    const cancelRequested = this.cancelRequestedAt !== null;
+    const to = stateAfterReport(report.state, cancelRequested);
+    // Already applied by an earlier delivery from this worker: nothing to change.
+    if (this.state === to && (this.claimedBy ?? this.releasedBy) === workerId) return false;
+    if (this.claimedBy !== workerId) throw new RunNotHeldError();
+    if (to === 'cancelled' && !cancelRequested) throw new IllegalRunTransitionError(this.state, to);
+    assertTransition(this.state, to);
+    // Issue #147: where a bring-up-to-date merge started (only while this worker holds the Run).
+    if (report.bringUpToDateStarted && to === 'running') {
+      this.recordUpdateStart(workerId, report.bringUpToDateStarted);
+    }
+    const held = isOneOf(CLAIMED_RUN_STATES, to);
+    const keepsWorkingCopy = to === 'failed' || to === 'cancelled' || to === 'timed_out';
+    // A cancel that arrived during the delivery keeps what was delivered (review of #121).
+    const delivery = to === 'succeeded' || to === 'cancelled' ? (report.delivery ?? null) : null;
+    const failure = to === 'failed' ? report.failure : null;
+    const pushedCommit =
+      report.failure?.code === 'delivery_failed' ? (report.pushedCommit ?? null) : null;
+    this.apply({
+      state: to,
+      failure,
+      claimedBy: held ? workerId : null,
+      heartbeatAt: held ? now : null,
+      cancellation:
+        to !== 'cancelled'
+          ? null
+          : report.delivery?.outcome === 'none' && report.delivery.branchPushed
+            ? { ...OPERATOR_CANCELLATION_BRANCH_PUSHED }
+            : { ...OPERATOR_CANCELLATION },
+      waitingSince: to === 'waiting_for_operator' ? now : null,
+      releasedBy: held ? null : workerId,
+      ...(to === 'running' ? { stepStartedAt: now } : {}),
+      ...(isFinal(to) ? { finishedAt: now } : {}),
+      ...(keepsWorkingCopy && report.workingCopy ? { workingCopy: report.workingCopy } : {}),
+      ...(delivery ? deliveryFields(delivery) : {}),
+      ...(failure?.code === 'delivery_failed' ? { delivery: 'failed' as const } : {}),
+      // Review S2 of #150: a delivery that pushed before it failed still records the push.
+      ...(pushedCommit ? { pushedCommit } : {}),
+      // Issue #105: the session a Run stopped at the usage limit resumes later.
+      ...(to === 'failed' && failure?.code === 'usage_limit' && report.sessionRef
+        ? { sessionRef: report.sessionRef }
+        : {}),
+    });
+    if (to === 'succeeded') this.recordMergedCommit();
+    return true;
+  }
+
+  /**
+   * The outcome of a delivery retry: the one way out of `failed` (Issue #102). The worker holding
+   * the Run for it reports `succeeded` with the delivery, or `failed` with `delivery_failed`
+   * again; either way the Run is released and finished again at `now`, and the request is over.
+   */
+  private reportDeliveryRetry(workerId: string, report: RunStateReport, now: Date): boolean {
+    const delivery = report.state === 'succeeded' && report.delivery ? report.delivery : null;
+    const failure =
+      report.state === 'failed' && report.failure?.code === 'delivery_failed'
+        ? report.failure
+        : null;
+    if (!delivery && !failure) throw new IllegalRunTransitionError(this.state, report.state);
+    this.apply({
+      claimedBy: null,
+      heartbeatAt: null,
+      // A retried report of this outcome is then recognised (review of #121).
+      releasedBy: workerId,
+      deliveryRequested: false,
+      finishedAt: now,
+      ...(report.workingCopy ? { workingCopy: report.workingCopy } : {}),
+      ...(delivery
+        ? { state: 'succeeded' as const, failure: null, ...deliveryFields(delivery) }
+        : {
+            failure: failure!,
+            delivery: 'failed' as const,
+            ...(report.pushedCommit ? { pushedCommit: report.pushedCommit } : {}),
+          }),
+    });
+    if (delivery) this.recordMergedCommit();
+    return true;
+  }
+
+  /**
+   * A bring-up-to-date request whose branch was already up to date (Issue #147), reported by the
+   * worker holding the Run (preparing or running): the Run goes back to the result it had before
+   * the request (the state, failure and delivery the `part_end` before the Follow-up recorded) and
+   * a `part_end` with `detail` notes that nothing was changed. Nothing was pushed and no Run step
+   * was taken. A repeat of the report that already applied changes nothing (`false`).
+   */
+  private reportUnchanged(workerId: string, detail: string, now: Date): boolean {
+    if (this.claimedBy !== workerId) {
+      if (this.releasedBy === workerId && isFinal(this.state)) return false;
+      throw new RunNotHeldError();
+    }
+    const index = this.messages.findLastIndex((message) => message.kind === 'follow_up');
+    const entry = this.messages[index];
+    const before = this.messages[index - 1];
+    if (
+      !isOneOf(CLAIMED_RUN_STATES, this.state) ||
+      entry?.kind !== 'follow_up' ||
+      entry.source !== 'bring_up_to_date' ||
+      before?.kind !== 'part_end'
+    ) {
+      throw new IllegalRunTransitionError(this.state, 'succeeded');
+    }
+    // Nothing was changed: the Run is as it was, and its conversation says so.
+    this.append({
+      kind: 'part_end',
+      state: before.state,
+      failureCode: before.failureCode,
+      delivery: before.delivery,
+      detail,
+      at: now,
+    });
+    this.apply({
+      ...restoreEarlierResult(before),
+      claimedBy: null,
+      heartbeatAt: null,
+      releasedBy: workerId,
+      finishedAt: now,
+      stepStartedAt: null,
+    });
+    return true;
+  }
+
+  /**
+   * Records where a bring-up-to-date merge started (Issue #147) on the Run's latest Follow-up: the
+   * Run branch's commit before it and the integration branch commit being merged, kept for the
+   * later claims of the part. Only while `workerId` holds the Run, only when that Follow-up came
+   * from the request and has none yet. `false` when nothing was recorded.
+   */
+  recordUpdateStart(
+    workerId: string,
+    start: { baseCommit: string; integrationCommit: string },
+  ): boolean {
+    const entry = this.messages.findLast((message) => message.kind === 'follow_up');
+    if (
+      this.claimedBy !== workerId ||
+      entry?.kind !== 'follow_up' ||
+      entry.source !== 'bring_up_to_date' ||
+      entry.updateTip !== undefined
+    ) {
+      return false;
+    }
+    this.updateFollowUpEntry({ updateBase: start.baseCommit, updateTip: start.integrationCommit });
+    return true;
+  }
+
+  /**
+   * Once a bring-up-to-date part succeeded (Issue #147): its merge is in the pushed Run branch, so
+   * the Follow-up's `updateTip` becomes its `mergedCommit` (what the page shows and what the Run's
+   * own changes are counted from). Idempotent; `false` when there was nothing to record.
+   */
+  recordMergedCommit(): boolean {
+    const entry = this.messages.findLast((message) => message.kind === 'follow_up');
+    if (
+      entry?.kind !== 'follow_up' ||
+      entry.source !== 'bring_up_to_date' ||
+      entry.updateTip === undefined ||
+      entry.mergedCommit !== undefined
+    ) {
+      return false;
+    }
+    this.updateFollowUpEntry({ mergedCommit: entry.updateTip });
+    return true;
+  }
+
+  /**
+   * The agent worker holding a `running` Run reports the structured result of a Run step, numbered
+   * 1, 2, … in report order (Issue #96). The Working copy's state it reports becomes the Run's
+   * latest (Issue #98), with the checks the agent reported failed (Issue #102); a `needs_input`
+   * step's question becomes the Run's next message and the session reference the Run's (Issue
+   * #103); the step's clock stops (review of #121). A retried report of a step already stored
+   * (same number) is acknowledged without storing it again. A step beyond the allowance of the
+   * current part (the first, or a Follow-up, Issue #141) is not stored: the Run is `failed` with
+   * `step_limit`, released and finished at `now` (Issue #100), and the outcome says so. Throws
+   * {@link RunNotHeldError} (not running, or not held by this worker) or
+   * {@link StepOutOfOrderError}, changing nothing.
+   */
+  reportStep(
+    workerId: string,
+    step: RunStepRecord,
+    workingCopy: RunWorkingCopy,
+    failingChecks: readonly string[],
+    now: Date,
+  ): RunStepOutcome {
+    if (this.state !== 'running' || this.claimedBy !== workerId) throw new RunNotHeldError();
+    const last = this.stepCount;
+    const index = step.index ?? last + 1;
+    if (index <= last) return { status: 'stored', index, duplicate: true };
+    if (index !== last + 1) throw new StepOutOfOrderError(last + 1);
+    if (index > this.stepsBeforePart + this.limits.maxSteps) {
+      this.apply({
+        state: 'failed',
+        failure: stepLimitFailure(this.limits.maxSteps, this.followUpCount > 0),
+        claimedBy: null,
+        heartbeatAt: null,
+        finishedAt: now,
+      });
+      return { status: 'step_limit' };
+    }
+    const pending = CHANGES.get(this)!;
+    pending.steps = [...(pending.steps ?? []), { index, kind: step.kind, result: step.result }];
+    // A question becomes the Run's next message (Issue #103).
+    if (step.question) this.append({ kind: 'question', question: step.question, at: now });
+    this.apply({
+      stepCount: index,
+      workingCopy,
+      failingChecks: [...failingChecks],
+      // The step is over: Studio's time-limit backstop no longer runs for it (review of #121), so
+      // a slow delivery after it is never timed out.
+      stepStartedAt: null,
+      lastActivityAt: now,
+      ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
+    });
+    return { status: 'stored', index };
+  }
+
+  /**
+   * The agent worker holding the Run says it is still alive, which renews its lease (Issue #96).
+   * Tells it whether the operator asked to cancel (Issue #100). Throws {@link RunNotHeldError}
+   * when this worker does not hold the Run.
+   */
+  recordHeartbeat(workerId: string, now: Date): { cancelRequested: boolean } {
+    if (this.claimedBy !== workerId) throw new RunNotHeldError();
+    this.apply({ heartbeatAt: now });
+    return { cancelRequested: this.cancelRequestedAt !== null };
+  }
+
+  /**
+   * The worker's retention removed the Run's Working copy (Issue #141): recorded only for a Run
+   * the worker last claimed and does not hold, also one queued for a Follow-up meanwhile (review S9
+   * of #150), and only once. `false` when nothing was recorded.
+   */
+  reportWorkingCopyRemoved(workerId: string, now: Date): boolean {
+    if (
+      this.lastClaimedBy !== workerId ||
+      this.claimedBy !== null ||
+      this.workingCopyRemovedAt !== null
+    ) {
+      return false;
+    }
+    this.apply({ workingCopyRemovedAt: now });
+    return true;
+  }
+
+  /**
+   * Records the Project's Environment file the claim gave the `preparing` Run held by `workerId`
+   * (Issue #104; a Follow-up, or a usage-limit resume inside one, takes the Project's current file,
+   * review S3 of #150): its path in the Working copy and the secret store's reference to its
+   * snapshot; or `null` when the Project has none now. Throws {@link RunNotHeldError} when the Run
+   * is no longer `preparing` or held by this worker.
+   */
+  recordEnvironmentFile(workerId: string, file: { path: string; secretRef: string } | null): void {
+    if (this.state !== 'preparing' || this.claimedBy !== workerId) throw new RunNotHeldError();
+    this.apply({ environmentFileSupplied: file !== null, environmentFilePath: file?.path ?? null });
+    CHANGES.get(this)!.environmentFileSecretRef = file?.secretRef ?? null;
+  }
+
+  /**
+   * The claim could not prepare the Run (the Environment file or the repository remote is not
+   * there; Issue #104): the Run held by `workerId` in `preparing`, with no cancel request, is
+   * `failed` with `failure`, released and finished at `now`. `false` when it is not so held, with
+   * no cancel request.
+   */
+  failPreparation(workerId: string, failure: RunFailure, now: Date): boolean {
+    if (
+      this.state !== 'preparing' ||
+      this.claimedBy !== workerId ||
+      this.cancelRequestedAt !== null
+    ) {
+      return false;
+    }
+    this.apply({
+      state: 'failed',
+      failure,
+      claimedBy: null,
+      heartbeatAt: null,
+      releasedBy: workerId,
+      waitingSince: null,
+      finishedAt: now,
+    });
+    return true;
+  }
+
+  private updateFollowUpEntry(details: BringUpDetails): void {
+    const index = this.messages.findLastIndex((message) => message.kind === 'follow_up');
+    const entry = this.messages[index];
+    if (entry?.kind !== 'follow_up') return;
+    const messages = [...this.messages];
+    messages[index] = { ...entry, ...details };
+    Object.assign(this, { messages });
+    const pending = CHANGES.get(this)!;
+    pending.followUpEntry = { ...pending.followUpEntry, ...details };
   }
 
   private apply(patch: Partial<Omit<RunData, 'messages'>>): void {

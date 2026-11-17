@@ -67,7 +67,7 @@ describe('ResumeRunHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     handler = new ResumeRunHandler(runs, { now: () => T1 });
-    await runs.add(NEW_RUN);
+    await runs.start(NEW_RUN);
     run = (await runs.claimNext(WORKER, T0))!;
   });
 
@@ -131,7 +131,7 @@ describe('ResumeRunHandler', () => {
 
   it("refuses while another Run holds the project's place, and resumes once it has ended", async () => {
     await stop(USAGE_LIMIT);
-    await runs.add({ ...NEW_RUN, task: 'other' });
+    await runs.start({ ...NEW_RUN, task: 'other' });
     const other = (await runs.claimNext(WORKER, T1))!;
 
     await expect(handler.execute(run.id)).rejects.toEqual(new RunSlotTakenError('project'));
@@ -155,7 +155,7 @@ describe('ResumeRunHandler', () => {
   it("refuses while the server's places are taken", async () => {
     await stop(USAGE_LIMIT);
     for (const project of [OTHER_PROJECT_1, OTHER_PROJECT_2]) {
-      await runs.add({ ...NEW_RUN, projectId: project });
+      await runs.start({ ...NEW_RUN, projectId: project });
       await runs.claimNext(OTHER_WORKER, T1);
     }
 

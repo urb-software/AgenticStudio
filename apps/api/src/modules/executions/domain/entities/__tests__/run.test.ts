@@ -10,7 +10,6 @@ import {
   IllegalRunTransitionError,
   isFinal,
   isResumable,
-  longWaitCancellation,
   NO_PULL_REQUEST_STATUS,
   type RunPullRequestStatus,
   RUN_STATES,
@@ -18,6 +17,7 @@ import {
   type RunState,
   stepLimitFailure,
 } from '../run.js';
+import { LongWaitRule } from '../../value-objects/run-sweep-rules.js';
 
 // Issue #96: the Run state machine, enforced in the domain.
 const LEGAL: [RunState, RunState][] = [
@@ -106,6 +106,7 @@ describe('long-wait rule', () => {
     finishedAt: null,
     failure: null,
     claimedBy: null,
+    heartbeatAt: null,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays, maxTotalSteps: 50 },
     environmentFileSupplied: false,
     environmentFilePath: null,
@@ -131,22 +132,24 @@ describe('long-wait rule', () => {
     new Date(since.getTime() + days * 24 * 60 * 60 * 1000 + extraMs);
 
   it('leaves a Run waiting exactly its limit alone', () => {
-    expect(longWaitCancellation(waiting(14), after(14))).toBeNull();
+    expect(LongWaitRule.at(after(14)).cancellationFor(waiting(14))).toBeNull();
   });
 
   it('cancels a Run waiting longer than its limit, by the system, saying why', () => {
-    expect(longWaitCancellation(waiting(14), after(14, 1))).toEqual({
+    expect(LongWaitRule.at(after(14, 1)).cancellationFor(waiting(14))).toEqual({
       by: 'system',
       reason: 'Cancelled automatically: the run waited for the operator longer than 14 days.',
     });
-    expect(longWaitCancellation(waiting(1), after(2))?.reason).toBe(
+    expect(LongWaitRule.at(after(2)).cancellationFor(waiting(1))?.reason).toBe(
       'Cancelled automatically: the run waited for the operator longer than 1 day.',
     );
   });
 
   it('applies only to a Run waiting for the operator', () => {
     expect(
-      longWaitCancellation(waiting(1, { state: 'running', waitingSince: null }), after(30)),
+      LongWaitRule.at(after(30)).cancellationFor(
+        waiting(1, { state: 'running', waitingSince: null }),
+      ),
     ).toBeNull();
   });
 });
@@ -189,6 +192,7 @@ describe('questions and answers', () => {
     finishedAt: null,
     failure: null,
     claimedBy: null,
+    heartbeatAt: null,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     cancelRequestedAt: null,
     cancellation: null,

@@ -52,8 +52,12 @@ export class GetRunStatesHandler {
     removed?: { workerId: string; runIds: readonly string[] },
   ): Promise<RunRetentionAnswer[]> {
     const now = this.clock.now();
-    if (removed && removed.runIds.length > 0) {
-      await this.runs.markWorkingCopiesRemoved(removed.workerId, [...new Set(removed.runIds)], now);
+    // Each Run is changed under its own row lock (Issue #169): a Follow-up queued meanwhile
+    // either took the Working copy before this report or finds it removed.
+    for (const runId of new Set(removed?.runIds ?? [])) {
+      await this.runs.change(runId, (run) => {
+        run.reportWorkingCopyRemoved(removed!.workerId, now);
+      });
     }
     const views = await this.runs.findStates([...new Set(runIds)]);
     const limited = views.filter(

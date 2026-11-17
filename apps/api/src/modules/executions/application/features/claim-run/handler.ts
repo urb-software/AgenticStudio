@@ -12,13 +12,12 @@ import {
 } from '../../../../projects/contracts/index.js';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects/run-environment-file.js';
 import {
-  longWaitCancellation,
-  lostWorkerRule,
+  IllegalRunTransitionError,
   resumeMessage,
   type Run,
+  RunNotHeldError,
   type RunData,
   type RunFailure,
-  STEP_TIME_LIMIT_GRACE_MINUTES,
   takesNewEnvironmentFile,
 } from '../../../domain/entities/run.js';
 import {
@@ -31,6 +30,11 @@ import {
   ENVIRONMENT_FILE_SNAPSHOTS,
   type EnvironmentFileSnapshots,
 } from '../../ports/environment-file-snapshots.js';
+import {
+  LongWaitRule,
+  LostWorkerRule,
+  OverdueStepRule,
+} from '../../../domain/value-objects/run-sweep-rules.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
 const NO_REMOTE: RunFailure = {
@@ -134,18 +138,19 @@ export class ClaimRunHandler {
 
   async execute(workerId: string): Promise<ClaimedRun | null> {
     const now = this.clock.now();
-    const { staleBefore, failure, deliveryFailure } = lostWorkerRule(now, this.lease.seconds);
-    await this.runs.failStaleClaims(staleBefore, failure, deliveryFailure, now);
+    const lost = LostWorkerRule.at(now, this.lease.seconds);
+    await this.runs.failStaleClaims(lost.staleBefore, lost.failure, lost.deliveryFailure, now);
     // A Run left waiting too long holds a slot; it is cancelled first (Issue #100).
     for (const waiting of await this.runs.listWaiting()) {
-      const cancellation = longWaitCancellation(waiting, now);
+      const cancellation = LongWaitRule.at(now).cancellationFor(waiting);
       // Conditional: an answer or an operator's cancel in between wins.
       if (cancellation) {
         await this.runs.cancelUnheld(waiting.id, 'waiting_for_operator', cancellation, now);
       }
     }
     // A step far past its time limit holds a slot too (review of #121: Studio's backstop).
-    await this.runs.timeOutOverdueSteps(now, STEP_TIME_LIMIT_GRACE_MINUTES);
+    const overdue = OverdueStepRule.at(now);
+    await this.runs.timeOutOverdueSteps(overdue.now, overdue.graceMinutes);
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;
@@ -163,12 +168,15 @@ export class ClaimRunHandler {
             ...(await this.progress(run.id)),
           };
         }
-        await this.runs.finishDeliveryRetry({
-          runId: run.id,
-          workerId,
-          result: { state: 'failed', failure: NOT_DELIVERABLE },
-          workingCopy: null,
-          now,
+        await this.runs.change(run.id, (held) => {
+          try {
+            held.reportState(workerId, { state: 'failed', failure: NOT_DELIVERABLE }, now);
+          } catch (error) {
+            // Lost its claim meanwhile: nothing to finish (the sweep failed it).
+            if (!(error instanceof RunNotHeldError || error instanceof IllegalRunTransitionError)) {
+              throw error;
+            }
+          }
         });
         // Nothing left to deliver, so nothing more to redact (Issue #104).
         await this.snapshots.releaseFor(run.id);
@@ -249,20 +257,15 @@ export class ClaimRunHandler {
       if (replace) await this.snapshots.releaseFor(run.id);
       const file = await this.environmentFiles.forProject(run.projectId);
       if (!file) {
-        if (!replace || (await this.runs.replaceEnvironmentFile(run.id, workerId, null))) {
-          return null;
-        }
-        throw new Error('The run is no longer held for its claim.');
+        // A claim that does not replace has no file to record (nothing was supplied before).
+        if (replace) await this.recordEnvironmentFile(run.id, workerId, null);
+        return null;
       }
       secretRef = await this.secrets.put(file.content, {
         owner: RUN_ENVIRONMENT_FILE_SECRET_OWNER,
       });
-      const attached = replace
-        ? await this.runs.replaceEnvironmentFile(run.id, workerId, { path: file.path, secretRef })
-        : await this.runs.attachEnvironmentFile(run.id, workerId, { path: file.path, secretRef });
-      if (attached) {
-        return file;
-      }
+      await this.recordEnvironmentFile(run.id, workerId, { path: file.path, secretRef });
+      return file;
     } catch (error) {
       // Only the error's class name: nothing logged here can hold the content.
       this.logger.error(
@@ -289,15 +292,21 @@ export class ClaimRunHandler {
     return { completedSteps: steps.length, nextSeq: lastSeq + 1, diffState };
   }
 
+  /** The Run holds the Environment file only while this worker still holds it preparing. */
+  private async recordEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string } | null,
+  ): Promise<void> {
+    const recorded = await this.runs.change(runId, (run) =>
+      run.recordEnvironmentFile(workerId, file),
+    );
+    if (!recorded) throw new Error('The run is no longer held for its claim.');
+  }
+
   private async fail(run: Run, workerId: string, failure: RunFailure, now: Date): Promise<void> {
-    await this.runs.transitionClaimed({
-      runId: run.id,
-      workerId,
-      from: 'preparing',
-      to: 'failed',
-      failure,
-      cancelRequested: false,
-      now,
+    await this.runs.change(run.id, (preparing) => {
+      preparing.failPreparation(workerId, failure, now);
     });
   }
 }

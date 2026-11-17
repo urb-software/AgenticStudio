@@ -80,7 +80,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
 
   /** A Run WORKER carried to `end` after `steps` done steps. */
   async function finished(end: RunState = 'succeeded', steps = 1, maxTotalSteps = 50) {
-    const added = await runs.add(newRun(maxTotalSteps));
+    const added = await runs.start(newRun(maxTotalSteps));
     await runs.claimNext(WORKER, T0);
     await runs.transitionClaimed({
       runId: added.id,
@@ -101,7 +101,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
         T0,
       );
     }
-    if (end === 'cancelled') await runs.requestCancel(added.id, T0);
+    if (end === 'cancelled') await runs.cancel(added.id, T0);
     await runs.transitionClaimed({
       runId: added.id,
       workerId: WORKER,
@@ -191,7 +191,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
 
   it('refuses for the Follow-up reasons, and a second request while one is queued', async () => {
     const run = await finished();
-    const waiting = await runs.add(newRun());
+    const waiting = await runs.start(newRun());
     await expect(bringUp(waiting.id, undefined)).rejects.toMatchObject({
       reason: 'not_finished',
     });

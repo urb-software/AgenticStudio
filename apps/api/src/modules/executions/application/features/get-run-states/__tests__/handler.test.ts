@@ -29,7 +29,7 @@ describe('GetRunStatesHandler', () => {
   let handler: GetRunStatesHandler;
 
   const add = (projectId: string) =>
-    runs.add({
+    runs.start({
       projectId,
       provider: 'codex',
       task: 'x',

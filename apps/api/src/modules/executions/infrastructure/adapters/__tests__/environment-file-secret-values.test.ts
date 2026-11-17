@@ -20,7 +20,7 @@ describe('EnvironmentFileSecretValues', () => {
     runs = new InMemoryRunRepository();
     secrets = new InMemorySecretStore();
     values = new EnvironmentFileSecretValues(runs, secrets);
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

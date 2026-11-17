@@ -37,7 +37,7 @@ describe('SweepLostWorkersHandler', () => {
   let released: string[];
 
   async function claimed(projectId: string) {
-    await runs.add({
+    await runs.start({
       projectId,
       provider: 'claude_code',
       task: 'x',
@@ -130,7 +130,7 @@ describe('SweepLostWorkersHandler', () => {
   });
 
   it('leaves queued Runs alone', async () => {
-    await runs.add({
+    await runs.start({
       projectId: PROJECTS[1],
       provider: 'codex',
       task: 'x',

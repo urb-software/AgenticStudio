@@ -4,7 +4,7 @@ import {
   RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS,
   RUN_ENVIRONMENT_FILE_SECRET_OWNER,
 } from '../../../domain/value-objects/run-environment-file.js';
-import { lostWorkerRule } from '../../../domain/entities/run.js';
+import { LostWorkerRule } from '../../../domain/value-objects/run-sweep-rules.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { SecretStoreEnvironmentFileSnapshots } from '../environment-file-snapshots.js';
@@ -26,7 +26,7 @@ describe('Environment file snapshots', () => {
   let now: Date;
 
   async function claimedWithSnapshot(projectId: string, content: string) {
-    await runs.add({
+    await runs.start({
       projectId,
       provider: 'codex',
       task: 'x',
@@ -59,7 +59,7 @@ describe('Environment file snapshots', () => {
 
   it("deletes the snapshots of Runs that ended any way, e.g. a lost worker, and keeps the others'", async () => {
     const lost = await claimedWithSnapshot(PROJECT, 'A=test-only-lost');
-    const { staleBefore, failure } = lostWorkerRule(new Date(T0.getTime() + 61_000), 60);
+    const { staleBefore, failure } = LostWorkerRule.at(new Date(T0.getTime() + 61_000), 60);
     await runs.failStaleClaims(staleBefore, failure, failure, T0);
     const live = await claimedWithSnapshot(OTHER, 'B=test-only-live');
 

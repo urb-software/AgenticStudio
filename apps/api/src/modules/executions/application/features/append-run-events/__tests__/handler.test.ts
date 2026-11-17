@@ -54,7 +54,7 @@ describe('AppendRunEventsHandler', () => {
     log = new InMemoryRunLogRepository(runs);
     notified = [];
     secrets = [];
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

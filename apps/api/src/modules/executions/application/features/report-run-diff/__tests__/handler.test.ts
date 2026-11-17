@@ -50,7 +50,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     runs = new InMemoryRunRepository();
     diffs = new InMemoryRunDiffRepository(runs);
     secrets = [];
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

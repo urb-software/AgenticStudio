@@ -20,7 +20,7 @@ describe('CancelLongWaitingRunsHandler', () => {
   let handler: CancelLongWaitingRunsHandler;
 
   async function waiting(projectId: string, waitingDays: number): Promise<Run> {
-    const run = await runs.add({
+    const run = await runs.start({
       projectId,
       provider: 'codex',
       task: 'x',

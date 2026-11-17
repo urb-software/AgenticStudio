@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STEP_TIME_LIMIT_GRACE_MINUTES } from '../../../../domain/entities/run.js';
+import { OverdueStepRule } from '../../../../domain/value-objects/run-sweep-rules.js';
 import type { RunRepository } from '../../../../domain/repositories/run-repository.js';
 import { TimeOutOverdueStepsHandler } from '../handler.js';
 
@@ -18,6 +18,6 @@ describe('TimeOutOverdueStepsHandler (review of #121)', () => {
     const timedOut = await new TimeOutOverdueStepsHandler(runs, { now: () => NOW }).execute();
 
     expect(timedOut).toBe(2);
-    expect(calls).toEqual([[NOW, STEP_TIME_LIMIT_GRACE_MINUTES]]);
+    expect(calls).toEqual([[NOW, OverdueStepRule.GRACE_MINUTES]]);
   });
 });

@@ -19,7 +19,7 @@ export async function deliveredRun(
   runs: InMemoryRunRepository,
   options: { delivered?: boolean } = {},
 ): Promise<Run> {
-  const added = await runs.add({
+  const added = await runs.start({
     projectId: PROJECT,
     provider: 'claude_code',
     task: 'Add a health check',

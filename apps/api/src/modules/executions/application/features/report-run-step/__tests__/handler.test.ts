@@ -37,7 +37,7 @@ describe('ReportRunStepHandler', () => {
       { now: () => T1 },
       { forRun: () => Promise.resolve(['known-secret-value']) },
     );
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

@@ -31,7 +31,7 @@ describe('ClaimRunHandler', () => {
   let diffs: InMemoryRunDiffRepository;
 
   const queue = (projectId: string) =>
-    runs.add({
+    runs.start({
       projectId,
       provider: 'claude_code',
       task: `Task of ${projectId}`,
@@ -102,7 +102,7 @@ describe('ClaimRunHandler', () => {
   });
 
   it('fails a Run without a remote URL as preparation_failed and hands out the next (review of #117)', async () => {
-    const orphan = await runs.add({
+    const orphan = await runs.start({
       projectId: A,
       provider: 'codex',
       task: 'x',
@@ -594,7 +594,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
   let handler: ClaimRunHandler;
 
   const queue = () =>
-    runs.add({
+    runs.start({
       projectId: A,
       provider: 'claude_code',
       task: 'Run the integration tests',

@@ -37,7 +37,7 @@ describe('RetryDeliveryHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     handler = new RetryDeliveryHandler(runs);
-    run = await runs.add({
+    run = await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

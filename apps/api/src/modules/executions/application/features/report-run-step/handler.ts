@@ -1,14 +1,17 @@
 import { runStepResultSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type RunQuestion, type RunWorkingCopy } from '../../../domain/entities/run.js';
+import {
+  isRunId,
+  type RunQuestion,
+  type RunStepOutcome,
+  type RunStepRecord,
+  type RunWorkingCopy,
+  StepLimitReachedError,
+} from '../../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
-  RunNotHeldError,
   type RunRepository,
-  type RunStepRecord,
-  StepLimitReachedError,
-  StepOutOfOrderError,
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
@@ -28,10 +31,11 @@ export interface ReportRunStepInput extends RunStepRecord {
  * #102). Its free-text fields and the commit subjects are redacted before they are stored,
  * like the log (Issue #99; never its enum fields, #104); reads redact again for rows stored
  * before. A step beyond the Run's maximum is refused and the
- * Run fails with `step_limit` (Issue #100). Returns the step's number. Throws
- * {@link RunNotFoundError}, {@link RunNotHeldError} (not running, or not held by it),
- * {@link StepLimitReachedError} or {@link StepOutOfOrderError}. A retried report of a step
- * already stored (same number) is acknowledged without storing it again (review of #121).
+ * Run fails with `step_limit` (Issue #100). Returns the step's number. The Run's `reportStep`
+ * decides under its row lock (Issue #169). Throws {@link RunNotFoundError}, `RunNotHeldError`
+ * (not running, or not held by it), {@link StepLimitReachedError} or `StepOutOfOrderError`. A
+ * retried report of a step already stored (same number) is acknowledged without storing it again
+ * (review of #121).
  * Issue #103: a `needs_input` step's question becomes the Run's next message, and the session
  * reference a step reports is kept on the Run (not redacted, not in the stored result).
  */
@@ -53,24 +57,25 @@ export class ReportRunStepHandler {
     const { sessionRef, ...shown } = runStepResultSchema.parse(input.result);
     const result = redaction.runStepResult(shown);
     const question = questionOf(result);
-    const outcome = await this.runs.appendStep(
-      input.runId,
-      input.workerId,
-      {
-        kind: input.kind,
-        result,
-        ...(input.index === undefined ? {} : { index: input.index }),
-        ...(question ? { question } : {}),
-        ...(typeof sessionRef === 'string' ? { sessionRef } : {}),
-      },
-      redaction.workingCopy(input.workingCopy),
-      // From the redacted result: the names are shown on the Run page.
-      failingChecks(result),
-      this.clock.now(),
-    );
-    if (outcome.status === 'not_held') throw new RunNotHeldError();
+    let outcome: RunStepOutcome | undefined;
+    const saved = await this.runs.change(input.runId, (run) => {
+      outcome = run.reportStep(
+        input.workerId,
+        {
+          kind: input.kind,
+          result,
+          ...(input.index === undefined ? {} : { index: input.index }),
+          ...(question ? { question } : {}),
+          ...(typeof sessionRef === 'string' ? { sessionRef } : {}),
+        },
+        redaction.workingCopy(input.workingCopy),
+        // From the redacted result: the names are shown on the Run page.
+        failingChecks(result),
+        this.clock.now(),
+      );
+    });
+    if (!saved || !outcome) throw new RunNotFoundError();
     if (outcome.status === 'step_limit') throw new StepLimitReachedError();
-    if (outcome.status === 'out_of_order') throw new StepOutOfOrderError(outcome.expected);
     return outcome.index;
   }
 }

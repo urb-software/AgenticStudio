@@ -5,104 +5,20 @@ import type {
   ResumeFacts,
   Run,
   RunCancellation,
-  RunDeliveryOutcome,
   RunFailure,
-  RunLimits,
-  RunQuestion,
   RunState,
-  RunWorkingCopy,
+  RunStepRecord,
+} from '../entities/run.js';
+
+export {
+  RunNotHeldError,
+  type RunStepRecord,
+  StepLimitReachedError,
+  StepOutOfOrderError,
 } from '../entities/run.js';
 
 /** DI token for the {@link RunRepository} adapter. */
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');
-
-export interface NewRun {
-  /** The Run's id when the caller assigned one (`Run.start`); otherwise the store assigns it. */
-  id?: string;
-  projectId: string;
-  provider: Provider;
-  task: string;
-  startCommit: string;
-  remoteUrl: string;
-  /** The limits in force when the Run is started (Issue #100). */
-  limits: RunLimits;
-  integrationBranch: string;
-}
-
-/** A change of state reported by the agent worker holding the Run. */
-export interface ClaimedRunChange {
-  runId: string;
-  workerId: string;
-  from: RunState;
-  to: RunState;
-  /** Exactly when `to` is `failed`. */
-  failure: RunFailure | null;
-  /** When set, becomes the Run's latest Working copy state (a failed Run, Issue #98). */
-  workingCopy?: RunWorkingCopy | null;
-  /** Exactly when `to` is `cancelled` (Issue #100). */
-  cancellation?: RunCancellation | null;
-  /**
-   * Whether the caller saw a cancel request on the Run (Issue #100); the change applies only
-   * if that is still so, so a cancel that arrives in between is never lost.
-   */
-  cancelRequested: boolean;
-  /**
-   * With `succeeded` (Issue #102): how the Run was delivered. A `failed` Run with
-   * `delivery_failed` records the delivery `failed` by itself.
-   */
-  delivery?: RunDeliveryOutcome | null;
-  /**
-   * With `failed` / `usage_limit` (Issue #105): the agent session the stopped step ran in;
-   * becomes the Run's session reference, so the operator can resume the Run later.
-   */
-  sessionRef?: string | null;
-  /**
-   * With `failed` / `delivery_failed` (review S2 of #150): the commit the delivery pushed before
-   * it failed; recorded as the Run's pushed commit.
-   */
-  pushedCommit?: string | null;
-  now: Date;
-}
-
-/**
- * The outcome of a delivery retry (Issue #102), reported by the agent worker holding the
- * `failed` Run: `succeeded` with the delivery, or still `failed` with `delivery_failed` and the
- * new reason. Either way the Run is released and finished again at `now`.
- */
-export interface DeliveryRetryOutcome {
-  runId: string;
-  workerId: string;
-  result:
-    { state: 'succeeded'; delivery: RunDeliveryOutcome } | { state: 'failed'; failure: RunFailure };
-  /** When set, becomes the Run's latest Working copy state. */
-  workingCopy: RunWorkingCopy | null;
-  /** A retry that failed after its push: the pushed commit (review S2 of #150). */
-  pushedCommit?: string | null;
-  now: Date;
-}
-
-/** What storing a Run step did (Issue #100: the API also enforces the step limit). */
-export type AppendStepOutcome =
-  /** Stored now, or (`duplicate`) already stored by an earlier delivery of the same report. */
-  | { status: 'stored'; index: number; duplicate?: boolean }
-  /** The reported number is neither the stored last one nor the next one; nothing changed. */
-  | { status: 'out_of_order'; expected: number }
-  /** The Run is not `running` or not held by this worker; nothing changed. */
-  | { status: 'not_held' }
-  /** The step would exceed the Run's `maxSteps`: it was not stored, and the Run is `failed`. */
-  | { status: 'step_limit' };
-
-/** One reported Run step: its kind and the structured result, as validated JSON. */
-export interface RunStepRecord {
-  kind: 'start' | 'resume';
-  result: unknown;
-  /** The step's number as the worker reports it (review of #121); the next one when absent. */
-  index?: number;
-  /** A `needs_input` step's question (Issue #103): stored as the Run's next message. */
-  question?: RunQuestion;
-  /** The agent session the step reported (Issue #103): becomes the Run's session reference. */
-  sessionRef?: string;
-}
 
 /** A stored Run step: its number, kind, report time and the result as stored JSON. */
 export interface StoredRunStep extends RunStepRecord {
@@ -146,13 +62,18 @@ export interface RunsSummary {
 }
 
 /**
- * The Run aggregate's store (Issue #96). Every change a worker reports is conditional on the
- * stored state and holder still being what the caller read, so a late or repeated report
- * changes nothing; the store, not a prior read, decides.
+ * The Run aggregate's store (Issue #96). A Run's rules are the {@link Run}'s own: the operator's
+ * operations and what the agent worker reports for one Run are Run methods, run through
+ * {@link RunRepository.change} (load under the row lock, call, save). What stays here, besides
+ * loading, saving and the queries the screens and the worker need, is what a Run's own methods
+ * cannot do: handing out the next Run (`claimNext`, one atomic step under the claim lock) and the
+ * sweeps over many Runs (the lost-worker, step time-limit, long-wait and gone-worker sweeps, the
+ * lease renewal), each paired with a named rule in the domain that supplies its selection and its
+ * result (Issue #169).
  */
 export interface RunRepository {
-  /** Persists a new `queued` Run; the store assigns its id and creation time. */
-  add(run: NewRun): Promise<Run>;
+  /** Persists a new `queued` Run (`Run.start`). */
+  add(run: Run): Promise<Run>;
 
   /** The Run with this id, or `null`. */
   findById(id: string): Promise<Run | null>;
@@ -218,25 +139,6 @@ export interface RunRepository {
   claimNext(workerId: string, now: Date): Promise<Run | null>;
 
   /**
-   * Applies `change` if the Run is still in `change.from` and held by `change.workerId`. To
-   * `running` it stays held (heartbeat at `now`); to `waiting_for_operator` it is released
-   * (waiting since `now`); to a final state it is released and finished at `now`. Applies
-   * only if the Run's cancel request is still as `change.cancelRequested` says (Issue #100).
-   * `null` if a condition failed.
-   */
-  transitionClaimed(change: ClaimedRunChange): Promise<Run | null>;
-
-  /**
-   * Records a heartbeat of the worker holding the Run and tells it whether the operator asked
-   * to cancel (Issue #100); `null` if it does not hold the Run.
-   */
-  heartbeat(
-    runId: string,
-    workerId: string,
-    now: Date,
-  ): Promise<{ cancelRequested: boolean } | null>;
-
-  /**
    * Cancels a Run that no worker holds (`queued` or `waiting_for_operator`) if it is still in
    * `from`: → `cancelled` with `cancellation`, finished at `now` (Issue #100). `null` if not.
    * Kept for the long-wait sweep that runs with a claim and as a scheduled sweep (Studio's own
@@ -277,53 +179,6 @@ export interface RunRepository {
    */
   abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean>;
 
-  /**
-   * Applies a delivery retry's outcome if the Run is still `failed`, its retry requested and
-   * held by `outcome.workerId`; the request is cleared. `null` if the condition failed.
-   */
-  finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null>;
-
-  /**
-   * Records where a bring-up-to-date merge started (Issue #147) on the Run's latest Follow-up:
-   * the Run branch's commit before it and the integration branch commit being merged, kept for
-   * the later claims of the part. Only while `workerId` holds the Run, only when that Follow-up
-   * came from the request and has none yet. False when nothing was recorded.
-   */
-  recordUpdateStart(
-    runId: string,
-    workerId: string,
-    start: { baseCommit: string; integrationCommit: string },
-  ): Promise<boolean>;
-
-  /**
-   * Once a bring-up-to-date part succeeded (Issue #147): its merge is in the pushed Run branch, so
-   * the Follow-up's `updateTip` becomes its `mergedCommit` (what the page shows and what the Run's
-   * own changes are counted from). Idempotent; false when there was nothing to record.
-   */
-  recordMergedCommit(runId: string): Promise<boolean>;
-
-  /**
-   * Ends a bring-up-to-date Follow-up whose branch was already up to date (Issue #147), in one
-   * transaction: if `workerId` holds the Run (preparing or running) and its latest Follow-up
-   * came from that request, the Run goes back to the result it had before it (the state, failure
-   * and delivery the `part_end` before the Follow-up recorded) and a `part_end` with `detail`
-   * notes that nothing was changed. Nothing was pushed and no Run step was taken. `null` when a
-   * condition failed.
-   */
-  finishBringUpToDate(
-    runId: string,
-    workerId: string,
-    detail: string,
-    now: Date,
-  ): Promise<Run | null>;
-
-  /**
-   * Records that `workerId`'s retention removed the Working copies of these Runs (Issue #141):
-   * only for Runs it last claimed and does not hold, also one queued for a Follow-up meanwhile
-   * (review S9 of #150). Returns how many were recorded.
-   */
-  markWorkingCopiesRemoved(workerId: string, runIds: readonly string[], now: Date): Promise<number>;
-
   /** Resumable Runs no worker claimed yet, with the worker that started each (Issue #103). */
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;
 
@@ -342,22 +197,6 @@ export interface RunRepository {
    */
   findLimitedRuns(projectIds: readonly string[]): Promise<LimitedRunView[]>;
 
-  /**
-   * Stores a Run step of a `running` Run held by `workerId`, numbered 1, 2, … in report
-   * order, and makes `workingCopy` the Run's latest Working copy state and `failingChecks` its
-   * failing checks (Issue #102), in one transaction. A step's question becomes the Run's next
-   * message and its session reference the Run's (Issue #103), in the same transaction. A step beyond the Run's `maxSteps` is not
-   * stored: the Run fails with `stepLimitFailure`, released and finished at `now` (Issue #100).
-   */
-  appendStep(
-    runId: string,
-    workerId: string,
-    step: RunStepRecord,
-    workingCopy: RunWorkingCopy,
-    failingChecks: readonly string[],
-    now: Date,
-  ): Promise<AppendStepOutcome>;
-
   /** The Run's stored steps, by number (Issue #99). */
   listSteps(runId: string): Promise<StoredRunStep[]>;
 
@@ -373,28 +212,6 @@ export interface RunRepository {
     deliveryFailure: RunFailure,
     now: Date,
   ): Promise<number>;
-
-  /**
-   * Records that a `preparing` Run held by `workerId` was given its Project's Environment file
-   * (Issue #104): its path and the secret store's reference to its snapshot; false (nothing
-   * changed) if the Run is no longer `preparing` or held by it.
-   */
-  attachEnvironmentFile(
-    runId: string,
-    workerId: string,
-    file: { path: string; secretRef: string },
-  ): Promise<boolean>;
-
-  /**
-   * Records the new Environment file snapshot of a `preparing` Run held by `workerId` (review S3
-   * of #150: a Follow-up, or a usage-limit resume inside one, takes the Project's current file),
-   * or that it has none now; false (nothing changed) if the Run is no longer so held.
-   */
-  replaceEnvironmentFile(
-    runId: string,
-    workerId: string,
-    file: { path: string; secretRef: string } | null,
-  ): Promise<boolean>;
 
   /** The reference to the Run's Environment file snapshot, or `null` (none, or already deleted). */
   findEnvironmentFileSecret(runId: string): Promise<string | null>;
@@ -421,32 +238,5 @@ export class RunNotFoundError extends Error {
   constructor() {
     super('The run does not exist.');
     this.name = 'RunNotFoundError';
-  }
-}
-
-/**
- * The reporting agent worker does not hold the Run: another worker claimed it, it was
- * released (waiting for the operator, or final), or it was failed as `worker_lost`.
- */
-export class RunNotHeldError extends Error {
-  constructor() {
-    super('This agent worker does not hold the run.');
-    this.name = 'RunNotHeldError';
-  }
-}
-
-/** A Run step's number is neither the last stored one nor the next (review of #121). */
-export class StepOutOfOrderError extends Error {
-  constructor(readonly expected: number) {
-    super(`The next run step is number ${expected}.`);
-    this.name = 'StepOutOfOrderError';
-  }
-}
-
-/** A Run step beyond the Run's maximum was reported; the Run is now `failed` (Issue #100). */
-export class StepLimitReachedError extends Error {
-  constructor() {
-    super('The run reached its maximum number of run steps.');
-    this.name = 'StepLimitReachedError';
   }
 }
