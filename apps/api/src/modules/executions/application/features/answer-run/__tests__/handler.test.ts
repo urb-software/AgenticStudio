@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { type Run, RunNotWaitingError } from '../../../../domain/entities/run.js';
+import { type RunSnapshot, RunNotWaitingError } from '../../../../domain/entities/run.js';
+import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { AnswerRunHandler } from '../handler.js';
@@ -15,7 +16,7 @@ const QUESTION = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
 describe('AnswerRunHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: AnswerRunHandler;
-  let run: Run;
+  let run: RunSnapshot;
 
   /** WORKER carries `run` to a question and releases it waiting for the operator. */
   async function ask() {
@@ -54,7 +55,9 @@ describe('AnswerRunHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new AnswerRunHandler(runs, { now: () => T1 });
+    handler = new AnswerRunHandler(runs, new InMemoryPreparedFollowUpRepository(runs), {
+      now: () => T1,
+    });
     await runs.start({
       projectId: PROJECT,
       provider: 'codex',
@@ -70,7 +73,7 @@ describe('AnswerRunHandler', () => {
   it('stores the answer after the question and queues the Run to resume', async () => {
     await ask();
 
-    const answered = await handler.execute(run.id, 'PostgreSQL');
+    const { run: answered } = await handler.execute({ runId: run.id, text: 'PostgreSQL' });
 
     expect(answered).toMatchObject({ state: 'queued', waitingSince: null });
     expect(answered.messages).toEqual([
@@ -81,9 +84,11 @@ describe('AnswerRunHandler', () => {
 
   it('refuses a second answer: the Run is no longer waiting', async () => {
     await ask();
-    await handler.execute(run.id, 'PostgreSQL');
+    await handler.execute({ runId: run.id, text: 'PostgreSQL' });
 
-    const error = await handler.execute(run.id, 'SQLite').catch((caught: unknown) => caught);
+    const error = await handler
+      .execute({ runId: run.id, text: 'SQLite' })
+      .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(RunNotWaitingError);
     expect((error as RunNotWaitingError).state).toBe('queued');
@@ -91,7 +96,9 @@ describe('AnswerRunHandler', () => {
   });
 
   it('refuses an answer to a Run that is not waiting, e.g. running or cancelled', async () => {
-    await expect(handler.execute(run.id, 'x')).rejects.toBeInstanceOf(RunNotWaitingError);
+    await expect(handler.execute({ runId: run.id, text: 'x' })).rejects.toBeInstanceOf(
+      RunNotWaitingError,
+    );
 
     await ask();
     await runs.cancelUnheld(
@@ -100,14 +107,18 @@ describe('AnswerRunHandler', () => {
       { by: 'operator', reason: 'Cancelled by the operator.' },
       T1,
     );
-    const error = await handler.execute(run.id, 'x').catch((caught: unknown) => caught);
+    const error = await handler
+      .execute({ runId: run.id, text: 'x' })
+      .catch((caught: unknown) => caught);
     expect((error as RunNotWaitingError).state).toBe('cancelled');
   });
 
   it('rejects an unknown Run, also for an id that is not a UUID', async () => {
-    await expect(handler.execute('nope', 'x')).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(handler.execute({ runId: 'nope', text: 'x' })).rejects.toBeInstanceOf(
+      RunNotFoundError,
+    );
     await expect(
-      handler.execute('0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b', 'x'),
+      handler.execute({ runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b', text: 'x' }),
     ).rejects.toBeInstanceOf(RunNotFoundError);
   });
 });

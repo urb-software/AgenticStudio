@@ -1,14 +1,14 @@
-import { planLogAppend, type RunEvent } from '../../value-objects/run-event.js';
-import { CLAIMED_RUN_STATES } from '../../entities/run.js';
-import type { RunLogRepository } from '../run-log-repository.js';
-import type { InMemoryRunRepository } from './in-memory-run-repository.js';
+import { planLogAppend, type RunEvent } from '../../../domain/value-objects/run-event.js';
+import { LogAppendRule } from '../../../domain/value-objects/log-append-rule.js';
+import type { RunLog } from '../run-log.js';
+import type { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 
 /**
- * In-memory adapter of {@link RunLogRepository} for handler tests, with the database adapter's
+ * In-memory adapter of {@link RunLog} for handler tests, with the database adapter's
  * rules: appends only for the holding worker of a `preparing` or `running` Run, stored seqs
  * ignored, the cap applied per Run.
  */
-export class InMemoryRunLogRepository implements RunLogRepository {
+export class InMemoryRunLog implements RunLog {
   readonly events = new Map<string, RunEvent[]>();
   private readonly caps = new Map<string, { bytes: number; truncated: boolean }>();
 
@@ -21,8 +21,7 @@ export class InMemoryRunLogRepository implements RunLogRepository {
     maxBytes: number,
   ): Promise<number | null> {
     const run = this.runs.runs.find((candidate) => candidate.id === runId);
-    const held = (CLAIMED_RUN_STATES as readonly string[]).includes(run?.state ?? '');
-    if (!run || !held || run.claimedBy !== workerId) {
+    if (!run || !LogAppendRule.allows(run, workerId)) {
       return Promise.resolve(null);
     }
     const stored = this.events.get(runId) ?? [];

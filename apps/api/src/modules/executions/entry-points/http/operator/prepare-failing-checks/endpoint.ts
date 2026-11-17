@@ -8,7 +8,7 @@ import {
   pullRequestNotRefreshable,
   runNotFound,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import {
@@ -38,8 +38,10 @@ export class PrepareFailingChecksEndpoint {
   })
   async prepare(@Param('runId') runId: string) {
     try {
-      const { run, followUp, workerConnected } = await this.handler.execute(runId);
-      return toRunResponse(run, followUp, workerConnected);
+      const { run, followUp, workerConnected, preparedFollowUp } = await this.handler.execute({
+        runId,
+      });
+      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof PullRequestNotRefreshableError) throw pullRequestNotRefreshable();

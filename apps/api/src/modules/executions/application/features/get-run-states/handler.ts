@@ -25,6 +25,14 @@ export interface RunRetentionAnswer {
   session?: { provider: Provider; ref: string };
 }
 
+export interface GetRunStatesInput {
+  runIds: readonly string[];
+  /** Issue #141: the Runs whose Working copies the worker's retention removed. */
+  removed?: { workerId: string; runIds: readonly string[] };
+}
+
+export type GetRunStatesResult = RunRetentionAnswer[];
+
 /**
  * Query (Issue #98, #143): the agent worker asks for the Runs it keeps Working copies for, to
  * apply the retention. Studio decides, from what it holds: a Run that is not final (queued,
@@ -47,10 +55,8 @@ export class GetRunStatesHandler {
     @Inject(RETENTION_POLICY) private readonly policy: RetentionPolicy,
   ) {}
 
-  async execute(
-    runIds: readonly string[],
-    removed?: { workerId: string; runIds: readonly string[] },
-  ): Promise<RunRetentionAnswer[]> {
+  async execute(input: GetRunStatesInput): Promise<GetRunStatesResult> {
+    const { runIds, removed } = input;
     const now = this.clock.now();
     // Each Run is changed under its own row lock (Issue #169): a Follow-up queued meanwhile
     // either took the Working copy before this report or finds it removed.

@@ -9,6 +9,14 @@ import {
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
+export interface SweepLostWorkersResult {
+  /**
+   * How many Runs failed (also requested delivery retries and answered Runs whose worker is
+   * gone).
+   */
+  failed: number;
+}
+
 /**
  * Command (Issue #96): every held Run (`preparing` or `running`) whose last heartbeat is
  * older than the lease → `failed` with `worker_lost`. Runs waiting for the operator are not
@@ -29,11 +37,7 @@ export class SweepLostWorkersHandler {
   /** When this handler started: a worker that never reported since counts from here. */
   private readonly since: Date;
 
-  /**
-   * Returns how many Runs failed (also requested delivery retries and answered Runs whose
-   * worker is gone).
-   */
-  async execute(): Promise<number> {
+  async execute(): Promise<SweepLostWorkersResult> {
     const now = this.clock.now();
     const rule = LostWorkerRule.at(now, this.lease.seconds);
     const lost = await this.runs.failStaleClaims(
@@ -42,11 +46,12 @@ export class SweepLostWorkersHandler {
       rule.deliveryFailure,
       now,
     );
-    return (
-      lost +
-      (await this.abandonRetriesOfGoneWorkers(now)) +
-      (await this.abandonResumesOfGoneWorkers(now))
-    );
+    return {
+      failed:
+        lost +
+        (await this.abandonRetriesOfGoneWorkers(now)) +
+        (await this.abandonResumesOfGoneWorkers(now)),
+    };
   }
 
   /**

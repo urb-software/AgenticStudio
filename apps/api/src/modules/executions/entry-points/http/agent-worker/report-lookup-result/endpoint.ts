@@ -38,7 +38,7 @@ export class ReportLookupResultEndpoint {
     }
     if (!UUID.test(lookupId)) throw lookupNotFound();
     try {
-      await this.handler.execute(lookupId, parsed.data);
+      await this.handler.execute({ lookupId, answer: parsed.data });
     } catch (error) {
       if (error instanceof LookupNotFoundError) throw lookupNotFound();
       if (error instanceof LookupNotHeldError) throw lookupNotHeld();

@@ -616,4 +616,36 @@ describeGate('api', apiGate, 'apps/api', [
     expected: [],
     qualityRow: '`domain/` exports only classes, types, constants and type guards',
   },
+  {
+    fixture: 'executions-entry-point-imports-type-and-error-from-entities',
+    expected: [],
+  },
+  {
+    fixture: 'executions-entry-point-imports-entity-class',
+    expected: ['api-entry-points-no-entity-classes'],
+  },
+  {
+    fixture: 'executions-handler-returns-entity-class',
+    expected: ['api-handlers-return-plain-data'],
+  },
+  {
+    fixture: 'executions-repository-refers-to-root-and-its-child',
+    expected: [],
+  },
+  {
+    fixture: 'executions-repository-refers-to-two-entities',
+    expected: ['api-repository-refers-to-one-entity'],
+  },
+  {
+    fixture: 'executions-entity-imports-another-entity',
+    expected: ['api-entities-do-not-import-entities'],
+  },
+  {
+    fixture: 'executions-entity-imports-run-step-from-another-root',
+    expected: ['api-entities-do-not-import-entities'],
+  },
+  {
+    fixture: 'executions-repository-refers-to-another-root-and-the-run-step',
+    expected: ['api-repository-refers-to-one-entity'],
+  },
 ]);

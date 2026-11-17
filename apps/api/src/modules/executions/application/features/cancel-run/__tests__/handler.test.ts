@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RunAlreadyFinishedError, type Run } from '../../../../domain/entities/run.js';
+import { RunAlreadyFinishedError, type RunSnapshot } from '../../../../domain/entities/run.js';
+import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { CancelRunHandler } from '../handler.js';
@@ -18,9 +19,9 @@ describe('CancelRunHandler', () => {
   let runs: InMemoryRunRepository;
   let now: Date;
   let handler: CancelRunHandler;
-  let run: Run;
+  let run: RunSnapshot;
 
-  const transition = (from: Run['state'], to: Run['state']) =>
+  const transition = (from: RunSnapshot['state'], to: RunSnapshot['state']) =>
     runs.transitionClaimed({
       runId: run.id,
       workerId: WORKER,
@@ -34,7 +35,9 @@ describe('CancelRunHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     now = T1;
-    handler = new CancelRunHandler(runs, { now: () => now });
+    handler = new CancelRunHandler(runs, new InMemoryPreparedFollowUpRepository(runs), {
+      now: () => now,
+    });
     run = await runs.start({
       projectId: PROJECT,
       provider: 'codex',
@@ -47,7 +50,7 @@ describe('CancelRunHandler', () => {
   });
 
   it('cancels a queued Run at once, by the operator', async () => {
-    expect(await handler.execute(run.id)).toMatchObject({
+    expect((await handler.execute({ runId: run.id })).run).toMatchObject({
       state: 'cancelled',
       cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
       finishedAt: T1,
@@ -59,7 +62,7 @@ describe('CancelRunHandler', () => {
     await transition('preparing', 'running');
     await transition('running', 'waiting_for_operator');
 
-    expect(await handler.execute(run.id)).toMatchObject({
+    expect((await handler.execute({ runId: run.id })).run).toMatchObject({
       state: 'cancelled',
       cancellation: { by: 'operator' },
       finishedAt: T1,
@@ -73,7 +76,7 @@ describe('CancelRunHandler', () => {
       await runs.claimNext(WORKER, T0);
       if (state === 'running') await transition('preparing', 'running');
 
-      expect(await handler.execute(run.id)).toMatchObject({
+      expect((await handler.execute({ runId: run.id })).run).toMatchObject({
         state,
         cancelRequestedAt: T1,
         claimedBy: WORKER,
@@ -84,20 +87,20 @@ describe('CancelRunHandler', () => {
 
   it('accepts a repeated cancel and keeps the first request time', async () => {
     await runs.claimNext(WORKER, T0);
-    await handler.execute(run.id);
+    await handler.execute({ runId: run.id });
     now = T2;
 
-    expect(await handler.execute(run.id)).toMatchObject({
+    expect((await handler.execute({ runId: run.id })).run).toMatchObject({
       state: 'preparing',
       cancelRequestedAt: T1,
     });
   });
 
   it('refuses to cancel a finished Run, naming its state', async () => {
-    await handler.execute(run.id);
+    await handler.execute({ runId: run.id });
     now = T2;
 
-    const error = await handler.execute(run.id).catch((caught: unknown) => caught);
+    const error = await handler.execute({ runId: run.id }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(RunAlreadyFinishedError);
     expect((error as RunAlreadyFinishedError).state).toBe('cancelled');
@@ -105,7 +108,7 @@ describe('CancelRunHandler', () => {
   });
 
   it('reports an unknown Run, and an id that is not a UUID, as not found', async () => {
-    await expect(handler.execute(UNKNOWN_RUN)).rejects.toBeInstanceOf(RunNotFoundError);
-    await expect(handler.execute('../etc')).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(handler.execute({ runId: UNKNOWN_RUN })).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(handler.execute({ runId: '../etc' })).rejects.toBeInstanceOf(RunNotFoundError);
   });
 });

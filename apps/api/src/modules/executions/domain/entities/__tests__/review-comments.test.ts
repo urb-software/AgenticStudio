@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { LogRedaction, REDACTED } from '../log-redaction.js';
-import { type ReviewComment, ReviewComments, ReviewCommentSet } from '../review-comments.js';
+import { LogRedaction, REDACTED } from '../../value-objects/log-redaction.js';
+import type { ReviewComment } from '../../value-objects/review-comments.js';
+import { ReviewComments } from '../review-comments.js';
 
 // Issue #146: Review comments are untrusted text from the Git host. They are redacted with the
 // Run's known secret values and token shapes, held to their limits in UTF-8 bytes, and chosen by id.
@@ -14,10 +15,10 @@ const comment = (overrides: Partial<ReviewComment> = {}): ReviewComment => ({
   ...overrides,
 });
 
-describe('ReviewCommentSet.sanitize', () => {
+describe('ReviewComments.sanitize', () => {
   it('redacts the Run known secret values and token-shaped strings, in text and diff context', () => {
     const token = `ghp_${'a'.repeat(36)}`;
-    const { comments } = ReviewCommentSet.sanitize(
+    const { comments } = ReviewComments.sanitize(
       [
         comment({
           kind: 'inline',
@@ -37,7 +38,7 @@ describe('ReviewCommentSet.sanitize', () => {
   });
 
   it('removes control characters but keeps line breaks and markup as plain text', () => {
-    const { comments } = ReviewCommentSet.sanitize(
+    const { comments } = ReviewComments.sanitize(
       [comment({ text: 'a\u0000b\tc\nd <i>e</i> [f](http://evil.test)\u001B' })],
       false,
       LogRedaction.of([]),
@@ -47,7 +48,7 @@ describe('ReviewCommentSet.sanitize', () => {
   });
 
   it('cuts a text to 8 KiB in UTF-8 bytes at a character boundary and marks the cut', () => {
-    const { comments, truncated } = ReviewCommentSet.sanitize(
+    const { comments, truncated } = ReviewComments.sanitize(
       [comment({ text: 'é'.repeat(5000) })],
       false,
       LogRedaction.of([]),
@@ -61,7 +62,7 @@ describe('ReviewCommentSet.sanitize', () => {
 
   it('holds a text to the limit after redaction, which can lengthen it', () => {
     // 700 short secrets each become a 16-character marker: the text grows past 8 KiB.
-    const { comments } = ReviewCommentSet.sanitize(
+    const { comments } = ReviewComments.sanitize(
       [comment({ text: 'abcd '.repeat(700) })],
       false,
       LogRedaction.of(['abcd']),
@@ -76,7 +77,7 @@ describe('ReviewCommentSet.sanitize', () => {
       comment({ id: `conversation-${index + 1}` }),
     );
 
-    const { comments, truncated } = ReviewCommentSet.sanitize(many, false, LogRedaction.of([]));
+    const { comments, truncated } = ReviewComments.sanitize(many, false, LogRedaction.of([]));
 
     expect(comments).toHaveLength(100);
     expect(comments[0]?.id).toBe('conversation-6');
@@ -84,14 +85,12 @@ describe('ReviewCommentSet.sanitize', () => {
   });
 
   it('keeps what the worker said was truncated, and says nothing more for a clean set', () => {
-    expect(ReviewCommentSet.sanitize([comment()], true, LogRedaction.of([])).truncated).toBe(true);
-    expect(ReviewCommentSet.sanitize([comment()], false, LogRedaction.of([])).truncated).toBe(
-      false,
-    );
+    expect(ReviewComments.sanitize([comment()], true, LogRedaction.of([])).truncated).toBe(true);
+    expect(ReviewComments.sanitize([comment()], false, LogRedaction.of([])).truncated).toBe(false);
   });
 
   it('never shows a login that redaction would change half-masked', () => {
-    const { comments } = ReviewCommentSet.sanitize(
+    const { comments } = ReviewComments.sanitize(
       [comment({ author: 'octocat' })],
       false,
       LogRedaction.of(['octocat']),
@@ -102,7 +101,7 @@ describe('ReviewCommentSet.sanitize', () => {
 });
 
 describe('selecting comments', () => {
-  const set = ReviewCommentSet.restore({
+  const set = ReviewComments.restore({
     scope: 'unresolved',
     truncated: false,
     loadedAt: new Date('2026-11-16T12:00:00.000Z'),
@@ -125,10 +124,32 @@ describe('selecting comments', () => {
     expect(set.select(['review-1', 'review-1'])).toBeNull();
   });
 
+  it('says what a selection comes to as values for the Follow-up: how many, and whose', () => {
+    expect(set.selection(['conversation-3', 'review-1'])).toEqual({ count: 2, authors: ['a'] });
+    expect(set.selection(['inline-2', 'review-1'])).toEqual({ count: 2, authors: ['a', 'b'] });
+  });
+
+  it('says nothing for a selection that is not all in the set: it is not loaded', () => {
+    expect(set.selection(['review-1', 'review-9'])).toBeNull();
+    expect(set.selection(['review-1', 'review-1'])).toBeNull();
+  });
+
+  it('is a plain snapshot, a copy of its values', () => {
+    const snapshot = set.snapshot();
+
+    expect(snapshot).toEqual({
+      scope: 'unresolved',
+      truncated: false,
+      loadedAt: new Date('2026-11-16T12:00:00.000Z'),
+      comments: set.comments,
+    });
+    expect(snapshot.comments[0]).not.toBe(set.comments[0]);
+  });
+
   it('lists the distinct authors in order of appearance', () => {
-    expect(ReviewCommentSet.distinctAuthors(set.comments)).toEqual(['a', 'b']);
+    expect(ReviewComments.distinctAuthors(set.comments)).toEqual(['a', 'b']);
     const many = Array.from({ length: 30 }, (_, index) => comment({ author: `user-${index}` }));
-    expect(ReviewCommentSet.distinctAuthors(many)).toHaveLength(20);
+    expect(ReviewComments.distinctAuthors(many)).toHaveLength(20);
   });
 });
 

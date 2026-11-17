@@ -21,7 +21,7 @@ export class DiscardPreparedFollowUpEndpoint {
   @ApiProblemResponses({ 404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})` })
   async discard(@Param('runId') runId: string): Promise<void> {
     try {
-      await this.handler.execute(runId);
+      await this.handler.execute({ runId });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       throw error;

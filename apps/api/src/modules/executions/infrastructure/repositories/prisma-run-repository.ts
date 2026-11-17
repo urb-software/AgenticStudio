@@ -1,9 +1,7 @@
 import { isUniqueConstraintViolation, Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  DATABASE_CLIENT,
-  type DatabaseClient,
-} from '../../../../platform/database/database.module.js';
+import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
+import { type Executor, inTransaction } from './executor.js';
 import {
   CLAIMED_RUN_STATES,
   FINAL_RUN_STATES,
@@ -24,23 +22,22 @@ import {
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
-  type FollowUpSource,
   type RunPullRequestChecks,
   type PullRequestState,
   type RunPartEnd,
   type RunState,
+  type RunSnapshot,
   type RunWorkingCopy,
   UNDER_WAY_RUN_STATES,
 } from '../../domain/entities/run.js';
+import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
 import { HandOutRule } from '../../domain/value-objects/hand-out-rule.js';
-import { ReviewCommentSet } from '../../domain/value-objects/review-comments.js';
-import { commentsSchema } from './review-comment-json.js';
+import type { RunStepSnapshot } from '../../domain/entities/run-step.js';
 import type {
   LimitedRunView,
   RunRepository,
   RunsSummary,
   RunStateView,
-  StoredRunStep,
 } from '../../domain/repositories/run-repository.js';
 
 /** A Run's fields as lists read them: everything but its conversation (Issue #103). */
@@ -99,8 +96,6 @@ const LIST_FIELDS = {
   prChecks: true,
   prPrepareRequestedAt: true,
   prPrepareError: true,
-  // Issue #145: whether a prepared Follow-up waits for the operator.
-  preparedFollowUp: { select: { runId: true } },
   prEndedAt: true,
   lastActivityAt: true,
   // Issue #141: the Run step total, counted with the Run.
@@ -186,7 +181,6 @@ interface RunRow {
   prChecks: Prisma.JsonValue;
   prPrepareRequestedAt: Date | null;
   prPrepareError: string | null;
-  preparedFollowUp: { runId: string } | null;
   prEndedAt: Date | null;
   lastActivityAt: Date;
   _count: { steps: number };
@@ -377,7 +371,6 @@ function toRun(row: RunRow): Run {
       checks: row.prChecks as RunPullRequestChecks | null,
       prepareRequestedAt: row.prPrepareRequestedAt,
       prepareError: row.prPrepareError,
-      preparedFollowUp: row.preparedFollowUp !== null,
       endedAt: row.prEndedAt,
     },
     lastActivityAt: row.lastActivityAt,
@@ -466,6 +459,25 @@ const CHANGED_COLUMNS: {
   workingCopyRemovedAt: (workingCopyRemovedAt) => ({ workingCopyRemovedAt }),
   environmentFileSupplied: (supplied) => ({ environmentFileSupplied: supplied! }),
   environmentFilePath: (environmentFilePath) => ({ environmentFilePath }),
+  // What the lookups changed of the Run's pull request status (Issues #142, #143, #145).
+  pullRequestStatus: (status) => ({
+    prState: status!.state,
+    prBehindBy: status!.behindBy,
+    prAheadBy: status!.aheadBy,
+    prMergeable: status!.mergeable,
+    prRefreshedAt: status!.refreshedAt,
+    prRefreshError: status!.refreshError,
+    prRetryAt: status!.retryAt,
+    prRefreshRequestedAt: status!.refreshRequestedAt,
+    prLastAttemptAt: status!.lastAttemptAt,
+    prChecks:
+      status!.checks === null
+        ? Prisma.DbNull
+        : (status!.checks as unknown as Prisma.InputJsonValue),
+    prPrepareRequestedAt: status!.prepareRequestedAt,
+    prPrepareError: status!.prepareError,
+    prEndedAt: status!.endedAt,
+  }),
   // Counted from the stored Run steps, not a column.
   stepCount: () => ({}),
 };
@@ -491,7 +503,7 @@ function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdate
  */
 @Injectable()
 export class PrismaRunRepository implements RunRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
   async add(run: Run): Promise<Run> {
     const row = await this.db.run.create({
@@ -520,9 +532,14 @@ export class PrismaRunRepository implements RunRepository {
     return row ? toRun(row) : null;
   }
 
-  async listNewestFirst(): Promise<Run[]> {
+  async exists(id: string): Promise<boolean> {
+    if (!isRunId(id)) return false;
+    return (await this.db.run.count({ where: { id } })) > 0;
+  }
+
+  async listNewestFirst(): Promise<RunSnapshot[]> {
     const rows = await this.db.run.findMany({ orderBy: [...NEWEST_FIRST], select: LIST_FIELDS });
-    return rows.map(toRun);
+    return rows.map((row) => toRun(row).snapshot());
   }
 
   async summarize(): Promise<RunsSummary> {
@@ -539,17 +556,18 @@ export class PrismaRunRepository implements RunRepository {
     return { running: count(UNDER_WAY_RUN_STATES), waiting: count(['waiting_for_operator']) };
   }
 
-  async listByProjectNewestFirst(projectId: string): Promise<Run[]> {
+  async listByProjectNewestFirst(projectId: string): Promise<RunSnapshot[]> {
     const rows = await this.db.run.findMany({
       where: { projectId },
       orderBy: [...NEWEST_FIRST],
       select: LIST_FIELDS,
     });
-    return rows.map(toRun);
+    return rows.map((row) => toRun(row).snapshot());
   }
 
-  async claimNext(workerId: string, now: Date): Promise<Run | null> {
-    return this.db.$transaction(
+  async claimNext(workerId: string, now: Date): Promise<RunSnapshot | null> {
+    return inTransaction(
+      this.db,
       async (tx) => {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
@@ -593,7 +611,7 @@ export class PrismaRunRepository implements RunRepository {
         if (!claimed) return null;
         return toRun(
           await tx.run.findUniqueOrThrow({ where: { id: claimed.id }, select: RUN_FIELDS }),
-        );
+        ).snapshot();
       },
       // Claims queue on the lock inside their transactions; each holds it for milliseconds.
       CLAIM_TRANSACTION,
@@ -627,7 +645,7 @@ export class PrismaRunRepository implements RunRepository {
     from: 'queued' | 'waiting_for_operator',
     cancellation: RunCancellation,
     now: Date,
-  ): Promise<Run | null> {
+  ): Promise<RunSnapshot | null> {
     const { count } = await this.db.run.updateMany({
       where: { id: runId, state: from },
       data: {
@@ -639,20 +657,20 @@ export class PrismaRunRepository implements RunRepository {
         followUpQueued: false,
       },
     });
-    return count === 1 ? this.findById(runId) : null;
+    return count === 1 ? ((await this.findById(runId))?.snapshot() ?? null) : null;
   }
 
-  async listWaiting(): Promise<Run[]> {
+  async listWaiting(): Promise<RunSnapshot[]> {
     const rows = await this.db.run.findMany({
       where: { state: 'waiting_for_operator' },
       orderBy: [{ waitingSince: 'asc' }, { id: 'asc' }],
       select: LIST_FIELDS,
     });
-    return rows.map(toRun);
+    return rows.map((row) => toRun(row).snapshot());
   }
 
   async renewClaimsOncePerLease(now: Date, leaseSeconds: number): Promise<number | null> {
-    return this.db.$transaction(async (tx) => {
+    return inTransaction(this.db, async (tx) => {
       // Records this renewal only if the last one is at least a lease old (or there is none);
       // the row lock serializes two APIs starting at once.
       const renewed = await tx.$queryRaw<{ id: number }[]>`
@@ -681,28 +699,6 @@ export class PrismaRunRepository implements RunRepository {
   async change(runId: string, mutate: (run: Run) => void): Promise<Run | null> {
     return this.changeLocked(runId, {}, (run) => {
       mutate(run);
-    });
-  }
-
-  async changeWithReviewComments(
-    runId: string,
-    mutate: (run: Run, loaded: ReviewCommentSet | null) => void,
-  ): Promise<Run | null> {
-    return this.changeLocked(runId, {}, async (run, tx) => {
-      const stored = await tx.runReviewCommentSet.findUnique({ where: { runId } });
-      const parsed = stored ? commentsSchema.safeParse(stored.comments) : undefined;
-      // A stored set that does not validate is no loaded set.
-      mutate(
-        run,
-        stored && parsed?.success
-          ? ReviewCommentSet.restore({
-              scope: stored.scope as ReviewCommentSet['scope'],
-              comments: parsed.data,
-              truncated: stored.truncated,
-              loadedAt: stored.loadedAt,
-            })
-          : null,
-      );
     });
   }
 
@@ -747,26 +743,34 @@ export class PrismaRunRepository implements RunRepository {
     work: (run: Run, tx: Prisma.TransactionClient) => void | Promise<void>,
   ): Promise<Run | null> {
     if (!isRunId(runId)) return null;
-    return this.db.$transaction(async (tx) => {
-      if (options.serializedWithClaims) {
-        await tx.$queryRaw`
+    return inTransaction(
+      this.db,
+      async (tx) => {
+        if (options.serializedWithClaims) {
+          await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-      }
-      // Locks the Run row until commit: what `work` decides from the Run it then reads holds
-      // until the change is saved, and a worker's conditional update waits for it.
-      const [locked] = await tx.$queryRaw<{ id: string }[]>`
+        }
+        // Locks the Run row until commit: what `work` decides from the Run it then reads holds
+        // until the change is saved, and a worker's conditional update waits for it.
+        const [locked] = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM runs WHERE id = ${runId}::uuid FOR UPDATE`;
-      if (!locked) return null;
-      const read = () => tx.run.findUniqueOrThrow({ where: { id: runId }, select: RUN_FIELDS });
-      const run = toRun(await read());
-      await work(run, tx);
-      await this.save(tx, run);
-      return toRun(await read());
-    }, CLAIM_TRANSACTION);
+        if (!locked) return null;
+        const read = () => tx.run.findUniqueOrThrow({ where: { id: runId }, select: RUN_FIELDS });
+        const run = toRun(await read());
+        await work(run, tx);
+        await this.persist(tx, run);
+        return toRun(await read());
+      },
+      CLAIM_TRANSACTION,
+    );
   }
 
-  /** Saves what an operator operation changed on the Run: its columns, messages and discards. */
-  private async save(tx: Prisma.TransactionClient, run: Run): Promise<void> {
+  async save(run: Run): Promise<void> {
+    await inTransaction(this.db, (tx) => this.persist(tx, run));
+  }
+
+  /** Saves what a Run operation changed on the Run: its columns, messages and steps. */
+  private async persist(tx: Prisma.TransactionClient, run: Run): Promise<void> {
     const changes = run.pendingChanges();
     const data = changedColumns(changes.fields);
     if (changes.messages.length > 0) {
@@ -810,14 +814,6 @@ export class PrismaRunRepository implements RunRepository {
     }
     if (changes.environmentFileSecretRef !== undefined) {
       data.environmentFileSecretId = changes.environmentFileSecretRef;
-    }
-    if (changes.discardReviewComments) {
-      await tx.runReviewCommentSet.deleteMany({ where: { runId: run.id } });
-    }
-    if (changes.discardPreparedFollowUp !== undefined) {
-      await tx.runPreparedFollowUp.deleteMany({
-        where: { runId: run.id, source: changes.discardPreparedFollowUp },
-      });
     }
     if (Object.keys(data).length > 0) await tx.run.update({ where: { id: run.id }, data });
   }
@@ -902,7 +898,7 @@ export class PrismaRunRepository implements RunRepository {
     );
   }
 
-  async listSteps(runId: string): Promise<StoredRunStep[]> {
+  async listSteps(runId: string): Promise<(RunStepSnapshot & { reportedAt: Date })[]> {
     const rows = await this.db.runStep.findMany({
       where: { runId },
       orderBy: { index: 'asc' },
@@ -922,7 +918,7 @@ export class PrismaRunRepository implements RunRepository {
     deliveryFailure: RunFailure,
     now: Date,
   ): Promise<number> {
-    return this.db.$transaction(async (tx) => {
+    return inTransaction(this.db, async (tx) => {
       const held = await tx.run.updateMany({
         where: { state: { in: [...CLAIMED_RUN_STATES] }, heartbeatAt: { lt: staleBefore } },
         data: {
@@ -949,6 +945,32 @@ export class PrismaRunRepository implements RunRepository {
       });
       return held.count + retries.count;
     });
+  }
+
+  async listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]> {
+    const rows = await this.db.run.findMany({
+      where: {
+        pullRequestNumber: { not: null },
+        runBranch: { not: null },
+        prRefreshRequestedAt: null,
+        AND: [
+          { OR: [{ prState: null }, { prState: { in: ['draft', 'open'] } }] },
+          {
+            OR: [
+              { prLastAttemptAt: { lt: attemptedBefore } },
+              {
+                prLastAttemptAt: null,
+                OR: [{ prRefreshedAt: null }, { prRefreshedAt: { lt: attemptedBefore } }],
+              },
+            ],
+          },
+        ],
+      },
+      orderBy: [{ prLastAttemptAt: { sort: 'asc', nulls: 'first' } }, { id: 'asc' }],
+      select: { id: true },
+      take: limit,
+    });
+    return rows.map((row) => row.id);
   }
 
   async findEnvironmentFileSecret(runId: string): Promise<string | null> {

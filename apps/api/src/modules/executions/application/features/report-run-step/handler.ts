@@ -24,6 +24,11 @@ export interface ReportRunStepInput extends RunStepRecord {
   workingCopy: RunWorkingCopy;
 }
 
+export interface ReportRunStepResult {
+  /** The step's number. */
+  index: number;
+}
+
 /**
  * Command (Issue #96): the agent worker holding a `running` Run reports the structured result
  * of a Run step; it is stored (internal for now), and the Working copy's state it reports
@@ -47,8 +52,8 @@ export class ReportRunStepHandler {
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
   ) {}
 
-  async execute(input: ReportRunStepInput): Promise<number> {
-    if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
+  async execute(input: ReportRunStepInput): Promise<ReportRunStepResult> {
+    if (!isRunId(input.runId) || !(await this.runs.exists(input.runId))) {
       throw new RunNotFoundError();
     }
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
@@ -76,7 +81,7 @@ export class ReportRunStepHandler {
     });
     if (!saved || !outcome) throw new RunNotFoundError();
     if (outcome.status === 'step_limit') throw new StepLimitReachedError();
-    return outcome.index;
+    return { index: outcome.index };
   }
 }
 

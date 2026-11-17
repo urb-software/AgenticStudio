@@ -8,7 +8,14 @@ import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../../domain/repositories/run-lookup-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { RunLookupRequests } from '../../run-lookup-requests.js';
+
+export interface RequestDailyPullRequestRefreshesResult {
+  /** How many requests were recorded. */
+  requested: number;
+}
 
 /**
  * Command (Issue #142): the daily refresh. Records a pull request lookup for every Run that has a
@@ -23,10 +30,12 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 export class RequestDailyPullRequestRefreshesHandler {
   constructor(
     @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
+    @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    private readonly requests: RunLookupRequests,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async execute(): Promise<number> {
+  async execute(): Promise<RequestDailyPullRequestRefreshesResult> {
     const now = this.clock.now();
     const staleBefore = new Date(now.getTime() - DAILY_REFRESH_AGE_HOURS * 60 * 60 * 1000);
     // Finished lookups are not kept for ever (review S10 of #152).
@@ -34,14 +43,11 @@ export class RequestDailyPullRequestRefreshesHandler {
       new Date(now.getTime() - FINISHED_LOOKUPS_KEPT_DAYS * 24 * 60 * 60 * 1000),
     );
     let requested = 0;
-    for (const runId of await this.lookups.listDueForDailyRefresh(
-      staleBefore,
-      DAILY_REFRESH_BATCH,
-    )) {
-      if ((await this.lookups.request(runId, 'pull_request_state', now)) === 'requested') {
+    for (const runId of await this.runs.listDueForDailyRefresh(staleBefore, DAILY_REFRESH_BATCH)) {
+      if ((await this.requests.request(runId, 'pull_request_state', now)) === 'requested') {
         requested++;
       }
     }
-    return requested;
+    return { requested };
   }
 }

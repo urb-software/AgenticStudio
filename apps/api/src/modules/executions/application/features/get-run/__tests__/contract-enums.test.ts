@@ -49,9 +49,7 @@ import {
 } from '../../../../entry-points/http/shared/run-response.js';
 import {
   ANSWER_MAX_LENGTH,
-  FOLLOW_UP_MAX_LENGTH,
   FOLLOW_UP_REFUSALS,
-  FOLLOW_UP_SOURCES,
   PROVIDERS,
   PULL_REQUEST_CHECK_STATES,
   PULL_REQUEST_STATES,
@@ -61,6 +59,10 @@ import {
   RUN_FAILURE_CODES,
   RUN_STATES,
 } from '../../../../domain/entities/run.js';
+import {
+  FOLLOW_UP_MAX_LENGTH,
+  FOLLOW_UP_SOURCES,
+} from '../../../../domain/value-objects/follow-up.js';
 import { TASK_MAX_LENGTH } from '../../../../domain/value-objects/task.js';
 import { RUN_EVENT_KINDS } from '../../../../domain/value-objects/run-event.js';
 import {

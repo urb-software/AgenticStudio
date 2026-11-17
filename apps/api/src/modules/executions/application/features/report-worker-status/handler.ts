@@ -3,6 +3,10 @@ import type { RecordedWorkerStatus } from '../../../domain/value-objects/worker-
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
+export type ReportWorkerStatusInput = Omit<RecordedWorkerStatus, 'reportedAt'>;
+
+export type ReportWorkerStatusResult = void;
+
 /**
  * Command (Issue #101): an agent worker reports its runner mode and which providers its own
  * configuration enables. Studio keeps the latest report, for display and to refuse starting a
@@ -15,7 +19,7 @@ export class ReportWorkerStatusHandler {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  execute(report: Omit<RecordedWorkerStatus, 'reportedAt'>): void {
+  async execute(report: ReportWorkerStatusInput): Promise<ReportWorkerStatusResult> {
     this.statuses.record({
       workerId: report.workerId,
       runner: report.runner,

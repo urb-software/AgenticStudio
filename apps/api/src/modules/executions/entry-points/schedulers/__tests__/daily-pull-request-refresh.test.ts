@@ -15,7 +15,7 @@ describe('DailyPullRequestRefreshScheduler', () => {
     const counting = {
       execute: async () => {
         passes++;
-        return 0;
+        return { requested: 0 };
       },
     } as unknown as RequestDailyPullRequestRefreshesHandler;
     const schedule = new DailyPullRequestRefreshScheduler(counting, { intervalMs: HOUR });
@@ -39,7 +39,7 @@ describe('DailyPullRequestRefreshScheduler', () => {
     const counting = {
       execute: async () => {
         passes++;
-        return 0;
+        return { requested: 0 };
       },
     } as unknown as RequestDailyPullRequestRefreshesHandler;
     const schedule = new DailyPullRequestRefreshScheduler(counting, {
@@ -72,7 +72,7 @@ describe('DailyPullRequestRefreshScheduler', () => {
       execute: async () => {
         passes++;
         await held;
-        return 0;
+        return { requested: 0 };
       },
     } as unknown as RequestDailyPullRequestRefreshesHandler;
     const schedule = new DailyPullRequestRefreshScheduler(slow, SETTINGS);

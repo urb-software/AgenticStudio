@@ -1,10 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isFinal, isRunId } from '../../../domain/entities/run.js';
 import type { RunEvent } from '../../../domain/value-objects/run-event.js';
-import {
-  RUN_LOG_REPOSITORY,
-  type RunLogRepository,
-} from '../../../domain/repositories/run-log-repository.js';
+import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -22,6 +19,17 @@ export type RunLogStreamItem = RunEvent[] | typeof KEEP_ALIVE;
 /** Events read from the store at a time. */
 const READ_PAGE = 500;
 
+export interface StreamRunEventsInput {
+  runId: string;
+  /** The last seq the client saw; the stream starts after it. */
+  after: number;
+  abort: AbortSignal;
+}
+
+export interface StreamRunEventsResult {
+  stream: AsyncGenerator<RunLogStreamItem>;
+}
+
 /**
  * Query (Issue #99): a Run's log as a live stream, built on the stored log. It catches up from
  * the store after `after`, then waits for the in-process signal (or the keep-alive interval)
@@ -32,19 +40,16 @@ const READ_PAGE = 500;
 export class StreamRunEventsHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
-    @Inject(RUN_LOG_REPOSITORY) private readonly log: RunLogRepository,
+    @Inject(RUN_LOG) private readonly log: RunLog,
     @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
     @Inject(RUN_LOG_SETTINGS) private readonly settings: RunLogSettings,
   ) {}
 
   /** Throws {@link RunNotFoundError} before anything is streamed. */
-  async open(
-    runId: string,
-    after: number,
-    abort: AbortSignal,
-  ): Promise<AsyncGenerator<RunLogStreamItem>> {
-    if (!isRunId(runId) || !(await this.runs.findById(runId))) throw new RunNotFoundError();
-    return this.stream(runId, after, abort);
+  async execute(input: StreamRunEventsInput): Promise<StreamRunEventsResult> {
+    const { runId, after, abort } = input;
+    if (!isRunId(runId) || !(await this.runs.exists(runId))) throw new RunNotFoundError();
+    return { stream: this.stream(runId, after, abort) };
   }
 
   private async *stream(
@@ -64,7 +69,7 @@ export class StreamRunEventsHandler {
         woken = false;
         // The state is read before the log: a worker appends only while it holds the Run, so
         // once it is final, the read below sees every event there will ever be.
-        const run = await this.runs.findById(runId);
+        const [run] = await this.runs.findStates([runId]);
         for (;;) {
           const page = await this.log.listAfter(runId, cursor, READ_PAGE);
           if (page.length === 0) break;

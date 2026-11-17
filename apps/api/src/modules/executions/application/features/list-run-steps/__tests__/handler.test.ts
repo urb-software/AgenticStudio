@@ -53,7 +53,7 @@ describe('ListRunStepsHandler (Issue #99)', () => {
       forRun: () => Promise.resolve(['test-secret-value']),
     });
 
-    expect(await handler.execute(run.id)).toEqual([
+    expect(await handler.execute({ runId: run.id })).toEqual([
       {
         index: 1,
         kind: 'start',
@@ -72,6 +72,6 @@ describe('ListRunStepsHandler (Issue #99)', () => {
     const handler = new ListRunStepsHandler(new InMemoryRunRepository(), {
       forRun: () => Promise.resolve([]),
     });
-    await expect(handler.execute('nope')).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(handler.execute({ runId: 'nope' })).rejects.toBeInstanceOf(RunNotFoundError);
   });
 });

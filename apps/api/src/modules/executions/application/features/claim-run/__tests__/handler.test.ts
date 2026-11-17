@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../../domain/value-objects/run-environment-file.js';
 import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
-import { InMemoryRunLogRepository } from '../../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
+import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { ClaimRunHandler } from '../handler.js';
@@ -19,7 +19,7 @@ const T0 = new Date('2026-11-15T12:00:00.000Z');
 
 describe('ClaimRunHandler', () => {
   let runs: InMemoryRunRepository;
-  let logs: InMemoryRunLogRepository;
+  let logs: InMemoryRunLog;
   let now: Date;
   let handler: ClaimRunHandler;
   let secrets: InMemorySecretStore;
@@ -43,13 +43,13 @@ describe('ClaimRunHandler', () => {
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
-    logs = new InMemoryRunLogRepository(runs);
+    logs = new InMemoryRunLog(runs);
     now = T0;
     secrets = new InMemorySecretStore();
     released = [];
     files = new Map();
     filesFail = undefined;
-    diffs = new InMemoryRunDiffRepository(runs);
+    diffs = new InMemoryRunDiffRepository();
     const environmentFiles = {
       forProject: (projectId: string) =>
         filesFail ? Promise.reject(filesFail) : Promise.resolve(files.get(projectId) ?? null),
@@ -70,14 +70,14 @@ describe('ClaimRunHandler', () => {
   });
 
   it('hands out nothing when no Run is queued', async () => {
-    expect(await handler.execute(WORKER)).toBeNull();
+    expect(await handler.execute({ workerId: WORKER })).toBeNull();
   });
 
   it('hands out the oldest queued Run as preparing, held by the worker', async () => {
     const first = await queue(A);
     await queue(B);
 
-    const claimed = await handler.execute(WORKER);
+    const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed).toMatchObject({
       id: first.id,
@@ -93,9 +93,9 @@ describe('ClaimRunHandler', () => {
     const b1 = await queue(B);
     const c1 = await queue(C);
 
-    expect((await handler.execute(WORKER))?.id).toBe(a1.id);
-    expect((await handler.execute(OTHER_WORKER))?.id).toBe(b1.id);
-    expect(await handler.execute(WORKER)).toBeNull();
+    expect((await handler.execute({ workerId: WORKER }))?.id).toBe(a1.id);
+    expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(b1.id);
+    expect(await handler.execute({ workerId: WORKER })).toBeNull();
 
     expect((await runs.findById(a2.id))?.state).toBe('queued');
     expect((await runs.findById(c1.id))?.state).toBe('queued');
@@ -113,7 +113,7 @@ describe('ClaimRunHandler', () => {
     });
     const next = await queue(B);
 
-    const claimed = await handler.execute(WORKER);
+    const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed?.id).toBe(next.id);
     expect(await runs.findById(orphan.id)).toMatchObject({
@@ -156,14 +156,14 @@ describe('ClaimRunHandler', () => {
       const run = await failedDelivery(A);
       await runs.requestDeliveryRetry(run.id);
 
-      expect(await handler.execute(WORKER)).toMatchObject({
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: run.id,
         state: 'failed',
         deliveryRequested: true,
         claimedBy: WORKER,
       });
       // Held: handed out once.
-      expect(await handler.execute(WORKER)).toBeNull();
+      expect(await handler.execute({ workerId: WORKER })).toBeNull();
     });
 
     it('hands out a retry without the Environment file content, keeping its recorded path (#104)', async () => {
@@ -188,7 +188,7 @@ describe('ClaimRunHandler', () => {
       await runs.requestDeliveryRetry(run.id);
       files.set(A, { path: 'other.env', content: 'A=test-only-later' });
 
-      expect(await handler.execute(WORKER)).toMatchObject({
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: run.id,
         state: 'failed',
         environmentFilePath: '.env',
@@ -235,7 +235,7 @@ describe('ClaimRunHandler', () => {
       });
       await runs.requestDeliveryRetry(run.id);
 
-      expect(await handler.execute(WORKER)).toMatchObject({
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: run.id,
         state: 'failed',
         completedSteps: 1,
@@ -255,28 +255,31 @@ describe('ClaimRunHandler', () => {
       diffs.states.set(run.id, state);
       await runs.requestDeliveryRetry(run.id);
 
-      expect(await handler.execute(WORKER)).toMatchObject({ id: run.id, diffState: state });
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
+        id: run.id,
+        diffState: state,
+      });
     });
 
     it('hands a retry only to the worker that started the Run, which has its Working copy (review R4)', async () => {
       const run = await failedDelivery(A);
       await runs.requestDeliveryRetry(run.id);
 
-      expect(await handler.execute(OTHER_WORKER)).toBeNull();
-      expect((await handler.execute(WORKER))?.id).toBe(run.id);
+      expect(await handler.execute({ workerId: OTHER_WORKER })).toBeNull();
+      expect((await handler.execute({ workerId: WORKER }))?.id).toBe(run.id);
     });
 
     it('hands out no failed delivery whose retry was not requested', async () => {
       await failedDelivery(A);
 
-      expect(await handler.execute(WORKER)).toBeNull();
+      expect(await handler.execute({ workerId: WORKER })).toBeNull();
     });
 
     it('fails and releases at once a retry with no recorded Run branch (review R5)', async () => {
       const run = await failedDelivery(A, false);
       await runs.requestDeliveryRetry(run.id);
 
-      expect(await handler.execute(WORKER)).toBeNull();
+      expect(await handler.execute({ workerId: WORKER })).toBeNull();
       expect(await runs.findById(run.id)).toMatchObject({
         state: 'failed',
         failure: {
@@ -293,13 +296,13 @@ describe('ClaimRunHandler', () => {
     it('counts a held delivery retry toward the limits', async () => {
       const retry = await failedDelivery(A);
       await runs.requestDeliveryRetry(retry.id);
-      await handler.execute(WORKER);
+      await handler.execute({ workerId: WORKER });
       const a2 = await queue(A);
       const b1 = await queue(B);
       const c1 = await queue(C);
 
-      expect((await handler.execute(OTHER_WORKER))?.id).toBe(b1.id);
-      expect(await handler.execute(OTHER_WORKER)).toBeNull();
+      expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(b1.id);
+      expect(await handler.execute({ workerId: OTHER_WORKER })).toBeNull();
       expect((await runs.findById(a2.id))?.state).toBe('queued');
       expect((await runs.findById(c1.id))?.state).toBe('queued');
     });
@@ -307,10 +310,10 @@ describe('ClaimRunHandler', () => {
     it('keeps a retry whose worker was lost a failed delivery, so it can be retried again', async () => {
       const run = await failedDelivery(A);
       await runs.requestDeliveryRetry(run.id);
-      await handler.execute(WORKER);
+      await handler.execute({ workerId: WORKER });
       now = new Date(T0.getTime() + 61_000);
 
-      await handler.execute(OTHER_WORKER);
+      await handler.execute({ workerId: OTHER_WORKER });
 
       expect(await runs.findById(run.id)).toMatchObject({
         state: 'failed',
@@ -391,7 +394,7 @@ describe('ClaimRunHandler', () => {
       const run = await answered(A);
       now = new Date(T0.getTime() + 30_000);
 
-      expect(await handler.execute(WORKER)).toMatchObject({
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: run.id,
         state: 'preparing',
         claimedBy: WORKER,
@@ -405,8 +408,8 @@ describe('ClaimRunHandler', () => {
     it('hands it only to the worker that started it, which has its Working copy', async () => {
       const run = await answered(A);
 
-      expect(await handler.execute(OTHER_WORKER)).toBeNull();
-      expect((await handler.execute(WORKER))?.id).toBe(run.id);
+      expect(await handler.execute({ workerId: OTHER_WORKER })).toBeNull();
+      expect((await handler.execute({ workerId: WORKER }))?.id).toBe(run.id);
     });
 
     it('keeps its place while it waits for its worker', async () => {
@@ -415,8 +418,8 @@ describe('ClaimRunHandler', () => {
       const b1 = await queue(B);
       const c1 = await queue(C);
 
-      expect((await handler.execute(OTHER_WORKER))?.id).toBe(b1.id);
-      expect(await handler.execute(OTHER_WORKER)).toBeNull();
+      expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(b1.id);
+      expect(await handler.execute({ workerId: OTHER_WORKER })).toBeNull();
       expect((await runs.findById(a2.id))?.state).toBe('queued');
       expect((await runs.findById(c1.id))?.state).toBe('queued');
     });
@@ -425,7 +428,7 @@ describe('ClaimRunHandler', () => {
       const run = await answered(A, false);
       const next = await queue(B);
 
-      expect((await handler.execute(WORKER))?.id).toBe(next.id);
+      expect((await handler.execute({ workerId: WORKER }))?.id).toBe(next.id);
       expect(await runs.findById(run.id)).toMatchObject({
         state: 'failed',
         failure: { code: 'preparation_failed', detail: expect.stringContaining('run again') },
@@ -436,7 +439,7 @@ describe('ClaimRunHandler', () => {
     it('hands a resume without the Environment file content, keeping its snapshot and path (#104)', async () => {
       files.set(A, { path: '.env', content: 'A=test-only-1' });
       const queued = await queue(A);
-      const started = await handler.execute(WORKER);
+      const started = await handler.execute({ workerId: WORKER });
       expect(started?.environmentFile).not.toBeNull();
       const snapshot = await runs.findEnvironmentFileSecret(queued.id);
       // Carry the started Run to a question and answer it (the helper does it for a new Run).
@@ -469,7 +472,7 @@ describe('ClaimRunHandler', () => {
       await runs.answer(queued.id, 'Yes', T0);
       files.set(A, { path: 'other.env', content: 'A=test-only-later' });
 
-      expect(await handler.execute(WORKER)).toMatchObject({
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: queued.id,
         environmentFilePath: '.env',
         environmentFile: null,
@@ -481,7 +484,10 @@ describe('ClaimRunHandler', () => {
     it('starts a new Run with no steps taken and its events from seq 1', async () => {
       await queue(A);
 
-      expect(await handler.execute(WORKER)).toMatchObject({ completedSteps: 0, nextSeq: 1 });
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
+        completedSteps: 0,
+        nextSeq: 1,
+      });
     });
   });
 
@@ -489,11 +495,11 @@ describe('ClaimRunHandler', () => {
     const a1 = await queue(A);
     const b1 = await queue(B);
     const c1 = await queue(C);
-    await handler.execute(WORKER);
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
+    await handler.execute({ workerId: WORKER });
     now = new Date(T0.getTime() + 61_000);
 
-    const claimed = await handler.execute(OTHER_WORKER);
+    const claimed = await handler.execute({ workerId: OTHER_WORKER });
 
     expect(claimed?.id).toBe(c1.id);
     expect((await runs.findById(a1.id))?.failure?.code).toBe('worker_lost');
@@ -502,7 +508,7 @@ describe('ClaimRunHandler', () => {
 
   it('cancels a Run left waiting too long before it hands out work (Issue #100)', async () => {
     const waiting = await queue(A);
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
     for (const [from, to] of [
       ['preparing', 'running'],
       ['running', 'waiting_for_operator'],
@@ -520,7 +526,7 @@ describe('ClaimRunHandler', () => {
     const next = await queue(A);
     now = new Date(T0.getTime() + 15 * 24 * 60 * 60 * 1000);
 
-    expect((await handler.execute(WORKER))?.id).toBe(next.id);
+    expect((await handler.execute({ workerId: WORKER }))?.id).toBe(next.id);
     expect(await runs.findById(waiting.id)).toMatchObject({
       state: 'cancelled',
       cancellation: { by: 'system' },
@@ -529,7 +535,7 @@ describe('ClaimRunHandler', () => {
 
   it("times out a Run whose step ran past its limit plus Studio's grace (review of #121)", async () => {
     const stuck = await queue(A);
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
     await runs.transitionClaimed({
       runId: stuck.id,
       workerId: WORKER,
@@ -542,12 +548,12 @@ describe('ClaimRunHandler', () => {
     // The worker keeps sending heartbeats, but its step never stops.
     now = new Date(T0.getTime() + (60 + 5) * 60_000);
     await runs.heartbeat(stuck.id, WORKER, now);
-    await handler.execute(OTHER_WORKER);
+    await handler.execute({ workerId: OTHER_WORKER });
     expect((await runs.findById(stuck.id))?.state).toBe('running');
 
     now = new Date(now.getTime() + 1000);
     await runs.heartbeat(stuck.id, WORKER, now);
-    await handler.execute(OTHER_WORKER);
+    await handler.execute({ workerId: OTHER_WORKER });
 
     expect(await runs.findById(stuck.id)).toMatchObject({
       state: 'timed_out',
@@ -558,7 +564,7 @@ describe('ClaimRunHandler', () => {
 
   it("stops Studio's step clock once the step result is reported: a slow delivery is not timed out", async () => {
     const delivering = await queue(A);
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
     await runs.transitionClaimed({
       runId: delivering.id,
       workerId: WORKER,
@@ -579,7 +585,7 @@ describe('ClaimRunHandler', () => {
     // The push and pull request take long; the worker keeps sending heartbeats.
     now = new Date(T0.getTime() + 2 * 60 * 60_000);
     await runs.heartbeat(delivering.id, WORKER, now);
-    await handler.execute(OTHER_WORKER);
+    await handler.execute({ workerId: OTHER_WORKER });
 
     expect((await runs.findById(delivering.id))?.state).toBe('running');
   });
@@ -611,7 +617,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     failRead = undefined;
     handler = new ClaimRunHandler(
       runs,
-      new InMemoryRunLogRepository(runs),
+      new InMemoryRunLog(runs),
       { now: () => T0 },
       { seconds: 60 },
       {
@@ -628,7 +634,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
         },
         releaseFinal: () => Promise.resolve(),
       },
-      new InMemoryRunDiffRepository(runs),
+      new InMemoryRunDiffRepository(),
     );
   });
 
@@ -666,13 +672,13 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
   // Review S3 of #150: a Follow-up works with the Project's current Environment file.
   it("takes a new snapshot of the Project's current file for a Follow-up, replacing the earlier one", async () => {
     const queued = await queue();
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
     const first = await runs.findEnvironmentFileSecret(queued.id);
     await finish(queued.id);
     await runs.queueFollowUp(queued.id, 'Go on.', T0);
     current = { path: 'config/.env', content: 'DB_PASSWORD=test-only-new\n' };
 
-    const claimed = await handler.execute(WORKER);
+    const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed).toMatchObject({
       id: queued.id,
@@ -689,12 +695,12 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
 
   it('goes on without a file when the Project has none now, and the earlier file is removed', async () => {
     const queued = await queue();
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
     await finish(queued.id);
     await runs.queueFollowUp(queued.id, 'Go on.', T0);
     current = null;
 
-    const claimed = await handler.execute(WORKER);
+    const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed).toMatchObject({
       replaceEnvironmentFile: true,
@@ -708,13 +714,13 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
 
   it('keeps the snapshot for an answer, and fails a Follow-up whose Working copy was removed', async () => {
     const queued = await queue();
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
     await finish(queued.id);
     await runs.queueFollowUp(queued.id, 'Go on.', T0);
     // Review S9 of #150: the worker's retention removed it while the Follow-up waited.
     await runs.markWorkingCopiesRemoved(WORKER, [queued.id], T0);
 
-    expect(await handler.execute(WORKER)).toBeNull();
+    expect(await handler.execute({ workerId: WORKER })).toBeNull();
     expect(await runs.findById(queued.id)).toMatchObject({
       state: 'failed',
       failure: {
@@ -728,7 +734,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
   it("hands the Project's file to the claiming worker and keeps a Run-scoped snapshot", async () => {
     const queued = await queue();
 
-    const claimed = await handler.execute(WORKER);
+    const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed).toMatchObject({ id: queued.id, environmentFileSupplied: true });
     expect(claimed?.environmentFile).toEqual(FILE);
@@ -740,7 +746,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
 
   it('keeps the snapshot of the claim when the file changes or goes afterwards', async () => {
     const queued = await queue();
-    await handler.execute(WORKER);
+    await handler.execute({ workerId: WORKER });
 
     current = { path: '.env', content: 'DB_PASSWORD=test-only-changed\n' };
     const snapshot = await runs.findEnvironmentFileSecret(queued.id);
@@ -752,7 +758,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     current = null;
     const queued = await queue();
 
-    const claimed = await handler.execute(WORKER);
+    const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed).toMatchObject({ environmentFileSupplied: false, environmentFile: null });
     expect(await runs.findEnvironmentFileSecret(queued.id)).toBeNull();
@@ -763,7 +769,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     failRead = new Error('The secret could not be decrypted.');
     const queued = await queue();
 
-    expect(await handler.execute(WORKER)).toBeNull();
+    expect(await handler.execute({ workerId: WORKER })).toBeNull();
     expect(await runs.findById(queued.id)).toMatchObject({
       state: 'failed',
       failure: { code: 'preparation_failed' },
@@ -775,7 +781,7 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     secrets.failWith = new Error('The secret store is unavailable.');
     const queued = await queue();
 
-    expect(await handler.execute(WORKER)).toBeNull();
+    expect(await handler.execute({ workerId: WORKER })).toBeNull();
     expect((await runs.findById(queued.id))?.failure?.code).toBe('preparation_failed');
     secrets.failWith = undefined;
     expect(secrets.values.size).toBe(0);

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
-import type { PreparedFollowUp } from '../../../domain/value-objects/prepared-follow-up.js';
+import type { PreparedFollowUpSnapshot } from '../../../domain/entities/prepared-follow-up.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
@@ -15,6 +15,12 @@ export class PreparedFollowUpNotFoundError extends Error {
   }
 }
 
+export interface GetPreparedFollowUpInput {
+  runId: string;
+}
+
+export type GetPreparedFollowUpResult = PreparedFollowUpSnapshot;
+
 /**
  * Query (Issue #145): the Follow-up Studio prepared from the Run's failing checks, for the
  * operator to review before anything is sent. Throws {@link RunNotFoundError} (also for an id
@@ -26,9 +32,9 @@ export class GetPreparedFollowUpHandler {
     @Inject(PREPARED_FOLLOW_UP_REPOSITORY) private readonly prepared: PreparedFollowUpRepository,
   ) {}
 
-  async execute(runId: string): Promise<PreparedFollowUp> {
-    if (!isRunId(runId)) throw new RunNotFoundError();
-    const draft = await this.prepared.find(runId);
+  async execute(input: GetPreparedFollowUpInput): Promise<GetPreparedFollowUpResult> {
+    if (!isRunId(input.runId)) throw new RunNotFoundError();
+    const draft = await this.prepared.find(input.runId);
     if (!draft) throw new PreparedFollowUpNotFoundError();
     return draft;
   }

@@ -4,18 +4,17 @@ import {
   type Run,
   type RunState,
 } from '../../../../domain/entities/run.js';
-import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
+import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { FollowUpRunHandler } from '../handler.js';
-import {
-  type ReviewComment,
-  ReviewCommentSet,
-  ReviewCommentsNotLoadedError,
-} from '../../../../domain/value-objects/review-comments.js';
+import { ReviewComments } from '../../../../domain/entities/review-comments.js';
+import type { ReviewComment } from '../../../../domain/value-objects/review-comments.js';
+import { ReviewCommentsNotLoadedError } from '../../../../domain/value-objects/review-comments-not-loaded-error.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -88,6 +87,7 @@ describe('FollowUpRunHandler', () => {
   let runs: InMemoryRunRepository;
   let workers: InMemoryWorkerStatusStore;
   let lookups: InMemoryRunLookupRepository;
+  let executions: ReturnType<typeof inMemoryExecutions>;
   let handler: FollowUpRunHandler;
 
   /** The worker reports itself connected with both providers on, at `at`. */
@@ -138,8 +138,18 @@ describe('FollowUpRunHandler', () => {
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     workers = new InMemoryWorkerStatusStore();
-    lookups = new InMemoryRunLookupRepository(runs);
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
+    executions = inMemoryExecutions(runs);
+    lookups = executions.lookups;
+    handler = new FollowUpRunHandler(
+      runs,
+      { now: () => T1 },
+      workers,
+      LEASE,
+      executions.requests,
+      RETENTION,
+      executions.transactions,
+      executions.preparedFollowUps,
+    );
     connect();
   });
 
@@ -155,11 +165,11 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       runs.prepared.set(run.id, draft);
 
-      const { run: queued } = await handler.execute(
-        run.id,
-        'Prepared text, edited by the operator.',
-        'pull_request_checks',
-      );
+      const { run: queued } = await handler.execute({
+        runId: run.id,
+        text: 'Prepared text, edited by the operator.',
+        source: 'pull_request_checks',
+      });
 
       expect(queued.messages.at(-1)).toEqual({
         kind: 'follow_up',
@@ -172,12 +182,12 @@ describe('FollowUpRunHandler', () => {
 
     it('keeps the prepared draft when the Follow-up is refused', async () => {
       const run = await finished();
-      await handler.execute(run.id, 'A first Follow-up.');
+      await handler.execute({ runId: run.id, text: 'A first Follow-up.' });
       runs.prepared.set(run.id, draft);
 
-      await expect(handler.execute(run.id, 'Text.', 'pull_request_checks')).rejects.toBeInstanceOf(
-        FollowUpNotAllowedError,
-      );
+      await expect(
+        handler.execute({ runId: run.id, text: 'Text.', source: 'pull_request_checks' }),
+      ).rejects.toBeInstanceOf(FollowUpNotAllowedError);
 
       expect(runs.prepared.has(run.id)).toBe(true);
     });
@@ -186,7 +196,10 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       runs.prepared.set(run.id, draft);
 
-      const { run: queued } = await handler.execute(run.id, 'Written from scratch.');
+      const { run: queued } = await handler.execute({
+        runId: run.id,
+        text: 'Written from scratch.',
+      });
 
       expect(queued.messages.at(-1)).not.toHaveProperty('source');
       // A Follow-up of its own does not touch a draft the operator is still reviewing.
@@ -206,7 +219,7 @@ describe('FollowUpRunHandler', () => {
     const load = (runId: string) =>
       runs.reviewSets.set(
         runId,
-        ReviewCommentSet.restore({
+        ReviewComments.restore({
           scope: 'unresolved',
           comments: [
             comment('conversation-1', 'octocat'),
@@ -222,12 +235,12 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       load(run.id);
 
-      const { run: queued } = await handler.execute(
-        run.id,
-        'Add the test the reviewer asked for.',
-        'review_comments',
-        ['conversation-1', 'conversation-3'],
-      );
+      const { run: queued } = await handler.execute({
+        runId: run.id,
+        text: 'Add the test the reviewer asked for.',
+        source: 'review_comments',
+        reviewCommentIds: ['conversation-1', 'conversation-3'],
+      });
 
       expect(queued.messages.at(-1)).toEqual({
         kind: 'follow_up',
@@ -242,14 +255,24 @@ describe('FollowUpRunHandler', () => {
     it('refuses ids outside the loaded set, repeated ids and a set that was never loaded', async () => {
       const run = await finished();
       await expect(
-        handler.execute(run.id, 'x', 'review_comments', ['conversation-1']),
+        handler.execute({
+          runId: run.id,
+          text: 'x',
+          source: 'review_comments',
+          reviewCommentIds: ['conversation-1'],
+        }),
       ).rejects.toBeInstanceOf(ReviewCommentsNotLoadedError);
       load(run.id);
 
       for (const ids of [['conversation-9'], ['conversation-1', 'conversation-1'], []]) {
-        await expect(handler.execute(run.id, 'x', 'review_comments', ids)).rejects.toBeInstanceOf(
-          ReviewCommentsNotLoadedError,
-        );
+        await expect(
+          handler.execute({
+            runId: run.id,
+            text: 'x',
+            source: 'review_comments',
+            reviewCommentIds: ids,
+          }),
+        ).rejects.toBeInstanceOf(ReviewCommentsNotLoadedError);
       }
 
       // Nothing was queued, and the set is still there.
@@ -259,11 +282,16 @@ describe('FollowUpRunHandler', () => {
 
     it('keeps the loaded set when the Follow-up is refused', async () => {
       const run = await finished();
-      await handler.execute(run.id, 'A first Follow-up.');
+      await handler.execute({ runId: run.id, text: 'A first Follow-up.' });
       load(run.id);
 
       await expect(
-        handler.execute(run.id, 'x', 'review_comments', ['conversation-1']),
+        handler.execute({
+          runId: run.id,
+          text: 'x',
+          source: 'review_comments',
+          reviewCommentIds: ['conversation-1'],
+        }),
       ).rejects.toBeInstanceOf(FollowUpNotAllowedError);
 
       expect(runs.reviewSets.has(run.id)).toBe(true);
@@ -273,7 +301,10 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       load(run.id);
 
-      const { run: queued } = await handler.execute(run.id, 'Written from scratch.');
+      const { run: queued } = await handler.execute({
+        runId: run.id,
+        text: 'Written from scratch.',
+      });
 
       expect(queued.messages.at(-1)).not.toHaveProperty('source');
       expect(runs.reviewSets.has(run.id)).toBe(true);
@@ -285,7 +316,10 @@ describe('FollowUpRunHandler', () => {
     async (end) => {
       const run = await finished(end);
 
-      const { run: queued, followUp } = await handler.execute(run.id, 'Also handle empty lists.');
+      const { run: queued, followUp } = await handler.execute({
+        runId: run.id,
+        text: 'Also handle empty lists.',
+      });
 
       expect(queued).toMatchObject({
         state: 'queued',
@@ -311,20 +345,20 @@ describe('FollowUpRunHandler', () => {
   it("keeps the Run's pull request: the same one is updated", async () => {
     const run = await finished('succeeded');
 
-    const { run: queued } = await handler.execute(run.id, 'Rename it.');
+    const { run: queued } = await handler.execute({ runId: run.id, text: 'Rename it.' });
 
     expect(queued.pullRequest).toEqual(PULL_REQUEST);
   });
 
   it('refuses a second submission while one is queued, and a Run that is not finished', async () => {
     const run = await finished('succeeded');
-    await handler.execute(run.id, 'First.');
+    await handler.execute({ runId: run.id, text: 'First.' });
 
-    await expect(handler.execute(run.id, 'Second.')).rejects.toEqual(
+    await expect(handler.execute({ runId: run.id, text: 'Second.' })).rejects.toEqual(
       new FollowUpNotAllowedError('follow_up_queued'),
     );
     await runs.claimNext(WORKER, T1);
-    await expect(handler.execute(run.id, 'Third.')).rejects.toEqual(
+    await expect(handler.execute({ runId: run.id, text: 'Third.' })).rejects.toEqual(
       new FollowUpNotAllowedError('not_finished'),
     );
     expect(
@@ -335,7 +369,7 @@ describe('FollowUpRunHandler', () => {
   it('refuses a Run whose Working copy was removed, or that has no session', async () => {
     const removed = await finished('succeeded');
     await runs.markWorkingCopiesRemoved(WORKER, [removed.id], T1);
-    await expect(handler.execute(removed.id, 'x')).rejects.toEqual(
+    await expect(handler.execute({ runId: removed.id, text: 'x' })).rejects.toEqual(
       new FollowUpNotAllowedError('working_copy_removed'),
     );
 
@@ -350,7 +384,7 @@ describe('FollowUpRunHandler', () => {
       cancelRequested: false,
       now: T0,
     });
-    await expect(handler.execute(failedAtStart.id, 'x')).rejects.toEqual(
+    await expect(handler.execute({ runId: failedAtStart.id, text: 'x' })).rejects.toEqual(
       new FollowUpNotAllowedError('no_session'),
     );
   });
@@ -391,7 +425,7 @@ describe('FollowUpRunHandler', () => {
       now: T0,
     });
 
-    await expect(handler.execute(added.id, 'x')).rejects.toEqual(
+    await expect(handler.execute({ runId: added.id, text: 'x' })).rejects.toEqual(
       new FollowUpNotAllowedError('step_total_reached'),
     );
   });
@@ -399,14 +433,23 @@ describe('FollowUpRunHandler', () => {
   it('refuses while the agent worker holding the Working copy is gone, or the Provider is off', async () => {
     const run = await finished('succeeded');
     workers = new InMemoryWorkerStatusStore();
-    handler = new FollowUpRunHandler(runs, { now: () => T1 }, workers, LEASE, lookups, RETENTION);
+    handler = new FollowUpRunHandler(
+      runs,
+      { now: () => T1 },
+      workers,
+      LEASE,
+      executions.requests,
+      RETENTION,
+      executions.transactions,
+      executions.preparedFollowUps,
+    );
     connect(OTHER_WORKER);
-    await expect(handler.execute(run.id, 'x')).rejects.toEqual(
+    await expect(handler.execute({ runId: run.id, text: 'x' })).rejects.toEqual(
       new FollowUpNotAllowedError('worker_unavailable'),
     );
 
     connect(WORKER, T1, { claude_code: false, codex: true });
-    await expect(handler.execute(run.id, 'x')).rejects.toEqual(
+    await expect(handler.execute({ runId: run.id, text: 'x' })).rejects.toEqual(
       new FollowUpNotAllowedError('provider_unavailable'),
     );
   });
@@ -429,7 +472,7 @@ describe('FollowUpRunHandler', () => {
     const run = await finished('succeeded');
     readAs(run, state);
 
-    await expect(handler.execute(run.id, 'Go on.')).rejects.toEqual(
+    await expect(handler.execute({ runId: run.id, text: 'Go on.' })).rejects.toEqual(
       new FollowUpNotAllowedError(reason),
     );
     expect((await runs.findById(run.id))?.state).toBe('succeeded');
@@ -441,7 +484,7 @@ describe('FollowUpRunHandler', () => {
       const run = await finished('succeeded');
       readAs(run, state);
 
-      const { run: queued } = await handler.execute(run.id, 'Go on.');
+      const { run: queued } = await handler.execute({ runId: run.id, text: 'Go on.' });
 
       expect(queued.state).toBe('queued');
     },
@@ -450,17 +493,19 @@ describe('FollowUpRunHandler', () => {
   it('takes a Follow-up again once the next refresh finds the pull request reopened', async () => {
     const run = await finished('succeeded');
     readAs(run, 'closed');
-    await expect(handler.execute(run.id, 'Go on.')).rejects.toBeInstanceOf(FollowUpNotAllowedError);
+    await expect(handler.execute({ runId: run.id, text: 'Go on.' })).rejects.toBeInstanceOf(
+      FollowUpNotAllowedError,
+    );
 
     readAs(run, 'open');
 
-    expect((await handler.execute(run.id, 'Go on.')).run.state).toBe('queued');
+    expect((await handler.execute({ runId: run.id, text: 'Go on.' })).run.state).toBe('queued');
   });
 
   it('asks for the pull request state to be read again when it accepts a Follow-up', async () => {
     const run = await finished('succeeded');
 
-    const { run: queued } = await handler.execute(run.id, 'Go on.');
+    const { run: queued } = await handler.execute({ runId: run.id, text: 'Go on.' });
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'pull_request_state' });
@@ -469,17 +514,21 @@ describe('FollowUpRunHandler', () => {
 
   it('still accepts the Follow-up when asking for the pull request state fails (review S6 of #152)', async () => {
     const run = await finished('succeeded');
-    lookups.request = () => Promise.reject(new Error('The database is busy'));
+    executions.requests.request = () => Promise.reject(new Error('The database is busy'));
 
-    const { run: queued } = await handler.execute(run.id, 'Go on.');
+    const { run: queued } = await handler.execute({ runId: run.id, text: 'Go on.' });
 
     expect(queued.state).toBe('queued');
     expect(queued.followUpQueued).toBe(true);
   });
 
   it('answers not found for an unknown Run or an id that is not a UUID', async () => {
-    await expect(handler.execute(UNKNOWN_RUN, 'x')).rejects.toBeInstanceOf(RunNotFoundError);
-    await expect(handler.execute('nope', 'x')).rejects.toBeInstanceOf(RunNotFoundError);
+    await expect(handler.execute({ runId: UNKNOWN_RUN, text: 'x' })).rejects.toBeInstanceOf(
+      RunNotFoundError,
+    );
+    await expect(handler.execute({ runId: 'nope', text: 'x' })).rejects.toBeInstanceOf(
+      RunNotFoundError,
+    );
   });
 
   it('waits in the queue without holding a place: another Run of the project starts first', async () => {
@@ -488,7 +537,7 @@ describe('FollowUpRunHandler', () => {
     const started = await runs.claimNext(OTHER_WORKER, T1);
     expect(started?.id).toBe(other.id);
 
-    await handler.execute(run.id, 'Go on.');
+    await handler.execute({ runId: run.id, text: 'Go on.' });
 
     // The project is busy: the Follow-up waits, then its own worker claims it once it is free.
     expect(await runs.claimNext(WORKER, T1)).toBeNull();
@@ -511,7 +560,7 @@ describe('FollowUpRunHandler', () => {
 
   it('gives the Follow-up its own Run step allowance', async () => {
     const run = await finished('succeeded', 10);
-    await handler.execute(run.id, 'Go on.');
+    await handler.execute({ runId: run.id, text: 'Go on.' });
     await runs.claimNext(WORKER, T1);
     await runs.transitionClaimed({
       runId: run.id,

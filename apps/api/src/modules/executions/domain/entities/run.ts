@@ -5,13 +5,12 @@
  * constraints are written from them.
  */
 
-import {
-  ReviewCommentsNotLoadedError,
-  ReviewCommentSet,
-} from '../value-objects/review-comments.js';
+import { ReviewCommentsNotLoadedError } from '../value-objects/review-comments-not-loaded-error.js';
+import { type FollowUpComments, type FollowUpSource } from '../value-objects/follow-up.js';
 import { PROVIDERS, type Provider } from '../value-objects/provider.js';
 import type { Task } from '../value-objects/task.js';
 import { type RecordedWorkerStatus, WorkerStatus } from '../value-objects/worker-status.js';
+import { RunStep, type RunStepKind, type RunStepSnapshot } from './run-step.js';
 
 export const RUN_STATES = [
   'queued',
@@ -98,6 +97,15 @@ export function isPullRequestEnded(state: PullRequestState | null): boolean {
 }
 
 /**
+ * When a pull request was first read as over (Issue #143): the first time it is read as merged,
+ * closed or missing is kept (the retention period counts from it); reading it open or draft again
+ * (a reopened pull request) clears it.
+ */
+function pullRequestEndedAt(state: PullRequestState, current: Date | null, now: Date): Date | null {
+  return isPullRequestEnded(state) ? (current ?? now) : null;
+}
+
+/**
  * How a Pull request check stands (Issue #145). The worker protocol's list is pinned to this one
  * by a test.
  */
@@ -163,8 +171,6 @@ export interface RunPullRequestStatus {
   prepareRequestedAt: Date | null;
   /** Issue #145: why the latest preparation failed; cleared by a new request or a success. */
   prepareError: string | null;
-  /** Issue #145: whether a prepared Follow-up waits for the operator's review. */
-  preparedFollowUp: boolean;
   /**
    * Issue #143: when a lookup first read the pull request as merged, closed or missing; `null`
    * while it is not over (a reopened one is cleared). Working copy retention counts from it.
@@ -186,9 +192,21 @@ export const NO_PULL_REQUEST_STATUS: RunPullRequestStatus = {
   checks: null,
   prepareRequestedAt: null,
   prepareError: null,
-  preparedFollowUp: false,
   endedAt: null,
 };
+
+/** What a worker found out about a pull request (Issue #142, #145). */
+export interface PullRequestStateResult {
+  state: PullRequestState;
+  behindBy?: number;
+  aheadBy?: number;
+  mergeable?: boolean;
+  /** Issue #145: the checks of the latest commit `checksCommit`, for a draft or open pull request. */
+  checksCommit?: string;
+  checks?: PullRequestCheck[];
+  /** Issue #145: the Git host refused to tell the checks. */
+  checksUnavailable?: true;
+}
 
 /** One commit on a Run branch: its id and subject line. */
 export interface RunCommit {
@@ -259,35 +277,21 @@ export type RunDeliveryOutcome =
 export const ANSWER_MAX_LENGTH = 10_000;
 
 /**
- * What a Follow-up was prepared from (Issue #145): the text came from the failing Pull request
- * checks, or (Issue #146) from the pull request's Review comments, which the operator reviewed
- * and may have edited; (Issue #147) `bring_up_to_date` is the request to merge the integration
- * branch into the Run branch. A Follow-up written from scratch has no source.
- */
-export const FOLLOW_UP_SOURCES = [
-  'pull_request_checks',
-  'bring_up_to_date',
-  'review_comments',
-] as const;
-export type FollowUpSource = (typeof FOLLOW_UP_SOURCES)[number];
-
-/**
  * Where a Follow-up's text came from, when it was prepared (Issue #145, #147, #146): the source, and
- * for `review_comments` the ids of the comments the operator selected, which the store checks
- * against the Run's loaded set in the same transaction that queues the Follow-up.
+ * for `review_comments` what the operator's selection came to in the Run's loaded Review comments,
+ * as values the handler read under the Run's lock (how many, and whose); `null` when the selected
+ * comments are not all in the loaded set.
  */
 export type FollowUpOrigin =
   | Exclude<FollowUpSource, 'review_comments'>
-  | { source: 'review_comments'; commentIds: readonly string[] };
+  | { source: 'review_comments'; comments: FollowUpComments | null };
 
-/** What a Follow-up prepared from Review comments records: how many, and their authors (Issue #146). */
-export interface FollowUpComments {
-  count: number;
-  authors: string[];
-}
-
-/** Longest Follow-up, in characters (Issue #141). */
-export const FOLLOW_UP_MAX_LENGTH = 10_000;
+/**
+ * What a Follow-up used up beyond the Run: the prepared Follow-up of its source (Issue #145), or the
+ * loaded Review comments it was prepared from (Issue #146). The caller removes it in the same
+ * transaction that saves the Run.
+ */
+export type FollowUpConsumption = Exclude<FollowUpSource, 'bring_up_to_date'>;
 
 /**
  * The agent's question to the operator (Issue #103), from a `needs_input` step result: its
@@ -465,6 +469,9 @@ export interface RunData {
    */
   lastActivityAt: Date;
 }
+
+/** The Run's current values as read-only plain data (rule 10); {@link Run.snapshot} produces it. */
+export type RunSnapshot = Readonly<RunData>;
 
 const TRANSITIONS: Record<RunState, readonly RunState[]> = {
   queued: ['preparing', 'cancelled', 'timed_out'],
@@ -877,7 +884,7 @@ export class StepLimitReachedError extends Error {
 
 /** One reported Run step: its kind and the structured result, as validated JSON. */
 export interface RunStepRecord {
-  kind: 'start' | 'resume';
+  kind: RunStepKind;
   result: unknown;
   /** The step's number as the worker reports it (review of #121); the next one when absent. */
   index?: number;
@@ -1044,17 +1051,14 @@ export interface RunStartInput {
 
 /**
  * What changed on a Run since it was started or restored, for the store to save in one step
- * (Issue #167): the new values of the changed fields, the messages added to the conversation,
- * and what the change removes beside the Run: the prepared Follow-up of a source (Issue #145), or
- * the loaded Review comments (Issue #146) once they were sent.
+ * (Issue #167): the new values of the changed fields, the messages added to the conversation and
+ * the Run steps it created.
  */
 export interface RunChanges {
   fields: Partial<Omit<RunData, 'messages'>>;
   messages: RunMessage[];
-  discardPreparedFollowUp?: Exclude<FollowUpSource, 'review_comments'>;
-  discardReviewComments?: true;
-  /** Run steps to store (Issue #169): a reported step's number, kind and structured result. */
-  steps?: { index: number; kind: RunStepRecord['kind']; result: unknown }[];
+  /** Run steps to store (Issue #169): the child entities the Run created, as their snapshots. */
+  steps?: RunStepSnapshot[];
   /** What a bring-up-to-date request records on its latest Follow-up entry (Issue #147). */
   followUpEntry?: BringUpDetails;
   /** The secret store's reference to the Run's Environment file snapshot (Issue #104). */
@@ -1200,6 +1204,15 @@ export class Run {
   }
 
   /**
+   * The Run's current values as read-only plain data, flat as storage holds them (rule 10): what a
+   * handler's result carries, so the class itself never leaves the application layer.
+   */
+  snapshot(): RunSnapshot {
+    const { ...data } = this as unknown as RunData;
+    return data;
+  }
+
+  /**
    * The operator answers the agent's open question (Issue #103): the answer is stored after the
    * question and the Run goes back to `queued`, to be resumed by the agent worker that holds its
    * Working copy. Only a `waiting_for_operator` Run whose last message is a question takes an
@@ -1314,27 +1327,28 @@ export class Run {
    * kept and a new Run step allowance from the steps it has taken. Eligible as
    * {@link followUpEligibility} says, with `facts` about the agent worker; otherwise
    * {@link FollowUpNotAllowedError}. With an `origin` (Issue #145, #147: the text was prepared
-   * from a source) the message says so and the Run's prepared Follow-up of that source is to be
-   * removed with the change. Issue #146: a Follow-up from `review_comments` names the selected
-   * comments, which must all be in the loaded set `loaded` (otherwise
-   * {@link ReviewCommentsNotLoadedError}); it records how many and whose, and the loaded set is
-   * to be removed with the change.
+   * from a source) the message says so. Issue #146: a Follow-up from `review_comments` carries what
+   * the selection came to in the loaded Review comments (`origin.comments`, as values the caller
+   * read under the Run's lock): they must be there and not none (otherwise
+   * {@link ReviewCommentsNotLoadedError}), and the message records how many and whose. Returns what
+   * the Follow-up used up beyond the Run (the prepared Follow-up of its source, or the loaded
+   * Review comments), for the caller to remove in the same transaction that saves the Run.
    */
   followUp(
     text: string,
     now: Date,
     facts: FollowUpFacts,
     origin?: FollowUpOrigin,
-    loaded: ReviewCommentSet | null = null,
-  ): void {
+  ): FollowUpConsumption | undefined {
     const eligibility = followUpEligibility(this, facts);
     if (!eligibility.allowed) throw new FollowUpNotAllowedError(eligibility.reason);
     const source = typeof origin === 'object' ? origin.source : origin;
     let comments: FollowUpComments | undefined;
     if (typeof origin === 'object') {
-      const chosen = loaded === null ? null : loaded.select(origin.commentIds);
-      if (chosen === null || chosen.length === 0) throw new ReviewCommentsNotLoadedError();
-      comments = { count: chosen.length, authors: ReviewCommentSet.distinctAuthors(chosen) };
+      if (origin.comments === null || origin.comments.count === 0) {
+        throw new ReviewCommentsNotLoadedError();
+      }
+      comments = origin.comments;
     }
     this.append({ kind: 'part_end', ...partEndOf(this)!, at: now });
     this.append({
@@ -1344,9 +1358,6 @@ export class Run {
       ...(source === undefined ? {} : { source }),
       ...(comments === undefined ? {} : { sourceComments: comments }),
     });
-    const pending = CHANGES.get(this)!;
-    if (source === 'review_comments') pending.discardReviewComments = true;
-    else if (source !== undefined) pending.discardPreparedFollowUp = source;
     // Back to the queue (the one way from a final state, next to a delivery retry and a usage
     // limit resume): the Run's state reflects its latest result, so the earlier one is cleared.
     this.apply({
@@ -1363,6 +1374,7 @@ export class Run {
       waitingSince: null,
       stepStartedAt: null,
     });
+    return source === undefined || source === 'bring_up_to_date' ? undefined : source;
   }
 
   /**
@@ -1587,8 +1599,13 @@ export class Run {
       });
       return { status: 'step_limit' };
     }
+    // The Run creates its step: the step cannot exist without the Run, and the number and the
+    // limit above are the Run's to check from `stepCount`, so no other step is loaded for them.
     const pending = CHANGES.get(this)!;
-    pending.steps = [...(pending.steps ?? []), { index, kind: step.kind, result: step.result }];
+    pending.steps = [
+      ...(pending.steps ?? []),
+      RunStep.create({ index, kind: step.kind, result: step.result }).snapshot(),
+    ];
     // A question becomes the Run's next message (Issue #103).
     if (step.question) this.append({ kind: 'question', question: step.question, at: now });
     this.apply({
@@ -1669,6 +1686,118 @@ export class Run {
       finishedAt: now,
     });
     return true;
+  }
+
+  /**
+   * A lookup of the pull request's state was requested (Issue #142): the Run is refreshing from
+   * `now` on, and the attempt counts for the page-open throttle.
+   */
+  recordRefreshRequested(now: Date): void {
+    this.updateStatus({ refreshRequestedAt: now, lastAttemptAt: now });
+  }
+
+  /**
+   * The reading of the failing checks' logs was requested (Issue #145): the Run is preparing from
+   * `now` on, the last preparation's error cleared. The state refresh's throttle is left alone.
+   */
+  recordPreparationRequested(now: Date): void {
+    this.updateStatus({ prepareRequestedAt: now, prepareError: null });
+  }
+
+  /**
+   * What a worker read of the pull request's state replaces what Studio knows (Issues #142, #143,
+   * #145): the state, the branch position, the merge verdict, the Pull request checks and the read
+   * time; the error, the retry time and the refreshing mark are cleared. The answer's own fields
+   * are what is kept: a merged or missing pull request has no branch position, a closed one no
+   * merge verdict, and only an open one has checks. The time the pull request was first read as
+   * over is kept, and a reopened one clears it. A Run without a pull request is left alone.
+   */
+  recordPullRequestState(result: PullRequestStateResult, now: Date): void {
+    if (this.pullRequest === null) return;
+    this.updateStatus({
+      state: result.state,
+      behindBy: result.behindBy ?? null,
+      aheadBy: result.aheadBy ?? null,
+      mergeable: result.mergeable ?? null,
+      refreshedAt: now,
+      refreshError: null,
+      retryAt: null,
+      refreshRequestedAt: null,
+      checks:
+        result.checksUnavailable === true
+          ? { unavailable: true }
+          : result.checks !== undefined && result.checksCommit !== undefined
+            ? { commit: result.checksCommit, checks: result.checks }
+            : null,
+      endedAt: pullRequestEndedAt(result.state, this.pullRequestStatus.endedAt, now),
+    });
+  }
+
+  /** A prepared Follow-up was stored for the Run (Issue #145): it is no longer preparing. */
+  recordPreparationDone(): void {
+    this.updateStatus({ prepareRequestedAt: null, prepareError: null });
+  }
+
+  /**
+   * A lookup of the pull request's state failed (Issue #142): the Run keeps its last known state
+   * and gets `error`. With a retry (`retryAt`, a rate limit) it stays refreshing, from
+   * `requestedAt`, until then.
+   */
+  recordRefreshFailed(error: string, retryAt: Date | null, requestedAt: Date): void {
+    this.updateStatus({
+      refreshError: error,
+      retryAt,
+      refreshRequestedAt: retryAt === null ? null : requestedAt,
+    });
+  }
+
+  /** The reading of the failing checks' logs failed (Issue #145); as {@link recordRefreshFailed}. */
+  recordPreparationFailed(error: string, retryAt: Date | null, requestedAt: Date): void {
+    this.updateStatus({
+      prepareError: error,
+      prepareRequestedAt: retryAt === null ? null : requestedAt,
+    });
+  }
+
+  /**
+   * The state of the pull request a worker read on its own, right before it refused a Follow-up
+   * (review S4 of #152): the state and its read time replace the Run's, the error is cleared. A
+   * merged, closed or missing pull request has no branch position, merge verdict or checks worth
+   * keeping (review N1 of #152): those are cleared with the state (a closed one keeps its branch
+   * position). A Run without a pull request is left alone.
+   */
+  recordObservedPullRequestState(state: PullRequestState, now: Date): void {
+    if (this.pullRequest === null) return;
+    const gone = state === 'merged' || state === 'missing';
+    const over = gone || state === 'closed';
+    const status = this.pullRequestStatus;
+    this.updateStatus({
+      state,
+      refreshedAt: now,
+      refreshError: null,
+      retryAt: null,
+      behindBy: gone ? null : status.behindBy,
+      aheadBy: gone ? null : status.aheadBy,
+      mergeable: over ? null : status.mergeable,
+      checks: over ? null : status.checks,
+      endedAt: pullRequestEndedAt(state, status.endedAt, now),
+    });
+  }
+
+  /**
+   * Whether the agent worker may report this Run's diffs (Issue #144): it holds the Run, in
+   * `preparing` or `running`, or `failed` and held for a delivery retry (Issue #102). Throws
+   * {@link RunNotHeldError} otherwise.
+   */
+  assertDiffReportableBy(workerId: string): void {
+    const held =
+      isOneOf(CLAIMED_RUN_STATES, this.state) ||
+      (this.state === 'failed' && this.deliveryRequested);
+    if (!held || this.claimedBy !== workerId) throw new RunNotHeldError();
+  }
+
+  private updateStatus(patch: Partial<RunPullRequestStatus>): void {
+    this.apply({ pullRequestStatus: { ...this.pullRequestStatus, ...patch } });
   }
 
   private updateFollowUpEntry(details: BringUpDetails): void {

@@ -23,7 +23,18 @@ export const AGGREGATE_RULES = [
  * module is checked once it has a `domain/entities/` directory, which is where its aggregate
  * roots are; a module without one has no root to refer to.
  */
-const AGGREGATE_MODULES = new Set(['projects']);
+const AGGREGATE_MODULES = new Set(['projects', 'executions']);
+
+/**
+ * Child entities of an aggregate, by the file of their root: a child entity has its identity only
+ * within its root and is created and bounded through it, so the root's file and its repository
+ * may refer to it. Pinned here: a new child entity is a modelling decision.
+ */
+const CHILD_ENTITIES: Record<string, string[]> = {
+  'src/modules/executions/domain/entities/run.ts': [
+    'src/modules/executions/domain/entities/run-step.ts',
+  ],
+};
 
 const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
 const HANDLER_FILE = /^src\/modules\/([^/]+)\/application\/features\/[^/]+\/handler\.ts$/;
@@ -334,11 +345,12 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
     from: path,
     to,
   });
-  const entityFiles = new Set(
-    moduleImports(baseDir, path)
-      .map((entry) => target(path, entry.specifier))
-      .filter((to): to is string => to !== undefined && ENTITY_FILE.test(to)),
-  );
+  const referenced = moduleImports(baseDir, path)
+    .map((entry) => target(path, entry.specifier))
+    .filter((to): to is string => to !== undefined && ENTITY_FILE.test(to));
+  const children = new Set(referenced.flatMap((to) => CHILD_ENTITIES[to] ?? []));
+  // The child entities of a root are part of its aggregate: they do not count as another root.
+  const entityFiles = new Set(referenced.filter((to) => !children.has(to)));
   const found: Violation[] = [];
   if (entityFiles.size !== 1) {
     found.push(violation(`refers to ${entityFiles.size} entity files, not exactly one`));
@@ -364,6 +376,8 @@ function entityImportViolations(baseDir: string, path: string): Violation[] {
   return moduleImports(baseDir, path).flatMap((entry) => {
     const to = target(path, entry.specifier);
     if (!to || to === path || !ENTITY_FILE.test(to) || !existsSync(join(baseDir, to))) return [];
+    // A root creates its own child entity: the one other thing an entity file may import.
+    if ((CHILD_ENTITIES[path] ?? []).includes(to)) return [];
     return entry.names
       .filter((name) => !ID_TYPE_NAME.test(name))
       .map((name) => ({

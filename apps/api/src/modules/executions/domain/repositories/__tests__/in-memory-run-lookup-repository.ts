@@ -1,137 +1,81 @@
-import { randomUUID } from 'node:crypto';
-import { isPullRequestEnded, type PullRequestState } from '../../entities/run.js';
-import type { PreparedFollowUp } from '../../value-objects/prepared-follow-up.js';
-import {
-  type ReviewCommentScope,
-  ReviewComments,
-  ReviewCommentSet,
-  type ReviewCommentsRequest,
-} from '../../value-objects/review-comments.js';
-import type {
-  ClaimedLookup,
-  LookupKind,
-  PullRequestStateResult,
-  ReviewCommentsResult,
-} from '../../value-objects/run-lookup.js';
-import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
-import type { ReviewCommentRepository } from '../review-comment-repository.js';
-import type {
-  LookupAnswerOutcome,
-  LookupRequestOutcome,
-  RunLookupRepository,
-} from '../run-lookup-repository.js';
+import { RunLookup, type RunLookupSnapshot } from '../../entities/run-lookup.js';
+import type { LookupHandOutRule } from '../../value-objects/lookup-hand-out-rule.js';
+import type { ReviewCommentsLoad } from '../../entities/run-lookup.js';
+import type { LookupKind } from '../../value-objects/run-lookup.js';
+import type { ClaimedLookup } from '../../entities/run-lookup.js';
+import type { RunLookupRepository } from '../run-lookup-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
-export interface FakeLookup {
-  id: string;
-  runId: string;
-  kind: LookupKind;
-  status: 'requested' | 'claimed' | 'done' | 'failed';
-  requestedAt: Date;
-  claimedBy: string | null;
-  claimedAt: Date | null;
-  retryAt: Date | null;
-  finishedAt: Date | null;
-  error: string | null;
-  scope: ReviewCommentScope | null;
-  since: Date | null;
-}
+/** A lookup as the fake keeps it: plain and mutable, so a test can set one up in any state. */
+export type FakeLookup = {
+  -readonly [K in keyof Omit<RunLookupSnapshot, 'result'>]: RunLookupSnapshot[K];
+} & { result?: unknown };
 
-/** The database adapter's `pr_ended_at` rule (Issue #143): first end kept, a reopen clears it. */
-function endedAt(state: PullRequestState, current: Date | null, now: Date): Date | null {
-  return isPullRequestEnded(state) ? (current ?? now) : null;
-}
+const entity = (stored: FakeLookup): RunLookup =>
+  RunLookup.restore({ ...stored, result: stored.result ?? null });
 
 /**
  * In-memory adapter of {@link RunLookupRepository} for handler tests, with the database
- * adapter's rules: one open lookup per Run and kind, a claim older than the lease is handed out
- * again, a rate-limited lookup waits for its retry time, and an answer updates the Run's
- * pull request status in the given Run store.
+ * adapter's rules: one open lookup per Run and kind, and the hand-out follows the
+ * {@link LookupHandOutRule} over the lookups and their Runs in the given Run store. It stores
+ * lookups only: what an answer does to the Run, the prepared Follow-up or the Review comments is
+ * the transaction's, through their own fakes.
  */
-export class InMemoryRunLookupRepository
-  implements RunLookupRepository, PreparedFollowUpRepository, ReviewCommentRepository
-{
+export class InMemoryRunLookupRepository implements RunLookupRepository {
   readonly lookups: FakeLookup[] = [];
 
   constructor(private readonly runs: InMemoryRunRepository) {}
 
-  private run(runId: string) {
-    return this.runs.runs.find((candidate) => candidate.id === runId);
+  add(lookup: RunLookup): Promise<void> {
+    this.lookups.push(lookup.snapshot());
+    return Promise.resolve();
   }
 
-  request(
-    runId: string,
-    kind: LookupKind,
-    now: Date,
-    review?: ReviewCommentsRequest,
-  ): Promise<LookupRequestOutcome> {
-    const run = this.run(runId);
-    if (!run || run.pullRequest === null || run.workingCopy === null) {
-      return Promise.resolve('not_possible');
-    }
-    if (
-      this.lookups.some(
-        (lookup) =>
-          lookup.runId === runId &&
-          lookup.kind === kind &&
-          (lookup.status === 'requested' || lookup.status === 'claimed'),
-      )
-    ) {
-      return Promise.resolve('open');
-    }
-    this.lookups.push({
-      id: randomUUID(),
-      runId,
-      kind,
-      status: 'requested',
-      requestedAt: now,
-      claimedBy: null,
-      claimedAt: null,
-      retryAt: null,
-      finishedAt: null,
-      error: null,
-      scope: review?.scope ?? null,
-      since: review?.since ?? null,
-    });
-    if (kind === 'review_comments') return Promise.resolve('requested');
-    run.pullRequestStatus =
-      kind === 'failing_check_logs'
-        ? { ...run.pullRequestStatus, prepareRequestedAt: now, prepareError: null }
-        : { ...run.pullRequestStatus, refreshRequestedAt: now, lastAttemptAt: now };
-    return Promise.resolve('requested');
+  save(lookup: RunLookup): Promise<void> {
+    const stored = this.lookups.find((candidate) => candidate.id === lookup.id);
+    if (stored) Object.assign(stored, lookup.snapshot());
+    return Promise.resolve();
   }
 
-  claim(
-    workerId: string,
-    now: Date,
-    limit: number,
-    leaseSeconds: number,
-  ): Promise<ClaimedLookup[]> {
+  findById(id: string): Promise<RunLookup | null> {
+    const stored = this.lookups.find((candidate) => candidate.id === id);
+    return Promise.resolve(stored ? entity(stored) : null);
+  }
+
+  findByIdForUpdate(id: string): Promise<RunLookup | null> {
+    return this.findById(id);
+  }
+
+  findOpen(runId: string, kind: LookupKind): Promise<RunLookup | null> {
+    const stored = this.lookups.find(
+      (lookup) =>
+        lookup.runId === runId &&
+        lookup.kind === kind &&
+        (lookup.status === 'requested' || lookup.status === 'claimed'),
+    );
+    return Promise.resolve(stored ? entity(stored) : null);
+  }
+
+  claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]> {
+    // A claim that outlived its lease goes back to the queue first, as the statement does.
     for (const lookup of this.lookups) {
-      if (
-        lookup.status === 'claimed' &&
-        lookup.claimedAt !== null &&
-        now.getTime() - lookup.claimedAt.getTime() >= leaseSeconds * 1000
-      ) {
+      if (rule.claimExpired(lookup)) {
         Object.assign(lookup, { status: 'requested', claimedBy: null, claimedAt: null });
       }
     }
+    const runs = this.runs.runs.map((run) => ({
+      id: run.id,
+      hasPullRequest: run.pullRequest !== null,
+      hasRunBranch: run.workingCopy !== null,
+    }));
     const claimed: ClaimedLookup[] = [];
-    for (const lookup of this.lookups) {
-      if (claimed.length >= limit) break;
-      const run = this.run(lookup.runId);
-      if (
-        lookup.status !== 'requested' ||
-        (lookup.retryAt !== null && lookup.retryAt.getTime() > now.getTime()) ||
-        !run?.pullRequest ||
-        !run.workingCopy
-      ) {
-        continue;
-      }
+    for (const lookup of rule.next(this.lookups, runs)) {
+      const run = this.runs.runs.find((candidate) => candidate.id === lookup.runId);
+      if (!run?.pullRequest || !run.workingCopy) continue;
       Object.assign(lookup, {
         status: 'claimed',
         claimedBy: workerId,
-        claimedAt: now,
+        claimedAt: rule.now,
         retryAt: null,
       });
       claimed.push({
@@ -155,96 +99,16 @@ export class InMemoryRunLookupRepository
     return Promise.resolve(claimed);
   }
 
-  completePullRequestState(
-    lookupId: string,
-    workerId: string,
-    result: PullRequestStateResult,
-    now: Date,
-  ): Promise<LookupAnswerOutcome> {
-    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
-    if (!lookup || lookup.claimedBy !== workerId) return Promise.resolve('not_held');
-    if (lookup.status === 'done') return Promise.resolve('duplicate');
-    if (lookup.status !== 'claimed') return Promise.resolve('not_held');
-    lookup.status = 'done';
-    lookup.finishedAt = now;
-    lookup.error = null;
-    const run = this.run(lookup.runId);
-    if (run) {
-      run.pullRequestStatus = {
-        ...run.pullRequestStatus,
-        state: result.state,
-        behindBy: result.behindBy ?? null,
-        aheadBy: result.aheadBy ?? null,
-        mergeable: result.mergeable ?? null,
-        refreshedAt: now,
-        refreshError: null,
-        retryAt: null,
-        refreshRequestedAt: null,
-        lastAttemptAt: run.pullRequestStatus.lastAttemptAt,
-        checks:
-          result.checksUnavailable === true
-            ? { unavailable: true }
-            : result.checks !== undefined && result.checksCommit !== undefined
-              ? { commit: result.checksCommit, checks: result.checks }
-              : null,
-        endedAt: endedAt(result.state, run.pullRequestStatus.endedAt, now),
-      };
-    }
-    return Promise.resolve('stored');
-  }
-
-  completeFailingCheckLogs(
-    lookupId: string,
-    workerId: string,
-    draft: PreparedFollowUp,
-    now: Date,
-  ): Promise<LookupAnswerOutcome> {
-    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
-    if (!lookup || lookup.claimedBy !== workerId) return Promise.resolve('not_held');
-    if (lookup.status === 'done') return Promise.resolve('duplicate');
-    if (lookup.status !== 'claimed') return Promise.resolve('not_held');
-    lookup.status = 'done';
-    lookup.finishedAt = now;
-    lookup.error = null;
-    this.runs.prepared.set(lookup.runId, draft);
-    const run = this.run(lookup.runId);
-    if (run) {
-      run.pullRequestStatus = {
-        ...run.pullRequestStatus,
-        prepareRequestedAt: null,
-        prepareError: null,
-        preparedFollowUp: true,
-      };
-    }
-    return Promise.resolve('stored');
-  }
-
-  completeReviewComments(
-    lookupId: string,
-    workerId: string,
-    result: ReviewCommentsResult,
-    now: Date,
-  ): Promise<LookupAnswerOutcome> {
-    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
-    if (!lookup || lookup.claimedBy !== workerId) return Promise.resolve('not_held');
-    if (lookup.status === 'done') return Promise.resolve('duplicate');
-    if (lookup.status !== 'claimed') return Promise.resolve('not_held');
-    lookup.status = 'done';
-    lookup.finishedAt = now;
-    lookup.error = null;
-    this.runs.reviewSets.set(
-      lookup.runId,
-      ReviewCommentSet.restore({
-        scope: lookup.scope ?? 'unresolved',
-        comments: result.comments,
-        truncated: result.truncated,
-        loadedAt: now,
-      }),
+  deleteFinishedBefore(before: Date): Promise<number> {
+    const kept = this.lookups.filter(
+      (lookup) => !(lookup.finishedAt !== null && lookup.finishedAt < before),
     );
-    return Promise.resolve('stored');
+    const removed = this.lookups.length - kept.length;
+    this.lookups.splice(0, this.lookups.length, ...kept);
+    return Promise.resolve(removed);
   }
 
-  findReviewComments(runId: string): Promise<ReviewComments> {
+  findReviewCommentsLoad(runId: string): Promise<ReviewCommentsLoad> {
     const own = this.lookups.filter(
       (lookup) => lookup.runId === runId && lookup.kind === 'review_comments',
     );
@@ -257,118 +121,9 @@ export class InMemoryRunLookupRepository
           : best,
       undefined,
     );
-    return Promise.resolve(
-      ReviewComments.restore({
-        set: this.runs.reviewSets.get(runId) ?? null,
-        load: {
-          loading: open !== undefined,
-          error: open?.error ?? (latest?.status === 'failed' ? latest.error : null),
-        },
-      }),
-    );
-  }
-
-  find(runId: string): Promise<PreparedFollowUp | null> {
-    return Promise.resolve(this.runs.prepared.get(runId) ?? null);
-  }
-
-  discard(runId: string): Promise<void> {
-    this.runs.prepared.delete(runId);
-    const run = this.run(runId);
-    if (run) run.pullRequestStatus = { ...run.pullRequestStatus, preparedFollowUp: false };
-    return Promise.resolve();
-  }
-
-  fail(
-    lookupId: string,
-    workerId: string,
-    error: string,
-    retryInSeconds: number | null,
-    now: Date,
-  ): Promise<LookupAnswerOutcome> {
-    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
-    if (!lookup) return Promise.resolve('not_held');
-    if (lookup.status === 'requested' && lookup.retryAt !== null && lookup.error === error) {
-      return Promise.resolve('duplicate');
-    }
-    if (lookup.claimedBy !== workerId) return Promise.resolve('not_held');
-    if (lookup.status === 'failed') return Promise.resolve('duplicate');
-    if (lookup.status !== 'claimed') return Promise.resolve('not_held');
-    const retryAt =
-      retryInSeconds === null ? null : new Date(now.getTime() + retryInSeconds * 1000);
-    lookup.error = error;
-    if (retryAt === null) Object.assign(lookup, { status: 'failed', finishedAt: now });
-    else Object.assign(lookup, { status: 'requested', claimedBy: null, claimedAt: null, retryAt });
-    const run = this.run(lookup.runId);
-    if (run && lookup.kind !== 'review_comments') {
-      run.pullRequestStatus =
-        lookup.kind === 'failing_check_logs'
-          ? {
-              ...run.pullRequestStatus,
-              prepareError: error,
-              prepareRequestedAt: retryAt === null ? null : lookup.requestedAt,
-            }
-          : {
-              ...run.pullRequestStatus,
-              refreshError: error,
-              retryAt,
-              refreshRequestedAt: retryAt === null ? null : lookup.requestedAt,
-            };
-    }
-    return Promise.resolve('stored');
-  }
-
-  findRef(lookupId: string): Promise<{ kind: LookupKind; runId: string } | null> {
-    const lookup = this.lookups.find((candidate) => candidate.id === lookupId);
-    return Promise.resolve(lookup ? { kind: lookup.kind, runId: lookup.runId } : null);
-  }
-
-  recordObservedState(runId: string, state: PullRequestState, now: Date): Promise<void> {
-    const run = this.run(runId);
-    if (run?.pullRequest) {
-      const ended = state === 'merged' || state === 'missing' || state === 'closed';
-      run.pullRequestStatus = {
-        ...run.pullRequestStatus,
-        state,
-        refreshedAt: now,
-        refreshError: null,
-        retryAt: null,
-        ...(state === 'merged' || state === 'missing'
-          ? { behindBy: null, aheadBy: null, mergeable: null }
-          : {}),
-        ...(state === 'closed' ? { mergeable: null } : {}),
-        ...(ended ? { checks: null } : {}),
-        endedAt: endedAt(state, run.pullRequestStatus.endedAt, now),
-      };
-    }
-    return Promise.resolve();
-  }
-
-  deleteFinishedBefore(before: Date): Promise<number> {
-    const kept = this.lookups.filter(
-      (lookup) => !(lookup.finishedAt !== null && lookup.finishedAt < before),
-    );
-    const removed = this.lookups.length - kept.length;
-    this.lookups.splice(0, this.lookups.length, ...kept);
-    return Promise.resolve(removed);
-  }
-
-  listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]> {
-    return Promise.resolve(
-      this.runs.runs
-        .filter((run) => {
-          const status = run.pullRequestStatus;
-          const attempt = status.lastAttemptAt ?? status.refreshedAt;
-          return (
-            run.pullRequest !== null &&
-            run.workingCopy !== null &&
-            status.refreshRequestedAt === null &&
-            (status.state === null || status.state === 'draft' || status.state === 'open') &&
-            (attempt === null || attempt < attemptedBefore)
-          );
-        })
-        .slice(0, limit)
-        .map((run) => run.id),
-    );
+    return Promise.resolve({
+      loading: open !== undefined,
+      error: open?.error ?? (latest?.status === 'failed' ? latest.error : null),
+    });
   }
 }

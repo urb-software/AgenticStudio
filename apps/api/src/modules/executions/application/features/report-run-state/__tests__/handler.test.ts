@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { IllegalRunTransitionError, type Run } from '../../../../domain/entities/run.js';
-import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
+import { IllegalRunTransitionError, type RunSnapshot } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   RunNotFoundError,
@@ -18,18 +17,24 @@ const T1 = new Date('2026-11-15T12:05:00.000Z');
 describe('ReportRunStateHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: ReportRunStateHandler;
-  let run: Run;
+  let run: RunSnapshot;
   let notified: string[];
   /** The Runs whose Environment file snapshot the handler released (Issue #104). */
   let released: string[];
-  let lookups: InMemoryRunLookupRepository;
 
-  const report = (input: Partial<ReportRunStateInput>) =>
-    handler.execute({ runId: run.id, workerId: WORKER, state: 'running', failure: null, ...input });
+  const report = async (input: Partial<ReportRunStateInput>) =>
+    (
+      await handler.execute({
+        runId: run.id,
+        workerId: WORKER,
+        state: 'running',
+        failure: null,
+        ...input,
+      })
+    ).run;
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    lookups = new InMemoryRunLookupRepository(runs);
     notified = [];
     released = [];
     handler = new ReportRunStateHandler(
@@ -41,7 +46,6 @@ describe('ReportRunStateHandler', () => {
         releaseFinal: () => Promise.resolve(),
       },
       { forRun: () => Promise.resolve(['test-only-known']) },
-      lookups,
     );
     await runs.start({
       projectId: PROJECT,

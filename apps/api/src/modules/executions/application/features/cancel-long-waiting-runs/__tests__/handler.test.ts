@@ -57,7 +57,7 @@ describe('CancelLongWaitingRunsHandler', () => {
     const run = await waiting(PROJECTS[0], 14);
     now = later(14, 1);
 
-    expect(await handler.execute()).toBe(1);
+    expect(await handler.execute()).toEqual({ cancelled: 1 });
 
     expect(await runs.findById(run.id)).toMatchObject({
       state: 'cancelled',
@@ -74,13 +74,13 @@ describe('CancelLongWaitingRunsHandler', () => {
     const long = await waiting(PROJECTS[1], 14);
     now = later(2);
 
-    expect(await handler.execute()).toBe(1);
+    expect(await handler.execute()).toEqual({ cancelled: 1 });
 
     expect((await runs.findById(short.id))?.state).toBe('cancelled');
     expect((await runs.findById(long.id))?.state).toBe('waiting_for_operator');
   });
 
   it('cancels nothing when no Run waits', async () => {
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ cancelled: 0 });
   });
 });

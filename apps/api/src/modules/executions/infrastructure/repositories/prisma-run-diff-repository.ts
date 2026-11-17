@@ -1,21 +1,17 @@
 import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
+import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
+import type { RunDiff } from '../../domain/entities/run-diff.js';
+import { RUN_DIFF_FILE_STATUSES, type RunDiffScope } from '../../domain/value-objects/run-diff.js';
 import {
-  DATABASE_CLIENT,
-  type DatabaseClient,
-} from '../../../../platform/database/database.module.js';
-import { CLAIMED_RUN_STATES } from '../../domain/entities/run.js';
-import {
-  type NewRunDiff,
-  RUN_DIFF_FILE_STATUSES,
   type RunDiffFileSummary,
   type RunDiffFileView,
-  type RunDiffScope,
   type RunDiffState,
   type StoredRunDiff,
-} from '../../domain/value-objects/run-diff.js';
+} from '../../domain/entities/run-diff.js';
 import type { RunDiffRepository } from '../../domain/repositories/run-diff-repository.js';
+import { type Executor, inTransaction } from './executor.js';
 
 /** The stored file list (`run_diffs.files`), checked when it is read back. */
 const storedFilesSchema = z.array(
@@ -35,29 +31,17 @@ const storedFilesSchema = z.array(
  * PostgreSQL adapter of {@link RunDiffRepository} (Issue #144): one `run_diffs` row per Run and
  * scope (the file list as JSON) and one `run_diff_files` row per file with a patch, keyed by
  * the file's position in that list; one `run_diff_states` row per Run (review S-1 of #149). A
- * report locks the Run row, checks the holder and replaces both scopes (and the state, unless
- * it is unavailable) in one transaction.
+ * report replaces both scopes (and the state, unless it is unavailable) in one transaction. That
+ * the reporting worker holds the Run is the Run's rule, checked under the Run's lock by the
+ * transaction that calls this.
  */
 @Injectable()
 export class PrismaRunDiffRepository implements RunDiffRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
-  async replace(
-    runId: string,
-    workerId: string,
-    diffs: Record<RunDiffScope, NewRunDiff>,
-    state: RunDiffState | null,
-    now: Date,
-  ): Promise<boolean> {
-    return this.db.$transaction(async (tx) => {
-      // Held: claimed by this worker, also a failed Run held for a delivery retry (#102).
-      const [run] = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM runs
-        WHERE id = ${runId}::uuid AND claimed_by = ${workerId}::uuid
-          AND (state IN (${Prisma.join([...CLAIMED_RUN_STATES])})
-               OR (state = 'failed' AND delivery_requested))
-        FOR UPDATE`;
-      if (!run) return false;
+  async replace(report: RunDiff, now: Date): Promise<void> {
+    const { runId, diffs, state } = report;
+    await inTransaction(this.db, async (tx) => {
       // Cascades to run_diff_files.
       await tx.runDiff.deleteMany({ where: { runId } });
       for (const scope of ['run', 'last'] as const) {
@@ -107,7 +91,6 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
           update: columns,
         });
       }
-      return true;
     });
   }
 

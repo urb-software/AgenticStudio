@@ -1,6 +1,9 @@
 import { LOOKUP_ERROR_MAX_LENGTH, type LookupResultRequest } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import { retryDelaySeconds } from '../../../domain/value-objects/run-lookup.js';
+import { PreparedFollowUp } from '../../../domain/entities/prepared-follow-up.js';
+import { ReviewComments } from '../../../domain/entities/review-comments.js';
+import type { RunLookup } from '../../../domain/entities/run-lookup.js';
+import type { PullRequestStateResult } from '../../../domain/entities/run.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,
@@ -8,10 +11,17 @@ import {
 } from '../../../domain/repositories/run-lookup-repository.js';
 import { CheckLink } from '../../../domain/value-objects/check-link.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
-import { PreparedFollowUp } from '../../../domain/value-objects/prepared-follow-up.js';
-import { ReviewCommentSet } from '../../../domain/value-objects/review-comments.js';
+import {
+  type LookupAnswerOutcome,
+  retryDelaySeconds,
+} from '../../../domain/value-objects/run-lookup.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
+import {
+  RUN_TRANSACTIONS,
+  type RunTransactionRepositories,
+  type RunTransactions,
+} from '../../ports/run-transactions.js';
 
 /** The lookup does not exist. */
 export class LookupNotFoundError extends Error {
@@ -37,15 +47,26 @@ export class LookupKindMismatchError extends Error {
   }
 }
 
+export interface ReportLookupResultInput {
+  lookupId: string;
+  /** The worker's answer, validated by the shared contract. */
+  answer: LookupResultRequest;
+}
+
+export type ReportLookupResultResult = void;
+
 /**
  * Command (Issue #142): the agent worker holding a lookup reports its result, or why it failed.
  * A result replaces what Studio knows of the Run's pull request (Issue #145: with its Pull
  * request checks) or, for the logs of failing checks, becomes the Run's prepared Follow-up for the
  * operator to review, never sent by itself; Review comments (Issue #146) replace the Run's loaded
- * set, redacted and capped, and are sent only when the operator selects them; a failure keeps the last known state and records why
- * (the worker's words, redacted: never a token), and a rate limit puts the lookup back in the
- * queue for later. A repeated answer changes nothing. Throws
- * {@link LookupNotFoundError}, {@link LookupNotHeldError} or {@link LookupKindMismatchError}.
+ * set, redacted and capped, and are sent only when the operator selects them; a failure keeps the
+ * last known state and records why (the worker's words, redacted: never a token), and a rate limit
+ * puts the lookup back in the queue for later. A repeated answer changes nothing. The lookup
+ * decides whether the worker may answer (its own `complete` and `fail`); the answer changes the
+ * lookup and another aggregate in one transaction through `RunTransactions`, the Run locked
+ * first. Throws {@link LookupNotFoundError}, {@link LookupNotHeldError} or
+ * {@link LookupKindMismatchError}.
  */
 @Injectable()
 export class ReportLookupResultHandler {
@@ -54,77 +75,119 @@ export class ReportLookupResultHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
+    @Inject(RUN_TRANSACTIONS) private readonly transactions: RunTransactions,
   ) {}
 
-  async execute(lookupId: string, answer: LookupResultRequest): Promise<void> {
-    const found = await this.lookups.findRef(lookupId);
+  async execute(input: ReportLookupResultInput): Promise<ReportLookupResultResult> {
+    const { lookupId, answer } = input;
+    const found = await this.lookups.findById(lookupId);
     if (found === null) throw new LookupNotFoundError();
-    const { kind } = found;
+    const { kind, runId } = found;
     const now = this.clock.now();
-    if (answer.ok) {
-      if (answer.kind !== kind) throw new LookupKindMismatchError();
-      // Text from CI jobs is redacted like the Run's log: with the Run's known secret values too.
-      const redaction = LogRedaction.of(await this.secrets.forRun(found.runId));
-      // A check's link that redaction would break is replaced by the pull request's checks page.
-      const pull = (await this.runs.findById(found.runId))?.pullRequest;
-      const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
-      if (answer.kind === 'review_comments') {
-        // Comments are untrusted text from the Git host: redacted (with the Run's known secret
-        // values too) and held to their limits before they are stored (Issue #146).
-        const clean = ReviewCommentSet.sanitize(
-          answer.result.comments,
-          answer.result.truncated,
-          redaction,
-        );
-        const stored = await this.lookups.completeReviewComments(
-          lookupId,
-          answer.workerId,
-          clean,
-          now,
-        );
-        if (stored === 'not_held') throw new LookupNotHeldError();
-        return;
-      }
-      if (answer.kind === 'failing_check_logs') {
-        const stored = await this.lookups.completeFailingCheckLogs(
-          lookupId,
-          answer.workerId,
-          PreparedFollowUp.fromFailingChecks(answer.result, redaction, fallbackUrl),
-          now,
-        );
-        if (stored === 'not_held') throw new LookupNotHeldError();
-        return;
-      }
-      const { state, behindBy, aheadBy, mergeable, checksCommit, checks, checksUnavailable } =
-        answer.result;
-      // The answer's own fields are what is kept: a merged or missing pull request has no branch
-      // position, a closed one no merge verdict, and only an open one has checks.
-      const outcome = await this.lookups.completePullRequestState(
-        lookupId,
-        answer.workerId,
-        {
-          state,
-          ...(behindBy === undefined ? {} : { behindBy }),
-          ...(aheadBy === undefined ? {} : { aheadBy }),
-          ...(mergeable === undefined ? {} : { mergeable }),
-          ...(checksCommit === undefined ? {} : { checksCommit }),
-          ...(checks === undefined
-            ? {}
-            : {
-                // Names and links come from CI jobs: masked like any log text.
-                checks: checks.map((check) => ({
-                  ...check,
-                  name: redaction.text(check.name),
-                  url: CheckLink.of(check.url).safe(redaction, fallbackUrl),
-                })),
-              }),
-          ...(checksUnavailable === undefined ? {} : { checksUnavailable }),
-        },
-        now,
-      );
-      if (outcome === 'not_held') throw new LookupNotHeldError();
+    if (!answer.ok) {
+      await this.fail(runId, lookupId, answer, now);
       return;
     }
+    if (answer.kind !== kind) throw new LookupKindMismatchError();
+    // Text from CI jobs is redacted like the Run's log: with the Run's known secret values too.
+    const redaction = LogRedaction.of(await this.secrets.forRun(runId));
+    // A check's link that redaction would break is replaced by the pull request's checks page.
+    const pull = (await this.runs.findById(runId))?.pullRequest;
+    const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
+    if (answer.kind === 'review_comments') {
+      // Comments are untrusted text from the Git host: redacted (with the Run's known secret
+      // values too) and held to their limits before they are stored (Issue #146).
+      const clean = ReviewComments.sanitize(
+        answer.result.comments,
+        answer.result.truncated,
+        redaction,
+      );
+      await this.answer(runId, lookupId, async (lookup, repositories) => {
+        // The comments are kept in the Run's set only, not twice.
+        const outcome = lookup.complete(
+          answer.workerId,
+          { comments: clean.comments.length, truncated: clean.truncated },
+          now,
+        );
+        if (outcome !== 'stored') return outcome;
+        if (lookup.scope === null) {
+          throw new Error('Unexpected review comment scope in the database: null');
+        }
+        await repositories.lookups.save(lookup);
+        // The latest load replaces the earlier one.
+        await repositories.reviewComments.replace(
+          runId,
+          ReviewComments.load({
+            scope: lookup.scope,
+            comments: clean.comments,
+            truncated: clean.truncated,
+            loadedAt: now,
+          }),
+        );
+        return outcome;
+      });
+      return;
+    }
+    if (answer.kind === 'failing_check_logs') {
+      const draft = PreparedFollowUp.fromFailingChecks(answer.result, redaction, fallbackUrl);
+      await this.answer(runId, lookupId, async (lookup, repositories) => {
+        // The text is kept in the prepared Follow-up only, not twice.
+        const outcome = lookup.complete(answer.workerId, { items: draft.items.length }, now);
+        if (outcome !== 'stored') return outcome;
+        await repositories.lookups.save(lookup);
+        // The latest preparation replaces the earlier one.
+        await repositories.preparedFollowUps.replace(runId, draft, now);
+        const run = await repositories.runs.findById(runId);
+        if (run) {
+          run.recordPreparationDone();
+          await repositories.runs.save(run);
+        }
+        return outcome;
+      });
+      return;
+    }
+    const { state, behindBy, aheadBy, mergeable, checksCommit, checks, checksUnavailable } =
+      answer.result;
+    // The answer's own fields are what is kept: a merged or missing pull request has no branch
+    // position, a closed one no merge verdict, and only an open one has checks.
+    const result: PullRequestStateResult = {
+      state,
+      ...(behindBy === undefined ? {} : { behindBy }),
+      ...(aheadBy === undefined ? {} : { aheadBy }),
+      ...(mergeable === undefined ? {} : { mergeable }),
+      ...(checksCommit === undefined ? {} : { checksCommit }),
+      ...(checks === undefined
+        ? {}
+        : {
+            // Names and links come from CI jobs: masked like any log text.
+            checks: checks.map((check) => ({
+              ...check,
+              name: redaction.text(check.name),
+              url: CheckLink.of(check.url).safe(redaction, fallbackUrl),
+            })),
+          }),
+      ...(checksUnavailable === undefined ? {} : { checksUnavailable }),
+    };
+    await this.answer(runId, lookupId, async (lookup, repositories) => {
+      const outcome = lookup.complete(answer.workerId, result, now);
+      if (outcome !== 'stored') return outcome;
+      await repositories.lookups.save(lookup);
+      const run = await repositories.runs.findById(runId);
+      if (run) {
+        run.recordPullRequestState(result, now);
+        await repositories.runs.save(run);
+      }
+      return outcome;
+    });
+  }
+
+  /** The worker says the lookup failed: a rate limit puts it back in the queue for later. */
+  private async fail(
+    runId: string,
+    lookupId: string,
+    answer: Extract<LookupResultRequest, { ok: false }>,
+    now: Date,
+  ): Promise<void> {
     const error = LogRedaction.NONE.text(answer.error).slice(0, LOOKUP_ERROR_MAX_LENGTH);
     const retry = retryDelaySeconds({
       code: answer.code,
@@ -133,7 +196,43 @@ export class ReportLookupResultHandler {
         ? {}
         : { retryAfterSeconds: answer.retryAfterSeconds }),
     });
-    const outcome = await this.lookups.fail(lookupId, answer.workerId, error, retry, now);
+    await this.answer(runId, lookupId, async (lookup, repositories) => {
+      const outcome = lookup.fail(answer.workerId, error, retry, now);
+      if (outcome !== 'stored') return outcome;
+      await repositories.lookups.save(lookup);
+      const run = await repositories.runs.findById(runId);
+      if (run) {
+        // A retry keeps the Run refreshing or preparing until it; reading Review comments marks
+        // no Run column.
+        if (lookup.kind === 'failing_check_logs') {
+          run.recordPreparationFailed(error, lookup.retryAt, lookup.requestedAt);
+        } else if (lookup.kind === 'pull_request_state') {
+          run.recordRefreshFailed(error, lookup.retryAt, lookup.requestedAt);
+        }
+        await repositories.runs.save(run);
+      }
+      return outcome;
+    });
+  }
+
+  /**
+   * One answer in one transaction, the Run locked first and then the lookup, read again under the
+   * lock; `work` decides with the lookup's own outcome and stores what the answer changes.
+   */
+  private async answer(
+    runId: string,
+    lookupId: string,
+    work: (
+      lookup: RunLookup,
+      repositories: RunTransactionRepositories,
+    ) => Promise<LookupAnswerOutcome>,
+  ): Promise<void> {
+    const outcome = await this.transactions.withRunLocked(runId, async (repositories) => {
+      // Read under the row lock too: a claim does not take the Run's lock, so a lookup re-claimed
+      // meanwhile is seen as it is, not overwritten.
+      const lookup = await repositories.lookups.findByIdForUpdate(lookupId);
+      return lookup === null ? 'not_held' : work(lookup, repositories);
+    });
     if (outcome === 'not_held') throw new LookupNotHeldError();
   }
 }

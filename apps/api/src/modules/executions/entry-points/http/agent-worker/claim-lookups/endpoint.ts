@@ -19,7 +19,7 @@ export class ClaimLookupsEndpoint {
     @Body() body: ClaimLookupsRequestDto,
     @Res({ passthrough: true }) response: { status(code: number): unknown },
   ): Promise<ClaimLookupsResponse | undefined> {
-    const lookups = await this.handler.execute(body.workerId);
+    const { lookups } = await this.handler.execute({ workerId: body.workerId });
     if (lookups.length === 0) {
       response.status(HttpStatus.NO_CONTENT);
       return undefined;

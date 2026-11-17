@@ -1,11 +1,28 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type Run } from '../../../domain/entities/run.js';
+import { isRunId, type RunSnapshot } from '../../../domain/entities/run.js';
+import {
+  PREPARED_FOLLOW_UP_REPOSITORY,
+  type PreparedFollowUpRepository,
+} from '../../../domain/repositories/prepared-follow-up-repository.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+
+export interface AnswerRunInput {
+  runId: string;
+  /** The operator's text: stored as given (the endpoint trims and bounds it). */
+  text: string;
+}
+
+export interface AnswerRunResult {
+  /** The Run as it is now, queued again. */
+  run: RunSnapshot;
+  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
+  preparedFollowUp: boolean;
+}
 
 /**
  * Command (Issue #103): the operator answers the agent's open question. The answer is stored
@@ -20,14 +37,21 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 export class AnswerRunHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(PREPARED_FOLLOW_UP_REPOSITORY)
+    private readonly preparedFollowUps: PreparedFollowUpRepository,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async execute(runId: string, text: string): Promise<Run> {
-    if (!isRunId(runId)) throw new RunNotFoundError();
+  async execute(input: AnswerRunInput): Promise<AnswerRunResult> {
+    if (!isRunId(input.runId)) throw new RunNotFoundError();
     const now = this.clock.now();
-    const answered = await this.runs.change(runId, (run) => run.answer(text, now));
+    const answered = await this.runs.change(input.runId, (run) => run.answer(input.text, now));
     if (!answered) throw new RunNotFoundError();
-    return answered;
+    return {
+      run: answered.snapshot(),
+      preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([answered.id])).has(
+        answered.id,
+      ),
+    };
   }
 }

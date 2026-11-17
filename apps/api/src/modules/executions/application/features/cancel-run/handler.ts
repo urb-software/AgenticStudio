@@ -1,11 +1,26 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { isRunId, type Run } from '../../../domain/entities/run.js';
+import { isRunId, type RunSnapshot } from '../../../domain/entities/run.js';
+import {
+  PREPARED_FOLLOW_UP_REPOSITORY,
+  type PreparedFollowUpRepository,
+} from '../../../domain/repositories/prepared-follow-up-repository.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+
+export interface CancelRunInput {
+  runId: string;
+}
+
+export interface CancelRunResult {
+  /** The Run as it is now: cancelled, or with its cancel request. */
+  run: RunSnapshot;
+  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
+  preparedFollowUp: boolean;
+}
 
 /**
  * Command (Issue #100): the operator cancels a Run. A `queued` or `waiting_for_operator` Run
@@ -20,14 +35,21 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 export class CancelRunHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
+    @Inject(PREPARED_FOLLOW_UP_REPOSITORY)
+    private readonly preparedFollowUps: PreparedFollowUpRepository,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async execute(runId: string): Promise<Run> {
-    if (!isRunId(runId)) throw new RunNotFoundError();
+  async execute(input: CancelRunInput): Promise<CancelRunResult> {
+    if (!isRunId(input.runId)) throw new RunNotFoundError();
     const now = this.clock.now();
-    const cancelled = await this.runs.change(runId, (run) => run.cancel(now));
+    const cancelled = await this.runs.change(input.runId, (run) => run.cancel(now));
     if (!cancelled) throw new RunNotFoundError();
-    return cancelled;
+    return {
+      run: cancelled.snapshot(),
+      preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([cancelled.id])).has(
+        cancelled.id,
+      ),
+    };
   }
 }

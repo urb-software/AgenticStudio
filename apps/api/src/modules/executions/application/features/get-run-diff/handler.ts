@@ -1,10 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
-import type {
-  RunDiffFileView,
-  RunDiffScope,
-  StoredRunDiff,
-} from '../../../domain/value-objects/run-diff.js';
+import type { RunDiffScope } from '../../../domain/value-objects/run-diff.js';
+import type { StoredRunDiff } from '../../../domain/entities/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -23,19 +20,17 @@ export class RunDiffNotFoundError extends Error {
   }
 }
 
-/** The Run's diff lists no file at that path (Issue #144). */
-export class RunDiffFileNotFoundError extends Error {
-  constructor() {
-    super('run diff file not found');
-    this.name = 'RunDiffFileNotFoundError';
-  }
+export interface GetRunDiffInput {
+  runId: string;
+  scope: RunDiffScope;
 }
 
+export type GetRunDiffResult = StoredRunDiff;
+
 /**
- * Queries (Issue #144): a Run's stored diff of one scope (its file list, without patches), and
- * one file of it with its patch, so a large diff loads per file. The patches were redacted when
- * they were stored. Throws {@link RunNotFoundError}, {@link RunDiffNotFoundError} or
- * {@link RunDiffFileNotFoundError}.
+ * Query (Issue #144): a Run's stored diff of one scope (its file list, without patches); one file
+ * of it with its patch is `get-run-diff-file`, so a large diff loads per file. The patches were
+ * redacted when they were stored. Throws {@link RunNotFoundError} or {@link RunDiffNotFoundError}.
  */
 @Injectable()
 export class GetRunDiffHandler {
@@ -44,21 +39,11 @@ export class GetRunDiffHandler {
     @Inject(RUN_DIFF_REPOSITORY) private readonly diffs: RunDiffRepository,
   ) {}
 
-  async diff(runId: string, scope: RunDiffScope): Promise<StoredRunDiff> {
-    await this.assertRun(runId);
+  async execute(input: GetRunDiffInput): Promise<GetRunDiffResult> {
+    const { runId, scope } = input;
+    if (!isRunId(runId) || !(await this.runs.exists(runId))) throw new RunNotFoundError();
     const diff = await this.diffs.find(runId, scope);
     if (!diff) throw new RunDiffNotFoundError();
     return diff;
-  }
-
-  async file(runId: string, scope: RunDiffScope, path: string): Promise<RunDiffFileView> {
-    await this.assertRun(runId);
-    const file = await this.diffs.findFile(runId, scope, path);
-    if (!file) throw new RunDiffFileNotFoundError();
-    return file;
-  }
-
-  private async assertRun(runId: string): Promise<void> {
-    if (!isRunId(runId) || !(await this.runs.findById(runId))) throw new RunNotFoundError();
   }
 }

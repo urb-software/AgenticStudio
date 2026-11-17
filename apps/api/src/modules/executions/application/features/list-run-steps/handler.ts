@@ -26,6 +26,12 @@ export interface RunStepView {
   reportedAt: Date;
 }
 
+export interface ListRunStepsInput {
+  runId: string;
+}
+
+export type ListRunStepsResult = RunStepView[];
+
 /**
  * Query (Issue #99): the structured result of each reported Run step, shown at the step's end
  * in the log: the summary and the agent's account of its checks. The agent wrote them, so
@@ -39,8 +45,9 @@ export class ListRunStepsHandler {
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
   ) {}
 
-  async execute(runId: string): Promise<RunStepView[]> {
-    if (!isRunId(runId) || !(await this.runs.findById(runId))) throw new RunNotFoundError();
+  async execute(input: ListRunStepsInput): Promise<ListRunStepsResult> {
+    const { runId } = input;
+    if (!isRunId(runId) || !(await this.runs.exists(runId))) throw new RunNotFoundError();
     const redaction = LogRedaction.of(await this.secrets.forRun(runId));
     const redact = (text: string) => redaction.text(text);
     const steps = await this.runs.listSteps(runId);

@@ -3,21 +3,23 @@ import {
   runResponseSchema,
   toRunListItem,
   toRunResponse,
+  withPreparedFollowUp,
 } from '../../../../entry-points/http/shared/run-response.js';
 import { preparedFollowUpResponseSchema } from '../../../../entry-points/http/operator/get-prepared-follow-up/schema.js';
 import {
   LOOKUP_CLAIM_MAX,
   LOOKUP_LEASE_SECONDS,
-  type PullRequestStateResult,
 } from '../../../../domain/value-objects/run-lookup.js';
+import type { PullRequestStateResult } from '../../../../domain/entities/run.js';
 import {
   deliveredRun,
   PULL_REQUEST,
   T0,
   WORKER,
 } from '../../../../domain/repositories/__tests__/delivered-run.js';
-import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
+import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
+import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { LookupNotFoundError, LookupNotHeldError, ReportLookupResultHandler } from '../handler.js';
 
@@ -28,6 +30,7 @@ const T1 = new Date(T0.getTime() + 5_000);
 describe('lookups: claim and result', () => {
   let runs: InMemoryRunRepository;
   let lookups: InMemoryRunLookupRepository;
+  let executions: ReturnType<typeof inMemoryExecutions>;
   let now: Date;
   let claims: ClaimLookupsHandler;
   let results: ReportLookupResultHandler;
@@ -38,18 +41,19 @@ describe('lookups: claim and result', () => {
   beforeEach(() => {
     known = ['hunter2-env-value'];
     runs = new InMemoryRunRepository();
-    lookups = new InMemoryRunLookupRepository(runs);
+    executions = inMemoryExecutions(runs);
+    lookups = executions.lookups;
     now = T1;
     const clock = { now: () => now };
     claims = new ClaimLookupsHandler(lookups, clock);
-    results = new ReportLookupResultHandler(lookups, clock, runs, secrets);
+    results = new ReportLookupResultHandler(lookups, clock, runs, secrets, executions.transactions);
   });
 
   /** A delivered Run with a lookup requested and claimed by `WORKER`. */
   async function claimed() {
     const run = await deliveredRun(runs);
-    await lookups.request(run.id, 'pull_request_state', T0);
-    const [lookup] = await claims.execute(WORKER);
+    await executions.requests.request(run.id, 'pull_request_state', T0);
+    const [lookup] = (await claims.execute({ workerId: WORKER })).lookups;
     return { run, lookup: lookup! };
   }
 
@@ -70,30 +74,30 @@ describe('lookups: claim and result', () => {
   });
 
   it('hands out nothing when no lookup waits, and each lookup to one worker only', async () => {
-    expect(await claims.execute(WORKER)).toEqual([]);
+    expect((await claims.execute({ workerId: WORKER })).lookups).toEqual([]);
     const { lookup } = await claimed();
 
     expect(lookup).toBeDefined();
-    expect(await claims.execute(OTHER_WORKER)).toEqual([]);
+    expect((await claims.execute({ workerId: OTHER_WORKER })).lookups).toEqual([]);
   });
 
   it('hands out at most five lookups at a time', async () => {
     for (let index = 0; index < LOOKUP_CLAIM_MAX + 2; index++) {
       const run = await deliveredRun(runs);
-      await lookups.request(run.id, 'pull_request_state', T0);
+      await executions.requests.request(run.id, 'pull_request_state', T0);
     }
 
-    expect(await claims.execute(WORKER)).toHaveLength(LOOKUP_CLAIM_MAX);
-    expect(await claims.execute(WORKER)).toHaveLength(2);
+    expect((await claims.execute({ workerId: WORKER })).lookups).toHaveLength(LOOKUP_CLAIM_MAX);
+    expect((await claims.execute({ workerId: WORKER })).lookups).toHaveLength(2);
   });
 
   it('hands a claim its worker never answered to another one after the lease', async () => {
     await claimed();
 
     now = new Date(T1.getTime() + (LOOKUP_LEASE_SECONDS - 1) * 1000);
-    expect(await claims.execute(OTHER_WORKER)).toEqual([]);
+    expect((await claims.execute({ workerId: OTHER_WORKER })).lookups).toEqual([]);
     now = new Date(T1.getTime() + LOOKUP_LEASE_SECONDS * 1000);
-    expect(await claims.execute(OTHER_WORKER)).toHaveLength(1);
+    expect((await claims.execute({ workerId: OTHER_WORKER })).lookups).toHaveLength(1);
   });
 
   it.each<[string, PullRequestStateResult]>([
@@ -105,11 +109,14 @@ describe('lookups: claim and result', () => {
   ])('stores a %s result on the Run and ends the refresh', async (_name, result) => {
     const { run, lookup } = await claimed();
 
-    await results.execute(lookup.id, {
-      workerId: WORKER,
-      ok: true,
-      kind: 'pull_request_state',
-      result,
+    await results.execute({
+      lookupId: lookup.id,
+      answer: {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result,
+      },
     });
 
     expect(status(run.id)).toEqual({
@@ -127,7 +134,6 @@ describe('lookups: claim and result', () => {
       checks: null,
       prepareRequestedAt: null,
       prepareError: null,
-      preparedFollowUp: false,
     });
   });
 
@@ -141,22 +147,28 @@ describe('lookups: claim and result', () => {
 
     it('stores the checks and their commit with the state, replacing the earlier ones', async () => {
       const { run, lookup } = await claimed();
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: { state: 'open', behindBy: 0, aheadBy: 1, checksCommit: SHA, checks },
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: { state: 'open', behindBy: 0, aheadBy: 1, checksCommit: SHA, checks },
+        },
       });
 
       expect(status(run.id).checks).toEqual({ commit: SHA, checks });
 
-      await lookups.request(run.id, 'pull_request_state', T1);
-      const [second] = await claims.execute(WORKER);
-      await results.execute(second!.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: { state: 'open', behindBy: 0, aheadBy: 1, checksCommit: SHA, checks: [] },
+      await executions.requests.request(run.id, 'pull_request_state', T1);
+      const [second] = (await claims.execute({ workerId: WORKER })).lookups;
+      await results.execute({
+        lookupId: second!.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: { state: 'open', behindBy: 0, aheadBy: 1, checksCommit: SHA, checks: [] },
+        },
       });
 
       expect(status(run.id).checks).toEqual({ commit: SHA, checks: [] });
@@ -164,11 +176,14 @@ describe('lookups: claim and result', () => {
 
     it('stores that the Git host refused to tell the checks, dropping the old ones', async () => {
       const { run, lookup } = await claimed();
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: { state: 'open', checksUnavailable: true },
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: { state: 'open', checksUnavailable: true },
+        },
       });
 
       expect(status(run.id).checks).toEqual({ unavailable: true });
@@ -176,20 +191,23 @@ describe('lookups: claim and result', () => {
 
     it("masks the Run's known secrets and link credentials in a check's name and link", async () => {
       const { run, lookup } = await claimed();
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: {
-          state: 'open',
-          checksCommit: SHA,
-          checks: [
-            {
-              name: 'deploy hunter2-env-value',
-              state: 'failed',
-              url: 'https://user:s3cr3t@ci.test/3',
-            },
-          ],
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: {
+            state: 'open',
+            checksCommit: SHA,
+            checks: [
+              {
+                name: 'deploy hunter2-env-value',
+                state: 'failed',
+                url: 'https://user:s3cr3t@ci.test/3',
+              },
+            ],
+          },
         },
       });
 
@@ -202,14 +220,19 @@ describe('lookups: claim and result', () => {
       // An Environment file value that is part of the link's host would leave no address behind.
       known = ['github.com'];
       const { run, lookup } = await claimed();
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: {
-          state: 'open',
-          checksCommit: SHA,
-          checks: [{ name: 'build', state: 'failed', url: 'https://github.com/acme/shop/runs/1' }],
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: {
+            state: 'open',
+            checksCommit: SHA,
+            checks: [
+              { name: 'build', state: 'failed', url: 'https://github.com/acme/shop/runs/1' },
+            ],
+          },
         },
       });
 
@@ -217,7 +240,10 @@ describe('lookups: claim and result', () => {
       const url = stored && !stored.unavailable ? stored.checks[0]!.url : '';
       expect(url).toBe(`${PULL_REQUEST.url}/checks`);
       // The Run page and the lists can carry it: both responses still parse.
-      const withStatus = { ...runs.runs.find((candidate) => candidate.id === run.id)! };
+      const withStatus = withPreparedFollowUp(
+        { ...runs.runs.find((candidate) => candidate.id === run.id)! },
+        false,
+      );
       expect(() => runResponseSchema.parse(toRunResponse(withStatus))).not.toThrow();
       expect(() => runResponseSchema.parse(toRunListItem(withStatus))).not.toThrow();
     });
@@ -225,14 +251,17 @@ describe('lookups: claim and result', () => {
     it('masks token-shaped strings in the name of a check', async () => {
       const { run, lookup } = await claimed();
       const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: {
-          state: 'open',
-          checksCommit: SHA,
-          checks: [{ name: `deploy ${token}`, state: 'failed', url: 'https://ci.test/3' }],
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: {
+            state: 'open',
+            checksCommit: SHA,
+            checks: [{ name: `deploy ${token}`, state: 'failed', url: 'https://ci.test/3' }],
+          },
         },
       });
 
@@ -242,19 +271,25 @@ describe('lookups: claim and result', () => {
 
     it('keeps no checks for a pull request that has ended', async () => {
       const { run, lookup } = await claimed();
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: { state: 'open', checksCommit: SHA, checks },
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: { state: 'open', checksCommit: SHA, checks },
+        },
       });
-      await lookups.request(run.id, 'pull_request_state', T1);
-      const [second] = await claims.execute(WORKER);
-      await results.execute(second!.id, {
-        workerId: WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: { state: 'merged' },
+      await executions.requests.request(run.id, 'pull_request_state', T1);
+      const [second] = (await claims.execute({ workerId: WORKER })).lookups;
+      await results.execute({
+        lookupId: second!.id,
+        answer: {
+          workerId: WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: { state: 'merged' },
+        },
       });
 
       expect(status(run.id).checks).toBeNull();
@@ -266,8 +301,8 @@ describe('lookups: claim and result', () => {
     const SHA = 'c'.repeat(40);
     const claimedLogs = async () => {
       const run = await deliveredRun(runs);
-      await lookups.request(run.id, 'failing_check_logs', T0);
-      const [lookup] = await claims.execute(WORKER);
+      await executions.requests.request(run.id, 'failing_check_logs', T0);
+      const [lookup] = (await claims.execute({ workerId: WORKER })).lookups;
       return { run, lookup: lookup! };
     };
     const logsAnswer = {
@@ -308,17 +343,16 @@ describe('lookups: claim and result', () => {
       const before = runs.runs.find((candidate) => candidate.id === run.id)!;
       const messages = before.messages.length;
 
-      await results.execute(lookup.id, logsAnswer);
+      await results.execute({ lookupId: lookup.id, answer: logsAnswer });
 
       const draft = runs.prepared.get(run.id)!;
       expect(draft.source).toBe('pull_request_checks');
       expect(draft.text).toContain('expected 1 to be 2');
       expect(draft.items.map((item) => item.name)).toEqual(['unit tests', 'deploy']);
-      expect(status(run.id)).toMatchObject({
-        preparedFollowUp: true,
-        prepareRequestedAt: null,
-        prepareError: null,
-      });
+      // The Prepared Follow-up is the aggregate that waits for the operator; the Run's preparation
+      // is over.
+      expect(runs.prepared.has(run.id)).toBe(true);
+      expect(status(run.id)).toMatchObject({ prepareRequestedAt: null, prepareError: null });
       // The Run is not queued and has no new message: only the operator's send does that.
       expect(before.messages).toHaveLength(messages);
       expect(before.followUpQueued).toBe(false);
@@ -327,13 +361,16 @@ describe('lookups: claim and result', () => {
 
     it('replaces the earlier prepared Follow-up of the Run', async () => {
       const { run, lookup } = await claimedLogs();
-      await results.execute(lookup.id, logsAnswer);
-      await lookups.request(run.id, 'failing_check_logs', T1);
-      const [second] = await claims.execute(WORKER);
+      await results.execute({ lookupId: lookup.id, answer: logsAnswer });
+      await executions.requests.request(run.id, 'failing_check_logs', T1);
+      const [second] = (await claims.execute({ workerId: WORKER })).lookups;
 
-      await results.execute(second!.id, {
-        ...logsAnswer,
-        result: { commit: SHA, checks: [logsAnswer.result.checks[1]!] },
+      await results.execute({
+        lookupId: second!.id,
+        answer: {
+          ...logsAnswer,
+          result: { commit: SHA, checks: [logsAnswer.result.checks[1]!] },
+        },
       });
 
       expect(runs.prepared.get(run.id)!.items).toHaveLength(1);
@@ -342,18 +379,21 @@ describe('lookups: claim and result', () => {
     it("redacts the Run's known secret values and link credentials, in the log, names and links", async () => {
       const { run, lookup } = await claimedLogs();
 
-      await results.execute(lookup.id, {
-        ...logsAnswer,
-        result: {
-          commit: SHA,
-          checks: [
-            {
-              name: 'deploy hunter2-env-value',
-              url: 'https://user:s3cr3t@ci.test/job/1',
-              logAvailable: true,
-              excerpt: 'password is hunter2-env-value',
-            },
-          ],
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          ...logsAnswer,
+          result: {
+            commit: SHA,
+            checks: [
+              {
+                name: 'deploy hunter2-env-value',
+                url: 'https://user:s3cr3t@ci.test/job/1',
+                logAvailable: true,
+                excerpt: 'password is hunter2-env-value',
+              },
+            ],
+          },
         },
       });
 
@@ -368,18 +408,21 @@ describe('lookups: claim and result', () => {
       known = ['github.com'];
       const { run, lookup } = await claimedLogs();
 
-      await results.execute(lookup.id, {
-        ...logsAnswer,
-        result: {
-          commit: SHA,
-          checks: [
-            {
-              name: 'unit tests',
-              url: 'https://github.com/acme/shop/runs/2',
-              logAvailable: true,
-              excerpt: 'failed',
-            },
-          ],
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          ...logsAnswer,
+          result: {
+            commit: SHA,
+            checks: [
+              {
+                name: 'unit tests',
+                url: 'https://github.com/acme/shop/runs/2',
+                logAvailable: true,
+                excerpt: 'failed',
+              },
+            ],
+          },
         },
       });
 
@@ -397,18 +440,21 @@ describe('lookups: claim and result', () => {
       const { run, lookup } = await claimedLogs();
       const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 
-      await results.execute(lookup.id, {
-        ...logsAnswer,
-        result: {
-          commit: SHA,
-          checks: [
-            {
-              name: 'unit tests',
-              url: 'https://ci.test/1',
-              logAvailable: true,
-              excerpt: `export GITHUB_TOKEN=${token}\nerror`,
-            },
-          ],
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          ...logsAnswer,
+          result: {
+            commit: SHA,
+            checks: [
+              {
+                name: 'unit tests',
+                url: 'https://ci.test/1',
+                logAvailable: true,
+                excerpt: `export GITHUB_TOKEN=${token}\nerror`,
+              },
+            ],
+          },
         },
       });
 
@@ -417,29 +463,35 @@ describe('lookups: claim and result', () => {
 
     it('records why a preparation failed and leaves the pull request state alone', async () => {
       const { run, lookup } = await claimedLogs();
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: false,
-        code: 'failed',
-        error: 'The pull request is not open any more.',
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: false,
+          code: 'failed',
+          error: 'The pull request is not open any more.',
+        },
       });
 
       expect(status(run.id)).toMatchObject({
         prepareRequestedAt: null,
         prepareError: 'The pull request is not open any more.',
         refreshError: null,
-        preparedFollowUp: false,
       });
+      expect(runs.prepared.has(run.id)).toBe(false);
     });
 
     it('keeps a rate-limited preparation preparing until its retry', async () => {
       const { run, lookup } = await claimedLogs();
-      await results.execute(lookup.id, {
-        workerId: WORKER,
-        ok: false,
-        code: 'rate_limited',
-        error: 'GitHub asked to wait.',
-        retryAfterSeconds: 60,
+      await results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: WORKER,
+          ok: false,
+          code: 'rate_limited',
+          error: 'GitHub asked to wait.',
+          retryAfterSeconds: 60,
+        },
       });
 
       expect(status(run.id)).toMatchObject({ prepareRequestedAt: T0, retryAt: null });
@@ -449,11 +501,14 @@ describe('lookups: claim and result', () => {
       const { lookup } = await claimedLogs();
 
       await expect(
-        results.execute(lookup.id, {
-          workerId: WORKER,
-          ok: true,
-          kind: 'pull_request_state',
-          result: { state: 'open' },
+        results.execute({
+          lookupId: lookup.id,
+          answer: {
+            workerId: WORKER,
+            ok: true,
+            kind: 'pull_request_state',
+            result: { state: 'open' },
+          },
         }),
       ).rejects.toThrow("The answer is not of the lookup's kind.");
     });
@@ -462,36 +517,45 @@ describe('lookups: claim and result', () => {
   // Issue #143: when the pull request ended, for the Working copy retention.
   it('keeps the first time the pull request was read as ended, and clears it when it is reopened', async () => {
     const { run, lookup } = await claimed();
-    await results.execute(lookup.id, {
-      workerId: WORKER,
-      ok: true,
-      kind: 'pull_request_state',
-      result: { state: 'closed' },
+    await results.execute({
+      lookupId: lookup.id,
+      answer: {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'closed' },
+      },
     });
     expect(status(run.id).endedAt).toEqual(T1);
 
     // Read as ended again later: the end stays at the first time.
     now = new Date(T1.getTime() + 3_600_000);
-    await lookups.request(run.id, 'pull_request_state', now);
-    const [again] = await claims.execute(WORKER);
-    await results.execute(again!.id, {
-      workerId: WORKER,
-      ok: true,
-      kind: 'pull_request_state',
-      result: { state: 'merged' },
+    await executions.requests.request(run.id, 'pull_request_state', now);
+    const [again] = (await claims.execute({ workerId: WORKER })).lookups;
+    await results.execute({
+      lookupId: again!.id,
+      answer: {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'merged' },
+      },
     });
     expect(status(run.id)).toMatchObject({ state: 'merged', endedAt: T1 });
 
     // Reopened, and then ended again: a new end.
     const later = new Date(T1.getTime() + 7_200_000);
     now = later;
-    await lookups.request(run.id, 'pull_request_state', now);
-    const [reopened] = await claims.execute(WORKER);
-    await results.execute(reopened!.id, {
-      workerId: WORKER,
-      ok: true,
-      kind: 'pull_request_state',
-      result: { state: 'open', behindBy: 0, aheadBy: 1 },
+    await executions.requests.request(run.id, 'pull_request_state', now);
+    const [reopened] = (await claims.execute({ workerId: WORKER })).lookups;
+    await results.execute({
+      lookupId: reopened!.id,
+      answer: {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'open', behindBy: 0, aheadBy: 1 },
+      },
     });
     expect(status(run.id).endedAt).toBeNull();
   });
@@ -504,30 +568,36 @@ describe('lookups: claim and result', () => {
       kind: 'pull_request_state' as const,
       result: { state: 'open' as const },
     };
-    await results.execute(lookup.id, answer);
+    await results.execute({ lookupId: lookup.id, answer });
     now = new Date(T1.getTime() + 60_000);
 
-    await results.execute(lookup.id, answer);
+    await results.execute({ lookupId: lookup.id, answer });
 
     expect(status(run.id).refreshedAt).toEqual(T1);
   });
 
   it('keeps the last known state when a lookup fails, and says why', async () => {
     const { run, lookup } = await claimed();
-    await results.execute(lookup.id, {
-      workerId: WORKER,
-      ok: true,
-      kind: 'pull_request_state',
-      result: { state: 'draft', behindBy: 1, aheadBy: 1 },
+    await results.execute({
+      lookupId: lookup.id,
+      answer: {
+        workerId: WORKER,
+        ok: true,
+        kind: 'pull_request_state',
+        result: { state: 'draft', behindBy: 1, aheadBy: 1 },
+      },
     });
-    await lookups.request(run.id, 'pull_request_state', T1);
-    const [second] = await claims.execute(WORKER);
+    await executions.requests.request(run.id, 'pull_request_state', T1);
+    const [second] = (await claims.execute({ workerId: WORKER })).lookups;
 
-    await results.execute(second!.id, {
-      workerId: WORKER,
-      ok: false,
-      code: 'failed',
-      error: 'GitHub could not be reached.',
+    await results.execute({
+      lookupId: second!.id,
+      answer: {
+        workerId: WORKER,
+        ok: false,
+        code: 'failed',
+        error: 'GitHub could not be reached.',
+      },
     });
 
     expect(status(run.id)).toMatchObject({
@@ -543,12 +613,15 @@ describe('lookups: claim and result', () => {
   it('records a rate limit, keeps the lookup for later and says when', async () => {
     const { run, lookup } = await claimed();
 
-    await results.execute(lookup.id, {
-      workerId: WORKER,
-      ok: false,
-      code: 'rate_limited',
-      error: 'GitHub asked to wait.',
-      retryAfterSeconds: 300,
+    await results.execute({
+      lookupId: lookup.id,
+      answer: {
+        workerId: WORKER,
+        ok: false,
+        code: 'rate_limited',
+        error: 'GitHub asked to wait.',
+        retryAfterSeconds: 300,
+      },
     });
 
     const retryAt = new Date(T1.getTime() + 300_000);
@@ -558,20 +631,23 @@ describe('lookups: claim and result', () => {
       refreshRequestedAt: T0,
     });
     // Not handed out before the time, then handed out again.
-    expect(await claims.execute(WORKER)).toEqual([]);
+    expect((await claims.execute({ workerId: WORKER })).lookups).toEqual([]);
     now = retryAt;
-    expect(await claims.execute(OTHER_WORKER)).toHaveLength(1);
+    expect((await claims.execute({ workerId: OTHER_WORKER })).lookups).toHaveLength(1);
   });
 
   it('never waits longer than an hour for a rate limit', async () => {
     const { run, lookup } = await claimed();
 
-    await results.execute(lookup.id, {
-      workerId: WORKER,
-      ok: false,
-      code: 'rate_limited',
-      error: 'GitHub asked to wait.',
-      retryAfterSeconds: 86_400,
+    await results.execute({
+      lookupId: lookup.id,
+      answer: {
+        workerId: WORKER,
+        ok: false,
+        code: 'rate_limited',
+        error: 'GitHub asked to wait.',
+        retryAfterSeconds: 86_400,
+      },
     });
 
     expect(status(run.id).retryAt).toEqual(new Date(T1.getTime() + 3_600_000));
@@ -580,27 +656,33 @@ describe('lookups: claim and result', () => {
   it('does not retry a rejected lookup by itself', async () => {
     const { run, lookup } = await claimed();
 
-    await results.execute(lookup.id, {
-      workerId: WORKER,
-      ok: false,
-      code: 'scope_mismatch',
-      error: 'Not the run pull request.',
+    await results.execute({
+      lookupId: lookup.id,
+      answer: {
+        workerId: WORKER,
+        ok: false,
+        code: 'scope_mismatch',
+        error: 'Not the run pull request.',
+      },
     });
 
     expect(status(run.id).refreshRequestedAt).toBeNull();
     expect(lookups.lookups[0]?.status).toBe('failed');
-    expect(await claims.execute(WORKER)).toEqual([]);
+    expect((await claims.execute({ workerId: WORKER })).lookups).toEqual([]);
   });
 
   it('redacts token-shaped strings in a failure before storing it', async () => {
     const { run, lookup } = await claimed();
     const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
 
-    await results.execute(lookup.id, {
-      workerId: WORKER,
-      ok: false,
-      code: 'failed',
-      error: `Refused: ${token}`,
+    await results.execute({
+      lookupId: lookup.id,
+      answer: {
+        workerId: WORKER,
+        ok: false,
+        code: 'failed',
+        error: `Refused: ${token}`,
+      },
     });
 
     expect(status(run.id).refreshError).not.toContain(token);
@@ -610,22 +692,28 @@ describe('lookups: claim and result', () => {
     const { lookup } = await claimed();
 
     await expect(
-      results.execute(lookup.id, {
-        workerId: OTHER_WORKER,
-        ok: true,
-        kind: 'pull_request_state',
-        result: { state: 'open' },
+      results.execute({
+        lookupId: lookup.id,
+        answer: {
+          workerId: OTHER_WORKER,
+          ok: true,
+          kind: 'pull_request_state',
+          result: { state: 'open' },
+        },
       }),
     ).rejects.toBeInstanceOf(LookupNotHeldError);
   });
 
   it('refuses an answer for an unknown lookup', async () => {
     await expect(
-      results.execute('9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b', {
-        workerId: WORKER,
-        ok: false,
-        code: 'failed',
-        error: 'x',
+      results.execute({
+        lookupId: '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b',
+        answer: {
+          workerId: WORKER,
+          ok: false,
+          code: 'failed',
+          error: 'x',
+        },
       }),
     ).rejects.toBeInstanceOf(LookupNotFoundError);
   });

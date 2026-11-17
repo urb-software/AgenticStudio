@@ -1,14 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  type ClaimedLookup,
-  LOOKUP_CLAIM_MAX,
-  LOOKUP_LEASE_SECONDS,
-} from '../../../domain/value-objects/run-lookup.js';
+import { LookupHandOutRule } from '../../../domain/value-objects/lookup-hand-out-rule.js';
+import type { ClaimedLookup } from '../../../domain/entities/run-lookup.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../../domain/repositories/run-lookup-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+
+export interface ClaimLookupsInput {
+  workerId: string;
+}
+
+export interface ClaimLookupsResult {
+  /** What the worker needs to answer each claimed lookup, nothing more. */
+  lookups: ClaimedLookup[];
+}
 
 /**
  * Command (Issue #142): an agent worker asks for the lookups waiting for it. Any connected
@@ -22,7 +28,10 @@ export class ClaimLookupsHandler {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  execute(workerId: string): Promise<ClaimedLookup[]> {
-    return this.lookups.claim(workerId, this.clock.now(), LOOKUP_CLAIM_MAX, LOOKUP_LEASE_SECONDS);
+  async execute(input: ClaimLookupsInput): Promise<ClaimLookupsResult> {
+    // The hand-out is the store's one atomic step; the rule supplies its lease and limit.
+    return {
+      lookups: await this.lookups.claim(input.workerId, LookupHandOutRule.at(this.clock.now())),
+    };
   }
 }

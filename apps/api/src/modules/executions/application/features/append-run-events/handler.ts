@@ -2,10 +2,7 @@ import { cutToBytes, RUN_EVENT_TEXT_MAX_BYTES } from '@agentic-studio/contracts'
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/entities/run.js';
 import type { RunEvent, RunEventKind } from '../../../domain/value-objects/run-event.js';
-import {
-  RUN_LOG_REPOSITORY,
-  type RunLogRepository,
-} from '../../../domain/repositories/run-log-repository.js';
+import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
@@ -32,6 +29,11 @@ export interface AppendRunEventsInput {
   }[];
 }
 
+export interface AppendRunEventsResult {
+  /** How many events were stored. */
+  stored: number;
+}
+
 /**
  * Command (Issue #99): the agent worker holding a Run appends a batch of its events. Each text
  * is redacted, then cut to the per-event cap; the store ignores seqs it already has and
@@ -42,14 +44,14 @@ export interface AppendRunEventsInput {
 export class AppendRunEventsHandler {
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
-    @Inject(RUN_LOG_REPOSITORY) private readonly log: RunLogRepository,
+    @Inject(RUN_LOG) private readonly log: RunLog,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
     @Inject(RUN_LOG_SETTINGS) private readonly settings: RunLogSettings,
     @Inject(RUN_LOG_SIGNAL) private readonly signal: RunLogSignal,
   ) {}
 
-  async execute(input: AppendRunEventsInput): Promise<number> {
-    if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
+  async execute(input: AppendRunEventsInput): Promise<AppendRunEventsResult> {
+    if (!isRunId(input.runId) || !(await this.runs.exists(input.runId))) {
       throw new RunNotFoundError();
     }
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
@@ -73,6 +75,6 @@ export class AppendRunEventsHandler {
     );
     if (stored === null) throw new RunNotHeldError();
     if (stored > 0) this.signal.notify(input.runId);
-    return stored;
+    return { stored };
   }
 }

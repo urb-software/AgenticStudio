@@ -4,6 +4,8 @@ import {
   type EnvironmentFileSnapshots,
 } from '../../ports/environment-file-snapshots.js';
 
+export type ReleaseFinalSnapshotsResult = void;
+
 /**
  * Command (Issue #104): releases the Environment file snapshots of Runs that ended any way.
  * Run on the sweep interval; never throws.
@@ -14,7 +16,7 @@ export class ReleaseFinalSnapshotsHandler {
     @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
   ) {}
 
-  execute(): Promise<void> {
+  execute(): Promise<ReleaseFinalSnapshotsResult> {
     return this.snapshots.releaseFinal();
   }
 }

@@ -1,6 +1,6 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { RunDiffState } from '../../../domain/value-objects/run-diff.js';
+import type { RunDiffState } from '../../../domain/entities/run-diff.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -14,16 +14,12 @@ import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects
 import {
   IllegalRunTransitionError,
   resumeMessage,
-  type Run,
   RunNotHeldError,
-  type RunData,
   type RunFailure,
+  type RunSnapshot,
   takesNewEnvironmentFile,
 } from '../../../domain/entities/run.js';
-import {
-  RUN_LOG_REPOSITORY,
-  type RunLogRepository,
-} from '../../../domain/repositories/run-log-repository.js';
+import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
@@ -88,7 +84,7 @@ const WORKING_COPY_REMOVED: RunFailure = {
  * it has taken and the seq of its next event (Issue #103: a resumed step continues after the
  * stored log).
  */
-export interface ClaimedRun extends RunData {
+export interface ClaimedRun extends RunSnapshot {
   environmentFile: EnvironmentFile | null;
   /**
    * Review S3 of #150: the claim carries a new snapshot of the Project's Environment file (or
@@ -103,8 +99,15 @@ export interface ClaimedRun extends RunData {
   diffState?: RunDiffState | null;
 }
 
+export interface ClaimRunInput {
+  workerId: string;
+}
+
+/** The Run handed out with what goes with it, or `null` when nothing is eligible. */
+export type ClaimRunResult = ClaimedRun | null;
+
 /** The Studio-placed paths of a Run: its Environment file's, when it has one. */
-const studioPathsOf = (run: Pick<Run, 'environmentFilePath'>): string[] =>
+const studioPathsOf = (run: Pick<RunSnapshot, 'environmentFilePath'>): string[] =>
   run.environmentFilePath ? [run.environmentFilePath] : [];
 
 /** The snapshot could not be taken; the Run was failed. */
@@ -127,7 +130,7 @@ export class ClaimRunHandler {
 
   constructor(
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
-    @Inject(RUN_LOG_REPOSITORY) private readonly logs: RunLogRepository,
+    @Inject(RUN_LOG) private readonly logs: RunLog,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RUN_ENVIRONMENT_FILES) private readonly environmentFiles: RunEnvironmentFiles,
@@ -136,7 +139,8 @@ export class ClaimRunHandler {
     @Inject(RUN_DIFF_REPOSITORY) private readonly diffs: RunDiffRepository,
   ) {}
 
-  async execute(workerId: string): Promise<ClaimedRun | null> {
+  async execute(input: ClaimRunInput): Promise<ClaimRunResult> {
+    const { workerId } = input;
     const now = this.clock.now();
     const lost = LostWorkerRule.at(now, this.lease.seconds);
     await this.runs.failStaleClaims(lost.staleBefore, lost.failure, lost.deliveryFailure, now);
@@ -165,7 +169,7 @@ export class ClaimRunHandler {
             environmentFile: null,
             replaceEnvironmentFile: false,
             studioPaths: studioPathsOf(run),
-            ...(await this.progress(run.id)),
+            ...(await this.progress(run)),
           };
         }
         await this.runs.change(run.id, (held) => {
@@ -202,7 +206,7 @@ export class ClaimRunHandler {
             environmentFile: null,
             replaceEnvironmentFile: false,
             studioPaths: studioPathsOf(run),
-            ...(await this.progress(run.id)),
+            ...(await this.progress(run)),
           };
         }
         // Review S3 of #150: a Follow-up works with the Project's current Environment file.
@@ -218,7 +222,7 @@ export class ClaimRunHandler {
           studioPaths: [
             ...new Set([...studioPathsOf(run), ...(environmentFile ? [environmentFile.path] : [])]),
           ],
-          ...(await this.progress(run.id)),
+          ...(await this.progress(run)),
         };
       }
       if (!reachable) {
@@ -247,7 +251,7 @@ export class ClaimRunHandler {
    * Run's earlier snapshot is deleted first, and the new one (or none) is recorded in its place.
    */
   private async snapshot(
-    run: Run,
+    run: RunSnapshot,
     workerId: string,
     now: Date,
     replace = false,
@@ -282,14 +286,14 @@ export class ClaimRunHandler {
    * its diffs stand (Issue #144, review S-1 of #149).
    */
   private async progress(
-    runId: string,
+    run: RunSnapshot,
   ): Promise<{ completedSteps: number; nextSeq: number; diffState: RunDiffState | null }> {
-    const [steps, lastSeq, diffState] = await Promise.all([
-      this.runs.listSteps(runId),
-      this.logs.lastSeq(runId),
-      this.diffs.findState(runId),
+    // The Run counts its steps with it; none is loaded to be counted.
+    const [lastSeq, diffState] = await Promise.all([
+      this.logs.lastSeq(run.id),
+      this.diffs.findState(run.id),
     ]);
-    return { completedSteps: steps.length, nextSeq: lastSeq + 1, diffState };
+    return { completedSteps: run.stepCount, nextSeq: lastSeq + 1, diffState };
   }
 
   /** The Run holds the Environment file only while this worker still holds it preparing. */
@@ -304,7 +308,12 @@ export class ClaimRunHandler {
     if (!recorded) throw new Error('The run is no longer held for its claim.');
   }
 
-  private async fail(run: Run, workerId: string, failure: RunFailure, now: Date): Promise<void> {
+  private async fail(
+    run: RunSnapshot,
+    workerId: string,
+    failure: RunFailure,
+    now: Date,
+  ): Promise<void> {
     await this.runs.change(run.id, (preparing) => {
       preparing.failPreparation(workerId, failure, now);
     });

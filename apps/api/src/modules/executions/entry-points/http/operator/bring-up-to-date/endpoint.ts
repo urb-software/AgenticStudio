@@ -11,7 +11,7 @@ import {
   followUpNotAllowed,
   runNotFound,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { FollowUpNotAllowedError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { FollowUpRunHandler } from '../../../../application/features/follow-up-run/handler.js';
@@ -52,12 +52,12 @@ export class BringUpToDateEndpoint {
       );
     }
     try {
-      const { run, followUp, workerConnected } = await this.handler.execute(
+      const { run, followUp, workerConnected, preparedFollowUp } = await this.handler.execute({
         runId,
-        parsed.data.note ?? '',
-        'bring_up_to_date',
-      );
-      return toRunResponse(run, followUp, workerConnected);
+        text: parsed.data.note ?? '',
+        source: 'bring_up_to_date',
+      });
+      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof FollowUpNotAllowedError) throw followUpNotAllowed(error.reason);

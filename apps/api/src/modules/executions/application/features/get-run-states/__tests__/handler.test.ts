@@ -60,7 +60,7 @@ describe('GetRunStatesHandler', () => {
     });
     await runs.claimNext(WORKER, T1);
 
-    const states = await handler.execute([finished.id, active.id, queued.id]);
+    const states = await handler.execute({ runIds: [finished.id, active.id, queued.id] });
 
     expect(states).toEqual(
       expect.arrayContaining([
@@ -80,7 +80,7 @@ describe('GetRunStatesHandler', () => {
   it('leaves out ids that name no Run', async () => {
     const run = await add(PROJECT);
 
-    expect(await handler.execute([randomUUID(), run.id])).toEqual([
+    expect(await handler.execute({ runIds: [randomUUID(), run.id] })).toEqual([
       { runId: run.id, state: 'queued', finishedAt: null },
     ]);
   });
@@ -101,10 +101,16 @@ describe('GetRunStatesHandler', () => {
     });
     await runs.claimNext(WORKER, T0);
 
-    await handler.execute([finished.id], { workerId: randomUUID(), runIds: [finished.id] });
+    await handler.execute({
+      runIds: [finished.id],
+      removed: { workerId: randomUUID(), runIds: [finished.id] },
+    });
     expect((await runs.findById(finished.id))!.workingCopyRemovedAt).toBeNull();
 
-    await handler.execute([finished.id], { workerId: WORKER, runIds: [finished.id, active.id] });
+    await handler.execute({
+      runIds: [finished.id],
+      removed: { workerId: WORKER, runIds: [finished.id, active.id] },
+    });
     expect((await runs.findById(finished.id))!.workingCopyRemovedAt).toEqual(T1);
     // A Run the worker is carrying keeps its Working copy, whatever is reported.
     expect((await runs.findById(active.id))!.workingCopyRemovedAt).toBeNull();
@@ -151,7 +157,7 @@ describe('GetRunStatesHandler', () => {
     const asking = (policy: RetentionPolicy = POLICY) =>
       new GetRunStatesHandler(runs, { now: () => NOW }, policy);
     const answerFor = async (runId: string, policy?: RetentionPolicy) =>
-      (await asking(policy).execute([runId])).find((answer) => answer.runId === runId);
+      (await asking(policy).execute({ runIds: [runId] })).find((answer) => answer.runId === runId);
 
     it('keeps a Run without a pull request seven days after it finished, then lets it go', async () => {
       const recent = await finished(PROJECT, 6 * DAY);
@@ -251,8 +257,10 @@ describe('GetRunStatesHandler', () => {
 
       // Asked in two batches: the limit still counts all of the Project's Runs.
       const answers = [
-        ...(await asking().execute(withoutPullRequest.slice(0, 6))),
-        ...(await asking().execute([...withoutPullRequest.slice(6), ...open, otherProject])),
+        ...(await asking().execute({ runIds: withoutPullRequest.slice(0, 6) })),
+        ...(await asking().execute({
+          runIds: [...withoutPullRequest.slice(6), ...open, otherProject],
+        })),
       ];
 
       const removable = answers.filter((answer) => answer.removable).map((answer) => answer.runId);
@@ -273,7 +281,7 @@ describe('GetRunStatesHandler', () => {
         kept.push(never);
       }
 
-      const answers = await asking().execute(kept);
+      const answers = await asking().execute({ runIds: kept });
 
       expect(answers.some((answer) => answer.removable)).toBe(false);
     });
@@ -301,7 +309,7 @@ describe('GetRunStatesHandler', () => {
       const kept: string[] = [];
       for (let n = 0; n < 10; n += 1) kept.push(await finished(PROJECT, (n + 2) * HOUR));
 
-      const answers = await asking().execute(kept);
+      const answers = await asking().execute({ runIds: kept });
 
       expect(answers.some((answer) => answer.removable)).toBe(false);
     });

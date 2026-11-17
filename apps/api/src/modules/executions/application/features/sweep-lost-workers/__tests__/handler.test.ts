@@ -64,7 +64,7 @@ describe('SweepLostWorkersHandler', () => {
     const run = await claimed(PROJECTS[0]);
     now = later(61);
 
-    expect(await handler.execute()).toBe(1);
+    expect(await handler.execute()).toEqual({ failed: 1 });
 
     expect(await runs.findById(run.id)).toMatchObject({
       state: 'failed',
@@ -90,7 +90,7 @@ describe('SweepLostWorkersHandler', () => {
     });
     now = later(91);
 
-    expect(await handler.execute()).toBe(1);
+    expect(await handler.execute()).toEqual({ failed: 1 });
     expect((await runs.findById(run.id))?.state).toBe('failed');
   });
 
@@ -99,7 +99,7 @@ describe('SweepLostWorkersHandler', () => {
     await runs.heartbeat(run.id, WORKER, later(50));
     now = later(100);
 
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ failed: 0 });
     expect((await runs.findById(run.id))?.state).toBe('preparing');
   });
 
@@ -125,7 +125,7 @@ describe('SweepLostWorkersHandler', () => {
     });
     now = later(3600);
 
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ failed: 0 });
     expect((await runs.findById(run.id))?.state).toBe('waiting_for_operator');
   });
 
@@ -141,7 +141,7 @@ describe('SweepLostWorkersHandler', () => {
     });
     now = later(3600);
 
-    expect(await handler.execute()).toBe(0);
+    expect(await handler.execute()).toEqual({ failed: 0 });
     expect(runs.runs[0]?.state).toBe('queued');
   });
 
@@ -179,7 +179,7 @@ describe('SweepLostWorkersHandler', () => {
       report(later(10));
       now = later(71);
 
-      expect(await handler.execute()).toBe(1);
+      expect(await handler.execute()).toEqual({ failed: 1 });
 
       expect(await runs.findById(run.id)).toMatchObject({
         state: 'failed',
@@ -200,17 +200,17 @@ describe('SweepLostWorkersHandler', () => {
       report(later(50));
       now = later(100);
 
-      expect(await handler.execute()).toBe(0);
+      expect(await handler.execute()).toEqual({ failed: 0 });
       expect((await runs.findById(run.id))?.deliveryRequested).toBe(true);
     });
 
     it('counts a worker never seen since Studio started from that start, not before', async () => {
       const run = await pendingRetry();
       now = later(59);
-      expect(await handler.execute()).toBe(0);
+      expect(await handler.execute()).toEqual({ failed: 0 });
 
       now = later(61);
-      expect(await handler.execute()).toBe(1);
+      expect(await handler.execute()).toEqual({ failed: 1 });
       expect((await runs.findById(run.id))?.deliveryRequested).toBe(false);
     });
   });
@@ -265,7 +265,7 @@ describe('SweepLostWorkersHandler', () => {
       report(later(10));
       now = later(71);
 
-      expect(await handler.execute()).toBe(1);
+      expect(await handler.execute()).toEqual({ failed: 1 });
 
       expect(await runs.findById(run.id)).toMatchObject({
         state: 'failed',
@@ -284,7 +284,7 @@ describe('SweepLostWorkersHandler', () => {
       report(later(50));
       now = later(100);
 
-      expect(await handler.execute()).toBe(0);
+      expect(await handler.execute()).toEqual({ failed: 0 });
       expect((await runs.findById(run.id))?.state).toBe('queued');
     });
   });

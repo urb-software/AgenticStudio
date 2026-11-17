@@ -1,8 +1,8 @@
 import { RUN_EVENT_TEXT_MAX_BYTES } from '@agentic-studio/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Run } from '../../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../../domain/entities/run.js';
 import { LOG_TRUNCATED_NOTICE } from '../../../../domain/value-objects/run-event.js';
-import { InMemoryRunLogRepository } from '../../../../domain/repositories/__tests__/in-memory-run-log-repository.js';
+import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   RunNotFoundError,
@@ -29,14 +29,14 @@ const event = (seq: number, text = `line ${seq}`, overrides: Partial<InputEvent>
 
 describe('AppendRunEventsHandler', () => {
   let runs: InMemoryRunRepository;
-  let log: InMemoryRunLogRepository;
+  let log: InMemoryRunLog;
   let notified: string[];
   let secrets: string[];
   let handler: AppendRunEventsHandler;
-  let run: Run;
+  let run: RunSnapshot;
 
-  const append = (events: InputEvent[], workerId = WORKER) =>
-    handler.execute({ runId: run.id, workerId, events });
+  const append = async (events: InputEvent[], workerId = WORKER) =>
+    (await handler.execute({ runId: run.id, workerId, events })).stored;
   const stored = () => log.events.get(run.id) ?? [];
 
   function build(maxBytes = 1024) {
@@ -51,7 +51,7 @@ describe('AppendRunEventsHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    log = new InMemoryRunLogRepository(runs);
+    log = new InMemoryRunLog(runs);
     notified = [];
     secrets = [];
     await runs.start({

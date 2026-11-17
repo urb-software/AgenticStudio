@@ -657,3 +657,15 @@ export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResp
   void _question;
   return item;
 }
+
+/**
+ * A Run snapshot with whether a prepared Follow-up waits for the operator, in the shape
+ * {@link toRunResponse} takes: the handler's result carries the flag beside the Run, because the
+ * Prepared Follow-up is an aggregate of its own that the Run does not hold.
+ */
+export function withPreparedFollowUp<T extends { pullRequestStatus: object }>(
+  run: T,
+  preparedFollowUp: boolean,
+): T & { pullRequestStatus: { preparedFollowUp: boolean } } {
+  return { ...run, pullRequestStatus: { ...run.pullRequestStatus, preparedFollowUp } };
+}

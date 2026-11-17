@@ -6,7 +6,7 @@ import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
 /** What Studio shows of the agent side (Issue #143). */
-export interface AgentWorkerView {
+export interface GetAgentWorkerResult {
   connected: boolean;
   /** The worker's disk figures, with whether free space is below its threshold. */
   disk?: WorkerDisk & { low: boolean };
@@ -25,7 +25,7 @@ export class GetAgentWorkerHandler {
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
   ) {}
 
-  execute(): AgentWorkerView {
+  async execute(): Promise<GetAgentWorkerResult> {
     const latest = this.statuses.latest();
     const connected = WorkerStatus.isAnyConnected(latest, this.clock.now(), this.lease.seconds);
     if (!connected || latest?.disk === undefined) return { connected };

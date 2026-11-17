@@ -1,12 +1,14 @@
+import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  DATABASE_CLIENT,
-  type DatabaseClient,
-} from '../../../../platform/database/database.module.js';
-import type { FollowUpSource } from '../../domain/entities/run.js';
 import { z } from 'zod';
-import { PreparedFollowUp } from '../../domain/value-objects/prepared-follow-up.js';
+import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
+import type {
+  PreparedFollowUp,
+  PreparedFollowUpSnapshot,
+} from '../../domain/entities/prepared-follow-up.js';
 import type { PreparedFollowUpRepository } from '../../domain/repositories/prepared-follow-up-repository.js';
+import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
+import type { Executor } from './executor.js';
 
 /** What `items` holds, checked on read: the column is JSON, written by the preparation. */
 const itemsSchema = z.array(
@@ -21,20 +23,41 @@ const itemsSchema = z.array(
 /** PostgreSQL adapter of {@link PreparedFollowUpRepository} (Issue #145): `run_prepared_follow_ups`. */
 @Injectable()
 export class PrismaPreparedFollowUpRepository implements PreparedFollowUpRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
-  async find(runId: string): Promise<PreparedFollowUp | null> {
+  async find(runId: string): Promise<PreparedFollowUpSnapshot | null> {
     const row = await this.db.runPreparedFollowUp.findUnique({ where: { runId } });
     if (!row) return null;
-    return PreparedFollowUp.restore({
+    return {
       // The CHECK constraint fixes the source; the items were written by the preparation.
       source: row.source as FollowUpSource,
       text: row.text,
       items: itemsSchema.parse(row.items),
+    };
+  }
+
+  async findRunIdsAmong(runIds: readonly string[]): Promise<ReadonlySet<string>> {
+    if (runIds.length === 0) return new Set();
+    const rows = await this.db.runPreparedFollowUp.findMany({
+      where: { runId: { in: [...runIds] } },
+      select: { runId: true },
+    });
+    return new Set(rows.map((row) => row.runId));
+  }
+
+  async replace(runId: string, draft: PreparedFollowUp, now: Date): Promise<void> {
+    const items = draft.items as unknown as Prisma.InputJsonValue;
+    // The latest preparation replaces the earlier one.
+    await this.db.runPreparedFollowUp.upsert({
+      where: { runId },
+      create: { runId, source: draft.source, text: draft.text, items, createdAt: now },
+      update: { source: draft.source, text: draft.text, items, createdAt: now },
     });
   }
 
-  async discard(runId: string): Promise<void> {
-    await this.db.runPreparedFollowUp.deleteMany({ where: { runId } });
+  async discard(runId: string, source?: FollowUpSource): Promise<void> {
+    await this.db.runPreparedFollowUp.deleteMany({
+      where: source === undefined ? { runId } : { runId, source },
+    });
   }
 }

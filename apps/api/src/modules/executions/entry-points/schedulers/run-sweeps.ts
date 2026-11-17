@@ -47,7 +47,7 @@ export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplication
 
   async onApplicationBootstrap(): Promise<void> {
     try {
-      const renewed = await this.leases.execute();
+      const { renewed } = await this.leases.execute();
       if (renewed === null) {
         this.logger.warn(
           'Not renewing the leases of held runs: they were renewed less than a lease ago ' +
@@ -79,13 +79,13 @@ export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplication
     if (this.sweeping) return;
     this.sweeping = true;
     try {
-      const failed = await this.lostWorkers.execute();
+      const { failed } = await this.lostWorkers.execute();
       if (failed > 0) this.logger.warn(`${failed} run(s) failed: their agent worker was lost.`);
-      const timedOut = await this.overdueSteps.execute();
+      const { timedOut } = await this.overdueSteps.execute();
       if (timedOut > 0) {
         this.logger.warn(`${timedOut} run(s) timed out: their run step ran far past its limit.`);
       }
-      const cancelled = await this.longWaits.execute();
+      const { cancelled } = await this.longWaits.execute();
       if (cancelled > 0) {
         this.logger.warn(`${cancelled} run(s) cancelled: they waited too long for the operator.`);
       }

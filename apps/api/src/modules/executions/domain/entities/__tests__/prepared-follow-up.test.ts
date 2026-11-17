@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { FOLLOW_UP_MAX_LENGTH } from '../../entities/run.js';
-import { LogRedaction } from '../log-redaction.js';
+import { FOLLOW_UP_MAX_LENGTH } from '../../value-objects/follow-up.js';
+import { LogRedaction } from '../../value-objects/log-redaction.js';
 import { PreparedFollowUp } from '../prepared-follow-up.js';
-import type { FailedCheckLog } from '../run-lookup.js';
+import type { FailedCheckLog } from '../../value-objects/run-lookup.js';
 
 const COMMIT = 'c'.repeat(40);
 

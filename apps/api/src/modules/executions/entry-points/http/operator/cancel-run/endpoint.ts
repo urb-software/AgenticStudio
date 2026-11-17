@@ -7,7 +7,7 @@ import {
   runAlreadyFinished,
   runNotFound,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { RunAlreadyFinishedError } from '../../../../domain/entities/run.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { CancelRunHandler } from '../../../../application/features/cancel-run/handler.js';
@@ -33,7 +33,8 @@ export class CancelRunEndpoint {
   })
   async cancel(@Param('runId') runId: string) {
     try {
-      return toRunResponse(await this.handler.execute(runId));
+      const { run, preparedFollowUp } = await this.handler.execute({ runId });
+      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp));
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof RunAlreadyFinishedError) throw runAlreadyFinished(error.state);

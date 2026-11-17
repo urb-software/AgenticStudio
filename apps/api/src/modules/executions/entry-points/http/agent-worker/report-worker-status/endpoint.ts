@@ -13,7 +13,7 @@ export class ReportWorkerStatusEndpoint {
 
   @Post()
   @HttpCode(HttpStatus.NO_CONTENT)
-  report(@Body() body: WorkerStatusRequestDto): void {
-    this.handler.execute(body);
+  async report(@Body() body: WorkerStatusRequestDto): Promise<void> {
+    await this.handler.execute(body);
   }
 }
