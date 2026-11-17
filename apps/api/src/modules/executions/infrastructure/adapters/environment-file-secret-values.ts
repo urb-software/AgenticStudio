@@ -6,7 +6,7 @@ import {
 } from '../../../../platform/secrets/index.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
 import { environmentFileValues } from '../../domain/services/environment-file-values.js';
-import type { RunSecretValues } from '../../ports/run-secret-values.js';
+import type { RunSecretValues } from '../../application/ports/run-secret-values.js';
 
 /**
  * {@link RunSecretValues} from the Run's Environment file snapshot (Issue #104): its values,

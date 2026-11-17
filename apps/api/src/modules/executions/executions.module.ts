@@ -9,90 +9,90 @@ import { PREPARED_FOLLOW_UP_REPOSITORY } from './domain/repositories/prepared-fo
 import { REVIEW_COMMENT_REPOSITORY } from './domain/repositories/review-comment-repository.js';
 import { RUN_LOOKUP_REPOSITORY } from './domain/repositories/run-lookup-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
-import { AnswerRunEndpoint } from './features/answer-run/endpoint.js';
-import { AnswerRunHandler } from './features/answer-run/handler.js';
-import { CancelLongWaitingRunsHandler } from './features/cancel-long-waiting-runs/handler.js';
-import { CancelRunEndpoint } from './features/cancel-run/endpoint.js';
-import { CancelRunHandler } from './features/cancel-run/handler.js';
-import { AppendRunEventsEndpoint } from './features/append-run-events/endpoint.js';
-import { AppendRunEventsHandler } from './features/append-run-events/handler.js';
-import { ClaimLookupsEndpoint } from './features/claim-lookups/endpoint.js';
-import { ClaimLookupsHandler } from './features/claim-lookups/handler.js';
-import { ClaimRunEndpoint } from './features/claim-run/endpoint.js';
-import { ClaimRunHandler } from './features/claim-run/handler.js';
-import { GetRunEndpoint } from './features/get-run/endpoint.js';
-import { GetRunsSummaryEndpoint } from './features/get-runs-summary/endpoint.js';
-import { GetRunsSummaryHandler } from './features/get-runs-summary/handler.js';
-import { GetRunHandler } from './features/get-run/handler.js';
-import { GetRunDiffEndpoint } from './features/get-run-diff/endpoint.js';
-import { GetRunDiffHandler } from './features/get-run-diff/handler.js';
-import { ListRunEventsEndpoint } from './features/list-run-events/endpoint.js';
-import { ListRunEventsHandler } from './features/list-run-events/handler.js';
-import { ListRunStepsEndpoint } from './features/list-run-steps/endpoint.js';
-import { ListRunStepsHandler } from './features/list-run-steps/handler.js';
-import { GetAgentWorkerEndpoint } from './features/get-agent-worker/endpoint.js';
-import { GetAgentWorkerHandler } from './features/get-agent-worker/handler.js';
-import { GetRunStatesEndpoint } from './features/get-run-states/endpoint.js';
-import { GetRunStatesHandler } from './features/get-run-states/handler.js';
-import { ListProvidersEndpoint } from './features/list-providers/endpoint.js';
-import { ListProvidersHandler } from './features/list-providers/handler.js';
-import { ListProjectRunsEndpoint } from './features/list-project-runs/endpoint.js';
-import { ListProjectRunsHandler } from './features/list-project-runs/handler.js';
-import { ListRunsEndpoint } from './features/list-runs/endpoint.js';
-import { ListRunsHandler } from './features/list-runs/handler.js';
-import { RecordHeartbeatEndpoint } from './features/record-heartbeat/endpoint.js';
-import { DiscardPreparedFollowUpEndpoint } from './features/discard-prepared-follow-up/endpoint.js';
-import { DiscardPreparedFollowUpHandler } from './features/discard-prepared-follow-up/handler.js';
-import { GetPreparedFollowUpEndpoint } from './features/get-prepared-follow-up/endpoint.js';
-import { GetReviewCommentsEndpoint } from './features/get-review-comments/endpoint.js';
-import { GetReviewCommentsHandler } from './features/get-review-comments/handler.js';
-import { LoadReviewCommentsEndpoint } from './features/load-review-comments/endpoint.js';
-import { LoadReviewCommentsHandler } from './features/load-review-comments/handler.js';
-import { GetPreparedFollowUpHandler } from './features/get-prepared-follow-up/handler.js';
-import { PrepareFailingChecksEndpoint } from './features/prepare-failing-checks/endpoint.js';
-import { PrepareFailingChecksHandler } from './features/prepare-failing-checks/handler.js';
-import { RefreshPullRequestEndpoint } from './features/refresh-pull-request/endpoint.js';
-import { RefreshPullRequestHandler } from './features/refresh-pull-request/handler.js';
-import { ReportLookupResultEndpoint } from './features/report-lookup-result/endpoint.js';
-import { ReportLookupResultHandler } from './features/report-lookup-result/handler.js';
-import { RecordHeartbeatHandler } from './features/record-heartbeat/handler.js';
-import { ReportRunDiffEndpoint } from './features/report-run-diff/endpoint.js';
-import { ReportRunDiffHandler } from './features/report-run-diff/handler.js';
-import { ReportRunStateEndpoint } from './features/report-run-state/endpoint.js';
-import { ReportRunStateHandler } from './features/report-run-state/handler.js';
-import { ReportRunStepEndpoint } from './features/report-run-step/endpoint.js';
-import { ReportRunStepHandler } from './features/report-run-step/handler.js';
-import { ReportWorkerStatusEndpoint } from './features/report-worker-status/endpoint.js';
-import { ReportWorkerStatusHandler } from './features/report-worker-status/handler.js';
+import { AnswerRunEndpoint } from './entry-points/http/operator/answer-run/endpoint.js';
+import { AnswerRunHandler } from './application/features/answer-run/handler.js';
+import { CancelLongWaitingRunsHandler } from './application/features/cancel-long-waiting-runs/handler.js';
+import { CancelRunEndpoint } from './entry-points/http/operator/cancel-run/endpoint.js';
+import { CancelRunHandler } from './application/features/cancel-run/handler.js';
+import { AppendRunEventsEndpoint } from './entry-points/http/agent-worker/append-run-events/endpoint.js';
+import { AppendRunEventsHandler } from './application/features/append-run-events/handler.js';
+import { ClaimLookupsEndpoint } from './entry-points/http/agent-worker/claim-lookups/endpoint.js';
+import { ClaimLookupsHandler } from './application/features/claim-lookups/handler.js';
+import { ClaimRunEndpoint } from './entry-points/http/agent-worker/claim-run/endpoint.js';
+import { ClaimRunHandler } from './application/features/claim-run/handler.js';
+import { GetRunEndpoint } from './entry-points/http/operator/get-run/endpoint.js';
+import { GetRunsSummaryEndpoint } from './entry-points/http/operator/get-runs-summary/endpoint.js';
+import { GetRunsSummaryHandler } from './application/features/get-runs-summary/handler.js';
+import { GetRunHandler } from './application/features/get-run/handler.js';
+import { GetRunDiffEndpoint } from './entry-points/http/operator/get-run-diff/endpoint.js';
+import { GetRunDiffHandler } from './application/features/get-run-diff/handler.js';
+import { ListRunEventsEndpoint } from './entry-points/http/operator/list-run-events/endpoint.js';
+import { ListRunEventsHandler } from './application/features/list-run-events/handler.js';
+import { ListRunStepsEndpoint } from './entry-points/http/operator/list-run-steps/endpoint.js';
+import { ListRunStepsHandler } from './application/features/list-run-steps/handler.js';
+import { GetAgentWorkerEndpoint } from './entry-points/http/operator/get-agent-worker/endpoint.js';
+import { GetAgentWorkerHandler } from './application/features/get-agent-worker/handler.js';
+import { GetRunStatesEndpoint } from './entry-points/http/agent-worker/get-run-states/endpoint.js';
+import { GetRunStatesHandler } from './application/features/get-run-states/handler.js';
+import { ListProvidersEndpoint } from './entry-points/http/operator/list-providers/endpoint.js';
+import { ListProvidersHandler } from './application/features/list-providers/handler.js';
+import { ListProjectRunsEndpoint } from './entry-points/http/operator/list-project-runs/endpoint.js';
+import { ListProjectRunsHandler } from './application/features/list-project-runs/handler.js';
+import { ListRunsEndpoint } from './entry-points/http/operator/list-runs/endpoint.js';
+import { ListRunsHandler } from './application/features/list-runs/handler.js';
+import { RecordHeartbeatEndpoint } from './entry-points/http/agent-worker/record-heartbeat/endpoint.js';
+import { DiscardPreparedFollowUpEndpoint } from './entry-points/http/operator/discard-prepared-follow-up/endpoint.js';
+import { DiscardPreparedFollowUpHandler } from './application/features/discard-prepared-follow-up/handler.js';
+import { GetPreparedFollowUpEndpoint } from './entry-points/http/operator/get-prepared-follow-up/endpoint.js';
+import { GetReviewCommentsEndpoint } from './entry-points/http/operator/get-review-comments/endpoint.js';
+import { GetReviewCommentsHandler } from './application/features/get-review-comments/handler.js';
+import { LoadReviewCommentsEndpoint } from './entry-points/http/operator/load-review-comments/endpoint.js';
+import { LoadReviewCommentsHandler } from './application/features/load-review-comments/handler.js';
+import { GetPreparedFollowUpHandler } from './application/features/get-prepared-follow-up/handler.js';
+import { PrepareFailingChecksEndpoint } from './entry-points/http/operator/prepare-failing-checks/endpoint.js';
+import { PrepareFailingChecksHandler } from './application/features/prepare-failing-checks/handler.js';
+import { RefreshPullRequestEndpoint } from './entry-points/http/operator/refresh-pull-request/endpoint.js';
+import { RefreshPullRequestHandler } from './application/features/refresh-pull-request/handler.js';
+import { ReportLookupResultEndpoint } from './entry-points/http/agent-worker/report-lookup-result/endpoint.js';
+import { ReportLookupResultHandler } from './application/features/report-lookup-result/handler.js';
+import { RecordHeartbeatHandler } from './application/features/record-heartbeat/handler.js';
+import { ReportRunDiffEndpoint } from './entry-points/http/agent-worker/report-run-diff/endpoint.js';
+import { ReportRunDiffHandler } from './application/features/report-run-diff/handler.js';
+import { ReportRunStateEndpoint } from './entry-points/http/agent-worker/report-run-state/endpoint.js';
+import { ReportRunStateHandler } from './application/features/report-run-state/handler.js';
+import { ReportRunStepEndpoint } from './entry-points/http/agent-worker/report-run-step/endpoint.js';
+import { ReportRunStepHandler } from './application/features/report-run-step/handler.js';
+import { ReportWorkerStatusEndpoint } from './entry-points/http/agent-worker/report-worker-status/endpoint.js';
+import { ReportWorkerStatusHandler } from './application/features/report-worker-status/handler.js';
 import {
   DAILY_REFRESH_INTERVAL_MS,
   DailyPullRequestRefreshSchedule,
   RequestDailyPullRequestRefreshesHandler,
-} from './features/request-daily-pull-request-refreshes/handler.js';
-import { RetryDeliveryEndpoint } from './features/retry-delivery/endpoint.js';
-import { RetryDeliveryHandler } from './features/retry-delivery/handler.js';
-import { BringUpToDateEndpoint } from './features/bring-up-to-date/endpoint.js';
-import { BringUpToDateHandler } from './features/bring-up-to-date/handler.js';
-import { FollowUpRunEndpoint } from './features/follow-up-run/endpoint.js';
-import { FollowUpRunHandler } from './features/follow-up-run/handler.js';
-import { ResumeRunEndpoint } from './features/resume-run/endpoint.js';
-import { ResumeRunHandler } from './features/resume-run/handler.js';
-import { StartRunEndpoint } from './features/start-run/endpoint.js';
-import { StartRunHandler } from './features/start-run/handler.js';
-import { StreamRunEventsEndpoint } from './features/stream-run-events/endpoint.js';
-import { StreamRunEventsHandler } from './features/stream-run-events/handler.js';
-import { LogStreamSlots } from './features/stream-run-events/log-stream-slots.js';
+} from './application/features/request-daily-pull-request-refreshes/handler.js';
+import { RetryDeliveryEndpoint } from './entry-points/http/operator/retry-delivery/endpoint.js';
+import { RetryDeliveryHandler } from './application/features/retry-delivery/handler.js';
+import { BringUpToDateEndpoint } from './entry-points/http/operator/bring-up-to-date/endpoint.js';
+import { BringUpToDateHandler } from './application/features/bring-up-to-date/handler.js';
+import { FollowUpRunEndpoint } from './entry-points/http/operator/follow-up-run/endpoint.js';
+import { FollowUpRunHandler } from './application/features/follow-up-run/handler.js';
+import { ResumeRunEndpoint } from './entry-points/http/operator/resume-run/endpoint.js';
+import { ResumeRunHandler } from './application/features/resume-run/handler.js';
+import { StartRunEndpoint } from './entry-points/http/operator/start-run/endpoint.js';
+import { StartRunHandler } from './application/features/start-run/handler.js';
+import { StreamRunEventsEndpoint } from './entry-points/http/operator/stream-run-events/endpoint.js';
+import { StreamRunEventsHandler } from './application/features/stream-run-events/handler.js';
+import { LogStreamSlots } from './application/features/stream-run-events/log-stream-slots.js';
 import {
   LostWorkerSweepSchedule,
   SweepLostWorkersHandler,
-} from './features/sweep-lost-workers/handler.js';
+} from './application/features/sweep-lost-workers/handler.js';
 import { EnvironmentFileSecretValues } from './infrastructure/adapters/environment-file-secret-values.js';
 import { SecretStoreEnvironmentFileSnapshots } from './infrastructure/adapters/environment-file-snapshots.js';
 import {
   ENVIRONMENT_FILE_SNAPSHOTS,
   RUN_SNAPSHOT_SETTINGS,
   type RunSnapshotSettings,
-} from './ports/environment-file-snapshots.js';
+} from './application/ports/environment-file-snapshots.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunDiffRepository } from './infrastructure/repositories/prisma-run-diff-repository.js';
@@ -102,20 +102,20 @@ import { PrismaReviewCommentRepository } from './infrastructure/repositories/pri
 import { PrismaRunLookupRepository } from './infrastructure/repositories/prisma-run-lookup-repository.js';
 import { InMemoryWorkerStatusStore } from './infrastructure/adapters/in-memory-worker-status-store.js';
 import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-repository.js';
-import { CLOCK, type Clock } from './ports/clock.js';
+import { CLOCK, type Clock } from './application/ports/clock.js';
 import {
   PULL_REQUEST_REFRESH_SETTINGS,
   type PullRequestRefreshSettings,
-} from './ports/pull-request-refresh-settings.js';
-import { OPERATOR_LOGIN, type OperatorLogin } from './ports/operator-login.js';
-import { RUN_LIMITS, type RunLimitsSetting } from './ports/run-limits.js';
-import { OPERATOR_SESSIONS } from './ports/operator-sessions.js';
-import { RUN_LOG_SETTINGS, type RunLogSettings } from './ports/run-log-settings.js';
-import { RUN_LOG_SIGNAL } from './ports/run-log-signal.js';
-import { RUN_SECRET_VALUES, type RunSecretValues } from './ports/run-secret-values.js';
-import { RETENTION_POLICY, type RetentionPolicy } from './ports/retention-policy.js';
-import { WORKER_LEASE, type WorkerLease } from './ports/worker-lease.js';
-import { WORKER_STATUS_STORE } from './ports/worker-status-store.js';
+} from './application/ports/pull-request-refresh-settings.js';
+import { OPERATOR_LOGIN, type OperatorLogin } from './application/ports/operator-login.js';
+import { RUN_LIMITS, type RunLimitsSetting } from './application/ports/run-limits.js';
+import { OPERATOR_SESSIONS } from './application/ports/operator-sessions.js';
+import { RUN_LOG_SETTINGS, type RunLogSettings } from './application/ports/run-log-settings.js';
+import { RUN_LOG_SIGNAL } from './application/ports/run-log-signal.js';
+import { RUN_SECRET_VALUES, type RunSecretValues } from './application/ports/run-secret-values.js';
+import { RETENTION_POLICY, type RetentionPolicy } from './application/ports/retention-policy.js';
+import { WORKER_LEASE, type WorkerLease } from './application/ports/worker-lease.js';
+import { WORKER_STATUS_STORE } from './application/ports/worker-status-store.js';
 
 /**
  * Test seams of the module: a controlled clock for the lease and the lost-worker sweep, a

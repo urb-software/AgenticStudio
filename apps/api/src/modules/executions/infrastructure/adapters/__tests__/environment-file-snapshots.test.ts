@@ -6,7 +6,7 @@ import {
 } from '../../../domain/entities/run-environment-file.js';
 import { lostWorkerRule } from '../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
+import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { SecretStoreEnvironmentFileSnapshots } from '../environment-file-snapshots.js';
 
 // Issue #104: a Run's Environment file snapshot serves its log redaction while the Run goes

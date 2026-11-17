@@ -1,5 +1,5 @@
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import type { GitFailureReason } from '../../../ports/repository-git.js';
+import type { GitFailureReason } from '../../../application/ports/repository-git.js';
 
 /** Longest redacted Git output kept for a caller or a log line. */
 export const MAX_DETAIL_LENGTH = 2_000;

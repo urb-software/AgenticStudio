@@ -18,7 +18,7 @@ import {
   GitOperationError,
   GitRequestRejectedError,
   type SshCredentials,
-} from '../../../../ports/repository-git.js';
+} from '../../../../application/ports/repository-git.js';
 import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
 import {
   parseKnownHosts,

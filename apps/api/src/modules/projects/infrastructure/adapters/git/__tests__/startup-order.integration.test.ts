@@ -11,23 +11,26 @@ import {
 import { SECRET_STORE } from '../../../../../../platform/secrets/index.js';
 import { PROJECT_REPOSITORY } from '../../../../domain/repositories/project-repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
-import { REPOSITORY_GIT } from '../../../../ports/repository-git.js';
-import { FakeRepositoryGit } from '../../../../ports/__tests__/fake-repository-git.js';
-import { CleanUpRepositoryHandler } from '../../../../features/clean-up-repository/handler.js';
-import { CloneRepositoryHandler } from '../../../../features/clone-repository/handler.js';
-import { DeployKeyHandler, SSH_TRUST_SETTINGS } from '../../../../features/deploy-key/handler.js';
-import { InMemorySecretStore } from '../../../../features/deploy-key/__tests__/in-memory-secret-store.js';
-import { FetchCloneHandler } from '../../../../features/fetch-clone/handler.js';
+import { REPOSITORY_GIT } from '../../../../application/ports/repository-git.js';
+import { FakeRepositoryGit } from '../../../../application/ports/__tests__/fake-repository-git.js';
+import { CleanUpRepositoryHandler } from '../../../../application/features/clean-up-repository/handler.js';
+import { CloneRepositoryHandler } from '../../../../application/features/clone-repository/handler.js';
+import {
+  DeployKeyHandler,
+  SSH_TRUST_SETTINGS,
+} from '../../../../application/features/deploy-key/handler.js';
+import { InMemorySecretStore } from '../../../../application/features/deploy-key/__tests__/in-memory-secret-store.js';
+import { FetchCloneHandler } from '../../../../application/features/fetch-clone/handler.js';
 import {
   DEPLOY_KEY_SWEEP_SETTINGS,
   SweepOrphanedDeployKeysHandler,
-} from '../../../../features/sweep-orphaned-deploy-keys/handler.js';
-import { RepositoryJobsHandler } from '../../../../features/repository-jobs/handler.js';
-import { SweepOrphanedEnvironmentFilesHandler } from '../../../../features/sweep-orphaned-environment-files/handler.js';
+} from '../../../../application/features/sweep-orphaned-deploy-keys/handler.js';
+import { RepositoryJobsHandler } from '../../../../application/features/repository-jobs/handler.js';
+import { SweepOrphanedEnvironmentFilesHandler } from '../../../../application/features/sweep-orphaned-environment-files/handler.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from '../../../../domain/repositories/environment-file-repository.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
-import { ENVIRONMENT_FILE_CONTENTS } from '../../../../ports/environment-file-contents.js';
-import { InMemoryEnvironmentFileContents } from '../../../../ports/__tests__/in-memory-environment-file-contents.js';
+import { ENVIRONMENT_FILE_CONTENTS } from '../../../../application/ports/environment-file-contents.js';
+import { InMemoryEnvironmentFileContents } from '../../../../application/ports/__tests__/in-memory-environment-file-contents.js';
 
 // Issue #60 clarification 11: the Git adapter's start-up sweep (its `onModuleInit`) removes
 // leftovers of any age, so no clone or fetch may reconcile or run before it has finished. The

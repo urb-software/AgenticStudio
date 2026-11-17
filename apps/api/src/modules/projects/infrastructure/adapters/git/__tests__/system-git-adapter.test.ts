@@ -9,7 +9,7 @@ import {
   GitUnsupportedPlatformError,
   REPOSITORY_GIT,
   type RepositoryGit,
-} from '../../../../ports/repository-git.js';
+} from '../../../../application/ports/repository-git.js';
 import {
   PRODUCTION_GIT_LIMITS,
   SystemGitAdapter,

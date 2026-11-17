@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { InMemorySecretStore } from '../../../features/deploy-key/__tests__/in-memory-secret-store.js';
+import { InMemorySecretStore } from '../../../application/features/deploy-key/__tests__/in-memory-secret-store.js';
 import {
   ENVIRONMENT_FILE_ORPHAN_AGE_MS,
   SecretStoreEnvironmentFileContents,

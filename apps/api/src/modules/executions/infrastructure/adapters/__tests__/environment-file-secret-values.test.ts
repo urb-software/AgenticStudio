@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/entities/run-environment-file.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
+import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { EnvironmentFileSecretValues } from '../environment-file-secret-values.js';
 
 // Issue #104: a Run's log redaction gets the values of its Environment file snapshot.

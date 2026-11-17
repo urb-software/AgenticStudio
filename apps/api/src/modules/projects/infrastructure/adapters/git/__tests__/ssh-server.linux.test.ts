@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
-import type { SshCredentials } from '../../../../ports/repository-git.js';
+import type { SshCredentials } from '../../../../application/ports/repository-git.js';
 import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
 
 const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
