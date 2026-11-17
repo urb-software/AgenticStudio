@@ -13,7 +13,7 @@ import { PROJECT_REPOSITORY } from '../../../../domain/repositories/project-repo
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { REPOSITORY_GIT } from '../../../../application/ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../../application/ports/__tests__/fake-repository-git.js';
-import { CleanUpRepositoryHandler } from '../../../../application/features/clean-up-repository/handler.js';
+import { DisconnectRepositoryHandler } from '../../../../application/features/disconnect-repository/handler.js';
 import { CloneRepositoryHandler } from '../../../../application/features/clone-repository/handler.js';
 import {
   DEPLOY_KEY_SWEEP_SETTINGS,
@@ -23,7 +23,11 @@ import { InMemorySecretStore } from '../../../../application/ports/__tests__/in-
 import { SecretStoreDeployKeys, SSH_TRUST_SETTINGS } from '../../secret-store-deploy-keys.js';
 import { FetchCloneHandler } from '../../../../application/features/fetch-clone/handler.js';
 import { SweepOrphanedDeployKeysHandler } from '../../../../application/features/sweep-orphaned-deploy-keys/handler.js';
-import { RepositoryJobsHandler } from '../../../../application/features/repository-jobs/handler.js';
+import { GetRepositoryOperationHandler } from '../../../../application/features/get-repository-operation/handler.js';
+import { REPOSITORY_JOBS } from '../../../../application/ports/repository-jobs.js';
+import { RepositoryJobProcessor } from '../../../../entry-points/jobs/repository-job-processor.js';
+import { RepositoryStartupRecovery } from '../../../../entry-points/startup/repository-startup-recovery.js';
+import { QueueRepositoryJobs } from '../../queue-repository-jobs.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../../../../application/features/sweep-orphaned-environment-files/handler.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from '../../../../domain/repositories/environment-file-repository.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
@@ -106,8 +110,18 @@ function startupContext(
       SweepOrphanedEnvironmentFilesHandler,
       CloneRepositoryHandler,
       FetchCloneHandler,
-      CleanUpRepositoryHandler,
-      RepositoryJobsHandler,
+      DisconnectRepositoryHandler,
+      GetRepositoryOperationHandler,
+      RepositoryStartupRecovery,
+      RepositoryJobProcessor,
+      QueueRepositoryJobs,
+      { provide: REPOSITORY_JOBS, useExisting: QueueRepositoryJobs },
+      {
+        provide: 'REPOSITORY_JOB_ROUTING',
+        useFactory: (jobs: QueueRepositoryJobs, processor: RepositoryJobProcessor) =>
+          jobs.deliverTo(processor),
+        inject: [QueueRepositoryJobs, RepositoryJobProcessor],
+      },
     ],
   })
   class StartupModule {}
@@ -145,7 +159,7 @@ describe('repository job start-up order (Redis via Testcontainers)', () => {
     const earlier = await startupContext(redis.url, { startWorkers: false });
     try {
       await earlier.init();
-      await earlier.get(RepositoryJobsHandler).start(PROJECT, 'clone');
+      await earlier.get(QueueRepositoryJobs).start(PROJECT, 'clone');
     } finally {
       await earlier.close();
     }

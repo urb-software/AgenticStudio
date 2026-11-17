@@ -51,6 +51,34 @@ export function interruptedFailure(): RepositoryFailure {
   return repositoryFailure('interrupted');
 }
 
+/**
+ * Why the job of a clone or fetch ended without finishing on its own: the processor's own
+ * error, or the reason the queue aborted it. It has the shape of the queue's failure report,
+ * which the job's entry point passes on; the domain and the application name no queue.
+ */
+export type UnfinishedJob =
+  | { reason: 'error'; error: unknown }
+  | { reason: 'cancelled' | 'timeout' | 'stalled' | 'shutdown' };
+
+/** The failure stored for a clone or fetch whose job did not finish on its own. */
+export function unfinishedJobFailure(
+  operation: 'clone' | 'fetch',
+  job: UnfinishedJob,
+): RepositoryFailure {
+  switch (job.reason) {
+    case 'timeout':
+      return repositoryFailure('timeout', `The ${operation} took too long and was stopped.`);
+    case 'cancelled':
+      return repositoryFailure('unknown', 'Cancelled');
+    // A crash-like end: the queue lost the job, or the API is shutting down (#60 clarification 2).
+    case 'stalled':
+    case 'shutdown':
+      return interruptedFailure();
+    case 'error':
+      return unexpectedFailure();
+  }
+}
+
 /** Longest stored failure detail; longer redacted Git output is cut. */
 export const FAILURE_DETAIL_MAX_LENGTH = 2000;
 

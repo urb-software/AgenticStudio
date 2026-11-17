@@ -25,7 +25,7 @@ import {
  * unreferenced is never saved again.
  *
  * Runs at start-up, after the repository queue is reconciled and before its worker starts
- * (`repository-jobs`), and after a Connect fails to delete a key (Connect repeats the selection inline, #163). Each delete is
+ * (`RepositoryStartupRecovery`), and after a Connect fails to delete a key (Connect repeats the selection inline, #163). Each delete is
  * logged by the secret's id only. Never throws: a failure is logged (redacted) and the next
  * sweep tries again.
  */

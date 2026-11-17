@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { GitOperationError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
-import { CleanUpRepositoryHandler } from '../handler.js';
+import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
+import { DisconnectRepositoryHandler } from '../handler.js';
 import { generateDeployKey } from '../../../../domain/value-objects/ssh-key.js';
 import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
@@ -13,13 +14,13 @@ const A = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const B = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 const C = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
 
-describe('CleanUpRepositoryHandler', () => {
+describe('DisconnectRepositoryHandler finishing a disconnect (formerly clean-up-repository)', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
   let git: FakeRepositoryGit;
   let logs: string[];
-  let cleanup: CleanUpRepositoryHandler;
+  let cleanup: DisconnectRepositoryHandler;
 
   async function connect(projectId: string, name: string) {
     projects.addProject(projectId, name);
@@ -44,7 +45,12 @@ describe('CleanUpRepositoryHandler', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
       logs.push(String(message));
     });
-    cleanup = new CleanUpRepositoryHandler(projects, git, deployKeys);
+    cleanup = new DisconnectRepositoryHandler(
+      projects,
+      git,
+      new RecordingRepositoryJobs(),
+      deployKeys,
+    );
   });
 
   it('resumes every disconnecting Repository at start-up and leaves the others alone', async () => {

@@ -1,22 +1,44 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
-import type { JobFailure } from '../../../../../platform/queue/job-queue.js';
-import { interruptedFailure, repositoryFailure } from '../../../domain/entities/repository.js';
+import {
+  gitOperationFailure,
+  interruptedFailure,
+  NO_TRUSTED_HOST_KEY_DETAIL,
+  NoTrustedHostKeyError,
+  type RepositoryFailure,
+  repositoryFailure,
+  type UnfinishedJob,
+  unfinishedJobFailure,
+} from '../../../domain/entities/repository.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import {
   GitCloneMissingError,
+  GitOperationError,
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
 import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
-import {
-  gitStepFailure,
-  isAbortError,
-  unfinishedJobFailure,
-} from '../repository-jobs/job-failures.js';
+
+/** Whether `error` is the abort of the job's signal; a processor rethrows it to the queue. */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+/**
+ * The failure of a Git step of the job, or `undefined` when `error` is not a Git failure (it
+ * is then unexpected, and the queue reports it). No trusted host key is a `host_key_mismatch`
+ * before Git runs (Issue #62); a Git failure keeps its reason and redacted output.
+ */
+function gitStepFailure(error: unknown): RepositoryFailure | undefined {
+  if (error instanceof NoTrustedHostKeyError) {
+    return repositoryFailure('host_key_mismatch', NO_TRUSTED_HOST_KEY_DETAIL);
+  }
+  if (error instanceof GitOperationError) return gitOperationFailure(error.reason, error.detail);
+  return undefined;
+}
 
 /** Stored when the Clone the Repository records is missing on disk. */
 export const CLONE_MISSING_DETAIL =
@@ -24,7 +46,7 @@ export const CLONE_MISSING_DETAIL =
 
 /**
  * Feature: the background fetch of a `fetching` Repository, run by the Repository's job
- * (`repository-jobs`, which owns the queue and calls this for a `fetching` Repository).
+ * (the job processor under `entry-points/jobs/` calls this for a `fetching` Repository).
  *
  * - Fetches the Integration branch into the existing Clone (the Git adapter's 2-minute limit
  *   and size limit apply), then marks the Repository `ready` with the branch's commit and a
@@ -87,7 +109,7 @@ export class FetchCloneHandler {
     }
   }
 
-  async onFailed(projectId: string, failure: JobFailure): Promise<void> {
+  async onFailed(projectId: string, failure: UnfinishedJob): Promise<void> {
     if (failure.reason === 'error') {
       this.logger.error(
         `Fetch of project ${projectId} failed unexpectedly: ${redactSecrets(String(failure.error))}`,

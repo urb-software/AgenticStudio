@@ -5,7 +5,6 @@ import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_ENVIRONMENT_FILES, RUN_START_POINTS } from './contracts/index.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
-import { CleanUpRepositoryHandler } from './application/features/clean-up-repository/handler.js';
 import { CloneRepositoryHandler } from './application/features/clone-repository/handler.js';
 import { ConnectRepositoryEndpoint } from './entry-points/http/operator/connect-repository/endpoint.js';
 import {
@@ -35,7 +34,10 @@ import { GetRunStartPointHandler } from './application/features/get-run-start-po
 import { ListProjectsEndpoint } from './entry-points/http/operator/list-projects/endpoint.js';
 import { ListProjectsHandler } from './application/features/list-projects/handler.js';
 import { FetchCloneHandler } from './application/features/fetch-clone/handler.js';
-import { RepositoryJobsHandler } from './application/features/repository-jobs/handler.js';
+import { GetRepositoryOperationHandler } from './application/features/get-repository-operation/handler.js';
+import { RepositoryJobProcessor } from './entry-points/jobs/repository-job-processor.js';
+import { RepositoryStartupRecovery } from './entry-points/startup/repository-startup-recovery.js';
+import { QueueRepositoryJobs } from './infrastructure/adapters/queue-repository-jobs.js';
 import { SweepOrphanedDeployKeysHandler } from './application/features/sweep-orphaned-deploy-keys/handler.js';
 import { VerifyRepositoryEndpoint } from './entry-points/http/operator/verify-repository/endpoint.js';
 import { VerifyRepositoryHandler } from './application/features/verify-repository/handler.js';
@@ -61,6 +63,9 @@ import {
   type SshTrustSettings,
 } from './infrastructure/adapters/secret-store-deploy-keys.js';
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from './domain/value-objects/deploy-key-sweep-policy.js';
+
+/** DI token of the wiring that connects the repository queue's adapter to its job processor. */
+const REPOSITORY_JOB_ROUTING = Symbol('REPOSITORY_JOB_ROUTING');
 
 /**
  * Test seam of the module (like the job queue's worker tuning): tests pass shorter Git limits
@@ -152,9 +157,19 @@ export class ProjectsModule {
         SweepOrphanedDeployKeysHandler,
         CloneRepositoryHandler,
         FetchCloneHandler,
-        CleanUpRepositoryHandler,
-        RepositoryJobsHandler,
-        { provide: REPOSITORY_JOBS, useExisting: RepositoryJobsHandler },
+        GetRepositoryOperationHandler,
+        RepositoryStartupRecovery,
+        RepositoryJobProcessor,
+        QueueRepositoryJobs,
+        { provide: REPOSITORY_JOBS, useExisting: QueueRepositoryJobs },
+        // The queue adapter registers the queue; the job processor receives its events. A call
+        // after construction, because the processor's handlers (Disconnect) use the adapter.
+        {
+          provide: REPOSITORY_JOB_ROUTING,
+          useFactory: (jobs: QueueRepositoryJobs, processor: RepositoryJobProcessor) =>
+            jobs.deliverTo(processor),
+          inject: [QueueRepositoryJobs, RepositoryJobProcessor],
+        },
         CreateProjectHandler,
         ListProjectsHandler,
         GetProjectHandler,
