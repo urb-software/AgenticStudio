@@ -1,13 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import {
-  ACTIVE_RUN_STATES,
   CLAIMED_RUN_STATES,
   DeliveryNotRetryableError,
   type FollowUpOrigin,
   FollowUpNotAllowedError,
   IllegalRunTransitionError,
   isFinal,
-  MAX_ACTIVE_RUNS,
   NO_PULL_REQUEST_STATUS,
   type ResumeFacts,
   Run,
@@ -26,6 +24,7 @@ import {
   StepOutOfOrderError,
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
+import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { Task } from '../../value-objects/task.js';
 import type { PreparedFollowUp } from '../../value-objects/prepared-follow-up.js';
 import type { ReviewCommentSet } from '../../value-objects/review-comments.js';
@@ -80,17 +79,10 @@ export type AppendStepOutcome =
   | { status: 'not_held' }
   | { status: 'step_limit' };
 
-const isActive = (state: RunState) => (ACTIVE_RUN_STATES as readonly RunState[]).includes(state);
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
 /** Queued with a session reference: the database adapter's test for a Run queued to resume. */
 const queuedToResume = (run: RunData) => run.state === 'queued' && run.sessionRef !== null;
 
-/**
- * Active for the limits: an active state, a failed Run held for a delivery retry (#102), or a
- * resumable Run waiting for its worker (#103); a queued Follow-up holds none (#141).
- */
-const holdsPlace = (run: RunData) =>
-  isActive(run.state) || run.claimedBy !== null || (queuedToResume(run) && !run.followUpQueued);
 /**
  * In-memory adapter of {@link RunRepository} for handler tests, with the database adapter's
  * rules: claims honour the concurrency limits in creation order, worker changes are
@@ -177,19 +169,8 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   claimNext(workerId: string, now: Date): Promise<Run | null> {
-    // A candidate's own place does not count against it (a resumable Run keeps one, #103).
-    const others = (candidate: RunData) =>
-      this.runs.filter((run) => run.id !== candidate.id && holdsPlace(run));
-    const next = this.runs.find(
-      (run) =>
-        ((run.state === 'queued' && (!queuedToResume(run) || run.lastClaimedBy === workerId)) ||
-          (run.state === 'failed' &&
-            run.deliveryRequested &&
-            run.claimedBy === null &&
-            run.lastClaimedBy === workerId)) &&
-        others(run).length < MAX_ACTIVE_RUNS &&
-        !others(run).some((other) => other.projectId === run.projectId),
-    );
+    // The hand-out rule over the Runs in creation order, as the database adapter's query follows it.
+    const next = HandOutRule.for(workerId).next(this.runs);
     if (!next) return Promise.resolve(null);
     if (next.state === 'queued') {
       Object.assign(next, {
@@ -343,7 +324,9 @@ export class InMemoryRunRepository implements RunRepository {
     mutate: (run: Run, facts: ResumeFacts) => void,
   ): Promise<Run | null> {
     return this.changeStored(runId, (run, stored) => {
-      const others = this.runs.filter((other) => other.id !== runId && holdsPlace(other));
+      const others = this.runs.filter(
+        (other) => other.id !== runId && HandOutRule.holdsPlace(other),
+      );
       mutate(run, {
         projectPlaceTaken: others.some((other) => other.projectId === stored.projectId),
         serverPlacesTaken: others.length,

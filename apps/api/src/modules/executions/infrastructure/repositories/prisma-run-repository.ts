@@ -5,10 +5,8 @@ import {
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import {
-  ACTIVE_RUN_STATES,
   CLAIMED_RUN_STATES,
   FINAL_RUN_STATES,
-  MAX_ACTIVE_RUNS,
   PROVIDERS,
   type Provider,
   RUN_CANCELLED_BY,
@@ -34,6 +32,7 @@ import {
   type RunWorkingCopy,
   UNDER_WAY_RUN_STATES,
 } from '../../domain/entities/run.js';
+import { HandOutRule } from '../../domain/value-objects/hand-out-rule.js';
 import { ReviewCommentSet } from '../../domain/value-objects/review-comments.js';
 import { commentsSchema } from './review-comment-json.js';
 import type {
@@ -210,7 +209,7 @@ interface RunRow {
   }[];
 }
 
-const ACTIVE = Prisma.join([...ACTIVE_RUN_STATES]);
+const PLACE_STATES = Prisma.join([...HandOutRule.PLACE_STATES]);
 
 /** A message row as a Run's message (Issue #103); the CHECK constraint fixes the kinds. */
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
@@ -260,11 +259,12 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
 }
 
 /**
- * Places held, as for a claim (SQL over `runs a`): an active state, a failed Run held for a
- * delivery retry (Issue #102), or an answered Run queued for its worker to resume (Issue #103).
- * A Run queued for a Follow-up holds none until it is claimed (Issue #141).
+ * Places held, as for a claim (SQL over `runs a`): {@link HandOutRule.holdsPlace} in SQL. An
+ * active state, a failed Run held for a delivery retry (Issue #102), or an answered Run queued
+ * for its worker to resume (Issue #103). A Run queued for a Follow-up holds none until it is
+ * claimed (Issue #141).
  */
-const HOLDS_PLACE = Prisma.sql`(a.state IN (${ACTIVE})
+const HOLDS_PLACE = Prisma.sql`(a.state IN (${PLACE_STATES})
   OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
   OR (a.state = 'queued' AND a.session_ref IS NOT NULL AND NOT a.follow_up_queued))`;
 
@@ -485,7 +485,7 @@ function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdate
  * PostgreSQL adapter of {@link RunRepository} (Issue #96). Claims run in one transaction
  * under a transaction-scoped advisory lock, so concurrent claims are serialized and each sees
  * the others' committed result: together they cannot exceed one active Run per project or
- * `MAX_ACTIVE_RUNS` across the server; a `failed` Run a worker holds for a delivery retry
+ * `HandOutRule.MAX_PLACES` across the server; a `failed` Run a worker holds for a delivery retry
  * (Issue #102) and an answered Run queued for its worker to resume (Issue #103) count as active. The partial unique index on active Runs per project backs the
  * first limit in the schema itself.
  */
@@ -554,47 +554,45 @@ export class PrismaRunRepository implements RunRepository {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-        // Active (holds a place): an active state, a failed Run held for a delivery retry
-        // (Issue #102), or an answered Run queued for its worker to resume (Issue #103). A
-        // candidate's own place does not count against it. A resumable Run goes only to the
-        // worker that started it, like a delivery retry.
-        const [next] = await tx.$queryRaw<{ id: string; state: string; started_at: Date | null }[]>`
-          SELECT r.id, r.state, r.started_at FROM runs r
-          WHERE ((r.state = 'queued'
-                  AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
-                 OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
-                     AND r.last_claimed_by = ${workerId}::uuid))
-            AND (SELECT count(*) FROM runs a
-                 WHERE a.id <> r.id AND ${HOLDS_PLACE}) < ${MAX_ACTIVE_RUNS}::int
-            AND NOT EXISTS (SELECT 1 FROM runs a
-                            WHERE a.id <> r.id
-                              AND a.project_id = r.project_id
-                              AND ${HOLDS_PLACE})
-          ORDER BY r.created_at, r.id
-          LIMIT 1`;
-        if (!next) return null;
-        const row =
-          next.state === 'queued'
-            ? await tx.run.update({
-                where: { id: next.id, state: 'queued' },
-                data: {
-                  state: 'preparing',
-                  claimedBy: workerId,
-                  lastClaimedBy: workerId,
-                  // A resumed Run keeps its first start (Issue #103).
-                  startedAt: next.started_at ?? now,
-                  heartbeatAt: now,
-                  // A claimed Follow-up holds its places like any held Run (Issue #141).
-                  followUpQueued: false,
-                },
-                select: RUN_FIELDS,
-              })
-            : await tx.run.update({
-                where: { id: next.id, state: 'failed', deliveryRequested: true, claimedBy: null },
-                data: { claimedBy: workerId, heartbeatAt: now },
-                select: RUN_FIELDS,
-              });
-        return toRun(row);
+        // One statement selects the Run and hands it out (Issue #169), so a change that lands
+        // between the two, a cancel of the Run for one, cannot make the claim fail: the selection
+        // locks the Run's row and skips a Run another transaction holds (a change in progress
+        // decides about it first and the next claim sees the result); a Run that stopped being
+        // eligible since the selection read it is left out when the row is locked. The worker gets
+        // the next eligible Run or nothing. The conditions are HandOutRule's: queue order; the
+        // places held and their limits (`HOLDS_PLACE`, `HandOutRule.MAX_PLACES`; a candidate's own
+        // place does not count against it); a resumable or delivery-retry Run only to the worker
+        // that last claimed it. A queued Run goes to `preparing` (a resumed one keeps its first
+        // start, a claimed Follow-up holds its places like any held Run: Issues #103, #141); a
+        // failed Run held for a delivery retry stays `failed` (Issue #102).
+        const [claimed] = await tx.$queryRaw<{ id: string }[]>`
+          UPDATE runs SET
+            state = CASE WHEN state = 'queued' THEN 'preparing' ELSE state END,
+            claimed_by = ${workerId}::uuid,
+            last_claimed_by = CASE WHEN state = 'queued' THEN ${workerId}::uuid ELSE last_claimed_by END,
+            started_at = CASE WHEN state = 'queued' THEN COALESCE(started_at, ${now}) ELSE started_at END,
+            heartbeat_at = ${now},
+            follow_up_queued = CASE WHEN state = 'queued' THEN false ELSE follow_up_queued END
+          WHERE id = (
+            SELECT r.id FROM runs r
+            WHERE ((r.state = 'queued'
+                    AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
+                   OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
+                       AND r.last_claimed_by = ${workerId}::uuid))
+              AND (SELECT count(*) FROM runs a
+                   WHERE a.id <> r.id AND ${HOLDS_PLACE}) < ${HandOutRule.MAX_PLACES}::int
+              AND NOT EXISTS (SELECT 1 FROM runs a
+                              WHERE a.id <> r.id
+                                AND a.project_id = r.project_id
+                                AND ${HOLDS_PLACE})
+            ORDER BY r.created_at, r.id
+            LIMIT 1
+            FOR UPDATE OF r SKIP LOCKED)
+          RETURNING id`;
+        if (!claimed) return null;
+        return toRun(
+          await tx.run.findUniqueOrThrow({ where: { id: claimed.id }, select: RUN_FIELDS }),
+        );
       },
       // Claims queue on the lock inside their transactions; each holds it for milliseconds.
       CLAIM_TRANSACTION,
