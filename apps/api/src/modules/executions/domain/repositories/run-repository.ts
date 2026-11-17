@@ -1,11 +1,12 @@
 import type { Provider } from '../value-objects/provider.js';
 import type { PullRequestState } from '../value-objects/run-pull-request-status.js';
 import type { ResumeFacts } from '../value-objects/run-facts.js';
-import type { Run, RunSnapshot } from '../entities/run.js';
+import type { Run } from '../entities/run.js';
+import type { RunSnapshot } from '../value-objects/run-snapshot.js';
 import type { RunCancellation } from '../value-objects/run-cancellation.js';
 import type { RunFailure } from '../value-objects/run-failure.js';
 import type { RunState } from '../value-objects/run-state.js';
-import type { RunStepSnapshot } from '../entities/run-step.js';
+import type { RunStepSnapshot } from '../value-objects/run-step-snapshot.js';
 
 export {
   RunNotHeldError,

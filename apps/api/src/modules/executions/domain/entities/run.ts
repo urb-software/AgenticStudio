@@ -1,3 +1,4 @@
+import type { RunSnapshot } from '../value-objects/run-snapshot.js';
 import { HandOutRule } from '../value-objects/hand-out-rule.js';
 import type { FollowUpEligibility, FollowUpRefusal } from '../value-objects/follow-up.js';
 import { PROVIDERS } from '../value-objects/provider.js';
@@ -48,10 +49,7 @@ import { RunWorkerClaim } from '../value-objects/run-worker-claim.js';
 import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
 import { WorkerStatus } from '../value-objects/worker-status.js';
 import { RunStep } from './run-step.js';
-import type { RunStepSnapshot } from './run-step.js';
-
-/** The Run's current values as read-only plain data (rule 10); {@link Run.snapshot} produces it. */
-export type RunSnapshot = Readonly<RunData>;
+import type { RunStepSnapshot } from '../value-objects/run-step-snapshot.js';
 
 /** The stored fields an operation of the Run changes: the flat names, as storage holds them. */
 type RunPatch = Partial<

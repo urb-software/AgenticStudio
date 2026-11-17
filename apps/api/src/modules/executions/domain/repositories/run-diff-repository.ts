@@ -1,4 +1,5 @@
-import type { RunDiff, RunDiffSnapshot } from '../entities/run-diff.js';
+import type { RunDiff } from '../entities/run-diff.js';
+import type { RunDiffSnapshot } from '../value-objects/run-diff-snapshot.js';
 import type { RunDiffFileSummary, RunDiffScope } from '../value-objects/run-diff.js';
 
 /** DI token for the {@link RunDiffRepository} adapter. */

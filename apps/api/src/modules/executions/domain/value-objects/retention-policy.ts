@@ -1,4 +1,5 @@
-import type { Run, RunSnapshot } from '../entities/run.js';
+import type { Run } from '../entities/run.js';
+import type { RunSnapshot } from './run-snapshot.js';
 import type { FollowUpEligibility } from './follow-up.js';
 import type { RetentionFacts, WorkerFacts } from './run-facts.js';
 import { isEndedPullRequestState } from './run-pull-request-status.js';

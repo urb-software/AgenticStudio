@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Run, type RunSnapshot } from '../run.js';
+import { Run } from '../run.js';
+import { type RunSnapshot } from '../../value-objects/run-snapshot.js';
 import { RunNotHeldError } from '../../value-objects/run-errors.js';
 import { Task } from '../../value-objects/task.js';
 

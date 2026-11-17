@@ -111,6 +111,16 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
+    row: 'A repository interface returns the snapshot of its own entity',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A repository interface returns another value object, or the snapshot of another root',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
     row: 'An entity file imports another entity file for an id type',
     expected: 'PASS',
     gate: 'api',

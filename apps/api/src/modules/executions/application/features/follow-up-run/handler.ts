@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type FollowUpOrigin } from '../../../domain/value-objects/run-facts.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type RunSnapshot } from '../../../domain/entities/run.js';
+import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,

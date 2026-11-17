@@ -1,6 +1,6 @@
 import { FAILURE_DETAIL_MAX_LENGTH } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunSnapshot } from '../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { type PullRequestState } from '../../../domain/value-objects/run-pull-request-status.js';
 import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';

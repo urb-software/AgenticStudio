@@ -18,7 +18,8 @@ import {
   type ResumeFacts,
   type RunStepRecord,
 } from '../../value-objects/run-facts.js';
-import { Run, type RunSnapshot } from '../../entities/run.js';
+import { Run } from '../../entities/run.js';
+import { type RunSnapshot } from '../../value-objects/run-snapshot.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { isFinalRunState } from '../../value-objects/run-state.js';
 import { type RunCancellation } from '../../value-objects/run-cancellation.js';
@@ -30,9 +31,9 @@ import { type Provider } from '../../value-objects/provider.js';
 import { type RunWorkingCopy } from '../../value-objects/run-working-copy.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { Task } from '../../value-objects/task.js';
-import type { PreparedFollowUpSnapshot } from '../../entities/prepared-follow-up.js';
+import type { PreparedFollowUpSnapshot } from '../../value-objects/prepared-follow-up-snapshot.js';
 import type { ReviewComments } from '../../entities/review-comments.js';
-import type { RunStepSnapshot } from '../../entities/run-step.js';
+import type { RunStepSnapshot } from '../../value-objects/run-step-snapshot.js';
 import type {
   LimitedRunView,
   RunRepository,

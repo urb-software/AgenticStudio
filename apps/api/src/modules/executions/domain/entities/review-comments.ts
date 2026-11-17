@@ -1,3 +1,4 @@
+import type { ReviewCommentsSnapshot } from '../value-objects/review-comments-snapshot.js';
 import type { FollowUpComments } from '../value-objects/follow-up.js';
 import type { LogRedaction } from '../value-objects/log-redaction.js';
 import {
@@ -24,15 +25,6 @@ function cutToBytes(text: string, maxBytes: number): { text: string; cut: boolea
   // Back off continuation bytes (10xxxxxx) so no character is split.
   while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
   return { text: bytes.subarray(0, end).toString('utf8'), cut: true };
-}
-
-/** What a Run's loaded Review comments hold, to restore them from. */
-export interface ReviewCommentsSnapshot {
-  readonly scope: ReviewCommentScope;
-  readonly comments: readonly ReviewComment[];
-  /** More comments existed than are kept, or a text was cut. */
-  readonly truncated: boolean;
-  readonly loadedAt: Date;
 }
 
 /**

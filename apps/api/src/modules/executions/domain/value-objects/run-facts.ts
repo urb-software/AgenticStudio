@@ -1,4 +1,4 @@
-import type { RunStepSnapshot } from '../entities/run-step.js';
+import type { RunStepSnapshot } from './run-step-snapshot.js';
 import type { FollowUpComments, FollowUpSource } from './follow-up.js';
 import type { Provider } from './provider.js';
 import type { BringUpDetails, RunMessage, RunQuestion } from './run-conversation.js';

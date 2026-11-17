@@ -15,7 +15,7 @@ import {
   IllegalRunTransitionError,
   RunNotHeldError,
 } from '../../../domain/value-objects/run-errors.js';
-import type { RunSnapshot } from '../../../domain/entities/run.js';
+import type { RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
 import { RunConversation } from '../../../domain/value-objects/run-conversation.js';
 import { type RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';

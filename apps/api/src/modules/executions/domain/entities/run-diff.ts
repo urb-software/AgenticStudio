@@ -1,15 +1,7 @@
+import type { RunDiffSnapshot } from '../value-objects/run-diff-snapshot.js';
 import type { NewRunDiff, RunDiffScope, RunDiffState } from '../value-objects/run-diff.js';
 
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
-
-/** What a Run's reported diffs hold, as read-only plain data (rule 10); {@link RunDiff.snapshot}. */
-export interface RunDiffSnapshot {
-  readonly runId: string;
-  /** The latest diff of each scope, with each file's patch (redacted). */
-  readonly diffs: Readonly<Record<RunDiffScope, NewRunDiff>>;
-  /** Where the diffs stand for the next resume or delivery claim; `null` keeps the stored one. */
-  readonly state: RunDiffState | null;
-}
 
 /**
  * A Run's diffs as the agent worker last reported them (Issue #144): its two scopes and where they

@@ -557,6 +557,17 @@ describeGate('api', apiGate, 'apps/api', [
       'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
   },
   {
+    fixture: 'repository-returns-own-snapshot',
+    expected: [],
+    qualityRow: 'A repository interface returns the snapshot of its own entity',
+  },
+  {
+    fixture: 'repository-returns-other-roots-snapshot',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow:
+      'A repository interface returns another value object, or the snapshot of another root',
+  },
+  {
     fixture: 'entity-imports-entity-id-type',
     expected: [],
     qualityRow: 'An entity file imports another entity file for an id type',

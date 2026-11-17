@@ -22,7 +22,8 @@ import {
 } from '../../domain/value-objects/run-failure.js';
 import { isRunId } from '../../domain/value-objects/run-id.js';
 import { type ResumeFacts, type RunChanges } from '../../domain/value-objects/run-facts.js';
-import { Run, type RunSnapshot } from '../../domain/entities/run.js';
+import { Run } from '../../domain/entities/run.js';
+import { type RunSnapshot } from '../../domain/value-objects/run-snapshot.js';
 import { RunSlotTakenError } from '../../domain/value-objects/run-errors.js';
 import { RUN_DELIVERIES, type RunDeliveryState } from '../../domain/value-objects/run-delivery.js';
 import { type RunMessage, type RunPartEnd } from '../../domain/value-objects/run-conversation.js';
@@ -33,7 +34,7 @@ import {
 import { type RunWorkingCopy } from '../../domain/value-objects/run-working-copy.js';
 import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
 import { HandOutRule } from '../../domain/value-objects/hand-out-rule.js';
-import type { RunStepSnapshot } from '../../domain/entities/run-step.js';
+import type { RunStepSnapshot } from '../../domain/value-objects/run-step-snapshot.js';
 import type {
   LimitedRunView,
   RunRepository,

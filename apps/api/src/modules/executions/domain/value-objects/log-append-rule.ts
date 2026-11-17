@@ -1,4 +1,4 @@
-import type { RunSnapshot } from '../entities/run.js';
+import type { RunSnapshot } from './run-snapshot.js';
 import { CLAIMED_RUN_STATES } from './run-state.js';
 
 /**

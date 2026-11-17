@@ -1,4 +1,4 @@
-import type { RunSnapshot } from '../entities/run.js';
+import type { RunSnapshot } from './run-snapshot.js';
 import type { RunCancellation } from './run-cancellation.js';
 import type { RunFailure } from './run-failure.js';
 
