@@ -82,7 +82,7 @@ describe('a Run log, paged and live (Issue #99)', () => {
     runs = new InMemoryRunRepository();
     log = new InMemoryRunLogRepository(runs);
     signal = new TestSignal();
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

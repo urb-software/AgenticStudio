@@ -11,7 +11,7 @@ const T0 = new Date('2026-11-15T12:00:00.000Z');
 describe('ListRunStepsHandler (Issue #99)', () => {
   it('shows each step result: outcome, summary and checks, redacted like the log', async () => {
     const runs = new InMemoryRunRepository();
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

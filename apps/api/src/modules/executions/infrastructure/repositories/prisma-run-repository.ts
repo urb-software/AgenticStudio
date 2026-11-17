@@ -8,7 +8,6 @@ import {
   ACTIVE_RUN_STATES,
   CLAIMED_RUN_STATES,
   FINAL_RUN_STATES,
-  isFinal,
   MAX_ACTIVE_RUNS,
   PROVIDERS,
   type Provider,
@@ -23,33 +22,25 @@ import {
   type RunCancellation,
   type RunCancelledBy,
   RUN_DELIVERIES,
-  type RunDeliveryOutcome,
   type RunDeliveryState,
   type RunFailure,
   type RunFailureCode,
   type RunMessage,
   type FollowUpSource,
-  restoreEarlierResult,
   type RunPullRequestChecks,
   type PullRequestState,
   type RunPartEnd,
   type RunState,
   type RunWorkingCopy,
-  stepLimitFailure,
   UNDER_WAY_RUN_STATES,
 } from '../../domain/entities/run.js';
 import { ReviewCommentSet } from '../../domain/value-objects/review-comments.js';
 import { commentsSchema } from './review-comment-json.js';
 import type {
-  AppendStepOutcome,
-  ClaimedRunChange,
-  DeliveryRetryOutcome,
   LimitedRunView,
-  NewRun,
   RunRepository,
   RunsSummary,
   RunStateView,
-  RunStepRecord,
   StoredRunStep,
 } from '../../domain/repositories/run-repository.js';
 
@@ -77,6 +68,7 @@ const LIST_FIELDS = {
   failureCode: true,
   failureDetail: true,
   claimedBy: true,
+  heartbeatAt: true,
   environmentFileSupplied: true,
   environmentFilePath: true,
   cancelRequestedAt: true,
@@ -163,6 +155,7 @@ interface RunRow {
   failureCode: string | null;
   failureDetail: string | null;
   claimedBy: string | null;
+  heartbeatAt: Date | null;
   environmentFileSupplied: boolean;
   environmentFilePath: string | null;
   cancelRequestedAt: Date | null;
@@ -267,24 +260,6 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
 }
 
 /**
- * The columns of a delivery outcome (Issue #102). Issue #141: a Run has at most one pull request,
- * so an outcome without one leaves a recorded pull request (from an earlier part of the Run) as
- * it is; the pushed commit is recorded whenever the worker reports one.
- */
-function deliveryColumns(delivery: RunDeliveryOutcome) {
-  return {
-    delivery: delivery.outcome satisfies RunDeliveryState,
-    ...(delivery.outcome === 'delivered'
-      ? {
-          pullRequestUrl: delivery.pullRequest.url,
-          pullRequestNumber: delivery.pullRequest.number,
-        }
-      : {}),
-    ...(delivery.pushedCommit === undefined ? {} : { pushedCommit: delivery.pushedCommit }),
-  };
-}
-
-/**
  * Places held, as for a claim (SQL over `runs a`): an active state, a failed Run held for a
  * delivery retry (Issue #102), or an answered Run queued for its worker to resume (Issue #103).
  * A Run queued for a Follow-up holds none until it is claimed (Issue #141).
@@ -364,6 +339,7 @@ function toRun(row: RunRow): Run {
     failure:
       code === null ? null : { code: code as RunFailureCode, detail: row.failureDetail ?? '' },
     claimedBy: row.claimedBy,
+    heartbeatAt: row.heartbeatAt,
     environmentFileSupplied: row.environmentFileSupplied,
     environmentFilePath: row.environmentFilePath,
     limits: {
@@ -436,13 +412,21 @@ function messageRow(message: RunMessage) {
         at: message.at,
       };
     case 'question':
-      throw new Error('A question is added by the agent worker, not by an operator operation.');
+      return {
+        kind: 'question',
+        text: message.question.text,
+        ...(message.question.options ? { options: [...message.question.options] } : {}),
+        ...(message.question.recommendation === undefined
+          ? {}
+          : { recommendation: message.question.recommendation }),
+        at: message.at,
+      };
   }
 }
 
 type ChangedField = keyof RunChanges['fields'];
 
-/** The columns of the Run fields the operator's operations change; any other field is a bug. */
+/** The columns of the Run fields its methods change; any other field is a bug. */
 const CHANGED_COLUMNS: {
   [K in ChangedField]?: (
     value: NonNullable<RunChanges['fields'][K]> | null,
@@ -467,6 +451,23 @@ const CHANGED_COLUMNS: {
   delivery: (delivery) => ({ delivery }),
   stepStartedAt: (stepStartedAt) => ({ stepStartedAt }),
   deliveryRequested: (deliveryRequested) => ({ deliveryRequested: deliveryRequested! }),
+  // What the agent worker reports for the Run (Issue #169).
+  claimedBy: (claimedBy) => ({ claimedBy }),
+  heartbeatAt: (heartbeatAt) => ({ heartbeatAt }),
+  releasedBy: (releasedBy) => ({ releasedBy }),
+  workingCopy: (workingCopy) => workingCopyColumns(workingCopy),
+  pullRequest: (pullRequest) => ({
+    pullRequestUrl: pullRequest?.url ?? null,
+    pullRequestNumber: pullRequest?.number ?? null,
+  }),
+  pushedCommit: (pushedCommit) => ({ pushedCommit }),
+  failingChecks: (failingChecks) => ({ failingChecks: [...(failingChecks ?? [])] }),
+  sessionRef: (sessionRef) => ({ sessionRef }),
+  workingCopyRemovedAt: (workingCopyRemovedAt) => ({ workingCopyRemovedAt }),
+  environmentFileSupplied: (supplied) => ({ environmentFileSupplied: supplied! }),
+  environmentFilePath: (environmentFilePath) => ({ environmentFilePath }),
+  // Counted from the stored Run steps, not a column.
+  stepCount: () => ({}),
 };
 
 function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdateInput {
@@ -492,11 +493,11 @@ function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdate
 export class PrismaRunRepository implements RunRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
 
-  async add(run: NewRun): Promise<Run> {
+  async add(run: Run): Promise<Run> {
     const row = await this.db.run.create({
       data: {
         // The creation time is the database's (ordering by it must not depend on the API's clock).
-        ...(run.id === undefined ? {} : { id: run.id }),
+        id: run.id,
         projectId: run.projectId,
         provider: run.provider,
         task: run.task,
@@ -600,44 +601,6 @@ export class PrismaRunRepository implements RunRepository {
     );
   }
 
-  async transitionClaimed(change: ClaimedRunChange): Promise<Run | null> {
-    const held = includes(CLAIMED_RUN_STATES, change.to);
-    const cancellation = change.to === 'cancelled' ? (change.cancellation ?? null) : null;
-    const { count } = await this.db.run.updateMany({
-      where: {
-        id: change.runId,
-        state: change.from,
-        claimedBy: change.workerId,
-        cancelRequestedAt: change.cancelRequested ? { not: null } : null,
-      },
-      data: {
-        state: change.to,
-        failureCode: change.failure?.code ?? null,
-        failureDetail: change.failure?.detail ?? null,
-        claimedBy: held ? change.workerId : null,
-        heartbeatAt: held ? change.now : null,
-        cancelledBy: cancellation?.by ?? null,
-        cancelReason: cancellation?.reason ?? null,
-        waitingSince: change.to === 'waiting_for_operator' ? change.now : null,
-        releasedBy: held ? null : change.workerId,
-        ...(change.to === 'running' ? { stepStartedAt: change.now } : {}),
-        ...(isFinal(change.to) ? { finishedAt: change.now } : {}),
-        ...workingCopyColumns(change.workingCopy),
-        ...((change.to === 'succeeded' || change.to === 'cancelled') && change.delivery
-          ? deliveryColumns(change.delivery)
-          : {}),
-        ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
-        // Review S2 of #150: a delivery that pushed before it failed still records the push.
-        ...(change.pushedCommit ? { pushedCommit: change.pushedCommit } : {}),
-        // Issue #105: the session a Run stopped at the usage limit resumes later.
-        ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
-          ? { sessionRef: change.sessionRef }
-          : {}),
-      },
-    });
-    return count === 1 ? this.findById(change.runId) : null;
-  }
-
   async listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {
     const rows = await this.db.run.findMany({
       where: { state: 'failed', deliveryRequested: true, claimedBy: null },
@@ -658,56 +621,6 @@ export class PrismaRunRepository implements RunRepository {
       },
     });
     return count === 1;
-  }
-
-  async finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null> {
-    const { result } = outcome;
-    const { count } = await this.db.run.updateMany({
-      where: {
-        id: outcome.runId,
-        state: 'failed',
-        deliveryRequested: true,
-        claimedBy: outcome.workerId,
-      },
-      data: {
-        claimedBy: null,
-        heartbeatAt: null,
-        // A retried report of this outcome is then recognised (review of #121).
-        releasedBy: outcome.workerId,
-        deliveryRequested: false,
-        finishedAt: outcome.now,
-        ...workingCopyColumns(outcome.workingCopy),
-        ...(result.state === 'succeeded'
-          ? {
-              state: 'succeeded',
-              failureCode: null,
-              failureDetail: null,
-              ...deliveryColumns(result.delivery),
-            }
-          : {
-              failureCode: result.failure.code,
-              failureDetail: result.failure.detail,
-              delivery: 'failed',
-              ...(outcome.pushedCommit ? { pushedCommit: outcome.pushedCommit } : {}),
-            }),
-      },
-    });
-    return count === 1 ? this.findById(outcome.runId) : null;
-  }
-
-  async heartbeat(
-    runId: string,
-    workerId: string,
-    now: Date,
-  ): Promise<{ cancelRequested: boolean } | null> {
-    // One statement: the renewal and the cancel request it answers with are read together.
-    // Held: preparing or running, or failed during a delivery retry (Issue #102; the CHECK
-    // constraint allows a holder in no other state).
-    const [row] = await this.db.$queryRaw<{ cancel_requested: boolean }[]>`
-      UPDATE runs SET heartbeat_at = ${now}
-      WHERE id = ${runId}::uuid AND claimed_by = ${workerId}::uuid
-      RETURNING cancel_requested_at IS NOT NULL AS cancel_requested`;
-    return row ? { cancelRequested: row.cancel_requested } : null;
   }
 
   async cancelUnheld(
@@ -868,6 +781,37 @@ export class PrismaRunRepository implements RunRepository {
         await tx.runMessage.create({ data: { runId: run.id, seq: ++seq, ...messageRow(message) } });
       }
     }
+    for (const step of changes.steps ?? []) {
+      await tx.runStep.create({
+        data: {
+          runId: run.id,
+          index: step.index,
+          kind: step.kind,
+          result: step.result as Prisma.InputJsonValue,
+        },
+      });
+    }
+    if (changes.followUpEntry) {
+      const entry = await tx.runMessage.findFirst({
+        where: { runId: run.id, kind: 'follow_up' },
+        orderBy: { seq: 'desc' },
+        select: { seq: true },
+      });
+      if (entry) {
+        const { updateBase, updateTip, mergedCommit } = changes.followUpEntry;
+        await tx.runMessage.update({
+          where: { runId_seq: { runId: run.id, seq: entry.seq } },
+          data: {
+            ...(updateBase === undefined ? {} : { updateBase }),
+            ...(updateTip === undefined ? {} : { updateTip }),
+            ...(mergedCommit === undefined ? {} : { mergedCommit }),
+          },
+        });
+      }
+    }
+    if (changes.environmentFileSecretRef !== undefined) {
+      data.environmentFileSecretId = changes.environmentFileSecretRef;
+    }
     if (changes.discardReviewComments) {
       await tx.runReviewCommentSet.deleteMany({ where: { runId: run.id } });
     }
@@ -877,144 +821,6 @@ export class PrismaRunRepository implements RunRepository {
       });
     }
     if (Object.keys(data).length > 0) await tx.run.update({ where: { id: run.id }, data });
-  }
-
-  async recordUpdateStart(
-    runId: string,
-    workerId: string,
-    start: { baseCommit: string; integrationCommit: string },
-  ): Promise<boolean> {
-    return this.db.$transaction(async (tx) => {
-      const held = await tx.run.count({ where: { id: runId, claimedBy: workerId } });
-      if (held === 0) return false;
-      const entry = await tx.runMessage.findFirst({
-        where: { runId, kind: 'follow_up' },
-        orderBy: { seq: 'desc' },
-        select: { seq: true, source: true, updateTip: true },
-      });
-      if (!entry || entry.source !== 'bring_up_to_date' || entry.updateTip !== null) {
-        return false;
-      }
-      await tx.runMessage.update({
-        where: { runId_seq: { runId, seq: entry.seq } },
-        data: { updateBase: start.baseCommit, updateTip: start.integrationCommit },
-      });
-      return true;
-    });
-  }
-
-  async recordMergedCommit(runId: string): Promise<boolean> {
-    return this.db.$transaction(async (tx) => {
-      const entry = await tx.runMessage.findFirst({
-        where: { runId, kind: 'follow_up' },
-        orderBy: { seq: 'desc' },
-        select: { seq: true, source: true, updateTip: true, mergedCommit: true },
-      });
-      if (
-        !entry ||
-        entry.source !== 'bring_up_to_date' ||
-        entry.updateTip === null ||
-        entry.mergedCommit !== null
-      ) {
-        return false;
-      }
-      await tx.runMessage.update({
-        where: { runId_seq: { runId, seq: entry.seq } },
-        data: { mergedCommit: entry.updateTip },
-      });
-      return true;
-    });
-  }
-
-  async finishBringUpToDate(
-    runId: string,
-    workerId: string,
-    detail: string,
-    now: Date,
-  ): Promise<Run | null> {
-    return this.db.$transaction(async (tx) => {
-      // Locks the Run row: the condition and the return to the earlier result hold together.
-      const [held] = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM runs
-        WHERE id = ${runId}::uuid AND claimed_by = ${workerId}
-          AND state IN ('preparing', 'running')
-        FOR UPDATE`;
-      if (!held) return null;
-      const entry = await tx.runMessage.findFirst({
-        where: { runId, kind: 'follow_up' },
-        orderBy: { seq: 'desc' },
-        select: { seq: true, source: true },
-      });
-      if (!entry || entry.source !== 'bring_up_to_date') return null;
-      const before = await tx.runMessage.findUnique({
-        where: { runId_seq: { runId, seq: entry.seq - 1 } },
-      });
-      if (before?.kind !== 'part_end' || before.endState === null) return null;
-      const ended = before.endState as RunPartEnd['state'];
-      const last = await tx.runMessage.findFirst({
-        where: { runId },
-        orderBy: { seq: 'desc' },
-        select: { seq: true },
-      });
-      // Nothing was changed: the Run is as it was, and its conversation says so.
-      await tx.runMessage.create({
-        data: {
-          runId,
-          seq: (last?.seq ?? 0) + 1,
-          kind: 'part_end',
-          text: detail,
-          endState: before.endState,
-          endFailureCode: before.endFailureCode,
-          endDelivery: before.endDelivery,
-          at: now,
-        },
-      });
-      const earlier = restoreEarlierResult({
-        state: ended,
-        failureCode: before.endFailureCode as RunFailureCode | null,
-        delivery: before.endDelivery as RunDeliveryState | null,
-        detail: before.text,
-      });
-      const row = await tx.run.update({
-        where: { id: runId },
-        data: {
-          state: earlier.state,
-          failureCode: earlier.failure?.code ?? null,
-          failureDetail: earlier.failure?.detail ?? null,
-          cancelledBy: earlier.cancellation?.by ?? null,
-          cancelReason: earlier.cancellation?.reason ?? null,
-          delivery: earlier.delivery,
-          claimedBy: null,
-          heartbeatAt: null,
-          releasedBy: workerId,
-          finishedAt: now,
-          stepStartedAt: null,
-        },
-        select: RUN_FIELDS,
-      });
-      return toRun(row);
-    });
-  }
-
-  async markWorkingCopiesRemoved(
-    workerId: string,
-    runIds: readonly string[],
-    now: Date,
-  ): Promise<number> {
-    if (runIds.length === 0) return 0;
-    // Only the worker that holds a Run's Working copy can report it gone, and only for a Run it
-    // does not carry. Never dropped (review S9 of #150): a Follow-up queued meanwhile then fails
-    // at its claim, and the Run says its Working copy was removed.
-    const { count } = await this.db.run.updateMany({
-      where: {
-        id: { in: [...runIds] },
-        lastClaimedBy: workerId,
-        claimedBy: null,
-        workingCopyRemovedAt: null,
-      },
-      data: { workingCopyRemovedAt: now },
-    });
-    return count;
   }
 
   async listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
@@ -1097,90 +903,6 @@ export class PrismaRunRepository implements RunRepository {
     );
   }
 
-  async appendStep(
-    runId: string,
-    workerId: string,
-    step: RunStepRecord,
-    workingCopy: RunWorkingCopy,
-    failingChecks: readonly string[],
-    now: Date,
-  ): Promise<AppendStepOutcome> {
-    return this.db.$transaction(async (tx): Promise<AppendStepOutcome> => {
-      // Locks the Run row: the check and the numbering hold until the step is stored.
-      const [run] = await tx.$queryRaw<
-        {
-          id: string;
-          limit_max_steps: number;
-          steps_before_part: number;
-          follow_up_count: number;
-        }[]
-      >`
-        SELECT id, limit_max_steps, steps_before_part, follow_up_count FROM runs
-        WHERE id = ${runId}::uuid AND state = 'running' AND claimed_by = ${workerId}::uuid
-        FOR UPDATE`;
-      if (!run) return { status: 'not_held' };
-      const last =
-        (await tx.runStep.aggregate({ where: { runId }, _max: { index: true } }))._max.index ?? 0;
-      const index = step.index ?? last + 1;
-      // A retried report of a step already stored (review of #121): acknowledged, not stored.
-      if (index <= last) return { status: 'stored', index, duplicate: true };
-      if (index !== last + 1) return { status: 'out_of_order', expected: last + 1 };
-      // Issue #141: each part (the first, or a Follow-up) gets its own allowance.
-      if (index > run.steps_before_part + run.limit_max_steps) {
-        // Issue #100: the step is not stored, and the Run fails under the same row lock.
-        const failure = stepLimitFailure(run.limit_max_steps, run.follow_up_count > 0);
-        await tx.run.update({
-          where: { id: runId },
-          data: {
-            state: 'failed',
-            failureCode: failure.code,
-            failureDetail: failure.detail,
-            claimedBy: null,
-            heartbeatAt: null,
-            finishedAt: now,
-          },
-        });
-        return { status: 'step_limit' };
-      }
-      await tx.runStep.create({
-        data: { runId, index, kind: step.kind, result: step.result as Prisma.InputJsonValue },
-      });
-      // A question becomes the Run's next message (Issue #103), under the same row lock.
-      if (step.question) {
-        const lastMessage =
-          (await tx.runMessage.aggregate({ where: { runId }, _max: { seq: true } }))._max.seq ?? 0;
-        await tx.runMessage.create({
-          data: {
-            runId,
-            seq: lastMessage + 1,
-            kind: 'question',
-            text: step.question.text,
-            ...(step.question.options ? { options: [...step.question.options] } : {}),
-            ...(step.question.recommendation === undefined
-              ? {}
-              : { recommendation: step.question.recommendation }),
-            at: now,
-          },
-        });
-      }
-      // The latest Working copy state (Issue #98), failing checks (Issue #102) and session
-      // reference (Issue #103), under the same row lock as the step.
-      await tx.run.update({
-        where: { id: runId },
-        data: {
-          ...workingCopyColumns(workingCopy),
-          failingChecks: [...failingChecks],
-          // The step is over: Studio's time-limit backstop no longer runs for it (review of
-          // #121), so a slow delivery after it is never timed out.
-          stepStartedAt: null,
-          lastActivityAt: now,
-          ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
-        },
-      });
-      return { status: 'stored', index };
-    });
-  }
-
   async listSteps(runId: string): Promise<StoredRunStep[]> {
     const rows = await this.db.runStep.findMany({
       where: { runId },
@@ -1228,38 +950,6 @@ export class PrismaRunRepository implements RunRepository {
       });
       return held.count + retries.count;
     });
-  }
-
-  async attachEnvironmentFile(
-    runId: string,
-    workerId: string,
-    file: { path: string; secretRef: string },
-  ): Promise<boolean> {
-    const { count } = await this.db.run.updateMany({
-      where: { id: runId, state: 'preparing', claimedBy: workerId },
-      data: {
-        environmentFileSupplied: true,
-        environmentFilePath: file.path,
-        environmentFileSecretId: file.secretRef,
-      },
-    });
-    return count === 1;
-  }
-
-  async replaceEnvironmentFile(
-    runId: string,
-    workerId: string,
-    file: { path: string; secretRef: string } | null,
-  ): Promise<boolean> {
-    const { count } = await this.db.run.updateMany({
-      where: { id: runId, state: 'preparing', claimedBy: workerId },
-      data: {
-        environmentFileSupplied: file !== null,
-        environmentFilePath: file?.path ?? null,
-        environmentFileSecretId: file?.secretRef ?? null,
-      },
-    });
-    return count === 1;
   }
 
   async findEnvironmentFileSecret(runId: string): Promise<string | null> {

@@ -3,7 +3,6 @@ import { isRunId } from '../../../domain/entities/run.js';
 import {
   RUN_REPOSITORY,
   RunNotFoundError,
-  RunNotHeldError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
@@ -11,7 +10,8 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 /**
  * Command (Issue #96): the agent worker holding a Run says it is still alive, which renews
  * its lease. The answer tells it whether the operator asked to cancel the Run (Issue #100).
- * Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
+ * The Run's `recordHeartbeat` decides under its row lock, so a heartbeat and the lost-worker
+ * sweep never both win (Issue #169). Throws {@link RunNotFoundError} or `RunNotHeldError`.
  */
 @Injectable()
 export class RecordHeartbeatHandler {
@@ -21,11 +21,12 @@ export class RecordHeartbeatHandler {
   ) {}
 
   async execute(input: { runId: string; workerId: string }): Promise<{ cancelRequested: boolean }> {
-    if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
-      throw new RunNotFoundError();
-    }
-    const answer = await this.runs.heartbeat(input.runId, input.workerId, this.clock.now());
-    if (!answer) throw new RunNotHeldError();
+    if (!isRunId(input.runId)) throw new RunNotFoundError();
+    let answer: { cancelRequested: boolean } | undefined;
+    const saved = await this.runs.change(input.runId, (run) => {
+      answer = run.recordHeartbeat(input.workerId, this.clock.now());
+    });
+    if (!saved || !answer) throw new RunNotFoundError();
     return answer;
   }
 }

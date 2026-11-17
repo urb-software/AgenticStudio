@@ -5,8 +5,8 @@ import {
   DeliveryNotRetryableError,
   type FollowUpOrigin,
   FollowUpNotAllowedError,
+  IllegalRunTransitionError,
   isFinal,
-  restoreEarlierResult,
   MAX_ACTIVE_RUNS,
   NO_PULL_REQUEST_STATUS,
   type ResumeFacts,
@@ -14,34 +14,71 @@ import {
   RunAlreadyFinishedError,
   type RunCancellation,
   type RunData,
+  type RunLimits,
+  RunNotHeldError,
   RunNotWaitingError,
   type RunDeliveryOutcome,
   type RunFailure,
+  type Provider,
   type RunState,
+  type RunStepRecord,
   type RunWorkingCopy,
-  stepLimitFailure,
+  StepOutOfOrderError,
   UNDER_WAY_RUN_STATES,
 } from '../../entities/run.js';
+import { Task } from '../../value-objects/task.js';
 import type { PreparedFollowUp } from '../../value-objects/prepared-follow-up.js';
 import type { ReviewCommentSet } from '../../value-objects/review-comments.js';
 import type {
-  AppendStepOutcome,
-  ClaimedRunChange,
-  DeliveryRetryOutcome,
   LimitedRunView,
-  NewRun,
   RunRepository,
   RunsSummary,
   RunStateView,
-  RunStepRecord,
   StoredRunStep,
 } from '../run-repository.js';
 
 /** A Run as the fake keeps it: the Run's fields, and what the database keeps beside them. */
 type StoredRun = RunData & {
-  heartbeatAt: Date | null;
   environmentFileSecret: string | null;
 };
+
+/** What the tests' setup starts a Run from (the Task as plain text). */
+export interface StartedRun {
+  id?: string;
+  projectId: string;
+  provider: Provider;
+  task: string;
+  startCommit: string;
+  remoteUrl: string;
+  /** The limits in force when the Run is started (Issue #100). */
+  limits: RunLimits;
+  integrationBranch: string;
+}
+
+/**
+ * A change of state as the tests' setup states it, with what the store once checked (the state it
+ * is in, its holder and its cancel request).
+ */
+export interface ClaimedRunChange {
+  runId: string;
+  workerId: string;
+  from: RunState;
+  to: RunState;
+  failure: RunFailure | null;
+  workingCopy?: RunWorkingCopy | null;
+  delivery?: RunDeliveryOutcome | null;
+  sessionRef?: string | null;
+  pushedCommit?: string | null;
+  cancelRequested: boolean;
+  now: Date;
+}
+
+/** What storing a Run step did, as the tests' setup reads it. */
+export type AppendStepOutcome =
+  | { status: 'stored'; index: number; duplicate?: boolean }
+  | { status: 'out_of_order'; expected: number }
+  | { status: 'not_held' }
+  | { status: 'step_limit' };
 
 const isActive = (state: RunState) => (ACTIVE_RUN_STATES as readonly RunState[]).includes(state);
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
@@ -54,12 +91,6 @@ const queuedToResume = (run: RunData) => run.state === 'queued' && run.sessionRe
  */
 const holdsPlace = (run: RunData) =>
   isActive(run.state) || run.claimedBy !== null || (queuedToResume(run) && !run.followUpQueued);
-const deliveryFields = (delivery: RunDeliveryOutcome) => ({
-  delivery: delivery.outcome,
-  ...(delivery.outcome === 'delivered' ? { pullRequest: { ...delivery.pullRequest } } : {}),
-  ...(delivery.pushedCommit === undefined ? {} : { pushedCommit: delivery.pushedCommit }),
-});
-
 /**
  * In-memory adapter of {@link RunRepository} for handler tests, with the database adapter's
  * rules: claims honour the concurrency limits in creation order, worker changes are
@@ -70,9 +101,9 @@ export class InMemoryRunRepository implements RunRepository {
   readonly steps: { runId: string; index: number; step: RunStepRecord }[] = [];
   private sequence = 0;
 
-  add(run: NewRun): Promise<Run> {
+  add(run: Run): Promise<Run> {
     const created = {
-      id: run.id ?? randomUUID(),
+      id: run.id,
       projectId: run.projectId,
       provider: run.provider,
       task: run.task,
@@ -176,40 +207,6 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(this.view(next));
   }
 
-  transitionClaimed(change: ClaimedRunChange): Promise<Run | null> {
-    const run = this.runs.find((candidate) => candidate.id === change.runId);
-    if (
-      !run ||
-      run.state !== change.from ||
-      run.claimedBy !== change.workerId ||
-      (run.cancelRequestedAt !== null) !== change.cancelRequested
-    ) {
-      return Promise.resolve(null);
-    }
-    const held = isClaimed(change.to);
-    Object.assign(run, {
-      state: change.to,
-      failure: change.failure,
-      claimedBy: held ? change.workerId : null,
-      heartbeatAt: held ? change.now : null,
-      finishedAt: isFinal(change.to) ? change.now : null,
-      cancellation: change.to === 'cancelled' ? (change.cancellation ?? null) : null,
-      waitingSince: change.to === 'waiting_for_operator' ? change.now : null,
-      stepStartedAt: change.to === 'running' ? change.now : run.stepStartedAt,
-      releasedBy: held ? null : change.workerId,
-      ...(change.workingCopy ? { workingCopy: structuredClone(change.workingCopy) } : {}),
-      ...((change.to === 'succeeded' || change.to === 'cancelled') && change.delivery
-        ? deliveryFields(change.delivery)
-        : {}),
-      ...(change.failure?.code === 'delivery_failed' ? { delivery: 'failed' } : {}),
-      ...(change.pushedCommit ? { pushedCommit: change.pushedCommit } : {}),
-      ...(change.to === 'failed' && change.failure?.code === 'usage_limit' && change.sessionRef
-        ? { sessionRef: change.sessionRef }
-        : {}),
-    });
-    return Promise.resolve(this.view(run));
-  }
-
   listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {
     return Promise.resolve(
       this.runs
@@ -230,46 +227,6 @@ export class InMemoryRunRepository implements RunRepository {
       finishedAt: now,
     });
     return Promise.resolve(true);
-  }
-
-  finishDeliveryRetry(outcome: DeliveryRetryOutcome): Promise<Run | null> {
-    const run = this.runs.find((candidate) => candidate.id === outcome.runId);
-    if (
-      !run ||
-      run.state !== 'failed' ||
-      !run.deliveryRequested ||
-      run.claimedBy !== outcome.workerId
-    ) {
-      return Promise.resolve(null);
-    }
-    const { result } = outcome;
-    Object.assign(run, {
-      claimedBy: null,
-      releasedBy: outcome.workerId,
-      heartbeatAt: null,
-      deliveryRequested: false,
-      finishedAt: outcome.now,
-      ...(outcome.workingCopy ? { workingCopy: structuredClone(outcome.workingCopy) } : {}),
-      ...(result.state === 'succeeded'
-        ? { state: 'succeeded', failure: null, ...deliveryFields(result.delivery) }
-        : {
-            failure: { ...result.failure },
-            delivery: 'failed',
-            ...(outcome.pushedCommit ? { pushedCommit: outcome.pushedCommit } : {}),
-          }),
-    });
-    return Promise.resolve(this.view(run));
-  }
-
-  heartbeat(
-    runId: string,
-    workerId: string,
-    now: Date,
-  ): Promise<{ cancelRequested: boolean } | null> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.claimedBy !== workerId || !isClaimed(run.state)) return Promise.resolve(null);
-    run.heartbeatAt = now;
-    return Promise.resolve({ cancelRequested: run.cancelRequestedAt !== null });
   }
 
   cancelUnheld(
@@ -364,142 +321,11 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  appendStep(
-    runId: string,
-    workerId: string,
-    step: RunStepRecord,
-    workingCopy: RunWorkingCopy,
-    failingChecks: readonly string[],
-    now: Date,
-  ): Promise<AppendStepOutcome> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.state !== 'running' || run.claimedBy !== workerId) {
-      return Promise.resolve({ status: 'not_held' });
-    }
-    const last = this.steps.filter((stored) => stored.runId === runId).length;
-    const index = step.index ?? last + 1;
-    if (index <= last) return Promise.resolve({ status: 'stored', index, duplicate: true });
-    if (index !== last + 1) return Promise.resolve({ status: 'out_of_order', expected: last + 1 });
-    if (index > run.stepsBeforePart + run.limits.maxSteps) {
-      Object.assign(run, {
-        state: 'failed',
-        failure: stepLimitFailure(run.limits.maxSteps, run.followUpCount > 0),
-        claimedBy: null,
-        heartbeatAt: null,
-        finishedAt: now,
-      });
-      return Promise.resolve({ status: 'step_limit' });
-    }
-    const { kind, result } = step;
-    this.steps.push({ runId, index, step: structuredClone({ kind, result }) });
-    run.stepCount = index;
-    run.workingCopy = structuredClone(workingCopy);
-    run.failingChecks = [...failingChecks];
-    run.stepStartedAt = null;
-    run.lastActivityAt = now;
-    if (step.sessionRef !== undefined) run.sessionRef = step.sessionRef;
-    if (step.question) {
-      run.messages.push({ kind: 'question', question: structuredClone(step.question), at: now });
-    }
-    return Promise.resolve({ status: 'stored', index });
-  }
-
   /** Issue #145: the prepared Follow-ups, by Run id (shared with the lookup and prepared stores). */
   readonly prepared = new Map<string, PreparedFollowUp>();
 
   /** Issue #146: the loaded Review comments, by Run id (shared with the lookup store). */
   readonly reviewSets = new Map<string, ReviewCommentSet>();
-
-  markWorkingCopiesRemoved(
-    workerId: string,
-    runIds: readonly string[],
-    now: Date,
-  ): Promise<number> {
-    const removed = this.runs.filter(
-      (run) =>
-        runIds.includes(run.id) &&
-        run.lastClaimedBy === workerId &&
-        run.claimedBy === null &&
-        run.workingCopyRemovedAt === null,
-    );
-    for (const run of removed) run.workingCopyRemovedAt = now;
-    return Promise.resolve(removed.length);
-  }
-
-  recordUpdateStart(
-    runId: string,
-    workerId: string,
-    start: { baseCommit: string; integrationCommit: string },
-  ): Promise<boolean> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    const entry = run?.messages.findLast((message) => message.kind === 'follow_up');
-    if (
-      !run ||
-      run.claimedBy !== workerId ||
-      entry?.kind !== 'follow_up' ||
-      entry.source !== 'bring_up_to_date' ||
-      entry.updateTip !== undefined
-    ) {
-      return Promise.resolve(false);
-    }
-    entry.updateBase = start.baseCommit;
-    entry.updateTip = start.integrationCommit;
-    return Promise.resolve(true);
-  }
-
-  recordMergedCommit(runId: string): Promise<boolean> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    const entry = run?.messages.findLast((message) => message.kind === 'follow_up');
-    if (
-      entry?.kind !== 'follow_up' ||
-      entry.source !== 'bring_up_to_date' ||
-      entry.updateTip === undefined ||
-      entry.mergedCommit !== undefined
-    ) {
-      return Promise.resolve(false);
-    }
-    entry.mergedCommit = entry.updateTip;
-    return Promise.resolve(true);
-  }
-
-  finishBringUpToDate(
-    runId: string,
-    workerId: string,
-    detail: string,
-    now: Date,
-  ): Promise<Run | null> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.claimedBy !== workerId || !['preparing', 'running'].includes(run.state)) {
-      return Promise.resolve(null);
-    }
-    const index = run.messages.findLastIndex((message) => message.kind === 'follow_up');
-    const entry = run.messages[index];
-    const before = run.messages[index - 1];
-    if (
-      entry?.kind !== 'follow_up' ||
-      entry.source !== 'bring_up_to_date' ||
-      before?.kind !== 'part_end'
-    ) {
-      return Promise.resolve(null);
-    }
-    run.messages.push({
-      kind: 'part_end',
-      state: before.state,
-      failureCode: before.failureCode,
-      delivery: before.delivery,
-      detail,
-      at: now,
-    });
-    Object.assign(run, {
-      ...restoreEarlierResult(before),
-      claimedBy: null,
-      heartbeatAt: null,
-      releasedBy: workerId,
-      finishedAt: now,
-      stepStartedAt: null,
-    });
-    return Promise.resolve(this.view(run));
-  }
 
   async change(runId: string, mutate: (run: Run) => void): Promise<Run | null> {
     return this.changeStored(runId, (run) => mutate(run));
@@ -537,6 +363,17 @@ export class InMemoryRunRepository implements RunRepository {
     work(run, stored);
     const changes = run.pendingChanges();
     Object.assign(stored, structuredClone(changes.fields));
+    const entry = stored.messages.findLast((message) => message.kind === 'follow_up');
+    if (changes.followUpEntry && entry?.kind === 'follow_up') {
+      Object.assign(entry, structuredClone(changes.followUpEntry));
+    }
+    for (const step of changes.steps ?? []) {
+      const { kind, result } = step;
+      this.steps.push({ runId, index: step.index, step: structuredClone({ kind, result }) });
+    }
+    if (changes.environmentFileSecretRef !== undefined) {
+      stored.environmentFileSecret = changes.environmentFileSecretRef;
+    }
     stored.messages.push(...structuredClone(changes.messages));
     if (changes.discardReviewComments) this.reviewSets.delete(runId);
     if (
@@ -548,8 +385,22 @@ export class InMemoryRunRepository implements RunRepository {
     return this.view(stored);
   }
 
-  // Test setup shortcuts, not part of the Run repository: the operator's operations as the Run's
-  // own methods apply them, returning `null` where the operation is refused.
+  /** Test setup: starts a Run as `StartRunHandler` does (`Run.start`) and stores it. */
+  start(input: StartedRun): Promise<Run> {
+    return this.add(
+      Run.start({
+        ...input,
+        id: input.id ?? randomUUID(),
+        task: Task.of(input.task),
+        // The fake keeps its own distinct, increasing creation times, like the database's clock.
+        now: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence)),
+      }),
+    );
+  }
+
+  // Test setup shortcuts, not part of the Run repository: the operator's operations and what the
+  // agent worker reports, as the Run's own methods apply them, returning `null` (or `false`) where
+  // the operation is refused.
 
   /** The operator answers the open question; `null` if the Run is not waiting with one. */
   async answer(runId: string, text: string, now: Date): Promise<Run | null> {
@@ -559,8 +410,8 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  /** The operator cancels; `null` if the Run is finished. */
-  async requestCancel(runId: string, now: Date): Promise<Run | null> {
+  /** The operator cancels (a request, or at once for a Run no worker holds); `null` if finished. */
+  async cancel(runId: string, now: Date): Promise<Run | null> {
     return this.refusedAsNull(
       () => this.change(runId, (run) => run.cancel(now)),
       [RunAlreadyFinishedError],
@@ -590,6 +441,161 @@ export class InMemoryRunRepository implements RunRepository {
         ),
       [FollowUpNotAllowedError],
     );
+  }
+
+  /**
+   * A change of state the agent worker reported, as the Run's `reportState` applies it, only
+   * while the Run is still as the setup states (`from`, the cancel request); `null` if refused.
+   */
+  async transitionClaimed(change: ClaimedRunChange): Promise<Run | null> {
+    return this.refusedAsNull(
+      () =>
+        this.change(change.runId, (run) => {
+          if (
+            run.state !== change.from ||
+            (run.cancelRequestedAt !== null) !== change.cancelRequested
+          ) {
+            throw new RunNotHeldError();
+          }
+          run.reportState(
+            change.workerId,
+            {
+              state: change.to,
+              failure: change.failure,
+              workingCopy: change.workingCopy ?? null,
+              delivery: change.delivery ?? null,
+              sessionRef: change.sessionRef ?? null,
+              pushedCommit: change.pushedCommit ?? null,
+            },
+            change.now,
+          );
+        }),
+      [RunNotHeldError, IllegalRunTransitionError],
+    );
+  }
+
+  /** The agent worker reports a Run step. */
+  async appendStep(
+    runId: string,
+    workerId: string,
+    step: RunStepRecord,
+    workingCopy: RunWorkingCopy,
+    failingChecks: readonly string[],
+    now: Date,
+  ): Promise<AppendStepOutcome> {
+    let outcome: AppendStepOutcome = { status: 'not_held' };
+    try {
+      await this.change(runId, (run) => {
+        outcome = run.reportStep(workerId, step, workingCopy, failingChecks, now);
+      });
+    } catch (error) {
+      if (error instanceof RunNotHeldError) return { status: 'not_held' };
+      if (error instanceof StepOutOfOrderError) {
+        return { status: 'out_of_order', expected: error.expected };
+      }
+      throw error;
+    }
+    return outcome;
+  }
+
+  /** The agent worker's heartbeat; `null` if it does not hold the Run. */
+  async heartbeat(
+    runId: string,
+    workerId: string,
+    now: Date,
+  ): Promise<{ cancelRequested: boolean } | null> {
+    let answer: { cancelRequested: boolean } | null = null;
+    try {
+      await this.change(runId, (run) => {
+        answer = run.recordHeartbeat(workerId, now);
+      });
+    } catch (error) {
+      if (error instanceof RunNotHeldError) return null;
+      throw error;
+    }
+    return answer;
+  }
+
+  /** The agent worker reports where a bring-up-to-date merge started; `false` if not recorded. */
+  async recordUpdateStart(
+    runId: string,
+    workerId: string,
+    start: { baseCommit: string; integrationCommit: string },
+  ): Promise<boolean> {
+    let recorded = false;
+    await this.change(runId, (run) => {
+      recorded = run.recordUpdateStart(workerId, start);
+    });
+    return recorded;
+  }
+
+  /** A bring-up-to-date part succeeded; `false` if there was nothing to record. */
+  async recordMergedCommit(runId: string): Promise<boolean> {
+    let recorded = false;
+    await this.change(runId, (run) => {
+      recorded = run.recordMergedCommit();
+    });
+    return recorded;
+  }
+
+  /** The agent worker reports a bring-up-to-date request that changed nothing; `null` if refused. */
+  async finishBringUpToDate(
+    runId: string,
+    workerId: string,
+    detail: string,
+    now: Date,
+  ): Promise<Run | null> {
+    return this.refusedAsNull(
+      () =>
+        this.change(runId, (run) => {
+          run.reportState(
+            workerId,
+            { state: 'succeeded', failure: null, unchanged: true, unchangedDetail: detail },
+            now,
+          );
+        }),
+      [RunNotHeldError, IllegalRunTransitionError],
+    );
+  }
+
+  /** The agent worker reports the removal of Working copies; how many were recorded. */
+  async markWorkingCopiesRemoved(
+    workerId: string,
+    runIds: readonly string[],
+    now: Date,
+  ): Promise<number> {
+    let recorded = 0;
+    for (const runId of runIds) {
+      await this.change(runId, (run) => {
+        if (run.reportWorkingCopyRemoved(workerId, now)) recorded++;
+      });
+    }
+    return recorded;
+  }
+
+  /** The claim gives the `preparing` Run its Environment file; `false` if it is no longer so held. */
+  async attachEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string },
+  ): Promise<boolean> {
+    return this.replaceEnvironmentFile(runId, workerId, file);
+  }
+
+  /** The claim replaces the `preparing` Run's Environment file; `false` if it is no longer so held. */
+  async replaceEnvironmentFile(
+    runId: string,
+    workerId: string,
+    file: { path: string; secretRef: string } | null,
+  ): Promise<boolean> {
+    try {
+      return (
+        (await this.change(runId, (run) => run.recordEnvironmentFile(workerId, file))) !== null
+      );
+    } catch (error) {
+      if (error instanceof RunNotHeldError) return false;
+      throw error;
+    }
   }
 
   private async refusedAsNull(
@@ -658,40 +664,6 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(stale.length);
   }
 
-  attachEnvironmentFile(
-    runId: string,
-    workerId: string,
-    file: { path: string; secretRef: string },
-  ): Promise<boolean> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.state !== 'preparing' || run.claimedBy !== workerId) {
-      return Promise.resolve(false);
-    }
-    Object.assign(run, {
-      environmentFileSupplied: true,
-      environmentFilePath: file.path,
-      environmentFileSecret: file.secretRef,
-    });
-    return Promise.resolve(true);
-  }
-
-  replaceEnvironmentFile(
-    runId: string,
-    workerId: string,
-    file: { path: string; secretRef: string } | null,
-  ): Promise<boolean> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.state !== 'preparing' || run.claimedBy !== workerId) {
-      return Promise.resolve(false);
-    }
-    Object.assign(run, {
-      environmentFileSupplied: file !== null,
-      environmentFilePath: file?.path ?? null,
-      environmentFileSecret: file?.secretRef ?? null,
-    });
-    return Promise.resolve(true);
-  }
-
   findEnvironmentFileSecret(runId: string): Promise<string | null> {
     return Promise.resolve(
       this.runs.find((candidate) => candidate.id === runId)?.environmentFileSecret ?? null,
@@ -736,9 +708,8 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   private data(run: StoredRun): RunData {
-    const { heartbeatAt, environmentFileSecret, ...rest } = run;
+    const { environmentFileSecret, ...rest } = run;
     // Internal: not part of a Run.
-    void heartbeatAt;
     void environmentFileSecret;
     return structuredClone(rest);
   }

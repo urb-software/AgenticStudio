@@ -67,6 +67,7 @@ function data(overrides: Partial<RunData> = {}): RunData {
     finishedAt: null,
     failure: null,
     claimedBy: null,
+    heartbeatAt: null,
     environmentFileSupplied: false,
     environmentFilePath: null,
     limits: LIMITS,

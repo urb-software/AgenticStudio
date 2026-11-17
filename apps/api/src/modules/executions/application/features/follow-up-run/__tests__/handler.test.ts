@@ -97,7 +97,7 @@ describe('FollowUpRunHandler', () => {
 
   /** A Run WORKER carried to `end` after `steps` done steps, delivering its pull request. */
   async function finished(end: RunState = 'succeeded', steps = 1, projectId = PROJECT) {
-    const added = await runs.add(newRun(projectId));
+    const added = await runs.start(newRun(projectId));
     await runs.claimNext(WORKER, T0);
     await runs.transitionClaimed({
       runId: added.id,
@@ -118,7 +118,7 @@ describe('FollowUpRunHandler', () => {
         T0,
       );
     }
-    if (end === 'cancelled') await runs.requestCancel(added.id, T0);
+    if (end === 'cancelled') await runs.cancel(added.id, T0);
     await runs.transitionClaimed({
       runId: added.id,
       workerId: WORKER,
@@ -339,7 +339,7 @@ describe('FollowUpRunHandler', () => {
       new FollowUpNotAllowedError('working_copy_removed'),
     );
 
-    const failedAtStart: Run = await runs.add(newRun(OTHER_PROJECT));
+    const failedAtStart: Run = await runs.start(newRun(OTHER_PROJECT));
     await runs.claimNext(WORKER, T0);
     await runs.transitionClaimed({
       runId: failedAtStart.id,
@@ -356,7 +356,10 @@ describe('FollowUpRunHandler', () => {
   });
 
   it('refuses a Run that has used its Run step total', async () => {
-    const added = await runs.add({ ...newRun(), limits: { ...newRun().limits, maxTotalSteps: 2 } });
+    const added = await runs.start({
+      ...newRun(),
+      limits: { ...newRun().limits, maxTotalSteps: 2 },
+    });
     await runs.claimNext(WORKER, T0);
     await runs.transitionClaimed({
       runId: added.id,
@@ -481,7 +484,7 @@ describe('FollowUpRunHandler', () => {
 
   it('waits in the queue without holding a place: another Run of the project starts first', async () => {
     const run = await finished('succeeded');
-    const other = await runs.add(newRun());
+    const other = await runs.start(newRun());
     const started = await runs.claimNext(OTHER_WORKER, T1);
     expect(started?.id).toBe(other.id);
 
@@ -608,7 +611,7 @@ describe('FollowUpRunHandler', () => {
       };
       const removed = await finished('succeeded');
       runs.runs.find((run) => run.id === removed.id)!.workingCopyRemovedAt = T0;
-      const queued = await runs.add(newRun(OTHER_PROJECT));
+      const queued = await runs.start(newRun(OTHER_PROJECT));
 
       for (const run of [merged, removed, queued]) {
         const current = (await runs.findById(run.id))!;

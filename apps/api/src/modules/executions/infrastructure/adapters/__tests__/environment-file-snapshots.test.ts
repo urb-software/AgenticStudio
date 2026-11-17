@@ -26,7 +26,7 @@ describe('Environment file snapshots', () => {
   let now: Date;
 
   async function claimedWithSnapshot(projectId: string, content: string) {
-    await runs.add({
+    await runs.start({
       projectId,
       provider: 'codex',
       task: 'x',

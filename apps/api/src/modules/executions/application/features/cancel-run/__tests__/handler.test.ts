@@ -35,7 +35,7 @@ describe('CancelRunHandler', () => {
     runs = new InMemoryRunRepository();
     now = T1;
     handler = new CancelRunHandler(runs, { now: () => now });
-    run = await runs.add({
+    run = await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

@@ -43,7 +43,7 @@ describe('ReportRunStateHandler', () => {
       { forRun: () => Promise.resolve(['test-only-known']) },
       lookups,
     );
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',
@@ -389,7 +389,7 @@ describe('ReportRunStateHandler', () => {
   describe('cancel and time limit', () => {
     it('ends a running Run as cancelled when the worker confirms a requested cancel', async () => {
       await report({ state: 'running' });
-      await runs.requestCancel(run.id, T0);
+      await runs.cancel(run.id, T0);
       const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: true };
 
       expect(await report({ state: 'cancelled', workingCopy })).toMatchObject({
@@ -402,7 +402,7 @@ describe('ReportRunStateHandler', () => {
     });
 
     it('confirms a cancel requested while the Run was still preparing', async () => {
-      await runs.requestCancel(run.id, T0);
+      await runs.cancel(run.id, T0);
 
       expect(await report({ state: 'cancelled' })).toMatchObject({ state: 'cancelled' });
     });
@@ -418,7 +418,7 @@ describe('ReportRunStateHandler', () => {
 
     it('ends the Run as cancelled when its step ends waiting for the operator after a cancel request', async () => {
       await report({ state: 'running' });
-      await runs.requestCancel(run.id, T0);
+      await runs.cancel(run.id, T0);
 
       expect(await report({ state: 'waiting_for_operator' })).toMatchObject({
         state: 'cancelled',
@@ -429,7 +429,7 @@ describe('ReportRunStateHandler', () => {
 
     it('keeps a succeeded report with its delivery after a cancel request (the push was done)', async () => {
       await report({ state: 'running' });
-      await runs.requestCancel(run.id, T0);
+      await runs.cancel(run.id, T0);
 
       expect(await report({ state: 'succeeded', delivery: { outcome: 'none' } })).toMatchObject({
         state: 'succeeded',
@@ -440,7 +440,7 @@ describe('ReportRunStateHandler', () => {
 
     it('keeps a failure a failure after a cancel request', async () => {
       await report({ state: 'running' });
-      await runs.requestCancel(run.id, T0);
+      await runs.cancel(run.id, T0);
       const failure = { code: 'agent_failed', detail: 'exit 1' } as const;
 
       expect(await report({ state: 'failed', failure })).toMatchObject({
@@ -490,7 +490,7 @@ describe('ReportRunStateHandler', () => {
 
     it('accepts a repeated waiting report, and a repeat that became cancelled', async () => {
       await report({ state: 'running' });
-      await runs.requestCancel(run.id, T0);
+      await runs.cancel(run.id, T0);
       const cancelled = await report({ state: 'waiting_for_operator' });
 
       expect(cancelled.state).toBe('cancelled');
@@ -510,7 +510,7 @@ describe('ReportRunStateHandler', () => {
   // Review round 2 of #121: a cancel that lands during the delivery leaves a trace.
   it('records the pull request a delivery opened on a Run cancelled during it', async () => {
     await report({ state: 'running' });
-    await runs.requestCancel(run.id, T0);
+    await runs.cancel(run.id, T0);
     const pullRequest = { url: 'https://github.com/acme/shop/pull/9', number: 9 };
 
     expect(
@@ -525,7 +525,7 @@ describe('ReportRunStateHandler', () => {
 
   it('records a pushed Run branch without a pull request on a Run cancelled during its delivery', async () => {
     await report({ state: 'running' });
-    await runs.requestCancel(run.id, T0);
+    await runs.cancel(run.id, T0);
 
     expect(
       await report({ state: 'cancelled', delivery: { outcome: 'none', branchPushed: true } }),

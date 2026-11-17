@@ -55,7 +55,7 @@ describe('AnswerRunHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     handler = new AnswerRunHandler(runs, { now: () => T1 });
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

@@ -24,7 +24,7 @@ const later = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 describe('RunSweepsScheduler at API start', () => {
   async function setUp() {
     const runs = new InMemoryRunRepository();
-    await runs.add({
+    await runs.start({
       projectId: PROJECT,
       provider: 'codex',
       task: 'x',

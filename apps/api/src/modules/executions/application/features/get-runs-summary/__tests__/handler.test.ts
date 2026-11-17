@@ -16,7 +16,7 @@ describe('GetRunsSummaryHandler', () => {
   let handler: GetRunsSummaryHandler;
 
   const add = (projectId: string) =>
-    runs.add({
+    runs.start({
       projectId,
       provider: 'codex',
       task: 'x',
