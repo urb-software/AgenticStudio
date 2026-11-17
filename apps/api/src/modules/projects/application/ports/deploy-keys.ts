@@ -11,6 +11,14 @@ export const DEPLOY_KEYS = Symbol('DEPLOY_KEYS');
  */
 export const DEPLOY_KEY_SECRET_OWNER = 'projects.deploy-key';
 
+/** DI token for {@link DeployKeySweepSettings}. */
+export const DEPLOY_KEY_SWEEP_SETTINGS = Symbol('DEPLOY_KEY_SWEEP_SETTINGS');
+
+export interface DeployKeySweepSettings {
+  /** `DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS` in production; tests may pass a shorter one. */
+  gracePeriodMs: number;
+}
+
 /** A stored Deploy key: the public half and the secret store's reference to the private half. */
 export interface StoredDeployKey {
   publicKey: string;

@@ -5,15 +5,12 @@ import {
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import { DeployKeySweepPolicy } from '../../../domain/value-objects/deploy-key-sweep-policy.js';
-import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
-
-/** DI token for {@link DeployKeySweepSettings}. */
-export const DEPLOY_KEY_SWEEP_SETTINGS = Symbol('DEPLOY_KEY_SWEEP_SETTINGS');
-
-export interface DeployKeySweepSettings {
-  /** `DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS` in production; tests may pass a shorter one. */
-  gracePeriodMs: number;
-}
+import {
+  DEPLOY_KEY_SWEEP_SETTINGS,
+  DEPLOY_KEYS,
+  type DeployKeys,
+  type DeployKeySweepSettings,
+} from '../../ports/deploy-keys.js';
 
 /**
  * Feature: deleting Deploy keys no Repository references (Issue #76). A key is orphaned when
@@ -28,7 +25,7 @@ export interface DeployKeySweepSettings {
  * unreferenced is never saved again.
  *
  * Runs at start-up, after the repository queue is reconciled and before its worker starts
- * (`repository-jobs`). Each delete is
+ * (`repository-jobs`), and after a Connect fails to delete a key (Connect repeats the selection inline, #163). Each delete is
  * logged by the secret's id only. Never throws: a failure is logged (redacted) and the next
  * sweep tries again.
  */

@@ -16,7 +16,14 @@ import { RepositoryUrl } from '../../../domain/value-objects/repository-url.js';
 import { gitHostName } from '../../../domain/value-objects/trusted-host-keys.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
-import { DEPLOY_KEYS, type DeployKeys, type StoredDeployKey } from '../../ports/deploy-keys.js';
+import { DeployKeySweepPolicy } from '../../../domain/value-objects/deploy-key-sweep-policy.js';
+import {
+  DEPLOY_KEY_SWEEP_SETTINGS,
+  DEPLOY_KEYS,
+  type DeployKeys,
+  type DeployKeySweepSettings,
+  type StoredDeployKey,
+} from '../../ports/deploy-keys.js';
 
 /** DI token for {@link ConnectRepositorySettings}. */
 export const CONNECT_REPOSITORY_SETTINGS = Symbol('CONNECT_REPOSITORY_SETTINGS');
@@ -59,9 +66,11 @@ export class ConnectRepositoryHandler {
     @Inject(REPOSITORY_JOBS) private readonly jobs: RepositoryJobs,
     @Inject(CONNECT_REPOSITORY_SETTINGS) private readonly settings: ConnectRepositorySettings,
     @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
+    @Inject(DEPLOY_KEY_SWEEP_SETTINGS) private readonly sweepSettings: DeployKeySweepSettings,
   ) {}
 
   private readonly logger = new Logger('ConnectRepository');
+  private readonly sweepLogger = new Logger('DeployKeySweep');
 
   async execute(input: ConnectRepositoryInput): Promise<RepositoryConnection> {
     if (!isProjectId(input.projectId)) throw new ProjectNotFoundError();
@@ -132,9 +141,10 @@ export class ConnectRepositoryHandler {
   }
 
   /**
-   * Deletes a Deploy key no Repository references; a failure is logged (redacted), not thrown:
-   * the orphaned-key sweep (Issue #76) deletes the key at a later start-up, once it is past its
-   * grace period.
+   * Deletes a Deploy key no Repository references; a failure is logged (redacted), not thrown,
+   * and followed by an orphan sweep (Issue #76), which deletes the key once it is past the
+   * sweep's grace period, if not now then at a later sweep. The sweep's selection is repeated
+   * here instead of calling its handler (backend.md §3 rule 3, step 5).
    */
   private async deleteKey(projectId: string, secretRef: string): Promise<void> {
     try {
@@ -143,6 +153,34 @@ export class ConnectRepositoryHandler {
       this.logger.warn(
         `Connect of project ${projectId}: could not delete an unused Deploy key. ${redactSecrets(String(error))}`,
       );
+      await this.sweepOrphanedKeys();
+    }
+  }
+
+  /** The orphaned-key sweep's steps (`sweep-orphaned-deploy-keys`); never throws. */
+  private async sweepOrphanedKeys(): Promise<void> {
+    let orphans: string[];
+    try {
+      const policy = DeployKeySweepPolicy.of(this.sweepSettings.gracePeriodMs);
+      const candidates = await this.deployKeys.listOlderThan(policy.gracePeriodMs);
+      if (candidates.length === 0) return;
+      orphans = policy.orphans(candidates, await this.projects.listDeployKeySecretRefs());
+    } catch (error) {
+      this.sweepLogger.warn(
+        `Could not sweep orphaned Deploy keys; the next sweep tries again. ${redactSecrets(String(error))}`,
+      );
+      return;
+    }
+    for (const secretRef of orphans) {
+      try {
+        await this.deployKeys.remove(secretRef);
+        this.sweepLogger.log(`Deleted the orphaned Deploy key secret ${secretRef}.`);
+      } catch (error) {
+        this.sweepLogger.warn(
+          `Could not delete the orphaned Deploy key secret ${secretRef}; the next sweep tries ` +
+            `again. ${redactSecrets(String(error))}`,
+        );
+      }
     }
   }
 }

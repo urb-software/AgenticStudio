@@ -36,11 +36,7 @@ import { ListProjectsEndpoint } from './entry-points/http/operator/list-projects
 import { ListProjectsHandler } from './application/features/list-projects/handler.js';
 import { FetchCloneHandler } from './application/features/fetch-clone/handler.js';
 import { RepositoryJobsHandler } from './application/features/repository-jobs/handler.js';
-import {
-  DEPLOY_KEY_SWEEP_SETTINGS,
-  type DeployKeySweepSettings,
-  SweepOrphanedDeployKeysHandler,
-} from './application/features/sweep-orphaned-deploy-keys/handler.js';
+import { SweepOrphanedDeployKeysHandler } from './application/features/sweep-orphaned-deploy-keys/handler.js';
 import { VerifyRepositoryEndpoint } from './entry-points/http/operator/verify-repository/endpoint.js';
 import { VerifyRepositoryHandler } from './application/features/verify-repository/handler.js';
 import {
@@ -54,7 +50,11 @@ import { ENVIRONMENT_FILE_CONTENTS } from './application/ports/environment-file-
 import { PrismaEnvironmentFileRepository } from './infrastructure/repositories/prisma-environment-file-repository.js';
 import { REPOSITORY_JOBS } from './application/ports/repository-jobs.js';
 import { REPOSITORY_GIT } from './application/ports/repository-git.js';
-import { DEPLOY_KEYS } from './application/ports/deploy-keys.js';
+import {
+  DEPLOY_KEY_SWEEP_SETTINGS,
+  DEPLOY_KEYS,
+  type DeployKeySweepSettings,
+} from './application/ports/deploy-keys.js';
 import {
   SecretStoreDeployKeys,
   SSH_TRUST_SETTINGS,
