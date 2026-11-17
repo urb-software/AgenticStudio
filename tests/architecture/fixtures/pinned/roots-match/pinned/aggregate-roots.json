@@ -1,0 +1,10 @@
+{
+  "roots": {
+    "notes/Note": {
+      "reason": "It has its own repository and its own transaction."
+    },
+    "notes/Tag": {
+      "reason": "It has its own repository and its own transaction."
+    }
+  }
+}

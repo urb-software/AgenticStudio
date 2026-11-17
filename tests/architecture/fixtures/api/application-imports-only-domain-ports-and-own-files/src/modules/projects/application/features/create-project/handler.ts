@@ -3,6 +3,8 @@ import { ProjectNameTakenError } from '../../../domain/repositories/project-repo
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import type { CreateProjectInput } from './input.js';
 
+export type CreateProjectInput = CreateProjectInput;
+
 @Injectable()
 export class CreateProjectHandler {
   private readonly logger = new Logger(CreateProjectHandler.name);

@@ -1,5 +1,7 @@
+export type CancelRunResult = string;
+
 export class CancelRunHandler {
-  execute(): string {
+  execute(): CancelRunResult {
     return 'cancelled';
   }
 }

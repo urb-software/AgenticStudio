@@ -1,0 +1,9 @@
+{
+  "repositories": {
+    "catalog/ProductRepository": {
+      "add": { "kind": "save" },
+      "findByName": { "kind": "load" },
+      "listNewestFirst": { "kind": "query" }
+    }
+  }
+}

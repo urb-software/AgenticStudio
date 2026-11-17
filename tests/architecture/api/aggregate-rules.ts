@@ -1,14 +1,23 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { listDirectories, listFiles, type Violation } from '../harness';
-import { isErrorClass, moduleImports, target } from './layout-rules';
+import {
+  exportedClasses,
+  exportedLater,
+  hasExportModifier,
+  isErrorClass,
+  moduleImports,
+  parse,
+  target,
+} from './syntax';
 
 /**
  * The four checks that follow from rules 10 to 12 of backend.md §3 (Issue #182): aggregate
  * roots in `domain/entities/`, one repository per root, and handlers that return plain data.
  * Syntax and file tree only, as in `layout-rules.ts`: each file is parsed on its own, without
- * type checking, so the checks work on fixtures.
+ * type checking, so the checks work on fixtures. They apply to every module under
+ * `src/modules/`, by path pattern (Issue #170): a new module is covered without editing the gate.
  */
 export const AGGREGATE_RULES = [
   'api-entry-points-no-entity-classes',
@@ -18,25 +27,17 @@ export const AGGREGATE_RULES = [
 ];
 
 /**
- * Modules the four checks apply to. Issue #182 introduces them for `projects`, #183 adds
- * `executions`, and #170 removes the list so every module is checked by path pattern. A listed
- * module is checked once it has a `domain/entities/` directory, which is where its aggregate
- * roots are; a module without one has no root to refer to.
- */
-const AGGREGATE_MODULES = new Set(['projects', 'executions']);
-
-/**
  * Child entities of an aggregate, by the file of their root: a child entity has its identity only
  * within its root and is created and bounded through it, so the root's file and its repository
  * may refer to it. Pinned here: a new child entity is a modelling decision.
  */
-const CHILD_ENTITIES: Record<string, string[]> = {
+export const CHILD_ENTITIES: Record<string, string[]> = {
   'src/modules/executions/domain/entities/run.ts': [
     'src/modules/executions/domain/entities/run-step.ts',
   ],
 };
 
-const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
+export const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
 const HANDLER_FILE = /^src\/modules\/([^/]+)\/application\/features\/[^/]+\/handler\.ts$/;
 const REPOSITORY_FILE = /^src\/modules\/([^/]+)\/domain\/repositories\/[^/]+\.ts$/;
 const ENTRY_POINT_FILE = /^src\/modules\/([^/]+)\/entry-points\//;
@@ -46,12 +47,7 @@ const ID_TYPE_NAME = /Id$/;
 const HANDLER_SUFFIX = /Handler$/;
 
 export function aggregateViolations(baseDir: string): Violation[] {
-  const modules = listDirectories(baseDir, 'src/modules').filter(
-    (module) =>
-      AGGREGATE_MODULES.has(module) &&
-      listDirectories(baseDir, `src/modules/${module}/domain`).includes('entities'),
-  );
-  return modules.flatMap((module) => {
+  return listDirectories(baseDir, 'src/modules').flatMap((module) => {
     const files = listFiles(baseDir, `src/modules/${module}`).filter(
       (path) => path.endsWith('.ts') && !path.endsWith('.d.ts'),
     );
@@ -73,54 +69,11 @@ export function aggregateViolations(baseDir: string): Violation[] {
   });
 }
 
-function parse(baseDir: string, path: string): ts.SourceFile {
-  return ts.createSourceFile(
-    path,
-    readFileSync(join(baseDir, path), 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-  );
-}
-
-function isExported(declaration: ts.Node): boolean {
-  return (
-    ts.canHaveModifiers(declaration) &&
-    (ts.getModifiers(declaration) ?? []).some(
-      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-    )
-  );
-}
-
-/** Names exported by a later `export { A, B }` statement without a module specifier. */
-function exportedLater(source: ts.SourceFile): Set<string> {
-  const names = new Set<string>();
-  for (const statement of source.statements) {
-    if (
-      ts.isExportDeclaration(statement) &&
-      !statement.moduleSpecifier &&
-      statement.exportClause &&
-      ts.isNamedExports(statement.exportClause)
-    ) {
-      for (const element of statement.exportClause.elements) {
-        names.add((element.propertyName ?? element.name).text);
-      }
-    }
-  }
-  return names;
-}
-
 /** Classes an entity file exports, not counting error classes: the aggregate's own classes. */
 function exportedEntityClasses(source: ts.SourceFile): string[] {
-  const later = exportedLater(source);
-  return source.statements
-    .filter(ts.isClassDeclaration)
-    .filter(
-      (declaration) =>
-        declaration.name !== undefined &&
-        (isExported(declaration) || later.has(declaration.name.text)) &&
-        !isErrorClass(declaration),
-    )
-    .map((declaration) => declaration.name!.text);
+  return exportedClasses(source)
+    .filter((exported) => !isErrorClass(exported))
+    .map((exported) => exported.name);
 }
 
 /** The entity classes of each entity file of the module, by file path. */
@@ -156,45 +109,69 @@ function entryPointViolations(
   });
 }
 
-/** The names of the types a type node refers to, through unions, arrays and type arguments. */
-function referencedTypeNames(node: ts.TypeNode): string[] {
-  const names: string[] = [];
+/** A type a type node refers to: `Foo`, `ns.Foo` or `import('./x.js').Foo`. */
+interface TypeReference {
+  /** As written: `Foo`, `ns.Foo`, or the qualifier of an import type (`*` when it has none). */
+  text: string;
+  /** The first identifier: the local name the reference starts from. */
+  root: string;
+  /** The last identifier: the name of the type itself. */
+  leaf: string;
+  /** The module specifier of an import type. */
+  specifier?: string;
+}
+
+function entityNameParts(name: ts.EntityName): { text: string; root: string; leaf: string } {
+  const text = name.getText();
+  const parts = text.split('.');
+  return { text, root: parts[0]!, leaf: parts[parts.length - 1]! };
+}
+
+/** The types a type node refers to, through unions, arrays, type arguments and function types. */
+function typeReferences(node: ts.TypeNode, local?: Map<string, ts.Node>): TypeReference[] {
+  const found: TypeReference[] = [];
+  const seen = new Set<string>();
   const visit = (current: ts.Node): void => {
     if (ts.isTypeReferenceNode(current)) {
-      names.push(current.typeName.getText());
+      const reference = entityNameParts(current.typeName);
+      found.push(reference);
+      const declared = reference.text === reference.root ? local?.get(reference.text) : undefined;
+      if (declared && !seen.has(reference.text)) {
+        seen.add(reference.text);
+        visit(declared);
+      }
+    } else if (
+      ts.isImportTypeNode(current) &&
+      ts.isLiteralTypeNode(current.argument) &&
+      ts.isStringLiteral(current.argument.literal)
+    ) {
+      const reference = current.qualifier
+        ? entityNameParts(current.qualifier)
+        : { text: '*', root: '*', leaf: '*' };
+      found.push({ ...reference, specifier: current.argument.literal.text });
     }
     current.forEachChild(visit);
   };
   visit(node);
-  return names;
+  return found;
+}
+
+/** The names of the types a type node refers to, as written. */
+function referencedTypeNames(node: ts.TypeNode): string[] {
+  return typeReferences(node).map((reference) => reference.text);
 }
 
 /**
- * Like {@link referencedTypeNames}, and also the names inside the interfaces and type aliases
+ * Like {@link typeReferences}, and also the references inside the interfaces and type aliases
  * the file declares itself, so a result type that wraps an entity class is seen through.
  */
-function referencedTypeNamesDeep(node: ts.TypeNode, source: ts.SourceFile): string[] {
+function typeReferencesDeep(node: ts.TypeNode, source: ts.SourceFile): TypeReference[] {
   const local = new Map<string, ts.Node>();
   for (const statement of source.statements) {
     if (ts.isTypeAliasDeclaration(statement)) local.set(statement.name.text, statement.type);
     else if (ts.isInterfaceDeclaration(statement)) local.set(statement.name.text, statement);
   }
-  const names: string[] = [];
-  const seen = new Set<string>();
-  const visit = (current: ts.Node): void => {
-    if (ts.isTypeReferenceNode(current)) {
-      const name = current.typeName.getText();
-      names.push(name);
-      const declared = local.get(name);
-      if (declared && !seen.has(name)) {
-        seen.add(name);
-        visit(declared);
-      }
-    }
-    current.forEachChild(visit);
-  };
-  visit(node);
-  return names;
+  return typeReferences(node, local);
 }
 
 /** `Promise<T>` → `T`; any other type is returned as it is. */
@@ -228,7 +205,7 @@ function exportedDeclarations(source: ts.SourceFile): Set<string> {
         ts.isClassDeclaration(statement) ||
         ts.isEnumDeclaration(statement)) &&
       statement.name &&
-      (isExported(statement) || later.has(statement.name.text))
+      (hasExportModifier(statement) || later.has(statement.name.text))
     ) {
       names.add(statement.name.text);
     }
@@ -262,14 +239,14 @@ function handlerViolations(
 ): Violation[] {
   const source = parse(baseDir, path);
   const exported = exportedDeclarations(source);
-  const entityNames = new Set([...entityClasses.values()].flat());
+  const imported = importedNames(source);
   const handlers = source.statements
     .filter(ts.isClassDeclaration)
     .filter(
       (declaration) =>
         declaration.name !== undefined &&
         HANDLER_SUFFIX.test(declaration.name.text) &&
-        (isExported(declaration) || exportedLater(source).has(declaration.name.text)),
+        (hasExportModifier(declaration) || exportedLater(source).has(declaration.name.text)),
     );
   const violation = (to: string): Violation => ({
     rule: 'api-handlers-return-plain-data',
@@ -282,9 +259,13 @@ function handlerViolations(
     const methods = handler.members.filter(isPublicMethod);
     const found: Violation[] = [];
     for (const method of methods) {
-      const returned = method.type ? referencedTypeNamesDeep(method.type, source) : [];
-      for (const name of returned.filter((returnedName) => entityNames.has(returnedName))) {
-        found.push(violation(`${method.name.getText()} returns the entity class ${name}`));
+      const name = method.name.getText();
+      const declared = methods.some((other) => other.name.getText() === name && other.type);
+      if (!declared) found.push(violation(`${name} does not declare its return type`));
+      for (const reference of method.type ? typeReferencesDeep(method.type, source) : []) {
+        if (isEntityClass(reference, path, imported, entityClasses)) {
+          found.push(violation(`${name} returns the entity class ${reference.text}`));
+        }
       }
     }
     const execute = methods.find((method) => method.name.getText() === 'execute');
@@ -300,10 +281,7 @@ function handlerViolations(
       else if (!typed.includes(inputName))
         found.push(violation(`execute does not take ${inputName}`));
     }
-    if (!execute.type) {
-      found.push(violation('execute does not declare its return type'));
-      return found;
-    }
+    if (!execute.type) return found;
     const resultName = `${base}Result`;
     if (!isNothing(unwrapPromise(execute.type))) {
       if (!exported.has(resultName)) found.push(violation(`${resultName} is not exported`));
@@ -315,22 +293,55 @@ function handlerViolations(
   });
 }
 
-/** What a file imports by local name: `local name → module specifier`. */
+/** What a file imports by local name (named, default and namespace): `local name → specifier`. */
 function importedNames(source: ts.SourceFile): Map<string, string> {
   const names = new Map<string, string>();
   for (const statement of source.statements) {
     if (
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.importClause?.namedBindings &&
-      ts.isNamedImports(statement.importClause.namedBindings)
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      !statement.importClause
     ) {
-      for (const element of statement.importClause.namedBindings.elements) {
+      continue;
+    }
+    const { name, namedBindings } = statement.importClause;
+    if (name) names.set(name.text, statement.moduleSpecifier.text);
+    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+      names.set(namedBindings.name.text, statement.moduleSpecifier.text);
+    } else if (namedBindings) {
+      for (const element of namedBindings.elements) {
         names.set(element.name.text, statement.moduleSpecifier.text);
       }
     }
   }
   return names;
+}
+
+/** The file a type reference comes from, when it is imported (named, qualified or import type). */
+function referenceTarget(
+  reference: TypeReference,
+  path: string,
+  imported: Map<string, string>,
+): string | undefined {
+  const specifier = reference.specifier ?? imported.get(reference.root);
+  return specifier ? target(path, specifier) : undefined;
+}
+
+/**
+ * Whether a reference names an entity class of the module: a plain name of one of its entity
+ * classes, `ns.Entity` through a namespace import of an entity file, or an import type of one.
+ */
+function isEntityClass(
+  reference: TypeReference,
+  path: string,
+  imported: Map<string, string>,
+  entityClasses: Map<string, string[]>,
+): boolean {
+  if (reference.specifier !== undefined || reference.text !== reference.root) {
+    const to = referenceTarget(reference, path, imported);
+    return (to !== undefined && entityClasses.get(to)?.includes(reference.leaf)) === true;
+  }
+  return [...entityClasses.values()].some((classes) => classes.includes(reference.text));
 }
 
 /**
@@ -365,13 +376,22 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
   );
   const imported = importedNames(source);
   for (const statement of source.statements.filter(ts.isInterfaceDeclaration)) {
-    for (const member of statement.members.filter(ts.isMethodSignature)) {
-      if (!member.type) continue;
-      for (const name of referencedTypeNames(member.type)) {
-        const specifier = imported.get(name);
-        const to = specifier ? target(path, specifier) : undefined;
+    for (const member of statement.members) {
+      // A method, or a property whose type is a function (`find: (id: string) => Promise<Run>`).
+      const returned = ts.isMethodSignature(member)
+        ? member.type
+        : ts.isPropertySignature(member) && member.type && ts.isFunctionTypeNode(member.type)
+          ? member.type.type
+          : undefined;
+      if (!returned) continue;
+      for (const reference of typeReferences(returned)) {
+        const to = referenceTarget(reference, path, imported);
         if (to && VALUE_OBJECT_FILE.test(to) && !ownSnapshots.has(to)) {
-          found.push(violation(`${member.name.getText()} returns ${name} from ${to}`));
+          found.push(
+            violation(
+              `${member.name?.getText() ?? 'a member'} returns ${reference.text} from ${to}`,
+            ),
+          );
         }
       }
     }

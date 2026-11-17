@@ -8,10 +8,12 @@ export class ProjectDto extends createZodDto({} as never) {
   name!: string;
 }
 
+export type ListProjectsResult = ProjectDto[];
+
 @Injectable()
 export class ListProjectsHandler {
   @Cron('0 * * * *')
-  async execute(): Promise<ProjectDto[]> {
+  async execute(): Promise<ListProjectsResult> {
     return [];
   }
 }

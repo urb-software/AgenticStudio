@@ -1,5 +1,7 @@
+export type GetRunResult = string;
+
 export class GetRunHandler {
-  execute(): string {
+  execute(): GetRunResult {
     return 'run';
   }
 }

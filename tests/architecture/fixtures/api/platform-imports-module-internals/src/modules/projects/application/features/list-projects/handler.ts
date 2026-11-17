@@ -1,5 +1,7 @@
+export type ListProjectsResult = string[];
+
 export class ListProjectsHandler {
-  async execute(): Promise<string[]> {
+  async execute(): Promise<ListProjectsResult> {
     return [];
   }
 }

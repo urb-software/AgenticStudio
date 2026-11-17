@@ -100,7 +100,7 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: 'A handler returns an entity class, or does not export its result type',
+    row: 'A handler returns an entity class, does not export its result type, or has a public method with no declared return type',
     expected: 'FAIL',
     gate: 'api',
   },
@@ -160,6 +160,56 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   { row: '`domain/` exports a function other than a type guard', expected: 'FAIL', gate: 'api' },
+  {
+    row: 'An application collaborator imports ports and the domain',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'An application collaborator imports `application/features/`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A structure rule is broken in a module the app does not have (`billing`)',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'The reference module fixture (the complete approved layout)',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'An entry point imports a repository interface or port file by any route (nested, side-effect, dynamic, re-exported by a handler)',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'An entry point imports an error class through a handler, or a test imports a fake from `ports/__tests__/`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'Repository methods and application collaborators match the pinned lists',
+    expected: 'PASS',
+    gate: 'pinned',
+  },
+  {
+    row: 'A repository method or application collaborator is added, renamed or removed without updating its pinned list',
+    expected: 'FAIL',
+    gate: 'pinned',
+  },
+  {
+    row: 'The aggregate roots match the pinned record',
+    expected: 'PASS',
+    gate: 'pinned',
+  },
+  {
+    row: 'An aggregate root is added or removed without updating its pinned record',
+    expected: 'FAIL',
+    gate: 'pinned',
+  },
 ] as const;
 
 export interface FixtureCase {

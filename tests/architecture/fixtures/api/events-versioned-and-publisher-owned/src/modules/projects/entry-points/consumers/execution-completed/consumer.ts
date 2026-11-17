@@ -6,6 +6,6 @@ export class ExecutionCompletedConsumer {
 
   async handle(message: unknown): Promise<void> {
     const event = ExecutionCompletedV2Schema.parse(message);
-    await this.handler.execute(event.projectId, event.executionId);
+    await this.handler.execute({ projectId: event.projectId, executionId: event.executionId });
   }
 }
