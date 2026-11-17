@@ -51,6 +51,8 @@ An **entry point** is any code that receives outside input and calls a handler (
 
 The layers sit at the top of a module (clean architecture); the vertical slices are inside the application layer, one folder per use case ([ADR 0003](adr/0003-api-module-layout.md)). This replaces the earlier decision on Issue #30 that placed shared HTTP shapes in `contracts/http/`.
 
+**Reference module.** `tests/architecture/fixtures/api/reference-module/` (the module `catalog`) is the complete approved layout in a few small files: an aggregate root with its snapshot, errors file and value object, a repository interface and its in-memory implementation, two features with their handlers (input and result types, no entity class returned) and a test with fakes, HTTP endpoints with a schema and a shared response shape, a port with its adapter, `contracts/`, and the module file. Every `architecture:api` check passes on it and its pinned records match it. Copy it when you add a module; the gate applies to any `src/modules/<module>/` without being edited ([Quality](../engineering/quality.md) §4).
+
 **Secrets are a platform capability** ([ADR 0001](adr/0001-secret-store.md), Issue #57). `platform/secrets/` owns the `SecretStore` port, its PostgreSQL adapter, the AES-256-GCM code and the `secrets` table. A business module stores only the opaque reference. It injects `SECRET_STORE` from `platform/secrets/index.ts` (the port and its typed errors), and its `{module}.module.ts` imports `SecretsModule` from `platform/secrets/secrets.module.ts`. Nothing outside `platform/secrets/` imports any other file there, uses the Prisma `secret` model, or reads `secretsKey` from the configuration (only `platform/config/` and `platform/secrets/` do). `architecture:api` enforces these rules. Each secret carries its module's owner label, so a module can list its own unreferenced secrets (references only) and delete them (ADR 0001 amendment, Issue #76).
 
 **No empty mandatory directories.** `handler.ts` is the default feature file; `input.ts`, ports, collaborators, value objects, the entry-point folders other than `http/`, and `contracts/events/` exist only when needed.
@@ -127,9 +129,9 @@ A **child entity** has an identity only within its root and is created, changed 
 
 **When unsure, make them separate roots.** Joining two things into one aggregate needs a stated rule that spans them; keeping them apart needs none.
 
-### Current aggregates (target)
+### Current aggregates
 
-This is the target model that the tickets of Epic #160 implement (#182 and #185 for `projects`, #183 and #184 for `executions`). Until they are merged the code differs: the groupings of the Run's value objects are confirmed against the code in their tickets. In `projects` every non-root file of an aggregate (snapshot, stored record, facts, errors) sits in `domain/value-objects/`, so `domain/entities/` holds only the root classes.
+This is the model the code follows (the tickets of Epic #160: #182 and #185 for `projects`, #183 and #184 for `executions`). The roots are pinned in `tests/architecture/api/pinned/aggregate-roots.json`, so adding or removing one is a reviewed decision. In `projects` every non-root file of an aggregate (snapshot, stored record, facts, errors) sits in `domain/value-objects/`, so `domain/entities/` holds only the root classes.
 
 | Module | Aggregate roots | Child entities | Value objects and plain records |
 | --- | --- | --- | --- |

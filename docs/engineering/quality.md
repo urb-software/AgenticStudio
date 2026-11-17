@@ -33,7 +33,7 @@ A clean unit-test result proves neither architectural correctness nor safe behav
 
 ### `architecture:api` — NestJS
 
-The module layout and the thirteen structure rules are canonical in [Backend](../architecture/backend.md) §2 and §3 ([ADR 0003](../architecture/adr/0003-api-module-layout.md)). Checks below that the layout tickets of Epic #160 have not yet delivered are marked "(added by #n)"; the ticket that adds a check removes its marker, so this document never claims a check exists before it does. The rules that name features, ports, entry points and contracts use the new paths (`application/features/`, `application/ports/`, `entry-points/`, `contracts/`).
+The module layout and the thirteen structure rules are canonical in [Backend](../architecture/backend.md) §2 and §3 ([ADR 0003](../architecture/adr/0003-api-module-layout.md)). Every check below exists and runs inside `architecture:api`, and each applies to every module under `src/modules/` by path pattern, with no module list, so a new module is covered without editing the gate; the reference module fixture (named in [Backend](../architecture/backend.md) §2) shows the complete approved layout and passes every check. The rules that name features, ports, entry points and contracts use the new paths (`application/features/`, `application/ports/`, `entry-points/`, `contracts/`).
 
 **Dependency rules** (Dependency Cruiser or equivalent):
 
@@ -45,36 +45,37 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Event consumers use the owning module's public contract and do not bypass module boundaries.
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
 - `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API: no `nestjs-zod`, `@nestjs/swagger`, `class-validator`, `class-transformer`, `express`, `@nestjs/platform-express`, `bullmq`, `@nestjs/bullmq`, `@nestjs/schedule`, `node-cron`, `cron`, Node `http`/`https`/`http2`, and no controller, route or parameter decorator from `@nestjs/common` (`Controller`, `Get`, `Body`, `UseGuards`, …). Plain `zod` stays allowed for now. `application/` also imports nothing from `platform/queue/`: a job is started and cancelled through a port whose adapter lives in `infrastructure/`, and its events reach a handler through an entry point. The tests of `application/` (`__tests__/`) are not checked: they may import the queue's error classes to make a fake adapter fail the way the real one does.
-- `entry-points/` imports nothing from `infrastructure/`, and from a repository interface or port file only domain error classes (imported names ending in `Error`), so an entry point reaches the application through handlers.
+- `entry-points/` imports nothing from `infrastructure/`, and from a repository interface or port file (at any depth under `domain/repositories/` and `application/ports/`) only domain error classes (imported names ending in `Error`), so an entry point reaches the application through handlers. A port token or repository interface that another file, a handler for example, re-exports is the same import in disguise and is refused too. The in-memory fakes under `ports/__tests__/` are not interfaces: production code importing one is refused by the test-import check below.
 - No production file of a module imports a test file (a file in `__tests__/` or named `*.test.ts`); this keeps the `__tests__/` exemption of the feature check from reaching production code.
-- No import from one feature folder into another feature folder of the same module, for `executions` and `projects` (by path pattern; #170 adds all modules). The tests of a feature (`__tests__/`) are not checked: a round-trip test may build the handler that produces what the handler under test reads.
+- No import from one feature folder into another feature folder of the same module, in every module. The shared import parser sees every route: `import`, `export … from`, side-effect imports (`import './x.js'`), `import x = require()`, dynamic `import()` and import types. The tests of a feature (`__tests__/`) are not checked: a round-trip test may build the handler that produces what the handler under test reads.
 - `domain/` imports nothing from `application/ports/`, in every module (by path pattern).
 - Domain tests import no database client or container tooling (the ORM, concrete clients, `testcontainers`, `@testcontainers/*`, `@agentic-studio/database` and `@agentic-studio/testing`), in every module.
-- An application collaborator never imports `application/features/` (added by #170).
+- An application collaborator (a file directly in `application/`) never imports `application/features/`, by any route (its tests are not checked): shared logic that features call must not call a feature back.
 
 **Structural rules** (Vitest assertions or equivalent):
 
-- Nothing under `entry-points/` imports a class from `domain/entities/`; types are allowed. The exemption for errors used to cover the errors an entity file exported; since rule 13 an entity file exports no error (`projects` since #185, `executions` since #184), so it now matters only for the errors file of a root under `domain/value-objects/`, which the check does not cover (it looks at classes in entity files only): a fixture proves that an entry point may import an error class from such a file (`executions`, #184; the `projects` fixture of #182 imports one too) (rule 10; added by #182 for `projects`, extended to `executions` by #183, general by #170).
-- No handler's return type is an entity class, and every handler file exports its input type (when it takes input) and its result type (when it returns something) (rule 10; added by #182, extended by #183, general by #170).
-- Each repository interface refers to exactly one file in `domain/entities/`, and no type under `domain/value-objects/` is the main type a repository returns, except the snapshot of its own entity, `value-objects/<entity>-snapshot.ts`, or of its root's pinned child entity (the snapshot of another root, or any other value object, still fails). The read shapes of one repository contract (for example `RunStateView`, `StoredRunDiff`, `ClaimedLookup`) are declared in that repository's file (rule 11; added by #182, extended by #183, general by #170). A root's child entities, pinned in the check (the Run step of the Run), belong to its aggregate and do not count as another entity file.
-- No entity file imports another entity file except for an id type, or a root's own pinned child entity (rule 12; added by #182, extended by #183, general by #170).
-- Until #170 the four checks above cover only the modules on their list (`projects` since #182, `executions` since #183) and, within a listed module, apply once it has a `domain/entities/` directory, where its aggregate roots are.
-- A file under `domain/entities/` exports at most one class (error classes count) and no functions; a file with no class is refused by the entity-class check above (rule 13; added by #185 for `projects`, extended to `executions` by #184, general by #170; the module list is in `tests/architecture/api/file-rules.ts`).
-- No file under `domain/` exports a function other than a type guard, tests excluded (rule 13; added by #185 for `projects`, extended to `executions` by #184, general by #170).
-- The aggregate roots of each module are pinned, each with the one-line reason it is a root: adding or removing one fails until the record is changed in review (rule 11; added by #170).
+- Nothing under `entry-points/` imports a class from `domain/entities/`; types are allowed. Since rule 13 an entity file exports no error, so an entry point takes a domain error from the root's errors file under `domain/value-objects/`, which the check does not cover (it looks at classes in entity files only): a fixture proves that an entry point may import an error class from such a file (rule 10).
+- No public method of a handler returns an entity class (also behind a local type alias, a namespace import `ns.Entity` or an import type), every public method declares its return type, and every handler file exports its input type (when it takes input) and its result type (when it returns something) (rule 10).
+- Each repository interface refers to exactly one file in `domain/entities/`, and no type under `domain/value-objects/` is the main type a repository returns, except the snapshot of its own entity, `value-objects/<entity>-snapshot.ts`, or of its root's pinned child entity (the snapshot of another root, or any other value object, still fails). The read shapes of one repository contract (for example `RunStateView`, `StoredRunDiff`, `ClaimedLookup`) are declared in that repository's file (rule 11). A property typed as a function counts as a method, and a qualified name (`ns.Type`) is followed to its file. A root's child entities, pinned in the check (the Run step of the Run), belong to its aggregate and do not count as another entity file.
+- No entity file imports another entity file except for an id type, or a root's own pinned child entity (rule 12).
+- The four checks above apply to every module, including one with no `domain/entities/` directory: a repository interface there refers to no entity file and fails, since anything with its own repository is a root in `domain/entities/`. The fixtures use a module name the app does not have (`billing`).
+- A file under `domain/entities/` exports at most one class (error classes count, and so does `export const X = class {}`) and no functions; a file with no class is refused by the entity-class check above (rule 13).
+- No file under `domain/` exports a function other than a type guard, tests excluded: an overloaded function counts once (and is a type guard when its overload signatures are), and an arrow function behind `as` or `satisfies` counts (rule 13).
+- The aggregate roots of each module are pinned in `tests/architecture/api/pinned/aggregate-roots.json`, each with the one-line reason it is a root: adding or removing one fails `pinned.test.ts` until the record is changed in review (rule 11). A root's child entity (pinned in `aggregate-rules.ts`) is not a root.
 - A present use-case feature has a `handler.ts`; `endpoint.ts`, `schema.ts`, `input.ts`, `__tests__/` are optional.
 - Concrete read/write repository implementations belong in `infrastructure/repositories/`, adapters in `infrastructure/adapters/`.
 - Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
 - `contracts/` holds only `index.ts` and `events/`.
 - No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/`.
-- Every file in `domain/entities/` exports a class with a non-public constructor (`executions`, `projects`; all modules, by path pattern, by #170; an aggregate root is always such a class; records without behaviour that are not roots live in `domain/value-objects/`).
+- Every file in `domain/entities/` exports a class with a non-public constructor, in every module (an aggregate root is always such a class, declared or as `export const X = class {}`; records without behaviour that are not roots live in `domain/value-objects/`).
 - No `domain/services/` directory, in every module (by path pattern).
-- The list of repository methods is pinned: adding, renaming or removing a method fails until the list is changed in review, and each atomic or set-wide operation carries a one-line reason (added by #170).
-- The list of application collaborators is pinned: a new one fails until the list is changed in review (added by #170).
+- The methods of every repository interface are pinned in `tests/architecture/api/pinned/repository-methods.json`, each with its kind (`load`, `save`, `query`, `atomic` or `set-wide`): adding, renaming or removing a method fails `pinned.test.ts` until the record is changed in review, and each atomic or set-wide method carries a one-line reason it cannot be a load, a call on the domain object and a save. The failure message names the file and says what to do.
+- The files directly in a module's `application/` folder are pinned in `tests/architecture/api/pinned/application-collaborators.json`, each with the step of rule 3 that was tried and why it did not apply: a new one fails until the record is changed in review. The Epic aimed for none; one remains (`executions/application/run-lookup-requests.ts`, with its reason in the record).
+- The three pinned records state decisions and are never an allowlist: no entry makes a violation of a gate check pass. The pull request template's checkbox points to them.
 - Do **not** require empty folders, mandatory `command.ts`/`query.ts`, or `domain/events/`.
 - Static checks cannot prove where all business logic lives; thin consumer/endpoint rules need behavior tests and review.
 
-**Structure report** (not a check; added by #170): a script prints, for the API, the largest source files (flagging every file under a module's `domain/` over 400 lines: rule 13 says size is reported, not enforced), the number of methods per repository interface, the number of public methods per handler, the number of collaborators per module and the number of files per feature. CI shows it in the pull request's job summary, with the change against the base branch, and it never fails the build (§7); it runs locally with one command that #170 documents here.
+**Structure report** (not a check): `pnpm run structure:report` (`scripts/structure-report.mjs`) prints, for the API, the largest source files, every file under a module's `domain/` over 400 lines (rule 13: size is reported, not enforced), the number of methods per repository interface, the number of public methods per handler, the number of collaborators per module and the number of files per feature. With `--base-ref <git ref>` it also shows the change against that ref. CI runs it as a step of the `architecture:api` job and writes it to the pull request's job summary with the change against the base branch; the step never fails the build and adds no required check (§7, §8).
 
 ### `architecture:web` — Next.js
 
@@ -125,44 +126,45 @@ Positive and negative fixtures prove the rules catch violations:
 | A module has `entry-points/http/shared/` (the one exemption) | PASS |
 | A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/` | FAIL |
 | A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers` | FAIL |
-| A feature imports another feature of its module | FAIL (`executions` and `projects`; all modules by #170) |
-| A feature imports a port, the domain or its own files | PASS (`executions` and `projects`; all modules by #170) |
-| A test of a feature imports another feature (tests are not checked) | PASS (`executions`) |
+| A feature imports another feature of its module | FAIL |
+| A feature imports a port, the domain or its own files | PASS |
+| A test of a feature imports another feature (tests are not checked) | PASS |
 | A test of `application/` imports `platform/queue/` (tests are not checked) | PASS |
 | A production file of a module imports a test file (`__tests__/` or `*.test.ts`) | FAIL |
 | A test file imports a test helper | PASS |
-| `domain/entities/` file exports a class with a non-public constructor | PASS (`executions`, `projects`; all modules by #170) |
-| `domain/entities/` file exports a class with a public constructor, or no class | FAIL (`executions`, `projects`; all modules by #170) |
-| `entry-points/` imports a type from `domain/entities/` | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
-| `entry-points/` imports a class from `domain/entities/` | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |
-| `entry-points/` imports an error class from an errors file in `domain/value-objects/` | PASS (`executions` by #184, all modules by #170) |
-| A handler returns a snapshot, ids, values or a view type, and exports its input and result types | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
-| A handler returns an entity class, or does not export its result type | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |
-| A repository interface refers to one entity file | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
-| A repository interface refers to two entity files, or its main type is under `domain/value-objects/` | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |
-| A repository interface returns the snapshot of its own entity, or of its root's pinned child entity | PASS (`executions` by #184, all modules by #170) |
-| A repository interface returns another value object, or the snapshot of another root | FAIL (`executions` by #184, all modules by #170) |
-| An entity file imports another entity file for an id type | PASS (`projects` by #182, `executions` by #183, all modules by #170) |
-| An entity file imports another entity file for anything else | FAIL (`projects` by #182, `executions` by #183, all modules by #170) |
-| The four checks above applied to `executions` | PASS and FAIL with fixtures (added by #183) |
-| The four checks above in every module, by path pattern | PASS and FAIL with fixtures (added by #170) |
-| A `domain/entities/` file exports exactly one class and no function | PASS (`projects` by #185, `executions` by #184, all modules by #170) |
-| A `domain/entities/` file exports a second class or any function | FAIL (`projects` by #185, `executions` by #184, all modules by #170) |
-| `domain/` exports only classes, types, constants and type guards | PASS (`projects` by #185, `executions` by #184, all modules by #170) |
-| `domain/` exports a function other than a type guard | FAIL (`projects` by #185, `executions` by #184, all modules by #170) |
-| The aggregate roots match the pinned record | PASS (added by #170) |
-| An aggregate root is added or removed without updating its pinned record | FAIL (added by #170) |
+| `domain/entities/` file exports a class with a non-public constructor | PASS |
+| `domain/entities/` file exports a class with a public constructor, or no class | FAIL |
+| `entry-points/` imports a type from `domain/entities/` | PASS |
+| `entry-points/` imports a class from `domain/entities/` | FAIL |
+| `entry-points/` imports an error class from an errors file in `domain/value-objects/` | PASS |
+| A handler returns a snapshot, ids, values or a view type, and exports its input and result types | PASS |
+| A handler returns an entity class, does not export its result type, or has a public method with no declared return type | FAIL |
+| A repository interface refers to one entity file | PASS |
+| A repository interface refers to two entity files, or its main type is under `domain/value-objects/` | FAIL |
+| A repository interface returns the snapshot of its own entity, or of its root's pinned child entity | PASS |
+| A repository interface returns another value object, or the snapshot of another root | FAIL |
+| An entity file imports another entity file for an id type | PASS |
+| An entity file imports another entity file for anything else | FAIL |
+| A structure rule is broken in a module the app does not have (`billing`) | FAIL |
+| An entry point imports a repository interface or port file by any route (nested, side-effect, dynamic, re-exported by a handler) | FAIL |
+| An entry point imports an error class through a handler, or a test imports a fake from `ports/__tests__/` | PASS |
+| A `domain/entities/` file exports exactly one class and no function | PASS |
+| A `domain/entities/` file exports a second class or any function | FAIL |
+| `domain/` exports only classes, types, constants and type guards | PASS |
+| `domain/` exports a function other than a type guard | FAIL |
+| The aggregate roots match the pinned record | PASS |
+| An aggregate root is added or removed without updating its pinned record | FAIL |
 | A module has no `domain/services/` directory | PASS |
 | A module has a `domain/services/` directory | FAIL |
 | `domain/` imports only `domain/` and plain libraries | PASS |
 | `domain/` imports from `application/ports/` | FAIL |
 | A domain test imports only the domain and test helpers | PASS |
 | A domain test imports a database client or container tooling | FAIL |
-| An application collaborator imports ports and the domain | PASS (added by #170) |
-| An application collaborator imports `application/features/` | FAIL (added by #170) |
-| Repository methods and application collaborators match the pinned lists | PASS (added by #170) |
-| A repository method or application collaborator is added, renamed or removed without updating its pinned list | FAIL (added by #170) |
-| The reference module fixture (the complete approved layout) | PASS with every check (added by #170) |
+| An application collaborator imports ports and the domain | PASS |
+| An application collaborator imports `application/features/` | FAIL |
+| Repository methods and application collaborators match the pinned lists | PASS |
+| A repository method or application collaborator is added, renamed or removed without updating its pinned list | FAIL |
+| The reference module fixture (the complete approved layout) | PASS |
 | Web imports `@/modules/agents` public entrypoint | PASS |
 | Web deep-imports another module's private Zustand store | FAIL |
 | Two modules introduce a dependency cycle | FAIL |
@@ -175,19 +177,19 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 
 | # | Rule | Enforcement |
 | --- | --- | --- |
-| 1 | Features are independent | Gate check: no import between feature folders (`executions` and `projects`; all modules by #170) |
-| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1 (`executions` and `projects`), and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule |
-| 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features (added by #170); pinned test: the list of application collaborators (added by #170); the six-step order is review only |
-| 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (`executions`, `projects`; all modules by #170); where a rule sits is review only |
+| 1 | Features are independent | Gate check: no import between feature folders, in every module |
+| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1, and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule |
+| 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features; pinned test: the list of application collaborators; the six-step order is review only |
+| 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor, in every module; where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory |
-| 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests; pinned test: the list of repository methods (added by #170); that no business rule is written in the database adapter is review only |
+| 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests; pinned test: the list of repository methods; that no business rule is written in the database adapter is review only |
 | 7 | Validation has two homes | Review only |
 | 8 | `contracts/` is a module's public face | Gate check: `contracts/` holds only `index.ts` and `events/`, and the existing check that other modules import only `contracts/index.ts` |
 | 9 | Same role, same form | Review only; entity classes are also covered by the check of rule 4 |
-| 10 | Handlers own their input and result | Gate checks: nothing under `entry-points/` imports an entity class, no handler returns an entity class, and every handler exports its input and result types (`projects` by #182, `executions` by #183, all modules by #170); that a handler builds no HTTP shape is review only (rule 2 keeps HTTP APIs out of `application/`) |
-| 11 | One aggregate root, one file, one repository | Gate check: a repository interface refers to exactly one entity file and no value object is its main type (`projects` by #182, `executions` by #183, all modules by #170); pinned test: the aggregate roots of each module (added by #170); that anything with its own repository is a root is review only |
-| 12 | Aggregates refer to each other by id | Gate check: no entity file imports another entity file except for an id type (`projects` by #182, `executions` by #183, all modules by #170); that no root loads another is review only |
-| 13 | One concept per file | Gate checks: an entity file exports exactly one class and no function; `domain/` exports no function other than a type guard (`projects` by #185, `executions` by #184, all modules by #170). Size is reported by the structure report (added by #170), not enforced; that each file is one named concept is review only |
+| 10 | Handlers own their input and result | Gate checks: nothing under `entry-points/` imports an entity class, no handler returns an entity class, and every handler exports its input and result types; that a handler builds no HTTP shape is review only (rule 2 keeps HTTP APIs out of `application/`) |
+| 11 | One aggregate root, one file, one repository | Gate check: a repository interface refers to exactly one entity file and no value object is its main type; pinned test: the aggregate roots of each module; that anything with its own repository is a root is review only |
+| 12 | Aggregates refer to each other by id | Gate check: no entity file imports another entity file except for an id type; that no root loads another is review only |
+| 13 | One concept per file | Gate checks: an entity file exports exactly one class and no function; `domain/` exports no function other than a type guard. Size is reported by the structure report (§4), not enforced; that each file is one named concept is review only |
 
 Rules that are review only are covered by the specific backend items of the review report ([template](../templates/review-report.md) §2) and by the review skill's third brief, which checks only the thirteen rules against the diff. The architecture review skill (`studio-improve-codebase-architecture`) runs at the end of each Epic ([Agent roles](agent-roles.md) §6).
 
@@ -251,10 +253,11 @@ pnpm architecture:api
 pnpm architecture:web
 pnpm architecture:monorepo
 pnpm contracts:check     # CI job test:contracts
+pnpm structure:report    # the API structure report (a step of CI architecture:api, never a check)
 pnpm check:affected
 ```
 
-Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `check:agent-worker` and `test:agent-worker` run as the CI jobs `quality:agent-worker` and `test:agent-worker` (Issue #96). The CI job `deploy:server` (Issue #107) runs ShellCheck and the `deploy/tests/` suites; they need Linux, Docker and a throwaway VM, so there is no local script ([Deployment](deployment.md) §8). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
+Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm structure:report` prints the API structure report (§4; in CI a step of `architecture:api` that writes it to the job summary, with the change against the base branch, and always exits 0; locally add `--base-ref <git ref>` for the change against a ref). `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `check:agent-worker` and `test:agent-worker` run as the CI jobs `quality:agent-worker` and `test:agent-worker` (Issue #96). The CI job `deploy:server` (Issue #107) runs ShellCheck and the `deploy/tests/` suites; they need Linux, Docker and a throwaway VM, so there is no local script ([Deployment](deployment.md) §8). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
 
 For every substantive task, the implementer runs all relevant existing checks and reports exact commands, exit status, commit SHA, skips, and blockers.
 

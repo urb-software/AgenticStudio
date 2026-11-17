@@ -42,7 +42,7 @@ Each business module therefore has four layers at the top, `application/`, `doma
 
 - **A feature's handler and its endpoint are in two folders** (`application/features/<feature>/` and `entry-points/http/<caller>/`), so reading one use case end to end means opening both.
 - **Small repetition between handlers is accepted.** Step 5 of rule 3 says to repeat small logic rather than extract it, so two handlers may contain similar lines.
-- **The conversion of existing code is staged.** [Backend](../backend.md) §2 describes a layout the code does not yet have until the layout tickets of Epic #160 are merged; each gate check is listed in [Quality](../../engineering/quality.md) §4 as added by its ticket until it exists.
+- **The conversion of existing code was staged** across the tickets of Epic #160, each adding the gate checks for its part. [Quality](../../engineering/quality.md) §4 lists every check, and §5 says how each rule is enforced.
 - **No ticket changes behaviour.** Each is verified by the existing tests passing, with only imports, wiring and test placement changed. Where a database operation's concurrency guarantee cannot be kept after its rule moves into the domain, the operation stays in the repository and the ticket says why.
 - **Domain rules get unit tests that need no database**, since the domain imports no port, repository or database client.
 - **The architecture review skill runs at the end of each Epic** ([Agent roles](../../engineering/agent-roles.md) §6), to catch drift the gate cannot check.

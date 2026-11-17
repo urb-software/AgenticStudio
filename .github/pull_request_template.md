@@ -34,7 +34,7 @@ Refs #
 - [ ] Changed behavior has appropriate tests.
 - [ ] No secrets or unauthorized permissions have been introduced.
 - [ ] Applicable architecture rules and public contracts have been checked.
-- [ ] New shared backend logic or a new repository method is justified in the review notes (or not applicable).
+- [ ] New shared backend logic, a new repository method or a new aggregate root is justified in the review notes, and the matching pinned record in `tests/architecture/api/pinned/` (`application-collaborators.json`, `repository-methods.json`, `aggregate-roots.json`) is updated with its reason (or not applicable).
 - [ ] Failed and skipped checks are reported transparently.
 - [ ] The PR targets `dev` (or an approved exception is documented).
 
