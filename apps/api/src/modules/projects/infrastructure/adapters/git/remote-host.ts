@@ -4,7 +4,10 @@ import {
   REFUSED_RANGE_REASON,
   refusedRange,
 } from '../../../domain/value-objects/remote-address.js';
-import { GitOperationError, GitRequestRejectedError } from '../../../ports/repository-git.js';
+import {
+  GitOperationError,
+  GitRequestRejectedError,
+} from '../../../application/ports/repository-git.js';
 
 /** Resolves a host name to every address the system resolver returns for it. */
 export type ResolveHost = (host: string) => Promise<string[]>;

@@ -12,7 +12,7 @@ import {
   GitOperationError,
   GitRequestRejectedError,
   type GitFailureReason,
-} from '../../../../ports/repository-git.js';
+} from '../../../../application/ports/repository-git.js';
 import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
 import { addCommit, createFixture, headOf, type Fixture } from './fixtures/fixture-repos.js';
 

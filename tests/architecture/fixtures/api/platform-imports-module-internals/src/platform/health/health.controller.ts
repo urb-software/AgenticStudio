@@ -1,4 +1,4 @@
-import { ListProjectsHandler } from '../../modules/projects/features/list-projects/handler.js';
+import { ListProjectsHandler } from '../../modules/projects/application/features/list-projects/handler.js';
 
 export class HealthController {
   constructor(private readonly projects: ListProjectsHandler) {}

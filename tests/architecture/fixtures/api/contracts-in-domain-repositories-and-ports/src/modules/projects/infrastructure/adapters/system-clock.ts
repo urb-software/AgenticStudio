@@ -1,4 +1,4 @@
-import { Clock } from '../../ports/clock.js';
+import { Clock } from '../../application/ports/clock.js';
 
 export class SystemClock extends Clock {
   now(): Date {

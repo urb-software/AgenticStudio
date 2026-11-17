@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { Injectable } from '@nestjs/common';
-import type { RunLogSignal } from '../../ports/run-log-signal.js';
+import type { RunLogSignal } from '../../application/ports/run-log-signal.js';
 
 /**
  * In-process {@link RunLogSignal} (Issue #99): one event per Run id. Studio runs a single API

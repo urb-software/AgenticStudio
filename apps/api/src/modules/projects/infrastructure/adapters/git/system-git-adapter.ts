@@ -13,7 +13,7 @@ import {
   type RemoteInspection,
   type RepositoryGit,
   type SshCredentials,
-} from '../../../ports/repository-git.js';
+} from '../../../application/ports/repository-git.js';
 import { ClonePaths } from './clone-paths.js';
 import { classifyGitFailure, redactGitOutput } from './git-output.js';
 import { diskUsage, GitProcessInterrupted, runGitProcess, type SizeWatch } from './git-process.js';

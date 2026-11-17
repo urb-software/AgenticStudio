@@ -6,12 +6,12 @@ import {
   RUN_ENVIRONMENT_FILE_SECRET_OWNER,
 } from '../../domain/entities/run-environment-file.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
-import { CLOCK, type Clock } from '../../ports/clock.js';
+import { CLOCK, type Clock } from '../../application/ports/clock.js';
 import {
   type EnvironmentFileSnapshots,
   RUN_SNAPSHOT_SETTINGS,
   type RunSnapshotSettings,
-} from '../../ports/environment-file-snapshots.js';
+} from '../../application/ports/environment-file-snapshots.js';
 
 /**
  * {@link EnvironmentFileSnapshots} over the secret store (Issue #104): deletes the Environment file snapshots of Runs that are final. A final

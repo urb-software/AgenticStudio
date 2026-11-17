@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GitRequestRejectedError } from '../../../../ports/repository-git.js';
+import { GitRequestRejectedError } from '../../../../application/ports/repository-git.js';
 import { parseRemoteUrl, remoteEndpoint, sshEndpoint, type GitTransport } from '../remote-url.js';
 
 const PRODUCTION: GitTransport[] = ['ssh', 'https'];

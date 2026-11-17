@@ -1,5 +1,5 @@
 import { hostLiteral } from '../../../domain/value-objects/remote-address.js';
-import { GitRequestRejectedError } from '../../../ports/repository-git.js';
+import { GitRequestRejectedError } from '../../../application/ports/repository-git.js';
 
 /** Transports a remote URL may use. Production allows exactly `ssh` and `https`. */
 export type GitTransport = 'ssh' | 'https' | 'file';

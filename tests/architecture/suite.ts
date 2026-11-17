@@ -25,6 +25,50 @@ export const QUALITY_TABLE = [
   { row: 'Web imports `@/modules/agents` public entrypoint', expected: 'PASS', gate: 'web' },
   { row: "Web deep-imports another module's private Zustand store", expected: 'FAIL', gate: 'web' },
   { row: 'Two modules introduce a dependency cycle', expected: 'FAIL', gate: 'api' },
+  {
+    row: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: '`application/` imports only domain, ports and its own files',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  { row: '`entry-points/` imports a handler', expected: 'PASS', gate: 'api' },
+  {
+    row: '`entry-points/` imports a repository interface, port or infrastructure file',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  { row: '`contracts/` holds `index.ts` and `events/` only', expected: 'PASS', gate: 'api' },
+  { row: '`contracts/` holds another file', expected: 'FAIL', gate: 'api' },
+  { row: '`contracts/` holds another directory', expected: 'FAIL', gate: 'api' },
+  {
+    row: 'An entry-point file other than the pinned one imports a pinned port',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'The pinned entry-point file imports a port other than its two',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A module has `entry-points/http/shared/` (the one exemption)',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
 ] as const;
 
 export interface FixtureCase {

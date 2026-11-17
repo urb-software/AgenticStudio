@@ -66,7 +66,11 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'handler-imports-queue-client',
-    expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
+    expected: [
+      'api-application-no-http-queue-scheduler-libraries',
+      'api-features-no-concrete-adapters',
+      'api-features-no-reachable-adapters',
+    ],
   },
   { fixture: 'domain-imports-docker-client', expected: ['api-domain-independent'] },
   { fixture: 'unresolved-relative-import', expected: ['api-local-imports-resolve'] },
@@ -144,7 +148,11 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'unresolved-workspace-import', expected: ['api-local-imports-resolve'] },
   {
     fixture: 'handler-imports-framework-queue-integration',
-    expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
+    expected: [
+      'api-application-no-http-queue-scheduler-libraries',
+      'api-features-no-concrete-adapters',
+      'api-features-no-reachable-adapters',
+    ],
   },
   { fixture: 'port-imports-framework-orm-integration', expected: ['api-ports-independent'] },
   { fixture: 'contracts-reexport-client-wrapper', expected: ['api-contracts-self-contained'] },
@@ -214,6 +222,116 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'module-uses-other-module-public-contract', expected: [] },
   {
     fixture: 'module-imports-other-module-http-contract',
-    expected: ['api-cross-module-contracts-index-only'],
+    expected: ['api-contracts-only-index-and-events', 'api-cross-module-contracts-index-only'],
+  },
+  { fixture: 'module-imports-other-module-http-shared', expected: ['api-no-cross-module-private'] },
+  // The checks the approved module layout makes possible (Issue #162).
+  {
+    fixture: 'application-imports-only-domain-ports-and-own-files',
+    expected: [],
+    qualityRow: '`application/` imports only domain, ports and its own files',
+  },
+  {
+    fixture: 'application-imports-schema-openapi-and-scheduler-libraries',
+    expected: ['api-application-no-http-queue-scheduler-libraries'],
+    qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
+  },
+  {
+    fixture: 'application-imports-http-decorators',
+    expected: ['api-application-no-http-decorators'],
+    qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
+  },
+  {
+    fixture: 'entry-point-imports-handlers-schemas-shared-shapes-and-domain-errors',
+    expected: [],
+    qualityRow: '`entry-points/` imports a handler',
+  },
+  {
+    fixture: 'entry-point-imports-repository-interface',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
+  },
+  {
+    fixture: 'entry-point-imports-port-token',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
+  },
+  {
+    fixture: 'entry-point-imports-infrastructure',
+    expected: [
+      'api-entry-points-no-ports-or-infrastructure',
+      'api-features-no-concrete-adapters',
+      'api-features-no-reachable-adapters',
+    ],
+    qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
+  },
+  // The one pinned exemption, removed by #166, and proof that it does not widen.
+  { fixture: 'entry-point-pinned-exemption-stream-run-events', expected: [] },
+  {
+    fixture: 'entry-point-other-file-imports-pinned-port',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: 'An entry-point file other than the pinned one imports a pinned port',
+  },
+  {
+    fixture: 'entry-point-pinned-file-imports-third-port',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: 'The pinned entry-point file imports a port other than its two',
+  },
+  {
+    fixture: 'contracts-index-and-events-only',
+    expected: [],
+    qualityRow: '`contracts/` holds `index.ts` and `events/` only',
+  },
+  {
+    fixture: 'contracts-holds-extra-file',
+    expected: ['api-contracts-only-index-and-events'],
+    qualityRow: '`contracts/` holds another file',
+  },
+  {
+    fixture: 'contracts-holds-extra-directory',
+    expected: ['api-contracts-only-index-and-events'],
+    qualityRow: '`contracts/` holds another directory',
+  },
+  {
+    fixture: 'http-shared-directory-is-the-one-exemption',
+    expected: [],
+    qualityRow: 'A module has `entry-points/http/shared/` (the one exemption)',
+  },
+  {
+    fixture: 'shared-directory-outside-http-shared',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+    qualityRow:
+      'A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/`',
+  },
+  {
+    fixture: 'http-shared-subdirectory-utils',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+    qualityRow:
+      'A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers`',
+  },
+  {
+    fixture: 'entry-points-shared-directory-outside-http',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'http-caller-shared-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'domain-helpers-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'infrastructure-common-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'feature-utils-directory',
+    expected: ['api-no-shared-common-utils-helpers-directory'],
+  },
+  {
+    fixture: 'application-imports-nestjs-common-as-namespace',
+    expected: ['api-application-no-http-decorators'],
+    qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
   },
 ]);

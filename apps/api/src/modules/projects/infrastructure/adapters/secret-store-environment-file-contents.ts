@@ -6,7 +6,7 @@ import {
   type SecretStore,
 } from '../../../../platform/secrets/index.js';
 import { ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/entities/environment-file.js';
-import type { EnvironmentFileContents } from '../../ports/environment-file-contents.js';
+import type { EnvironmentFileContents } from '../../application/ports/environment-file-contents.js';
 
 /**
  * How old an unreferenced content must be before the orphan sweep deletes it: far longer than

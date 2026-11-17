@@ -33,7 +33,7 @@ A clean unit-test result proves neither architectural correctness nor safe behav
 
 ### `architecture:api` — NestJS
 
-The module layout and the nine structure rules are canonical in [Backend](../architecture/backend.md) §2 and §3 ([ADR 0003](../architecture/adr/0003-api-module-layout.md)). Checks below that the layout tickets of Epic #160 have not yet delivered are marked "(added by #n)"; the ticket that adds a check removes its marker, so this document never claims a check exists before it does. The existing rules that name `features/`, `ports/` and `contracts/http/` are re-pointed to the new layout by #162.
+The module layout and the nine structure rules are canonical in [Backend](../architecture/backend.md) §2 and §3 ([ADR 0003](../architecture/adr/0003-api-module-layout.md)). Checks below that the layout tickets of Epic #160 have not yet delivered are marked "(added by #n)"; the ticket that adds a check removes its marker, so this document never claims a check exists before it does. The rules that name features, ports, entry points and contracts use the new paths (`application/features/`, `application/ports/`, `entry-points/`, `contracts/`).
 
 **Dependency rules** (Dependency Cruiser or equivalent):
 
@@ -44,8 +44,8 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - No prohibited cycles between modules or layers.
 - Event consumers use the owning module's public contract and do not bypass module boundaries.
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
-- `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API (added by #162).
-- `entry-points/` imports no repository interface, port or infrastructure file (added by #162).
+- `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API: no `nestjs-zod`, `@nestjs/swagger`, `class-validator`, `class-transformer`, `express`, `@nestjs/platform-express`, `bullmq`, `@nestjs/bullmq`, `@nestjs/schedule`, `node-cron`, `cron`, Node `http`/`https`/`http2`, and no controller, route or parameter decorator from `@nestjs/common` (`Controller`, `Get`, `Body`, `UseGuards`, …). Plain `zod` and `platform/queue/` stay allowed for now; #164 tightens `platform/queue/` for `application/`.
+- `entry-points/` imports nothing from `infrastructure/`, and from a repository interface or port file only domain error classes (imported names ending in `Error`), so an entry point reaches the application through handlers. **One pinned exemption, removed by #166:** `executions/entry-points/http/operator/stream-run-events/endpoint.ts` injects the `operator-sessions` and `run-log-settings` ports itself; the same import from any other file fails.
 - No import from one feature folder into another feature folder of the same module (added by #164 for `projects`; for `executions` by #166; for all modules, by path pattern, by #170).
 - `domain/` imports nothing from `application/ports/` (added by #168).
 - Domain tests import no database client or container tooling (added by #168).
@@ -56,8 +56,8 @@ The module layout and the nine structure rules are canonical in [Backend](../arc
 - A present use-case feature has a `handler.ts`; `endpoint.ts`, `schema.ts`, `input.ts`, `__tests__/` are optional.
 - Concrete read/write repository implementations belong in `infrastructure/repositories/`, adapters in `infrastructure/adapters/`.
 - Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
-- `contracts/` holds only `index.ts` and `events/` (added by #162).
-- No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/` (added by #162).
+- `contracts/` holds only `index.ts` and `events/`.
+- No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/`.
 - Every file in `domain/entities/` exports a class with a non-public constructor (added by #165 for `projects`; for `executions` by #167; for all modules, by path pattern, by #170).
 - No `domain/services/` directory (added by #168).
 - The list of repository methods is pinned: a new method fails until the list is changed in review (added by #170).
@@ -106,14 +106,18 @@ Positive and negative fixtures prove the rules catch violations:
 | Two modules define the same integration event | FAIL |
 | Integration event re-exported by another module or under another name | FAIL |
 | Repository contract declared outside `domain/repositories/` | FAIL |
-| `application/` imports an HTTP, schema, OpenAPI, queue or scheduler API | FAIL (added by #162) |
-| `application/` imports only domain, ports and its own files | PASS (added by #162) |
-| `entry-points/` imports a handler | PASS (added by #162) |
-| `entry-points/` imports a repository interface, port or infrastructure file | FAIL (added by #162) |
-| `contracts/` holds `index.ts` and `events/` only | PASS (added by #162) |
-| `contracts/` holds another file or directory | FAIL (added by #162) |
-| A module has `entry-points/http/shared/` (the one exemption) | PASS (added by #162) |
-| A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/` | FAIL (added by #162) |
+| `application/` imports an HTTP, schema, OpenAPI, queue or scheduler API | FAIL |
+| `application/` imports only domain, ports and its own files | PASS |
+| `entry-points/` imports a handler | PASS |
+| `entry-points/` imports a repository interface, port or infrastructure file | FAIL |
+| An entry-point file other than the pinned one imports a pinned port (one pinned exemption, removed by #166) | FAIL |
+| The pinned entry-point file imports a port other than its two (removed by #166) | FAIL |
+| `contracts/` holds `index.ts` and `events/` only | PASS |
+| `contracts/` holds another file | FAIL |
+| `contracts/` holds another directory | FAIL |
+| A module has `entry-points/http/shared/` (the one exemption) | PASS |
+| A module has a `shared`, `common`, `utils` or `helpers` directory, e.g. `application/shared/` | FAIL |
+| A subdirectory of `entry-points/http/shared/` is named `shared`, `common`, `utils` or `helpers` | FAIL |
 | A feature imports another feature of its module | FAIL (added by #164 for `projects`; `executions` by #166; all modules by #170) |
 | A feature imports a port, the domain or its own files | PASS (added by #164 for `projects`; `executions` by #166; all modules by #170) |
 | `domain/entities/` file exports a class with a non-public constructor | PASS (added by #165 for `projects`; `executions` by #167; all modules by #170) |
@@ -142,13 +146,13 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | # | Rule | Enforcement |
 | --- | --- | --- |
 | 1 | Features are independent | Gate check: no import between feature folders (added by #164 for `projects`; `executions` by #166; all modules by #170) |
-| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file (added by #162); handlers never call each other, through the check of rule 1 (added by #164). Review only: that an entry point holds no business rule |
-| 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory (added by #162), collaborators never import features (added by #170); pinned test: the list of application collaborators (added by #170); the six-step order is review only |
+| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1 (added by #164). Review only: that an entry point holds no business rule |
+| 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features (added by #170); pinned test: the list of application collaborators (added by #170); the six-step order is review only |
 | 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor (added by #165 for `projects`; `executions` by #167; all modules by #170); where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory (added by #168) |
 | 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests (added by #168); pinned test: the list of repository methods (added by #170); that no business rule is written in the database adapter is review only |
 | 7 | Validation has two homes | Review only |
-| 8 | `contracts/` is a module's public face | Gate check: `contracts/` holds only `index.ts` and `events/` (added by #162), and the existing check that other modules import only `contracts/index.ts` |
+| 8 | `contracts/` is a module's public face | Gate check: `contracts/` holds only `index.ts` and `events/`, and the existing check that other modules import only `contracts/index.ts` |
 | 9 | Same role, same form | Review only; entity classes are also covered by the check of rule 4 |
 
 Rules that are review only are covered by the specific backend items of the review report ([template](../templates/review-report.md) §2) and by the review skill's third brief, which checks only the nine rules against the diff. The architecture review skill (`studio-improve-codebase-architecture`) runs at the end of each Epic ([Agent roles](agent-roles.md) §6).

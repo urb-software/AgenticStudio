@@ -5,50 +5,50 @@ import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { RUN_ENVIRONMENT_FILES, RUN_START_POINTS } from './contracts/index.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
-import { CleanUpRepositoryHandler } from './features/clean-up-repository/handler.js';
-import { CloneRepositoryHandler } from './features/clone-repository/handler.js';
-import { ConnectRepositoryEndpoint } from './features/connect-repository/endpoint.js';
+import { CleanUpRepositoryHandler } from './application/features/clean-up-repository/handler.js';
+import { CloneRepositoryHandler } from './application/features/clone-repository/handler.js';
+import { ConnectRepositoryEndpoint } from './entry-points/http/operator/connect-repository/endpoint.js';
 import {
   CONNECT_REPOSITORY_SETTINGS,
   ConnectRepositoryHandler,
   type ConnectRepositorySettings,
-} from './features/connect-repository/handler.js';
-import { DisconnectRepositoryEndpoint } from './features/disconnect-repository/endpoint.js';
-import { DisconnectRepositoryHandler } from './features/disconnect-repository/handler.js';
-import { FetchRepositoryEndpoint } from './features/fetch-repository/endpoint.js';
-import { FetchRepositoryHandler } from './features/fetch-repository/handler.js';
-import { CreateProjectEndpoint } from './features/create-project/endpoint.js';
+} from './application/features/connect-repository/handler.js';
+import { DisconnectRepositoryEndpoint } from './entry-points/http/operator/disconnect-repository/endpoint.js';
+import { DisconnectRepositoryHandler } from './application/features/disconnect-repository/handler.js';
+import { FetchRepositoryEndpoint } from './entry-points/http/operator/fetch-repository/endpoint.js';
+import { FetchRepositoryHandler } from './application/features/fetch-repository/handler.js';
+import { CreateProjectEndpoint } from './entry-points/http/operator/create-project/endpoint.js';
 import {
   DeployKeyHandler,
   SSH_TRUST_SETTINGS,
   type SshTrustSettings,
-} from './features/deploy-key/handler.js';
-import { CreateProjectHandler } from './features/create-project/handler.js';
-import { GetProjectEndpoint } from './features/get-project/endpoint.js';
-import { GetProjectHandler } from './features/get-project/handler.js';
-import { GetRepositoryEndpoint } from './features/get-repository/endpoint.js';
-import { GetRepositoryHandler } from './features/get-repository/handler.js';
-import { GetEnvironmentFileEndpoint } from './features/get-environment-file/endpoint.js';
-import { GetEnvironmentFileHandler } from './features/get-environment-file/handler.js';
-import { GetRunEnvironmentFileHandler } from './features/get-run-environment-file/handler.js';
-import { RemoveEnvironmentFileEndpoint } from './features/remove-environment-file/endpoint.js';
-import { RemoveEnvironmentFileHandler } from './features/remove-environment-file/handler.js';
-import { SetEnvironmentFileEndpoint } from './features/set-environment-file/endpoint.js';
-import { SetEnvironmentFileHandler } from './features/set-environment-file/handler.js';
-import { SweepOrphanedEnvironmentFilesHandler } from './features/sweep-orphaned-environment-files/handler.js';
-import { GetRunStartPointHandler } from './features/get-run-start-point/handler.js';
-import { ListProjectsEndpoint } from './features/list-projects/endpoint.js';
-import { ListProjectsHandler } from './features/list-projects/handler.js';
-import { FetchCloneHandler } from './features/fetch-clone/handler.js';
-import { RepositoryJobsHandler } from './features/repository-jobs/handler.js';
+} from './application/features/deploy-key/handler.js';
+import { CreateProjectHandler } from './application/features/create-project/handler.js';
+import { GetProjectEndpoint } from './entry-points/http/operator/get-project/endpoint.js';
+import { GetProjectHandler } from './application/features/get-project/handler.js';
+import { GetRepositoryEndpoint } from './entry-points/http/operator/get-repository/endpoint.js';
+import { GetRepositoryHandler } from './application/features/get-repository/handler.js';
+import { GetEnvironmentFileEndpoint } from './entry-points/http/operator/get-environment-file/endpoint.js';
+import { GetEnvironmentFileHandler } from './application/features/get-environment-file/handler.js';
+import { GetRunEnvironmentFileHandler } from './application/features/get-run-environment-file/handler.js';
+import { RemoveEnvironmentFileEndpoint } from './entry-points/http/operator/remove-environment-file/endpoint.js';
+import { RemoveEnvironmentFileHandler } from './application/features/remove-environment-file/handler.js';
+import { SetEnvironmentFileEndpoint } from './entry-points/http/operator/set-environment-file/endpoint.js';
+import { SetEnvironmentFileHandler } from './application/features/set-environment-file/handler.js';
+import { SweepOrphanedEnvironmentFilesHandler } from './application/features/sweep-orphaned-environment-files/handler.js';
+import { GetRunStartPointHandler } from './application/features/get-run-start-point/handler.js';
+import { ListProjectsEndpoint } from './entry-points/http/operator/list-projects/endpoint.js';
+import { ListProjectsHandler } from './application/features/list-projects/handler.js';
+import { FetchCloneHandler } from './application/features/fetch-clone/handler.js';
+import { RepositoryJobsHandler } from './application/features/repository-jobs/handler.js';
 import {
   DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS,
   DEPLOY_KEY_SWEEP_SETTINGS,
   type DeployKeySweepSettings,
   SweepOrphanedDeployKeysHandler,
-} from './features/sweep-orphaned-deploy-keys/handler.js';
-import { VerifyRepositoryEndpoint } from './features/verify-repository/endpoint.js';
-import { VerifyRepositoryHandler } from './features/verify-repository/handler.js';
+} from './application/features/sweep-orphaned-deploy-keys/handler.js';
+import { VerifyRepositoryEndpoint } from './entry-points/http/operator/verify-repository/endpoint.js';
+import { VerifyRepositoryHandler } from './application/features/verify-repository/handler.js';
 import {
   SystemGitAdapter,
   type SystemGitSettings,
@@ -56,10 +56,10 @@ import {
 } from './infrastructure/adapters/git/system-git-adapter.js';
 import { PrismaProjectRepository } from './infrastructure/repositories/prisma-project-repository.js';
 import { SecretStoreEnvironmentFileContents } from './infrastructure/adapters/secret-store-environment-file-contents.js';
-import { ENVIRONMENT_FILE_CONTENTS } from './ports/environment-file-contents.js';
+import { ENVIRONMENT_FILE_CONTENTS } from './application/ports/environment-file-contents.js';
 import { PrismaEnvironmentFileRepository } from './infrastructure/repositories/prisma-environment-file-repository.js';
-import { REPOSITORY_JOBS } from './ports/repository-jobs.js';
-import { REPOSITORY_GIT } from './ports/repository-git.js';
+import { REPOSITORY_JOBS } from './application/ports/repository-jobs.js';
+import { REPOSITORY_GIT } from './application/ports/repository-git.js';
 
 /**
  * Test seam of the module (like the job queue's worker tuning): tests pass shorter Git limits

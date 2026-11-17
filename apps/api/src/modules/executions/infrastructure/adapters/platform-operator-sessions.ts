@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OperatorSessionCheck } from '../../../../platform/auth/operator-session-check.js';
-import type { OperatorSessions } from '../../ports/operator-sessions.js';
+import type { OperatorSessions } from '../../application/ports/operator-sessions.js';
 
 /** {@link OperatorSessions} over the platform's read-only operator session check. */
 @Injectable()

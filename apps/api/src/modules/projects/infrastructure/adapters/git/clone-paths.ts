@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { lstat, mkdir } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { isSameOrInside } from '../../../../../platform/config/config.js';
-import { GitRequestRejectedError } from '../../../ports/repository-git.js';
+import { GitRequestRejectedError } from '../../../application/ports/repository-git.js';
 
 /** A canonical, lowercase UUID: the only accepted project id. */
 const PROJECT_ID = /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/;

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GitRequestRejectedError } from '../../../../ports/repository-git.js';
+import { GitRequestRejectedError } from '../../../../application/ports/repository-git.js';
 import { ClonePaths } from '../clone-paths.js';
 
 const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
