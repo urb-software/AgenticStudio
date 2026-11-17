@@ -9,11 +9,11 @@ import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
-import { runView } from '../../../../domain/services/follow-up-context.js';
-import type { RetentionPolicy } from '../../../ports/retention-policy.js';
+import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { FollowUpRunHandler } from '../handler.js';
 import {
   type ReviewComment,
+  ReviewCommentSet,
   ReviewCommentsNotLoadedError,
 } from '../../../../domain/value-objects/review-comments.js';
 
@@ -42,12 +42,31 @@ const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
 const T0 = new Date('2026-11-16T12:00:00.000Z');
 const T1 = new Date('2026-11-16T12:30:00.000Z');
 const LEASE = { seconds: 60 };
-const RETENTION: RetentionPolicy = {
+/** What the single-Run answers add to a Run, with the facts fetched from the fake store. */
+const runView = (
+  run: Run,
+  workers: WorkerStatusStore,
+  now: Date,
+  leaseSeconds: number,
+  retention: RetentionPolicy,
+  overLimit = false,
+) =>
+  retention.runView(
+    run,
+    {
+      holderLastSeen: run.lastClaimedBy === null ? undefined : workers.lastSeen(run.lastClaimedBy),
+      latest: workers.latest(),
+    },
+    now,
+    leaseSeconds,
+    overLimit,
+  );
+const RETENTION = RetentionPolicy.of({
   days: 7,
   maxPerProject: 10,
   openPullRequestIdleDays: 30,
   hoursAfterPullRequestEnd: 24,
-};
+});
 const DAY = 24 * 60 * 60_000;
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',
@@ -185,16 +204,19 @@ describe('FollowUpRunHandler', () => {
       createdAt: '2026-11-16T10:00:00.000Z',
     });
     const load = (runId: string) =>
-      runs.reviewSets.set(runId, {
-        scope: 'unresolved',
-        comments: [
-          comment('conversation-1', 'octocat'),
-          comment('conversation-2', 'octocat'),
-          comment('conversation-3', 'stranger'),
-        ],
-        truncated: false,
-        loadedAt: T0,
-      });
+      runs.reviewSets.set(
+        runId,
+        ReviewCommentSet.restore({
+          scope: 'unresolved',
+          comments: [
+            comment('conversation-1', 'octocat'),
+            comment('conversation-2', 'octocat'),
+            comment('conversation-3', 'stranger'),
+          ],
+          truncated: false,
+          loadedAt: T0,
+        }),
+      );
 
     it('records the source, how many comments and their authors, and removes the loaded set', async () => {
       const run = await finished();

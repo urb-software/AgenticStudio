@@ -1,3 +1,3 @@
-import type { GitClient } from '../../domain/services/git-client.js';
+import type { GitClient } from '../../domain/value-objects/git-client.js';
 
 export type GitPort = GitClient;

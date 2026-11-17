@@ -6,10 +6,10 @@ import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
 } from '../../../domain/repositories/run-lookup-repository.js';
-import { prepareFailingChecksDraft } from '../../../domain/services/failing-checks-draft.js';
-import { sanitizeReviewComments } from '../../../domain/services/review-comments.js';
-import { safeCheckLink } from '../../../domain/services/check-links.js';
-import { redactLogText } from '../../../domain/services/log-redaction.js';
+import { CheckLink } from '../../../domain/value-objects/check-link.js';
+import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
+import { PreparedFollowUp } from '../../../domain/value-objects/prepared-follow-up.js';
+import { ReviewCommentSet } from '../../../domain/value-objects/review-comments.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
@@ -64,17 +64,17 @@ export class ReportLookupResultHandler {
     if (answer.ok) {
       if (answer.kind !== kind) throw new LookupKindMismatchError();
       // Text from CI jobs is redacted like the Run's log: with the Run's known secret values too.
-      const known = await this.secrets.forRun(found.runId);
+      const redaction = LogRedaction.of(await this.secrets.forRun(found.runId));
       // A check's link that redaction would break is replaced by the pull request's checks page.
       const pull = (await this.runs.findById(found.runId))?.pullRequest;
       const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
       if (answer.kind === 'review_comments') {
         // Comments are untrusted text from the Git host: redacted (with the Run's known secret
         // values too) and held to their limits before they are stored (Issue #146).
-        const clean = sanitizeReviewComments(
+        const clean = ReviewCommentSet.sanitize(
           answer.result.comments,
           answer.result.truncated,
-          known,
+          redaction,
         );
         const stored = await this.lookups.completeReviewComments(
           lookupId,
@@ -89,7 +89,7 @@ export class ReportLookupResultHandler {
         const stored = await this.lookups.completeFailingCheckLogs(
           lookupId,
           answer.workerId,
-          prepareFailingChecksDraft(answer.result, known, fallbackUrl),
+          PreparedFollowUp.fromFailingChecks(answer.result, redaction, fallbackUrl),
           now,
         );
         if (stored === 'not_held') throw new LookupNotHeldError();
@@ -114,8 +114,8 @@ export class ReportLookupResultHandler {
                 // Names and links come from CI jobs: masked like any log text.
                 checks: checks.map((check) => ({
                   ...check,
-                  name: redactLogText(check.name, known),
-                  url: safeCheckLink(check.url, known, fallbackUrl),
+                  name: redaction.text(check.name),
+                  url: CheckLink.of(check.url).safe(redaction, fallbackUrl),
                 })),
               }),
           ...(checksUnavailable === undefined ? {} : { checksUnavailable }),
@@ -125,7 +125,7 @@ export class ReportLookupResultHandler {
       if (outcome === 'not_held') throw new LookupNotHeldError();
       return;
     }
-    const error = redactLogText(answer.error, []).slice(0, LOOKUP_ERROR_MAX_LENGTH);
+    const error = LogRedaction.NONE.text(answer.error).slice(0, LOOKUP_ERROR_MAX_LENGTH);
     const retry = retryDelaySeconds({
       code: answer.code,
       error,

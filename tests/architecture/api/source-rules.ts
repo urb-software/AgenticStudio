@@ -334,7 +334,7 @@ function locate(
  * Follows re-exports (`export { X } from`, `export *`, `import { X }` + `export { X }`) and
  * re-badging declarations (`type Y = X`, `interface Y extends X {}`) from `path` to the file
  * that declares the contract, so a barrel or alias in `ports/` cannot pass off a contract
- * declared in `features/` or `domain/services/`. If none is found, `path` itself is reported.
+ * declared in `features/` or in the domain. If none is found, `path` itself is reported.
  */
 function declarationOf(
   baseDir: string,

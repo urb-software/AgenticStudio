@@ -19,7 +19,7 @@ import {
 import {
   type ReviewComment,
   ReviewCommentsNotLoadedError,
-  type ReviewCommentSet,
+  ReviewCommentSet,
 } from '../../value-objects/review-comments.js';
 import { Task } from '../../value-objects/task.js';
 
@@ -512,12 +512,13 @@ describe('Run.followUp', () => {
     text: `Comment ${id}`,
     createdAt: T0.toISOString(),
   });
-  const loaded = (...comments: ReviewComment[]): ReviewCommentSet => ({
-    scope: 'unresolved',
-    comments,
-    truncated: false,
-    loadedAt: T0,
-  });
+  const loaded = (...comments: ReviewComment[]): ReviewCommentSet =>
+    ReviewCommentSet.restore({
+      scope: 'unresolved',
+      comments,
+      truncated: false,
+      loadedAt: T0,
+    });
 
   it.each(FINAL_STATES)(
     'queues a Follow-up for a %s Run: the earlier part is recorded, the earlier result cleared',

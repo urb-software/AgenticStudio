@@ -11,9 +11,9 @@ import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   PROVIDER_UNAVAILABLE_REASONS,
-  providerAvailability,
   ProviderUnavailableError,
-} from '../../../domain/services/provider-availability.js';
+  WorkerStatus,
+} from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_LIMITS, type RunLimitsSetting } from '../../ports/run-limits.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -73,7 +73,7 @@ export class StartRunHandler {
   }
 
   private assertAvailable(provider: Provider): void {
-    const availability = providerAvailability(
+    const availability = WorkerStatus.providerAvailability(
       this.statuses.latest(),
       this.clock.now(),
       this.lease.seconds,

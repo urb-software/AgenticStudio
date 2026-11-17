@@ -7,7 +7,7 @@ import {
   StepLimitReachedError,
   StepOutOfOrderError,
 } from '../../../../domain/repositories/run-repository.js';
-import { REDACTED } from '../../../../domain/services/log-redaction.js';
+import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ReportRunStepHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';

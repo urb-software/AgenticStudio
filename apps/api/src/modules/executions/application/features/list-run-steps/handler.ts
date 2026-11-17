@@ -7,7 +7,7 @@ import {
   RunNotFoundError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
-import { redactLogText } from '../../../domain/services/log-redaction.js';
+import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
 /** The part of a stored structured result the operator sees at the end of a Run step. */
@@ -41,8 +41,8 @@ export class ListRunStepsHandler {
 
   async execute(runId: string): Promise<RunStepView[]> {
     if (!isRunId(runId) || !(await this.runs.findById(runId))) throw new RunNotFoundError();
-    const known = await this.secrets.forRun(runId);
-    const redact = (text: string) => redactLogText(text, known);
+    const redaction = LogRedaction.of(await this.secrets.forRun(runId));
+    const redact = (text: string) => redaction.text(text);
     const steps = await this.runs.listSteps(runId);
     return steps.map((step) => {
       // Validated by the shared contract when it was reported.

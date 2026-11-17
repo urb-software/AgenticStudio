@@ -11,7 +11,7 @@ import {
   StepOutOfOrderError,
 } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
-import { redactRunStepResult, redactWorkingCopy } from '../../../domain/services/log-redaction.js';
+import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
 export interface ReportRunStepInput extends RunStepRecord {
@@ -47,11 +47,11 @@ export class ReportRunStepHandler {
     if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
       throw new RunNotFoundError();
     }
-    const known = await this.secrets.forRun(input.runId);
+    const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
     // Issue #103: the session reference is an opaque id the resume needs exactly, so it is
     // neither redacted nor kept in the stored result; it is stored on the Run (internal).
     const { sessionRef, ...shown } = runStepResultSchema.parse(input.result);
-    const result = redactRunStepResult(shown, known);
+    const result = redaction.runStepResult(shown);
     const question = questionOf(result);
     const outcome = await this.runs.appendStep(
       input.runId,
@@ -63,7 +63,7 @@ export class ReportRunStepHandler {
         ...(question ? { question } : {}),
         ...(typeof sessionRef === 'string' ? { sessionRef } : {}),
       },
-      redactWorkingCopy(input.workingCopy, known),
+      redaction.workingCopy(input.workingCopy),
       // From the redacted result: the names are shown on the Run page.
       failingChecks(result),
       this.clock.now(),

@@ -5,7 +5,7 @@ import { ApiProblemResponses } from '../../../../../../platform/http/problem-det
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
 import { RunEventPageDto, toRunEventResponse } from '../../shared/run-event-response.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { REDACTED } from '../../../../domain/services/log-redaction.js';
+import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ListRunEventsHandler } from '../../../../application/features/list-run-events/handler.js';
 import { ListRunEventsQueryDto } from './schema.js';
 

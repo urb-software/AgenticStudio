@@ -1,6 +1,6 @@
 import type { WorkerDisk } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import { anyWorkerConnected } from '../../../domain/services/follow-up-context.js';
+import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
@@ -27,7 +27,7 @@ export class GetAgentWorkerHandler {
 
   execute(): AgentWorkerView {
     const latest = this.statuses.latest();
-    const connected = anyWorkerConnected(this.statuses, this.clock.now(), this.lease.seconds);
+    const connected = WorkerStatus.isAnyConnected(latest, this.clock.now(), this.lease.seconds);
     if (!connected || latest?.disk === undefined) return { connected };
     return {
       connected,

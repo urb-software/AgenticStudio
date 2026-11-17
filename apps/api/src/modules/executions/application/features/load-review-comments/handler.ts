@@ -6,9 +6,7 @@ import {
   ReviewCommentsLoadRunningError,
   type ReviewCommentsView,
 } from '../../../domain/value-objects/review-comments.js';
-import { followUpEligibility, FollowUpNotAllowedError } from '../../../domain/entities/run.js';
-import { followUpContext } from '../../../domain/services/follow-up-context.js';
-import { reviewCommentsView } from '../../../domain/services/review-comments.js';
+import { FollowUpNotAllowedError } from '../../../domain/entities/run.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import {
@@ -57,9 +55,14 @@ export class LoadReviewCommentsHandler {
     if (!found) throw new RunNotFoundError();
     if (!canRefreshPullRequest(found)) throw new PullRequestNotRefreshableError();
     const now = this.clock.now();
-    const eligibility = followUpEligibility(
-      found,
-      followUpContext(found, this.workers, now, this.lease.seconds),
+    const eligibility = found.followUpAvailability(
+      {
+        holderLastSeen:
+          found.lastClaimedBy === null ? undefined : this.workers.lastSeen(found.lastClaimedBy),
+        latest: this.workers.latest(),
+      },
+      now,
+      this.lease.seconds,
     );
     if (!eligibility.allowed) throw new FollowUpNotAllowedError(eligibility.reason);
     const outcome = await this.lookups.request(found.id, 'review_comments', now, {
@@ -68,9 +71,6 @@ export class LoadReviewCommentsHandler {
     });
     if (outcome === 'not_possible') throw new PullRequestNotRefreshableError();
     if (outcome === 'open') throw new ReviewCommentsLoadRunningError();
-    return reviewCommentsView(
-      await this.comments.findReviewComments(found.id),
-      this.operator.login,
-    );
+    return (await this.comments.findReviewComments(found.id)).view(this.operator.login);
   }
 }

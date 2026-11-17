@@ -116,7 +116,8 @@ import { OPERATOR_SESSIONS } from './application/ports/operator-sessions.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './application/ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL } from './application/ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from './application/ports/run-secret-values.js';
-import { RETENTION_POLICY, type RetentionPolicy } from './application/ports/retention-policy.js';
+import { RETENTION_POLICY } from './application/ports/retention-policy.js';
+import { RetentionPolicy } from './domain/value-objects/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from './application/ports/worker-lease.js';
 import { WORKER_STATUS_STORE } from './application/ports/worker-status-store.js';
 
@@ -228,7 +229,7 @@ export class ExecutionsModule {
         },
         {
           provide: RETENTION_POLICY,
-          useFactory: (config: AppConfig): RetentionPolicy => ({ ...config.retention }),
+          useFactory: (config: AppConfig): RetentionPolicy => RetentionPolicy.of(config.retention),
           inject: [APP_CONFIG],
         },
         {

@@ -12,7 +12,7 @@ import {
   RunNotHeldError,
   type RunRepository,
 } from '../../../domain/repositories/run-repository.js';
-import { redactLogText } from '../../../domain/services/log-redaction.js';
+import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
@@ -52,10 +52,10 @@ export class AppendRunEventsHandler {
     if (!isRunId(input.runId) || !(await this.runs.findById(input.runId))) {
       throw new RunNotFoundError();
     }
-    const known = await this.secrets.forRun(input.runId);
+    const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
     const events = input.events.map((event): RunEvent => {
       // Redaction first: it can lengthen a text, and the cut must not split a secret open.
-      const { text, cut } = cutToBytes(redactLogText(event.text, known), RUN_EVENT_TEXT_MAX_BYTES);
+      const { text, cut } = cutToBytes(redaction.text(event.text), RUN_EVENT_TEXT_MAX_BYTES);
       return {
         seq: event.seq,
         at: new Date(event.at),

@@ -7,7 +7,7 @@ import { redactSecrets } from '../../../../../../platform/http/redact.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound, tooManyLogStreams } from '../../shared/problems.js';
 import { toRunEventResponse } from '../../shared/run-event-response.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { REDACTED } from '../../../../domain/services/log-redaction.js';
+import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import {
   KEEP_ALIVE,
   type RunLogStreamItem,

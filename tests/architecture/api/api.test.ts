@@ -454,4 +454,44 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entities-are-classes-with-non-public-constructors'],
     qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
   },
+  // `domain/` has no services, imports no port, and its tests need no database (Issue #168).
+  {
+    fixture: 'domain-has-no-services-directory',
+    expected: [],
+    qualityRow: 'A module has no `domain/services/` directory',
+  },
+  {
+    fixture: 'domain-has-services-directory',
+    expected: ['api-no-domain-services-directory'],
+    qualityRow: 'A module has a `domain/services/` directory',
+  },
+  {
+    fixture: 'domain-imports-only-domain-and-plain-libraries',
+    expected: [],
+    qualityRow: '`domain/` imports only `domain/` and plain libraries',
+  },
+  {
+    fixture: 'domain-imports-application-port',
+    expected: ['api-domain-no-ports'],
+    qualityRow: '`domain/` imports from `application/ports/`',
+  },
+  {
+    fixture: 'domain-test-imports-domain-and-test-helpers',
+    expected: [],
+    qualityRow: 'A domain test imports only the domain and test helpers',
+  },
+  {
+    fixture: 'domain-test-imports-container-tooling',
+    expected: ['api-domain-tests-no-database-or-containers'],
+    qualityRow: 'A domain test imports a database client or container tooling',
+  },
+  {
+    fixture: 'domain-test-imports-database-client',
+    expected: [
+      'api-domain-independent',
+      'api-domain-tests-no-database-or-containers',
+      'api-orm-only-in-infrastructure-repositories',
+    ],
+    qualityRow: 'A domain test imports a database client or container tooling',
+  },
 ]);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { REDACTED } from '../../../../domain/services/log-redaction.js';
+import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ListRunStepsHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';

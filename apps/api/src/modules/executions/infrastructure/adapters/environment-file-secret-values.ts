@@ -5,7 +5,7 @@ import {
   type SecretStore,
 } from '../../../../platform/secrets/index.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../domain/repositories/run-repository.js';
-import { environmentFileValues } from '../../domain/services/environment-file-values.js';
+import { EnvironmentFileContent } from '../../domain/value-objects/environment-file-content.js';
 import type { RunSecretValues } from '../../application/ports/run-secret-values.js';
 
 /**
@@ -25,7 +25,7 @@ export class EnvironmentFileSecretValues implements RunSecretValues {
     const secretRef = await this.runs.findEnvironmentFileSecret(runId);
     if (secretRef === null) return [];
     try {
-      return environmentFileValues(await this.secrets.get(secretRef));
+      return EnvironmentFileContent.of(await this.secrets.get(secretRef)).valuesToRedact();
     } catch (error) {
       if (error instanceof SecretNotFoundError) return [];
       throw error;

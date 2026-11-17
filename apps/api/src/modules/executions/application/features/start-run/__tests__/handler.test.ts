@@ -5,7 +5,7 @@ import {
   RunProjectNotFoundError,
 } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { ProviderUnavailableError } from '../../../../domain/services/provider-availability.js';
+import { ProviderUnavailableError } from '../../../../domain/value-objects/worker-status.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { StartRunHandler } from '../handler.js';

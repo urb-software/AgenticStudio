@@ -15,7 +15,7 @@ import { InMemoryRunLookupRepository } from '../../../../domain/repositories/__t
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
-import type { RetentionPolicy } from '../../../ports/retention-policy.js';
+import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FollowUpRunHandler } from '../handler.js';
 
@@ -43,12 +43,12 @@ const T0 = new Date('2026-11-16T12:00:00.000Z');
 const T1 = new Date('2026-11-16T12:30:00.000Z');
 const T2 = new Date('2026-11-16T12:45:00.000Z');
 const LEASE = { seconds: 60 };
-const RETENTION: RetentionPolicy = {
+const RETENTION = RetentionPolicy.of({
   days: 7,
   maxPerProject: 10,
   openPullRequestIdleDays: 30,
   hoursAfterPullRequestEnd: 24,
-};
+});
 const MERGED = 'b'.repeat(40);
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',

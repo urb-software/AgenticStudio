@@ -1,17 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import type { RetentionPolicy } from '../../../ports/retention-policy.js';
+import {
+  RetentionPolicy,
+  type RetentionSettings,
+} from '../../../../domain/value-objects/retention-policy.js';
 import { GetRunStatesHandler } from '../handler.js';
 
 // Issue #98: the agent worker asks which of its Runs are final, and since when, to apply the
 // retention rules to their Working copies. Issue #143: Studio decides what the worker removes.
-const POLICY: RetentionPolicy = {
+const SETTINGS: RetentionSettings = {
   days: 7,
   maxPerProject: 10,
   openPullRequestIdleDays: 30,
   hoursAfterPullRequestEnd: 24,
 };
+const POLICY = RetentionPolicy.of(SETTINGS);
 const DAY = 24 * 60 * 60_000;
 const HOUR = 60 * 60_000;
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -305,11 +309,15 @@ describe('GetRunStatesHandler', () => {
     it('takes the periods and the limit from the policy', async () => {
       const run = await finished(PROJECT, 2 * DAY);
 
-      expect(await answerFor(run, { ...POLICY, days: 1 })).toMatchObject({ removable: true });
-      expect(await answerFor(run, { ...POLICY, maxPerProject: 0 })).toMatchObject({
+      expect(await answerFor(run, RetentionPolicy.of({ ...SETTINGS, days: 1 }))).toMatchObject({
         removable: true,
       });
-      expect(await answerFor(run, { ...POLICY, days: 3 })).toMatchObject({
+      expect(
+        await answerFor(run, RetentionPolicy.of({ ...SETTINGS, maxPerProject: 0 })),
+      ).toMatchObject({
+        removable: true,
+      });
+      expect(await answerFor(run, RetentionPolicy.of({ ...SETTINGS, days: 3 }))).toMatchObject({
         keepUntil: new Date(NOW.getTime() + DAY),
       });
 
@@ -319,10 +327,16 @@ describe('GetRunStatesHandler', () => {
         prEndedAgo: 5 * HOUR,
       });
       expect(
-        await answerFor(withPullRequest, { ...POLICY, hoursAfterPullRequestEnd: 1 }),
+        await answerFor(
+          withPullRequest,
+          RetentionPolicy.of({ ...SETTINGS, hoursAfterPullRequestEnd: 1 }),
+        ),
       ).toMatchObject({ removable: true });
       expect(
-        await answerFor(withPullRequest, { ...POLICY, openPullRequestIdleDays: 4 }),
+        await answerFor(
+          withPullRequest,
+          RetentionPolicy.of({ ...SETTINGS, openPullRequestIdleDays: 4 }),
+        ),
       ).toMatchObject({ removable: true });
     });
   });
