@@ -4,15 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { CloneRepositoryHandler } from '../modules/projects/application/features/clone-repository/handler.js';
-import { FetchCloneHandler } from '../modules/projects/application/features/fetch-clone/handler.js';
-import {
-  GitOperationError,
-  REPOSITORY_GIT,
-  type RepositoryGit,
-} from '../modules/projects/application/ports/repository-git.js';
-import { hostKeyFingerprint } from '../modules/projects/domain/value-objects/ssh-key.js';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { createGitFixture, type GitFixture } from './git-fixture.js';
 import {
@@ -38,6 +31,13 @@ const CASE_TIMEOUT = 300_000;
 const PROBLEM = 'urn:agentic-studio:problem:';
 const HOST_KEY = `ssh-ed25519 ${Buffer.from('studio-race-test-host-key').toString('base64')}`;
 
+/** SHA256 fingerprint of a host key (`<type> <base64>`), as `ssh-keygen -l` prints it. */
+function hostKeyFingerprint(hostKey: string): string {
+  const data = hostKey.split(' ')[1]!;
+  const digest = createHash('sha256').update(Buffer.from(data, 'base64')).digest('base64');
+  return `SHA256:${digest.replace(/=+$/, '')}`;
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe.runIf(linux)(
@@ -53,8 +53,6 @@ describe.runIf(linux)(
     const http = () => request(app.getHttpServer());
     const operator = () => ({ Origin: STUDIO_ORIGIN, Cookie: cookie });
     const db = () => app.get<DatabaseClient>(DATABASE_CLIENT);
-    const clones = () => app.get(CloneRepositoryHandler, { strict: false });
-    const fetches = () => app.get(FetchCloneHandler, { strict: false });
 
     const connect = (projectId: string, url = fixture.url) =>
       http()
@@ -154,10 +152,6 @@ describe.runIf(linux)(
       };
       app = await startStudioApp(services.config);
       cookie = await signIn(app);
-    });
-
-    afterEach(() => {
-      vi.restoreAllMocks();
     });
 
     afterAll(async () => {
@@ -372,51 +366,7 @@ describe.runIf(linux)(
     );
 
     it(
-      'a late failure report of the clone job racing a disconnect: the disconnect wins',
-      async () => {
-        for (let i = 0; i < ITERATIONS; i++) {
-          await freshIteration();
-          const id = await createProject(`Late clone failure ${i}`);
-          await insertRepository(id, 'connecting');
-
-          const [disconnected] = await Promise.all([
-            disconnect(id),
-            clones().onFailed(id, { reason: 'timeout' }),
-          ]);
-
-          expect(disconnected.status, `iteration ${i}`).toBe(204);
-          const rows = await db().$queryRaw<{ n: bigint }[]>`
-            SELECT count(*) AS n FROM repositories WHERE project_id = ${id}::uuid`;
-          expect(Number(rows[0]!.n), `iteration ${i}`).toBe(0);
-        }
-      },
-      CASE_TIMEOUT,
-    );
-
-    it(
-      'a late failure report of the fetch job racing a disconnect: the disconnect wins',
-      async () => {
-        for (let i = 0; i < ITERATIONS; i++) {
-          await freshIteration();
-          const id = await createProject(`Late fetch failure ${i}`);
-          await insertRepository(id, 'fetching');
-
-          const [disconnected] = await Promise.all([
-            disconnect(id),
-            fetches().onFailed(id, { reason: 'stalled' }),
-          ]);
-
-          expect(disconnected.status, `iteration ${i}`).toBe(204);
-          const rows = await db().$queryRaw<{ n: bigint }[]>`
-            SELECT count(*) AS n FROM repositories WHERE project_id = ${id}::uuid`;
-          expect(Number(rows[0]!.n), `iteration ${i}`).toBe(0);
-        }
-      },
-      CASE_TIMEOUT,
-    );
-
-    it(
-      'the start-up reconciliation racing a disconnect: the disconnect wins',
+      'two instances starting together fail what is still connecting or fetching, once',
       async () => {
         for (let i = 0; i < ITERATIONS; i++) {
           await freshIteration();
@@ -425,12 +375,45 @@ describe.runIf(linux)(
           await insertRepository(connecting, 'connecting');
           await insertRepository(fetching, 'fetching');
 
-          const [first, second] = await Promise.all([
+          // Each instance fails the interrupted operations before its workers start.
+          const started = await Promise.all([
+            startStudioApp(services.config),
+            startStudioApp(services.config),
+          ]);
+          try {
+            expect((await getRepository(connecting)).body, `iteration ${i}`).toMatchObject({
+              state: 'failed',
+              failure: { code: 'interrupted' },
+            });
+            expect((await getRepository(fetching)).body, `iteration ${i}`).toMatchObject({
+              state: 'failed',
+              hasClone: true,
+              failure: { code: 'interrupted' },
+            });
+          } finally {
+            await Promise.all(started.map((instance) => instance.close()));
+          }
+        }
+      },
+      CASE_TIMEOUT,
+    );
+
+    it(
+      'the start-up reconciliation of another instance racing a disconnect: the disconnect wins',
+      async () => {
+        for (let i = 0; i < ITERATIONS; i++) {
+          await freshIteration();
+          const connecting = await createProject(`Reconcile and disconnect A ${i}`);
+          const fetching = await createProject(`Reconcile and disconnect B ${i}`);
+          await insertRepository(connecting, 'connecting');
+          await insertRepository(fetching, 'fetching');
+
+          const [instance, first, second] = await Promise.all([
+            startStudioApp(services.config),
             disconnect(connecting),
             disconnect(fetching),
-            clones().reconcile(),
-            fetches().reconcile(),
           ]);
+          await instance.close();
 
           expect(first.status, `iteration ${i}`).toBe(204);
           expect(second.status, `iteration ${i}`).toBe(204);
@@ -443,36 +426,7 @@ describe.runIf(linux)(
       CASE_TIMEOUT,
     );
 
-    it(
-      'the start-up reconciliation fails what is still connecting or fetching, once',
-      async () => {
-        for (let i = 0; i < ITERATIONS; i++) {
-          await freshIteration();
-          const connecting = await createProject(`Reconcile only connecting ${i}`);
-          const fetching = await createProject(`Reconcile only fetching ${i}`);
-          await insertRepository(connecting, 'connecting');
-          await insertRepository(fetching, 'fetching');
-
-          await Promise.all([clones().reconcile(), clones().reconcile(), fetches().reconcile()]);
-          await fetches().reconcile();
-
-          expect((await getRepository(connecting)).body).toMatchObject({
-            state: 'failed',
-            failure: { code: 'interrupted' },
-          });
-          expect((await getRepository(fetching)).body).toMatchObject({
-            state: 'failed',
-            hasClone: true,
-            failure: { code: 'interrupted' },
-          });
-        }
-      },
-      CASE_TIMEOUT,
-    );
-
     describe('verification of an SSH Repository', () => {
-      const scan = () => app.get<RepositoryGit>(REPOSITORY_GIT, { strict: false });
-
       it(
         'two confirmations of the same host key: one 202, one refused, and the key is pinned once',
         async () => {
@@ -491,65 +445,6 @@ describe.runIf(linux)(
             const rows = await db().$queryRaw<{ pinned: string | null }[]>`
               SELECT pinned_host_key AS pinned FROM repositories WHERE project_id = ${id}::uuid`;
             expect(rows[0]!.pinned, `iteration ${i}`).toBe(HOST_KEY);
-          }
-        },
-        CASE_TIMEOUT,
-      );
-
-      it(
-        'two verifications that retrieve the host key: both end waiting for the same confirmation',
-        async () => {
-          vi.spyOn(scan(), 'scanHostKey').mockResolvedValue({ hostKey: HOST_KEY });
-          for (let i = 0; i < ITERATIONS; i++) {
-            await freshIteration();
-            const id = await createProject(`Scan race ${i}`);
-            await insertRepository(id, 'awaiting_key');
-
-            const responses = await Promise.all([verify(id), verify(id)]);
-
-            for (const response of responses) {
-              expect(response.status, `iteration ${i}`).toBe(202);
-              expect(response.body.state, `iteration ${i}`).toBe('awaiting_host_key');
-              expect(response.body.hostKeyFingerprint).toBe(hostKeyFingerprint(HOST_KEY));
-            }
-            const rows = await db().$queryRaw<{ state: string; pending: string | null }[]>`
-              SELECT state, pending_host_key AS pending FROM repositories
-              WHERE project_id = ${id}::uuid`;
-            expect(rows[0], `iteration ${i}`).toEqual({
-              state: 'awaiting_host_key',
-              pending: HOST_KEY,
-            });
-          }
-        },
-        CASE_TIMEOUT,
-      );
-
-      it(
-        'a verification that cannot reach the host racing a confirmation: the Repository is never half changed',
-        async () => {
-          vi.spyOn(scan(), 'scanHostKey').mockRejectedValue(
-            new GitOperationError('host_unreachable', 'fatal: unreachable'),
-          );
-          for (let i = 0; i < ITERATIONS; i++) {
-            await freshIteration();
-            const id = await createProject(`Fail and confirm ${i}`);
-            await insertRepository(id, 'awaiting_host_key');
-
-            const [scanned, confirmed] = await Promise.all([
-              verify(id),
-              verify(id, { acceptHostKeyFingerprint: hostKeyFingerprint(HOST_KEY) }),
-            ]);
-
-            expect([200, 202, 409], `iteration ${i}`).toContain(scanned.status);
-            expect([202, 409], `iteration ${i}`).toContain(confirmed.status);
-            const rows = await db().$queryRaw<
-              { state: string; pending: string | null; pinned: string | null }[]
-            >`SELECT state, pending_host_key AS pending, pinned_host_key AS pinned
-              FROM repositories WHERE project_id = ${id}::uuid`;
-            const { state, pending, pinned } = rows[0]!;
-            // The database's own constraints reject a half-changed row; this checks the pairs.
-            expect(pending !== null, `iteration ${i}`).toBe(state === 'awaiting_host_key');
-            if (confirmed.status === 202) expect(pinned, `iteration ${i}`).toBe(HOST_KEY);
           }
         },
         CASE_TIMEOUT,

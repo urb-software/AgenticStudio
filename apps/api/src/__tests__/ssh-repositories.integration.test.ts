@@ -138,6 +138,9 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     fatal: capture('fatal'),
   };
 
+  /** A port with nothing listening on it (set by the cases that need one). */
+  let closed = 0;
+
   const server = () => app.getHttpServer();
   const db = () => app.get<DatabaseClient>(DATABASE_CLIENT);
 
@@ -430,6 +433,79 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     expect(second.status).toBe(201);
     expect(second.body.publicKey).not.toBe(first.publicKey);
     expect(second.body).not.toHaveProperty('hostKeyFingerprint');
+  });
+
+  // Issue #165 (Epic #160): the verification steps against each other and a disconnect, 25
+  // iterations each with real concurrency. Written against the code before the Repository
+  // connection became a class; they pass on both.
+  describe('simultaneous requests on one SSH Repository', () => {
+    const ITERATIONS = 25;
+
+    const fresh = (name: string) =>
+      db().$executeRaw`TRUNCATE TABLE projects CASCADE`.then(() => createProject(name));
+
+    it('two verifications that retrieve the host key both end waiting for the same confirmation', async () => {
+      for (let i = 0; i < ITERATIONS; i++) {
+        const id = await fresh(`Scan race ${i}`);
+        await connect(id, urlOf(unlisted));
+
+        const [first, second] = await Promise.all([verify(id), verify(id)]);
+
+        for (const response of [first, second]) {
+          expect(response.status, `iteration ${i}`).toBe(202);
+          expect(response.body, `iteration ${i}`).toMatchObject({
+            state: 'awaiting_host_key',
+            hostKeyFingerprint: fingerprintOf(unlistedKey.publicKey),
+          });
+        }
+        const [row] = await db().$queryRaw<{ state: string; pending: string | null }[]>`
+          SELECT state, pending_host_key AS pending FROM repositories WHERE project_id = ${id}::uuid`;
+        expect(row?.state, `iteration ${i}`).toBe('awaiting_host_key');
+        expect(fingerprintOf(row!.pending!), `iteration ${i}`).toBe(
+          fingerprintOf(unlistedKey.publicKey),
+        );
+      }
+    }, 180_000);
+
+    it('two verifications of a host that cannot be reached both leave it failed', async () => {
+      const url = `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`;
+      for (let i = 0; i < ITERATIONS; i++) {
+        const id = await fresh(`Unreachable race ${i}`);
+        await connect(id, url);
+
+        const [first, second] = await Promise.all([verify(id), verify(id)]);
+
+        for (const response of [first, second]) {
+          expect(response.status, `iteration ${i}`).toBe(202);
+          expect(response.body, `iteration ${i}`).toMatchObject({
+            state: 'failed',
+            failure: { code: 'host_unreachable' },
+          });
+        }
+      }
+    }, 180_000);
+
+    it.each([
+      ['retrieving the host key', () => urlOf(unlisted)],
+      ['failing to reach the host', () => `ssh://git@127.0.0.1:${closed}/srv/git/repo.git`],
+    ])(
+      'a verification %s racing a disconnect: the disconnect wins and nothing is left',
+      async (_case, urlFor) => {
+        closed = await closedPort();
+        for (let i = 0; i < ITERATIONS; i++) {
+          const id = await fresh(`Verify and disconnect ${i}`);
+          await connect(id, urlFor());
+
+          const [verified, disconnected] = await Promise.all([verify(id), disconnect(id)]);
+
+          expect(disconnected.status, `iteration ${i}`).toBe(204);
+          expect([202, 404, 409], `iteration ${i}`).toContain(verified.status);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          expect((await getRepository(id)).status, `iteration ${i}`).toBe(404);
+        }
+      },
+      180_000,
+    );
   });
 
   // Self-contained: it drives every state and failure path itself, then checks everything the
