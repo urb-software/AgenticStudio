@@ -13,14 +13,11 @@ import {
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects/run-environment-file.js';
 import {
   IllegalRunTransitionError,
-  longWaitCancellation,
-  lostWorkerRule,
   resumeMessage,
   type Run,
   RunNotHeldError,
   type RunData,
   type RunFailure,
-  STEP_TIME_LIMIT_GRACE_MINUTES,
   takesNewEnvironmentFile,
 } from '../../../domain/entities/run.js';
 import {
@@ -33,6 +30,11 @@ import {
   ENVIRONMENT_FILE_SNAPSHOTS,
   type EnvironmentFileSnapshots,
 } from '../../ports/environment-file-snapshots.js';
+import {
+  LongWaitRule,
+  LostWorkerRule,
+  OverdueStepRule,
+} from '../../../domain/value-objects/run-sweep-rules.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
 const NO_REMOTE: RunFailure = {
@@ -136,18 +138,19 @@ export class ClaimRunHandler {
 
   async execute(workerId: string): Promise<ClaimedRun | null> {
     const now = this.clock.now();
-    const { staleBefore, failure, deliveryFailure } = lostWorkerRule(now, this.lease.seconds);
-    await this.runs.failStaleClaims(staleBefore, failure, deliveryFailure, now);
+    const lost = LostWorkerRule.at(now, this.lease.seconds);
+    await this.runs.failStaleClaims(lost.staleBefore, lost.failure, lost.deliveryFailure, now);
     // A Run left waiting too long holds a slot; it is cancelled first (Issue #100).
     for (const waiting of await this.runs.listWaiting()) {
-      const cancellation = longWaitCancellation(waiting, now);
+      const cancellation = LongWaitRule.at(now).cancellationFor(waiting);
       // Conditional: an answer or an operator's cancel in between wins.
       if (cancellation) {
         await this.runs.cancelUnheld(waiting.id, 'waiting_for_operator', cancellation, now);
       }
     }
     // A step far past its time limit holds a slot too (review of #121: Studio's backstop).
-    await this.runs.timeOutOverdueSteps(now, STEP_TIME_LIMIT_GRACE_MINUTES);
+    const overdue = OverdueStepRule.at(now);
+    await this.runs.timeOutOverdueSteps(overdue.now, overdue.graceMinutes);
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;

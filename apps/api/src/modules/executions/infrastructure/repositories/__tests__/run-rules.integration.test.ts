@@ -256,7 +256,7 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
               expect(changed).toEqual([]);
               break;
             }
-            expect(changed.length).toBeLessThanOrEqual(1);
+            expect(changed).toEqual([handed.id]);
             expect(handed.claimedBy).toBe(worker);
             expect(handed.heartbeatAt).toEqual(NOW);
           }
@@ -334,7 +334,11 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
           heartbeatAt: null,
           finishedAt: NOW,
         });
-        expect(run.deliveryRequested).toBe(result.retryEnds ? false : run.deliveryRequested);
+        if (result.retryEnds) {
+          expect(run).toMatchObject({ deliveryRequested: false, delivery: 'failed' });
+        } else {
+          expect(run.deliveryRequested).toBe(false);
+        }
       }
       expect(ids).toHaveLength(SPECS.length);
     });

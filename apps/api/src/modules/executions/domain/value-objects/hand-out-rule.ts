@@ -31,7 +31,8 @@ export type HandOutView = Pick<
  *   not count against it.
  *
  * The store hands the Run out in one atomic step under the claim lock, with the query the places
- * and the limit here supply; {@link HandOutRule.next} is the same rule over a set of Runs, which
+ * and the limit here supply. It waits for a Run another transaction holds and then re-checks it, so
+ * a Run is never skipped for being briefly locked and the order stays strict; {@link HandOutRule.next} is the same rule over a set of Runs, which
  * a test uses to prove the query follows it.
  */
 export class HandOutRule {

@@ -1,9 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  goneResumeWorkerRule,
-  goneWorkerRule,
-  lostWorkerRule,
-} from '../../../domain/entities/run.js';
+import { GoneWorkerRule, LostWorkerRule } from '../../../domain/value-objects/run-sweep-rules.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
@@ -39,8 +35,13 @@ export class SweepLostWorkersHandler {
    */
   async execute(): Promise<number> {
     const now = this.clock.now();
-    const { staleBefore, failure, deliveryFailure } = lostWorkerRule(now, this.lease.seconds);
-    const lost = await this.runs.failStaleClaims(staleBefore, failure, deliveryFailure, now);
+    const rule = LostWorkerRule.at(now, this.lease.seconds);
+    const lost = await this.runs.failStaleClaims(
+      rule.staleBefore,
+      rule.failure,
+      rule.deliveryFailure,
+      now,
+    );
     return (
       lost +
       (await this.abandonRetriesOfGoneWorkers(now)) +
@@ -54,12 +55,15 @@ export class SweepLostWorkersHandler {
    * the Run fails as "Working copy no longer exists (agent worker gone) — run again".
    */
   private async abandonResumesOfGoneWorkers(now: Date): Promise<number> {
-    const { seenBefore, failure } = goneResumeWorkerRule(now, this.lease.seconds);
+    const rule = GoneWorkerRule.at(now, this.lease.seconds);
     let abandoned = 0;
     for (const resume of await this.runs.listPendingResumes()) {
       const seen =
         (resume.startedBy ? this.statuses.lastSeen(resume.startedBy) : undefined) ?? this.since;
-      if (seen < seenBefore && (await this.runs.abandonResume(resume.runId, failure, now))) {
+      if (
+        rule.isGone(seen) &&
+        (await this.runs.abandonResume(resume.runId, rule.resumeFailure, now))
+      ) {
         abandoned++;
         // Final: its log takes no more events, so nothing more to redact (Issue #104).
         await this.snapshots.releaseFor(resume.runId);
@@ -74,12 +78,15 @@ export class SweepLostWorkersHandler {
    * exists (agent worker gone)" and is released (review N2 of #122).
    */
   private async abandonRetriesOfGoneWorkers(now: Date): Promise<number> {
-    const { seenBefore, failure } = goneWorkerRule(now, this.lease.seconds);
+    const rule = GoneWorkerRule.at(now, this.lease.seconds);
     let abandoned = 0;
     for (const retry of await this.runs.listPendingDeliveryRetries()) {
       const seen =
         (retry.startedBy ? this.statuses.lastSeen(retry.startedBy) : undefined) ?? this.since;
-      if (seen < seenBefore && (await this.runs.abandonDeliveryRetry(retry.runId, failure, now))) {
+      if (
+        rule.isGone(seen) &&
+        (await this.runs.abandonDeliveryRetry(retry.runId, rule.deliveryRetryFailure, now))
+      ) {
         abandoned++;
         // The Working copy is gone with its worker: nothing more to redact (Issue #104).
         await this.snapshots.releaseFor(retry.runId);

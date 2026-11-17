@@ -556,15 +556,16 @@ export class PrismaRunRepository implements RunRepository {
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
         // One statement selects the Run and hands it out (Issue #169), so a change that lands
         // between the two, a cancel of the Run for one, cannot make the claim fail: the selection
-        // locks the Run's row and skips a Run another transaction holds (a change in progress
-        // decides about it first and the next claim sees the result); a Run that stopped being
-        // eligible since the selection read it is left out when the row is locked. The worker gets
-        // the next eligible Run or nothing. The conditions are HandOutRule's: queue order; the
-        // places held and their limits (`HOLDS_PLACE`, `HandOutRule.MAX_PLACES`; a candidate's own
-        // place does not count against it); a resumable or delivery-retry Run only to the worker
-        // that last claimed it. A queued Run goes to `preparing` (a resumed one keeps its first
-        // start, a claimed Follow-up holds its places like any held Run: Issues #103, #141); a
-        // failed Run held for a delivery retry stays `failed` (Issue #102).
+        // locks the Run's row and, if another transaction holds it, waits for that transaction;
+        // PostgreSQL then re-checks the row as it is after it, so a Run that stopped being
+        // eligible is left out and the claim takes the next eligible Run in queue order, or none.
+        // A Run is never skipped for being briefly locked, so the queue order is strict. The
+        // conditions are HandOutRule's: queue order; the places held and their limits
+        // (`HOLDS_PLACE`, `HandOutRule.MAX_PLACES`; a candidate's own place does not count against
+        // it); a resumable or delivery-retry Run only to the worker that last claimed it. A queued
+        // Run goes to `preparing` (a resumed one keeps its first start, a claimed Follow-up holds
+        // its places like any held Run: Issues #103, #141); a failed Run held for a delivery retry
+        // stays `failed` (Issue #102).
         const [claimed] = await tx.$queryRaw<{ id: string }[]>`
           UPDATE runs SET
             state = CASE WHEN state = 'queued' THEN 'preparing' ELSE state END,
@@ -587,7 +588,7 @@ export class PrismaRunRepository implements RunRepository {
                                 AND ${HOLDS_PLACE})
             ORDER BY r.created_at, r.id
             LIMIT 1
-            FOR UPDATE OF r SKIP LOCKED)
+            FOR UPDATE OF r)
           RETURNING id`;
         if (!claimed) return null;
         return toRun(

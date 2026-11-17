@@ -1,9 +1,4 @@
-import {
-  type Run,
-  longWaitCancellation,
-  lostWorkerRule,
-  type RunFailure,
-} from '../entities/run.js';
+import type { Run, RunCancellation, RunFailure } from '../entities/run.js';
 
 /**
  * The lost-worker rule (Issue #96, #102, #169): a Run a worker holds whose last heartbeat is older
@@ -21,8 +16,20 @@ export class LostWorkerRule {
   ) {}
 
   static at(now: Date, leaseSeconds: number): LostWorkerRule {
-    const rule = lostWorkerRule(now, leaseSeconds);
-    return new LostWorkerRule(rule.staleBefore, rule.failure, rule.deliveryFailure);
+    return new LostWorkerRule(
+      new Date(now.getTime() - leaseSeconds * 1000),
+      {
+        code: 'worker_lost',
+        detail: `The agent worker sent no heartbeat for ${leaseSeconds} seconds.`,
+      },
+      // A delivery retry whose worker was lost stays a failed delivery, so it can be retried.
+      {
+        code: 'delivery_failed',
+        detail:
+          `The agent worker sent no heartbeat for ${leaseSeconds} seconds while it retried the ` +
+          'delivery. Retry the delivery.',
+      },
+    );
   }
 
   /** Whether the Run has lost its worker. */
@@ -45,12 +52,18 @@ export class LostWorkerRule {
  * set-wide statement; {@link OverdueStepRule.selects} is the same selection over one Run.
  */
 export class OverdueStepRule {
+  /**
+   * The agent worker stops a Run step at `stepMinutes`; if a `running` Run's step is still going
+   * this much later, Studio itself ends the Run as `timed_out`.
+   */
+  static readonly GRACE_MINUTES = 5;
+
   private constructor(
     readonly now: Date,
     readonly graceMinutes: number,
   ) {}
 
-  static at(now: Date, graceMinutes: number): OverdueStepRule {
+  static at(now: Date, graceMinutes: number = OverdueStepRule.GRACE_MINUTES): OverdueStepRule {
     return new OverdueStepRule(now, graceMinutes);
   }
 
@@ -63,7 +76,7 @@ export class OverdueStepRule {
 
 /**
  * The long-wait rule (Issue #100, #169): a Run waiting for the operator longer than its own
- * `waitingDays` is cancelled by Studio, with {@link longWaitCancellation}'s reason. The store lists
+ * `waitingDays` is cancelled by Studio, with the reason `cancellationFor` states. The store lists
  * the Runs waiting for the operator (`listWaiting`: the only condition it holds is the state, the
  * rule's {@link LongWaitRule.candidate}) and cancels one only while it still waits
  * (`cancelUnheld`); {@link LongWaitRule.selects} decides which of them are cancelled.
@@ -81,23 +94,61 @@ export class LongWaitRule {
   }
 
   selects(run: Pick<Run, 'state' | 'waitingSince' | 'limits'>): boolean {
-    return longWaitCancellation(run, this.now) !== null;
+    return this.cancellationFor(run) !== null;
   }
 
-  /** What happens to a selected Run. */
-  cancellationFor(run: Pick<Run, 'state' | 'waitingSince' | 'limits'>) {
-    return longWaitCancellation(run, this.now);
+  /** What happens to a selected Run: cancelled by Studio, with the reason stated; else `null`. */
+  cancellationFor(run: Pick<Run, 'state' | 'waitingSince' | 'limits'>): RunCancellation | null {
+    if (run.state !== 'waiting_for_operator' || run.waitingSince === null) return null;
+    const limitMs = run.limits.waitingDays * 24 * 60 * 60 * 1000;
+    if (this.now.getTime() - run.waitingSince.getTime() <= limitMs) return null;
+    const days = run.limits.waitingDays;
+    return {
+      by: 'system',
+      reason: `Cancelled automatically: the run waited for the operator longer than ${days} ${days === 1 ? 'day' : 'days'}.`,
+    };
   }
 }
 
 /**
  * The gone-worker rule (Issue #102, #103, #169): a requested delivery retry that no worker holds,
  * and an answered Run no worker claimed yet, can only be taken by the worker that started the Run;
- * when that worker has not reported for longer than the lease they fail ({@link goneWorkerRule},
- * {@link goneResumeWorkerRule}). The store lists the pending ones and gives one up only while it is
+ * when that worker has not reported for longer than the lease they fail (the failures below). The store lists the pending ones and gives one up only while it is
  * still pending; these are the predicates behind the two lists.
  */
 export class GoneWorkerRule {
+  private constructor(
+    /** The worker that has not reported since this time (or since Studio started) is gone. */
+    readonly seenBefore: Date,
+    /** A requested delivery retry whose worker is gone fails with this and is released. */
+    readonly deliveryRetryFailure: RunFailure,
+    /** An answered Run whose worker is gone fails with this. */
+    readonly resumeFailure: RunFailure,
+  ) {}
+
+  static at(now: Date, leaseSeconds: number): GoneWorkerRule {
+    return new GoneWorkerRule(
+      new Date(now.getTime() - leaseSeconds * 1000),
+      {
+        code: 'delivery_failed',
+        detail:
+          `Working copy no longer exists (agent worker gone): the agent worker that started this ` +
+          `run has not reported for more than ${leaseSeconds} seconds.`,
+      },
+      {
+        code: 'preparation_failed',
+        detail:
+          `Working copy no longer exists (agent worker gone) — run again: the agent worker that ` +
+          `started this run has not reported for more than ${leaseSeconds} seconds.`,
+      },
+    );
+  }
+
+  /** Whether a worker last seen at `seen` is gone. */
+  isGone(seen: Date): boolean {
+    return seen < this.seenBefore;
+  }
+
   /** A `failed` Run whose delivery retry was requested and that nobody holds. */
   static pendingDeliveryRetry(
     run: Pick<Run, 'state' | 'deliveryRequested' | 'claimedBy'>,

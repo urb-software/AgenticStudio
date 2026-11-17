@@ -631,32 +631,6 @@ export function currentUpdateStart(
 }
 
 /**
- * The long-wait rule (Issue #100): a Run waiting for the operator longer than its
- * `waitingDays` is cancelled by Studio, with that stated as the reason. Returns the
- * cancellation when the rule applies at `now`, otherwise `null`.
- */
-export function longWaitCancellation(
-  run: Pick<Run, 'state' | 'waitingSince' | 'limits'>,
-  now: Date,
-): RunCancellation | null {
-  if (run.state !== 'waiting_for_operator' || run.waitingSince === null) return null;
-  const limitMs = run.limits.waitingDays * 24 * 60 * 60 * 1000;
-  if (now.getTime() - run.waitingSince.getTime() <= limitMs) return null;
-  const days = run.limits.waitingDays;
-  return {
-    by: 'system',
-    reason: `Cancelled automatically: the run waited for the operator longer than ${days} ${days === 1 ? 'day' : 'days'}.`,
-  };
-}
-
-/**
- * Studio's backstop for the step time limit (review of #121): the agent worker stops a Run step
- * at `stepMinutes`; if a `running` Run's step is still going this much later, Studio itself ends
- * the Run as `timed_out`.
- */
-export const STEP_TIME_LIMIT_GRACE_MINUTES = 5;
-
-/**
  * The failure of a Run that would exceed its maximum number of Run steps (Issue #100); in a
  * Follow-up the allowance is the Follow-up's own (Issue #141).
  */
@@ -875,26 +849,6 @@ export class RunNotWaitingError extends Error {
 }
 
 /**
- * The gone-worker rule for a resume (Issue #103): only the agent worker that started the Run
- * has its Working copy and the agent's session; when it has not reported for longer than the
- * lease (counted from when Studio started, if it never reported since), the answered Run fails.
- */
-export function goneResumeWorkerRule(
-  now: Date,
-  leaseSeconds: number,
-): { seenBefore: Date; failure: RunFailure } {
-  return {
-    seenBefore: new Date(now.getTime() - leaseSeconds * 1000),
-    failure: {
-      code: 'preparation_failed',
-      detail:
-        `Working copy no longer exists (agent worker gone) — run again: the agent worker that ` +
-        `started this run has not reported for more than ${leaseSeconds} seconds.`,
-    },
-  };
-}
-
-/**
  * The reporting agent worker does not hold the Run: another worker claimed it, it was released
  * (waiting for the operator, or final), or it was failed as `worker_lost`.
  */
@@ -1015,51 +969,6 @@ export class RepositoryNotReadyError extends Error {
     );
     this.name = 'RepositoryNotReadyError';
   }
-}
-
-/**
- * The gone-worker rule for a requested delivery retry (Issue #102, review N2 of #122): only the
- * agent worker that started the Run has its Working copy; when it has not reported for longer
- * than the lease (counted from when Studio started, if it never reported since), the retry
- * fails with this failure and is released.
- */
-export function goneWorkerRule(
-  now: Date,
-  leaseSeconds: number,
-): { seenBefore: Date; failure: RunFailure } {
-  return {
-    seenBefore: new Date(now.getTime() - leaseSeconds * 1000),
-    failure: {
-      code: 'delivery_failed',
-      detail:
-        `Working copy no longer exists (agent worker gone): the agent worker that started this ` +
-        `run has not reported for more than ${leaseSeconds} seconds.`,
-    },
-  };
-}
-
-/**
- * The lost-worker rule (Issue #96): a held Run whose last heartbeat is older than the lease
- * has lost its agent worker. Returns the cut-off and the failure it gets.
- */
-export function lostWorkerRule(
-  now: Date,
-  leaseSeconds: number,
-): { staleBefore: Date; failure: RunFailure; deliveryFailure: RunFailure } {
-  return {
-    staleBefore: new Date(now.getTime() - leaseSeconds * 1000),
-    failure: {
-      code: 'worker_lost',
-      detail: `The agent worker sent no heartbeat for ${leaseSeconds} seconds.`,
-    },
-    // A delivery retry whose worker was lost stays a failed delivery, so it can be retried.
-    deliveryFailure: {
-      code: 'delivery_failed',
-      detail:
-        `The agent worker sent no heartbeat for ${leaseSeconds} seconds while it retried the ` +
-        'delivery. Retry the delivery.',
-    },
-  };
 }
 
 /** What the Run needs to know about the agent worker to take a Follow-up (Issue #141). */

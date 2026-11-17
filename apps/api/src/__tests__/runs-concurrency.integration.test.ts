@@ -790,6 +790,47 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
       );
     });
 
+    // A Run another transaction holds for a moment (a Working copy report, a lookup write) is not
+    // skipped: the claim waits for it and hands it out, in queue order.
+    describe('a claim and an eligible Run that is locked for a moment', () => {
+      it(
+        'hands out the older Run, not the newer one, once the lock is released',
+        async () => {
+          for (let i = 0; i < ITERATIONS; i++) {
+            await freshIteration();
+            const older = await queuedRun(await newProject());
+            const newer = await queuedRun(await newProject());
+            let claimed!: Promise<request.Response>;
+
+            await db().$transaction(
+              async (tx) => {
+                await tx.$queryRaw`SELECT id FROM runs WHERE id = ${older}::uuid FOR UPDATE`;
+                let settled = false;
+                claimed = Promise.resolve(claim()).finally(() => {
+                  settled = true;
+                });
+                for (let waited = 0; waited < 3000 && !settled; waited += 50) {
+                  const [waiting] = await tx.$queryRaw<{ n: number }[]>`
+                    SELECT count(*)::int AS n FROM pg_stat_activity
+                    WHERE datname = current_database() AND wait_event_type = 'Lock'
+                      AND pid <> pg_backend_pid()`;
+                  if (waiting!.n > 0) break;
+                  await new Promise((resolve) => setTimeout(resolve, 50));
+                }
+              },
+              { timeout: 30_000, maxWait: 10_000 },
+            );
+
+            const response = await claimed;
+            expect(response.status).toBe(200);
+            expect(response.body.runId).toBe(older);
+            expect((await getRun(newer)).body.state).toBe('queued');
+          }
+        },
+        CASE_TIMEOUT,
+      );
+    });
+
     // The same race with real concurrency: a cancel (at once, as the Run is queued) and a claim
     // started together. Not marked as an expected failure on dev's code: there the window is hit
     // only now and then, so these cases would pass or fail by chance; the held-row case above is
