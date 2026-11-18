@@ -1,3 +1,4 @@
+import { CutText } from './cut-text.js';
 import type { LogRedaction } from './log-redaction.js';
 import type { ReviewCommentKind } from './review-comment-kind.js';
 import type { ReviewVerdict } from './review-verdict.js';
@@ -19,19 +20,6 @@ export interface ReviewCommentInput {
 /** Control characters other than the line break and the tab (PostgreSQL's JSON cannot hold NUL). */
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
-
-/**
- * `text` cut to at most `maxBytes` UTF-8 bytes at a character boundary. It mirrors `cutToBytes` of
- * the worker protocol: the domain may not import the contracts package.
- */
-function cutToBytes(text: string, maxBytes: number): { text: string; cut: boolean } {
-  const bytes = Buffer.from(text, 'utf8');
-  if (bytes.length <= maxBytes) return { text, cut: false };
-  let end = maxBytes;
-  // Back off continuation bytes (10xxxxxx) so no character is split.
-  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
-  return { text: bytes.subarray(0, end).toString('utf8'), cut: true };
-}
 
 /** Which comments had their diff context cut when they were loaded; never stored. */
 const CONTEXT_CUT = new WeakSet<ReviewComment>();
@@ -78,11 +66,11 @@ export class ReviewComment {
    */
   static load(raw: ReviewCommentInput, redaction: LogRedaction): ReviewComment {
     const clean = (text: string) => redaction.text(text).replace(CONTROL, '');
-    const text = cutToBytes(clean(raw.text), ReviewComment.TEXT_MAX_BYTES);
+    const text = CutText.of(clean(raw.text), ReviewComment.TEXT_MAX_BYTES);
     const context =
       raw.diffContext === undefined
         ? undefined
-        : cutToBytes(clean(raw.diffContext), ReviewComment.DIFF_CONTEXT_MAX_BYTES);
+        : CutText.of(clean(raw.diffContext), ReviewComment.DIFF_CONTEXT_MAX_BYTES);
     // A login that redaction would change is no login: it is not shown half-masked.
     const author = redaction.text(raw.author) === raw.author ? raw.author : 'unknown';
     const textCut = text.cut || raw.textCut === true;

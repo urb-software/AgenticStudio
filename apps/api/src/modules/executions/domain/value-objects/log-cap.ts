@@ -1,4 +1,4 @@
-import type { RunEvent } from './run-event.js';
+import { RunEvent } from './run-event.js';
 
 export const LOG_TRUNCATED_NOTICE =
   "log truncated: the Run's log reached its size limit; later output is not stored";
@@ -29,14 +29,16 @@ export class LogCap {
     for (const event of events) {
       const size = utf8Length(event.text);
       if (bytes + size > maxBytes) {
-        store.push({
-          seq: event.seq,
-          at: event.at,
-          stepIndex: event.stepIndex,
-          kind: 'notice',
-          text: LOG_TRUNCATED_NOTICE,
-          truncated: false,
-        });
+        store.push(
+          RunEvent.restore({
+            seq: event.seq,
+            at: event.at,
+            stepIndex: event.stepIndex,
+            kind: 'notice',
+            text: LOG_TRUNCATED_NOTICE,
+            truncated: false,
+          }),
+        );
         return { store, state: { bytes, truncated: true } };
       }
       bytes += size;

@@ -1,4 +1,4 @@
-import { LOOKUP_ERROR_MAX_LENGTH, type LookupResultRequest } from '@agentic-studio/contracts';
+import { type LookupResultRequest } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { PreparedFollowUp } from '../../../domain/entities/prepared-follow-up.js';
 import { ReviewComments } from '../../../domain/entities/review-comments.js';
@@ -167,12 +167,12 @@ export class ReportLookupResultHandler {
     answer: Extract<LookupResultRequest, { ok: false }>,
     now: Date,
   ): Promise<void> {
-    const error = LogRedaction.NONE.text(answer.error).slice(0, LOOKUP_ERROR_MAX_LENGTH);
-    const retry = LookupFailure.of({
-      code: answer.code,
-      error,
-      retryAfterSeconds: answer.retryAfterSeconds,
-    }).retryDelaySeconds;
+    const failure = LookupFailure.of(
+      { code: answer.code, error: answer.error, retryAfterSeconds: answer.retryAfterSeconds },
+      LogRedaction.NONE,
+    );
+    const { error } = failure;
+    const retry = failure.retryDelaySeconds;
     await this.answer(runId, lookupId, async (lookup, repositories) => {
       const outcome = lookup.fail(answer.workerId, error, retry, now);
       if (outcome !== 'stored') return outcome;

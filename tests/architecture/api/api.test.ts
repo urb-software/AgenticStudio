@@ -505,6 +505,24 @@ describeGate('api', apiGate, 'apps/api', [
       'A `domain/value-objects/` file exports two classes, two records, or a record not named after its class',
   },
   {
+    fixture: 'value-object-constant-beside-a-class',
+    expected: [],
+    qualityRow:
+      'A `domain/value-objects/` file exports a constant that is not a list beside a class',
+  },
+  {
+    fixture: 'domain-has-no-factories-directory',
+    expected: [],
+    qualityRow:
+      'A module has no `factories` directory under `domain/` or `application/` (tests are not checked)',
+  },
+  {
+    fixture: 'domain-test-factories-directory-is-not-checked',
+    expected: [],
+    qualityRow:
+      'A module has no `factories` directory under `domain/` or `application/` (tests are not checked)',
+  },
+  {
     fixture: 'domain-has-factories-directory',
     expected: ['api-domain-no-factories-directory'],
     qualityRow: 'A module has a `factories` directory under `domain/` or `application/`',

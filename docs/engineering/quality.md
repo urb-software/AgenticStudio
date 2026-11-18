@@ -74,7 +74,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - No `domain/services/` directory, in every module (by path pattern).
 - A file under `domain/value-objects/` exports a constant that is not a list of allowed values (an array or object of literals written `as const`) only if it also exports a class (Issue #215).
 - A file under `domain/value-objects/` exports at most one class (error classes aside) or, with no class, at most one record; with a class, any record it exports is named after the class. Lists of allowed values, the union types derived from them, type guards and typed-id brands are not records (Issue #215).
-- No directory named `factories` under a module's `domain/` or `application/`, and no class under `domain/` whose public members are all methods returning a different class (Issue #215). The check for static methods that do not return an instance of their class is Issue #216.
+- No directory named `factories` under a module's `domain/` or `application/` (tests are not checked), and no class under `domain/` whose public members are all methods returning a different class (Issue #215). The check for static methods that do not return an instance of their class is Issue #216.
 - The methods of every repository interface are pinned in `tests/architecture/api/pinned/repository-methods.json`, each with its kind (`load`, `save`, `query`, `atomic` or `set-wide`): adding, renaming or removing a method fails `pinned.test.ts` until the record is changed in review, and each atomic or set-wide method carries a one-line reason it cannot be a load, a call on the domain object and a save. The failure message names the file and says what to do.
 - The files directly in a module's `application/` folder are pinned in `tests/architecture/api/pinned/application-collaborators.json`, each with the step of rule 3 that was tried and why it did not apply: a new one fails until the record is changed in review. The Epic aimed for none; one remains (`executions/application/run-lookup-requests.ts`, with its reason in the record).
 - The three pinned records state decisions and are never an allowlist: no entry makes a violation of a gate check pass. The pull request template's checkbox points to them.
@@ -172,7 +172,9 @@ Positive and negative fixtures prove the rules catch violations:
 | A `domain/value-objects/` file exports one class or one record, with the lists and guards that describe it | PASS |
 | A `domain/value-objects/` file exports a constant that is not a list of allowed values and no class | FAIL |
 | A `domain/value-objects/` file exports two classes, two records, or a record not named after its class | FAIL |
+| A module has no `factories` directory under `domain/` or `application/` (tests are not checked) | PASS |
 | A module has a `factories` directory under `domain/` or `application/` | FAIL |
+| A `domain/value-objects/` file exports a constant that is not a list beside a class | PASS |
 | A `domain/` class only has methods returning another class | FAIL |
 | A `domain/` class has state, or methods returning its own class | PASS |
 | `domain/` imports only `domain/` and plain libraries | PASS |
@@ -204,7 +206,7 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | 6 | The domain receives facts and never fetches them | Gate check: `domain/` imports nothing from `application/ports/` and no database client in domain tests; pinned test: the list of repository methods; that no business rule is written in the database adapter is review only |
 | 7 | Validation has two homes | Review only |
 | 8 | `contracts/` is a module's public face | Gate check: `contracts/` holds only `index.ts` and `events/`, and the existing check that other modules import only `contracts/index.ts` |
-| 9 | Same role, same form | Gate checks: a `domain/value-objects/` file exports a non-list constant only beside a class and exports one class or one record, and no `factories/` directory or class of methods returning another class exists under `domain/` or `application/`; entity classes are also covered by the check of rule 4. That a record with a rule is a class, and that a static method that is not a factory is an instance method, is review only until Issue #216 adds its check |
+| 9 | Same role, same form | Gate checks: a `domain/value-objects/` file exports a non-list constant only beside a class and exports one class or one record, no `factories/` directory exists under `domain/` or `application/` (tests are not checked), and no class under `domain/` has only methods returning another class; entity classes are also covered by the check of rule 4. That a record with a rule is a class, and that a static method that is not a factory is an instance method, is review only until Issue #216 adds its check |
 | 10 | Handlers own their input and result | Gate checks: nothing under `entry-points/` imports an entity class, no handler returns an entity class, and every handler exports its input and result types; that a handler builds no HTTP shape is review only (rule 2 keeps HTTP APIs out of `application/`) |
 | 11 | One aggregate root, one file, one repository | Gate check: a repository interface refers to exactly one entity file and no value object is its main type; pinned test: the aggregate roots of each module; that anything with its own repository is a root is review only |
 | 12 | Aggregates refer to each other by id | Gate check: no entity file imports another entity file except for an id type; that no root loads another is review only |

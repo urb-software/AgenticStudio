@@ -84,11 +84,11 @@ export class RunProgress {
   stepLimitFailure(): RunFailure {
     const { maxSteps } = this.limits;
     const steps = `${maxSteps} run ${maxSteps === 1 ? 'step' : 'steps'}`;
-    return RunFailure.restore({
-      code: 'step_limit',
-      detail: this.inFollowUp
+    return RunFailure.of(
+      'step_limit',
+      this.inFollowUp
         ? `The Follow-up reached its limit of ${steps}; no further step was started.`
         : `The run reached its limit of ${steps}; no further step was started.`,
-    });
+    );
   }
 }

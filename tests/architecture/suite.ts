@@ -178,6 +178,16 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
+    row: 'A module has no `factories` directory under `domain/` or `application/` (tests are not checked)',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/value-objects/` file exports a constant that is not a list beside a class',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
     row: 'A module has a `factories` directory under `domain/` or `application/`',
     expected: 'FAIL',
     gate: 'api',

@@ -27,37 +27,33 @@ import { LostWorkerRule } from '../../../domain/value-objects/lost-worker-rule.j
 import { OverdueStepRule } from '../../../domain/value-objects/overdue-step-rule.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
-const NO_REMOTE = RunFailure.restore({
-  code: 'preparation_failed',
-  detail:
-    "The run has no repository remote to prepare from (the project's repository was removed).",
-});
+const NO_REMOTE = RunFailure.of(
+  'preparation_failed',
+  "The run has no repository remote to prepare from (the project's repository was removed).",
+);
 
-const NOT_DELIVERABLE = RunFailure.restore({
-  code: 'delivery_failed',
-  detail:
-    'The run cannot be delivered: it has no repository remote, integration branch or recorded ' +
+const NOT_DELIVERABLE = RunFailure.of(
+  'delivery_failed',
+  'The run cannot be delivered: it has no repository remote, integration branch or recorded ' +
     'Run branch.',
-});
+);
 
-const ENVIRONMENT_FILE_UNAVAILABLE = RunFailure.restore({
-  code: 'preparation_failed',
-  detail:
-    "Studio could not read the project's Environment file for this run. Start the run again; " +
+const ENVIRONMENT_FILE_UNAVAILABLE = RunFailure.of(
+  'preparation_failed',
+  "Studio could not read the project's Environment file for this run. Start the run again; " +
     'if it keeps failing, set the Environment file again.',
-});
+);
 
-const NOT_RESUMABLE = RunFailure.restore({
-  code: 'preparation_failed',
-  detail:
-    'Working copy no longer exists — run again: Studio has no recorded Working copy, repository ' +
+const NOT_RESUMABLE = RunFailure.of(
+  'preparation_failed',
+  'Working copy no longer exists — run again: Studio has no recorded Working copy, repository ' +
     'remote or integration branch for this run.',
-});
+);
 
-const WORKING_COPY_REMOVED = RunFailure.restore({
-  code: 'preparation_failed',
-  detail: "Working copy no longer exists — run again: the agent worker's retention removed it.",
-});
+const WORKING_COPY_REMOVED = RunFailure.of(
+  'preparation_failed',
+  "Working copy no longer exists — run again: the agent worker's retention removed it.",
+);
 
 export interface ClaimedRun extends RunSnapshot {
   environmentFile: EnvironmentFile | null;

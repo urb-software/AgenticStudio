@@ -38,7 +38,7 @@ export class PrismaReviewCommentRepository implements ReviewCommentRepository {
   }
 
   async replace(runId: string, set: ReviewComments): Promise<void> {
-    const comments = set.comments as unknown as Prisma.InputJsonValue;
+    const comments = set.snapshot().comments as unknown as Prisma.InputJsonValue;
     await this.db.runReviewCommentSet.upsert({
       where: { runId },
       create: {

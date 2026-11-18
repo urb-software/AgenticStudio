@@ -48,7 +48,7 @@ export function valueObjectViolations(baseDir: string): Violation[] {
   const found: Violation[] = [];
   const reportedDirectories = new Set<string>();
   for (const path of files) {
-    const directory = FACTORIES_DIRECTORY.exec(path);
+    const directory = TEST_FILE.test(path) ? null : FACTORIES_DIRECTORY.exec(path);
     if (directory && !reportedDirectories.has(directory[1]!)) {
       reportedDirectories.add(directory[1]!);
       found.push({

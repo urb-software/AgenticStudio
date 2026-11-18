@@ -1,18 +1,8 @@
+import type { ReviewCommentsAnswerFacts } from './review-comments-answer-facts.js';
 import type { ReviewCommentsSnapshot } from './review-comments-snapshot.js';
 import type { FollowUpComments } from '../value-objects/follow-up-comments.js';
-import type { LogRedaction } from '../value-objects/log-redaction.js';
-import { ReviewComment, type ReviewCommentInput } from '../value-objects/review-comment.js';
+import { ReviewComment } from '../value-objects/review-comment.js';
 import type { ReviewCommentScope } from '../value-objects/review-comment-scope.js';
-
-/** What a pull request's comments are loaded from: the Git host's answer. */
-export interface ReviewCommentsLoad {
-  scope: ReviewCommentScope;
-  comments: readonly ReviewCommentInput[];
-  /** The Git host already left some out. */
-  truncated: boolean;
-  redaction: LogRedaction;
-  loadedAt: Date;
-}
 
 /** What people wrote on a Run's pull request, as its latest load left it. */
 export class ReviewComments {
@@ -39,7 +29,7 @@ export class ReviewComments {
    * Redacts, removes control characters and cuts each text to its byte size (after the redaction,
    * which can change its length); keeps at most the latest {@link ReviewComment.SET_MAX}.
    */
-  static load(input: ReviewCommentsLoad): ReviewComments {
+  static load(input: ReviewCommentsAnswerFacts): ReviewComments {
     let truncated = input.truncated;
     const kept = input.comments.slice(-ReviewComment.SET_MAX);
     if (kept.length < input.comments.length) truncated = true;

@@ -122,6 +122,22 @@ describe('ReviewComments.load', () => {
   });
 });
 
+describe('ReviewComments.restore', () => {
+  it('keeps a stored text as it is, without cutting or redacting it', () => {
+    const long = 'é'.repeat(5000);
+    const set = ReviewComments.restore({
+      scope: 'unresolved',
+      comments: [comment({ text: long, diffContext: 'x'.repeat(3000) })],
+      truncated: false,
+      loadedAt: new Date('2026-11-16T12:00:00.000Z'),
+    });
+
+    expect(set.comments[0]?.text).toBe(long);
+    expect(set.comments[0]?.diffContext).toHaveLength(3000);
+    expect(ReviewComment.restore(comment({ text: long })).text).toBe(long);
+  });
+});
+
 describe('selecting comments', () => {
   const set = ReviewComments.restore({
     scope: 'unresolved',

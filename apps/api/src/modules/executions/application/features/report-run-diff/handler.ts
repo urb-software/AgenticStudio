@@ -62,7 +62,7 @@ export class ReportRunDiffHandler {
         })),
     });
     // Redaction can lengthen the reason: cut after it, to what is stored.
-    const reason = (text: string) => redact(text).slice(0, RunDiffUnavailableReason.MAX_LENGTH);
+    const reason = (text: string) => RunDiffUnavailableReason.of(text, redaction).text;
     const diffs: Record<RunDiffScope, NewRunDiff> =
       'unavailable' in input.diffs
         ? {

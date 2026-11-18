@@ -16,17 +16,16 @@ export class LostWorkerRule {
   static at(now: Date, leaseSeconds: number): LostWorkerRule {
     return new LostWorkerRule(
       new Date(now.getTime() - leaseSeconds * 1000),
-      RunFailure.restore({
-        code: 'worker_lost',
-        detail: `The agent worker sent no heartbeat for ${leaseSeconds} seconds.`,
-      }),
+      RunFailure.of(
+        'worker_lost',
+        `The agent worker sent no heartbeat for ${leaseSeconds} seconds.`,
+      ),
       // A delivery retry whose worker was lost stays a failed delivery, so it can be retried.
-      RunFailure.restore({
-        code: 'delivery_failed',
-        detail:
-          `The agent worker sent no heartbeat for ${leaseSeconds} seconds while it retried the ` +
+      RunFailure.of(
+        'delivery_failed',
+        `The agent worker sent no heartbeat for ${leaseSeconds} seconds while it retried the ` +
           'delivery. Retry the delivery.',
-      }),
+      ),
     );
   }
 

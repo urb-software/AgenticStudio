@@ -16,18 +16,16 @@ export class GoneWorkerRule {
   static at(now: Date, leaseSeconds: number): GoneWorkerRule {
     return new GoneWorkerRule(
       new Date(now.getTime() - leaseSeconds * 1000),
-      RunFailure.restore({
-        code: 'delivery_failed',
-        detail:
-          `Working copy no longer exists (agent worker gone): the agent worker that started this ` +
+      RunFailure.of(
+        'delivery_failed',
+        `Working copy no longer exists (agent worker gone): the agent worker that started this ` +
           `run has not reported for more than ${leaseSeconds} seconds.`,
-      }),
-      RunFailure.restore({
-        code: 'preparation_failed',
-        detail:
-          `Working copy no longer exists (agent worker gone) — run again: the agent worker that ` +
+      ),
+      RunFailure.of(
+        'preparation_failed',
+        `Working copy no longer exists (agent worker gone) — run again: the agent worker that ` +
           `started this run has not reported for more than ${leaseSeconds} seconds.`,
-      }),
+      ),
     );
   }
 
