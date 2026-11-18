@@ -8,7 +8,7 @@ import {
 } from '../../../domain/errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
-import { type RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
+import { repositoryView, type RepositoryView } from '../../repository-view.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -45,7 +45,7 @@ export interface ConnectRepositoryInput {
   integrationBranch: string;
 }
 
-export type ConnectRepositoryResult = RepositoryConnectionSnapshot;
+export type ConnectRepositoryResult = RepositoryView;
 
 /**
  * If the clone job cannot be scheduled, the attempt is failed again and the error rethrown, so
@@ -116,7 +116,7 @@ export class ConnectRepositoryHandler {
     if (previousKey && previousKey !== deployKey) {
       await this.deleteKey(input.projectId, previousKey.secretRef);
     }
-    if (url.ssh) return repository.snapshot();
+    if (url.ssh) return repositoryView(repository);
     try {
       await this.jobs.start(input.projectId, 'clone');
     } catch (error) {
@@ -129,7 +129,7 @@ export class ConnectRepositoryHandler {
       });
       throw error;
     }
-    return repository.snapshot();
+    return repositoryView(repository);
   }
 
   /**

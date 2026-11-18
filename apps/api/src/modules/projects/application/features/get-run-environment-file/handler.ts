@@ -1,4 +1,3 @@
-import type { EnvironmentFile as RunEnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import type { RunEnvironmentFiles } from '../../../contracts/index.js';
 import {
@@ -15,7 +14,7 @@ export interface GetRunEnvironmentFileInput {
   projectId: string;
 }
 
-export type GetRunEnvironmentFileResult = RunEnvironmentFile | null;
+export type GetRunEnvironmentFileResult = { path: string; content: string } | null;
 
 /**
  * Returns the content (a secret): for `executions` only, never an operator endpoint.

@@ -311,6 +311,7 @@ describe('DisconnectRepositoryHandler', () => {
       integrationBranch: 'dev',
     };
     const first = await connect.execute(input);
+    const firstSecret = connections.repositories.get(PROJECT)!.deployKeySecret;
     expect(secrets.values.size).toBe(1);
 
     expect(await handler.execute({ projectId: PROJECT })).toEqual({ disconnected: true });
@@ -319,8 +320,9 @@ describe('DisconnectRepositoryHandler', () => {
 
     const second = await connect.execute(input);
     expect(second.state).toBe('awaiting_key');
+    const secondSecret = connections.repositories.get(PROJECT)!.deployKeySecret;
     expect(second.publicKey).not.toBe(first.publicKey);
-    expect(second.deployKeySecret).not.toBe(first.deployKeySecret);
-    expect([...secrets.values.keys()]).toEqual([second.deployKeySecret]);
+    expect(secondSecret).not.toBe(firstSecret);
+    expect([...secrets.values.keys()]).toEqual([secondSecret]);
   });
 });

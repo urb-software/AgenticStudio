@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { ProjectSnapshot } from '../../../domain/entities/project-snapshot.js';
+import { projectView, type ProjectView } from '../../project-view.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 
-export type ListProjectsResult = readonly ProjectSnapshot[];
+export type ListProjectsResult = readonly ProjectView[];
 
 @Injectable()
 export class ListProjectsHandler {
@@ -13,6 +13,6 @@ export class ListProjectsHandler {
 
   async execute(): Promise<ListProjectsResult> {
     const projects = await this.projects.listNewestFirst();
-    return projects.map((project) => project.snapshot());
+    return projects.map(projectView);
   }
 }

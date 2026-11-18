@@ -69,7 +69,6 @@ describe('ConnectRepositoryHandler', () => {
     });
 
     expect(repository).toEqual({
-      projectId: PROJECT,
       url: URL,
       integrationBranch: 'dev',
       state: 'connecting',
@@ -78,10 +77,13 @@ describe('ConnectRepositoryHandler', () => {
       lastFetchedAt: null,
       failure: null,
       publicKey: null,
+      hostKeyFingerprint: null,
+    });
+    expect(connections.repositories.get(PROJECT)).toMatchObject({
+      projectId: PROJECT,
       deployKeySecret: null,
       pinnedHostKey: null,
       pendingHostKey: null,
-      hostKeyFingerprint: null,
     });
     expect(connections.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
     expect(jobs.started).toEqual([[PROJECT, 'clone']]);
@@ -188,13 +190,13 @@ describe('ConnectRepositoryHandler', () => {
         state: 'awaiting_key',
         hasClone: false,
         publicKey: expect.stringMatching(/^ssh-ed25519 [A-Za-z0-9+/]+=* studio-Shop$/),
-        pinnedHostKey: null,
-        pendingHostKey: null,
         hostKeyFingerprint: null,
       });
+      const stored = connections.repositories.get(PROJECT)!;
+      expect(stored).toMatchObject({ pinnedHostKey: null, pendingHostKey: null });
       // Only the secret store holds the private half; the Repository has its reference.
-      expect([...secrets.values.keys()]).toEqual([repository.deployKeySecret]);
-      expect(secrets.values.get(repository.deployKeySecret!)).toMatch(/PRIVATE KEY/);
+      expect([...secrets.values.keys()]).toEqual([stored.deployKeySecret]);
+      expect(secrets.values.get(stored.deployKeySecret!)).toMatch(/PRIVATE KEY/);
       expect(JSON.stringify(repository)).not.toMatch(/PRIVATE KEY/);
       expect(jobs.started).toEqual([]);
       expect(git.calls).toEqual([]);
@@ -242,7 +244,7 @@ describe('ConnectRepositoryHandler', () => {
         pinnedHostKey,
         failure: { code: 'auth_failed', detail: '', remoteDefaultBranch: null },
       });
-      return first;
+      return { ...first, deployKeySecret: stored.deployKeySecret };
     }
 
     it('keeps the Deploy key and the pinned host key when a failed one is replaced for the same host', async () => {
@@ -259,9 +261,11 @@ describe('ConnectRepositoryHandler', () => {
         state: 'awaiting_key',
         integrationBranch: 'main',
         publicKey: first.publicKey,
+        failure: null,
+      });
+      expect(connections.repositories.get(PROJECT)).toMatchObject({
         deployKeySecret: first.deployKeySecret,
         pinnedHostKey: pinned,
-        failure: null,
       });
       expect(secrets.values.size).toBe(1);
     });
@@ -275,7 +279,8 @@ describe('ConnectRepositoryHandler', () => {
         integrationBranch: 'dev',
       });
 
-      expect(replaced).toMatchObject({ publicKey: first.publicKey, pinnedHostKey: null });
+      expect(replaced).toMatchObject({ publicKey: first.publicKey });
+      expect(connections.repositories.get(PROJECT)).toMatchObject({ pinnedHostKey: null });
     });
 
     it('deletes the Deploy key when a failed SSH Repository is replaced over HTTPS', async () => {
@@ -290,6 +295,8 @@ describe('ConnectRepositoryHandler', () => {
       expect(replaced).toMatchObject({
         state: 'connecting',
         publicKey: null,
+      });
+      expect(connections.repositories.get(PROJECT)).toMatchObject({
         deployKeySecret: null,
         pinnedHostKey: null,
       });
@@ -363,7 +370,8 @@ describe('ConnectRepositoryHandler', () => {
           integrationBranch: 'dev',
         });
 
-        expect(replaced).toMatchObject({ state: 'connecting', deployKeySecret: null });
+        expect(replaced).toMatchObject({ state: 'connecting' });
+        expect(connections.repositories.get(PROJECT)).toMatchObject({ deployKeySecret: null });
         expect(warnings).toEqual([
           expect.stringMatching(
             /could not delete an unused Deploy key\. .*SecretStoreUnavailableError/,

@@ -77,7 +77,6 @@ describe('FetchRepositoryHandler', () => {
     const repository = await handler.execute({ projectId: PROJECT });
 
     expect(repository).toEqual({
-      projectId: PROJECT,
       url: URL,
       integrationBranch: 'dev',
       state: 'fetching',
@@ -86,9 +85,6 @@ describe('FetchRepositoryHandler', () => {
       lastFetchedAt: FETCHED_AT,
       failure: null,
       publicKey: null,
-      deployKeySecret: null,
-      pinnedHostKey: null,
-      pendingHostKey: null,
       hostKeyFingerprint: null,
     });
     expect(jobs.started).toEqual([[PROJECT, 'fetch']]);

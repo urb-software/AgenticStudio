@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { EnvironmentFileSnapshot } from '../../../domain/entities/environment-file-snapshot.js';
+import { environmentFileView, type EnvironmentFileView } from '../../environment-file-view.js';
 import { EnvironmentFilePathTrackedError } from '../../../domain/errors/environment-file-errors.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
-import { checkEnvironmentFile } from './check.js';
+import { EnvironmentFileContent } from '../../../domain/value-objects/environment-file-content.js';
+import { EnvironmentFilePath } from '../../../domain/value-objects/environment-file-path.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
@@ -34,7 +35,7 @@ export interface SetEnvironmentFileInput {
   content: string;
 }
 
-export type SetEnvironmentFileResult = EnvironmentFileSnapshot;
+export type SetEnvironmentFileResult = EnvironmentFileView;
 
 /**
  * Throws {@link ProjectNotFoundError}, `InvalidEnvironmentFilePathError` (including
@@ -55,19 +56,20 @@ export class SetEnvironmentFileHandler {
     if (!isProjectId(input.projectId) || !(await this.projects.findById(input.projectId))) {
       throw new ProjectNotFoundError();
     }
-    const { sizeBytes } = checkEnvironmentFile(input.path, input.content);
-    await this.refuseTrackedPath(input.projectId, input.path);
+    const { value: path } = EnvironmentFilePath.of(input.path);
+    const { sizeBytes } = EnvironmentFileContent.of(input.content);
+    await this.refuseTrackedPath(input.projectId, path);
 
     const secretRef = await this.contents.store(input.content);
     let result: Awaited<ReturnType<EnvironmentFileRepository['save']>>;
     try {
-      result = await this.files.save(input.projectId, { path: input.path, sizeBytes, secretRef });
+      result = await this.files.save(input.projectId, { path, sizeBytes, secretRef });
     } catch (error) {
       await this.contents.discard(secretRef);
       throw error;
     }
     if (result.replacedSecretRef !== null) await this.contents.discard(result.replacedSecretRef);
-    return result.saved.snapshot();
+    return environmentFileView(result.saved);
   }
 
   /** The tracked-path check of a ready Clone; skipped without one (the worker re-checks). */

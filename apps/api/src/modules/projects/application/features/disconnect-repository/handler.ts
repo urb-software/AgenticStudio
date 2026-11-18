@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import type { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
-import type { RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
+import { repositoryView, type RepositoryView } from '../../repository-view.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -22,7 +22,7 @@ export interface DisconnectRepositoryInput {
 }
 
 export type DisconnectRepositoryResult =
-  { disconnected: true } | { disconnected: false; repository: RepositoryConnectionSnapshot };
+  { disconnected: true } | { disconnected: false; repository: RepositoryView };
 
 /** One thing a Disconnect removes; each step is idempotent, so a retry runs them all again. */
 interface CleanupStep {
@@ -84,10 +84,10 @@ export class DisconnectRepositoryHandler {
       await this.jobs.cancel(projectId);
     } catch (error) {
       this.logPending(projectId, 'could not cancel its running operation', error);
-      return { disconnected: false, repository: repository.snapshot() };
+      return { disconnected: false, repository: repositoryView(repository) };
     }
     if (await this.finish(projectId)) return { disconnected: true };
-    return { disconnected: false, repository: repository.snapshot() };
+    return { disconnected: false, repository: repositoryView(repository) };
   }
 
   /**

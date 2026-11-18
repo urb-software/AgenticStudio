@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
+import { repositoryView, type RepositoryView } from '../../repository-view.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -15,7 +15,7 @@ export interface GetRepositoryInput {
   projectId: string;
 }
 
-export type GetRepositoryResult = RepositoryConnectionSnapshot | null;
+export type GetRepositoryResult = RepositoryView | null;
 
 /**
  * `null` when none is connected. Throws {@link ProjectNotFoundError} for an unknown project.
@@ -32,7 +32,7 @@ export class GetRepositoryHandler {
     const { projectId } = input;
     if (!isProjectId(projectId)) throw new ProjectNotFoundError();
     const repository = await this.repositories.find(projectId);
-    if (repository) return repository.snapshot();
+    if (repository) return repositoryView(repository);
     if (!(await this.projects.findById(projectId))) throw new ProjectNotFoundError();
     return null;
   }

@@ -125,7 +125,9 @@ export interface RepositoryView {
   hostKeyFingerprint: string | null;
 }
 
-export function toRepositorySummary(repository: RepositoryView): RepositorySummaryResponse {
+export function toRepositorySummary(
+  repository: Pick<RepositoryView, 'state' | 'url' | 'integrationBranch'>,
+): RepositorySummaryResponse {
   return {
     state: repository.state,
     url: repository.url,

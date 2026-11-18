@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
-import { type RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
+import { repositoryView, type RepositoryView } from '../../repository-view.js';
 import {
   RepositoryNotVerifiableError,
   NoRepositoryError,
@@ -29,7 +29,7 @@ export interface VerifyRepositoryInput {
   acceptHostKeyFingerprint?: string;
 }
 
-export type VerifyRepositoryResult = RepositoryConnectionSnapshot;
+export type VerifyRepositoryResult = RepositoryView;
 
 /** How long retrieving a host key may take; the request waits for it. */
 export const HOST_KEY_SCAN_TIMEOUT_MS = 30_000;
@@ -64,11 +64,11 @@ export class VerifyRepositoryHandler {
 
     if (acceptHostKeyFingerprint !== undefined) {
       const pendingHostKey = repository.confirmedHostKey(acceptHostKeyFingerprint);
-      return (await this.startClone(repository, { pendingHostKey })).snapshot();
+      return repositoryView(await this.startClone(repository, { pendingHostKey }));
     }
 
     if (!this.deployKeys.trustedHostKeys(repository).isEmpty) {
-      return (await this.startClone(repository, null)).snapshot();
+      return repositoryView(await this.startClone(repository, null));
     }
 
     let hostKey: string;
@@ -82,13 +82,13 @@ export class VerifyRepositoryHandler {
       await this.repositories.change(projectId, (stored) => {
         stored.failVerification(failure);
       });
-      return (await this.current(projectId)).snapshot();
+      return repositoryView(await this.current(projectId));
     }
     const awaiting = await this.repositories.change(projectId, (stored) => {
       stored.awaitHostKey(hostKey);
     });
     if (!awaiting) throw new RepositoryNotVerifiableError();
-    return awaiting.snapshot();
+    return repositoryView(awaiting);
   }
 
   /**
