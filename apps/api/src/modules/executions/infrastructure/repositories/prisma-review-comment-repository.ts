@@ -2,7 +2,7 @@ import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import { ReviewComments } from '../../domain/entities/review-comments.js';
-import { type ReviewCommentsSnapshot } from '../../domain/value-objects/review-comments-snapshot.js';
+import { type ReviewCommentsSnapshot } from '../../domain/entities/review-comments-snapshot.js';
 import type { ReviewCommentRepository } from '../../domain/repositories/review-comment-repository.js';
 import type { ReviewCommentScope } from '../../domain/value-objects/review-comments.js';
 import type { Executor } from './executor.js';

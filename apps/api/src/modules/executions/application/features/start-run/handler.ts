@@ -6,9 +6,9 @@ import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
   ProviderUnavailableError,
-} from '../../../domain/value-objects/run-errors.js';
+} from '../../../domain/errors/run-errors.js';
 import { Run } from '../../../domain/entities/run.js';
-import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {

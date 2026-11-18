@@ -8,7 +8,7 @@ import {
   ProjectName,
 } from '../../../../domain/value-objects/project-name.js';
 import { CreateProjectHandler } from '../handler.js';
-import { ProjectNameTakenError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNameTakenError } from '../../../../domain/errors/project-errors.js';
 
 /** In-memory adapter of the repository port, with the same uniqueness rule as the database. */
 class InMemoryProjectRepository implements ProjectRepository {

@@ -1,4 +1,4 @@
-import type { RunDiffSnapshot } from '../value-objects/run-diff-snapshot.js';
+import type { RunDiffSnapshot } from './run-diff-snapshot.js';
 import type { NewRunDiff, RunDiffScope, RunDiffState } from '../value-objects/run-diff.js';
 
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;

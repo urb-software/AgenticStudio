@@ -1,10 +1,10 @@
-import type { RunSnapshot } from '../value-objects/run-snapshot.js';
+import type { RunSnapshot } from './run-snapshot.js';
 import { HandOutRule } from '../value-objects/hand-out-rule.js';
 import type { FollowUpEligibility, FollowUpRefusal } from '../value-objects/follow-up.js';
 import { PROVIDERS } from '../value-objects/provider.js';
 import { RunConversation, type BringUpDetails } from '../value-objects/run-conversation.js';
 import type { RunMessage } from '../value-objects/run-conversation.js';
-import type { RunData } from '../value-objects/run-data.js';
+import type { RunData } from './run-data.js';
 import { RunDelivery } from '../value-objects/run-delivery.js';
 import {
   DeliveryNotRetryableError,
@@ -17,21 +17,16 @@ import {
   RunNotWaitingError,
   RunSlotTakenError,
   StepOutOfOrderError,
-} from '../value-objects/run-errors.js';
+} from '../errors/run-errors.js';
 import type { RunFailure } from '../value-objects/run-failure.js';
-import type {
-  FollowUpConsumption,
-  FollowUpFacts,
-  FollowUpOrigin,
-  ResumeFacts,
-  RetentionFacts,
-  RunChanges,
-  RunStartInput,
-  RunStateReport,
-  RunStepOutcome,
-  RunStepRecord,
-  WorkerFacts,
-} from '../value-objects/run-facts.js';
+import type { FollowUpConsumption, FollowUpOrigin } from './run-follow-up-facts.js';
+import type { FollowUpFacts, WorkerFacts } from './run-worker-facts.js';
+import type { ResumeFacts } from './run-resume-facts.js';
+import type { RetentionFacts } from '../value-objects/retention-policy.js';
+import type { RunChanges } from './run-change-facts.js';
+import type { RunStartInput } from './run-start-facts.js';
+import type { RunStateReport } from './run-report-facts.js';
+import type { RunStepOutcome, RunStepRecord } from './run-step-facts.js';
 import { RunLifecycle } from '../value-objects/run-lifecycle.js';
 import { RunProgress } from '../value-objects/run-progress.js';
 import {
@@ -49,7 +44,7 @@ import { RunWorkerClaim } from '../value-objects/run-worker-claim.js';
 import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
 import { WorkerStatus } from '../value-objects/worker-status.js';
 import { RunStep } from './run-step.js';
-import type { RunStepSnapshot } from '../value-objects/run-step-snapshot.js';
+import type { RunStepSnapshot } from './run-step-snapshot.js';
 
 /** The stored fields an operation of the Run changes: the flat names, as storage holds them. */
 type RunPatch = Partial<
@@ -308,7 +303,8 @@ export class Run {
       throw new RunNotResumableError();
     }
     if (facts.projectPlaceTaken) throw new RunSlotTakenError('project');
-    if (facts.serverPlacesTaken >= HandOutRule.MAX_PLACES) throw new RunSlotTakenError('server');
+    if (facts.serverPlacesTaken >= HandOutRule.MAX_PLACES)
+      throw new RunSlotTakenError('server', HandOutRule.MAX_PLACES);
     this.append({ kind: 'answer', text: RunConversation.USAGE_LIMIT_RESUME_TEXT, at: now });
     this.apply({ state: 'queued', failure: null, finishedAt: null, lastActivityAt: now });
   }

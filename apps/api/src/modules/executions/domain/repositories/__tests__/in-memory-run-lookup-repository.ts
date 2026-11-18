@@ -1,5 +1,5 @@
 import { RunLookup } from '../../entities/run-lookup.js';
-import { type RunLookupSnapshot } from '../../value-objects/run-lookup-snapshot.js';
+import { type RunLookupSnapshot } from '../../entities/run-lookup-snapshot.js';
 import type { LookupHandOutRule } from '../../value-objects/lookup-hand-out-rule.js';
 import type { ReviewCommentsLoad } from '../run-lookup-repository.js';
 import type { LookupKind } from '../../value-objects/run-lookup.js';

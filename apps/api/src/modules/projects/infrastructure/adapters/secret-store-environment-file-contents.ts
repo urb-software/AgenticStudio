@@ -5,8 +5,10 @@ import {
   SecretNotFoundError,
   type SecretStore,
 } from '../../../../platform/secrets/index.js';
-import { ENVIRONMENT_FILE_SECRET_OWNER } from '../../domain/value-objects/environment-file.js';
 import type { EnvironmentFileContents } from '../../application/ports/environment-file-contents.js';
+
+/** The owner label of the content in the secret store. */
+const ENVIRONMENT_FILE_SECRET_OWNER = 'projects.environment-file';
 
 /**
  * How old an unreferenced content must be before the orphan sweep deletes it: far longer than

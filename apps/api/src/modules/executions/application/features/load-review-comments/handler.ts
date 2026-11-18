@@ -9,7 +9,7 @@ import {
   FollowUpNotAllowedError,
   RunNotFoundError,
   PullRequestNotRefreshableError,
-} from '../../../domain/value-objects/run-errors.js';
+} from '../../../domain/errors/run-errors.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import {
@@ -24,7 +24,7 @@ import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RunLookupRequests } from '../../run-lookup-requests.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from '../../ports/operator-login.js';
-import { ReviewCommentsLoadRunningError } from '../../../domain/value-objects/review-comments-errors.js';
+import { ReviewCommentsLoadRunningError } from '../../../domain/errors/review-comments-errors.js';
 
 export interface LoadReviewCommentsInput {
   runId: string;

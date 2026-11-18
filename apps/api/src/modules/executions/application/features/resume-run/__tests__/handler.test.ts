@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
+import type { RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import { HandOutRule } from '../../../../domain/value-objects/hand-out-rule.js';
 import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
 import { type RunFailure } from '../../../../domain/value-objects/run-failure.js';
 import {
   RunNotResumableError,
   RunSlotTakenError,
   RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { ResumeRunHandler } from '../handler.js';
@@ -165,7 +166,7 @@ describe('ResumeRunHandler', () => {
     }
 
     await expect(handler.execute({ runId: run.id })).rejects.toEqual(
-      new RunSlotTakenError('server'),
+      new RunSlotTakenError('server', HandOutRule.MAX_PLACES),
     );
   });
 

@@ -1,4 +1,4 @@
-import { InvalidProductNameError } from './product-errors.js';
+import { InvalidProductNameError } from '../errors/product-errors.js';
 
 // A value object validates on creation.
 export class ProductName {

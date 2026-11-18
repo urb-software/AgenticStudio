@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Run } from '../run.js';
-import type { RunData } from '../../value-objects/run-data.js';
+import type { RunData } from '../run-data.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import type { RunState } from '../../value-objects/run-state.js';
 import { LongWaitRule } from '../../value-objects/run-sweep-rules.js';

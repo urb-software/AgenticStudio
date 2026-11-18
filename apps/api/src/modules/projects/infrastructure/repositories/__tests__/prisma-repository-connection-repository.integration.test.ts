@@ -21,7 +21,7 @@ import {
   RepositoryAlreadyConnectedError,
   RemoteAlreadyConnectedError,
   RemoteHeldByOtherProjectError,
-} from '../../../domain/value-objects/repository-connection-errors.js';
+} from '../../../domain/errors/repository-connection-errors.js';
 import { type RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 import { PrismaProjectRepository } from '../prisma-project-repository.js';

@@ -2,7 +2,7 @@ import { ENVIRONMENT_FILE_MAX_BYTES, environmentFilePathProblem } from '@agentic
 import {
   InvalidEnvironmentFileContentError,
   InvalidEnvironmentFilePathError,
-} from '../../../domain/value-objects/environment-file.js';
+} from '../../../domain/errors/environment-file-errors.js';
 
 /** A UTF-16 surrogate without its pair: not encodable as UTF-8. */
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;

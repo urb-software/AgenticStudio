@@ -10,7 +10,7 @@ import {
   type GetProjectResult,
 } from '../../../../application/features/get-project/handler.js';
 import { ProjectDetailResponseDto } from './schema.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 /** `GET /api/projects/:id`, behind the global session guard. */
 @ApiTags('projects')

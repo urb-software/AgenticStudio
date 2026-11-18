@@ -1,4 +1,4 @@
-import type { RunStepSnapshot } from '../value-objects/run-step-snapshot.js';
+import type { RunStepSnapshot } from './run-step-snapshot.js';
 
 export class RunStep {
   private constructor(readonly index: number) {}

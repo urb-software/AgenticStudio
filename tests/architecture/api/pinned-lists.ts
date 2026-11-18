@@ -2,8 +2,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { listDirectories, listFiles } from '../harness';
-import { CHILD_ENTITIES, ENTITY_FILE } from './aggregate-rules';
+import { CHILD_ENTITIES } from './aggregate-rules';
 import {
+  ENTITY_FILE,
   exportedClasses,
   exportedLater,
   hasExportModifier,

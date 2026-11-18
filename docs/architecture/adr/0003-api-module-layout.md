@@ -38,6 +38,15 @@ Each business module therefore has four layers at the top, `application/`, `doma
 - **One snapshot per aggregate, not a full output model per handler** (rule 10). A snapshot is produced by the entity and reused wherever a result contains the whole aggregate. A separate output model for each handler would repeat the aggregate's fields many times, and every new field would be copied through all of them. Not chosen; a result that is not a whole aggregate is a view type owned by the feature.
 - **No line limit** (rule 13). A limit makes a file get split to pass the check instead of to name a concept, which produces files without a meaning. The rule is that a file holds one named concept; size is reported by a structure report ([Quality](../../engineering/quality.md) §4) and reviewed, not enforced.
 
+## Amendment, 2026-11-18 (Epic #160, Issue #203): direction of references and homes for companions
+
+After the entity files were split by concept, `domain/value-objects/` held things that are not value objects (error classes, fact types, stored shapes, snapshots), and one value object (the retention policy) took the `Run` class as a parameter. The layout is amended:
+
+- Error classes of an aggregate live in `domain/errors/<aggregate>-errors.ts`, one file per aggregate.
+- An aggregate's snapshot, stored data shape and fact types live beside its entity in `domain/entities/`, in files with the suffixes `-snapshot.ts`, `-data.ts` and `-facts.ts` (split facts: `<aggregate>-<operation>-facts.ts`) that export types only. The gate recognises a companion by its suffix; every other file in `domain/entities/` is an entity file with the unchanged checks.
+- `domain/value-objects/` holds value objects, policies and rules only. Inside `domain/`, references point one way: entities use value objects, value objects use smaller value objects, nothing under `value-objects/` or `errors/` imports from `entities/`, and there is no import cycle. A rule or policy takes an input type it declares itself.
+- Two gate checks keep this ([Quality](../../engineering/quality.md) §4 and §5). No behaviour changes.
+
 ## Consequences
 
 - **A feature's handler and its endpoint are in two folders** (`application/features/<feature>/` and `entry-points/http/<caller>/`), so reading one use case end to end means opening both.

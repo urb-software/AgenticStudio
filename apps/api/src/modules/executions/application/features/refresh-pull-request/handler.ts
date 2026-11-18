@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
@@ -15,7 +15,7 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 import {
   PullRequestNotRefreshableError,
   RunNotFoundError,
-} from '../../../domain/value-objects/run-errors.js';
+} from '../../../domain/errors/run-errors.js';
 
 export interface RefreshPullRequestInput {
   runId: string;
@@ -66,19 +66,24 @@ export class RefreshPullRequestHandler {
     const over =
       this.retention.isLimited(run.retentionFacts()) &&
       this.retention.overLimit(await this.runs.findLimitedRuns([run.projectId])).has(run.id);
-    const view = this.retention.runView(
-      run,
-      {
-        holderLastSeen:
-          run.claim.lastClaimedBy === null
-            ? undefined
-            : this.workers.lastSeen(run.claim.lastClaimedBy),
-        latest: this.workers.latest(),
-      },
-      now,
-      this.lease.seconds,
-      over,
-    );
+    const workers = {
+      holderLastSeen:
+        run.claim.lastClaimedBy === null
+          ? undefined
+          : this.workers.lastSeen(run.claim.lastClaimedBy),
+      latest: this.workers.latest(),
+    };
+    const view = {
+      run: run.snapshot(),
+      ...this.retention.runView(
+        run.followUpAvailability(workers, now, this.lease.seconds),
+        run.retentionFacts(),
+        workers.latest,
+        now,
+        this.lease.seconds,
+        over,
+      ),
+    };
     return {
       ...view,
       preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([run.id])).has(run.id),

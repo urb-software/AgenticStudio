@@ -1,4 +1,4 @@
-import type { RunLookupSnapshot } from '../value-objects/run-lookup-snapshot.js';
+import type { RunLookupSnapshot } from './run-lookup-snapshot.js';
 import type { ReviewCommentScope } from '../value-objects/review-comments.js';
 import type {
   LookupAnswerOutcome,

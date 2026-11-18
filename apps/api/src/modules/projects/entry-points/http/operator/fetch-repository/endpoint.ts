@@ -22,10 +22,10 @@ import {
   NoUsableCloneError,
   RepositoryBusyError,
   NoRepositoryError,
-} from '../../../../domain/value-objects/repository-connection-errors.js';
+} from '../../../../domain/errors/repository-connection-errors.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
 import { FetchRepositoryHandler } from '../../../../application/features/fetch-repository/handler.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 /** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {

@@ -7,7 +7,7 @@ import { RunEventPageDto, toRunEventResponse } from '../../shared/run-event-resp
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ListRunEventsHandler } from '../../../../application/features/list-run-events/handler.js';
 import { ListRunEventsQueryDto } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `GET /api/runs/:runId/events?after=&limit=` (Issue #99), behind the global session guard:

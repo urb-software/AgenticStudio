@@ -8,7 +8,7 @@ import {
 } from '../../shared/environment-file-response.js';
 import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
 import { GetEnvironmentFileHandler } from '../../../../application/features/get-environment-file/handler.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 /**
  * `GET /api/projects/:id/environment-file` (Issue #104), behind the global session guard: the

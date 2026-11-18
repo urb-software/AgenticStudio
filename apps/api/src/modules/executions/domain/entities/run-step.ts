@@ -1,4 +1,4 @@
-import type { RunStepSnapshot } from '../value-objects/run-step-snapshot.js';
+import type { RunStepSnapshot } from './run-step-snapshot.js';
 import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
 /**

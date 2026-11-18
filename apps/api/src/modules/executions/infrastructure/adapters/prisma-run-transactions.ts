@@ -13,7 +13,7 @@ import { PrismaReviewCommentRepository } from '../repositories/prisma-review-com
 import { PrismaRunDiffRepository } from '../repositories/prisma-run-diff-repository.js';
 import { PrismaRunLookupRepository } from '../repositories/prisma-run-lookup-repository.js';
 import { PrismaRunRepository } from '../repositories/prisma-run-repository.js';
-import { RunNotFoundError } from '../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../domain/errors/run-errors.js';
 
 /** Generous limits, as the Run repository's own transactions: they wait for the Run's row lock. */
 const TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;

@@ -6,7 +6,7 @@ import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 /** Yielded when the stream was idle for the keep-alive interval. */
 export const KEEP_ALIVE = 'keep-alive';

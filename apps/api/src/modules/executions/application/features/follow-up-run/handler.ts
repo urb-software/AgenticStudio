@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { type FollowUpOrigin } from '../../../domain/value-objects/run-facts.js';
+import { type FollowUpOrigin } from '../../../domain/entities/run-follow-up-facts.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
@@ -16,7 +16,7 @@ import { RUN_TRANSACTIONS, type RunTransactions } from '../../ports/run-transact
 import { RunLookupRequests } from '../../run-lookup-requests.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface FollowUpRunInput {
   runId: string;
@@ -131,19 +131,24 @@ export class FollowUpRunHandler {
       this.retention
         .overLimit(await this.runs.findLimitedRuns([refreshed.projectId]))
         .has(refreshed.id);
-    const view = this.retention.runView(
-      refreshed,
-      {
-        holderLastSeen:
-          refreshed.claim.lastClaimedBy === null
-            ? undefined
-            : this.workers.lastSeen(refreshed.claim.lastClaimedBy),
-        latest: this.workers.latest(),
-      },
-      viewedAt,
-      this.lease.seconds,
-      over,
-    );
+    const workers = {
+      holderLastSeen:
+        refreshed.claim.lastClaimedBy === null
+          ? undefined
+          : this.workers.lastSeen(refreshed.claim.lastClaimedBy),
+      latest: this.workers.latest(),
+    };
+    const view = {
+      run: refreshed.snapshot(),
+      ...this.retention.runView(
+        refreshed.followUpAvailability(workers, viewedAt, this.lease.seconds),
+        refreshed.retentionFacts(),
+        workers.latest,
+        viewedAt,
+        this.lease.seconds,
+        over,
+      ),
+    };
     return {
       ...view,
       preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([refreshed.id])).has(

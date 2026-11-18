@@ -6,22 +6,20 @@ import {
   RunNotResumableError,
   RunNotWaitingError,
   RunSlotTakenError,
-} from '../../value-objects/run-errors.js';
+} from '../../errors/run-errors.js';
 import { FOLLOW_UP_REFUSALS } from '../../value-objects/follow-up.js';
-import {
-  type FollowUpFacts,
-  type FollowUpOrigin,
-  type ResumeFacts,
-} from '../../value-objects/run-facts.js';
+import { type FollowUpFacts } from '../run-worker-facts.js';
+import { type FollowUpOrigin } from '../run-follow-up-facts.js';
+import { type ResumeFacts } from '../run-resume-facts.js';
 import { Run } from '../run.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { RunConversation } from '../../value-objects/run-conversation.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
-import { type RunData } from '../../value-objects/run-data.js';
+import { type RunData } from '../run-data.js';
 import { type RunState } from '../../value-objects/run-state.js';
 import { ReviewComments } from '../review-comments.js';
 import type { ReviewComment } from '../../value-objects/review-comments.js';
-import { ReviewCommentsNotLoadedError } from '../../value-objects/run-errors.js';
+import { ReviewCommentsNotLoadedError } from '../../errors/run-errors.js';
 import { Task } from '../../value-objects/task.js';
 
 // Issue #167: the operator's operations are methods of the Run. Each allowed and each refused

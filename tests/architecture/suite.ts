@@ -90,7 +90,7 @@ export const QUALITY_TABLE = [
   },
   { row: '`entry-points/` imports a class from `domain/entities/`', expected: 'FAIL', gate: 'api' },
   {
-    row: '`entry-points/` imports an error class from an errors file in `domain/value-objects/`',
+    row: '`entry-points/` imports an error class from an errors file in `domain/errors/`',
     expected: 'PASS',
     gate: 'api',
   },
@@ -127,6 +127,36 @@ export const QUALITY_TABLE = [
   },
   {
     row: 'An entity file imports another entity file for anything else',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'Nothing under `domain/value-objects/` or `domain/errors/` imports from `domain/entities/`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A file under `domain/value-objects/` or `domain/errors/` imports (or re-exports from) `domain/entities/`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: "A module's `domain/` has no import cycle",
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: "A module's `domain/` has an import cycle, type-only imports and `export … from` included",
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A type-only companion of an entity (`-snapshot`, `-data`, `-facts`) exports types only',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A companion file exports a class, a function, a value or `export *`',
     expected: 'FAIL',
     gate: 'api',
   },

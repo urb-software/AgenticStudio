@@ -1,5 +1,5 @@
 import type { Project } from '../entities/project.js';
-import type { EnvironmentFileSnapshot } from '../value-objects/environment-file-snapshot.js';
+import type { EnvironmentFileSnapshot } from '../entities/environment-file-snapshot.js';
 
 export interface ProjectRepository {
   add(project: Project): Promise<void>;

@@ -8,10 +8,7 @@ import {
 } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound, runNotWaiting } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
-import {
-  RunNotWaitingError,
-  RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+import { RunNotWaitingError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { AnswerRunHandler } from '../../../../application/features/answer-run/handler.js';
 import { answerRunRequestSchema, AnswerRunRequestDto } from './schema.js';
 

@@ -1,5 +1,5 @@
 import type { ReviewComments } from '../entities/review-comments.js';
-import type { ReviewCommentsSnapshot } from '../value-objects/review-comments-snapshot.js';
+import type { ReviewCommentsSnapshot } from '../entities/review-comments-snapshot.js';
 
 /** DI token for the {@link ReviewCommentRepository} adapter. */
 export const REVIEW_COMMENT_REPOSITORY = Symbol('REVIEW_COMMENT_REPOSITORY');

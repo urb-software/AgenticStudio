@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { Product } from '../../../domain/entities/product.js';
 import type { ProductRepository } from '../../../domain/repositories/product-repository.js';
-import type { ProductSnapshot } from '../../../domain/value-objects/product-snapshot.js';
+import type { ProductSnapshot } from '../../../domain/entities/product-snapshot.js';
 import type { Clock } from '../../ports/clock.js';
 
 export interface AddProductInput {

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { EnvironmentFileSnapshot } from '../../../domain/value-objects/environment-file-snapshot.js';
+import type { EnvironmentFileSnapshot } from '../../../domain/entities/environment-file-snapshot.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
@@ -9,7 +9,7 @@ import {
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
-import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
 export interface GetEnvironmentFileInput {
   projectId: string;

@@ -5,7 +5,7 @@ import { runNotFound, runNotHeld } from '../../shared/problems.js';
 import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { RecordHeartbeatHandler } from '../../../../application/features/record-heartbeat/handler.js';
 import { HeartbeatRequestDto } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `POST /api/worker/runs/:runId/heartbeat` (Issue #96), worker token only: 200 with

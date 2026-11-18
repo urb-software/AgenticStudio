@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ListRunStepsHandler } from '../handler.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';

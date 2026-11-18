@@ -1,10 +1,25 @@
-import type { Run } from '../entities/run.js';
-import type { RunSnapshot } from './run-snapshot.js';
 import type { FollowUpEligibility } from './follow-up.js';
-import type { RetentionFacts, WorkerFacts } from './run-facts.js';
-import { isEndedPullRequestState } from './run-pull-request-status.js';
-import { isFinalRunState } from './run-state.js';
-import { WorkerStatus } from './worker-status.js';
+import { isEndedPullRequestState, type PullRequestState } from './run-pull-request-status.js';
+import { isFinalRunState, type RunState } from './run-state.js';
+import { WorkerStatus, type RecordedWorkerStatus } from './worker-status.js';
+
+/** What Studio knows about a Run that decides how long its Working copy is kept (Issue #143). */
+export interface RetentionFacts {
+  state: RunState;
+  /** Set exactly in a final state. */
+  finishedAt: Date | null;
+  /** Whether the Run has a pull request (it was delivered). */
+  hasPullRequest: boolean;
+  /**
+   * The pull request's state as last read. `null` (never read, or a lookup that never succeeded)
+   * counts as open: a Git host outage never causes removal.
+   */
+  pullRequestState: PullRequestState | null;
+  /** When the pull request was first read as merged, closed or missing; `null` while it is not. */
+  pullRequestEndedAt: Date | null;
+  /** The latest Run step, Answer or Follow-up (or the Run's creation). */
+  lastActivityAt: Date;
+}
 
 /**
  * The periods and limits of the `STUDIO_RETENTION_*` settings (Issue #143), as plain values to
@@ -113,28 +128,20 @@ export class RetentionPolicy {
   }
 
   /**
-   * What the single-Run answers (the Run page, the refresh, the Follow-up command and the
-   * preparation of failing checks) add to a Run: whether it can take a Follow-up now and until
-   * when it stays open to one, and whether any agent worker is connected (Issues #141, #142,
-   * #143). The handler fetched `workers` (the holder's last report and the latest report) and
-   * `overLimit` (the per-Project limit removes the Run).
+   * Whether the Run can take a Follow-up now and until when, and whether any agent worker is
+   * connected. `overLimit`: the per-Project limit removes the Run.
    */
   runView(
-    run: Run,
-    workers: WorkerFacts,
+    eligibility: FollowUpEligibility,
+    facts: RetentionFacts,
+    latestWorker: RecordedWorkerStatus | undefined,
     now: Date,
     leaseSeconds: number,
     overLimit: boolean,
-  ): { run: RunSnapshot; followUp: FollowUpView; workerConnected: boolean } {
+  ): { followUp: FollowUpView; workerConnected: boolean } {
     return {
-      run: run.snapshot(),
-      followUp: this.followUpView(
-        run.followUpAvailability(workers, now, leaseSeconds),
-        run.retentionFacts(),
-        overLimit,
-        now,
-      ),
-      workerConnected: WorkerStatus.isAnyConnected(workers.latest, now, leaseSeconds),
+      followUp: this.followUpView(eligibility, facts, overLimit, now),
+      workerConnected: WorkerStatus.isAnyConnected(latestWorker, now, leaseSeconds),
     };
   }
 

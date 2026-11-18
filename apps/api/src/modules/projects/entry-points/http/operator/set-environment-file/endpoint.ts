@@ -14,10 +14,10 @@ import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.j
 import {
   InvalidEnvironmentFileContentError,
   InvalidEnvironmentFilePathError,
-} from '../../../../domain/value-objects/environment-file.js';
+} from '../../../../domain/errors/environment-file-errors.js';
 import { SetEnvironmentFileHandler } from '../../../../application/features/set-environment-file/handler.js';
 import { type SetEnvironmentFileRequest, SetEnvironmentFileRequestDto } from './schema.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 const INVALID_REQUEST = 'The request is invalid.';
 

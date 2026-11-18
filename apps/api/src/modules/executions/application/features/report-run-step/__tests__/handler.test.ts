@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
+import type { RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   RunNotHeldError,
@@ -8,7 +8,7 @@ import {
 } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ReportRunStepHandler } from '../handler.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';

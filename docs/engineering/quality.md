@@ -54,11 +54,14 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 
 **Structural rules** (Vitest assertions or equivalent):
 
-- Nothing under `entry-points/` imports a class from `domain/entities/`; types are allowed. Since rule 13 an entity file exports no error, so an entry point takes a domain error from the root's errors file under `domain/value-objects/`, which the check does not cover (it looks at classes in entity files only): a fixture proves that an entry point may import an error class from such a file (rule 10).
+- Nothing under `entry-points/` imports a class from `domain/entities/`; types are allowed. Since rule 13 an entity file exports no error, so an entry point takes a domain error from the root's errors file under `domain/errors/`, which the check does not cover (it looks at classes in entity files only): a fixture proves that an entry point may import an error class from such a file (rule 10).
 - No public method of a handler returns an entity class (also behind a local type alias, a namespace import `ns.Entity` or an import type), every public method declares its return type, and every handler file exports its input type (when it takes input) and its result type (when it returns something) (rule 10).
-- Each repository interface refers to exactly one file in `domain/entities/`, and no type under `domain/value-objects/` is the main type a repository returns, except the snapshot of its own entity, `value-objects/<entity>-snapshot.ts`, or of its root's pinned child entity (the snapshot of another root, or any other value object, still fails). The read shapes of one repository contract (for example `RunStateView`, `StoredRunDiff`, `ClaimedLookup`) are declared in that repository's file (rule 11). A property typed as a function counts as a method, and a qualified name (`ns.Type`) is followed to its file. A root's child entities, pinned in the check (the Run step of the Run), belong to its aggregate and do not count as another entity file.
+- Each repository interface refers to exactly one file in `domain/entities/`, and no type under `domain/value-objects/`, and no companion file (`-data`, `-facts` or the snapshot of another root), is the main type a repository returns, except the snapshot of its own entity, `entities/<entity>-snapshot.ts`, or of its root's pinned child entity (the snapshot of another root, or any other value object, still fails). The read shapes of one repository contract (for example `RunStateView`, `StoredRunDiff`, `ClaimedLookup`) are declared in that repository's file (rule 11). A property typed as a function counts as a method, and a qualified name (`ns.Type`) is followed to its file. A root's child entities, pinned in the check (the Run step of the Run), belong to its aggregate and do not count as another entity file.
 - No entity file imports another entity file except for an id type, or a root's own pinned child entity (rule 12).
 - The four checks above apply to every module, including one with no `domain/entities/` directory: a repository interface there refers to no entity file and fails, since anything with its own repository is a root in `domain/entities/`. The fixtures use a module name the app does not have (`billing`).
+- Nothing under `domain/value-objects/` or `domain/errors/` imports from `domain/entities/`, by any route (import, type-only import, `export … from`, dynamic import), in every module (Issue #203).
+- No import cycle exists inside a module's `domain/`: static `import` and `export … from`, type-only imports included, tests excluded (Issue #203; `api-no-circular` also covers the whole `src/` tree).
+- A type-only companion in `domain/entities/` (suffix `-snapshot.ts`, `-data.ts` or `-facts.ts`) exports types only: no class, function, value or `export *`; fixtures prove that a class and a function fail. Every other file of `domain/entities/` keeps the entity checks unchanged (Issue #203).
 - A file under `domain/entities/` exports at most one class (error classes count, and so does `export const X = class {}`) and no functions; a file with no class is refused by the entity-class check above (rule 13).
 - No file under `domain/` exports a function other than a type guard, tests excluded: an overloaded function counts once (and is a type guard when its overload signatures are), and an arrow function behind `as` or `satisfies` counts (rule 13).
 - The aggregate roots of each module are pinned in `tests/architecture/api/pinned/aggregate-roots.json`, each with the one-line reason it is a root: adding or removing one fails `pinned.test.ts` until the record is changed in review (rule 11). A root's child entity (pinned in `aggregate-rules.ts`) is not a root.
@@ -67,7 +70,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
 - `contracts/` holds only `index.ts` and `events/`.
 - No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/`.
-- Every file in `domain/entities/` exports a class with a non-public constructor, in every module (an aggregate root is always such a class, declared or as `export const X = class {}`; records without behaviour that are not roots live in `domain/value-objects/`).
+- Every file in `domain/entities/` exports a class with a non-public constructor, in every module (an aggregate root is always such a class, declared or as `export const X = class {}`; records without behaviour that are not roots live in `domain/value-objects/`); the type-only companions recognised by their suffix are the exception (see above).
 - No `domain/services/` directory, in every module (by path pattern).
 - The methods of every repository interface are pinned in `tests/architecture/api/pinned/repository-methods.json`, each with its kind (`load`, `save`, `query`, `atomic` or `set-wide`): adding, renaming or removing a method fails `pinned.test.ts` until the record is changed in review, and each atomic or set-wide method carries a one-line reason it cannot be a load, a call on the domain object and a save. The failure message names the file and says what to do.
 - The files directly in a module's `application/` folder are pinned in `tests/architecture/api/pinned/application-collaborators.json`, each with the step of rule 3 that was tried and why it did not apply: a new one fails until the record is changed in review. The Epic aimed for none; one remains (`executions/application/run-lookup-requests.ts`, with its reason in the record).
@@ -136,11 +139,17 @@ Positive and negative fixtures prove the rules catch violations:
 | `domain/entities/` file exports a class with a public constructor, or no class | FAIL |
 | `entry-points/` imports a type from `domain/entities/` | PASS |
 | `entry-points/` imports a class from `domain/entities/` | FAIL |
-| `entry-points/` imports an error class from an errors file in `domain/value-objects/` | PASS |
+| `entry-points/` imports an error class from an errors file in `domain/errors/` | PASS |
 | A handler returns a snapshot, ids, values or a view type, and exports its input and result types | PASS |
 | A handler returns an entity class, does not export its result type, or has a public method with no declared return type | FAIL |
 | A repository interface refers to one entity file | PASS |
 | A repository interface refers to two entity files, or its main type is under `domain/value-objects/` | FAIL |
+| Nothing under `domain/value-objects/` or `domain/errors/` imports from `domain/entities/` | PASS |
+| A file under `domain/value-objects/` or `domain/errors/` imports (or re-exports from) `domain/entities/` | FAIL |
+| A module's `domain/` has no import cycle | PASS |
+| A module's `domain/` has an import cycle, type-only imports and `export … from` included | FAIL |
+| A type-only companion of an entity (`-snapshot`, `-data`, `-facts`) exports types only | PASS |
+| A companion file exports a class, a function, a value or `export *` | FAIL |
 | A repository interface returns the snapshot of its own entity, or of its root's pinned child entity | PASS |
 | A repository interface returns another value object, or the snapshot of another root | FAIL |
 | An entity file imports another entity file for an id type | PASS |

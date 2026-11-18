@@ -1,4 +1,4 @@
-import type { ConnectAttempt } from '../value-objects/repository-connection-facts.js';
+import type { ConnectAttempt } from '../entities/repository-connection-facts.js';
 import type { RepositoryConnection } from '../entities/repository-connection.js';
 import type { RepositoryState } from '../value-objects/repository-state.js';
 

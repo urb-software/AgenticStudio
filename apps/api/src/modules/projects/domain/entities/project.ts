@@ -1,4 +1,4 @@
-import type { ProjectSnapshot } from '../value-objects/project-snapshot.js';
+import type { ProjectSnapshot } from './project-snapshot.js';
 
 /**
  * The Project aggregate root: the operator's unit of work (glossary). It has no rule beyond

@@ -7,7 +7,7 @@ import {
 import {
   type ConnectAttempt,
   type RepositoryChanges,
-} from '../../domain/value-objects/repository-connection-facts.js';
+} from '../../domain/entities/repository-connection-facts.js';
 import {
   REPOSITORY_STATES,
   type RepositoryState,
@@ -15,7 +15,7 @@ import {
 import {
   RepositoryAlreadyConnectedError,
   RemoteHeldByOtherProjectError,
-} from '../../domain/value-objects/repository-connection-errors.js';
+} from '../../domain/errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../../domain/entities/repository-connection.js';
 import { type RepositoryConnectionRepository } from '../../domain/repositories/repository-connection-repository.js';
 import {

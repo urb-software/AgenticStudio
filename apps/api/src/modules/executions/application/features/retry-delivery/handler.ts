@@ -1,12 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface RetryDeliveryInput {
   runId: string;

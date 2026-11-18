@@ -5,7 +5,7 @@ import { ApiProblemResponses } from '../../../../../../platform/http/problem-det
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
 import { ListRunStepsHandler } from '../../../../application/features/list-run-steps/handler.js';
 import { RunStepListDto } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `GET /api/runs/:runId/steps` (Issue #99), behind the global session guard: the structured

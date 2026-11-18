@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import type { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
-import type { RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
+import type { RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -14,8 +14,8 @@ import {
 import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 import { REPOSITORY_GIT, type RepositoryGit } from '../../ports/repository-git.js';
 import { REPOSITORY_JOBS, type RepositoryJobs } from '../../ports/repository-jobs.js';
-import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
-import { NoRepositoryError } from '../../../domain/value-objects/repository-connection-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
+import { NoRepositoryError } from '../../../domain/errors/repository-connection-errors.js';
 
 export interface DisconnectRepositoryInput {
   projectId: string;

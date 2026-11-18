@@ -7,6 +7,8 @@ import {
   exportedLater,
   hasExportModifier,
   isErrorClass,
+  COMPANION_FILE,
+  ENTITY_FILE,
   moduleImports,
   parse,
   repositoryContract,
@@ -38,7 +40,6 @@ export const CHILD_ENTITIES: Record<string, string[]> = {
   ],
 };
 
-export const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
 const HANDLER_FILE = /^src\/modules\/([^/]+)\/application\/features\/[^/]+\/handler\.ts$/;
 const REPOSITORY_FILE = /^src\/modules\/([^/]+)\/domain\/repositories\/[^/]+\.ts$/;
 const ENTRY_POINT_FILE = /^src\/modules\/([^/]+)\/entry-points\//;
@@ -348,8 +349,7 @@ function isEntityClass(
 /**
  * A repository interface serves one aggregate root (rule 11): the file refers to exactly one
  * file in `domain/entities/`, and no method returns a type taken from `domain/value-objects/`
- * (a record of a root with no behaviour is a value object, never the thing a store returns),
- * except the snapshot of its own entity, `value-objects/<entity>-snapshot.ts`.
+ * or from a companion file other than its own entity's snapshot.
  */
 function repositoryViolations(baseDir: string, path: string): Violation[] {
   const source = parse(baseDir, path);
@@ -369,10 +369,10 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
     found.push(violation(`refers to ${entityFiles.size} entity files, not exactly one`));
   }
   // The one value object a repository may return: the snapshot of the entity it serves (or of
-  // that root's child entity), `value-objects/<entity>-snapshot.ts` in the same module.
+  // that root's child entity), `entities/<entity>-snapshot.ts` in the same module.
   const ownSnapshots = new Set(
     [...referenced, ...children].map((entity) =>
-      entity.replace(/\/entities\/([^/]+)\.ts$/, '/value-objects/$1-snapshot.ts'),
+      entity.replace(/\/entities\/([^/]+)\.ts$/, '/entities/$1-snapshot.ts'),
     ),
   );
   const imported = importedNames(source);
@@ -387,7 +387,11 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
       if (!returned) continue;
       for (const reference of typeReferences(returned)) {
         const to = referenceTarget(reference, path, imported);
-        if (to && VALUE_OBJECT_FILE.test(to) && !ownSnapshots.has(to)) {
+        if (
+          to &&
+          (VALUE_OBJECT_FILE.test(to) || COMPANION_FILE.test(to)) &&
+          !ownSnapshots.has(to)
+        ) {
           found.push(
             violation(
               `${member.name?.getText() ?? 'a member'} returns ${reference.text} from ${to}`,

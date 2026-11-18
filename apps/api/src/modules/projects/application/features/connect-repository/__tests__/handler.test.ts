@@ -4,7 +4,7 @@ import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queu
 import {
   RepositoryAlreadyConnectedError,
   RemoteAlreadyConnectedError,
-} from '../../../../domain/value-objects/repository-connection-errors.js';
+} from '../../../../domain/errors/repository-connection-errors.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';
@@ -20,7 +20,7 @@ import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-ke
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { SweepOrphanedDeployKeysHandler } from '../../sweep-orphaned-deploy-keys/handler.js';
 import { ConnectRepositoryHandler } from '../handler.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';

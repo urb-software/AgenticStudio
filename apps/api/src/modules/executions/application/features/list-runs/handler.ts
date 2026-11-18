@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,

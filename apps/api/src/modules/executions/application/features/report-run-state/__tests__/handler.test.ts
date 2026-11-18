@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   IllegalRunTransitionError,
   RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
-import { type RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
+} from '../../../../domain/errors/run-errors.js';
+import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { ReportRunStateHandler, type ReportRunStateInput } from '../handler.js';

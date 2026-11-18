@@ -13,7 +13,7 @@ import {
   RunNotResumableError,
   RunSlotTakenError,
   RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 import { ResumeRunHandler } from '../../../../application/features/resume-run/handler.js';
 
 /**

@@ -3,7 +3,7 @@ import { JobAlreadyActiveError } from '../../../../../../platform/queue/job-queu
 import {
   RepositoryNotVerifiableError,
   NoRepositoryError,
-} from '../../../../domain/value-objects/repository-connection-errors.js';
+} from '../../../../domain/errors/repository-connection-errors.js';
 import {
   GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
@@ -19,8 +19,8 @@ import { NOT_STARTED_DETAIL } from '../../../../domain/value-objects/repository-
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { VerifyRepositoryHandler } from '../handler.js';
-import { HostKeyFingerprintMismatchError } from '../../../../domain/value-objects/repository-connection-errors.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { HostKeyFingerprintMismatchError } from '../../../../domain/errors/repository-connection-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const TRUSTED_URL = 'git@github.com:acme/shop.git';

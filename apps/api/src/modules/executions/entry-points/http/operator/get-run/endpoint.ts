@@ -5,7 +5,7 @@ import { ApiProblemResponses } from '../../../../../../platform/http/problem-det
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `GET /api/runs/:runId` (Issue #96), behind the global session guard: the Run with its

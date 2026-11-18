@@ -1,4 +1,4 @@
-import type { RunData } from '../../value-objects/run-data.js';
+import type { RunData } from '../run-data.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 
 export const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';

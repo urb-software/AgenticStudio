@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { knownHostName } from '../../../../../platform/config/ssh-known-hosts.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
-import { NoTrustedHostKeyError } from '../../../domain/value-objects/repository-connection-errors.js';
-import { type RepositoryConnectionData } from '../../../domain/value-objects/repository-connection-snapshot.js';
+import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
+import { type RepositoryConnectionData } from '../../../domain/entities/repository-connection-data.js';
 import { DeployKey } from '../../../domain/value-objects/deploy-key.js';
 import { TrustedHostKeys } from '../../../domain/value-objects/trusted-host-keys.js';
 import { SecretStoreDeployKeys } from '../secret-store-deploy-keys.js';

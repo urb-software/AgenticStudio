@@ -1,5 +1,5 @@
 import type { ProductRepository } from '../../../domain/repositories/product-repository.js';
-import type { ProductSnapshot } from '../../../domain/value-objects/product-snapshot.js';
+import type { ProductSnapshot } from '../../../domain/entities/product-snapshot.js';
 
 export type ListProductsResult = ProductSnapshot[];
 

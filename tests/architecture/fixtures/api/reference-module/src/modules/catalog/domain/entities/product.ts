@@ -1,5 +1,5 @@
 import { ProductName } from '../value-objects/product-name.js';
-import type { ProductSnapshot } from '../value-objects/product-snapshot.js';
+import type { ProductSnapshot } from './product-snapshot.js';
 
 // An aggregate root is a class with its own id and a non-public constructor: only its factories
 // make one, so it cannot be built in an invalid state. It produces its snapshot, the plain data
