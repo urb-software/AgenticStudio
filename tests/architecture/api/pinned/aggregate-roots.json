@@ -1,0 +1,29 @@
+{
+  "description": "The aggregate roots of each module (backend.md section 3 rule 11: anything with its own repository is a root, in its own file in domain/entities/). Each entry is '<module>/<RootClass>' with the one-line reason it is a root. Child entities (pinned in aggregate-rules.ts, for example the Run step of the Run) are not roots. Adding or removing a root fails tests/architecture/api/pinned.test.ts until this file is updated in the same pull request.",
+  "roots": {
+    "executions/PreparedFollowUp": {
+      "reason": "Its own repository, one per Run, stored by a lookup answer and replaced or discarded in its own transaction; refers to the Run by id."
+    },
+    "executions/ReviewComments": {
+      "reason": "Its own repository, one loaded set per Run, replaced by each load and removed when a Follow-up from it is sent; refers to the Run by id."
+    },
+    "executions/Run": {
+      "reason": "Its own id that others refer to, its own repository and table; changed in its own transaction under the row lock; its rules hold across its steps and messages."
+    },
+    "executions/RunDiff": {
+      "reason": "Its own repository, replaced as a whole by the worker's report; refers to the Run by id and no rule spans it and the Run."
+    },
+    "executions/RunLookup": {
+      "reason": "Its own id and repository; a lookup is claimed and answered by a worker in its own transaction; refers to the Run by id."
+    },
+    "projects/EnvironmentFile": {
+      "reason": "Its own repository; it outlives disconnecting the Repository and holds only the secret store reference; refers to the Project by id."
+    },
+    "projects/Project": {
+      "reason": "Its own id that Repository connections, Environment files and Runs refer to; its own repository and table, created in its own transaction."
+    },
+    "projects/RepositoryConnection": {
+      "reason": "Its own repository; changed in its own transaction under a row lock; refers to its Project by id."
+    }
+  }
+}

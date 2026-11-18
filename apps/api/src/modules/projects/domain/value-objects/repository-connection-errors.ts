@@ -60,3 +60,30 @@ export class HostKeyFingerprintMismatchError extends Error {
     this.name = 'HostKeyFingerprintMismatchError';
   }
 }
+
+/**
+ * Another project holds the same remote; the handler names it for the operator
+ * (`RemoteAlreadyConnectedError`).
+ */
+export class RemoteHeldByOtherProjectError extends Error {
+  constructor(readonly ownerProjectId: string) {
+    super('Another project holds the same remote.');
+    this.name = 'RemoteHeldByOtherProjectError';
+  }
+}
+
+/** The same remote is connected to another project, named here for the operator. */
+export class RemoteAlreadyConnectedError extends Error {
+  constructor(readonly projectName: string) {
+    super(`Already connected to ${projectName}`);
+    this.name = 'RemoteAlreadyConnectedError';
+  }
+}
+
+/** The project has no Repository. */
+export class NoRepositoryError extends Error {
+  constructor() {
+    super('The project has no repository.');
+    this.name = 'NoRepositoryError';
+  }
+}

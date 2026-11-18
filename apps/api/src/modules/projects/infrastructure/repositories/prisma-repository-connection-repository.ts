@@ -12,12 +12,12 @@ import {
   REPOSITORY_STATES,
   type RepositoryState,
 } from '../../domain/value-objects/repository-state.js';
-import { RepositoryAlreadyConnectedError } from '../../domain/value-objects/repository-connection-errors.js';
-import { RepositoryConnection } from '../../domain/entities/repository-connection.js';
 import {
+  RepositoryAlreadyConnectedError,
   RemoteHeldByOtherProjectError,
-  type RepositoryConnectionRepository,
-} from '../../domain/repositories/repository-connection-repository.js';
+} from '../../domain/value-objects/repository-connection-errors.js';
+import { RepositoryConnection } from '../../domain/entities/repository-connection.js';
+import { type RepositoryConnectionRepository } from '../../domain/repositories/repository-connection-repository.js';
 import {
   REPOSITORY_FAILURE_CODES,
   RepositoryFailure,

@@ -19,14 +19,16 @@ import {
   unsupportedPlatform,
 } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
-import { RepositoryAlreadyConnectedError } from '../../../../domain/value-objects/repository-connection-errors.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
-import { RemoteAlreadyConnectedError } from '../../../../domain/repositories/repository-connection-repository.js';
+import {
+  RepositoryAlreadyConnectedError,
+  RemoteAlreadyConnectedError,
+} from '../../../../domain/value-objects/repository-connection-errors.js';
 import { InvalidIntegrationBranchError } from '../../../../domain/value-objects/integration-branch.js';
 import { InvalidRepositoryUrlError } from '../../../../domain/value-objects/repository-url.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
 import { ConnectRepositoryHandler } from '../../../../application/features/connect-repository/handler.js';
 import { type ConnectRepositoryRequest, ConnectRepositoryRequestDto } from './schema.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 const INVALID_REQUEST = 'The request is invalid.';
 

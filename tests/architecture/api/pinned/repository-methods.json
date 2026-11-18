@@ -1,0 +1,125 @@
+{
+  "description": "Every method of every repository interface in domain/repositories/ (backend.md section 3 rule 6: business rules live on the domain object, never in the database adapter). Kinds: load (reads one aggregate), save (persists or removes one), query (reads plain data), atomic (one conditional, locked or index-decided step that load, call and save cannot express) and set-wide (one statement over many aggregates). Each atomic or set-wide method has a one-line reason. Compared with the source by tests/architecture/api/pinned.test.ts: a method added, renamed or removed fails it until this file is updated in the same pull request.",
+  "repositories": {
+    "executions/PreparedFollowUpRepository": {
+      "find": { "kind": "load" },
+      "findRunIdsAmong": { "kind": "query" },
+      "replace": { "kind": "save" },
+      "discard": { "kind": "save" }
+    },
+    "executions/ReviewCommentRepository": {
+      "find": { "kind": "load" },
+      "findSnapshot": { "kind": "load" },
+      "replace": { "kind": "save" },
+      "discard": { "kind": "save" }
+    },
+    "executions/RunDiffRepository": {
+      "replace": { "kind": "save" },
+      "find": { "kind": "query" },
+      "findFile": { "kind": "query" },
+      "findState": { "kind": "query" }
+    },
+    "executions/RunLookupRepository": {
+      "add": { "kind": "save" },
+      "save": { "kind": "save" },
+      "findById": { "kind": "load" },
+      "findByIdForUpdate": { "kind": "load" },
+      "findOpen": { "kind": "load" },
+      "claim": {
+        "kind": "atomic",
+        "reason": "Hands out the waiting requests in one statement under the claim lock, so two workers never get the same one; the selection is the domain LookupHandOutRule."
+      },
+      "deleteFinishedBefore": {
+        "kind": "set-wide",
+        "reason": "One DELETE over every lookup finished before a time; the retention limit is the time the caller passes in."
+      },
+      "findReviewCommentsLoad": { "kind": "query" }
+    },
+    "executions/RunRepository": {
+      "add": { "kind": "save" },
+      "findById": { "kind": "load" },
+      "exists": { "kind": "query" },
+      "save": { "kind": "save" },
+      "change": {
+        "kind": "atomic",
+        "reason": "Loads the Run FOR UPDATE, calls a pure callback that runs Run methods, and saves in one transaction, so the row lock serializes every operator and worker change of the Run."
+      },
+      "changeSerializedWithClaims": {
+        "kind": "atomic",
+        "reason": "The same locked change, but it takes the claim lock first, so a resume sees the places held and the Environment file snapshot as they stay until it saves."
+      },
+      "listNewestFirst": { "kind": "query" },
+      "listByProjectNewestFirst": { "kind": "query" },
+      "summarize": { "kind": "query" },
+      "claimNext": {
+        "kind": "atomic",
+        "reason": "Hands out the next eligible Run in one statement under the claim lock that locks the row it selects, so concurrent claims cannot exceed the limits; the selection is the domain HandOutRule."
+      },
+      "cancelUnheld": {
+        "kind": "atomic",
+        "reason": "A conditional update (only if the Run is still in the given state) for the long-wait sweep, so a worker or operator change that landed first is not overwritten."
+      },
+      "listWaiting": { "kind": "query" },
+      "renewClaimsOncePerLease": {
+        "kind": "set-wide",
+        "reason": "Renews the lease of every held Run in one statement, at most once per lease period; the time of the last renewal is stored with it."
+      },
+      "timeOutOverdueSteps": {
+        "kind": "set-wide",
+        "reason": "One statement over every running Run whose step is overdue; the limit is the domain step time limit plus a grace period the caller passes in."
+      },
+      "listPendingDeliveryRetries": { "kind": "query" },
+      "abandonDeliveryRetry": {
+        "kind": "atomic",
+        "reason": "A conditional update (only if the retry is still pending and no worker holds the Run) that gives it up, so a worker that claimed it meanwhile wins."
+      },
+      "listPendingResumes": { "kind": "query" },
+      "abandonResume": {
+        "kind": "atomic",
+        "reason": "A conditional update (only if the Run is still resumable) that fails it, so a worker that claimed it meanwhile wins."
+      },
+      "findStates": { "kind": "query" },
+      "findLimitedRuns": { "kind": "query" },
+      "listSteps": { "kind": "query" },
+      "listDueForDailyRefresh": { "kind": "query" },
+      "failStaleClaims": {
+        "kind": "set-wide",
+        "reason": "One statement over every held Run whose heartbeat is stale; the staleness limit and the failures are domain values the caller passes in."
+      },
+      "findEnvironmentFileSecret": { "kind": "query" },
+      "listReleasableEnvironmentFileSecrets": { "kind": "query" },
+      "clearEnvironmentFileSecret": {
+        "kind": "atomic",
+        "reason": "Forgets the reference only if the Run still holds that one (compare and clear), so a newer snapshot reference is not lost."
+      },
+      "listEnvironmentFileSecretRefs": { "kind": "query" }
+    },
+    "projects/EnvironmentFileRepository": {
+      "find": { "kind": "load" },
+      "save": { "kind": "save" },
+      "delete": { "kind": "save" },
+      "listSecretRefs": { "kind": "query" }
+    },
+    "projects/ProjectRepository": {
+      "add": {
+        "kind": "atomic",
+        "reason": "The unique index on the normalized name decides a simultaneous create, because there is no row to lock before it exists."
+      },
+      "listNewestFirst": { "kind": "query" },
+      "findById": { "kind": "load" }
+    },
+    "projects/RepositoryConnectionRepository": {
+      "find": { "kind": "load" },
+      "connect": {
+        "kind": "atomic",
+        "reason": "A Repository that does not exist yet cannot be locked, so the unique indexes (one Repository per Project, one Project per remote) decide simultaneous connects."
+      },
+      "change": {
+        "kind": "atomic",
+        "reason": "Loads the Repository FOR UPDATE, calls a pure callback and saves in one transaction, so a late job write waits for a Disconnect and finds the state it left."
+      },
+      "listIdsInState": { "kind": "query" },
+      "listDeployKeySecretRefs": { "kind": "query" }
+    }
+  }
+}

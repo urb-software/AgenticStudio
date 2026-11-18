@@ -1,3 +1,3 @@
-export interface CreateProjectInput {
+export interface CreateProjectFields {
   name: string;
 }

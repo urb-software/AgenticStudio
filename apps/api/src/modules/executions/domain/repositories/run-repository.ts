@@ -230,11 +230,3 @@ export interface RunRepository {
   /** Every snapshot reference any Run holds (the orphan sweep keeps these). */
   listEnvironmentFileSecretRefs(): Promise<string[]>;
 }
-
-/** No Run has this id. */
-export class RunNotFoundError extends Error {
-  constructor() {
-    super('The run does not exist.');
-    this.name = 'RunNotFoundError';
-  }
-}

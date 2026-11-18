@@ -13,15 +13,15 @@ import {
   type DatabaseClient,
 } from '../../../../../platform/database/database.module.js';
 import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
-import {
-  RemoteAlreadyConnectedError,
-  RemoteHeldByOtherProjectError,
-} from '../../../domain/repositories/repository-connection-repository.js';
 import { ConnectRepositoryHandler } from '../../../application/features/connect-repository/handler.js';
 import { FakeRepositoryGit } from '../../../application/ports/__tests__/fake-repository-git.js';
 import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memory-deploy-keys.js';
 import { RecordingRepositoryJobs } from '../../../application/ports/__tests__/recording-repository-jobs.js';
-import { RepositoryAlreadyConnectedError } from '../../../domain/value-objects/repository-connection-errors.js';
+import {
+  RepositoryAlreadyConnectedError,
+  RemoteAlreadyConnectedError,
+  RemoteHeldByOtherProjectError,
+} from '../../../domain/value-objects/repository-connection-errors.js';
 import { type RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 import { PrismaProjectRepository } from '../prisma-project-repository.js';

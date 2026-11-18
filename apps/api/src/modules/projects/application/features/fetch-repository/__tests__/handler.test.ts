@@ -3,11 +3,10 @@ import {
   JobAlreadyActiveError,
   QueueUnavailableError,
 } from '../../../../../../platform/queue/job-queue.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
-import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import {
   NoUsableCloneError,
   RepositoryBusyError,
+  NoRepositoryError,
 } from '../../../../domain/value-objects/repository-connection-errors.js';
 import { RepositoryConnection } from '../../../../domain/entities/repository-connection.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
@@ -16,6 +15,7 @@ import { GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { FetchRepositoryHandler } from '../handler.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';

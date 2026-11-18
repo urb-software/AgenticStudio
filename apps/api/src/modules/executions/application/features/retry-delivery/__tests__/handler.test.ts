@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DeliveryNotRetryableError } from '../../../../domain/value-objects/run-errors.js';
+import {
+  DeliveryNotRetryableError,
+  RunNotFoundError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { type RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { RetryDeliveryHandler } from '../handler.js';
 
 // Issue #102: the operator asks to repeat only the delivery of a Run whose delivery failed.

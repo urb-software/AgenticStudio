@@ -7,8 +7,8 @@ import {
   ReviewCommentsResponseDto,
   toReviewCommentsResponse,
 } from '../../shared/review-comments-response.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { GetReviewCommentsHandler } from '../../../../application/features/get-review-comments/handler.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `GET /api/runs/:runId/pull-request/review-comments` (Issue #146), behind the global session

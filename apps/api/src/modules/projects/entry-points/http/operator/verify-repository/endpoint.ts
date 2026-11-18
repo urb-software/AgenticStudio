@@ -23,12 +23,12 @@ import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/reposi
 import {
   HostKeyFingerprintMismatchError,
   RepositoryNotVerifiableError,
+  NoRepositoryError,
 } from '../../../../domain/value-objects/repository-connection-errors.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
-import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { GitUnsupportedPlatformError } from '../../../../application/ports/repository-git.js';
 import { VerifyRepositoryHandler } from '../../../../application/features/verify-repository/handler.js';
 import { type VerifyRepositoryRequest, VerifyRepositoryRequestDto } from './schema.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 const INVALID_REQUEST = 'The request is invalid.';
 

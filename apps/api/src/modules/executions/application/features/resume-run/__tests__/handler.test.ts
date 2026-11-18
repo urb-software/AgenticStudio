@@ -5,10 +5,10 @@ import { type RunFailure } from '../../../../domain/value-objects/run-failure.js
 import {
   RunNotResumableError,
   RunSlotTakenError,
+  RunNotFoundError,
 } from '../../../../domain/value-objects/run-errors.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { ResumeRunHandler } from '../handler.js';
 
 // Issue #105: the operator resumes a Run that stopped at the subscription's usage limit.

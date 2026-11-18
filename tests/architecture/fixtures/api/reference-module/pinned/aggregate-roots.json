@@ -1,0 +1,7 @@
+{
+  "roots": {
+    "catalog/Product": {
+      "reason": "Its own repository and its own transaction; other aggregates would refer to it by its id."
+    }
+  }
+}

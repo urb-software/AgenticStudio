@@ -2,12 +2,10 @@ import { type HeartbeatResponse, heartbeatResponseSchema } from '@agentic-studio
 import { Body, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { WorkerController } from '../../../../../../platform/auth/worker-route.js';
 import { runNotFound, runNotHeld } from '../../shared/problems.js';
-import {
-  RunNotFoundError,
-  RunNotHeldError,
-} from '../../../../domain/repositories/run-repository.js';
+import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { RecordHeartbeatHandler } from '../../../../application/features/record-heartbeat/handler.js';
 import { HeartbeatRequestDto } from './schema.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `POST /api/worker/runs/:runId/heartbeat` (Issue #96), worker token only: 200 with

@@ -7,13 +7,13 @@ import {
   stepOutOfOrder,
 } from '../../shared/problems.js';
 import {
-  RunNotFoundError,
   RunNotHeldError,
   StepLimitReachedError,
   StepOutOfOrderError,
 } from '../../../../domain/repositories/run-repository.js';
 import { ReportRunStepHandler } from '../../../../application/features/report-run-step/handler.js';
 import { ReportRunStepRequestDto } from './schema.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `POST /api/worker/runs/:runId/steps` (Issue #96), worker token only: 204 once the step's

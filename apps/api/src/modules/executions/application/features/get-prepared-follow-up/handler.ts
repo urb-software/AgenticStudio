@@ -5,7 +5,7 @@ import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
-import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 /** The Run has no prepared Follow-up (none asked for, or it was sent or discarded). */
 export class PreparedFollowUpNotFoundError extends Error {

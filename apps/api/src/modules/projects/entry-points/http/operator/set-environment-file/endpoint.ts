@@ -15,9 +15,9 @@ import {
   InvalidEnvironmentFileContentError,
   InvalidEnvironmentFilePathError,
 } from '../../../../domain/value-objects/environment-file.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { SetEnvironmentFileHandler } from '../../../../application/features/set-environment-file/handler.js';
 import { type SetEnvironmentFileRequest, SetEnvironmentFileRequestDto } from './schema.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 const INVALID_REQUEST = 'The request is invalid.';
 

@@ -3,7 +3,6 @@ import type { ProjectSnapshot } from '../../../domain/value-objects/project-snap
 import type { RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
-  ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import {
@@ -11,6 +10,7 @@ import {
   type RepositoryConnectionRepository,
 } from '../../../domain/repositories/repository-connection-repository.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
+import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
 
 export interface GetProjectInput {
   projectId: string;

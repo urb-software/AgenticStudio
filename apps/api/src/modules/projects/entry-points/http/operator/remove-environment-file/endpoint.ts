@@ -2,8 +2,8 @@ import { Controller, Delete, HttpCode, HttpStatus, Param } from '@nestjs/common'
 import { ApiNoContentResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { RemoveEnvironmentFileHandler } from '../../../../application/features/remove-environment-file/handler.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 /**
  * `DELETE /api/projects/:id/environment-file` (Issue #104), behind the global session and

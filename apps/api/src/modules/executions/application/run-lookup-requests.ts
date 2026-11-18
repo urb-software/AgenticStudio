@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { RunLookup } from '../domain/entities/run-lookup.js';
-import { RunNotFoundError } from '../domain/repositories/run-repository.js';
 import type { ReviewCommentsRequest } from '../domain/value-objects/review-comments.js';
 import { type LookupKind, type LookupRequestOutcome } from '../domain/value-objects/run-lookup.js';
 import { RUN_TRANSACTIONS, type RunTransactions } from './ports/run-transactions.js';
+import { RunNotFoundError } from '../domain/value-objects/run-errors.js';
 
 /**
  * Requesting a lookup (Issues #142, #145, #146), for the five entry points that need one (the

@@ -17,12 +17,14 @@ import {
   ReviewCommentsResponseDto,
   toReviewCommentsResponse,
 } from '../../shared/review-comments-response.js';
-import { ReviewCommentsLoadRunningError } from '../../../../domain/value-objects/review-comments.js';
-import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
+import {
+  FollowUpNotAllowedError,
+  RunNotFoundError,
+  PullRequestNotRefreshableError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { LoadReviewCommentsHandler } from '../../../../application/features/load-review-comments/handler.js';
 import { loadReviewCommentsRequestSchema, LoadReviewCommentsRequestDto } from './schema.js';
+import { ReviewCommentsLoadRunningError } from '../../../../domain/value-objects/review-comments-errors.js';
 
 /**
  * `POST /api/runs/:runId/pull-request/review-comments/load` (Issue #146), behind the global

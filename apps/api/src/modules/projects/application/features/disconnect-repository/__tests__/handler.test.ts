@@ -6,8 +6,6 @@ import {
 } from '../../../../../../platform/queue/job-queue.js';
 import type { RepositoryConnection } from '../../../../domain/entities/repository-connection.js';
 import { RepositoryFailure } from '../../../../domain/value-objects/repository-failure.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
-import { NoRepositoryError } from '../../../../domain/repositories/repository-connection-repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
@@ -18,6 +16,8 @@ import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-ke
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from '../../../../domain/value-objects/deploy-key-sweep-policy.js';
 import { ConnectRepositoryHandler } from '../../connect-repository/handler.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { NoRepositoryError } from '../../../../domain/value-objects/repository-connection-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';

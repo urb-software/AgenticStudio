@@ -4,8 +4,8 @@ import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { noRepository, PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import { GetRepositoryHandler } from '../../../../application/features/get-repository/handler.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 /** `GET /api/projects/:id/repository`, behind the global session guard. */
 @ApiTags('projects')

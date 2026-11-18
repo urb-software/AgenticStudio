@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
-import { RunNotWaitingError } from '../../../../domain/value-objects/run-errors.js';
+import {
+  RunNotWaitingError,
+  RunNotFoundError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { AnswerRunHandler } from '../handler.js';
 
 // Issue #103: the operator answers the agent's question; the Run is queued to resume.

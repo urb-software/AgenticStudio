@@ -1,5 +1,5 @@
-import { RunNotFoundError } from '../../../domain/repositories/run-repository.js';
 import type { RunTransactionRepositories, RunTransactions } from '../run-transactions.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 /**
  * In-memory adapter of {@link RunTransactions} for handler tests: it hands the in-memory

@@ -9,7 +9,6 @@ import {
 } from '../../../domain/repositories/environment-file-repository.js';
 import {
   PROJECT_REPOSITORY,
-  ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import {
@@ -26,6 +25,7 @@ import {
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
+import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
 
 export interface SetEnvironmentFileInput {
   projectId: string;

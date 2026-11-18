@@ -3,10 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
 import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import {
-  RunNotFoundError,
-  RunNotHeldError,
-} from '../../../../domain/repositories/run-repository.js';
+import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import {
   GetRunDiffFileHandler,
@@ -15,6 +12,7 @@ import {
 import { GetRunDiffHandler, RunDiffNotFoundError } from '../../get-run-diff/handler.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { ReportRunDiffHandler } from '../handler.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 // Issue #144: the worker's diff report through the handlers, against in-memory stores with the
 // database adapter's rules (the HTTP seam with PostgreSQL: run-diff.integration.test.ts).

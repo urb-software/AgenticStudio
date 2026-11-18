@@ -2,4 +2,8 @@ import type { ProjectRepository } from '../../domain/repositories/missing-reposi
 
 export class CreateProjectHandler {
   constructor(private readonly projects: ProjectRepository) {}
+
+  async execute(): Promise<void> {
+    void this.projects;
+  }
 }

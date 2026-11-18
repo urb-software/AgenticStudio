@@ -7,14 +7,16 @@ import {
   T0,
   WORKER,
 } from '../../../../domain/repositories/__tests__/delivered-run.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
 import { ReportLookupResultHandler } from '../../report-lookup-result/handler.js';
 import { RefreshPullRequestHandler } from '../handler.js';
+import {
+  RunNotFoundError,
+  PullRequestNotRefreshableError,
+} from '../../../../domain/value-objects/run-errors.js';
 
 class Workers implements WorkerStatusStore {
   current: RecordedWorkerStatus | undefined;

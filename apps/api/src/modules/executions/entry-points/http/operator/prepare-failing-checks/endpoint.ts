@@ -9,12 +9,14 @@ import {
   runNotFound,
 } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
-import { PullRequestNotRefreshableError } from '../../../../domain/value-objects/run-lookup.js';
 import {
   NoFailingChecksError,
   PrepareFailingChecksHandler,
 } from '../../../../application/features/prepare-failing-checks/handler.js';
+import {
+  RunNotFoundError,
+  PullRequestNotRefreshableError,
+} from '../../../../domain/value-objects/run-errors.js';
 
 /**
  * `POST /api/runs/:runId/pull-request/failing-checks/prepare` (Issue #145), behind the global

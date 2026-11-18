@@ -2,11 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import type { RunEvent } from '../../../domain/value-objects/run-event.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
-import {
-  RUN_REPOSITORY,
-  RunNotFoundError,
-  type RunRepository,
-} from '../../../domain/repositories/run-repository.js';
+import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
+import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
 
 /** Events per page when the caller names no limit, and the most it may ask for. */
 export const RUN_EVENTS_PAGE = { default: 500, max: 1000 } as const;

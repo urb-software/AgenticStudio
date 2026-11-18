@@ -4,10 +4,10 @@ import type { RunSnapshot } from '../../../../domain/value-objects/run-snapshot.
 import type { RunEvent } from '../../../../domain/value-objects/run-event.js';
 import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import type { RunLogSignal } from '../../../ports/run-log-signal.js';
 import { ListRunEventsHandler } from '../../list-run-events/handler.js';
 import { KEEP_ALIVE, type RunLogStreamItem, StreamRunEventsHandler } from '../handler.js';
+import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';

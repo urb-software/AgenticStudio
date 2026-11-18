@@ -1,6 +1,8 @@
 import type { FollowUpRefusal } from './follow-up.js';
 import { HandOutRule } from './hand-out-rule.js';
+import type { Provider } from './provider.js';
 import type { RunState } from './run-state.js';
+import type { ProviderUnavailableReason } from './worker-status.js';
 
 /** Retrying the delivery of a Run that is not `failed` with `delivery_failed`. */
 export class DeliveryNotRetryableError extends Error {
@@ -123,5 +125,43 @@ export class ReviewCommentsNotLoadedError extends Error {
   constructor() {
     super('Some of the selected review comments are not loaded.');
     this.name = 'ReviewCommentsNotLoadedError';
+  }
+}
+
+/** No Run has this id. */
+export class RunNotFoundError extends Error {
+  constructor() {
+    super('The run does not exist.');
+    this.name = 'RunNotFoundError';
+  }
+}
+
+/** The Run has no pull request (or no known Run branch) whose state could be read. */
+export class PullRequestNotRefreshableError extends Error {
+  constructor() {
+    super('The run has no pull request to refresh.');
+    this.name = 'PullRequestNotRefreshableError';
+  }
+}
+
+/** A Task the Run cannot be started with: empty after trimming, or longer than the limit. */
+export class InvalidTaskError extends Error {
+  constructor(
+    readonly reason: 'empty' | 'too_long',
+    maxLength: number,
+  ) {
+    super(reason === 'empty' ? 'Enter a task.' : `Use at most ${maxLength} characters.`);
+    this.name = 'InvalidTaskError';
+  }
+}
+
+/** A Run cannot start: Studio knows its provider is unavailable. */
+export class ProviderUnavailableError extends Error {
+  constructor(
+    readonly provider: Provider,
+    readonly reason: ProviderUnavailableReason,
+  ) {
+    super(reason);
+    this.name = 'ProviderUnavailableError';
   }
 }

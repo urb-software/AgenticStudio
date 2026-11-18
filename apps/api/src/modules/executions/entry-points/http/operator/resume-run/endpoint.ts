@@ -12,8 +12,8 @@ import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../share
 import {
   RunNotResumableError,
   RunSlotTakenError,
+  RunNotFoundError,
 } from '../../../../domain/value-objects/run-errors.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
 import { ResumeRunHandler } from '../../../../application/features/resume-run/handler.js';
 
 /**

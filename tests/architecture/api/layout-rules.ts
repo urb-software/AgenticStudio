@@ -1,7 +1,16 @@
-import { readFileSync } from 'node:fs';
-import { join, posix } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import ts from 'typescript';
 import { listDirectories, listFiles, type Violation } from '../harness';
+import {
+  exportedClasses,
+  exportedNames,
+  isErrorClass,
+  moduleImports,
+  parse,
+  target,
+  type ModuleImport,
+} from './syntax';
 
 /**
  * Layout rules of `architecture:api` that follow from the approved module layout
@@ -12,6 +21,7 @@ export const LAYOUT_RULES = [
   'api-application-no-http-decorators',
   'api-entry-points-no-ports-or-infrastructure',
   'api-features-no-feature-imports',
+  'api-collaborators-no-feature-imports',
   'api-production-no-test-imports',
   'api-contracts-only-index-and-events',
   'api-no-shared-common-utils-helpers-directory',
@@ -72,30 +82,23 @@ const HTTP_DECORATORS = new Set([
   'UsePipes',
 ]);
 
-/**
- * Modules in which no feature folder imports another feature folder (backend.md §3 rule 1).
- * Issue #166 adds `executions` and #164 `projects`; the check is by path pattern, so #170 adds
- * every other module by listing it here (or dropping the list).
- */
-const FEATURE_ISOLATED_MODULES = new Set(['executions', 'projects']);
-
-/**
- * Modules in which every file in `domain/entities/` exports a class with a non-public
- * constructor (rule 4). Issue #167 added `executions`, #165 adds `projects`; the check is by path
- * pattern, so #170 adds every module by listing it here (or dropping the list).
- */
-const ENTITY_CLASS_MODULES = new Set(['executions', 'projects']);
-
 const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
 /** `src/modules/<module>/domain/entities/<file>.ts` (not a file of a nested folder). */
 const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
 /** `src/modules/<module>/application/features/<feature>/…` (not the tests of a feature). */
 const FEATURE_FILE = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\/(?!__tests__\/)/;
+/** A file directly in a module's `application/` folder: a collaborator (rule 3, the last resort). */
+const COLLABORATOR_FILE = /^src\/modules\/[^/]+\/application\/[^/]+\.tsx?$/;
 const FEATURE_PATH = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\//;
 const ENTRY_POINT_FILE = /^src\/modules\/[^/]+\/entry-points\//;
 const INFRASTRUCTURE_FILE = /^src\/modules\/[^/]+\/infrastructure\//;
+/**
+ * A repository interface or port file, at any depth (ports may sit in sub-folders). The test
+ * helpers under `__tests__/` (in-memory fakes) are not interfaces: production code importing one is
+ * `api-production-no-test-imports`.
+ */
 const REPOSITORY_OR_PORT_FILE =
-  /^src\/modules\/[^/]+\/(domain\/repositories|application\/ports)\/[^/]+\.ts$/;
+  /^src\/modules\/[^/]+\/(domain\/repositories|application\/ports)\/(?!(.*\/)?__tests__\/).+\.ts$/;
 /** A domain error class: the one thing an entry point may take from a repository or port file. */
 const ERROR_NAME = /Error$/;
 /** Names that, as a directory inside a business module, are generic dumping grounds. */
@@ -114,66 +117,13 @@ export function layoutViolations(baseDir: string): Violation[] {
       .filter((path) => ENTRY_POINT_FILE.test(path))
       .flatMap((path) => entryPointViolations(baseDir, path)),
     ...files.flatMap((path) => featureImportViolations(baseDir, path)),
+    ...files.flatMap((path) => collaboratorImportViolations(baseDir, path)),
     ...files.flatMap((path) => testImportViolations(baseDir, path)),
     ...files.flatMap((path) => entityClassViolations(baseDir, path)),
     ...contractsViolations(baseDir),
     ...directoryViolations(baseDir),
     ...domainServicesViolations(baseDir),
   ];
-}
-
-export interface ModuleImport {
-  /** The module specifier, e.g. `../ports/clock.js`. */
-  specifier: string;
-  /** Imported names; `*` for a namespace import, `default` for a default import. */
-  names: string[];
-}
-
-/** Every `import … from` and `export … from` of a file (type-only ones included). */
-export function moduleImports(baseDir: string, path: string): ModuleImport[] {
-  const source = ts.createSourceFile(
-    path,
-    readFileSync(join(baseDir, path), 'utf8'),
-    ts.ScriptTarget.Latest,
-  );
-  const found: ModuleImport[] = [];
-  for (const statement of source.statements) {
-    if (
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.importClause
-    ) {
-      const { name, namedBindings } = statement.importClause;
-      const names: string[] = [];
-      if (name) names.push('default');
-      if (namedBindings && ts.isNamespaceImport(namedBindings)) names.push('*');
-      else if (namedBindings) {
-        names.push(
-          ...namedBindings.elements.map((element) => (element.propertyName ?? element.name).text),
-        );
-      }
-      found.push({ specifier: statement.moduleSpecifier.text, names });
-    } else if (
-      ts.isExportDeclaration(statement) &&
-      statement.moduleSpecifier &&
-      ts.isStringLiteral(statement.moduleSpecifier)
-    ) {
-      const clause = statement.exportClause;
-      const names =
-        clause && ts.isNamedExports(clause)
-          ? clause.elements.map((element) => (element.propertyName ?? element.name).text)
-          : ['*'];
-      found.push({ specifier: statement.moduleSpecifier.text, names });
-    }
-  }
-  return found;
-}
-
-/** A relative specifier as a POSIX `.ts` path below the base directory (the file may not exist). */
-export function target(from: string, specifier: string): string | undefined {
-  if (!specifier.startsWith('.')) return undefined;
-  const joined = posix.normalize(posix.join(posix.dirname(from), specifier));
-  return `${joined.replace(/\.(js|ts)x?$/, '')}.ts`;
 }
 
 /**
@@ -195,7 +145,9 @@ function applicationDecoratorViolations(baseDir: string, path: string): Violatio
 /**
  * An entry point imports handlers, its own schemas and shared shapes, and domain errors and
  * types for mapping. It never imports anything from `infrastructure/`, and from a repository
- * interface or port file only error classes (names ending in `Error`).
+ * interface or port file (at any depth under `domain/repositories/` and `application/ports/`)
+ * only error classes (names ending in `Error`). A port token or repository interface re-exported
+ * by another file, a handler for example, is the same import in disguise and is refused too.
  */
 function entryPointViolations(baseDir: string, path: string): Violation[] {
   return moduleImports(baseDir, path).flatMap((entry) => {
@@ -204,15 +156,97 @@ function entryPointViolations(baseDir: string, path: string): Violation[] {
     if (INFRASTRUCTURE_FILE.test(to)) {
       return [{ rule: 'api-entry-points-no-ports-or-infrastructure', from: path, to }];
     }
-    if (!REPOSITORY_OR_PORT_FILE.test(to)) return [];
-    return entry.names
-      .filter((name) => !ERROR_NAME.test(name))
-      .map((name) => ({
+    if (REPOSITORY_OR_PORT_FILE.test(to)) {
+      return entry.names
+        .filter((name) => !ERROR_NAME.test(name))
+        .map((name) => ({
+          rule: 'api-entry-points-no-ports-or-infrastructure',
+          from: path,
+          to: `${to} ${name}`,
+        }));
+    }
+    return portReexports(baseDir, to)
+      .filter(({ name }) => entry.names.includes('*') || entry.names.includes(name))
+      .map(({ name, origin }) => ({
         rule: 'api-entry-points-no-ports-or-infrastructure',
         from: path,
-        to: `${to} ${name}`,
+        to: `${to} ${name} (re-exported from ${origin})`,
       }));
   });
+}
+
+/**
+ * The non-error names `file` exposes that come from a repository interface or port file, through
+ * `export { X } from`, `export * from`, or an import followed by `export { X }`, followed through
+ * relative files. `*` stands for names that cannot be listed (`export *`, `export * as ns`).
+ */
+function portReexports(
+  baseDir: string,
+  file: string,
+  chain: string[] = [],
+): { name: string; origin: string }[] {
+  if (chain.includes(file) || !existsSync(join(baseDir, file))) return [];
+  const source = parse(baseDir, file);
+  const imported = new Map<string, { specifier: string; name: string }>();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) {
+        imported.set(element.name.text, {
+          specifier: statement.moduleSpecifier.text,
+          name: (element.propertyName ?? element.name).text,
+        });
+      }
+    }
+  }
+  /** What exposing `name` of the file at `specifier` leads to, if it is a port or repository. */
+  const through = (specifier: string, name: string): string | undefined => {
+    const to = target(file, specifier);
+    if (!to) return undefined;
+    if (REPOSITORY_OR_PORT_FILE.test(to)) return ERROR_NAME.test(name) ? undefined : to;
+    const inner = portReexports(baseDir, to, [...chain, file]).filter(
+      (candidate) => candidate.name === name || candidate.name === '*',
+    );
+    return inner[0]?.origin;
+  };
+  const found: { name: string; origin: string }[] = [];
+  for (const statement of source.statements) {
+    if (!ts.isExportDeclaration(statement)) continue;
+    const specifier =
+      statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+        ? statement.moduleSpecifier.text
+        : undefined;
+    const clause = statement.exportClause;
+    if (specifier && (!clause || ts.isNamespaceExport(clause))) {
+      const to = target(file, specifier);
+      if (!to) continue;
+      const inner = REPOSITORY_OR_PORT_FILE.test(to)
+        ? existsSync(join(baseDir, to))
+          ? exportedNames(parse(baseDir, to))
+              .filter((name) => !ERROR_NAME.test(name))
+              .map((name) => ({ name, origin: to }))
+          : []
+        : portReexports(baseDir, to, [...chain, file]);
+      if (clause) {
+        // `export * as ns`: one name, `ns`, for everything the file leads to.
+        if (inner[0]) found.push({ name: clause.name.text, origin: inner[0].origin });
+      } else {
+        // `export *`: the file's own non-error names, so an import of any of them is seen.
+        found.push(...inner);
+      }
+    } else if (clause && ts.isNamedExports(clause)) {
+      for (const element of clause.elements) {
+        const from = (element.propertyName ?? element.name).text;
+        const binding = specifier ? { specifier, name: from } : imported.get(from);
+        const origin = binding ? through(binding.specifier, binding.name) : undefined;
+        if (origin) found.push({ name: element.name.text, origin });
+      }
+    }
+  }
+  return found;
 }
 
 /**
@@ -223,12 +257,27 @@ function entryPointViolations(baseDir: string, path: string): Violation[] {
  */
 function featureImportViolations(baseDir: string, path: string): Violation[] {
   const own = FEATURE_FILE.exec(path);
-  if (!own || !FEATURE_ISOLATED_MODULES.has(own[1])) return [];
+  if (!own) return [];
   return moduleImports(baseDir, path).flatMap((entry) => {
     const to = target(path, entry.specifier);
     const other = to ? FEATURE_PATH.exec(to) : null;
     if (!to || !other || other[1] !== own[1] || other[2] === own[2]) return [];
     return [{ rule: 'api-features-no-feature-imports', from: path, to }];
+  });
+}
+
+/**
+ * A collaborator, a file directly in `application/`, imports nothing from `application/features/`
+ * (rule 3): it is shared logic that features call, so a feature reached from it would turn the
+ * dependency around and make one feature depend on another through it. Its tests are not checked.
+ */
+function collaboratorImportViolations(baseDir: string, path: string): Violation[] {
+  if (!COLLABORATOR_FILE.test(path) || /\.test\.tsx?$/.test(path)) return [];
+  return moduleImports(baseDir, path).flatMap((entry) => {
+    const to = target(path, entry.specifier);
+    return to && FEATURE_PATH.test(to)
+      ? [{ rule: 'api-collaborators-no-feature-imports', from: path, to }]
+      : [];
   });
 }
 
@@ -305,60 +354,25 @@ function domainServicesViolations(baseDir: string): Violation[] {
 /**
  * An entity file exports a class that nobody outside can construct (rule 4): a `private` or
  * `protected` constructor, so only its factories make one and it cannot be built in an invalid
- * state. A file may also export error classes (a class named `…Error` or extending `Error`), which
- * are not entities. A file that exports no entity class (a plain record, a function), or one whose
+ * state. The class may be a declaration or `export const X = class {}`. A file may also export
+ * error classes (a class named `…Error` or extending `Error`), which are not entities. A file that exports no entity class (a plain record, a function), or one whose
  * constructor is public or implicit, breaks the rule: such records belong in `domain/value-objects/`.
  */
 function entityClassViolations(baseDir: string, path: string): Violation[] {
   const match = ENTITY_FILE.exec(path);
-  if (!match || !ENTITY_CLASS_MODULES.has(match[1])) return [];
-  const source = ts.createSourceFile(
-    path,
-    readFileSync(join(baseDir, path), 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
+  if (!match) return [];
+  const entityClasses = exportedClasses(parse(baseDir, path)).filter(
+    (exported) => !isErrorClass(exported),
   );
-  const exportedLater = new Set<string>();
-  for (const statement of source.statements) {
-    if (
-      ts.isExportDeclaration(statement) &&
-      !statement.moduleSpecifier &&
-      statement.exportClause &&
-      ts.isNamedExports(statement.exportClause)
-    ) {
-      for (const element of statement.exportClause.elements) {
-        exportedLater.add((element.propertyName ?? element.name).text);
-      }
-    }
-  }
-  const entityClasses = source.statements
-    .filter(ts.isClassDeclaration)
-    .filter(
-      (declaration) =>
-        ts
-          .getModifiers(declaration)
-          ?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ||
-        (declaration.name !== undefined && exportedLater.has(declaration.name.text)),
-    )
-    .filter((declaration) => !isErrorClass(declaration));
-  const sealed = entityClasses.length > 0 && entityClasses.every(hasNonPublicConstructor);
+  const sealed =
+    entityClasses.length > 0 &&
+    entityClasses.every((exported) => hasNonPublicConstructor(exported.node));
   return sealed
     ? []
     : [{ rule: 'api-entities-are-classes-with-non-public-constructors', from: path }];
 }
 
-export function isErrorClass(declaration: ts.ClassDeclaration): boolean {
-  if (declaration.name && ERROR_NAME.test(declaration.name.text)) return true;
-  return (declaration.heritageClauses ?? []).some(
-    (clause) =>
-      clause.token === ts.SyntaxKind.ExtendsKeyword &&
-      clause.types.some(
-        (type) => ts.isIdentifier(type.expression) && type.expression.text === 'Error',
-      ),
-  );
-}
-
-function hasNonPublicConstructor(declaration: ts.ClassDeclaration): boolean {
+function hasNonPublicConstructor(declaration: ts.ClassLikeDeclaration): boolean {
   const constructors = declaration.members.filter(ts.isConstructorDeclaration);
   return (
     constructors.length > 0 &&

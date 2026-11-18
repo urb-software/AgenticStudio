@@ -5,6 +5,7 @@ import { type Provider } from '../../../domain/value-objects/provider.js';
 import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
+  ProviderUnavailableError,
 } from '../../../domain/value-objects/run-errors.js';
 import { Run } from '../../../domain/entities/run.js';
 import { type RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
@@ -12,7 +13,6 @@ import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   PROVIDER_UNAVAILABLE_REASONS,
-  ProviderUnavailableError,
   WorkerStatus,
 } from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';

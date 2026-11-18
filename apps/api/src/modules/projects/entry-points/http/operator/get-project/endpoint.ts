@@ -5,12 +5,12 @@ import { ApiProblemResponses } from '../../../../../../platform/http/problem-det
 import { toProjectResponse } from '../../shared/project-response.js';
 import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
 import { toRepositorySummary } from '../../shared/repository-response.js';
-import { ProjectNotFoundError } from '../../../../domain/repositories/project-repository.js';
 import {
   GetProjectHandler,
   type GetProjectResult,
 } from '../../../../application/features/get-project/handler.js';
 import { ProjectDetailResponseDto } from './schema.js';
+import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
 
 /** `GET /api/projects/:id`, behind the global session guard. */
 @ApiTags('projects')

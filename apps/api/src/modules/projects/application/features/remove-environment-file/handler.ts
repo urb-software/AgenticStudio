@@ -6,13 +6,13 @@ import {
 } from '../../../domain/repositories/environment-file-repository.js';
 import {
   PROJECT_REPOSITORY,
-  ProjectNotFoundError,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import {
   ENVIRONMENT_FILE_CONTENTS,
   type EnvironmentFileContents,
 } from '../../ports/environment-file-contents.js';
+import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
 
 export interface RemoveEnvironmentFileInput {
   projectId: string;

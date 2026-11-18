@@ -1,5 +1,17 @@
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { describeGate } from '../suite';
+import { fileViolations } from './file-rules';
 import { apiGate } from './gate';
+
+const ROW_NEW_MODULE =
+  'A structure rule is broken in a module the app does not have (`billing`)' as const;
+const ROW_PORT_ANY_ROUTE =
+  'An entry point imports a repository interface or port file by any route (nested, side-effect, dynamic, re-exported by a handler)' as const;
+const ROW_ERROR_THROUGH_HANDLER =
+  'An entry point imports an error class through a handler, or a test imports a fake from `ports/__tests__/`' as const;
+const ROW_HANDLER_FAIL =
+  'A handler returns an entity class, does not export its result type, or has a public method with no declared return type' as const;
 
 describeGate('api', apiGate, 'apps/api', [
   {
@@ -527,17 +539,17 @@ describeGate('api', apiGate, 'apps/api', [
   {
     fixture: 'handler-returns-entity-class',
     expected: ['api-handlers-return-plain-data'],
-    qualityRow: 'A handler returns an entity class, or does not export its result type',
+    qualityRow: ROW_HANDLER_FAIL,
   },
   {
     fixture: 'handler-result-wraps-entity-class',
     expected: ['api-handlers-return-plain-data'],
-    qualityRow: 'A handler returns an entity class, or does not export its result type',
+    qualityRow: ROW_HANDLER_FAIL,
   },
   {
     fixture: 'handler-does-not-export-result-type',
     expected: ['api-handlers-return-plain-data'],
-    qualityRow: 'A handler returns an entity class, or does not export its result type',
+    qualityRow: ROW_HANDLER_FAIL,
   },
   {
     fixture: 'repository-refers-to-one-entity-file',
@@ -697,4 +709,186 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'executions-repository-refers-to-another-root-and-the-run-step',
     expected: ['api-repository-refers-to-one-entity'],
   },
+  // Every structure check applies to any module under `src/modules/`, by path pattern: `billing`
+  // is a module the app does not have, and each rule is broken in it (Issue #170).
+  {
+    fixture: 'billing-feature-imports-another-feature',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  {
+    fixture: 'billing-entity-class-with-private-constructor',
+    expected: [],
+    qualityRow: '`domain/entities/` file exports a class with a non-public constructor',
+  },
+  {
+    fixture: 'billing-entity-class-with-public-constructor',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  {
+    fixture: 'billing-entry-point-imports-entity-class',
+    expected: ['api-entry-points-no-entity-classes'],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  {
+    fixture: 'billing-handler-returns-entity-class',
+    expected: ['api-handlers-return-plain-data'],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  {
+    fixture: 'billing-repository-refers-to-two-entities',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  {
+    fixture: 'billing-entity-imports-another-entity',
+    expected: ['api-entities-do-not-import-entities'],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  {
+    fixture: 'billing-entity-class-and-function',
+    expected: [
+      'api-entity-file-exports-one-class-and-no-function',
+      'api-domain-exports-no-function-but-type-guards',
+    ],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  {
+    fixture: 'billing-domain-exports-loose-function',
+    expected: ['api-domain-exports-no-function-but-type-guards'],
+    qualityRow: ROW_NEW_MODULE,
+  },
+  // An application collaborator never imports a feature (backend.md §3 rule 3, Issue #170).
+  {
+    fixture: 'application-collaborator-imports-ports-and-domain',
+    expected: [],
+    qualityRow: 'An application collaborator imports ports and the domain',
+  },
+  {
+    fixture: 'application-collaborator-imports-a-feature',
+    expected: ['api-collaborators-no-feature-imports'],
+    qualityRow: 'An application collaborator imports `application/features/`',
+  },
+  // The shared import parser sees side-effect imports and dynamic `import()` (review of #174).
+  {
+    fixture: 'feature-imports-another-feature-side-effect',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
+  {
+    fixture: 'feature-imports-another-feature-dynamically',
+    expected: ['api-features-no-feature-imports'],
+    qualityRow: 'A feature imports another feature of its module',
+  },
+  {
+    fixture: 'entry-point-imports-port-file-by-side-effect',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: ROW_PORT_ANY_ROUTE,
+  },
+  {
+    fixture: 'entry-point-imports-port-file-dynamically',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: ROW_PORT_ANY_ROUTE,
+  },
+  // Ports nested deeper, and port tokens re-exported through a handler (review of #172).
+  {
+    fixture: 'entry-point-imports-nested-port-file',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: ROW_PORT_ANY_ROUTE,
+  },
+  {
+    fixture: 'entry-point-imports-port-token-through-handler',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: ROW_PORT_ANY_ROUTE,
+  },
+  {
+    fixture: 'entry-point-imports-port-token-through-handler-export-star',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: ROW_PORT_ANY_ROUTE,
+  },
+  {
+    fixture: 'entry-point-imports-error-class-through-handler',
+    expected: [],
+    qualityRow: ROW_ERROR_THROUGH_HANDLER,
+  },
+  {
+    fixture: 'entry-point-test-imports-port-test-fake',
+    expected: [],
+    qualityRow: ROW_ERROR_THROUGH_HANDLER,
+  },
+  // Handler methods with no declared return type, function-typed repository properties and
+  // qualified names (review of #188).
+  {
+    fixture: 'handler-method-without-return-type',
+    expected: ['api-handlers-return-plain-data'],
+    qualityRow: ROW_HANDLER_FAIL,
+  },
+  {
+    fixture: 'handler-returns-entity-class-through-namespace-import',
+    expected: ['api-handlers-return-plain-data'],
+    qualityRow: ROW_HANDLER_FAIL,
+  },
+  {
+    fixture: 'repository-property-returns-value-object',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow:
+      'A repository interface returns another value object, or the snapshot of another root',
+  },
+  {
+    fixture: 'repository-returns-value-object-through-namespace-import',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow:
+      'A repository interface returns another value object, or the snapshot of another root',
+  },
+  // `satisfies`, `export const X = class {}` and overloads (review of #190).
+  {
+    fixture: 'domain-exports-arrow-function-with-satisfies',
+    expected: ['api-domain-exports-no-function-but-type-guards'],
+    qualityRow: '`domain/` exports a function other than a type guard',
+  },
+  {
+    fixture: 'domain-exports-overloaded-function',
+    expected: ['api-domain-exports-no-function-but-type-guards'],
+    qualityRow: '`domain/` exports a function other than a type guard',
+  },
+  {
+    fixture: 'domain-exports-overloaded-type-guard',
+    expected: [],
+    qualityRow: '`domain/` exports only classes, types, constants and type guards',
+  },
+  {
+    fixture: 'entity-class-expression-with-private-constructor',
+    expected: [],
+    qualityRow: '`domain/entities/` file exports a class with a non-public constructor',
+  },
+  {
+    fixture: 'entity-class-and-class-expression',
+    expected: ['api-entity-file-exports-one-class-and-no-function'],
+    qualityRow: 'A `domain/entities/` file exports a second class or any function',
+  },
+  // The complete approved layout, the example for a new module (backend.md §2, Issue #170).
+  {
+    fixture: 'reference-module',
+    expected: [],
+    qualityRow: 'The reference module fixture (the complete approved layout)',
+  },
 ]);
+
+describe('architecture:api precision', () => {
+  const fixtures = join(import.meta.dirname, '..', 'fixtures', 'api');
+
+  it('an overloaded function is one export, reported once (review of #190)', () => {
+    expect(fileViolations(join(fixtures, 'domain-exports-overloaded-function'))).toEqual([
+      {
+        rule: 'api-domain-exports-no-function-but-type-guards',
+        from: 'src/modules/billing/domain/value-objects/rounding.ts',
+        to: 'exports the function round',
+      },
+    ]);
+  });
+
+  it('an overloaded type guard is not reported (review of #190)', () => {
+    expect(fileViolations(join(fixtures, 'domain-exports-overloaded-type-guard'))).toEqual([]);
+  });
+});

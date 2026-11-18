@@ -5,6 +5,8 @@ import {
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 
+export type CreateProjectInput = string;
+
 @Injectable()
 export class CreateProjectHandler {
   constructor(
@@ -12,7 +14,7 @@ export class CreateProjectHandler {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async execute(name: string): Promise<void> {
+  async execute(name: CreateProjectInput): Promise<void> {
     if ((await this.projects.count()) >= this.config.maxProjects) {
       throw new Error('Too many projects');
     }

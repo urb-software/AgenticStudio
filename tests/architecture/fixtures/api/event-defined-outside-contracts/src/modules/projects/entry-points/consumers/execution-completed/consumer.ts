@@ -10,6 +10,6 @@ export class ExecutionCompletedConsumer {
   constructor(private readonly handler: RecordExecutionHandler) {}
 
   async handle(event: ExecutionCompletedV1): Promise<void> {
-    await this.handler.execute(event.projectId, event.executionId);
+    await this.handler.execute({ projectId: event.projectId, executionId: event.executionId });
   }
 }

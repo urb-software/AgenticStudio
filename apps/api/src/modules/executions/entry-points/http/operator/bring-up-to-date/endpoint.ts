@@ -12,8 +12,10 @@ import {
   runNotFound,
 } from '../../shared/problems.js';
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
-import { FollowUpNotAllowedError } from '../../../../domain/value-objects/run-errors.js';
-import { RunNotFoundError } from '../../../../domain/repositories/run-repository.js';
+import {
+  FollowUpNotAllowedError,
+  RunNotFoundError,
+} from '../../../../domain/value-objects/run-errors.js';
 import { FollowUpRunHandler } from '../../../../application/features/follow-up-run/handler.js';
 import { bringUpToDateRequestSchema, BringUpToDateRequestDto } from './schema.js';
 
