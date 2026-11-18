@@ -19,6 +19,7 @@ import {
 export const AGGREGATE_RULES = [
   'api-entry-points-no-entity-classes',
   'api-handlers-return-plain-data',
+  'api-handler-input-plain-data',
   'api-repository-refers-to-one-entity',
   'api-entities-do-not-import-entities',
 ];
@@ -37,6 +38,7 @@ export const CHILD_ENTITIES: Record<string, string[]> = {
 const HANDLER_FILE = /^src\/modules\/([^/]+)\/application\/features\/[^/]+\/handler\.ts$/;
 const REPOSITORY_FILE = /^src\/modules\/([^/]+)\/domain\/repositories\/[^/]+\.ts$/;
 const ENTRY_POINT_FILE = /^src\/modules\/([^/]+)\/entry-points\//;
+const DOMAIN_CLASS_FILE = /^src\/modules\/([^/]+)\/domain\/(entities|value-objects)\/(?!.*__tests__\/)[^/]+\.ts$/;
 const VALUE_OBJECT_FILE = /^src\/modules\/([^/]+)\/domain\/value-objects\//;
 /** An id type, the one thing an entity file may take from another entity file. */
 const ID_TYPE_NAME = /Id$/;
@@ -48,6 +50,7 @@ export function aggregateViolations(baseDir: string): Violation[] {
       (path) => path.endsWith('.ts') && !path.endsWith('.d.ts'),
     );
     const entityClasses = entityClassNames(baseDir, files);
+    const domainClasses = domainClassNames(baseDir, files);
     return [
       ...files
         .filter((path) => ENTRY_POINT_FILE.test(path))
@@ -55,6 +58,9 @@ export function aggregateViolations(baseDir: string): Violation[] {
       ...files
         .filter((path) => HANDLER_FILE.test(path))
         .flatMap((path) => handlerViolations(baseDir, path, entityClasses)),
+      ...files
+        .filter((path) => HANDLER_FILE.test(path))
+        .flatMap((path) => handlerInputViolations(baseDir, path, domainClasses)),
       ...files
         .filter((path) => REPOSITORY_FILE.test(path))
         .flatMap((path) => repositoryViolations(baseDir, path)),
@@ -79,6 +85,63 @@ function entityClassNames(baseDir: string, files: string[]): Map<string, string[
     found.set(path, exportedEntityClasses(parse(baseDir, path)));
   }
   return found;
+}
+
+/** The classes of each file of `domain/entities/` and `domain/value-objects/`, errors excluded. */
+function domainClassNames(baseDir: string, files: string[]): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  for (const path of files.filter((file) => DOMAIN_CLASS_FILE.test(file))) {
+    found.set(path, exportedEntityClasses(parse(baseDir, path)));
+  }
+  return found;
+}
+
+/**
+ * A handler's input holds plain data (rule 10): it refers to no class from `domain/`, an
+ * interface it extends included. Plain types, lists of allowed values and the input's own nested
+ * shapes are allowed.
+ */
+function handlerInputViolations(
+  baseDir: string,
+  path: string,
+  domainClasses: Map<string, string[]>,
+): Violation[] {
+  const source = parse(baseDir, path);
+  const imported = importedNames(source);
+  const handler = source.statements
+    .filter(ts.isClassDeclaration)
+    .find((declaration) => declaration.name && HANDLER_SUFFIX.test(declaration.name.text));
+  if (!handler?.name) return [];
+  const inputName = `${handler.name.text.replace(HANDLER_SUFFIX, '')}Input`;
+  const declaration = source.statements.find(
+    (statement): statement is ts.InterfaceDeclaration | ts.TypeAliasDeclaration =>
+      (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) &&
+      statement.name.text === inputName,
+  );
+  if (!declaration) return [];
+  const references: TypeReference[] = [];
+  if (ts.isTypeAliasDeclaration(declaration)) {
+    references.push(...typeReferencesDeep(declaration.type, source));
+  } else {
+    for (const member of declaration.members) {
+      references.push(...typeReferencesDeep(member as unknown as ts.TypeNode, source));
+    }
+    for (const clause of declaration.heritageClauses ?? []) {
+      for (const type of clause.types) {
+        references.push(entityNameParts(type.expression as ts.EntityName));
+      }
+    }
+  }
+  return references
+    .filter((reference) => {
+      const to = referenceTarget(reference, path, imported);
+      return to !== undefined && domainClasses.get(to)?.includes(reference.leaf) === true;
+    })
+    .map((reference) => ({
+      rule: 'api-handler-input-plain-data',
+      from: path,
+      to: `${inputName} refers to the domain class ${reference.text}`,
+    }));
 }
 
 /**

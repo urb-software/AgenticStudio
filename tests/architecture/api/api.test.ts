@@ -14,6 +14,13 @@ const ROW_ERROR_THROUGH_HANDLER =
 const ROW_HANDLER_FAIL =
   'A handler returns an entity class, does not export its result type, or has a public method with no declared return type' as const;
 
+const ROW_SNAPSHOT_FAIL =
+  'A handler, port, collaborator, entry point or `contracts/` file imports a `*-snapshot.ts` file' as const;
+const ROW_PROTOCOL_FAIL =
+  'A file under `application/` imports the worker protocol package or an entry point' as const;
+const ROW_INPUT_FAIL =
+  'A handler input refers to a class from `domain/`, directly or by extending it' as const;
+
 describeGate('api', apiGate, 'apps/api', [
   {
     fixture: 'handler-imports-own-port',
@@ -193,7 +200,10 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'consumer-deep-imports-event-file',
     expected: ['api-events-imported-via-contracts-index'],
   },
-  { fixture: 'http-dto-named-event', expected: [] },
+  {
+    fixture: 'http-dto-named-event',
+    expected: ['api-application-no-worker-protocol-or-entry-points'],
+  },
   { fixture: 'unresolved-generated-client-import', expected: ['api-local-imports-resolve'] },
   {
     fixture: 'database-package-unresolved-import',
@@ -237,7 +247,10 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'module-imports-other-module-http-contract',
     expected: ['api-contracts-only-index-and-events', 'api-cross-module-contracts-index-only'],
   },
-  { fixture: 'module-imports-other-module-http-shared', expected: ['api-no-cross-module-private'] },
+  {
+    fixture: 'module-imports-other-module-http-shared',
+    expected: ['api-no-cross-module-private', 'api-application-no-worker-protocol-or-entry-points'],
+  },
   {
     fixture: 'application-imports-only-domain-ports-and-own-files',
     expected: [],
@@ -692,7 +705,7 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'handler-returns-snapshot-and-exports-input-and-result',
     expected: [],
     qualityRow:
-      'A handler returns a snapshot, ids, values or a view type, and exports its input and result types',
+      'A handler returns ids, values or a view type of its own, and exports its input and result types',
   },
   {
     fixture: 'handler-returns-entity-class',
@@ -1093,6 +1106,58 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-repository-refers-to-one-entity'],
     qualityRow:
       'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
+  },
+  {
+    fixture: 'billing-repository-imports-its-snapshot',
+    expected: [],
+    qualityRow:
+      'A `*-snapshot.ts` file is imported only by `domain/entities/`, `domain/repositories/` and `infrastructure/repositories/`',
+  },
+  {
+    fixture: 'billing-handler-imports-snapshot',
+    expected: ['api-snapshots-between-entity-and-repository'],
+    qualityRow: ROW_SNAPSHOT_FAIL,
+  },
+  {
+    fixture: 'billing-entry-point-imports-snapshot',
+    expected: ['api-snapshots-between-entity-and-repository'],
+    qualityRow: ROW_SNAPSHOT_FAIL,
+  },
+  {
+    fixture: 'billing-contracts-imports-snapshot',
+    expected: ['api-snapshots-between-entity-and-repository', 'api-contracts-self-contained'],
+    qualityRow: ROW_SNAPSHOT_FAIL,
+  },
+  {
+    fixture: 'billing-handler-imports-worker-protocol',
+    expected: ['api-application-no-worker-protocol-or-entry-points', 'api-local-imports-resolve'],
+    qualityRow: ROW_PROTOCOL_FAIL,
+  },
+  {
+    fixture: 'billing-handler-imports-entry-point',
+    expected: ['api-application-no-worker-protocol-or-entry-points'],
+    qualityRow: ROW_PROTOCOL_FAIL,
+  },
+  {
+    fixture: 'billing-handler-test-imports-entry-point',
+    expected: [],
+    qualityRow: 'A test under `application/` imports an entry point (tests are not checked)',
+  },
+  {
+    fixture: 'billing-handler-input-plain-data',
+    expected: [],
+    qualityRow:
+      'A handler input holds plain data: primitives, lists of allowed values and nested shapes it declares',
+  },
+  {
+    fixture: 'billing-handler-input-holds-domain-class',
+    expected: ['api-handler-input-plain-data'],
+    qualityRow: ROW_INPUT_FAIL,
+  },
+  {
+    fixture: 'billing-handler-input-extends-domain-class',
+    expected: ['api-handler-input-plain-data'],
+    qualityRow: ROW_INPUT_FAIL,
   },
   {
     fixture: 'reference-module',

@@ -145,8 +145,14 @@ Positive and negative fixtures prove the rules catch violations:
 | `entry-points/` imports a type from `domain/entities/` | PASS |
 | `entry-points/` imports a class from `domain/entities/` | FAIL |
 | `entry-points/` imports an error class from an errors file in `domain/errors/` | PASS |
-| A handler returns a snapshot, ids, values or a view type, and exports its input and result types | PASS |
+| A handler returns ids, values or a view type of its own, and exports its input and result types | PASS |
 | A handler returns an entity class, does not export its result type, or has a public method with no declared return type | FAIL |
+| A `*-snapshot.ts` file is imported only by `domain/entities/`, `domain/repositories/` and `infrastructure/repositories/` | PASS |
+| A handler, port, collaborator, entry point or `contracts/` file imports a `*-snapshot.ts` file | FAIL |
+| A file under `application/` imports the worker protocol package or an entry point | FAIL |
+| A test under `application/` imports an entry point (tests are not checked) | PASS |
+| A handler input holds plain data: primitives, lists of allowed values and nested shapes it declares | PASS |
+| A handler input refers to a class from `domain/`, directly or by extending it | FAIL |
 | A repository interface refers to one entity file | PASS |
 | A repository interface refers to two entity files, or its main type is under `domain/value-objects/` | FAIL |
 | Nothing under `domain/value-objects/` or `domain/errors/` imports from `domain/entities/` | PASS |

@@ -3,13 +3,13 @@ import type { ProductSnapshot } from './product-snapshot.js';
 
 // An aggregate root is a class with its own id and a non-public constructor: only its factories
 // make one, so it cannot be built in an invalid state. It produces its snapshot, the plain data
-// that leaves the application layer. The file holds the class and nothing else (one concept per
+// that only its repository sees. The file holds the class and nothing else (one concept per
 // file).
 export class Product {
   private constructor(
     readonly id: string,
-    private readonly name: ProductName,
-    private readonly addedAt: number,
+    readonly name: ProductName,
+    readonly addedAt: number,
   ) {}
 
   static create(id: string, name: string, now: number): Product {
