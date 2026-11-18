@@ -70,6 +70,18 @@ describe('ReviewComments.load', () => {
     expect(comments[0]!.text).not.toContain('�');
   });
 
+  it('cuts a diff context to 2 KiB and says that the set was cut', () => {
+    const { comments, truncated } = sanitize(
+      [comment({ kind: 'inline', id: 'inline-1', diffContext: 'é'.repeat(2000) })],
+      false,
+      LogRedaction.of([]),
+    );
+
+    expect(Buffer.byteLength(comments[0]!.diffContext!, 'utf8')).toBeLessThanOrEqual(2 * 1024);
+    expect(comments[0]?.textCut).toBeUndefined();
+    expect(truncated).toBe(true);
+  });
+
   it('holds a text to the limit after redaction, which can lengthen it', () => {
     // 700 short secrets each become a 16-character marker: the text grows past 8 KiB.
     const { comments } = sanitize(
