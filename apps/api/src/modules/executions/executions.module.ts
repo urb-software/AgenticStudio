@@ -125,6 +125,7 @@ import { RetentionPolicy } from './domain/value-objects/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from './application/ports/worker-lease.js';
 import { WORKER_STATUS_STORE } from './application/ports/worker-status-store.js';
 
+/** Test seams: production passes nothing. */
 export interface ExecutionsModuleOptions {
   clock?: Clock;
   logKeepAliveMs?: number;
@@ -279,7 +280,8 @@ export class ExecutionsModule {
         {
           provide: RUN_SWEEPS_SETTINGS,
           useFactory: (config: AppConfig): RunSweepsSettings => ({
-            // Half the lease, at most every 30 s: a lost worker is noticed within one lease.
+            // Half the lease, at most every 30 s: a lost worker is noticed within half a lease
+            // after its lease expires.
             intervalMs: Math.min(30_000, (config.workerLeaseSeconds * 1000) / 2),
           }),
           inject: [APP_CONFIG],

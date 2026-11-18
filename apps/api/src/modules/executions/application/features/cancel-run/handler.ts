@@ -20,7 +20,8 @@ export interface CancelRunResult {
 
 /**
  * Repeating a cancel succeeds. The Run's `cancel` decides under the row lock, so a Run claimed or
- * finished in between is decided on as it is. Throws `RunNotFoundError` or `RunAlreadyFinishedError`.
+ * finished in between is decided on as it is. Throws `RunNotFoundError` or
+ * `RunAlreadyFinishedError`.
  */
 @Injectable()
 export class CancelRunHandler {

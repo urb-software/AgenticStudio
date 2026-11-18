@@ -31,8 +31,9 @@ export interface StartRunResult {
 }
 
 /**
- * Refuses a provider known to be unavailable from the latest worker status; the worker's own check stays authoritative.
- * Throws {@link RunProjectNotFoundError}, {@link RepositoryNotReadyError}, {@link ProviderUnavailableError} or `InvalidTaskError`.
+ * Refuses a provider known to be unavailable from the latest worker status; the worker's own check
+ * stays authoritative. Throws {@link RunProjectNotFoundError}, {@link RepositoryNotReadyError},
+ * {@link ProviderUnavailableError} or `InvalidTaskError`.
  */
 @Injectable()
 export class StartRunHandler {

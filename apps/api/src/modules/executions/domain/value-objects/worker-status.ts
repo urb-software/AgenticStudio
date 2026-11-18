@@ -63,8 +63,8 @@ export class WorkerStatus {
   }
 
   /**
-   * A status older than the worker lease counts as no worker connected; a switched-on provider with a reason from the
-   * worker is unavailable with that reason.
+   * A status older than the worker lease counts as no worker connected; a switched-on provider with
+   * a reason from the worker is unavailable with that reason.
    */
   static providerAvailability(
     latest: RecordedWorkerStatus | undefined,

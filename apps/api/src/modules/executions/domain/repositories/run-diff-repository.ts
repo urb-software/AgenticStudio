@@ -2,7 +2,6 @@ import type { RunDiff } from '../entities/run-diff.js';
 import type { RunDiffSnapshot } from '../entities/run-diff-snapshot.js';
 import type { RunDiffFileSummary, RunDiffScope } from '../value-objects/run-diff.js';
 
-/** DI token for the {@link RunDiffRepository} adapter. */
 export const RUN_DIFF_REPOSITORY = Symbol('RUN_DIFF_REPOSITORY');
 
 export type StoredRunDiff =

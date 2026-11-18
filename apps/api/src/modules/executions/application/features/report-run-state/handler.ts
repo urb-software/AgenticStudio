@@ -56,7 +56,8 @@ export class ReportRunStateHandler {
     if (!isRunId(input.runId)) throw new RunNotFoundError();
     input = await this.redacted(input);
     let applied = false;
-    // Under the Run's row lock, a cancel, an Answer or a sweep that came first is seen as the state it left.
+    // Under the Run's row lock, a cancel, an Answer or a sweep that came first is seen as the state
+    // it left.
     const changed = await this.runs.change(input.runId, (run) => {
       applied = run.reportState(
         input.workerId,
@@ -82,8 +83,9 @@ export class ReportRunStateHandler {
       await this.runs.change(changed.id, (run) => run.recordObservedPullRequestState(observed, at));
     }
     this.signal.notify(changed.id);
-    // A failed delivery that can be retried keeps its Environment file snapshot until the retry ends.
-    // A bring-up request that changed nothing leaves the Run as it was, snapshot included.
+    // A failed delivery that can be retried, or a Run that can resume after the usage limit, keeps
+    // its snapshot. A bring-up request that changed nothing leaves the Run as it was, snapshot
+    // included.
     if (
       !input.unchanged &&
       changed.claim.environmentFileSupplied &&

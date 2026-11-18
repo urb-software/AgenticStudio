@@ -1,8 +1,8 @@
 import type { FollowUpRefusal } from './follow-up.js';
 
 /**
- * `missing`: the pull request, or the Run branch it came from, no longer exists. The worker protocol's list is
- * pinned to this one by a test.
+ * `missing`: the pull request, or the Run branch it came from, no longer exists. The worker
+ * protocol's list is pinned to this one by a test.
  */
 export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
 export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
@@ -34,8 +34,8 @@ export interface PullRequestCheck {
 }
 
 /**
- * `unavailable`: the Git host refused to tell them (the Agent account lacks the permission). An empty list means
- * none are configured or reported for that commit.
+ * `unavailable`: the Git host refused to tell them (the Agent account lacks the permission). An
+ * empty list means none are configured or reported for that commit.
  */
 export type RunPullRequestChecks =
   { unavailable: true } | { unavailable?: false; commit: string; checks: PullRequestCheck[] };
@@ -53,8 +53,8 @@ export interface PullRequestStateResult {
 }
 
 /**
- * Studio itself never reads the Git host. `state` is `null` until the first lookup succeeded, and is kept when a
- * later one fails (`refreshError` then says why). Every field is `null` for a Run without a pull request.
+ * `state` is `null` until the first lookup succeeded, and is kept when a later one fails
+ * (`refreshError` then says why). Every field is `null` for a Run without a pull request.
  */
 export interface StoredPullRequestStatus {
   state: PullRequestState | null;
@@ -69,7 +69,9 @@ export interface StoredPullRequestStatus {
   checks: RunPullRequestChecks | null;
   prepareRequestedAt: Date | null;
   prepareError: string | null;
-  /** `null` while it is not over (a reopened one is cleared). Working copy retention counts from it. */
+  /**
+   * `null` while it is not over (a reopened one is cleared). Working copy retention counts from it.
+   */
   endedAt: Date | null;
 }
 
@@ -156,7 +158,10 @@ export class RunPullRequestStatus {
     return new RunPullRequestStatus({ ...this.toStored(), ...patch });
   }
 
-  /** `null` also while its state is unknown (a reopened pull request is open again at the next lookup). */
+  /**
+   * `null` also while its state is unknown (a reopened pull request is open again at the next
+   * lookup).
+   */
   get followUpRefusal(): FollowUpRefusal | null {
     return isEndedPullRequestState(this.state)
       ? RunPullRequestStatus.ENDED_REFUSALS[this.state]
@@ -182,8 +187,8 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * The first time it is read as merged, closed or missing is kept (retention counts from it); reading it open or
-   * draft again clears it.
+   * The first time it is read as merged, closed or missing is kept (retention counts from it);
+   * reading it open or draft again clears it.
    */
   private endedAtFor(state: PullRequestState, now: Date): Date | null {
     return isEndedPullRequestState(state) ? (this.endedAt ?? now) : null;
@@ -198,8 +203,8 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * The answer's own fields are what is kept: a merged or missing pull request has no branch position, a closed one
-   * no merge verdict, and only an open one has checks.
+   * The answer's own fields are what is kept: a merged or missing pull request has no branch
+   * position, a closed one no merge verdict, and only an open one has checks.
    */
   read(result: PullRequestStateResult, now: Date): RunPullRequestStatus {
     return this.with({
@@ -225,7 +230,10 @@ export class RunPullRequestStatus {
     return this.with({ prepareRequestedAt: null, prepareError: null });
   }
 
-  /** With a retry (`retryAt`, a rate limit) the Run stays refreshing, from `requestedAt`, until then. */
+  /**
+   * With a retry (`retryAt`, a rate limit) the Run stays refreshing, from `requestedAt`, until
+   * then.
+   */
   refreshFailed(error: string, retryAt: Date | null, requestedAt: Date): RunPullRequestStatus {
     return this.with({
       refreshError: error,
@@ -242,8 +250,8 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * A merged, closed or missing pull request has no branch position, merge verdict or checks worth keeping: those are
-   * cleared with the state (a closed one keeps its branch position).
+   * A merged, closed or missing pull request has no branch position, merge verdict or checks worth
+   * keeping: those are cleared with the state (a closed one keeps its branch position).
    */
   observed(state: PullRequestState, now: Date): RunPullRequestStatus {
     const gone = state === 'merged' || state === 'missing';

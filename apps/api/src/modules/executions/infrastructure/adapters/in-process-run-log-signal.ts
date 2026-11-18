@@ -2,7 +2,9 @@ import { EventEmitter } from 'node:events';
 import { Injectable } from '@nestjs/common';
 import type { RunLogSignal } from '../../application/ports/run-log-signal.js';
 
-/** Studio runs a single API instance; several would need a shared channel (e.g. Redis pub/sub) here. */
+/**
+ * Studio runs a single API instance; several would need a shared channel (e.g. Redis pub/sub) here.
+ */
 @Injectable()
 export class InProcessRunLogSignal implements RunLogSignal {
   private readonly emitter = new EventEmitter().setMaxListeners(0);

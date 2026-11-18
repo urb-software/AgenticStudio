@@ -38,7 +38,8 @@ export class SecretStoreEnvironmentFileSnapshots implements EnvironmentFileSnaps
       )) {
         await this.release(runId, secretRef);
       }
-      // A snapshot no Run references (a claim stopped between storing it and recording it) is deleted after an hour.
+      // A snapshot no Run references (a claim stopped between storing it and recording it) is
+      // deleted after an hour.
       const orphans = await this.secrets.listOlderThan(
         RUN_ENVIRONMENT_FILE_SECRET_OWNER,
         RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS,

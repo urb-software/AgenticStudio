@@ -8,7 +8,8 @@ export interface TimeOutOverdueStepsResult {
 }
 
 /**
- * Backstop: the agent worker is the primary enforcer of the step limit; this ends the Run when a live worker failed to.
+ * Backstop: the agent worker is the primary enforcer of the step limit; this ends the Run when a
+ * live worker failed to.
  */
 @Injectable()
 export class TimeOutOverdueStepsHandler {

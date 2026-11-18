@@ -16,8 +16,8 @@ export interface RunLifecycleStored {
 }
 
 /**
- * The operator's Follow-up, a delivery retry and a usage-limit resume are the ways out of a final state; the Run
- * applies them itself.
+ * The operator's Follow-up, a delivery retry and a usage-limit resume are the ways out of a final
+ * state; the Run applies them itself.
  */
 export class RunLifecycle {
   private static readonly TRANSITIONS: Record<RunState, readonly RunState[]> = {
@@ -110,8 +110,8 @@ export class RunLifecycle {
   }
 
   /**
-   * Its outcome is the one exception to the final states: on success the Run becomes `succeeded`, otherwise it stays
-   * `failed` with the new reason.
+   * Its outcome is the one exception to the final states: on success the Run becomes `succeeded`,
+   * otherwise it stays `failed` with the new reason.
    */
   get canRetryDelivery(): boolean {
     return this.failureCode === 'delivery_failed';
@@ -122,8 +122,8 @@ export class RunLifecycle {
   }
 
   /**
-   * Kept until the Run ends otherwise, its retry or resume is given up (Working copy or worker gone), or the
-   * retention period ends.
+   * Kept until the Run ends otherwise, its retry or resume is given up (Working copy or worker
+   * gone), or the retention period ends.
    */
   get keepsEnvironmentFileForRetry(): boolean {
     return this.canRetryDelivery || this.stoppedAtUsageLimit;

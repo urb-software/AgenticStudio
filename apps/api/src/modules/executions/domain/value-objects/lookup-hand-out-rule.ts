@@ -16,8 +16,8 @@ export interface LookupRunView {
 }
 
 /**
- * The store hands lookups out in one atomic step, skipping lookups another claim holds; `next` is the
- * same rule in memory, which a test uses to prove the statements follow it.
+ * The store hands lookups out in one atomic step, skipping lookups another claim holds; `next` is
+ * the same rule in memory, which a test uses to prove the statements follow it.
  */
 export class LookupHandOutRule {
   private constructor(

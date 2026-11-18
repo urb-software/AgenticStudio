@@ -19,8 +19,9 @@ export interface ResumeRunResult {
 }
 
 /**
- * Holds its project's place and one of the server's, like an answered Run; `resumeAfterUsageLimit` decides with the places read under the lock that serializes claims.
- * Throws `RunNotFoundError`, `RunNotResumableError` or `RunSlotTakenError`.
+ * Holds its project's place and one of the server's, like an answered Run; `resumeAfterUsageLimit`
+ * decides with the places read under the lock that serializes claims. Throws `RunNotFoundError`,
+ * `RunNotResumableError` or `RunSlotTakenError`.
  */
 @Injectable()
 export class ResumeRunHandler {

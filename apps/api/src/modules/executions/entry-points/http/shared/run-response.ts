@@ -106,8 +106,9 @@ export const runResponseSchema = z
     failure: z.object({ code: runFailureCodeSchema, detail: z.string() }).optional(),
     runBranch: z.string().optional(),
     /**
-     * `pushed`: the commit is on the remote Run branch; otherwise it exists only in the Working copy.
-     * Absent on every commit when the pushed commit is not among the listed ones: which are pushed is unknown.
+     * `pushed`: the commit is on the remote Run branch; otherwise it exists only in the Working
+     * copy. Absent on every commit when the pushed commit is not among the listed ones: which are
+     * pushed is unknown.
      */
     commits: z
       .array(z.object({ id: z.string(), subject: z.string(), pushed: z.boolean().optional() }))
@@ -165,7 +166,10 @@ export const runResponseSchema = z
           .optional(),
         checksCommit: z.string().optional(),
         checksUnavailable: z.literal(true).optional(),
-        /** True when the checks belong to another commit than the Run's latest pushed one: someone else pushed. */
+        /**
+         * True when the checks belong to another commit than the Run's latest pushed one: someone
+         * else pushed.
+         */
         checksOtherCommit: z.literal(true).optional(),
         failingChecksPreparation: z
           .object({
@@ -181,7 +185,10 @@ export const runResponseSchema = z
     resumable: z.literal(true).optional(),
     failingChecks: z.array(z.string()).optional(),
     question: runQuestionResponseSchema.optional(),
-    /** Everything the agent wrote is plain text. Single-Run answers only; lists leave it and `question` out. */
+    /**
+     * Everything the agent wrote is plain text. Single-Run answers only; lists leave it and
+     * `question` out.
+     */
     messages: z.array(runMessageResponseSchema).optional(),
   })
   .meta({ id: 'Run' });
@@ -283,8 +290,8 @@ export function toRunResponse(
   workerConnected?: boolean,
 ): RunResponse {
   const last = run.messages.at(-1);
-  // The commits up to and including the pushed one are on the remote Run branch. A pushed commit not in
-  // the list leaves each commit's pushed state unknown: no `pushed` field.
+  // The commits up to and including the pushed one are on the remote Run branch. A pushed commit
+  // not in the list leaves each commit's pushed state unknown: no `pushed` field.
   const pushedUpTo = run.workingCopy
     ? run.workingCopy.commits.findIndex((commit) => commit.id === run.pushedCommit)
     : -1;

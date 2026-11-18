@@ -7,7 +7,10 @@ export interface RetentionFacts {
   state: RunState;
   finishedAt: Date | null;
   hasPullRequest: boolean;
-  /** `null` (never read, or a lookup that never succeeded) counts as open: a Git host outage never causes removal. */
+  /**
+   * `null` (never read, or a lookup that never succeeded) counts as open: a Git host outage never
+   * causes removal.
+   */
   pullRequestState: PullRequestState | null;
   pullRequestEndedAt: Date | null;
   lastActivityAt: Date;
@@ -49,8 +52,9 @@ export class RetentionPolicy {
   }
 
   /**
-   * `null` when the Run is not final. With a pull request: the earlier of its end plus `hoursAfterPullRequestEnd` and the last
-   * activity plus `openPullRequestIdleDays`. Otherwise `days` after it finished.
+   * `null` when the Run is not final. With a pull request: the earlier of its end plus
+   * `hoursAfterPullRequestEnd` and the last activity plus `openPullRequestIdleDays`. Otherwise
+   * `days` after it finished.
    */
   keepUntil(facts: RetentionFacts): Date | null {
     if (!isFinalRunState(facts.state) || facts.finishedAt === null) return null;
@@ -73,6 +77,7 @@ export class RetentionPolicy {
     return isFinalRunState(facts.state) && !facts.hasPullRequest;
   }
 
+  /** Takes only final Runs without a pull request and without a removed Working copy. */
   overLimit(runs: readonly LimitedRun[]): Set<string> {
     const byProject = new Map<string, LimitedRun[]>();
     for (const run of runs) {

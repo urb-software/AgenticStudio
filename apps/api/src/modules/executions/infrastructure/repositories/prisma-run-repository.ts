@@ -552,9 +552,9 @@ export class PrismaRunRepository implements RunRepository {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-        // One statement selects the Run and hands it out, so a concurrent cancel cannot make the claim fail:
-        // the selection waits for the Run's row lock, PostgreSQL re-checks the row, and an ineligible Run is
-        // left out. A Run is never skipped for being briefly locked, so the queue order is strict.
+        // One statement selects and hands out the Run: it waits for a held row lock and re-checks
+        // the row, so a concurrent cancel cannot fail the claim and no Run is skipped for being
+        // briefly locked.
         const [claimed] = await tx.$queryRaw<{ id: string }[]>`
           UPDATE runs SET
             state = CASE WHEN state = 'queued' THEN 'preparing' ELSE state END,

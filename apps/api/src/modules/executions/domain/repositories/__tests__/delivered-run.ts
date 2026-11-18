@@ -11,7 +11,9 @@ const WORKING_COPY = {
   hasUncommittedChanges: false,
 };
 
-/** A Run `WORKER` carried to `succeeded`; with `delivered: false` it ends without a pull request. */
+/**
+ * A Run `WORKER` carried to `succeeded`; with `delivered: false` it ends without a pull request.
+ */
 export async function deliveredRun(
   runs: InMemoryRunRepository,
   options: { delivered?: boolean } = {},

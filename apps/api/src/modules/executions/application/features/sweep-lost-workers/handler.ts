@@ -26,6 +26,8 @@ export class SweepLostWorkersHandler {
     this.since = clock.now();
   }
 
+  // The status store starts empty after a restart: a worker not seen yet gets one lease counted
+  // from here.
   private readonly since: Date;
 
   async execute(): Promise<SweepLostWorkersResult> {

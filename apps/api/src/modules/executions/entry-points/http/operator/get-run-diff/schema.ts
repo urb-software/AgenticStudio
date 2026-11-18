@@ -42,8 +42,8 @@ export const runDiffFileSummarySchema = runDiffFileResponseSchema
   .meta({ id: 'RunDiffFileSummary' });
 
 /**
- * A diff the agent worker could not compute has no base commit, pushed state or files, and says why.
- * All text is the repository's and the agent's: plain text.
+ * A diff the agent worker could not compute has no base commit, pushed state or files, and says
+ * why. All text is the repository's and the agent's: plain text.
  */
 export const runDiffResponseSchema = z
   .object({

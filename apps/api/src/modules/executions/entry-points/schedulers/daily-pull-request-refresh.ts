@@ -15,6 +15,7 @@ export interface DailyPullRequestRefreshSettings {
   manual?: (pass: () => Promise<void>) => void;
 }
 
+// Ticks hourly and takes only states older than a day, so a restarted API catches up.
 export const DAILY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
 export const DAILY_REFRESH_FIRST_PASS_MS = 60 * 1000;

@@ -11,6 +11,9 @@ export interface RunStartInput {
   remoteUrl: string;
   integrationBranch: string;
   limits: RunLimits;
-  /** The store assigns `created_at` itself, so the queue order uses one clock; this time is not stored. */
+  /**
+   * The store assigns `created_at` itself, so the queue order uses one clock; this time is not
+   * stored.
+   */
   now: Date;
 }

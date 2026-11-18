@@ -24,9 +24,9 @@ export interface ReportRunStepResult {
 }
 
 /**
- * Free text is redacted before storing, never enum fields or the opaque session reference.
- * A re-sent step number is acknowledged without storing it again; the Run's `reportStep` decides under its row lock.
- * Throws {@link RunNotFoundError}, `RunNotHeldError`, {@link StepLimitReachedError} or `StepOutOfOrderError`.
+ * Free text is redacted before storing, never enum fields or the session reference; a re-sent step
+ * number is acknowledged. Throws {@link RunNotFoundError}, `RunNotHeldError`,
+ * `StepLimitReachedError` or `StepOutOfOrderError`.
  */
 @Injectable()
 export class ReportRunStepHandler {
@@ -41,7 +41,8 @@ export class ReportRunStepHandler {
       throw new RunNotFoundError();
     }
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
-    // The session reference is an opaque id the resume needs exactly: not redacted, not in the stored result.
+    // The session reference is an opaque id the resume needs exactly: not redacted, not in the
+    // stored result.
     const { sessionRef, ...shown } = runStepResultSchema.parse(input.result);
     const result = redaction.runStepResult(shown);
     const question = questionOf(result);

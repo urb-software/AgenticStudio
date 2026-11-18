@@ -27,7 +27,8 @@ const storedFilesSchema = z.array(
 
 /**
  * That the reporting worker holds the Run is checked under the Run's lock by the calling
- * transaction; a report replaces both scopes (and the state, unless unavailable) in that transaction.
+ * transaction; a report replaces both scopes (and the state, unless unavailable) in that
+ * transaction.
  */
 @Injectable()
 export class PrismaRunDiffRepository implements RunDiffRepository {
@@ -75,8 +76,8 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
           resultCommit: state.resultCommit,
           previousTree: state.previousTree,
           previousCommit: state.previousCommit,
-          // The pushed commit is stored once, on the Run, from the delivery reports; the one a worker
-          // sends with its diff state is only its echo of that value.
+          // The pushed commit is stored once, on the Run, from the delivery reports; the one a
+          // worker sends with its diff state is only its echo of that value.
         };
         await tx.runDiffState.upsert({
           where: { runId },

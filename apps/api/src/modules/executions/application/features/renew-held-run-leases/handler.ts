@@ -10,7 +10,8 @@ export interface RenewHeldRunLeasesResult {
 }
 
 /**
- * At most once per lease period, so an API that keeps crashing cannot keep a dead worker's Run alive.
+ * At most once per lease period, so an API that keeps crashing cannot keep a dead worker's Run
+ * alive.
  */
 @Injectable()
 export class RenewHeldRunLeasesHandler {

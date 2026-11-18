@@ -25,9 +25,9 @@ export interface ReportRunDiffInput {
 export type ReportRunDiffResult = void;
 
 /**
- * Patches and reasons are redacted with the log's rules; the Environment file's path is dropped in any spelling.
- * Holding the Run is checked under its lock in the transaction that replaces the diffs.
- * Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
+ * Patches and reasons are redacted with the log's rules; the Environment file's path is dropped in
+ * any spelling. Holding the Run is checked under its lock in the transaction that replaces the
+ * diffs. Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
  */
 @Injectable()
 export class ReportRunDiffHandler {

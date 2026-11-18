@@ -27,7 +27,7 @@ function cutToBytes(text: string, maxBytes: number): { text: string; cut: boolea
   return { text: bytes.subarray(0, end).toString('utf8'), cut: true };
 }
 
-/** What people wrote on a Run's pull request, as its latest load left it; an aggregate root of its own. */
+/** What people wrote on a Run's pull request, as its latest load left it. */
 export class ReviewComments {
   readonly scope: ReviewCommentScope;
   readonly comments: readonly ReviewComment[];

@@ -1,6 +1,7 @@
 /**
- * Best effort (security.md §3): known secret values, common token shapes and credential-bearing URLs,
- * never everything an agent might print. Over-masking is acceptable.
+ * Best effort (security.md §3): known secret values, common token shapes and credential-bearing
+ * URLs, never everything an agent might print. Over-masking is acceptable; every scan runs in
+ * linear time.
  */
 
 export const REDACTED = '••••••[redacted]';
@@ -12,8 +13,8 @@ const URL_SCHEME_SEPARATOR = /:\/\//g;
 const WHITESPACE = /\s/g;
 
 /**
- * Everything up to the last `@` of the whitespace-free token, so a password holding `@`, `/` or `:` is masked whole.
- * A scan, not a regex: linear time.
+ * Everything up to the last `@` of the whitespace-free token, so a password holding `@`, `/` or `:`
+ * is masked whole. A scan, not a regex: linear time.
  */
 function maskUrlUserinfo(text: string): string {
   let output = '';
@@ -67,6 +68,7 @@ export class LogRedaction {
     this.known = known;
   }
 
+  /** For the worker's own error text, which holds no known secret value. */
   static readonly NONE = new LogRedaction([]);
 
   static of(knownSecrets: readonly string[]): LogRedaction {
@@ -89,7 +91,10 @@ export class LogRedaction {
     return TOKEN_SHAPES.reduce((current, shape) => current.replace(shape, REDACTED), redacted);
   }
 
-  /** The enum fields (`outcome`, each check's `result`) are never touched: a known value equal to one would make the stored result invalid. */
+  /**
+   * The enum fields (`outcome`, each check's `result`) are never touched: a known value equal to
+   * one would make the stored result invalid.
+   */
   runStepResult<T extends StepResultText>(result: T): T {
     const redact = (text: string) => this.text(text);
     return {

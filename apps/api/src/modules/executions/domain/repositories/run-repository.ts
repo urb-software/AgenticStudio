@@ -14,7 +14,6 @@ export {
   StepOutOfOrderError,
 } from '../errors/run-errors.js';
 
-/** DI token for the {@link RunRepository} adapter. */
 export const RUN_REPOSITORY = Symbol('RUN_REPOSITORY');
 
 export interface RunStateView {
@@ -44,10 +43,6 @@ export interface RunsSummary {
   waiting: number;
 }
 
-/**
- * A Run's rules are the {@link Run}'s own, run through {@link RunRepository.change}. Here stay
- * the hand-out of the next Run (one atomic step under the claim lock) and the sweeps over many Runs.
- */
 export interface RunRepository {
   add(run: Run): Promise<Run>;
 
@@ -55,12 +50,15 @@ export interface RunRepository {
 
   exists(id: string): Promise<boolean>;
 
-  /** Only for a caller that holds the Run's row lock, so what it decided from the Run holds until the save. */
+  /**
+   * Only for a caller that holds the Run's row lock, so what it decided from the Run holds until
+   * the save.
+   */
   save(run: Run): Promise<void>;
 
   /**
-   * One transaction: loads the Run `FOR UPDATE`, calls `mutate`, saves what it changed. `null`
-   * when no Run has this id. `mutate` does no I/O; what it throws rolls back and reaches the caller.
+   * One transaction: loads the Run `FOR UPDATE`, calls `mutate`, saves what it changed. `null` when
+   * no Run has this id. `mutate` does no I/O; what it throws rolls back and reaches the caller.
    */
   change(runId: string, mutate: (run: Run) => void): Promise<Run | null>;
 
@@ -82,11 +80,15 @@ export interface RunRepository {
 
   /**
    * Hands the oldest eligible Run to `workerId`; a delivery retry or a resumable Run goes only to
-   * the worker that started it. Serialized against concurrent claims. `null` when none is eligible.
+   * the worker that last claimed it. Serialized against concurrent claims. `null` when none is
+   * eligible.
    */
   claimNext(workerId: string, now: Date): Promise<RunSnapshot | null>;
 
-  /** Only if the Run is still in `from`; `null` if not. For Studio's own sweeps, not the operator's cancel. */
+  /**
+   * Only if the Run is still in `from`; `null` if not. For Studio's own sweeps, not the operator's
+   * cancel.
+   */
   cancelUnheld(
     runId: string,
     from: 'queued' | 'waiting_for_operator',
@@ -107,7 +109,7 @@ export interface RunRepository {
 
   listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]>;
 
-  /** False if the Run is no longer in that state. */
+  /** False if the Run no longer waits for that retry. */
   abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean>;
 
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;
@@ -118,17 +120,25 @@ export interface RunRepository {
   /** Ids must be valid UUIDs; ids that name no Run are left out. */
   findStates(ids: readonly string[]): Promise<RunStateView[]>;
 
+  /**
+   * Only final Runs without a pull request and without a removed Working copy: what the per-Project
+   * limit counts.
+   */
   findLimitedRuns(projectIds: readonly string[]): Promise<LimitedRunView[]>;
 
   listSteps(runId: string): Promise<(RunStepSnapshot & { reportedAt: Date })[]>;
 
   /**
-   * Runs whose state is `draft`, `open` or unknown and whose last lookup was requested before
-   * `attemptedBefore` (counted from the attempt, not the last success), oldest attempt first.
+   * Runs whose pull request state is `draft`, `open` or unknown and whose last state lookup was
+   * requested before `attemptedBefore` (counted from the attempt, not the last success), oldest
+   * attempt first.
    */
   listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]>;
 
-  /** A `failed` Run held for a delivery retry keeps `failed` with `deliveryFailure`. Returns how many. */
+  /**
+   * A `failed` Run held for a delivery retry keeps `failed` with `deliveryFailure`. Returns how
+   * many.
+   */
   failStaleClaims(
     staleBefore: Date,
     failure: RunFailure,
@@ -139,7 +149,10 @@ export interface RunRepository {
   /** `null` when none, or already deleted. */
   findEnvironmentFileSecret(runId: string): Promise<string | null>;
 
-  /** Excludes a `failed` Run with `delivery_failed` that finished at or after `retryableFinishedBefore` or retries. */
+  /**
+   * Excludes a `failed` Run with `delivery_failed` that finished at or after
+   * `retryableFinishedBefore` or retries.
+   */
   listReleasableEnvironmentFileSecrets(
     retryableFinishedBefore: Date,
   ): Promise<{ runId: string; secretRef: string }[]>;
@@ -147,5 +160,6 @@ export interface RunRepository {
   /** Only if the reference is still `secretRef`. */
   clearEnvironmentFileSecret(runId: string, secretRef: string): Promise<void>;
 
+  /** Every reference any Run holds; the orphan sweep keeps exactly these. */
   listEnvironmentFileSecretRefs(): Promise<string[]>;
 }

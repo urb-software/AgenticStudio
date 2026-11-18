@@ -64,7 +64,10 @@ export class RunNotWaitingError extends Error {
   }
 }
 
-/** Not held: claimed by another worker, released (waiting for the operator, or final), or failed as `worker_lost`. */
+/**
+ * Not held: claimed by another worker, released (waiting for the operator, or final), or failed as
+ * `worker_lost`.
+ */
 export class RunNotHeldError extends Error {
   constructor() {
     super('This agent worker does not hold the run.');

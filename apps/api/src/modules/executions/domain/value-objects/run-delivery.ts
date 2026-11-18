@@ -15,7 +15,10 @@ export interface RunDeliveryStored {
   integrationBranch: string;
   delivery: RunDeliveryState | null;
   pullRequest: RunPullRequest | null;
-  /** Stays set while an agent worker holds the Run for the retry, until the worker reports the outcome. */
+  /**
+   * Stays set while an agent worker holds the Run for the retry, until the worker reports the
+   * outcome.
+   */
   deliveryRequested: boolean;
   pushedCommit: string | null;
 }

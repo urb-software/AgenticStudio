@@ -1,7 +1,6 @@
 import type { ReviewComments } from '../entities/review-comments.js';
 import type { ReviewCommentsSnapshot } from '../entities/review-comments-snapshot.js';
 
-/** DI token for the {@link ReviewCommentRepository} adapter. */
 export const REVIEW_COMMENT_REPOSITORY = Symbol('REVIEW_COMMENT_REPOSITORY');
 
 /** At most one set of loaded Review comments per Run. */

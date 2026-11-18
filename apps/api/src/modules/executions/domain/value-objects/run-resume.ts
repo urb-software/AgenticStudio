@@ -12,8 +12,8 @@ export class RunResume {
   }
 
   /**
-   * A Follow-up, and a usage-limit resume inside one (`followUpCount` above zero), work with the Project's current
-   * file (or none), snapshotted at the claim as at a Run's start.
+   * A Follow-up, and a usage-limit resume inside one (`followUpCount` above zero), work with the
+   * Project's current file (or none), snapshotted at the claim as at a Run's start.
    */
   takesNewEnvironmentFile(followUpCount: number): boolean {
     return (

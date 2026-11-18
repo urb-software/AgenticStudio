@@ -1,6 +1,6 @@
 /**
- * The worker protocol's and the HTTP contract's enums are pinned to this list by tests; the database CHECK
- * constraints are written from it.
+ * The worker protocol's and the HTTP contract's enums are pinned to this list by tests; the
+ * database CHECK constraints are written from it.
  */
 export const RUN_STATES = [
   'queued',

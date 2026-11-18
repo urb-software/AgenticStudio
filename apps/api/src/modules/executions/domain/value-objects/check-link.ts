@@ -1,6 +1,8 @@
 import type { LogRedaction } from './log-redaction.js';
 
-/** Never stored half-masked: a secret inside the host or path would leave text that is no address. */
+/**
+ * Never stored half-masked: a secret inside the host or path would leave text that is no address.
+ */
 export class CheckLink {
   private constructor(private readonly url: string) {}
 

@@ -15,7 +15,10 @@ export type FakeLookup = {
 const entity = (stored: FakeLookup): RunLookup =>
   RunLookup.restore({ ...stored, result: stored.result ?? null });
 
-/** In-memory {@link RunLookupRepository}: one open lookup per Run and kind; the hand-out follows {@link LookupHandOutRule}. */
+/**
+ * In-memory {@link RunLookupRepository}: one open lookup per Run and kind; the hand-out follows
+ * {@link LookupHandOutRule}.
+ */
 export class InMemoryRunLookupRepository implements RunLookupRepository {
   readonly lookups: FakeLookup[] = [];
 

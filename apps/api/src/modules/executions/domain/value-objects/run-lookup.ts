@@ -1,8 +1,8 @@
 import type { ReviewComment, ReviewCommentsRequest } from './review-comments.js';
 
 /**
- * Studio itself never reads the Git host: only an agent worker can answer, through the Agent account. The worker
- * protocol's lists are pinned to these by a test.
+ * Studio itself never reads the Git host: only an agent worker can answer, through the Agent
+ * account. The worker protocol's lists are pinned to these by a test.
  */
 export const LOOKUP_KINDS = [
   'pull_request_state',

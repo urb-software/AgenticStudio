@@ -15,8 +15,9 @@ export interface RunSweepFacts {
 }
 
 /**
- * The store's sweep (`failStaleClaims`) is one set-wide statement with the cut-off and the failures this rule
- * supplies; `selects` is the same selection over one Run, which a test uses to prove the statement follows it.
+ * The store's sweep (`failStaleClaims`) is one set-wide statement with the cut-off and the failures
+ * this rule supplies; `selects` is the same selection over one Run, which a test uses to prove the
+ * statement follows it.
  */
 export class LostWorkerRule {
   private constructor(
@@ -53,9 +54,15 @@ export class LostWorkerRule {
   }
 }
 
-/** The store's sweep (`timeOutOverdueSteps`) is one set-wide statement; `selects` is the same selection over one Run. */
+/**
+ * The store's sweep (`timeOutOverdueSteps`) is one set-wide statement; `selects` is the same
+ * selection over one Run.
+ */
 export class OverdueStepRule {
-  /** The agent worker stops a step at `stepMinutes`; Studio ends the Run itself only this much later. */
+  /**
+   * The agent worker stops a step at `stepMinutes`; Studio ends the Run itself only this much
+   * later.
+   */
   static readonly GRACE_MINUTES = 5;
 
   private constructor(
@@ -75,8 +82,8 @@ export class OverdueStepRule {
 }
 
 /**
- * The store lists the waiting Runs (`listWaiting`, the state only) and cancels one only while it still waits
- * (`cancelUnheld`).
+ * The store lists the waiting Runs (`listWaiting`, the state only) and cancels one only while it
+ * still waits (`cancelUnheld`).
  */
 export class LongWaitRule {
   private constructor(readonly now: Date) {}
@@ -97,6 +104,7 @@ export class LongWaitRule {
     run: Pick<RunSweepFacts, 'state' | 'waitingSince' | 'limits'>,
   ): RunCancellation | null {
     if (run.state !== 'waiting_for_operator' || run.waitingSince === null) return null;
+    // The waiting limit is Studio's own: the agent worker never enforces it.
     const limitMs = run.limits.waitingDays * 24 * 60 * 60 * 1000;
     if (this.now.getTime() - run.waitingSince.getTime() <= limitMs) return null;
     const days = run.limits.waitingDays;
@@ -108,8 +116,9 @@ export class LongWaitRule {
 }
 
 /**
- * Such a Run can only be taken by the worker that started it; when that worker has not reported for longer than the
- * lease, they fail. The store gives one up only while it is still pending.
+ * A Run held for a delivery retry or a resume can only be taken by the worker that last claimed it;
+ * when that worker has not reported for longer than the lease, they fail. The store gives one up
+ * only while it is still pending.
  */
 export class GoneWorkerRule {
   private constructor(
@@ -152,8 +161,8 @@ export class GoneWorkerRule {
 }
 
 /**
- * At most once per lease period, so a restart loop cannot keep a dead worker's Run alive. The store renews in one
- * statement.
+ * At most once per lease period, so a restart loop cannot keep a dead worker's Run alive. The store
+ * renews in one statement.
  */
 export class LeaseRenewalRule {
   private constructor(

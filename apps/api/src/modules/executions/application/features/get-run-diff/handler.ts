@@ -23,7 +23,10 @@ export interface GetRunDiffInput {
 
 export type GetRunDiffResult = StoredRunDiff;
 
-/** The patches were redacted when stored. Throws {@link RunNotFoundError} or {@link RunDiffNotFoundError}. */
+/**
+ * The patches were redacted when stored. Throws {@link RunNotFoundError} or {@link
+ * RunDiffNotFoundError}.
+ */
 @Injectable()
 export class GetRunDiffHandler {
   constructor(

@@ -11,7 +11,10 @@ export interface RunQuestion {
   recommendation?: string;
 }
 
-/** The Follow-up's text is then the operator's optional note (empty when there is none). */
+/**
+ * For a bring-up-to-date request the Follow-up's text is the operator's optional note (empty when
+ * there is none).
+ */
 export interface BringUpDetails {
   mergedCommit?: string;
   updateBase?: string;
@@ -19,8 +22,9 @@ export interface BringUpDetails {
 }
 
 /**
- * Recorded when a Follow-up reopens the Run, before its result is cleared, so the earlier result stays in the
- * conversation. `detail` is the failure detail or the cancellation reason; empty otherwise.
+ * Recorded when a Follow-up reopens the Run, before its result is cleared, so the earlier result
+ * stays in the conversation. `detail` is the failure detail or the cancellation reason; empty
+ * otherwise.
  */
 export interface RunPartEnd {
   state: FinalRunState;
@@ -111,15 +115,15 @@ export class RunConversation {
   }
 
   /**
-   * A bring-up merge of the part before the current one that never succeeded: its merge commit may still be in the
-   * Working copy, so the next part resets the Run branch to `baseCommit` first, unless something past it was
-   * pushed (`pushedCommit`).
+   * A bring-up merge of the part before the current one that never succeeded: its merge commit may
+   * still be in the Working copy, so the next part resets the Run branch to `baseCommit` first,
+   * unless something past it was pushed (`pushedCommit`).
    */
   pendingUpdate(
     pushedCommit: string | null,
   ): { baseCommit: string; pushedCommit?: string } | undefined {
-    // Only the part right before the current one: once it (or a later part) reset the branch, the base is not
-    // offered again, so nothing a later part did is undone.
+    // Only the part right before the current one: once it (or a later part) reset the branch, the
+    // base is not offered again, so nothing a later part did is undone.
     const followUps = this.messages.flatMap((message, index) =>
       message.kind === 'follow_up' ? [index] : [],
     );
@@ -178,8 +182,8 @@ export class RunConversation {
   }
 
   /**
-   * A resumed step that asks again adds a question after it, so it is never handed out twice. An answer that does
-   * not follow a question is the usage-limit resume.
+   * A resumed step that asks again adds a question after it, so it is never handed out twice. An
+   * answer that does not follow a question is the usage-limit resume.
    */
   resumeMessage(hasSession: boolean): RunResume | null {
     const last = this.messages.at(-1);

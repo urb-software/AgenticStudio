@@ -3,7 +3,9 @@ import type { DatabaseClient } from '../../../../platform/database/database.modu
 
 export type Executor = DatabaseClient | Prisma.TransactionClient;
 
-/** On a client already in a transaction, runs directly on it: interactive transactions do not nest. */
+/**
+ * On a client already in a transaction, runs directly on it: interactive transactions do not nest.
+ */
 export function inTransaction<T>(
   db: Executor,
   work: (tx: Prisma.TransactionClient) => Promise<T>,

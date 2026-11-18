@@ -1,4 +1,7 @@
-/** Untrusted text: anyone can comment on a public pull request, so nothing reaches an agent unless the operator selects it. */
+/**
+ * Untrusted text: anyone can comment on a public pull request, so nothing reaches an agent unless
+ * the operator selects it.
+ */
 
 export const REVIEW_COMMENT_SCOPES = ['since_last_result', 'unresolved'] as const;
 export type ReviewCommentScope = (typeof REVIEW_COMMENT_SCOPES)[number];

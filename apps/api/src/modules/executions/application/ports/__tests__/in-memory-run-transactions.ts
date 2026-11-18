@@ -1,7 +1,10 @@
 import type { RunTransactionRepositories, RunTransactions } from '../run-transactions.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
-/** In-memory {@link RunTransactions}: the fakes change synchronously, so only the per-Run row lock is simulated. */
+/**
+ * In-memory {@link RunTransactions}: the fakes change synchronously, so only the per-Run row lock
+ * is simulated.
+ */
 export class InMemoryRunTransactions implements RunTransactions {
   /** The end of the line of transactions on each Run: the Run's row lock. */
   private readonly lines = new Map<string, Promise<unknown>>();

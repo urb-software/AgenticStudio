@@ -15,12 +15,12 @@ export interface ClaimedLookup {
 }
 
 export interface ReviewCommentsLoad {
+  /** A request is open, including one waiting out a rate limit. */
   loading: boolean;
   /** Redacted; null unless the latest load failed. */
   error: string | null;
 }
 
-/** DI token for the {@link RunLookupRepository} adapter. */
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');
 
 /**
@@ -43,7 +43,10 @@ export interface RunLookupRepository {
   /** Open means requested or claimed. */
   findOpen(runId: string, kind: LookupKind): Promise<RunLookup | null>;
 
-  /** Oldest first, first returning the claims older than the lease to the queue. Any worker may claim. */
+  /**
+   * Oldest first, first returning the claims older than the lease to the queue. Any worker may
+   * claim.
+   */
   claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]>;
 
   /** Returns how many were removed. */

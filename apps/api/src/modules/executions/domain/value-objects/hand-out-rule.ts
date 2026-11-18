@@ -14,7 +14,8 @@ export interface HandOutView {
 
 /**
  * The store hands a Run out in one atomic step under the claim lock, re-checking Runs another
- * transaction holds; `next` is the same rule in memory, which a test uses to prove the query follows it.
+ * transaction holds; `next` is the same rule in memory, which a test uses to prove the query
+ * follows it.
  */
 export class HandOutRule {
   static readonly PLACE_STATES = [
@@ -44,7 +45,10 @@ export class HandOutRule {
   static readonly queueOrder = (a: HandOutView, b: HandOutView): number =>
     a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-  /** A Run with an agent session or a delivery retry goes only to the worker that last claimed it: it alone has the Working copy. */
+  /**
+   * A Run with an agent session or a delivery retry goes only to the worker that last claimed it:
+   * it alone has the Working copy.
+   */
   takes(run: HandOutView): boolean {
     if (run.state === 'queued')
       return run.sessionRef === null || run.lastClaimedBy === this.workerId;

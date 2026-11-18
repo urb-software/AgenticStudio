@@ -44,8 +44,8 @@ export interface LoadReviewCommentsResult {
 }
 
 /**
- * Throws {@link RunNotFoundError}, {@link PullRequestNotRefreshableError}, {@link FollowUpNotAllowedError}
- * or {@link ReviewCommentsLoadRunningError}.
+ * Throws {@link RunNotFoundError}, {@link PullRequestNotRefreshableError}, {@link
+ * FollowUpNotAllowedError} or {@link ReviewCommentsLoadRunningError}.
  */
 @Injectable()
 export class LoadReviewCommentsHandler {

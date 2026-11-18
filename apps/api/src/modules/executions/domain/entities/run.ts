@@ -63,7 +63,7 @@ type RunPatch = Partial<
 const CHANGES = new WeakMap<Run, RunChanges>();
 
 /**
- * The Run aggregate root. The store saves {@link Run.pendingChanges} in one transaction under the
+ * The store saves {@link Run.pendingChanges} in one transaction under the
  * Run's row lock, so two simultaneous requests cannot both succeed.
  */
 export class Run {
@@ -232,7 +232,8 @@ export class Run {
   resumeAfterUsageLimit(now: Date, facts: ResumeFacts): void {
     if (
       !this.canResumeAfterUsageLimit ||
-      // The resumed step's log is redacted with the snapshot; a Run in a Follow-up works without it.
+      // The resumed step's log is redacted with the snapshot; a Run in a Follow-up works without
+      // it.
       (this.claim.environmentFileSupplied &&
         !facts.environmentFileSnapshotKept &&
         !this.progress.inFollowUp)
@@ -266,7 +267,8 @@ export class Run {
     if (!this.lifecycle.isFinal || this.claim.isHeld || this.delivery.requested) {
       return refuse('not_finished');
     }
-    // Nothing to update once the pull request is over; a reopened one is open again at the next lookup.
+    // Nothing to update once the pull request is over; a reopened one is open again at the next
+    // lookup.
     const ended = this.pullRequestStatus.followUpRefusal;
     if (ended !== null) return refuse(ended);
     if (!this.claim.hasSession) return refuse('no_session');
@@ -465,7 +467,10 @@ export class Run {
     return true;
   }
 
-  /** `false` when nothing was recorded: not held by `workerId`, or the Follow-up has a start already. */
+  /**
+   * `false` when nothing was recorded: not held by `workerId`, or the Follow-up has a start
+   * already.
+   */
   recordUpdateStart(
     workerId: string,
     start: { baseCommit: string; integrationCommit: string },
@@ -526,7 +531,8 @@ export class Run {
       stepCount: index,
       workingCopy,
       failingChecks: [...failingChecks],
-      // The step is over: the time-limit backstop no longer runs for it, so a slow delivery after it is never timed out.
+      // The step is over: the time-limit backstop no longer runs for it, so a slow delivery after
+      // it is never timed out.
       stepStartedAt: null,
       lastActivityAt: now,
       ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
@@ -623,7 +629,10 @@ export class Run {
     this.updateStatus(this.pullRequestStatus.observed(state, now));
   }
 
-  /** Throws {@link RunNotHeldError} unless the worker holds the Run, also `failed` for a delivery retry. */
+  /**
+   * Throws {@link RunNotHeldError} unless the worker holds the Run, also `failed` for a delivery
+   * retry.
+   */
   assertDiffReportableBy(workerId: string): void {
     const held =
       isClaimedRunState(this.lifecycle.state) ||
@@ -643,7 +652,9 @@ export class Run {
     pending.followUpEntry = { ...pending.followUpEntry, ...details };
   }
 
-  /** Records the patch as what the store saves: only the fields an operation changed are written. */
+  /**
+   * Records the patch as what the store saves: only the fields an operation changed are written.
+   */
   private apply(patch: RunPatch): void {
     Object.assign(this, {
       lifecycle: this.lifecycle.with(patch),

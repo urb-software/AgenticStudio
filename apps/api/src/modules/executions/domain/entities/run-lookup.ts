@@ -63,7 +63,9 @@ export class RunLookup {
     return this.status === 'requested' || this.status === 'claimed';
   }
 
-  /** `not_held` when another worker holds it or nobody does; `duplicate` when it is done already. */
+  /**
+   * `not_held` when another worker holds it or nobody does; `duplicate` when it is done already.
+   */
   complete(workerId: string, result: unknown, now: Date): LookupAnswerOutcome {
     if (this.claimedBy !== workerId) return 'not_held';
     if (this.status === 'done') return 'duplicate';

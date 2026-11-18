@@ -1,6 +1,6 @@
 /**
- * Patches are redacted like the log before they are stored. The domain owns these lists; a test pins the worker
- * protocol's and the HTTP contract's to them.
+ * Patches are redacted like the log before they are stored. The domain owns these lists; a test
+ * pins the worker protocol's and the HTTP contract's to them.
  */
 export const RUN_DIFF_SCOPES = ['run', 'last'] as const;
 export type RunDiffScope = (typeof RUN_DIFF_SCOPES)[number];
@@ -33,8 +33,8 @@ export type NewRunDiff =
   | { kind: 'unavailable'; reason: string };
 
 /**
- * Object ids only. Studio stores the pushed commit once, on the Run; the claim fills `pushedCommit` from there,
- * and what a worker sends with its diff state is not stored.
+ * Object ids only. Studio stores the pushed commit once, on the Run; the claim fills `pushedCommit`
+ * from there, and what a worker sends with its diff state is not stored.
  */
 export interface RunDiffState {
   resultTree: string;

@@ -5,8 +5,9 @@ export const RUN_LOG = Symbol('RUN_LOG');
 /** The per-Run cap is applied atomically (`LogCap.plan`) against concurrent appends. */
 export interface RunLog {
   /**
-   * Events whose seq is already stored are ignored. Returns how many were stored, or `null` if
-   * the worker does not hold the Run.
+   * The events arrive already redacted, cut and in seq order: the port does not redact. Events
+   * whose seq is already stored are ignored. Returns how many were stored, or `null` if the worker
+   * does not hold the Run.
    */
   append(
     runId: string,

@@ -17,7 +17,10 @@ export class LogCap {
     return new LogCap({ ...state });
   }
 
-  /** The first event that does not fit becomes one {@link LOG_TRUNCATED_NOTICE}; it and every later event are dropped. */
+  /**
+   * The first event that does not fit becomes one {@link LOG_TRUNCATED_NOTICE}; it and every later
+   * event are dropped.
+   */
   plan(events: readonly RunEvent[], maxBytes: number): { store: RunEvent[]; state: LogCapState } {
     const { state } = this;
     if (state.truncated) return { store: [], state };

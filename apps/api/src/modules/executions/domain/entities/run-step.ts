@@ -1,7 +1,7 @@
 import type { RunStepSnapshot } from './run-step-snapshot.js';
 import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
-/** One reported Run step: a child entity that only the Run creates ({@link Run.reportStep}). */
+/** One reported Run step: only the Run creates one ({@link Run.reportStep}). */
 export class RunStep {
   private constructor(
     readonly index: number,

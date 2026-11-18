@@ -19,7 +19,10 @@ export interface RunStateReport {
   pushedCommit?: string | null;
   /** With `running` of a bring-up-to-date Follow-up: where the merge started. */
   bringUpToDateStarted?: { baseCommit: string; integrationCommit: string } | null;
-  /** With `succeeded` and a bring-up-to-date Follow-up: the request changed nothing; `unchangedDetail` says why. */
+  /**
+   * With `succeeded` and a bring-up-to-date Follow-up: the request changed nothing;
+   * `unchangedDetail` says why.
+   */
   unchanged?: boolean;
   unchangedDetail?: string | null;
 }

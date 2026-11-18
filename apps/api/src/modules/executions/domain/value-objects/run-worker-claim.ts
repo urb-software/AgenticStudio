@@ -1,16 +1,28 @@
 export interface RunWorkerClaimStored {
-  /** Set exactly when `preparing` or `running`, or while it retries the delivery of a `failed` Run. */
+  /**
+   * Set exactly when `preparing` or `running`, or while it retries the delivery of a `failed` Run.
+   */
   claimedBy: string | null;
-  /** Only it holds the Working copy and the agent's session. Internal, never in the operator API. */
+  /**
+   * Only it holds the Working copy and the agent's session. Internal, never in the operator API.
+   */
   lastClaimedBy: string | null;
   /** So a retried report of that same change is recognised. */
   releasedBy: string | null;
-  /** Set exactly while `claimedBy` is; a held Run whose heartbeat is older than the lease has lost its worker. */
+  /**
+   * Set exactly while `claimedBy` is; a held Run whose heartbeat is older than the lease has lost
+   * its worker.
+   */
   heartbeatAt: Date | null;
-  /** Internal: it goes to the agent worker that holds the Working copy, never to the operator API. */
+  /**
+   * Internal: it goes to the agent worker that holds the Working copy, never to the operator API.
+   */
   sessionRef: string | null;
   workingCopyRemovedAt: Date | null;
-  /** A snapshot taken at the claim; later changes to the file affect only later Runs. Never the content. */
+  /**
+   * A snapshot taken at the claim; later changes to the file affect only later Runs. Never the
+   * content.
+   */
   environmentFileSupplied: boolean;
   /** Never committed or pushed by a delivery, a retry too. Not secret, not in the operator API. */
   environmentFilePath: string | null;

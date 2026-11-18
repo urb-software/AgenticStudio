@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { PROVIDERS } from '../../../../domain/value-objects/provider.js';
 import { TASK_MAX_LENGTH } from '../../../../domain/value-objects/task.js';
 
-/** Counted in UTF-16 code units; PostgreSQL VARCHAR(20000) counts characters, so a valid Task always fits. */
+/**
+ * Counted in UTF-16 code units; PostgreSQL VARCHAR(20000) counts characters, so a valid Task always
+ * fits.
+ */
 export const startRunRequestSchema = z
   .strictObject({
     task: z

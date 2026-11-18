@@ -1,7 +1,7 @@
 import type { ReviewCommentScope } from '../value-objects/review-comments.js';
 import type { LookupKind, LookupStatus } from '../value-objects/run-lookup.js';
 
-/** A lookup's current values as read-only plain data; {@link RunLookup.snapshot}. */
+/** A lookup's current values; {@link RunLookup.snapshot}. */
 export interface RunLookupSnapshot {
   readonly id: string;
   /** The Run it is about, by id. */

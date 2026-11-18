@@ -15,9 +15,9 @@ import { PrismaRunLookupRepository } from '../repositories/prisma-run-lookup-rep
 import { PrismaRunRepository } from '../repositories/prisma-run-repository.js';
 import { RunNotFoundError } from '../../domain/errors/run-errors.js';
 
+/** Generous limits: a transaction waits for the Run's row lock. */
 const TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;
 
-/** The first statement is the Run's `SELECT … FOR UPDATE`; every repository is bound to the transaction. */
 @Injectable()
 export class PrismaRunTransactions implements RunTransactions {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}

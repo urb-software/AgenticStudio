@@ -1,11 +1,14 @@
 export const RUN_ENVIRONMENT_FILE_SECRET_OWNER = 'executions.run-environment-file';
 
-/** Far longer than a claim takes between storing the snapshot and recording its reference on the Run. */
+/**
+ * Far longer than a claim takes between storing the snapshot and recording its reference on the
+ * Run.
+ */
 export const RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS = 60 * 60 * 1000;
 
 /**
- * Deleted once the Run is final, except while its failed delivery can be retried: a retry still reports text that
- * needs redaction.
+ * Deleted once the Run is final, except while its failed delivery can be retried or it can resume
+ * after the usage limit: both still report text that needs redaction.
  */
 export class RunEnvironmentFile {
   private constructor(readonly path: string | null) {}

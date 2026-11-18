@@ -362,7 +362,8 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  // Test setup shortcuts, not part of the Run repository: they return `null` (or `false`) when refused.
+  // Test setup shortcuts, not part of the Run repository: they return `null` (or `false`) when
+  // refused.
 
   /** The operator answers the open question; `null` if the Run is not waiting with one. */
   async answer(runId: string, text: string, now: Date): Promise<Run | null> {
@@ -494,7 +495,9 @@ export class InMemoryRunRepository implements RunRepository {
     return recorded;
   }
 
-  /** The agent worker reports a bring-up-to-date request that changed nothing; `null` if refused. */
+  /**
+   * The agent worker reports a bring-up-to-date request that changed nothing; `null` if refused.
+   */
   async finishBringUpToDate(
     runId: string,
     workerId: string,
@@ -529,7 +532,9 @@ export class InMemoryRunRepository implements RunRepository {
     return recorded;
   }
 
-  /** The claim gives the `preparing` Run its Environment file; `false` if it is no longer so held. */
+  /**
+   * The claim gives the `preparing` Run its Environment file; `false` if it is no longer so held.
+   */
   async attachEnvironmentFile(
     runId: string,
     workerId: string,
@@ -538,7 +543,9 @@ export class InMemoryRunRepository implements RunRepository {
     return this.replaceEnvironmentFile(runId, workerId, file);
   }
 
-  /** The claim replaces the `preparing` Run's Environment file; `false` if it is no longer so held. */
+  /**
+   * The claim replaces the `preparing` Run's Environment file; `false` if it is no longer so held.
+   */
   async replaceEnvironmentFile(
     runId: string,
     workerId: string,

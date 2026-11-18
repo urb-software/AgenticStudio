@@ -3,7 +3,7 @@ import type { NewRunDiff, RunDiffScope, RunDiffState } from '../value-objects/ru
 
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
-/** A Run's diffs as the agent worker last reported them; an aggregate root of its own. */
+/** A Run's diffs as the agent worker last reported them. */
 export class RunDiff {
   private constructor(
     readonly runId: string,

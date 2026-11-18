@@ -53,7 +53,8 @@ export type ReportLookupResultResult = void;
 
 /**
  * The answer changes the lookup and another aggregate in one transaction, the Run locked first.
- * Throws {@link LookupNotFoundError}, {@link LookupNotHeldError} or {@link LookupKindMismatchError}.
+ * Throws {@link LookupNotFoundError}, {@link LookupNotHeldError} or {@link
+ * LookupKindMismatchError}.
  */
 @Injectable()
 export class ReportLookupResultHandler {
