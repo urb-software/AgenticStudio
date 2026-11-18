@@ -1,34 +1,32 @@
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
-import type { GeneratedDeployKey } from './generated-deploy-key.js';
+import type { GeneratedDeployKey } from '../../domain/value-objects/generated-deploy-key.js';
 
 const ED25519 = 'ssh-ed25519';
-const COMMENT_NAME_MAX_LENGTH = 64;
-
-function sshString(value: Buffer | string): Buffer {
-  const bytes = typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(bytes.length);
-  return Buffer.concat([length, bytes]);
-}
-
-function uint32(value: number): Buffer {
-  const bytes = Buffer.alloc(4);
-  bytes.writeUInt32BE(value);
-  return bytes;
-}
 
 /**
- * The project's Deploy key: the SSH key pair Studio generates to reach a private Repository; nothing
- * here stores, logs or sends a key.
+ * Generates the project's Deploy key, the SSH key pair Studio uses to reach a private Repository;
+ * nothing here stores, logs or sends a key.
  */
-export class DeployKey {
-  private constructor() {}
+export class Ed25519DeployKeyGenerator {
+  private static sshString(value: Buffer | string): Buffer {
+    const bytes = typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(bytes.length);
+    return Buffer.concat([length, bytes]);
+  }
+
+  private static uint32(value: number): Buffer {
+    const bytes = Buffer.alloc(4);
+    bytes.writeUInt32BE(value);
+    return bytes;
+  }
 
   /**
    * Generates an ed25519 Deploy key in the formats OpenSSH reads. No passphrase: the key lives in the
    * secret store and is written owner-only for one Git operation at a time.
    */
-  static generate(comment: string): GeneratedDeployKey {
+  generate(comment: string): GeneratedDeployKey {
+    const sshString = Ed25519DeployKeyGenerator.sshString;
     const { privateKey } = generateKeyPairSync('ed25519');
     const jwk = privateKey.export({ format: 'jwk' });
     const seed = Buffer.from(jwk.d!, 'base64url');
@@ -54,7 +52,7 @@ export class DeployKey {
       sshString('none'),
       sshString('none'),
       sshString(''),
-      uint32(1),
+      Ed25519DeployKeyGenerator.uint32(1),
       sshString(publicBlob),
       sshString(section),
     ]);
@@ -67,19 +65,5 @@ export class DeployKey {
       privateKey: `-----BEGIN OPENSSH PRIVATE KEY-----\n${body}\n-----END OPENSSH PRIVATE KEY-----\n`,
       publicKey: `${ED25519} ${publicBlob.toString('base64')} ${comment}`,
     };
-  }
-
-  /**
-   * The Deploy key's comment: `studio-<project name>`, the name reduced to letters, digits,
-   * `.`, `_` and `-` (any other run becomes one `-`), at most 64 characters of it.
-   */
-  static commentFor(projectName: string): string {
-    const safe = projectName
-      .replace(/[^A-Za-z0-9._-]+/g, '-')
-      .replace(/-{2,}/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, COMMENT_NAME_MAX_LENGTH)
-      .replace(/-+$/, '');
-    return `studio-${safe || 'project'}`;
   }
 }

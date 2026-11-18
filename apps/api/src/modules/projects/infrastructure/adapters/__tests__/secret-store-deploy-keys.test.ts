@@ -3,11 +3,12 @@ import { knownHostName } from '../../../../../platform/config/ssh-known-hosts.js
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
 import { type RepositoryConnectionData } from '../../../domain/entities/repository-connection-data.js';
-import { DeployKey } from '../../../domain/value-objects/deploy-key.js';
+import { Ed25519DeployKeyGenerator } from '../ed25519-deploy-key-generator.js';
 import { KnownHostName } from '../../../domain/value-objects/known-host-name.js';
 import { SecretStoreDeployKeys } from '../secret-store-deploy-keys.js';
 
-const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string =>
+  new Ed25519DeployKeyGenerator().generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 const GITHUB_KEY = hostKey();
 const PORT_KEY = hostKey();
 const PINNED_KEY = hostKey();

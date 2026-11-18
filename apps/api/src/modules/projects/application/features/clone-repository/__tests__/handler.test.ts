@@ -14,7 +14,7 @@ import {
   HOST_KEY_CHANGED_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
 } from '../../../../domain/value-objects/repository-failure.js';
-import { DeployKey } from '../../../../domain/value-objects/deploy-key.js';
+import { Ed25519DeployKeyGenerator } from '../../../../infrastructure/adapters/ed25519-deploy-key-generator.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
@@ -280,8 +280,16 @@ describe('CloneRepositoryHandler', () => {
 
   describe('an SSH Repository', () => {
     const SSH_URL = 'git@github.com:acme/shop.git';
-    const trusted = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
-    const pinned = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+    const trusted = new Ed25519DeployKeyGenerator()
+      .generate('host')
+      .publicKey.split(' ')
+      .slice(0, 2)
+      .join(' ');
+    const pinned = new Ed25519DeployKeyGenerator()
+      .generate('host')
+      .publicKey.split(' ')
+      .slice(0, 2)
+      .join(' ');
 
     async function connectingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');

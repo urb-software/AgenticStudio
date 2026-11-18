@@ -13,7 +13,7 @@ import { GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
-import { DeployKey } from '../../../../domain/value-objects/deploy-key.js';
+import { Ed25519DeployKeyGenerator } from '../../../../infrastructure/adapters/ed25519-deploy-key-generator.js';
 import { NOT_STARTED_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from '../../../../domain/value-objects/deploy-key-sweep-policy.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
@@ -26,7 +26,8 @@ const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/acme/shop.git';
 const SSH_URL = 'git@github.com:acme/shop.git';
 const OTHER_PROJECT = '9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d';
-const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string =>
+  new Ed25519DeployKeyGenerator().generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 
 describe('ConnectRepositoryHandler', () => {
   let projects: InMemoryProjectRepository;
