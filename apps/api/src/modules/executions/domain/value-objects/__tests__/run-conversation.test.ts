@@ -53,9 +53,6 @@ describe('RunConversation', () => {
   it('keeps the limits and texts the operator-facing rules use', () => {
     expect(RunConversation.ANSWER_MAX_LENGTH).toBe(10_000);
     expect(RunConversation.USAGE_LIMIT_RESUME_TEXT).toBe('Continue where you stopped.');
-    expect(RunConversation.alreadyUpToDateDetail('dev')).toContain(
-      'already has everything dev has',
-    );
   });
 });
 

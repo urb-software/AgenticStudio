@@ -349,8 +349,7 @@ export class Run {
     if (report.unchanged) {
       return this.reportUnchanged(
         workerId,
-        report.unchangedDetail ??
-          RunConversation.alreadyUpToDateDetail(this.delivery.integrationBranch),
+        report.unchangedDetail ?? this.delivery.alreadyUpToDateDetail,
         now,
       );
     }

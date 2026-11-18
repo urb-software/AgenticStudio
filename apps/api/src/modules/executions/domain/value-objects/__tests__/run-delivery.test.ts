@@ -62,6 +62,12 @@ describe('RunDelivery', () => {
     });
   });
 
+  it('says what the Run branch already has when there is nothing to bring', () => {
+    expect(RunDelivery.start('dev').alreadyUpToDateDetail).toContain(
+      'already has everything dev has',
+    );
+  });
+
   it('copies the pull request of an outcome', () => {
     const outcome = { outcome: 'delivered' as const, pullRequest: { ...PULL_REQUEST } };
     const patch = RunDelivery.start('dev').outcomePatch(outcome);

@@ -6,15 +6,6 @@ const PAIR = /^(?:export\s+)?[A-Za-z_][A-Za-z0-9_.-]*\s*=(.*)$/;
 
 const QUOTES = new Set(['"', "'", '`']);
 
-function valuesOf(raw: string): string[] {
-  const value = raw.trim();
-  if (value.length >= 2 && QUOTES.has(value[0]!) && value.at(-1) === value[0]) {
-    return [value.slice(1, -1)];
-  }
-  const comment = value.indexOf(' #');
-  return comment === -1 ? [value] : [value, value.slice(0, comment).trim()];
-}
-
 /** Best effort, like all redaction (security.md §3): the file holds test values only. */
 export class EnvironmentFileContent {
   private constructor(private readonly content: string) {}
@@ -31,7 +22,7 @@ export class EnvironmentFileContent {
       const commented = line.startsWith('#');
       const pair = PAIR.exec(commented ? line.slice(1).trim() : line);
       if (pair) {
-        for (const value of valuesOf(pair[1]!)) {
+        for (const value of EnvironmentFileContent.valuesOf(pair[1]!)) {
           if (value.length >= KNOWN_SECRET_MIN_LENGTH) values.add(value);
         }
       } else if (!commented && line.length >= LOOSE_LINE_MIN_LENGTH) {
@@ -39,5 +30,14 @@ export class EnvironmentFileContent {
       }
     }
     return [...values];
+  }
+
+  private static valuesOf(raw: string): string[] {
+    const value = raw.trim();
+    if (value.length >= 2 && QUOTES.has(value[0]!) && value.at(-1) === value[0]) {
+      return [value.slice(1, -1)];
+    }
+    const comment = value.indexOf(' #');
+    return comment === -1 ? [value] : [value, value.slice(0, comment).trim()];
   }
 }
