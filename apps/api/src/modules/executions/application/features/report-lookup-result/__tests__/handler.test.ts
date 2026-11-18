@@ -6,10 +6,7 @@ import {
   withPreparedFollowUp,
 } from '../../../../entry-points/http/shared/run-response.js';
 import { preparedFollowUpResponseSchema } from '../../../../entry-points/http/operator/get-prepared-follow-up/schema.js';
-import {
-  LOOKUP_CLAIM_MAX,
-  LOOKUP_LEASE_SECONDS,
-} from '../../../../domain/value-objects/run-lookup.js';
+import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
 import type { PullRequestStateResult } from '../../../../domain/value-objects/run-pull-request-status.js';
 import {
   deliveredRun,
@@ -79,21 +76,23 @@ describe('lookups: claim and result', () => {
   });
 
   it('hands out at most five lookups at a time', async () => {
-    for (let index = 0; index < LOOKUP_CLAIM_MAX + 2; index++) {
+    for (let index = 0; index < LookupHandOutRule.CLAIM_MAX + 2; index++) {
       const run = await deliveredRun(runs);
       await executions.requests.request(run.id, 'pull_request_state', T0);
     }
 
-    expect((await claims.execute({ workerId: WORKER })).lookups).toHaveLength(LOOKUP_CLAIM_MAX);
+    expect((await claims.execute({ workerId: WORKER })).lookups).toHaveLength(
+      LookupHandOutRule.CLAIM_MAX,
+    );
     expect((await claims.execute({ workerId: WORKER })).lookups).toHaveLength(2);
   });
 
   it('hands a claim its worker never answered to another one after the lease', async () => {
     await claimed();
 
-    now = new Date(T1.getTime() + (LOOKUP_LEASE_SECONDS - 1) * 1000);
+    now = new Date(T1.getTime() + (LookupHandOutRule.LEASE_SECONDS - 1) * 1000);
     expect((await claims.execute({ workerId: OTHER_WORKER })).lookups).toEqual([]);
-    now = new Date(T1.getTime() + LOOKUP_LEASE_SECONDS * 1000);
+    now = new Date(T1.getTime() + LookupHandOutRule.LEASE_SECONDS * 1000);
     expect((await claims.execute({ workerId: OTHER_WORKER })).lookups).toHaveLength(1);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LookupFailure, STORED_RETRY_DELAY_MAX_SECONDS } from '../run-lookup.js';
+import { LookupFailure } from '../lookup-failure.js';
 
 describe('LookupFailure.retryDelaySeconds', () => {
   it('retries only a rate limit, after what the Git host asked, bounded', () => {
@@ -11,7 +11,7 @@ describe('LookupFailure.retryDelaySeconds', () => {
     expect(
       LookupFailure.of({ code: 'rate_limited', error: 'x', retryAfterSeconds: 999_999 })
         .retryDelaySeconds,
-    ).toBe(STORED_RETRY_DELAY_MAX_SECONDS);
+    ).toBe(LookupFailure.RETRY_DELAY_MAX_SECONDS);
     expect(LookupFailure.of({ code: 'failed', error: 'x' }).retryDelaySeconds).toBeNull();
     expect(LookupFailure.of({ code: 'scope_mismatch', error: 'x' }).retryDelaySeconds).toBeNull();
   });

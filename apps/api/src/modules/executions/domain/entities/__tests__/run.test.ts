@@ -3,7 +3,7 @@ import { Run } from '../run.js';
 import type { RunData } from '../run-data.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import type { RunState } from '../../value-objects/run-state.js';
-import { LongWaitRule } from '../../value-objects/run-sweep-rules.js';
+import { LongWaitRule } from '../../value-objects/long-wait-rule.js';
 import { AT, runData } from './run-fixtures.js';
 
 describe('long-wait rule', () => {

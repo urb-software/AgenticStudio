@@ -5,7 +5,7 @@ import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
-import {} from '../../../domain/value-objects/run-lookup.js';
+
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';

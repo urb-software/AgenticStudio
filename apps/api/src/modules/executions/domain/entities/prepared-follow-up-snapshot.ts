@@ -1,4 +1,4 @@
-import type { FollowUpSource } from '../value-objects/follow-up.js';
+import type { FollowUpSource } from '../value-objects/follow-up-source.js';
 import type { PreparedFollowUpItem } from '../value-objects/prepared-follow-up-item.js';
 
 /** A prepared Follow-up's current values. */

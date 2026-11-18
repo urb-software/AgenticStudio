@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { NewRunDiff } from '../../value-objects/run-diff.js';
+import type { NewRunDiff } from '../../value-objects/new-run-diff.js';
 import { RunDiff } from '../run-diff.js';
 
 const ID = 'a'.repeat(40);

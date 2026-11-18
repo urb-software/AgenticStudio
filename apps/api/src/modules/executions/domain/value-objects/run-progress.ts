@@ -1,4 +1,4 @@
-import type { RunFailure } from './run-failure.js';
+import { RunFailure } from './run-failure.js';
 import type { RunLimits } from './run-limits.js';
 
 export interface RunProgressStored {
@@ -84,11 +84,11 @@ export class RunProgress {
   stepLimitFailure(): RunFailure {
     const { maxSteps } = this.limits;
     const steps = `${maxSteps} run ${maxSteps === 1 ? 'step' : 'steps'}`;
-    return {
+    return RunFailure.restore({
       code: 'step_limit',
       detail: this.inFollowUp
         ? `The Follow-up reached its limit of ${steps}; no further step was started.`
         : `The run reached its limit of ${steps}; no further step was started.`,
-    };
+    });
   }
 }

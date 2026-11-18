@@ -7,7 +7,7 @@ import {
   type PreparedFollowUpRepository,
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
-import type { FollowUpSource } from '../../../domain/value-objects/follow-up.js';
+import type { FollowUpSource } from '../../../domain/value-objects/follow-up-source.js';
 import type { FollowUpView } from '../../../domain/value-objects/retention-policy.js';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';

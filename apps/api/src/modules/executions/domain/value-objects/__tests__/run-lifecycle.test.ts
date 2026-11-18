@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OPERATOR_CANCELLATION } from '../run-cancellation.js';
+import { RunCancellation } from '../run-cancellation.js';
 import { IllegalRunTransitionError } from '../../errors/run-errors.js';
 import { RunLifecycle, type RunLifecycleStored } from '../run-lifecycle.js';
 import { RUN_STATES, FINAL_RUN_STATES, isFinalRunState, type RunState } from '../run-state.js';
@@ -107,7 +107,9 @@ describe('RunLifecycle', () => {
       TypeError,
     );
     expect(() =>
-      RunLifecycle.restore(stored({ state: 'queued', cancellation: { ...OPERATOR_CANCELLATION } })),
+      RunLifecycle.restore(
+        stored({ state: 'queued', cancellation: { ...RunCancellation.OPERATOR } }),
+      ),
     ).toThrow(TypeError);
     expect(() => RunLifecycle.restore(stored({ state: 'paused' as RunState }))).toThrow(TypeError);
   });
@@ -172,7 +174,7 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
     });
     expect(
       RunLifecycle.restore(
-        stored({ state: 'cancelled', cancellation: { ...OPERATOR_CANCELLATION } }),
+        stored({ state: 'cancelled', cancellation: { ...RunCancellation.OPERATOR } }),
       ).partEnd(null),
     ).toEqual({
       state: 'cancelled',

@@ -3,8 +3,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import type { RunDiff } from '../../domain/entities/run-diff.js';
-import { RUN_DIFF_FILE_STATUSES, type RunDiffScope } from '../../domain/value-objects/run-diff.js';
-import { type RunDiffFileSummary, type RunDiffState } from '../../domain/value-objects/run-diff.js';
+import { RUN_DIFF_FILE_STATUSES } from '../../domain/value-objects/run-diff-file-status.js';
+import { type RunDiffScope } from '../../domain/value-objects/run-diff-scope.js';
+import { type RunDiffFileSummary } from '../../domain/value-objects/run-diff-file-summary.js';
+import { type RunDiffStateInput } from '../../domain/value-objects/run-diff-state.js';
 import {
   type RunDiffFileView,
   type StoredRunDiff,
@@ -126,7 +128,7 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
     return stored ? { ...file, patch: stored.patch } : file;
   }
 
-  async findState(runId: string): Promise<RunDiffState | null> {
+  async findState(runId: string): Promise<RunDiffStateInput | null> {
     const row = await this.db.runDiffState.findUnique({ where: { runId } });
     if (!row) return null;
     return {

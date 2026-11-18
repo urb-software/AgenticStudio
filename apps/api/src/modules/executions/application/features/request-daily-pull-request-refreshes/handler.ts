@@ -1,9 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  DAILY_REFRESH_AGE_HOURS,
-  DAILY_REFRESH_BATCH,
-  FINISHED_LOOKUPS_KEPT_DAYS,
-} from '../../../domain/value-objects/run-lookup.js';
+import { PullRequestRefreshRule } from '../../../domain/value-objects/pull-request-refresh-rule.js';
 import {
   RUN_LOOKUP_REPOSITORY,
   type RunLookupRepository,
@@ -28,12 +24,13 @@ export class RequestDailyPullRequestRefreshesHandler {
 
   async execute(): Promise<RequestDailyPullRequestRefreshesResult> {
     const now = this.clock.now();
-    const staleBefore = new Date(now.getTime() - DAILY_REFRESH_AGE_HOURS * 60 * 60 * 1000);
-    await this.lookups.deleteFinishedBefore(
-      new Date(now.getTime() - FINISHED_LOOKUPS_KEPT_DAYS * 24 * 60 * 60 * 1000),
-    );
+    const rule = PullRequestRefreshRule.at(now);
+    await this.lookups.deleteFinishedBefore(rule.finishedLookupsBefore);
     let requested = 0;
-    for (const runId of await this.runs.listDueForDailyRefresh(staleBefore, DAILY_REFRESH_BATCH)) {
+    for (const runId of await this.runs.listDueForDailyRefresh(
+      rule.staleBefore,
+      PullRequestRefreshRule.BATCH,
+    )) {
       if ((await this.requests.request(runId, 'pull_request_state', now)) === 'requested') {
         requested++;
       }

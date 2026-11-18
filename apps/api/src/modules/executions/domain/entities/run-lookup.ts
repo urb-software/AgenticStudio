@@ -1,11 +1,9 @@
 import type { RunLookupSnapshot } from './run-lookup-snapshot.js';
-import type { ReviewCommentScope } from '../value-objects/review-comments.js';
-import type {
-  LookupAnswerOutcome,
-  LookupKind,
-  LookupStatus,
-  RunLookupRequest,
-} from '../value-objects/run-lookup.js';
+import type { ReviewCommentScope } from '../value-objects/review-comment-scope.js';
+import type { LookupAnswerOutcome } from '../value-objects/lookup-answer-outcome.js';
+import type { LookupKind } from '../value-objects/lookup-kind.js';
+import type { LookupStatus } from '../value-objects/lookup-status.js';
+import type { RunLookupRequest } from '../value-objects/run-lookup-request.js';
 
 /**
  * One question of Studio's for the Git host that only an agent worker can answer. Handing out

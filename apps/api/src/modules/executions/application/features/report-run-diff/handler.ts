@@ -1,11 +1,10 @@
 import type { RunDiff as ReportedRunDiff } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import {
-  RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
-  type RunDiffScope,
-} from '../../../domain/value-objects/run-diff.js';
-import { type NewRunDiff, type RunDiffState } from '../../../domain/value-objects/run-diff.js';
+import { RunDiffUnavailableReason } from '../../../domain/value-objects/run-diff-unavailable-reason.js';
+import { type RunDiffScope } from '../../../domain/value-objects/run-diff-scope.js';
+import { type NewRunDiff } from '../../../domain/value-objects/new-run-diff.js';
+import { type RunDiffStateInput } from '../../../domain/value-objects/run-diff-state.js';
 import { RunDiff } from '../../../domain/entities/run-diff.js';
 import { RunEnvironmentFile } from '../../../domain/value-objects/run-environment-file.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
@@ -19,7 +18,8 @@ export interface ReportRunDiffInput {
   runId: string;
   workerId: string;
   diffs:
-    { run: ReportedRunDiff; last: ReportedRunDiff; state: RunDiffState } | { unavailable: string };
+    | { run: ReportedRunDiff; last: ReportedRunDiff; state: RunDiffStateInput }
+    | { unavailable: string };
 }
 
 export type ReportRunDiffResult = void;
@@ -62,7 +62,7 @@ export class ReportRunDiffHandler {
         })),
     });
     // Redaction can lengthen the reason: cut after it, to what is stored.
-    const reason = (text: string) => redact(text).slice(0, RUN_DIFF_UNAVAILABLE_MAX_LENGTH);
+    const reason = (text: string) => redact(text).slice(0, RunDiffUnavailableReason.MAX_LENGTH);
     const diffs: Record<RunDiffScope, NewRunDiff> =
       'unavailable' in input.diffs
         ? {

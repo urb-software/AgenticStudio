@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { LookupHandOutRule, type LookupHandOutView } from '../lookup-hand-out-rule.js';
-import { LOOKUP_CLAIM_MAX, LOOKUP_LEASE_SECONDS } from '../run-lookup.js';
 
 const NOW = new Date('2026-11-17T12:00:00.000Z');
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
@@ -21,7 +20,10 @@ describe('LookupHandOutRule', () => {
   const rule = LookupHandOutRule.at(NOW);
 
   it('uses the lease and the claim maximum of the domain unless told otherwise', () => {
-    expect(rule).toMatchObject({ leaseSeconds: LOOKUP_LEASE_SECONDS, limit: LOOKUP_CLAIM_MAX });
+    expect(rule).toMatchObject({
+      leaseSeconds: LookupHandOutRule.LEASE_SECONDS,
+      limit: LookupHandOutRule.CLAIM_MAX,
+    });
     expect(LookupHandOutRule.at(NOW, { leaseSeconds: 5, limit: 2 })).toMatchObject({
       leaseSeconds: 5,
       limit: 2,
@@ -61,8 +63,14 @@ describe('LookupHandOutRule', () => {
   });
 
   it('takes a claim back to the queue once it is a lease old, and not before', () => {
-    const edge = lookup('edge', { status: 'claimed', claimedAt: ago(LOOKUP_LEASE_SECONDS) });
-    const fresh = lookup('fresh', { status: 'claimed', claimedAt: ago(LOOKUP_LEASE_SECONDS - 1) });
+    const edge = lookup('edge', {
+      status: 'claimed',
+      claimedAt: ago(LookupHandOutRule.LEASE_SECONDS),
+    });
+    const fresh = lookup('fresh', {
+      status: 'claimed',
+      claimedAt: ago(LookupHandOutRule.LEASE_SECONDS - 1),
+    });
 
     expect(rule.claimExpired(edge)).toBe(true);
     expect(rule.claimExpired(fresh)).toBe(false);

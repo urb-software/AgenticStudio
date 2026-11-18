@@ -1,4 +1,4 @@
-import type { FollowUpEligibility } from './follow-up.js';
+import type { FollowUpEligibility } from './follow-up-eligibility.js';
 import { isEndedPullRequestState, type PullRequestState } from './run-pull-request-status.js';
 import { isFinalRunState, type RunState } from './run-state.js';
 import { WorkerStatus, type RecordedWorkerStatus } from './worker-status.js';

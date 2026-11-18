@@ -1,4 +1,4 @@
-import { LOOKUP_CLAIM_MAX, LOOKUP_LEASE_SECONDS, type LookupStatus } from './run-lookup.js';
+import { type LookupStatus } from './lookup-status.js';
 
 export interface LookupHandOutView {
   id: string;
@@ -20,6 +20,10 @@ export interface LookupRunView {
  * the same rule in memory, which a test uses to prove the statements follow it.
  */
 export class LookupHandOutRule {
+  static readonly LEASE_SECONDS = 120;
+
+  static readonly CLAIM_MAX = 5;
+
   private constructor(
     readonly now: Date,
     readonly leaseSeconds: number,
@@ -29,8 +33,8 @@ export class LookupHandOutRule {
   static at(now: Date, options: { leaseSeconds?: number; limit?: number } = {}): LookupHandOutRule {
     return new LookupHandOutRule(
       now,
-      options.leaseSeconds ?? LOOKUP_LEASE_SECONDS,
-      options.limit ?? LOOKUP_CLAIM_MAX,
+      options.leaseSeconds ?? LookupHandOutRule.LEASE_SECONDS,
+      options.limit ?? LookupHandOutRule.CLAIM_MAX,
     );
   }
 

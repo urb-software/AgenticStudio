@@ -1,6 +1,7 @@
-import type { FollowUpComments, FollowUpSource } from './follow-up.js';
+import type { FollowUpComments } from './follow-up-comments.js';
+import type { FollowUpSource } from './follow-up-source.js';
 import type { RunDeliveryState } from './run-delivery.js';
-import type { RunFailureCode } from './run-failure.js';
+import type { RunFailureCode } from './run-failure-code.js';
 import { RunResume } from './run-resume.js';
 import type { FinalRunState } from './run-state.js';
 

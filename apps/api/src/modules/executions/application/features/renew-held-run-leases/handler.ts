@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
-import { LeaseRenewalRule } from '../../../domain/value-objects/run-sweep-rules.js';
+import { LeaseRenewalRule } from '../../../domain/value-objects/lease-renewal-rule.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
 export interface RenewHeldRunLeasesResult {

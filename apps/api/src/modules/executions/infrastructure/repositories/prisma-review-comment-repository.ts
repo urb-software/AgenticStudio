@@ -4,7 +4,7 @@ import { DATABASE_CLIENT } from '../../../../platform/database/database.module.j
 import { ReviewComments } from '../../domain/entities/review-comments.js';
 import { type ReviewCommentsSnapshot } from '../../domain/entities/review-comments-snapshot.js';
 import type { ReviewCommentRepository } from '../../domain/repositories/review-comment-repository.js';
-import type { ReviewCommentScope } from '../../domain/value-objects/review-comments.js';
+import type { ReviewCommentScope } from '../../domain/value-objects/review-comment-scope.js';
 import type { Executor } from './executor.js';
 import { commentsSchema } from './review-comment-json.js';
 

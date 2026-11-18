@@ -4,13 +4,11 @@ import {
   RUN_DIFF_UNAVAILABLE_MAX_LENGTH as WORKER_UNAVAILABLE_MAX_LENGTH,
 } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
-import { RunDiff } from '../../../../domain/entities/run-diff.js';
+import { RunDiffState } from '../../../../domain/value-objects/run-diff-state.js';
 import { RunEnvironmentFile } from '../../../../domain/value-objects/run-environment-file.js';
-import {
-  RUN_DIFF_FILE_STATUSES,
-  RUN_DIFF_SCOPES,
-  RUN_DIFF_UNAVAILABLE_MAX_LENGTH,
-} from '../../../../domain/value-objects/run-diff.js';
+import { RUN_DIFF_FILE_STATUSES } from '../../../../domain/value-objects/run-diff-file-status.js';
+import { RUN_DIFF_SCOPES } from '../../../../domain/value-objects/run-diff-scope.js';
+import { RunDiffUnavailableReason } from '../../../../domain/value-objects/run-diff-unavailable-reason.js';
 import {
   runDiffFileSummarySchema,
   runDiffScopeSchema,
@@ -23,7 +21,7 @@ describe('Run diff lists of the domain, the worker protocol and the HTTP schemas
     expect([...WORKER_FILE_STATUSES]).toEqual([...RUN_DIFF_FILE_STATUSES]);
     expect(runDiffScopeSchema.options).toEqual([...RUN_DIFF_SCOPES]);
     expect(runDiffFileSummarySchema.shape.status.options).toEqual([...RUN_DIFF_FILE_STATUSES]);
-    expect(WORKER_UNAVAILABLE_MAX_LENGTH).toBe(RUN_DIFF_UNAVAILABLE_MAX_LENGTH);
+    expect(WORKER_UNAVAILABLE_MAX_LENGTH).toBe(RunDiffUnavailableReason.MAX_LENGTH);
   });
 });
 
@@ -36,10 +34,10 @@ describe('diff state and Environment file path', () => {
   };
 
   it('takes full object ids only', () => {
-    expect(RunDiff.isState(state)).toBe(true);
-    expect(RunDiff.isState({ ...state, pushedCommit: 'e'.repeat(40) })).toBe(true);
-    expect(RunDiff.isState({ ...state, resultTree: 'HEAD' })).toBe(false);
-    expect(RunDiff.isState({ ...state, pushedCommit: 'E'.repeat(40) })).toBe(false);
+    expect(() => RunDiffState.of(state)).not.toThrow();
+    expect(() => RunDiffState.of({ ...state, pushedCommit: 'e'.repeat(40) })).not.toThrow();
+    expect(() => RunDiffState.of({ ...state, resultTree: 'HEAD' })).toThrow();
+    expect(() => RunDiffState.of({ ...state, pushedCommit: 'E'.repeat(40) })).toThrow();
   });
 
   it('matches the Environment file path in any leading spelling', () => {

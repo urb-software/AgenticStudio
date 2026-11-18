@@ -1,4 +1,4 @@
-import type { FollowUpRefusal } from './follow-up.js';
+import type { FollowUpRefusal } from './follow-up-refusal.js';
 
 /**
  * `missing`: the pull request, or the Run branch it came from, no longer exists. The worker

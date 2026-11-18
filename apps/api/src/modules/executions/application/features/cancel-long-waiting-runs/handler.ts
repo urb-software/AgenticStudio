@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { LongWaitRule } from '../../../domain/value-objects/run-sweep-rules.js';
+import { LongWaitRule } from '../../../domain/value-objects/long-wait-rule.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 

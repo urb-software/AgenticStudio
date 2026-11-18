@@ -5,7 +5,7 @@ import { DATABASE_CLIENT } from '../../../../platform/database/database.module.j
 import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
 import type { PreparedFollowUpSnapshot } from '../../domain/entities/prepared-follow-up-snapshot.js';
 import type { PreparedFollowUpRepository } from '../../domain/repositories/prepared-follow-up-repository.js';
-import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
+import type { FollowUpSource } from '../../domain/value-objects/follow-up-source.js';
 import type { Executor } from './executor.js';
 
 const itemsSchema = z.array(

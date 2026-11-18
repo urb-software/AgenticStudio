@@ -1,6 +1,7 @@
 import type { RunSnapshot } from './run-snapshot.js';
 import { HandOutRule } from '../value-objects/hand-out-rule.js';
-import type { FollowUpEligibility, FollowUpRefusal } from '../value-objects/follow-up.js';
+import type { FollowUpEligibility } from '../value-objects/follow-up-eligibility.js';
+import type { FollowUpRefusal } from '../value-objects/follow-up-refusal.js';
 import { PROVIDERS } from '../value-objects/provider.js';
 import { RunConversation, type BringUpDetails } from '../value-objects/run-conversation.js';
 import type { RunMessage } from '../value-objects/run-conversation.js';
@@ -36,10 +37,7 @@ import {
 } from '../value-objects/run-pull-request-status.js';
 import type { RunResume } from '../value-objects/run-resume.js';
 import { isClaimedRunState, isFinalRunState, type RunState } from '../value-objects/run-state.js';
-import {
-  OPERATOR_CANCELLATION,
-  OPERATOR_CANCELLATION_BRANCH_PUSHED,
-} from '../value-objects/run-cancellation.js';
+import { RunCancellation } from '../value-objects/run-cancellation.js';
 import { RunWorkerClaim } from '../value-objects/run-worker-claim.js';
 import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
 import { WorkerStatus } from '../value-objects/worker-status.js';
@@ -209,7 +207,7 @@ export class Run {
       this.lifecycle.assertTransitionTo('cancelled');
       this.apply({
         state: 'cancelled',
-        cancellation: { ...OPERATOR_CANCELLATION },
+        cancellation: { ...RunCancellation.OPERATOR },
         waitingSince: null,
         finishedAt: now,
         followUpQueued: false,
@@ -388,8 +386,8 @@ export class Run {
         to !== 'cancelled'
           ? null
           : report.delivery?.outcome === 'none' && report.delivery.branchPushed
-            ? { ...OPERATOR_CANCELLATION_BRANCH_PUSHED }
-            : { ...OPERATOR_CANCELLATION },
+            ? { ...RunCancellation.OPERATOR_BRANCH_PUSHED }
+            : { ...RunCancellation.OPERATOR },
       waitingSince: to === 'waiting_for_operator' ? now : null,
       releasedBy: held ? null : workerId,
       ...(to === 'running' ? { stepStartedAt: now } : {}),

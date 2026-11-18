@@ -1,7 +1,7 @@
 import type { RunLookup } from '../entities/run-lookup.js';
 import type { LookupHandOutRule } from '../value-objects/lookup-hand-out-rule.js';
-import type { ReviewCommentScope } from '../value-objects/review-comments.js';
-import type { LookupKind } from '../value-objects/run-lookup.js';
+import type { ReviewCommentScope } from '../value-objects/review-comment-scope.js';
+import type { LookupKind } from '../value-objects/lookup-kind.js';
 
 export interface ClaimedLookup {
   id: string;

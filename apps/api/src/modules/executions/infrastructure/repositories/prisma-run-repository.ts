@@ -12,14 +12,14 @@ import {
 import { PROVIDERS, type Provider } from '../../domain/value-objects/provider.js';
 import {
   RUN_CANCELLED_BY,
-  type RunCancellation,
   type RunCancelledBy,
-} from '../../domain/value-objects/run-cancellation.js';
+} from '../../domain/value-objects/run-cancelled-by.js';
+import { type RunCancellation } from '../../domain/value-objects/run-cancellation.js';
 import {
   RUN_FAILURE_CODES,
-  type RunFailure,
   type RunFailureCode,
-} from '../../domain/value-objects/run-failure.js';
+} from '../../domain/value-objects/run-failure-code.js';
+import { type RunFailure } from '../../domain/value-objects/run-failure.js';
 import { isRunId } from '../../domain/value-objects/run-id.js';
 import { type ResumeFacts } from '../../domain/entities/run-resume-facts.js';
 import { type RunChanges } from '../../domain/entities/run-change-facts.js';
@@ -33,7 +33,7 @@ import {
   type PullRequestState,
 } from '../../domain/value-objects/run-pull-request-status.js';
 import { type RunWorkingCopy } from '../../domain/value-objects/run-working-copy.js';
-import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
+import type { FollowUpSource } from '../../domain/value-objects/follow-up-source.js';
 import { HandOutRule } from '../../domain/value-objects/hand-out-rule.js';
 import type { RunStepSnapshot } from '../../domain/entities/run-step-snapshot.js';
 import type {

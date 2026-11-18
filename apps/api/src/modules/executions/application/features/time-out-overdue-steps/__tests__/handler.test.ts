@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OverdueStepRule } from '../../../../domain/value-objects/run-sweep-rules.js';
+import { OverdueStepRule } from '../../../../domain/value-objects/overdue-step-rule.js';
 import type { RunRepository } from '../../../../domain/repositories/run-repository.js';
 import { TimeOutOverdueStepsHandler } from '../handler.js';
 

@@ -4,7 +4,7 @@ import {
   toReviewCommentsResponse,
 } from '../../../../entry-points/http/shared/review-comments-response.js';
 import { ReviewComments } from '../../../../domain/entities/review-comments.js';
-import { type ReviewComment } from '../../../../domain/value-objects/review-comments.js';
+import { type ReviewCommentInput } from '../../../../domain/value-objects/review-comment.js';
 import {
   FollowUpNotAllowedError,
   RunNotFoundError,
@@ -47,7 +47,7 @@ class Workers implements WorkerStatusStore {
   }
 }
 
-const comment = (overrides: Partial<ReviewComment> = {}): ReviewComment => ({
+const comment = (overrides: Partial<ReviewCommentInput> = {}): ReviewCommentInput => ({
   id: 'conversation-1',
   author: 'octocat',
   kind: 'conversation',
@@ -108,7 +108,7 @@ describe('review comments', () => {
     );
   });
 
-  async function loaded(runId: string, comments: ReviewComment[], truncated = false) {
+  async function loaded(runId: string, comments: ReviewCommentInput[], truncated = false) {
     await load.execute({ runId, scope: 'unresolved' });
     const [lookup] = (await claims.execute({ workerId: WORKER })).lookups;
     await report.execute({
@@ -322,7 +322,10 @@ describe('review comments', () => {
   });
 
   describe('what the operator is shown', () => {
-    const view = async (comments: ReviewComment[], operatorLogin: string | null = 'Octo-Cat') => {
+    const view = async (
+      comments: ReviewCommentInput[],
+      operatorLogin: string | null = 'Octo-Cat',
+    ) => {
       login = operatorLogin;
       const run = await deliveredRun(runs);
       runs.reviewSets.set(
