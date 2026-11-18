@@ -18,7 +18,7 @@ import {
   RunProjectNotFoundError,
   ProviderUnavailableError,
   InvalidTaskError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 import { StartRunHandler } from '../../../../application/features/start-run/handler.js';
 import { startRunRequestSchema, StartRunRequestDto } from './schema.js';
 

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface RecordHeartbeatInput {
   runId: string;

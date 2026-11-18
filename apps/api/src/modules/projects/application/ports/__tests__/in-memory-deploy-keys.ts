@@ -1,4 +1,4 @@
-import { NoTrustedHostKeyError } from '../../../domain/value-objects/repository-connection-errors.js';
+import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
 import { type RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { DeployKey } from '../../../domain/value-objects/deploy-key.js';
 import {

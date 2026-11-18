@@ -16,7 +16,7 @@ import {
 import {
   RunNotFoundError,
   PullRequestNotRefreshableError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 
 /**
  * `POST /api/runs/:runId/pull-request/failing-checks/prepare` (Issue #145), behind the global

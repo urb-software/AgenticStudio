@@ -1,4 +1,4 @@
-import { RunNotWaitingError } from '../value-objects/run-errors.js';
+import { RunNotWaitingError } from '../errors/run-errors.js';
 
 export class Run {
   private constructor(readonly state: string) {}

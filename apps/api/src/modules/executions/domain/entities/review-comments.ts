@@ -1,4 +1,4 @@
-import type { ReviewCommentsSnapshot } from '../value-objects/review-comments-snapshot.js';
+import type { ReviewCommentsSnapshot } from './review-comments-snapshot.js';
 import type { FollowUpComments } from '../value-objects/follow-up.js';
 import type { LogRedaction } from '../value-objects/log-redaction.js';
 import {

@@ -4,7 +4,7 @@ import { runNotFound, runNotHeld } from '../../shared/problems.js';
 import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { AppendRunEventsHandler } from '../../../../application/features/append-run-events/handler.js';
 import { AppendRunEventsRequestDto } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `POST /api/worker/runs/:runId/events` (Issue #99), worker token only: 204 once the batch is

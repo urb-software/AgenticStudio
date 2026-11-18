@@ -5,7 +5,7 @@ import { ApiProblemResponses } from '../../../../../../platform/http/problem-det
 import { noRepository, PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
 import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/repository-response.js';
 import { GetRepositoryHandler } from '../../../../application/features/get-repository/handler.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 /** `GET /api/projects/:id/repository`, behind the global session guard. */
 @ApiTags('projects')

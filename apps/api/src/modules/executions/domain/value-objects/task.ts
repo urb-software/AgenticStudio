@@ -1,4 +1,4 @@
-import { InvalidTaskError } from './run-errors.js';
+import { InvalidTaskError } from '../errors/run-errors.js';
 
 /** Longest Task, in characters (UTF-16 code units, as the request schema counts them). */
 export const TASK_MAX_LENGTH = 20_000;

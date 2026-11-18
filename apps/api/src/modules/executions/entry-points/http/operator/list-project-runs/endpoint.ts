@@ -8,7 +8,7 @@ import {
   toRunListItem,
   withPreparedFollowUp,
 } from '../../shared/run-response.js';
-import { RunProjectNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunProjectNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { ListProjectRunsHandler } from '../../../../application/features/list-project-runs/handler.js';
 
 /** `GET /api/projects/:id/runs` (Issue #96): a project's Runs, newest first; session guard. */

@@ -7,7 +7,7 @@ import {
   type RunDiffRepository,
 } from '../../../domain/repositories/run-diff-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 /** The Run has no diff of that scope yet: no Run step reported a result (Issue #144). */
 export class RunDiffNotFoundError extends Error {

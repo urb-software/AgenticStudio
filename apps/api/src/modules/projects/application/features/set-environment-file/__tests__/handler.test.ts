@@ -17,7 +17,7 @@ import { GetEnvironmentFileHandler } from '../../get-environment-file/handler.js
 import { GetRunEnvironmentFileHandler } from '../../get-run-environment-file/handler.js';
 import { RemoveEnvironmentFileHandler } from '../../remove-environment-file/handler.js';
 import { SetEnvironmentFileHandler } from '../handler.js';
-import { ProjectNotFoundError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 // Issue #104: the operator sets, replaces and removes a Project's Environment file; its content
 // goes to the secret store and is never returned to the operator. Test values only.

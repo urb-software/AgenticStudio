@@ -5,7 +5,7 @@ import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 /** The part of a stored structured result the operator sees at the end of a Run step. */
 const shownResultSchema = z.object({

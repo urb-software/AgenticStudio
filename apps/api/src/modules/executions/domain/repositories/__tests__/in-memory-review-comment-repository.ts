@@ -1,5 +1,5 @@
 import type { ReviewComments } from '../../entities/review-comments.js';
-import type { ReviewCommentsSnapshot } from '../../value-objects/review-comments-snapshot.js';
+import type { ReviewCommentsSnapshot } from '../../entities/review-comments-snapshot.js';
 import type { ReviewCommentRepository } from '../review-comment-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 

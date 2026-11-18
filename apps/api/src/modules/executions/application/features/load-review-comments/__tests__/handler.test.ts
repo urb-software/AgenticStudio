@@ -9,7 +9,7 @@ import {
   FollowUpNotAllowedError,
   RunNotFoundError,
   PullRequestNotRefreshableError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 import {
   deliveredRun,
   T0,
@@ -29,7 +29,7 @@ import {
   ReportLookupResultHandler,
 } from '../../report-lookup-result/handler.js';
 import { LoadReviewCommentsHandler } from '../handler.js';
-import { ReviewCommentsLoadRunningError } from '../../../../domain/value-objects/review-comments-errors.js';
+import { ReviewCommentsLoadRunningError } from '../../../../domain/errors/review-comments-errors.js';
 
 // Issue #146: the operator loads the Review comments of a Run's pull request; a worker reads them.
 // Loading starts no agent and creates no Follow-up; the operator's own comments are the only ones

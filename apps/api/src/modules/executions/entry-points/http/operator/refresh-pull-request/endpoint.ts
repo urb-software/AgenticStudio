@@ -17,7 +17,7 @@ import { refreshPullRequestRequestSchema, RefreshPullRequestRequestDto } from '.
 import {
   RunNotFoundError,
   PullRequestNotRefreshableError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 
 /**
  * `POST /api/runs/:runId/pull-request/refresh` (Issue #142), behind the global session and

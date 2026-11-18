@@ -5,9 +5,9 @@ import {
   RepositoryAlreadyConnectedError,
   RemoteAlreadyConnectedError,
   RemoteHeldByOtherProjectError,
-} from '../../../domain/value-objects/repository-connection-errors.js';
+} from '../../../domain/errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
-import { type RepositoryConnectionSnapshot } from '../../../domain/value-objects/repository-connection-snapshot.js';
+import { type RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -28,7 +28,7 @@ import {
   type DeployKeySweepSettings,
   type StoredDeployKey,
 } from '../../ports/deploy-keys.js';
-import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
 /** DI token for {@link ConnectRepositorySettings}. */
 export const CONNECT_REPOSITORY_SETTINGS = Symbol('CONNECT_REPOSITORY_SETTINGS');

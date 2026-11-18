@@ -12,7 +12,7 @@ import {
   ENVIRONMENT_FILE_CONTENTS,
   type EnvironmentFileContents,
 } from '../../ports/environment-file-contents.js';
-import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
 export interface RemoveEnvironmentFileInput {
   projectId: string;

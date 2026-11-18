@@ -13,7 +13,7 @@ import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 import { RUN_TRANSACTIONS, type RunTransactions } from '../../ports/run-transactions.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface ReportRunDiffInput {
   runId: string;

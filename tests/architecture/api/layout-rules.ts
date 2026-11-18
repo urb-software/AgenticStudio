@@ -83,8 +83,12 @@ const HTTP_DECORATORS = new Set([
 ]);
 
 const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
-/** `src/modules/<module>/domain/entities/<file>.ts` (not a file of a nested folder). */
-const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
+/**
+ * `src/modules/<module>/domain/entities/<file>.ts` (not a file of a nested folder), except the
+ * type-only companions recognised by their suffix (`-snapshot`, `-data`, `-facts`, Issue #203).
+ */
+const ENTITY_FILE =
+  /^src\/modules\/([^/]+)\/domain\/entities\/(?![^/]*-(?:snapshot|data|facts)\.ts$)[^/]+\.ts$/;
 /** `src/modules/<module>/application/features/<feature>/…` (not the tests of a feature). */
 const FEATURE_FILE = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\/(?!__tests__\/)/;
 /** A file directly in a module's `application/` folder: a collaborator (rule 3, the last resort). */

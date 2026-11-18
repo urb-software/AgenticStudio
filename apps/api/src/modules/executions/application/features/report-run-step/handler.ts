@@ -5,12 +5,9 @@ import { type RunQuestion } from '../../../domain/value-objects/run-conversation
 import {
   type RunStepOutcome,
   type RunStepRecord,
-} from '../../../domain/value-objects/run-facts.js';
+} from '../../../domain/entities/run-step-facts.js';
 import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
-import {
-  StepLimitReachedError,
-  RunNotFoundError,
-} from '../../../domain/value-objects/run-errors.js';
+import { StepLimitReachedError, RunNotFoundError } from '../../../domain/errors/run-errors.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';

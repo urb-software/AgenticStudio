@@ -11,7 +11,7 @@ import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../share
 import {
   DeliveryNotRetryableError,
   RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 import { RetryDeliveryHandler } from '../../../../application/features/retry-delivery/handler.js';
 
 /**

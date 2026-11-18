@@ -1,5 +1,5 @@
-import { NoUsableCloneError, RepositoryBusyError } from './repository-connection-errors.js';
-import type { StoredRepositoryConnection } from './repository-connection-snapshot.js';
+import { NoUsableCloneError, RepositoryBusyError } from '../errors/repository-connection-errors.js';
+import type { RepositoryFailure } from './repository-failure.js';
 import { isRepositoryState, type RepositoryState } from './repository-state.js';
 
 /** What the lifecycle needs to know of a Repository besides its state. */
@@ -9,6 +9,18 @@ export interface LifecycleFacts {
   readonly hasClone: boolean;
   /** Whether the Repository holds a Deploy key (it is an SSH Repository). */
   readonly hasDeployKey: boolean;
+}
+
+/** What {@link RepositoryLifecycle.assertStorable} reads of a stored Repository. */
+export interface StorableConnection {
+  state: RepositoryState;
+  headSha: string | null;
+  lastFetchedAt: Date | null;
+  failure: RepositoryFailure | null;
+  publicKey: string | null;
+  deployKeySecret: string | null;
+  pinnedHostKey: string | null;
+  pendingHostKey: string | null;
 }
 
 /**
@@ -42,7 +54,7 @@ export class RepositoryLifecycle {
    * Throws {@link TypeError} for a combination of state and fields that a store should never
    * hold (the database's CHECK constraints say the same).
    */
-  static assertStorable(stored: StoredRepositoryConnection): void {
+  static assertStorable(stored: StorableConnection): void {
     const { state } = stored;
     if (!isRepositoryState(state)) {
       throw new TypeError(`Unknown repository state: ${state}`);

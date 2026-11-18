@@ -6,7 +6,7 @@ import { ProjectResponseDto, toProjectResponse } from '../../shared/project-resp
 import { InvalidProjectNameError } from '../../../../domain/value-objects/project-name.js';
 import { CreateProjectHandler } from '../../../../application/features/create-project/handler.js';
 import { CreateProjectRequestDto } from './schema.js';
-import { ProjectNameTakenError } from '../../../../domain/value-objects/project-errors.js';
+import { ProjectNameTakenError } from '../../../../domain/errors/project-errors.js';
 
 /** `POST /api/projects`, behind the global session and mutation Origin guards. */
 @ApiTags('projects')

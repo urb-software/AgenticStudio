@@ -22,7 +22,7 @@ import {
   RunDiffDto,
   RunDiffFileDto,
 } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `GET /api/runs/:runId/diff?scope=run|last` and `GET /api/runs/:runId/diff/file?scope=&path=`

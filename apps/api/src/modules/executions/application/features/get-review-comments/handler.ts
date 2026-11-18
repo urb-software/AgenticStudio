@@ -15,7 +15,7 @@ import {
 } from '../../../domain/repositories/run-lookup-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from '../../ports/operator-login.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface GetReviewCommentsInput {
   runId: string;

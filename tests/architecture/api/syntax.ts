@@ -227,3 +227,66 @@ export function repositoryContract(
   }
   return undefined;
 }
+
+/**
+ * The type-only companions of an entity, beside it in `domain/entities/` (backend.md §2, ADR 0003,
+ * Issue #203): `<aggregate>-snapshot.ts`, `<aggregate>-data.ts`, `<aggregate>-facts.ts` and
+ * `<aggregate>-<operation>-facts.ts`. Recognised by the suffix alone.
+ */
+export const COMPANION_FILE =
+  /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+-(?:snapshot|data|facts)\.ts$/;
+
+/**
+ * What a file exports that exists at run time: classes, functions, variables, enums, namespaces,
+ * a default export, `export *` and a re-export of a name that is not a type. An interface, a type
+ * alias and `export type { … }` are not. An empty result means the file exports types only.
+ */
+export function runtimeExports(source: ts.SourceFile): string[] {
+  const typeNames = new Set<string>();
+  for (const statement of source.statements) {
+    if (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) {
+      typeNames.add(statement.name.text);
+    } else if (
+      ts.isImportDeclaration(statement) &&
+      statement.importClause &&
+      statement.importClause.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings)
+    ) {
+      for (const element of statement.importClause.namedBindings.elements) {
+        if (statement.importClause.isTypeOnly || element.isTypeOnly)
+          typeNames.add(element.name.text);
+      }
+    }
+  }
+  const found: string[] = [];
+  for (const statement of source.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      if (statement.isTypeOnly) continue;
+      if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) {
+        found.push('*');
+        continue;
+      }
+      for (const element of statement.exportClause.elements) {
+        const local = (element.propertyName ?? element.name).text;
+        const isType = element.isTypeOnly || (!statement.moduleSpecifier && typeNames.has(local));
+        if (!isType) found.push(element.name.text);
+      }
+    } else if (ts.isExportAssignment(statement)) {
+      found.push('default');
+    } else if (hasExportModifier(statement)) {
+      if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+          found.push(declaration.name.getText());
+        }
+      } else if (
+        ts.isClassDeclaration(statement) ||
+        ts.isFunctionDeclaration(statement) ||
+        ts.isEnumDeclaration(statement) ||
+        ts.isModuleDeclaration(statement)
+      ) {
+        found.push(statement.name?.getText() ?? 'default');
+      }
+    }
+  }
+  return found;
+}

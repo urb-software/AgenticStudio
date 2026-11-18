@@ -16,7 +16,7 @@ import { RefreshPullRequestHandler } from '../handler.js';
 import {
   RunNotFoundError,
   PullRequestNotRefreshableError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 
 class Workers implements WorkerStatusStore {
   current: RecordedWorkerStatus | undefined;

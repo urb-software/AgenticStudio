@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OPERATOR_CANCELLATION } from '../run-cancellation.js';
-import { IllegalRunTransitionError } from '../run-errors.js';
+import { IllegalRunTransitionError } from '../../errors/run-errors.js';
 import { RunLifecycle, type RunLifecycleStored } from '../run-lifecycle.js';
 import { RUN_STATES, FINAL_RUN_STATES, isFinalRunState, type RunState } from '../run-state.js';
 

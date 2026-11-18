@@ -1,5 +1,5 @@
 import type { RunSnapshot } from '../../../../domain/entities/run.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
 
 export class GetRunEndpoint {

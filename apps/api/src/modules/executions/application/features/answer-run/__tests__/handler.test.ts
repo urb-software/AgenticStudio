@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { type RunSnapshot } from '../../../../domain/value-objects/run-snapshot.js';
-import {
-  RunNotWaitingError,
-  RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import { RunNotWaitingError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { AnswerRunHandler } from '../handler.js';

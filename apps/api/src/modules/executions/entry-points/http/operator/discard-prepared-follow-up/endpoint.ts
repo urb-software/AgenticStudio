@@ -3,7 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
 import { DiscardPreparedFollowUpHandler } from '../../../../application/features/discard-prepared-follow-up/handler.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `DELETE /api/runs/:runId/pull-request/failing-checks/prepared` (Issue #145), behind the global

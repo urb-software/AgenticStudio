@@ -4,7 +4,7 @@ import { illegalRunTransition, runNotFound, runNotHeld } from '../../shared/prob
 import {
   IllegalRunTransitionError,
   RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+} from '../../../../domain/errors/run-errors.js';
 import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { ReportRunStateHandler } from '../../../../application/features/report-run-state/handler.js';
 import { ReportRunStateRequestDto } from './schema.js';

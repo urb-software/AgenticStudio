@@ -1,7 +1,7 @@
 import type {
   EnvironmentFileSnapshot,
   StoredEnvironmentFile,
-} from '../value-objects/environment-file-snapshot.js';
+} from './environment-file-snapshot.js';
 
 /**
  * The Environment file aggregate root (Issue #104): one file of test settings that Studio

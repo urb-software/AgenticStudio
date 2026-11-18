@@ -1,11 +1,11 @@
-import { type ConnectAttempt } from '../../value-objects/repository-connection-facts.js';
+import { type ConnectAttempt } from '../../entities/repository-connection-facts.js';
 import {
   RepositoryAlreadyConnectedError,
   RemoteHeldByOtherProjectError,
-} from '../../value-objects/repository-connection-errors.js';
+} from '../../errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../../entities/repository-connection.js';
 import { type RepositoryState } from '../../value-objects/repository-state.js';
-import { type StoredRepositoryConnection } from '../../value-objects/repository-connection-snapshot.js';
+import { type StoredRepositoryConnection } from '../../entities/repository-connection-snapshot.js';
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
 import { type RepositoryConnectionRepository } from '../repository-connection-repository.js';
 

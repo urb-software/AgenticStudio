@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  FollowUpNotAllowedError,
-  RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+import { FollowUpNotAllowedError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { type Run } from '../../../../domain/entities/run.js';
 import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
@@ -14,7 +11,7 @@ import { RetentionPolicy } from '../../../../domain/value-objects/retention-poli
 import { FollowUpRunHandler } from '../handler.js';
 import { ReviewComments } from '../../../../domain/entities/review-comments.js';
 import type { ReviewComment } from '../../../../domain/value-objects/review-comments.js';
-import { ReviewCommentsNotLoadedError } from '../../../../domain/value-objects/run-errors.js';
+import { ReviewCommentsNotLoadedError } from '../../../../domain/errors/run-errors.js';
 
 /** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -49,18 +46,24 @@ const runView = (
   leaseSeconds: number,
   retention: RetentionPolicy,
   overLimit = false,
-) =>
-  retention.runView(
-    run,
-    {
-      holderLastSeen:
-        run.claim.lastClaimedBy === null ? undefined : workers.lastSeen(run.claim.lastClaimedBy),
-      latest: workers.latest(),
-    },
-    now,
-    leaseSeconds,
-    overLimit,
-  );
+) => {
+  const facts = {
+    holderLastSeen:
+      run.claim.lastClaimedBy === null ? undefined : workers.lastSeen(run.claim.lastClaimedBy),
+    latest: workers.latest(),
+  };
+  return {
+    run: run.snapshot(),
+    ...retention.runView(
+      run.followUpAvailability(facts, now, leaseSeconds),
+      run.retentionFacts(),
+      facts.latest,
+      now,
+      leaseSeconds,
+      overLimit,
+    ),
+  };
+};
 const RETENTION = RetentionPolicy.of({
   days: 7,
   maxPerProject: 10,

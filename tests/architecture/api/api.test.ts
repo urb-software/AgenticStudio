@@ -57,7 +57,7 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'handler-imports-database-client',
     expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
   },
-  { fixture: 'file-cycle', expected: ['api-no-circular'] },
+  { fixture: 'file-cycle', expected: ['api-no-circular', 'api-domain-has-no-import-cycles'] },
   {
     fixture: 'orm-outside-infrastructure-repositories',
     expected: ['api-orm-only-in-infrastructure-repositories'],
@@ -866,6 +866,84 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'entity-class-and-class-expression',
     expected: ['api-entity-file-exports-one-class-and-no-function'],
     qualityRow: 'A `domain/entities/` file exports a second class or any function',
+  },
+  // The direction of references inside `domain/` and the type-only companions of an entity (Issue
+  // #203).
+  {
+    fixture: 'domain-leaves-import-smaller-leaves-and-entities-import-leaves',
+    expected: [],
+    qualityRow:
+      'Nothing under `domain/value-objects/` or `domain/errors/` imports from `domain/entities/`',
+  },
+  {
+    fixture: 'domain-value-object-imports-entity',
+    expected: ['api-domain-leaves-do-not-import-entities'],
+    qualityRow:
+      'A file under `domain/value-objects/` or `domain/errors/` imports (or re-exports from) `domain/entities/`',
+  },
+  {
+    fixture: 'domain-error-imports-entity',
+    expected: ['api-domain-leaves-do-not-import-entities'],
+    qualityRow:
+      'A file under `domain/value-objects/` or `domain/errors/` imports (or re-exports from) `domain/entities/`',
+  },
+  {
+    fixture: 'domain-value-object-re-exports-from-entity-file',
+    expected: ['api-domain-leaves-do-not-import-entities'],
+    qualityRow:
+      'A file under `domain/value-objects/` or `domain/errors/` imports (or re-exports from) `domain/entities/`',
+  },
+  {
+    fixture: 'domain-imports-form-a-diamond-without-a-cycle',
+    expected: [],
+    qualityRow: "A module's `domain/` has no import cycle",
+  },
+  {
+    fixture: 'domain-type-only-import-cycle',
+    expected: ['api-domain-has-no-import-cycles', 'api-no-circular'],
+    qualityRow:
+      "A module's `domain/` has an import cycle, type-only imports and `export … from` included",
+  },
+  {
+    fixture: 'domain-import-cycle-through-export-from',
+    expected: ['api-domain-has-no-import-cycles', 'api-no-circular'],
+    qualityRow:
+      "A module's `domain/` has an import cycle, type-only imports and `export … from` included",
+  },
+  {
+    fixture: 'entity-companions-export-types-only',
+    expected: [],
+    qualityRow:
+      'A type-only companion of an entity (`-snapshot`, `-data`, `-facts`) exports types only',
+  },
+  {
+    fixture: 'entity-companion-exports-class',
+    expected: ['api-entity-companions-export-types-only'],
+    qualityRow: 'A companion file exports a class, a function, a value or `export *`',
+  },
+  {
+    fixture: 'entity-companion-exports-function',
+    expected: [
+      'api-entity-companions-export-types-only',
+      'api-domain-exports-no-function-but-type-guards',
+    ],
+    qualityRow: 'A companion file exports a class, a function, a value or `export *`',
+  },
+  {
+    fixture: 'entity-companion-exports-value-and-star',
+    expected: ['api-entity-companions-export-types-only'],
+    qualityRow: 'A companion file exports a class, a function, a value or `export *`',
+  },
+  {
+    fixture: 'entity-file-without-companion-suffix-keeps-the-entity-checks',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
+  },
+  {
+    fixture: 'repository-returns-companion-facts',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow:
+      'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
   },
   // The complete approved layout, the example for a new module (backend.md §2, Issue #170).
   {

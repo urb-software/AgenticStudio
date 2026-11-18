@@ -1,4 +1,4 @@
-import type { PreparedFollowUpSnapshot } from '../value-objects/prepared-follow-up-snapshot.js';
+import type { PreparedFollowUpSnapshot } from './prepared-follow-up-snapshot.js';
 import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../value-objects/follow-up.js';
 import { CheckLink } from '../value-objects/check-link.js';
 import type { PreparedFollowUpItem } from '../value-objects/prepared-follow-up-item.js';

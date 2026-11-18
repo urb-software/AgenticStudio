@@ -12,7 +12,7 @@ import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-settings.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface AppendRunEventsInput {
   runId: string;

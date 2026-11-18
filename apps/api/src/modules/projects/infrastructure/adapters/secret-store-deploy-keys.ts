@@ -8,7 +8,7 @@ import {
   type StoredDeployKey,
 } from '../../application/ports/deploy-keys.js';
 import type { SshCredentials } from '../../application/ports/repository-git.js';
-import { NoTrustedHostKeyError } from '../../domain/value-objects/repository-connection-errors.js';
+import { NoTrustedHostKeyError } from '../../domain/errors/repository-connection-errors.js';
 import { DeployKey } from '../../domain/value-objects/deploy-key.js';
 import { TrustedHostKeys } from '../../domain/value-objects/trusted-host-keys.js';
 

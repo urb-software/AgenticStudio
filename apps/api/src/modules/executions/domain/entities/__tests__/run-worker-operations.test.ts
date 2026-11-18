@@ -3,16 +3,16 @@ import {
   IllegalRunTransitionError,
   RunNotHeldError,
   StepOutOfOrderError,
-} from '../../value-objects/run-errors.js';
+} from '../../errors/run-errors.js';
 import { Run } from '../run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import {
   OPERATOR_CANCELLATION,
   OPERATOR_CANCELLATION_BRANCH_PUSHED,
 } from '../../value-objects/run-cancellation.js';
-import { type RunData } from '../../value-objects/run-data.js';
+import { type RunData } from '../run-data.js';
 import { type RunState } from '../../value-objects/run-state.js';
-import { type RunStateReport } from '../../value-objects/run-facts.js';
+import { type RunStateReport } from '../run-report-facts.js';
 
 // Issue #169: what the agent worker reports for a Run is a method of the Run. Each allowed and
 // each refused report is checked here without a database: the Run decides from its own state, the

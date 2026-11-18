@@ -2,10 +2,7 @@ import { BRING_UP_TO_DATE_DEFAULT_TEXT as PROTOCOL_DEFAULT_TEXT } from '@agentic
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Run } from '../../../../domain/entities/run.js';
 import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
-import {
-  FollowUpNotAllowedError,
-  RunNotFoundError,
-} from '../../../../domain/value-objects/run-errors.js';
+import { FollowUpNotAllowedError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';

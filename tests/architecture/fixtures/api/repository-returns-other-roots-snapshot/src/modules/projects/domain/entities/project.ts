@@ -1,4 +1,4 @@
-import type { ProjectSnapshot } from '../value-objects/project-snapshot.js';
+import type { ProjectSnapshot } from './project-snapshot.js';
 
 export class Project {
   private constructor(readonly name: string) {}

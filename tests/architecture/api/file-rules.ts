@@ -1,17 +1,20 @@
 import ts from 'typescript';
 import { listFiles, type Violation } from '../harness';
 import {
+  COMPANION_FILE,
   exportedClasses,
   exportedLater,
   hasExportModifier,
   parse,
+  runtimeExports,
   unwrapExpression,
 } from './syntax';
 
 /**
- * The two checks that follow from rule 13 of backend.md §3, "one concept per file" (Issue
+ * The three checks that follow from rule 13 of backend.md §3, "one concept per file" (Issue
  * #185): an entity file exports exactly one class and no function, and `domain/` exports no
- * function other than a type guard. Syntax only, as in `layout-rules.ts`: each file is parsed
+ * function other than a type guard, and the type-only companions of an entity (Issue #203) export
+ * no runtime value. Syntax only, as in `layout-rules.ts`: each file is parsed
  * on its own, without type checking, so the checks work on fixtures. An entity file with no
  * class is already refused by `api-entities-are-classes-with-non-public-constructors`, so the
  * first check reports a second class and any function. Both apply to every module, by path
@@ -20,9 +23,11 @@ import {
 export const FILE_RULES = [
   'api-entity-file-exports-one-class-and-no-function',
   'api-domain-exports-no-function-but-type-guards',
+  'api-entity-companions-export-types-only',
 ];
 
-const ENTITY_FILE = /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+\.ts$/;
+const ENTITY_FILE =
+  /^src\/modules\/([^/]+)\/domain\/entities\/(?![^/]*-(?:snapshot|data|facts)\.ts$)[^/]+\.ts$/;
 const DOMAIN_FILE = /^src\/modules\/([^/]+)\/domain\//;
 const TEST_FILE = /(^|\/)__tests__\/|\.test\.tsx?$/;
 
@@ -34,6 +39,15 @@ export function fileViolations(baseDir: string): Violation[] {
       const source = parse(baseDir, path);
       const functions = exportedFunctions(source);
       const found: Violation[] = [];
+      if (COMPANION_FILE.test(path)) {
+        for (const name of runtimeExports(source)) {
+          found.push({
+            rule: 'api-entity-companions-export-types-only',
+            from: path,
+            to: `exports ${name === '*' ? 'everything of another file with export *' : name}, which is not a type`,
+          });
+        }
+      }
       if (ENTITY_FILE.test(path)) {
         const classes = exportedClasses(source);
         if (classes.length > 1) {

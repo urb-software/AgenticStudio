@@ -1,6 +1,6 @@
 import { FAILURE_DETAIL_MAX_LENGTH } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunSnapshot } from '../../../domain/value-objects/run-snapshot.js';
+import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { type PullRequestState } from '../../../domain/value-objects/run-pull-request-status.js';
 import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
@@ -16,7 +16,7 @@ import {
 } from '../../ports/environment-file-snapshots.js';
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
-import { RunNotFoundError } from '../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface ReportRunStateInput {
   runId: string;

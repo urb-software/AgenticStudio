@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { EnvironmentFileSnapshot } from '../../../domain/value-objects/environment-file-snapshot.js';
+import type { EnvironmentFileSnapshot } from '../../../domain/entities/environment-file-snapshot.js';
 import { EnvironmentFilePathTrackedError } from '../../../domain/value-objects/environment-file.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import { checkEnvironmentFile } from './check.js';
@@ -25,7 +25,7 @@ import {
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
-import { ProjectNotFoundError } from '../../../domain/value-objects/project-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
 export interface SetEnvironmentFileInput {
   projectId: string;

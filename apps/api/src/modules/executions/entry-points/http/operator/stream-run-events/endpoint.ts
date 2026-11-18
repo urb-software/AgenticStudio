@@ -15,7 +15,7 @@ import {
 import { LogStreamSlots } from '../../../../application/features/stream-run-events/log-stream-slots.js';
 import { StreamSession } from '../../../../application/features/stream-run-events/stream-session.js';
 import { StreamRunEventsQueryDto } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /** A `Last-Event-ID` the stream itself sent: a seq (PostgreSQL INTEGER). */
 const SEQ = /^\d{1,10}$/;

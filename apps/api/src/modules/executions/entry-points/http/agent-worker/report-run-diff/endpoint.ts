@@ -4,7 +4,7 @@ import { runNotFound, runNotHeld } from '../../shared/problems.js';
 import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { ReportRunDiffHandler } from '../../../../application/features/report-run-diff/handler.js';
 import { ReportRunDiffRequestDto } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/value-objects/run-errors.js';
+import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 /**
  * `POST /api/worker/runs/:runId/diff` (Issue #144), worker token only: 204 once the Run's diffs

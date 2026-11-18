@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Run } from '../run.js';
-import { type RunSnapshot } from '../../value-objects/run-snapshot.js';
-import { RunNotHeldError } from '../../value-objects/run-errors.js';
+import { type RunSnapshot } from '../run-snapshot.js';
+import { RunNotHeldError } from '../../errors/run-errors.js';
 import { Task } from '../../value-objects/task.js';
 
 // Issue #183: the Run's snapshot, the Run step it creates, what the lookups change of its pull

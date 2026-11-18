@@ -12,6 +12,7 @@ import {
   type Violation,
 } from '../harness';
 import { AGGREGATE_RULES, aggregateViolations } from './aggregate-rules';
+import { DIRECTION_RULES, directionViolations } from './direction-rules';
 import { FILE_RULES, fileViolations } from './file-rules';
 import { LAYOUT_RULES, APPLICATION_FORBIDDEN_PACKAGES, layoutViolations } from './layout-rules';
 import { SECRETS_SOURCE_RULES, secretsViolations } from './secrets-rules';
@@ -349,6 +350,7 @@ export const apiGate: Gate = {
       ...LAYOUT_RULES,
       ...AGGREGATE_RULES,
       ...FILE_RULES,
+      ...DIRECTION_RULES,
       ...SECRETS_SOURCE_RULES,
     ],
     check: (baseDir) => [
@@ -359,6 +361,7 @@ export const apiGate: Gate = {
       ...layoutViolations(baseDir),
       ...aggregateViolations(baseDir),
       ...fileViolations(baseDir),
+      ...directionViolations(baseDir),
       ...secretsViolations(baseDir),
     ],
   },

@@ -1,19 +1,16 @@
 import { HostKey } from '../value-objects/host-key.js';
 import { TrustedHostKeys } from '../value-objects/trusted-host-keys.js';
-import type {
-  ConnectAttempt,
-  RepositoryChanges,
-} from '../value-objects/repository-connection-facts.js';
+import type { ConnectAttempt, RepositoryChanges } from './repository-connection-facts.js';
 import {
   HostKeyFingerprintMismatchError,
   RepositoryAlreadyConnectedError,
   RepositoryNotVerifiableError,
-} from '../value-objects/repository-connection-errors.js';
+} from '../errors/repository-connection-errors.js';
 import type {
   RepositoryConnectionData,
   RepositoryConnectionSnapshot,
   StoredRepositoryConnection,
-} from '../value-objects/repository-connection-snapshot.js';
+} from './repository-connection-snapshot.js';
 import { RepositoryFailure } from '../value-objects/repository-failure.js';
 import { RepositoryLifecycle } from '../value-objects/repository-lifecycle.js';
 

@@ -1,7 +1,7 @@
 import type { RunPartEnd } from './run-conversation.js';
 import type { RunDeliveryState } from './run-delivery.js';
 import { OPERATOR_CANCELLATION_PREFIX, type RunCancellation } from './run-cancellation.js';
-import { IllegalRunTransitionError } from './run-errors.js';
+import { IllegalRunTransitionError } from '../errors/run-errors.js';
 import type { RunFailure } from './run-failure.js';
 import { isFinalRunState, isRunState, type RunState } from './run-state.js';
 

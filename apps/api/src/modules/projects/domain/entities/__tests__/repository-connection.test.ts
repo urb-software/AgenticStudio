@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { DeployKey } from '../../value-objects/deploy-key.js';
 import { HostKey } from '../../value-objects/host-key.js';
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
-import { type ConnectAttempt } from '../../value-objects/repository-connection-facts.js';
+import { type ConnectAttempt } from '../repository-connection-facts.js';
 import {
   HostKeyFingerprintMismatchError,
   NoUsableCloneError,
   RepositoryAlreadyConnectedError,
   RepositoryBusyError,
   RepositoryNotVerifiableError,
-} from '../../value-objects/repository-connection-errors.js';
+} from '../../errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../repository-connection.js';
-import { type StoredRepositoryConnection } from '../../value-objects/repository-connection-snapshot.js';
+import { type StoredRepositoryConnection } from '../repository-connection-snapshot.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const SHA = 'a'.repeat(40);
