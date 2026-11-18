@@ -33,7 +33,7 @@ export async function committedMigrations(): Promise<string[]> {
 /**
  * The SQL `prisma migrate dev` would generate to bring this database to the Prisma schema
  * (`migrate diff --from-config-datasource --to-schema --script`); only comments when in sync.
- * For tests that check what Prisma sees as drift, e.g. objects it does not model (Issue #96).
+ * For tests that check what Prisma sees as drift, e.g. objects it does not model.
  */
 export async function schemaDriftScript(databaseUrl: string): Promise<string> {
   const prismaCli = createRequire(import.meta.url).resolve('prisma/build/index.js');
