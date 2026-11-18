@@ -21,13 +21,8 @@ export interface GetReviewCommentsInput {
   runId: string;
 }
 
-/** One comment with whether the operator's own account wrote it (Issue #146). */
 export type GetReviewCommentsComment = ReviewComment & { byOperator: boolean };
 
-/**
- * What the Run page is shown (Issue #146): the loaded comments (each marked as the operator's or
- * not), the configured login, and the state of the latest load.
- */
 export interface GetReviewCommentsResult {
   operatorLogin: string | null;
   comments: GetReviewCommentsComment[];
@@ -38,11 +33,7 @@ export interface GetReviewCommentsResult {
   error: string | null;
 }
 
-/**
- * Query (Issue #146): the Review comments loaded for the Run and the state of the latest load.
- * Reading them starts nothing and sends nothing. Throws {@link RunNotFoundError} (also for an id
- * that is not a UUID).
- */
+/** Throws {@link RunNotFoundError} (also for a non-UUID id). */
 @Injectable()
 export class GetReviewCommentsHandler {
   constructor(
@@ -55,7 +46,6 @@ export class GetReviewCommentsHandler {
   async execute(input: GetReviewCommentsInput): Promise<GetReviewCommentsResult> {
     const { runId } = input;
     if (!isRunId(runId) || !(await this.runs.exists(runId))) throw new RunNotFoundError();
-    // The loaded set is the Review comments'; where the load stands is read from the lookups.
     const [set, load] = await Promise.all([
       this.comments.findSnapshot(runId),
       this.lookups.findReviewCommentsLoad(runId),

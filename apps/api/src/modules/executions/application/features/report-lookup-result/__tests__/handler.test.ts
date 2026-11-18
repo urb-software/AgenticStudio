@@ -23,7 +23,6 @@ import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { LookupNotFoundError, LookupNotHeldError, ReportLookupResultHandler } from '../handler.js';
 
-// Issue #142: a worker claims lookups and reports what it read.
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 const T1 = new Date(T0.getTime() + 5_000);
 
@@ -34,7 +33,6 @@ describe('lookups: claim and result', () => {
   let now: Date;
   let claims: ClaimLookupsHandler;
   let results: ReportLookupResultHandler;
-  /** The Run's known secret values (its Environment file), as the log redaction gets them. */
   let known = ['hunter2-env-value'];
   const secrets = { forRun: () => Promise.resolve(known) };
 
@@ -49,7 +47,6 @@ describe('lookups: claim and result', () => {
     results = new ReportLookupResultHandler(lookups, clock, runs, secrets, executions.transactions);
   });
 
-  /** A delivered Run with a lookup requested and claimed by `WORKER`. */
   async function claimed() {
     const run = await deliveredRun(runs);
     await executions.requests.request(run.id, 'pull_request_state', T0);
@@ -129,7 +126,6 @@ describe('lookups: claim and result', () => {
       retryAt: null,
       refreshRequestedAt: null,
       lastAttemptAt: T0,
-      // Issue #143: the retention period counts from the first end.
       endedAt: ['merged', 'closed', 'missing'].includes(result.state) ? T1 : null,
       checks: null,
       prepareRequestedAt: null,
@@ -137,7 +133,6 @@ describe('lookups: claim and result', () => {
     });
   });
 
-  // Issue #145: the Pull request checks come with the state.
   describe('Pull request checks', () => {
     const SHA = 'c'.repeat(40);
     const checks = [
@@ -296,7 +291,6 @@ describe('lookups: claim and result', () => {
     });
   });
 
-  // Issue #145: the logs of the failing checks become a prepared Follow-up, never a sent one.
   describe('logs of failing checks', () => {
     const SHA = 'c'.repeat(40);
     const claimedLogs = async () => {
@@ -349,11 +343,8 @@ describe('lookups: claim and result', () => {
       expect(draft.source).toBe('pull_request_checks');
       expect(draft.text).toContain('expected 1 to be 2');
       expect(draft.items.map((item) => item.name)).toEqual(['unit tests', 'deploy']);
-      // The Prepared Follow-up is the aggregate that waits for the operator; the Run's preparation
-      // is over.
       expect(runs.prepared.has(run.id)).toBe(true);
       expect(status(run.id)).toMatchObject({ prepareRequestedAt: null, prepareError: null });
-      // The Run is not queued and has no new message: only the operator's send does that.
       expect(before.messages).toHaveLength(messages);
       expect(before.followUpQueued).toBe(false);
       expect(before.state).not.toBe('queued');
@@ -514,7 +505,6 @@ describe('lookups: claim and result', () => {
     });
   });
 
-  // Issue #143: when the pull request ended, for the Working copy retention.
   it('keeps the first time the pull request was read as ended, and clears it when it is reopened', async () => {
     const { run, lookup } = await claimed();
     await results.execute({
@@ -528,7 +518,6 @@ describe('lookups: claim and result', () => {
     });
     expect(status(run.id).endedAt).toEqual(T1);
 
-    // Read as ended again later: the end stays at the first time.
     now = new Date(T1.getTime() + 3_600_000);
     await executions.requests.request(run.id, 'pull_request_state', now);
     const [again] = (await claims.execute({ workerId: WORKER })).lookups;
@@ -543,7 +532,6 @@ describe('lookups: claim and result', () => {
     });
     expect(status(run.id)).toMatchObject({ state: 'merged', endedAt: T1 });
 
-    // Reopened, and then ended again: a new end.
     const later = new Date(T1.getTime() + 7_200_000);
     now = later;
     await executions.requests.request(run.id, 'pull_request_state', now);
@@ -630,7 +618,6 @@ describe('lookups: claim and result', () => {
       retryAt,
       refreshRequestedAt: T0,
     });
-    // Not handed out before the time, then handed out again.
     expect((await claims.execute({ workerId: WORKER })).lookups).toEqual([]);
     now = retryAt;
     expect((await claims.execute({ workerId: OTHER_WORKER })).lookups).toHaveLength(1);

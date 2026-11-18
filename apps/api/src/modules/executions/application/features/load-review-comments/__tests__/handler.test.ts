@@ -31,10 +31,6 @@ import {
 import { LoadReviewCommentsHandler } from '../handler.js';
 import { ReviewCommentsLoadRunningError } from '../../../../domain/errors/review-comments-errors.js';
 
-// Issue #146: the operator loads the Review comments of a Run's pull request; a worker reads them.
-// Loading starts no agent and creates no Follow-up; the operator's own comments are the only ones
-// marked for preselection, and only by an exact, case-insensitive match of the configured login.
-
 const T1 = new Date(T0.getTime() + 5_000);
 const LEASE = { seconds: 60 };
 
@@ -112,7 +108,6 @@ describe('review comments', () => {
     );
   });
 
-  /** Loads, lets WORKER claim the lookup and report `comments`. */
   async function loaded(runId: string, comments: ReviewComment[], truncated = false) {
     await load.execute({ runId, scope: 'unresolved' });
     const [lookup] = (await claims.execute({ workerId: WORKER })).lookups;
@@ -149,7 +144,6 @@ describe('review comments', () => {
         since: run.lifecycle.finishedAt,
       });
       const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
-      // No Follow-up, no message, no refresh of the state.
       expect(stored.followUpQueued).toBe(false);
       expect(stored.messages.some((message) => message.kind === 'follow_up')).toBe(false);
       expect(stored.pullRequestStatus.refreshRequestedAt).toBeNull();
@@ -328,7 +322,6 @@ describe('review comments', () => {
   });
 
   describe('what the operator is shown', () => {
-    /** What `get-review-comments` shows for a Run with these loaded comments. */
     const view = async (comments: ReviewComment[], operatorLogin: string | null = 'Octo-Cat') => {
       login = operatorLogin;
       const run = await deliveredRun(runs);
@@ -375,7 +368,6 @@ describe('review comments', () => {
     });
 
     it('says nothing is loaded yet, and what the latest load is doing', async () => {
-      /** A Run whose only review lookup is in the given state, and nothing loaded. */
       const empty = async (loading: boolean, error: string | null) => {
         login = null;
         const run = await deliveredRun(runs);

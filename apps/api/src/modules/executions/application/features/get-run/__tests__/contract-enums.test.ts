@@ -79,13 +79,9 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect(runProviderSchema.options).toEqual([...PROVIDERS]);
     expect(runFailureCodeSchema.options).toEqual([...RUN_FAILURE_CODES]);
     expect(runCancelledBySchema.options).toEqual([...RUN_CANCELLED_BY]);
-    // Issue #102.
     expect(runDeliverySchema.options).toEqual([...RUN_DELIVERIES]);
-    // Issue #141.
     expect(followUpRefusalSchema.options).toEqual([...FOLLOW_UP_REFUSALS]);
-    // Issue #142.
     expect(pullRequestStateSchema.options).toEqual([...PULL_REQUEST_STATES]);
-    // Issue #145.
     expect(pullRequestCheckStateSchema.options).toEqual([...PULL_REQUEST_CHECK_STATES]);
     expect(followUpSourceSchema.options).toEqual([...FOLLOW_UP_SOURCES]);
   });
@@ -126,10 +122,9 @@ describe('Run enums of the HTTP contract and the worker protocol (Issue #96)', (
     expect([...WORKER_PROVIDERS]).toEqual([...PROVIDERS]);
     expect([...WORKER_FAILURE_CODES]).toEqual([...RUN_FAILURE_CODES]);
     expect(WORKER_TASK_MAX_LENGTH).toBe(TASK_MAX_LENGTH);
-    // Issue #141: the Follow-up and the answer travel in the same payload field.
+    // The Follow-up and the answer travel in the same payload field.
     expect(WORKER_FOLLOW_UP_MAX_LENGTH).toBe(FOLLOW_UP_MAX_LENGTH);
     expect(WORKER_ANSWER_MAX_LENGTH).toBe(RunConversation.ANSWER_MAX_LENGTH);
-    // Review T3 of #150: the domain's resume reasons are the protocol's.
     expect([...WORKER_RESUME_REASONS]).toEqual([...RESUME_REASONS]);
   });
 

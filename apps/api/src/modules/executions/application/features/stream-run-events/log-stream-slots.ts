@@ -1,11 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-settings.js';
 
-/**
- * Bounds the open live log streams (Issue #99 review): at most `streamsPerSession` per
- * operator session and `streamsTotal` in the API process. In process, as the streams are
- * (one API instance).
- */
+/** In process, as the streams are: one API instance. */
 @Injectable()
 export class LogStreamSlots {
   private readonly perSession = new Map<string, number>();

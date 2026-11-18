@@ -3,8 +3,6 @@ import type { Run } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { CancelLongWaitingRunsHandler } from '../handler.js';
 
-// Issue #100: a Run left waiting for the operator longer than its waiting period is cancelled
-// by Studio, with that stated as the reason. The clock is injected, so no test waits.
 const PROJECTS = [
   '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
   '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f',

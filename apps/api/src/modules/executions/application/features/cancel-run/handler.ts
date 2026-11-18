@@ -14,20 +14,13 @@ export interface CancelRunInput {
 }
 
 export interface CancelRunResult {
-  /** The Run as it is now: cancelled, or with its cancel request. */
   run: RunSnapshot;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }
 
 /**
- * Command (Issue #100): the operator cancels a Run. A `queued` or `waiting_for_operator` Run
- * (no worker holds it) is `cancelled` at once. A `preparing` or `running` Run gets a cancel
- * request; its state stays until the agent worker, told with its next heartbeat, has stopped
- * the Run step and reports `cancelled`. Repeating a cancel changes nothing and succeeds. The
- * Run's `cancel` method decides which, under the row lock the repository's `change` takes, so
- * a Run that is claimed or finished in between is decided on as it is. Throws
- * `RunNotFoundError` or `RunAlreadyFinishedError`.
+ * Repeating a cancel succeeds. The Run's `cancel` decides under the row lock, so a Run claimed or
+ * finished in between is decided on as it is. Throws `RunNotFoundError` or `RunAlreadyFinishedError`.
  */
 @Injectable()
 export class CancelRunHandler {

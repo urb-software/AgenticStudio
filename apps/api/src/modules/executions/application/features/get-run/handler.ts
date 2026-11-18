@@ -21,14 +21,10 @@ export interface GetRunResult {
   run: RunSnapshot;
   followUp: FollowUpView;
   workerConnected: boolean;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }
 
-/**
- * Query (Issue #96): one Run, and whether it can take a Follow-up now (Issue #141). Throws
- * {@link RunNotFoundError}, also for an id that is not a UUID.
- */
+/** Throws {@link RunNotFoundError}, also for a non-UUID id. */
 @Injectable()
 export class GetRunHandler {
   constructor(

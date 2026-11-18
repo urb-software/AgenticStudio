@@ -12,7 +12,6 @@ import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositor
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { ResumeRunHandler } from '../handler.js';
 
-// Issue #105: the operator resumes a Run that stopped at the subscription's usage limit.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
@@ -42,7 +41,6 @@ describe('ResumeRunHandler', () => {
   let handler: ResumeRunHandler;
   let run: RunSnapshot;
 
-  /** WORKER's step stops at `failure`, reporting the session and the Working copy. */
   async function stop(failure: RunFailure, sessionRef: string | null = 'session-1') {
     await runs.transitionClaimed({
       runId: run.id,

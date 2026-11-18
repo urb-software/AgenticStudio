@@ -29,7 +29,7 @@ describe('LogStreamSlots (Issue #99 review)', () => {
     expect(limit.acquire('c')).toBeNull();
 
     release();
-    release(); // A second release changes nothing.
+    release();
     expect(limit.acquire('c')).not.toBeNull();
     expect(limit.acquire('d')).toBeNull();
   });

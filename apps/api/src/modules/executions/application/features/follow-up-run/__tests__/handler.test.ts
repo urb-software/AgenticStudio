@@ -13,7 +13,6 @@ import { ReviewComments } from '../../../../domain/entities/review-comments.js';
 import type { ReviewComment } from '../../../../domain/value-objects/review-comments.js';
 import { ReviewCommentsNotLoadedError } from '../../../../domain/errors/run-errors.js';
 
-/** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
   private current: RecordedWorkerStatus | undefined;
   private readonly seen = new Map<string, Date>();
@@ -29,7 +28,6 @@ class InMemoryWorkerStatusStore implements WorkerStatusStore {
   }
 }
 
-// Issue #141: the operator sends a Follow-up to a finished Run.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER_PROJECT = '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
@@ -38,7 +36,6 @@ const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
 const T0 = new Date('2026-11-16T12:00:00.000Z');
 const T1 = new Date('2026-11-16T12:30:00.000Z');
 const LEASE = { seconds: 60 };
-/** What the single-Run answers add to a Run, with the facts fetched from the fake store. */
 const runView = (
   run: Run,
   workers: WorkerStatusStore,
@@ -94,12 +91,10 @@ describe('FollowUpRunHandler', () => {
   let executions: ReturnType<typeof inMemoryExecutions>;
   let handler: FollowUpRunHandler;
 
-  /** The worker reports itself connected with both providers on, at `at`. */
   function connect(workerId = WORKER, at = T1, providers = { claude_code: true, codex: true }) {
     workers.record({ workerId, runner: 'fake', providers, reportedAt: at });
   }
 
-  /** A Run WORKER carried to `end` after `steps` done steps, delivering its pull request. */
   async function finished(end: RunState = 'succeeded', steps = 1, projectId = PROJECT) {
     const added = await runs.start(newRun(projectId));
     await runs.claimNext(WORKER, T0);
@@ -157,7 +152,6 @@ describe('FollowUpRunHandler', () => {
     connect();
   });
 
-  // Issue #145: a Follow-up prepared from failing checks, as the operator left it.
   describe('a Follow-up prepared from failing checks', () => {
     const draft = {
       source: 'pull_request_checks' as const,
@@ -206,12 +200,10 @@ describe('FollowUpRunHandler', () => {
       });
 
       expect(queued.messages.at(-1)).not.toHaveProperty('source');
-      // A Follow-up of its own does not touch a draft the operator is still reviewing.
       expect(runs.prepared.has(run.id)).toBe(true);
     });
   });
 
-  // Issue #146: a Follow-up prepared from the pull request's Review comments.
   describe('a Follow-up prepared from review comments', () => {
     const comment = (id: string, author: string): ReviewComment => ({
       id,
@@ -279,7 +271,6 @@ describe('FollowUpRunHandler', () => {
         ).rejects.toBeInstanceOf(ReviewCommentsNotLoadedError);
       }
 
-      // Nothing was queued, and the set is still there.
       expect((await runs.findById(run.id))?.progress.followUpQueued).toBe(false);
       expect(runs.reviewSets.has(run.id)).toBe(true);
     });
@@ -458,7 +449,6 @@ describe('FollowUpRunHandler', () => {
     );
   });
 
-  // Issue #142: the Run's pull request, as last read.
   const readAs = (run: Run, state: 'draft' | 'open' | 'merged' | 'closed' | 'missing' | null) => {
     const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
     stored.pullRequestStatus = {
@@ -589,7 +579,6 @@ describe('FollowUpRunHandler', () => {
       detail: 'The Follow-up reached its limit of 10 run steps; no further step was started.',
     });
   });
-  // Issue #143: the Run page says until when the Run stays open to Follow-ups.
   describe('until when a Run is open to Follow-ups (Issue #143)', () => {
     const view = (run: Run, at = T1) => runView(run, workers, at, LEASE.seconds, RETENTION);
 

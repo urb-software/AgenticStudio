@@ -79,9 +79,7 @@ describe('StartRunHandler', () => {
       task: 'Fix the login bug',
       state: 'queued',
       startCommit: HEAD,
-      // Issue #98: recorded with the commit, so the Run fetches the remote the commit is from.
       remoteUrl: REMOTE,
-      // Issue #102: the pull request's base, recorded with the commit it starts from.
       integrationBranch: 'dev',
       delivery: null,
       pullRequest: null,

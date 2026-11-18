@@ -31,13 +31,8 @@ export interface LoadReviewCommentsInput {
   scope: ReviewCommentScope;
 }
 
-/** One comment with whether the operator's own account wrote it (Issue #146). */
 export type LoadReviewCommentsComment = ReviewComment & { byOperator: boolean };
 
-/**
- * What the Run page is shown after the request (Issue #146): the loaded comments (each marked as
- * the operator's or not), the configured login, and the state of the latest load.
- */
 export interface LoadReviewCommentsResult {
   operatorLogin: string | null;
   comments: LoadReviewCommentsComment[];
@@ -49,16 +44,8 @@ export interface LoadReviewCommentsResult {
 }
 
 /**
- * Command (Issue #146): the operator asks for the Review comments of the Run's pull request to be
- * loaded. Studio only records a request; an agent worker reads them through the Agent account and
- * reports them, and Studio keeps them for the operator to look at. The request starts no agent and
- * sends nothing: sending is the normal Follow-up, with the comments the operator selects. For
- * `since_last_result` a comment counts as new when it was created after the end of the Run's
- * latest part (the Run's finish time; none while the Run has not finished: then every unresolved
- * one counts). Like the page, the API loads only for a Run that can take a Follow-up now. Throws
- * {@link RunNotFoundError}, {@link PullRequestNotRefreshableError} (no pull request to read),
- * {@link FollowUpNotAllowedError} (the Run cannot take a Follow-up: the reason says why) or
- * {@link ReviewCommentsLoadRunningError} (a load is under way already; it keeps its own scope).
+ * Throws {@link RunNotFoundError}, {@link PullRequestNotRefreshableError}, {@link FollowUpNotAllowedError}
+ * or {@link ReviewCommentsLoadRunningError}.
  */
 @Injectable()
 export class LoadReviewCommentsHandler {

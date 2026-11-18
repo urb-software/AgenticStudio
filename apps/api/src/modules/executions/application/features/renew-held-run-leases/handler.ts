@@ -10,11 +10,7 @@ export interface RenewHeldRunLeasesResult {
 }
 
 /**
- * Command (Issue #100, review of #121): when the API starts, it renews the lease of every held
- * Run, so a short outage does not fail Runs whose agent workers kept going as `worker_lost`;
- * a worker that is really gone is noticed one lease later. At most once per lease period, so
- * an API that keeps crashing and restarting cannot keep a dead worker's Run alive. Returns how
- * many leases were renewed, or `null` when they were renewed less than a lease ago.
+ * At most once per lease period, so an API that keeps crashing cannot keep a dead worker's Run alive.
  */
 @Injectable()
 export class RenewHeldRunLeasesHandler {

@@ -4,8 +4,6 @@ import type { RecordedWorkerStatus } from '../../../../domain/value-objects/work
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { SweepLostWorkersHandler } from '../handler.js';
 
-// Issue #96: a claimed Run whose worker sends no heartbeat within the lease becomes failed
-// with worker_lost. The clock is injected, so no test waits.
 const PROJECTS = [
   '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
   '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f',
@@ -14,7 +12,6 @@ const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const later = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 
-/** The worker statuses Studio keeps (Issue #101), as the in-memory adapter keeps them. */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
   private readonly seen = new Map<string, RecordedWorkerStatus>();
   record(status: RecordedWorkerStatus) {
@@ -33,7 +30,6 @@ describe('SweepLostWorkersHandler', () => {
   let now: Date;
   let handler: SweepLostWorkersHandler;
   let statuses: InMemoryWorkerStatusStore;
-  /** Runs whose Environment file snapshot was released (Issue #104). */
   let released: string[];
 
   async function claimed(projectId: string) {
@@ -146,7 +142,6 @@ describe('SweepLostWorkersHandler', () => {
   });
 
   describe('a requested delivery retry whose worker is gone (review N2 of #122)', () => {
-    /** A Run WORKER started, whose delivery failed and whose retry the operator requested. */
     async function pendingRetry() {
       const run = await claimed(PROJECTS[0]);
       for (const [from, to] of [
@@ -191,7 +186,6 @@ describe('SweepLostWorkersHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
-      // The Working copy is gone: its Environment file snapshot goes too (Issue #104).
       expect(released).toEqual([run.id]);
     });
 
@@ -215,7 +209,6 @@ describe('SweepLostWorkersHandler', () => {
     });
   });
   describe('an answered Run whose worker is gone (Issue #103)', () => {
-    /** A Run WORKER carried to a question, which the operator answered. */
     async function answered() {
       const run = await claimed(PROJECTS[0]);
       await runs.transitionClaimed({

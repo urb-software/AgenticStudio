@@ -14,9 +14,6 @@ import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { ReportRunDiffHandler } from '../handler.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-// Issue #144: the worker's diff report through the handlers, against in-memory stores with the
-// database adapter's rules (the HTTP seam with PostgreSQL: run-diff.integration.test.ts).
-
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
@@ -132,7 +129,6 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     runs.runs.find((candidate) => candidate.id === run.id)!.environmentFilePath = 'config/.env';
     const files: RunDiff['files'] = [
       { path: 'config/.env', status: 'added', additions: 1, deletions: 0, patch: '+A=1\n' },
-      // Another spelling of the same path (review L-3 of #149).
       { path: './config/.env', status: 'added', additions: 1, deletions: 0, patch: '+A=1\n' },
       { path: 'a.ts', status: 'added', additions: 1, deletions: 0, patch: '+a\n' },
     ];

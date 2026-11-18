@@ -1,16 +1,11 @@
 import type { RecordedWorkerStatus } from '../../domain/value-objects/worker-status.js';
 
-/** DI token of the {@link WorkerStatusStore}. */
 export const WORKER_STATUS_STORE = Symbol('WORKER_STATUS_STORE');
 
-/**
- * Keeps the latest agent worker status (Issue #101). In memory: a report is refreshed with
- * every poll and is stale after the lease, so nothing is lost by a restart of the API.
- */
+/** In memory: a report is stale after the lease, so a restart loses nothing. */
 export interface WorkerStatusStore {
-  /** Replaces the latest status (the most recent report wins, from whichever worker). */
   record(status: RecordedWorkerStatus): void;
   latest(): RecordedWorkerStatus | undefined;
-  /** When this worker last reported its status, if it did since the API started (#102). */
+  /** Only if it reported since the API started. */
   lastSeen(workerId: string): Date | undefined;
 }

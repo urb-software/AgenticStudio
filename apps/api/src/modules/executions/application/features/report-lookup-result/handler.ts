@@ -23,7 +23,6 @@ import {
   type RunTransactions,
 } from '../../ports/run-transactions.js';
 
-/** The lookup does not exist. */
 export class LookupNotFoundError extends Error {
   constructor() {
     super('The lookup does not exist.');
@@ -31,7 +30,6 @@ export class LookupNotFoundError extends Error {
   }
 }
 
-/** The answering worker does not hold the lookup. */
 export class LookupNotHeldError extends Error {
   constructor() {
     super('This agent worker does not hold the lookup.');
@@ -39,7 +37,6 @@ export class LookupNotHeldError extends Error {
   }
 }
 
-/** The answer is of another kind than the lookup. */
 export class LookupKindMismatchError extends Error {
   constructor() {
     super("The answer is not of the lookup's kind.");
@@ -49,24 +46,14 @@ export class LookupKindMismatchError extends Error {
 
 export interface ReportLookupResultInput {
   lookupId: string;
-  /** The worker's answer, validated by the shared contract. */
   answer: LookupResultRequest;
 }
 
 export type ReportLookupResultResult = void;
 
 /**
- * Command (Issue #142): the agent worker holding a lookup reports its result, or why it failed.
- * A result replaces what Studio knows of the Run's pull request (Issue #145: with its Pull
- * request checks) or, for the logs of failing checks, becomes the Run's prepared Follow-up for the
- * operator to review, never sent by itself; Review comments (Issue #146) replace the Run's loaded
- * set, redacted and capped, and are sent only when the operator selects them; a failure keeps the
- * last known state and records why (the worker's words, redacted: never a token), and a rate limit
- * puts the lookup back in the queue for later. A repeated answer changes nothing. The lookup
- * decides whether the worker may answer (its own `complete` and `fail`); the answer changes the
- * lookup and another aggregate in one transaction through `RunTransactions`, the Run locked
- * first. Throws {@link LookupNotFoundError}, {@link LookupNotHeldError} or
- * {@link LookupKindMismatchError}.
+ * The answer changes the lookup and another aggregate in one transaction, the Run locked first.
+ * Throws {@link LookupNotFoundError}, {@link LookupNotHeldError} or {@link LookupKindMismatchError}.
  */
 @Injectable()
 export class ReportLookupResultHandler {
@@ -95,8 +82,7 @@ export class ReportLookupResultHandler {
     const pull = (await this.runs.findById(runId))?.delivery.pullRequest;
     const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
     if (answer.kind === 'review_comments') {
-      // Comments are untrusted text from the Git host: redacted (with the Run's known secret
-      // values too) and held to their limits before they are stored (Issue #146).
+      // Untrusted text from the Git host: redacted and capped before it is stored.
       const clean = ReviewComments.sanitize(
         answer.result.comments,
         answer.result.truncated,
@@ -114,7 +100,6 @@ export class ReportLookupResultHandler {
           throw new Error('Unexpected review comment scope in the database: null');
         }
         await repositories.lookups.save(lookup);
-        // The latest load replaces the earlier one.
         await repositories.reviewComments.replace(
           runId,
           ReviewComments.load({
@@ -135,7 +120,6 @@ export class ReportLookupResultHandler {
         const outcome = lookup.complete(answer.workerId, { items: draft.items.length }, now);
         if (outcome !== 'stored') return outcome;
         await repositories.lookups.save(lookup);
-        // The latest preparation replaces the earlier one.
         await repositories.preparedFollowUps.replace(runId, draft, now);
         const run = await repositories.runs.findById(runId);
         if (run) {
@@ -181,7 +165,6 @@ export class ReportLookupResultHandler {
     });
   }
 
-  /** The worker says the lookup failed: a rate limit puts it back in the queue for later. */
   private async fail(
     runId: string,
     lookupId: string,
@@ -213,10 +196,7 @@ export class ReportLookupResultHandler {
     });
   }
 
-  /**
-   * One answer in one transaction, the Run locked first and then the lookup, read again under the
-   * lock; `work` decides with the lookup's own outcome and stores what the answer changes.
-   */
+  /** The Run is locked first, then the lookup, read again under the lock. */
   private async answer(
     runId: string,
     lookupId: string,

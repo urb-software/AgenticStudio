@@ -13,19 +13,13 @@ export interface RetryDeliveryInput {
 }
 
 export interface RetryDeliveryResult {
-  /** The Run as it is now, marked for the retry. */
   run: RunSnapshot;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }
 
 /**
- * Command (Issue #102): the operator asks to repeat only the delivery of a Run whose delivery
- * failed, without running the agent again. The Run stays `failed` and is marked for a retry;
- * the next claim hands it to an agent worker as a delivery. Repeating the request while the
- * retry is pending changes nothing. The Run's `requestDeliveryRetry` method decides, under the
- * row lock the repository's `change` takes. Throws `RunNotFoundError` or
- * `DeliveryNotRetryableError`.
+ * The Run's `requestDeliveryRetry` decides, under the row lock the repository's `change` takes.
+ * Throws `RunNotFoundError` or `DeliveryNotRetryableError`.
  */
 @Injectable()
 export class RetryDeliveryHandler {

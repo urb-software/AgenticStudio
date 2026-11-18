@@ -12,15 +12,10 @@ export interface ClaimLookupsInput {
 }
 
 export interface ClaimLookupsResult {
-  /** What the worker needs to answer each claimed lookup, nothing more. */
   lookups: ClaimedLookup[];
 }
 
-/**
- * Command (Issue #142): an agent worker asks for the lookups waiting for it. Any connected
- * worker may claim them (a lookup needs no Working copy); a claim the worker never answered
- * goes back to the queue after the lease.
- */
+/** A claim the worker never answered goes back to the queue after the lease. */
 @Injectable()
 export class ClaimLookupsHandler {
   constructor(

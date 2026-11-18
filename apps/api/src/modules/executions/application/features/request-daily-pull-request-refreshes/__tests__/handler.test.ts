@@ -7,8 +7,6 @@ import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import type { RunLookupRequests } from '../../../run-lookup-requests.js';
 import { RequestDailyPullRequestRefreshesHandler } from '../handler.js';
 
-// Issue #142: the daily refresh asks only about Runs with an open pull request, or one of unknown
-// state, that was last read more than a day ago.
 const HOUR = 60 * 60 * 1000;
 
 describe('RequestDailyPullRequestRefreshesHandler', () => {
@@ -27,7 +25,6 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     });
   });
 
-  /** A delivered Run whose pull request was read as `state` `hoursAgo` hours before `now`. */
   async function readRun(state: PullRequestState | null, hoursAgo: number | null) {
     const run = await deliveredRun(runs);
     const stored = runs.runs.find((candidate) => candidate.id === run.id)!;

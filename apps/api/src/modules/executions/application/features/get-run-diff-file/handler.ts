@@ -9,7 +9,6 @@ import {
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
-/** The Run's diff lists no file at that path (Issue #144). */
 export class RunDiffFileNotFoundError extends Error {
   constructor() {
     super('run diff file not found');
@@ -25,11 +24,7 @@ export interface GetRunDiffFileInput {
 
 export type GetRunDiffFileResult = RunDiffFileView;
 
-/**
- * Query (Issue #144): one file of a Run's stored diff of one scope, with its patch, so a large
- * diff loads per file. The patch was redacted when it was stored. Throws
- * {@link RunNotFoundError} or {@link RunDiffFileNotFoundError}.
- */
+/** The patch was redacted when stored. Throws {@link RunNotFoundError} or {@link RunDiffFileNotFoundError}. */
 @Injectable()
 export class GetRunDiffFileHandler {
   constructor(

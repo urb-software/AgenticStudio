@@ -8,11 +8,9 @@ import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories
 
 export type ListRunsResult = {
   run: RunSnapshot;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }[];
 
-/** Query (Issue #96): every Run of every project, newest first. */
 @Injectable()
 export class ListRunsHandler {
   constructor(
@@ -22,7 +20,6 @@ export class ListRunsHandler {
   ) {}
 
   async execute(): Promise<ListRunsResult> {
-    // The repository returns the snapshots directly: no Run is built to be listed.
     const runs = await this.runs.listNewestFirst();
     const prepared = await this.preparedFollowUps.findRunIdsAmong(runs.map((run) => run.id));
     return runs.map((run) => ({ run, preparedFollowUp: prepared.has(run.id) }));

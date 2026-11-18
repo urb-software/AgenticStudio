@@ -123,7 +123,6 @@ describe('ReportRunStepHandler', () => {
       },
       checks: [{ name: 'unit', result: 'passed' }],
     });
-    // The session reference is opaque: kept exactly, on the Run (Issue #103).
     expect((await runs.findById(run.id))?.claim.sessionRef).toBe('session-done');
   });
 
@@ -204,7 +203,6 @@ describe('ReportRunStepHandler', () => {
     ).rejects.toBeInstanceOf(RunNotFoundError);
   });
 
-  // Issue #100: the API enforces the step limit too.
   it('refuses a step beyond the maximum and fails the Run with step_limit', async () => {
     await running();
     await report();
@@ -224,7 +222,6 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
-  // Issue #103: a question becomes the Run's open question; the session stays internal.
   describe('questions and sessions', () => {
     const asking = {
       outcome: 'needs_input',
@@ -309,7 +306,6 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
-  // Review of #121: the worker numbers its steps; a re-sent number is not stored twice.
   describe('step numbers', () => {
     const numbered = async (index: number) =>
       (

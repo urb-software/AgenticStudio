@@ -5,8 +5,6 @@ import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositor
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { CancelRunHandler } from '../handler.js';
 
-// Issue #100: the operator cancels a Run. Unheld Runs (queued, waiting) are cancelled at once;
-// held Runs (preparing, running) get a cancel request the worker confirms.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';

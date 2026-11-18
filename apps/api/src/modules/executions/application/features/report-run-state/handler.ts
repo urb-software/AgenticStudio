@@ -21,58 +21,20 @@ import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 export interface ReportRunStateInput {
   runId: string;
   workerId: string;
-  /** One of the states a worker reports (the shared contract restricts it). */
-  state: RunState;
-  /** Exactly when `state` is `failed`. */
-  failure: RunFailure | null;
-  /** A failed Run's Working copy state, when the worker could read it (Issue #98). */
-  workingCopy?: RunWorkingCopy | null;
-  /** With `succeeded`: how the Run was delivered (Issue #102). */
-  delivery?: RunDeliveryOutcome | null;
-  /** With `failed` / `usage_limit`: the agent session to resume later (Issue #105). */
-  sessionRef?: string | null;
-  /** With `failed` / `delivery_failed`: what the delivery pushed before it failed (#141, S2). */
   pushedCommit?: string | null;
-  /**
-   * With `failed` / `preparation_failed`: the pull request state the worker read before it refused
-   * a Follow-up (review S4 of #152).
-   */
   pullRequestState?: PullRequestState | null;
-  /**
-   * With `running` of a bring-up-to-date Follow-up (Issue #147): where the merge started, kept on
-   * its conversation entry for the later claims of the part.
-   */
-  bringUpToDateStarted?: { baseCommit: string; integrationCommit: string } | null;
-  /**
-   * With `succeeded` and a bring-up-to-date Follow-up (Issue #147): the request changed nothing;
-   * the Run returns to the result it had before it. `unchangedDetail` says why (default: the
-   * branch was already up to date).
-   */
   unchanged?: boolean;
   unchangedDetail?: string | null;
 }
 
 export interface ReportRunStateResult {
-  /** The Run as it is now. */
   run: RunSnapshot;
 }
 
 /**
- * Command (Issue #96): the agent worker holding a Run reports a change of state, with how a
- * succeeded Run was delivered (Issue #102). For a `failed` Run it holds for a delivery retry
- * it reports the retry's outcome: `succeeded` with the delivery, or `failed` with
- * `delivery_failed` again. With a cancel request on the Run (Issue #100) the worker confirms
- * the stop with `cancelled`; a Run step that ended with `waiting_for_operator` before the
- * worker learned of the request also ends the Run as `cancelled`, so the operator's cancel
- * holds (a `succeeded` report keeps its delivery: the worker delivers only while no stop is
- * pending). A `cancelled` report without a request is refused. A repeat of the change that
- * already applied (the worker retried a report whose answer it never got) is a no-op success
- * (review of #121). The rules are the Run's `reportState`, run under the row lock (Issue #169).
- * Throws {@link RunNotFoundError}, `RunNotHeldError` (another worker holds it, or nobody does)
- * or `IllegalRunTransitionError`. Wakes the Run's live log streams.
- * Issue #104: the failure detail and the commit subjects are redacted with the Run's known
- * values before they are stored (a retry's too: a retryable failed delivery keeps its
- * snapshot), and the snapshot is deleted once the Run needs no more redaction.
+ * Decided by the Run's `reportState` under its row lock; wakes the Run's live log streams.
+ * Failure detail and commit subjects are redacted with the Run's known values before storing.
+ * Throws {@link RunNotFoundError}, `RunNotHeldError` or `IllegalRunTransitionError`.
  */
 @Injectable()
 export class ReportRunStateHandler {
@@ -88,8 +50,7 @@ export class ReportRunStateHandler {
     if (!isRunId(input.runId)) throw new RunNotFoundError();
     input = await this.redacted(input);
     let applied = false;
-    // The Run decides under its row lock (Issue #169): a cancel, an Answer or a sweep that came
-    // first is seen as the state it left, and a report that no longer fits is refused.
+    // Under the Run's row lock, a cancel, an Answer or a sweep that came first is seen as the state it left.
     const changed = await this.runs.change(input.runId, (run) => {
       applied = run.reportState(
         input.workerId,
@@ -108,21 +69,15 @@ export class ReportRunStateHandler {
       );
     });
     if (!changed) throw new RunNotFoundError();
-    // A repeat of the change that already applied (the worker retried a report whose answer it
-    // never got): nothing to wake or release.
     if (!applied) return { run: changed.snapshot() };
-    // Review S4 of #152: what the worker read about the pull request before it refused a
-    // Follow-up is what the page shows.
     if (input.failure?.code === 'preparation_failed' && input.pullRequestState) {
       const observed = input.pullRequestState;
       const at = this.clock.now();
       await this.runs.change(changed.id, (run) => run.recordObservedPullRequestState(observed, at));
     }
-    // Live log streams re-read the state: a final Run ends them (Issue #99).
     this.signal.notify(changed.id);
-    // A final Run needs no more redaction, unless its failed delivery can be retried: its
-    // Environment file snapshot goes now, or when the retry ends it (Issue #104). A bring-up
-    // request that changed nothing leaves the Run as it was, snapshot included.
+    // A failed delivery that can be retried keeps its Environment file snapshot until the retry ends.
+    // A bring-up request that changed nothing leaves the Run as it was, snapshot included.
     if (
       !input.unchanged &&
       changed.claim.environmentFileSupplied &&
@@ -134,7 +89,6 @@ export class ReportRunStateHandler {
     return { run: changed.snapshot() };
   }
 
-  /** The worker's free text (failure detail, commit subjects) redacted like the log (#104). */
   private async redacted(input: ReportRunStateInput): Promise<ReportRunStateInput> {
     if (!input.failure && !input.workingCopy && !input.unchangedDetail) return input;
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));

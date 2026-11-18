@@ -8,18 +8,14 @@ import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-setti
 import { RUN_LOG_SIGNAL, type RunLogSignal } from '../../ports/run-log-signal.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
-/** Yielded when the stream was idle for the keep-alive interval. */
 export const KEEP_ALIVE = 'keep-alive';
 
-/** What a live stream yields: stored events in seq order, or a keep-alive tick. */
 export type RunLogStreamItem = RunEvent[] | typeof KEEP_ALIVE;
 
-/** Events read from the store at a time. */
 const READ_PAGE = 500;
 
 export interface StreamRunEventsInput {
   runId: string;
-  /** The last seq the client saw; the stream starts after it. */
   after: number;
   abort: AbortSignal;
 }
@@ -28,12 +24,7 @@ export interface StreamRunEventsResult {
   stream: AsyncGenerator<RunLogStreamItem>;
 }
 
-/**
- * Query (Issue #99): a Run's log as a live stream, built on the stored log. It catches up from
- * the store after `after`, then waits for the in-process signal (or the keep-alive interval)
- * and reads again. It ends once the Run is final and every event is sent, or when `abort`
- * fires. A reconnecting client passes the last seq it saw, so nothing is lost or repeated.
- */
+/** A reconnecting client passes the last seq it saw, so nothing is lost or repeated. */
 @Injectable()
 export class StreamRunEventsHandler {
   constructor(

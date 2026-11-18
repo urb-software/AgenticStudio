@@ -7,11 +7,6 @@ export type ReportWorkerStatusInput = Omit<RecordedWorkerStatus, 'reportedAt'>;
 
 export type ReportWorkerStatusResult = void;
 
-/**
- * Command (Issue #101): an agent worker reports its runner mode and which providers its own
- * configuration enables. Studio keeps the latest report, for display and to refuse starting a
- * Run it knows cannot run. Issue #143: the report also carries the disk figures of the agent side.
- */
 @Injectable()
 export class ReportWorkerStatusHandler {
   constructor(

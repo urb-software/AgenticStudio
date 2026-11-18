@@ -36,7 +36,6 @@ class TestSignal implements RunLogSignal {
   }
 }
 
-/** Reads items until `count` events were seen (keep-alives are recorded too). */
 async function take(stream: AsyncGenerator<RunLogStreamItem>, count: number) {
   const items: (number | typeof KEEP_ALIVE)[] = [];
   while (items.filter((item) => item !== KEEP_ALIVE).length < count) {

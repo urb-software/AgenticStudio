@@ -31,7 +31,6 @@ class Workers implements WorkerStatusStore {
   }
 }
 
-// Issue #142: asking for the Run's pull request state to be read again.
 const LEASE = { seconds: 60 };
 const minutes = (count: number) => new Date(T0.getTime() + count * 60_000);
 
@@ -73,7 +72,6 @@ describe('RefreshPullRequestHandler', () => {
       reportedAt: at,
     });
 
-  /** A lookup answered at `at`: the Run's state was read then. */
   const answered = (runId: string, at: Date) => {
     const run = runs.runs.find((candidate) => candidate.id === runId)!;
     run.pullRequestStatus = { ...run.pullRequestStatus, state: 'draft', refreshedAt: at };
@@ -122,7 +120,6 @@ describe('RefreshPullRequestHandler', () => {
       WORKER,
       LookupHandOutRule.at(now, { limit: 5, leaseSeconds: 120 }),
     );
-    // The worker's failed answer: the lookup ends, and the Run says why (not refreshing any more).
     await new ReportLookupResultHandler(
       lookups,
       { now: () => now },

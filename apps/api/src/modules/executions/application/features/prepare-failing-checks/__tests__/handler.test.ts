@@ -34,7 +34,6 @@ class Workers implements WorkerStatusStore {
   }
 }
 
-// Issue #145: asking for the failing Pull request checks to be turned into a Follow-up.
 const LEASE = { seconds: 60 };
 
 describe('preparing a Follow-up from failing checks', () => {
@@ -73,7 +72,6 @@ describe('preparing a Follow-up from failing checks', () => {
       reportedAt: T0,
     });
 
-  /** A delivered Run whose stored checks are `states`. */
   async function runWithChecks(...states: ('passed' | 'failed' | 'running')[]) {
     const run = await deliveredRun(runs);
     const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
@@ -101,7 +99,6 @@ describe('preparing a Follow-up from failing checks', () => {
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'failing_check_logs' });
     expect(answer.run.pullRequestStatus.prepareRequestedAt).toEqual(T0);
-    // It is not a refresh of the state, and nothing is sent to an agent.
     expect(answer.run.pullRequestStatus.refreshRequestedAt).toBeNull();
     expect(answer.run.followUpQueued).toBe(false);
     expect(answer.run.messages.some((message) => message.kind === 'follow_up')).toBe(false);

@@ -9,7 +9,6 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 
 export type ListProvidersResult = ProviderAvailability[];
 
-/** Query (Issue #101): every provider and whether a Run can be started with it now. */
 @Injectable()
 export class ListProvidersHandler {
   constructor(

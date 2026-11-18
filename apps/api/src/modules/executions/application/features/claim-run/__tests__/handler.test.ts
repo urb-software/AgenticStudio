@@ -7,7 +7,6 @@ import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { ClaimRunHandler } from '../handler.js';
 
-// Issue #96: handing out work under the concurrency limits, after the lost-worker sweep.
 const [A, B, C] = [
   '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
   '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f',
@@ -23,9 +22,7 @@ describe('ClaimRunHandler', () => {
   let now: Date;
   let handler: ClaimRunHandler;
   let secrets: InMemorySecretStore;
-  /** Runs whose Environment file snapshot was released (Issue #104). */
   let released: string[];
-  // Each project's current Environment file (Issue #104); test values only.
   let files: Map<string, EnvironmentFile>;
   let filesFail: Error | undefined;
   let diffs: InMemoryRunDiffRepository;
@@ -130,7 +127,6 @@ describe('ClaimRunHandler', () => {
       hasUncommittedChanges: false,
     };
 
-    /** A Run of `projectId` that WORKER started and whose delivery failed, released. */
     async function failedDelivery(projectId: string, recorded = true) {
       const run = await queue(projectId);
       await runs.claimNext(WORKER, T0);
@@ -162,7 +158,6 @@ describe('ClaimRunHandler', () => {
         deliveryRequested: true,
         claimedBy: WORKER,
       });
-      // Held: handed out once.
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
     });
 
@@ -289,7 +284,6 @@ describe('ClaimRunHandler', () => {
         deliveryRequested: false,
         claimedBy: null,
       });
-      // Nothing left to deliver: its Environment file snapshot goes (Issue #104).
       expect(released).toEqual([run.id]);
     });
 
@@ -328,7 +322,6 @@ describe('ClaimRunHandler', () => {
     });
   });
 
-  // Issue #103: an answered Run goes back to the worker that has its Working copy and session.
   describe('resumes (Issue #103)', () => {
     const WORKING_COPY = {
       runBranch: 'agent/x-r0b8e5c2d',
@@ -337,7 +330,6 @@ describe('ClaimRunHandler', () => {
     };
     const QUESTION = { text: 'Which database?' };
 
-    /** WORKER carries a Run of `projectId` to a question (logging 3 events), then it is answered. */
     async function answered(projectId: string, recorded = true) {
       const run = await queue(projectId);
       await runs.claimNext(WORKER, T0);
@@ -442,7 +434,6 @@ describe('ClaimRunHandler', () => {
       const started = await handler.execute({ workerId: WORKER });
       expect(started?.environmentFile).not.toBeNull();
       const snapshot = await runs.findEnvironmentFileSecret(queued.id);
-      // Carry the started Run to a question and answer it (the helper does it for a new Run).
       await runs.transitionClaimed({
         runId: queued.id,
         workerId: WORKER,
@@ -638,7 +629,6 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     );
   });
 
-  /** The claimed Run carried by WORKER through one done step to `succeeded`. */
   async function finish(runId: string) {
     await runs.transitionClaimed({
       runId,
@@ -669,7 +659,6 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     });
   }
 
-  // Review S3 of #150: a Follow-up works with the Project's current Environment file.
   it("takes a new snapshot of the Project's current file for a Follow-up, replacing the earlier one", async () => {
     const queued = await queue();
     await handler.execute({ workerId: WORKER });
@@ -717,7 +706,6 @@ describe('ClaimRunHandler with Environment files (Issue #104)', () => {
     await handler.execute({ workerId: WORKER });
     await finish(queued.id);
     await runs.queueFollowUp(queued.id, 'Go on.', T0);
-    // Review S9 of #150: the worker's retention removed it while the Follow-up waited.
     await runs.markWorkingCopiesRemoved(WORKER, [queued.id], T0);
 
     expect(await handler.execute({ workerId: WORKER })).toBeNull();

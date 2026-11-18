@@ -16,8 +16,7 @@ import {
   runDiffScopeSchema,
 } from '../../../../entry-points/http/operator/get-run-diff/schema.js';
 
-// Review ST-1 of #149: the domain owns the diff lists (backend.md shared kernel); the worker
-// protocol and the HTTP schemas carry their own, pinned here to the domain's.
+// The worker protocol and the HTTP schemas carry their own lists, pinned here to the domain's.
 describe('Run diff lists of the domain, the worker protocol and the HTTP schemas (Issue #144)', () => {
   it('lists exactly the domain scopes and file statuses everywhere', () => {
     expect([...WORKER_SCOPES]).toEqual([...RUN_DIFF_SCOPES]);
