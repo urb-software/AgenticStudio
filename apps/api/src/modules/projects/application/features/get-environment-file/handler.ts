@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { EnvironmentFileSnapshot } from '../../../domain/entities/environment-file-snapshot.js';
+import { environmentFileView, type EnvironmentFileView } from '../../environment-file-view.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
@@ -15,7 +15,7 @@ export interface GetEnvironmentFileInput {
   projectId: string;
 }
 
-export type GetEnvironmentFileResult = EnvironmentFileSnapshot | null;
+export type GetEnvironmentFileResult = EnvironmentFileView | null;
 
 /**
  * Never returns the content. Throws {@link ProjectNotFoundError}.
@@ -33,6 +33,6 @@ export class GetEnvironmentFileHandler {
       throw new ProjectNotFoundError();
     }
     const file = await this.files.find(projectId);
-    return file ? file.snapshot() : null;
+    return file ? environmentFileView(file) : null;
   }
 }

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RUN_START_POINTS, type RunStartPoints } from '../../../../projects/contracts/index.js';
-import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
+import { runView, type RunView } from '../../run-view.js';
 import { RunProjectNotFoundError } from '../../../domain/errors/run-errors.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
@@ -13,7 +13,7 @@ export interface ListProjectRunsInput {
 }
 
 export type ListProjectRunsResult = {
-  run: RunSnapshot;
+  run: RunView;
   preparedFollowUp: boolean;
 }[];
 
@@ -32,6 +32,6 @@ export class ListProjectRunsHandler {
     if (startPoint.status === 'project_not_found') throw new RunProjectNotFoundError();
     const runs = await this.runs.listByProjectNewestFirst(input.projectId);
     const prepared = await this.preparedFollowUps.findRunIdsAmong(runs.map((run) => run.id));
-    return runs.map((run) => ({ run, preparedFollowUp: prepared.has(run.id) }));
+    return runs.map((run) => ({ run: runView(run), preparedFollowUp: prepared.has(run.id) }));
   }
 }

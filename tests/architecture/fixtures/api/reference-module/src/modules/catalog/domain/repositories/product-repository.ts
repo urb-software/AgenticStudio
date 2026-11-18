@@ -1,7 +1,6 @@
 // A repository interface serves one aggregate root and lives in the domain; its implementation
-// is in infrastructure/repositories/. It returns the root, or the root's snapshot for a read.
+// is in infrastructure/repositories/. It returns the root.
 import type { Product } from '../entities/product.js';
-import type { ProductSnapshot } from '../entities/product-snapshot.js';
 
 export const PRODUCT_REPOSITORY = Symbol('PRODUCT_REPOSITORY');
 
@@ -18,6 +17,6 @@ export interface ProductRepository {
   /** The product with this id, or `null`. */
   findById(id: string): Promise<Product | null>;
 
-  /** Every product, newest first, as snapshots. */
-  listNewestFirst(): Promise<ProductSnapshot[]>;
+  /** Every product, newest first. */
+  listNewestFirst(): Promise<Product[]>;
 }

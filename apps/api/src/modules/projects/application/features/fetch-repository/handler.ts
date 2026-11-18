@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import type { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
-import type { RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
+import { repositoryView, type RepositoryView } from '../../repository-view.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -19,7 +19,7 @@ export interface FetchRepositoryInput {
   projectId: string;
 }
 
-export type FetchRepositoryResult = RepositoryConnectionSnapshot;
+export type FetchRepositoryResult = RepositoryView;
 
 /**
  * If the fetch job cannot be scheduled, the previous state is restored and the error rethrown.
@@ -55,7 +55,7 @@ export class FetchRepositoryHandler {
       await this.leaveFetching(projectId, before);
       throw error;
     }
-    return repository.snapshot();
+    return repositoryView(repository);
   }
 
   /**

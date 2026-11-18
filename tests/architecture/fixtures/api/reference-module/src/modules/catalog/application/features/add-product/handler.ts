@@ -3,14 +3,17 @@
 import { randomUUID } from 'node:crypto';
 import { Product } from '../../../domain/entities/product.js';
 import type { ProductRepository } from '../../../domain/repositories/product-repository.js';
-import type { ProductSnapshot } from '../../../domain/entities/product-snapshot.js';
 import type { Clock } from '../../ports/clock.js';
 
 export interface AddProductInput {
   name: string;
 }
 
-export type AddProductResult = ProductSnapshot;
+export interface AddProductResult {
+  id: string;
+  name: string;
+  addedAt: number;
+}
 
 export class AddProductHandler {
   constructor(
@@ -22,6 +25,6 @@ export class AddProductHandler {
     const product = Product.create(randomUUID(), input.name, this.clock.now());
     // The store refuses a duplicate name with ProductNameTakenError (see ProductRepository.add).
     await this.products.add(product);
-    return product.snapshot();
+    return { id: product.id, name: product.name.value, addedAt: product.addedAt };
   }
 }

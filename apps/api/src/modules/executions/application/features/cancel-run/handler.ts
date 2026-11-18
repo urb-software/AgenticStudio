@@ -34,7 +34,7 @@ export class CancelRunHandler {
     const cancelled = await this.runs.change(input.runId, (run) => run.cancel(now));
     if (!cancelled) throw new RunNotFoundError();
     return {
-      outcome: cancelled.snapshot().state === 'cancelled' ? 'cancelled' : 'cancel_requested',
+      outcome: cancelled.lifecycle.state === 'cancelled' ? 'cancelled' : 'cancel_requested',
     };
   }
 }

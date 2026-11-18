@@ -1,10 +1,9 @@
-import type { RunDiff as ReportedRunDiff } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { RunDiffUnavailableReason } from '../../../domain/value-objects/run-diff-unavailable-reason.js';
 import { type RunDiffScope } from '../../../domain/value-objects/run-diff-scope.js';
 import { type NewRunDiff } from '../../../domain/value-objects/new-run-diff.js';
-import { type RunDiffStateInput } from '../../../domain/value-objects/run-diff-state.js';
+import { type RunDiffFileSummary } from '../../../domain/value-objects/run-diff-file-summary.js';
 import { RunDiff } from '../../../domain/entities/run-diff.js';
 import { RunEnvironmentFile } from '../../../domain/value-objects/run-environment-file.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
@@ -14,11 +13,30 @@ import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-
 import { RUN_TRANSACTIONS, type RunTransactions } from '../../ports/run-transactions.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
+/** One diff as the worker reported it; the entry point has checked it against the protocol. */
+export interface ReportedRunDiff {
+  baseCommit: string;
+  includesUnpushed: boolean;
+  truncated: boolean;
+  files: (Omit<RunDiffFileSummary, 'hasPatch'> & { patch?: string })[];
+}
+
 export interface ReportRunDiffInput {
   runId: string;
   workerId: string;
   diffs:
-    | { run: ReportedRunDiff; last: ReportedRunDiff; state: RunDiffStateInput }
+    | {
+        run: ReportedRunDiff;
+        last: ReportedRunDiff;
+        /** Object ids only. */
+        state: {
+          resultTree: string;
+          resultCommit: string;
+          previousTree: string;
+          previousCommit: string;
+          pushedCommit?: string;
+        };
+      }
     | { unavailable: string };
 }
 

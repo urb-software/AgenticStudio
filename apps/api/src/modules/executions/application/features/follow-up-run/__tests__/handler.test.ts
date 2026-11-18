@@ -551,7 +551,7 @@ describe('FollowUpRunHandler', () => {
       now: T1,
     });
     expect(await runs.claimNext(OTHER_WORKER, T1)).toBeNull();
-    expect(await runs.claimNext(WORKER, T1)).toMatchObject({
+    expect((await runs.claimNext(WORKER, T1))?.snapshot()).toMatchObject({
       id: run.id,
       state: 'preparing',
       followUpQueued: false,

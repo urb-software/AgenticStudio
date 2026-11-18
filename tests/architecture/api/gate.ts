@@ -260,6 +260,43 @@ export const apiGate: Gate = {
       to: { path: '^src/platform/queue/' },
     },
     {
+      name: 'api-snapshots-between-entity-and-repository',
+      comment:
+        'A snapshot is the shape between an entity and its repository (backend.md §3 rule 10): ' +
+        'only domain/entities/, domain/repositories/ and infrastructure/repositories/ import a ' +
+        '*-snapshot.ts file. Handlers, ports, collaborators, entry points and contracts/ use ' +
+        'their own types. Tests are not checked.',
+      severity: 'error',
+      from: {
+        path: '^src/modules/',
+        pathNot: [
+          '^src/modules/[^/]+/(domain/(entities|repositories)|infrastructure/repositories)/',
+          TESTS,
+          '\\.test\\.tsx?$',
+        ],
+      },
+      to: { path: '^src/modules/[^/]+/domain/entities/[^/]*-snapshot\\.ts$' },
+    },
+    {
+      name: 'api-application-no-worker-protocol-or-entry-points',
+      comment:
+        'application/ knows neither the worker protocol package nor an entry point (backend.md §3 ' +
+        'rule 10): an entry point maps the protocol message to the handler input, and a limit the ' +
+        "application needs is the domain value's own constant. Tests are not checked.",
+      severity: 'error',
+      from: {
+        path: '^src/modules/[^/]+/application/',
+        pathNot: [TESTS, '\\.test\\.tsx?$'],
+      },
+      to: {
+        path: [
+          npmPackages('@agentic-studio/contracts'),
+          '(^|/)packages/contracts/',
+          '^src/modules/[^/]+/entry-points/',
+        ],
+      },
+    },
+    {
       name: 'api-orm-only-in-infrastructure-repositories',
       comment:
         'Inside business modules, Prisma is used only by infrastructure/repositories/ adapters.',

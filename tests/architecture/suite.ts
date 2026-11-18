@@ -95,7 +95,7 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: 'A handler returns a snapshot, ids, values or a view type, and exports its input and result types',
+    row: 'A handler returns ids, values or a view type of its own, and exports its input and result types',
     expected: 'PASS',
     gate: 'api',
   },
@@ -319,6 +319,36 @@ export const QUALITY_TABLE = [
     row: 'An aggregate root is added or removed without updating its pinned record',
     expected: 'FAIL',
     gate: 'pinned',
+  },
+  {
+    row: 'A `*-snapshot.ts` file is imported only by `domain/entities/`, `domain/repositories/` and `infrastructure/repositories/`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A handler, port, collaborator, entry point or `contracts/` file imports a `*-snapshot.ts` file',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A file under `application/` imports the worker protocol package or an entry point',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A test under `application/` imports an entry point (tests are not checked)',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A handler input holds plain data: primitives, lists of allowed values and nested shapes it declares',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A handler input refers to a class from `domain/`, directly or by extending it',
+    expected: 'FAIL',
+    gate: 'api',
   },
 ] as const;
 

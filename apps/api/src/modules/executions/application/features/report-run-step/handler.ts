@@ -1,11 +1,8 @@
-import { runStepResultSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { type RunQuestion } from '../../../domain/value-objects/run-question.js';
-import {
-  type RunStepOutcome,
-  type RunStepRecord,
-} from '../../../domain/entities/run-step-facts.js';
+import { type RunStepOutcome } from '../../../domain/entities/run-step-facts.js';
+import { type RunStepKind } from '../../../domain/value-objects/run-step-kind.js';
 import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
 import { StepLimitReachedError, RunNotFoundError } from '../../../domain/errors/run-errors.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
@@ -13,9 +10,22 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 
-export interface ReportRunStepInput extends RunStepRecord {
+export interface ReportRunStepInput {
   runId: string;
   workerId: string;
+  kind: RunStepKind;
+  /** The next number when absent. */
+  index?: number;
+  /** Already checked against the worker protocol by the entry point. */
+  result: {
+    outcome: 'done' | 'needs_input';
+    summary: string;
+    question?: RunQuestion;
+    /** The agent session the step ran in; required with `needs_input`. */
+    sessionRef?: string;
+    pullRequest?: { title: string; body: string };
+    checks?: { name: string; result: 'passed' | 'failed' | 'not_run'; detail?: string }[];
+  };
   workingCopy: RunWorkingCopy;
 }
 
@@ -43,7 +53,7 @@ export class ReportRunStepHandler {
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
     // The session reference is an opaque id the resume needs exactly: not redacted, not in the
     // stored result.
-    const { sessionRef, ...shown } = runStepResultSchema.parse(input.result);
+    const { sessionRef, ...shown } = input.result;
     const result = redaction.runStepResult(shown);
     const question = questionOf(result);
     let outcome: RunStepOutcome | undefined;

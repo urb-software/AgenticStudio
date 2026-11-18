@@ -1,4 +1,3 @@
-import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { RunDiffStateInput } from '../../../domain/value-objects/run-diff-state.js';
 import {
@@ -12,8 +11,10 @@ import {
 } from '../../../../projects/contracts/index.js';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects/run-environment-file.js';
 import { IllegalRunTransitionError, RunNotHeldError } from '../../../domain/errors/run-errors.js';
-import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
-import { RunConversation } from '../../../domain/value-objects/run-conversation.js';
+import type { Run } from '../../../domain/entities/run.js';
+import type { Provider } from '../../../domain/value-objects/provider.js';
+import type { RunMessage } from '../../../domain/value-objects/run-message.js';
+import type { RunState } from '../../../domain/value-objects/run-state.js';
 import { RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
@@ -55,8 +56,26 @@ const WORKING_COPY_REMOVED = RunFailure.of(
   "Working copy no longer exists — run again: the agent worker's retention removed it.",
 );
 
-export interface ClaimedRun extends RunSnapshot {
-  environmentFile: EnvironmentFile | null;
+/** What the agent worker needs to prepare and run a claimed Run. */
+export interface ClaimedRun {
+  id: string;
+  projectId: string;
+  provider: Provider;
+  task: string;
+  startCommit: string;
+  remoteUrl: string;
+  integrationBranch: string;
+  state: RunState;
+  workingCopy: { runBranch: string } | null;
+  pullRequest: { number: number } | null;
+  sessionRef: string | null;
+  pushedCommit: string | null;
+  followUpCount: number;
+  stepsBeforePart: number;
+  limits: { stepMinutes: number; maxSteps: number };
+  messages: RunMessage[];
+  /** Test values only; goes to the claiming worker, never logged. */
+  environmentFile: { path: string; content: string } | null;
   replaceEnvironmentFile: boolean;
   /** Never committed or pushed. */
   studioPaths: string[];
@@ -65,14 +84,47 @@ export interface ClaimedRun extends RunSnapshot {
   diffState?: RunDiffStateInput | null;
 }
 
+type ClaimExtras = Pick<
+  ClaimedRun,
+  | 'environmentFile'
+  | 'replaceEnvironmentFile'
+  | 'studioPaths'
+  | 'completedSteps'
+  | 'nextSeq'
+  | 'diffState'
+>;
+
+const claimedRun = (run: Run, extras: ClaimExtras): ClaimedRun => ({
+  id: run.id,
+  projectId: run.projectId,
+  provider: run.provider,
+  task: run.task,
+  startCommit: run.startCommit,
+  remoteUrl: run.remoteUrl,
+  integrationBranch: run.delivery.integrationBranch,
+  state: run.lifecycle.state,
+  workingCopy: run.workingCopy ? { runBranch: run.workingCopy.runBranch } : null,
+  pullRequest: run.delivery.pullRequest ? { number: run.delivery.pullRequest.number } : null,
+  sessionRef: run.claim.sessionRef,
+  pushedCommit: run.delivery.pushedCommit,
+  followUpCount: run.progress.followUpCount,
+  stepsBeforePart: run.progress.stepsBeforePart,
+  limits: {
+    stepMinutes: run.progress.limits.stepMinutes,
+    maxSteps: run.progress.limits.maxSteps,
+  },
+  messages: [...run.conversation.messages],
+  ...extras,
+});
+
 export interface ClaimRunInput {
   workerId: string;
 }
 
 export type ClaimRunResult = ClaimedRun | null;
 
-const studioPathsOf = (run: Pick<RunSnapshot, 'environmentFilePath'>): string[] =>
-  run.environmentFilePath ? [run.environmentFilePath] : [];
+const studioPathsOf = (run: Run): string[] =>
+  run.claim.environmentFilePath ? [run.claim.environmentFilePath] : [];
 
 const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
 
@@ -104,7 +156,7 @@ export class ClaimRunHandler {
     const lost = LostWorkerRule.at(now, this.lease.seconds);
     await this.runs.failStaleClaims(lost.staleBefore, lost.failure, lost.deliveryFailure, now);
     for (const waiting of await this.runs.listWaiting()) {
-      const cancellation = LongWaitRule.at(now).cancellationFor(waiting);
+      const cancellation = LongWaitRule.at(now).cancellationFor(waiting.sweepFacts());
       // Conditional: an answer or an operator's cancel in between wins.
       if (cancellation) {
         await this.runs.cancelUnheld(waiting.id, 'waiting_for_operator', cancellation, now);
@@ -115,16 +167,15 @@ export class ClaimRunHandler {
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;
-      if (run.state === 'failed') {
+      if (run.lifecycle.state === 'failed') {
         // Without a remote, integration branch or Run branch there is nothing to deliver.
-        if (run.remoteUrl !== '' && run.integrationBranch !== '' && run.workingCopy) {
-          return {
-            ...run,
+        if (run.remoteUrl !== '' && run.delivery.integrationBranch !== '' && run.workingCopy) {
+          return claimedRun(run, {
             environmentFile: null,
             replaceEnvironmentFile: false,
             studioPaths: studioPathsOf(run),
             ...(await this.progress(run)),
-          };
+          });
         }
         await this.runs.change(run.id, (held) => {
           try {
@@ -141,30 +192,27 @@ export class ClaimRunHandler {
       }
       // A Run without a remote (its Repository was removed) fails here instead
       // of reaching a worker.
-      const reachable = run.remoteUrl !== '' && run.integrationBranch !== '';
-      const resume = RunConversation.of(run.messages).resumeMessage(run.sessionRef !== null);
+      const reachable = run.remoteUrl !== '' && run.delivery.integrationBranch !== '';
+      const resume = run.resumeMessage();
       if (resume !== null) {
         // A Working copy the worker reported removed cannot be resumed.
-        if (!reachable || !run.workingCopy || run.workingCopyRemovedAt !== null) {
-          const failure = run.workingCopyRemovedAt !== null ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
+        if (!reachable || !run.workingCopy || run.claim.workingCopyRemovedAt !== null) {
+          const failure =
+            run.claim.workingCopyRemovedAt !== null ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
           await this.fail(run, workerId, failure, now);
           continue;
         }
-        if (!resume.takesNewEnvironmentFile(run.followUpCount)) {
-          return {
-            ...run,
+        if (!resume.takesNewEnvironmentFile(run.progress.followUpCount)) {
+          return claimedRun(run, {
             environmentFile: null,
             replaceEnvironmentFile: false,
             studioPaths: studioPathsOf(run),
             ...(await this.progress(run)),
-          };
+          });
         }
         const environmentFile = await this.snapshot(run, workerId, now, true);
         if (environmentFile === SNAPSHOT_FAILED) continue;
-        return {
-          ...run,
-          environmentFileSupplied: environmentFile !== null,
-          environmentFilePath: environmentFile?.path ?? null,
+        return claimedRun(run, {
           environmentFile,
           replaceEnvironmentFile: true,
           // The earlier file's path too: the worker removes it, and it is never committed.
@@ -172,7 +220,7 @@ export class ClaimRunHandler {
             ...new Set([...studioPathsOf(run), ...(environmentFile ? [environmentFile.path] : [])]),
           ],
           ...(await this.progress(run)),
-        };
+        });
       }
       if (!reachable) {
         await this.fail(run, workerId, NO_REMOTE, now);
@@ -180,16 +228,13 @@ export class ClaimRunHandler {
       }
       const environmentFile = await this.snapshot(run, workerId, now);
       if (environmentFile === SNAPSHOT_FAILED) continue;
-      return {
-        ...run,
-        environmentFileSupplied: environmentFile !== null,
-        environmentFilePath: environmentFile?.path ?? null,
+      return claimedRun(run, {
         environmentFile,
         replaceEnvironmentFile: false,
         studioPaths: environmentFile ? [environmentFile.path] : [],
         completedSteps: 0,
         nextSeq: 1,
-      };
+      });
     }
   }
 
@@ -198,11 +243,11 @@ export class ClaimRunHandler {
    * `replace` deletes the Run's earlier snapshot first.
    */
   private async snapshot(
-    run: RunSnapshot,
+    run: Run,
     workerId: string,
     now: Date,
     replace = false,
-  ): Promise<EnvironmentFile | null | typeof SNAPSHOT_FAILED> {
+  ): Promise<{ path: string; content: string } | null | typeof SNAPSHOT_FAILED> {
     let secretRef: string | undefined;
     try {
       if (replace) await this.snapshots.releaseFor(run.id);
@@ -229,13 +274,13 @@ export class ClaimRunHandler {
   }
 
   private async progress(
-    run: RunSnapshot,
+    run: Run,
   ): Promise<{ completedSteps: number; nextSeq: number; diffState: RunDiffStateInput | null }> {
     const [lastSeq, diffState] = await Promise.all([
       this.logs.lastSeq(run.id),
       this.diffs.findState(run.id),
     ]);
-    return { completedSteps: run.stepCount, nextSeq: lastSeq + 1, diffState };
+    return { completedSteps: run.progress.stepCount, nextSeq: lastSeq + 1, diffState };
   }
 
   /** The Run holds the Environment file only while this worker still holds it preparing. */
@@ -250,12 +295,7 @@ export class ClaimRunHandler {
     if (!recorded) throw new Error('The run is no longer held for its claim.');
   }
 
-  private async fail(
-    run: RunSnapshot,
-    workerId: string,
-    failure: RunFailure,
-    now: Date,
-  ): Promise<void> {
+  private async fail(run: Run, workerId: string, failure: RunFailure, now: Date): Promise<void> {
     await this.runs.change(run.id, (preparing) => {
       preparing.failPreparation(workerId, failure, now);
     });

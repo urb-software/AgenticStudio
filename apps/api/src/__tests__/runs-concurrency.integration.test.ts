@@ -331,7 +331,7 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
           ]);
           const run = (await getRun(runId)).body;
           expect(run.state).toBe('running');
-          expect(run.cancelRequestedAt).toEqual(expect.any(String));
+          expect(run.cancelRequestedAt).toBe(clock.current.toISOString());
           const beat = await worker(`runs/${runId}/heartbeat`, { workerId: W1 });
           expect(beat.body).toEqual({ cancelRequested: true });
         }

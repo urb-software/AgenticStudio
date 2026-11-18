@@ -67,7 +67,7 @@ describe('ResumeRunHandler', () => {
     runs = new InMemoryRunRepository();
     handler = new ResumeRunHandler(runs, { now: () => T1 });
     await runs.start(NEW_RUN);
-    run = (await runs.claimNext(WORKER, T0))!;
+    run = (await runs.claimNext(WORKER, T0))!.snapshot();
   });
 
   it('queues the Run to resume its session with "Continue where you stopped."', async () => {
@@ -94,7 +94,10 @@ describe('ResumeRunHandler', () => {
     await handler.execute({ runId: run.id });
 
     expect(await runs.claimNext(OTHER_WORKER, T1)).toBeNull();
-    expect(await runs.claimNext(WORKER, T1)).toMatchObject({ id: run.id, state: 'preparing' });
+    expect((await runs.claimNext(WORKER, T1))?.snapshot()).toMatchObject({
+      id: run.id,
+      state: 'preparing',
+    });
   });
 
   it('refuses a second resume once the Run is queued', async () => {

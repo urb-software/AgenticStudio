@@ -71,8 +71,8 @@ describe('VerifyRepositoryHandler', () => {
       expect(repository).toMatchObject({
         state: 'connecting',
         publicKey: before.publicKey,
-        deployKeySecret: before.deployKeySecret,
       });
+      expect(await stored()).toMatchObject({ deployKeySecret: before.deployKeySecret });
       expect(jobs.started).toEqual([[PROJECT, 'clone']]);
       expect(git.scanHostKey).not.toHaveBeenCalled();
     });
@@ -94,8 +94,8 @@ describe('VerifyRepositoryHandler', () => {
         state: 'connecting',
         failure: null,
         publicKey: before.publicKey,
-        deployKeySecret: before.deployKeySecret,
       });
+      expect(await stored()).toMatchObject({ deployKeySecret: before.deployKeySecret });
       expect(secrets.values.size).toBe(1);
       expect(jobs.started).toHaveLength(2);
     });
@@ -112,10 +112,9 @@ describe('VerifyRepositoryHandler', () => {
       expect(git.scanHostKey).toHaveBeenCalledWith(UNLISTED_URL, expect.anything());
       expect(repository).toMatchObject({
         state: 'awaiting_host_key',
-        pendingHostKey: presented,
-        pinnedHostKey: null,
         hostKeyFingerprint: HostKey.of(presented).fingerprint,
       });
+      expect(await stored()).toMatchObject({ pendingHostKey: presented, pinnedHostKey: null });
       expect(jobs.started).toEqual([]);
     });
 
@@ -132,10 +131,9 @@ describe('VerifyRepositoryHandler', () => {
 
       expect(repository).toMatchObject({
         state: 'connecting',
-        pinnedHostKey: presented,
-        pendingHostKey: null,
         hostKeyFingerprint: HostKey.of(presented).fingerprint,
       });
+      expect(await stored()).toMatchObject({ pinnedHostKey: presented, pendingHostKey: null });
       expect(jobs.started).toEqual([[PROJECT, 'clone']]);
     });
 
@@ -183,7 +181,8 @@ describe('VerifyRepositoryHandler', () => {
 
       const repository = await handler.execute({ projectId: PROJECT });
 
-      expect(repository).toMatchObject({ state: 'awaiting_host_key', pendingHostKey: second });
+      expect(repository).toMatchObject({ state: 'awaiting_host_key' });
+      expect(await stored()).toMatchObject({ pendingHostKey: second });
     });
 
     it('uses a pinned key without asking again (Retry after a failed clone)', async () => {
@@ -205,7 +204,8 @@ describe('VerifyRepositoryHandler', () => {
 
       const retried = await handler.execute({ projectId: PROJECT });
 
-      expect(retried).toMatchObject({ state: 'connecting', pinnedHostKey: presented });
+      expect(retried).toMatchObject({ state: 'connecting' });
+      expect(await stored()).toMatchObject({ pinnedHostKey: presented });
       expect(git.scanHostKey).toHaveBeenCalledTimes(1);
     });
 

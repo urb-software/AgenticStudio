@@ -1,8 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  ReviewComment,
-  type ReviewCommentInput,
-} from '../../../domain/value-objects/review-comment.js';
+import type { ReviewCommentInput } from '../../../domain/value-objects/review-comment.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import type { ReviewCommentScope } from '../../../domain/value-objects/review-comment-scope.js';
 import {
@@ -47,15 +44,15 @@ export class GetReviewCommentsHandler {
     const { runId } = input;
     if (!isRunId(runId) || !(await this.runs.exists(runId))) throw new RunNotFoundError();
     const [set, load] = await Promise.all([
-      this.comments.findSnapshot(runId),
+      this.comments.find(runId),
       this.lookups.findReviewCommentsLoad(runId),
     ]);
     const operatorLogin = this.operator.login;
     return {
       operatorLogin,
       comments: (set?.comments ?? []).map((comment) => ({
-        ...comment,
-        byOperator: ReviewComment.restore(comment).isBy(operatorLogin),
+        ...comment.snapshot(),
+        byOperator: comment.isBy(operatorLogin),
       })),
       truncated: set?.truncated ?? false,
       scope: set?.scope ?? null,

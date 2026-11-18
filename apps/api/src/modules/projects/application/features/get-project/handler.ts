@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { ProjectSnapshot } from '../../../domain/entities/project-snapshot.js';
-import type { RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
+import { projectView, type ProjectView } from '../../project-view.js';
+import type { RepositoryState } from '../../../domain/value-objects/repository-state.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -17,8 +17,8 @@ export interface GetProjectInput {
 }
 
 export interface GetProjectResult {
-  project: ProjectSnapshot;
-  repository: RepositoryConnectionSnapshot | null;
+  project: ProjectView;
+  repository: { state: RepositoryState; url: string; integrationBranch: string } | null;
 }
 
 /**
@@ -38,6 +38,15 @@ export class GetProjectHandler {
     const project = await this.projects.findById(projectId);
     if (!project) throw new ProjectNotFoundError();
     const repository = await this.repositories.find(projectId);
-    return { project: project.snapshot(), repository: repository?.snapshot() ?? null };
+    return {
+      project: projectView(project),
+      repository: repository
+        ? {
+            state: repository.state,
+            url: repository.url,
+            integrationBranch: repository.integrationBranch,
+          }
+        : null,
+    };
   }
 }

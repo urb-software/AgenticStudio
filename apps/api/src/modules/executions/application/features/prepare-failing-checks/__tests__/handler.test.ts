@@ -100,7 +100,7 @@ describe('preparing a Follow-up from failing checks', () => {
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'failing_check_logs' });
     expect(answer.run.pullRequestStatus.prepareRequestedAt).toEqual(T0);
     expect(answer.run.pullRequestStatus.refreshRequestedAt).toBeNull();
-    expect(answer.run.followUpQueued).toBe(false);
+    expect((await runs.findById(run.id))!.snapshot().followUpQueued).toBe(false);
     expect(answer.run.messages.some((message) => message.kind === 'follow_up')).toBe(false);
   });
 

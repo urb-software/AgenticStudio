@@ -22,16 +22,16 @@ describe('ReportRunStateHandler', () => {
   let notified: string[];
   let released: string[];
 
-  const report = async (input: Partial<ReportRunStateInput>) =>
-    (
-      await handler.execute({
-        runId: run.id,
-        workerId: WORKER,
-        state: 'running',
-        failure: null,
-        ...input,
-      })
-    ).run;
+  const report = async (input: Partial<ReportRunStateInput>) => {
+    await handler.execute({
+      runId: run.id,
+      workerId: WORKER,
+      state: 'running',
+      failure: null,
+      ...input,
+    });
+    return (await runs.findById(run.id))!.snapshot();
+  };
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
@@ -56,7 +56,7 @@ describe('ReportRunStateHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!;
+    run = (await runs.claimNext(WORKER, T0))!.snapshot();
     await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot' });
   });
 

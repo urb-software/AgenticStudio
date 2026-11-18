@@ -35,6 +35,7 @@ const RUNTIME_MODULES = new Set([
   'net',
   'dns',
   'dns/promises',
+  'module',
   'http',
   'https',
   'tls',
@@ -88,11 +89,22 @@ function isPrivateName(member: ts.ClassElement): boolean {
   return member.name !== undefined && ts.isPrivateIdentifier(member.name);
 }
 
-/** Every class a file declares, exported or not. */
-function allClasses(source: ts.SourceFile): { name: string; node: ts.ClassDeclaration }[] {
-  return source.statements
-    .filter(ts.isClassDeclaration)
-    .flatMap((node) => (node.name ? [{ name: node.name.text, node }] : []));
+/** Every class a file declares at the top level, exported or not, `const X = class {}` included. */
+function allClasses(source: ts.SourceFile): { name: string; node: ts.ClassLikeDeclaration }[] {
+  return source.statements.flatMap(
+    (statement): { name: string; node: ts.ClassLikeDeclaration }[] => {
+      if (ts.isClassDeclaration(statement)) {
+        return statement.name ? [{ name: statement.name.text, node: statement }] : [];
+      }
+      if (!ts.isVariableStatement(statement)) return [];
+      return statement.declarationList.declarations.flatMap((declaration) => {
+        const initializer = unwrapExpression(declaration.initializer);
+        return ts.isIdentifier(declaration.name) && initializer && ts.isClassExpression(initializer)
+          ? [{ name: declaration.name.text, node: initializer }]
+          : [];
+      });
+    },
+  );
 }
 
 /** The class itself, or the class with `| undefined` or `| null`. */

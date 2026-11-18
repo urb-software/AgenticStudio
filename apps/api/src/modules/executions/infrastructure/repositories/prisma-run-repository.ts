@@ -24,7 +24,6 @@ import { isRunId } from '../../domain/value-objects/run-id.js';
 import { type ResumeFacts } from '../../domain/entities/run-resume-facts.js';
 import { type RunChanges } from '../../domain/entities/run-change-facts.js';
 import { Run } from '../../domain/entities/run.js';
-import { type RunSnapshot } from '../../domain/entities/run-snapshot.js';
 import { RunSlotTakenError } from '../../domain/errors/run-errors.js';
 import { RUN_DELIVERIES, type RunDeliveryState } from '../../domain/value-objects/run-delivery.js';
 import { type RunMessage } from '../../domain/value-objects/run-message.js';
@@ -517,9 +516,9 @@ export class PrismaRunRepository implements RunRepository {
     return (await this.db.run.count({ where: { id } })) > 0;
   }
 
-  async listNewestFirst(): Promise<RunSnapshot[]> {
+  async listNewestFirst(): Promise<Run[]> {
     const rows = await this.db.run.findMany({ orderBy: [...NEWEST_FIRST], select: LIST_FIELDS });
-    return rows.map((row) => toRun(row).snapshot());
+    return rows.map((row) => toRun(row));
   }
 
   async summarize(): Promise<RunsSummary> {
@@ -535,16 +534,16 @@ export class PrismaRunRepository implements RunRepository {
     return { running: count(UNDER_WAY_RUN_STATES), waiting: count(['waiting_for_operator']) };
   }
 
-  async listByProjectNewestFirst(projectId: string): Promise<RunSnapshot[]> {
+  async listByProjectNewestFirst(projectId: string): Promise<Run[]> {
     const rows = await this.db.run.findMany({
       where: { projectId },
       orderBy: [...NEWEST_FIRST],
       select: LIST_FIELDS,
     });
-    return rows.map((row) => toRun(row).snapshot());
+    return rows.map((row) => toRun(row));
   }
 
-  async claimNext(workerId: string, now: Date): Promise<RunSnapshot | null> {
+  async claimNext(workerId: string, now: Date): Promise<Run | null> {
     return inTransaction(
       this.db,
       async (tx) => {
@@ -581,7 +580,7 @@ export class PrismaRunRepository implements RunRepository {
         if (!claimed) return null;
         return toRun(
           await tx.run.findUniqueOrThrow({ where: { id: claimed.id }, select: RUN_FIELDS }),
-        ).snapshot();
+        );
       },
       // Claims queue on the lock inside their transactions; each holds it for milliseconds.
       CLAIM_TRANSACTION,
@@ -615,7 +614,7 @@ export class PrismaRunRepository implements RunRepository {
     from: 'queued' | 'waiting_for_operator',
     cancellation: RunCancellation,
     now: Date,
-  ): Promise<RunSnapshot | null> {
+  ): Promise<Run | null> {
     const { count } = await this.db.run.updateMany({
       where: { id: runId, state: from },
       data: {
@@ -627,16 +626,16 @@ export class PrismaRunRepository implements RunRepository {
         followUpQueued: false,
       },
     });
-    return count === 1 ? ((await this.findById(runId))?.snapshot() ?? null) : null;
+    return count === 1 ? await this.findById(runId) : null;
   }
 
-  async listWaiting(): Promise<RunSnapshot[]> {
+  async listWaiting(): Promise<Run[]> {
     const rows = await this.db.run.findMany({
       where: { state: 'waiting_for_operator' },
       orderBy: [{ waitingSince: 'asc' }, { id: 'asc' }],
       select: LIST_FIELDS,
     });
-    return rows.map((row) => toRun(row).snapshot());
+    return rows.map((row) => toRun(row));
   }
 
   async renewClaimsOncePerLease(now: Date, leaseSeconds: number): Promise<number | null> {

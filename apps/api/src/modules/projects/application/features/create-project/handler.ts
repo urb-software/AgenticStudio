@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { ProjectSnapshot } from '../../../domain/entities/project-snapshot.js';
+import { projectView, type ProjectView } from '../../project-view.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -10,7 +10,7 @@ export interface CreateProjectInput {
   name: string;
 }
 
-export type CreateProjectResult = ProjectSnapshot;
+export type CreateProjectResult = ProjectView;
 
 /**
  * Throws `InvalidProjectNameError` for an empty or too long name and `ProjectNameTakenError`
@@ -22,6 +22,6 @@ export class CreateProjectHandler {
 
   async execute(input: CreateProjectInput): Promise<CreateProjectResult> {
     const project = await this.projects.add(ProjectName.parse(input.name));
-    return project.snapshot();
+    return projectView(project);
   }
 }

@@ -1,5 +1,4 @@
 import type { ReviewComments } from '../../entities/review-comments.js';
-import type { ReviewCommentsSnapshot } from '../../entities/review-comments-snapshot.js';
 import type { ReviewCommentRepository } from '../review-comment-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
@@ -9,10 +8,6 @@ export class InMemoryReviewCommentRepository implements ReviewCommentRepository 
 
   find(runId: string): Promise<ReviewComments | null> {
     return Promise.resolve(this.runs.reviewSets.get(runId) ?? null);
-  }
-
-  findSnapshot(runId: string): Promise<ReviewCommentsSnapshot | null> {
-    return Promise.resolve(this.runs.reviewSets.get(runId)?.snapshot() ?? null);
   }
 
   replace(runId: string, comments: ReviewComments): Promise<void> {
