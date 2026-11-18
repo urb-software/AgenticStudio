@@ -113,6 +113,23 @@ describe('Cancel run (Issue #100)', () => {
     expect(cancelButton()).toBeNull();
   });
 
+  it('shows the Run the read endpoint answers after a cancel, with its Follow-up availability', async () => {
+    const run = aRun({ state: 'queued' });
+    const api = fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+    expect(screen.queryByRole('heading', { name: 'Send a Follow-up' })).toBeNull();
+    api.update(run.id, { followUp: { allowed: true } });
+    const readsBefore = api.calls('run').length;
+
+    const dialog = await openDialog();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel run' }));
+
+    await vi.waitFor(() => expect(pill().textContent).toBe('Cancelled'));
+    expect(api.calls('run').length).toBeGreaterThan(readsBefore);
+    expect(screen.getByRole('heading', { name: 'Send a Follow-up' })).toBeTruthy();
+  });
+
   it('shows "Cancel requested…" on a running Run until the worker confirms', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const run = aRun({ state: 'running' });

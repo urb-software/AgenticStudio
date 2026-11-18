@@ -94,6 +94,7 @@ Feature-specific hooks, tests, UI elements and schema live near the feature. No 
 - Do not mirror React Hook Form values into another store.
 - Shared client state uses one consistent store convention; no ad hoc mix of Context, Redux and Zustand.
 - Scope mutable editor stores to a client-side provider/editor instance to avoid cross-request leakage.
+- **A command does not write its response into the cache.** A mutation on a Run invalidates the Run and the Run lists, and its success handler returns that promise, so the mutation stays pending until the Run has been read again from its read endpoint; the page keeps showing the current Run until then. The command's own answer holds only what the caller cannot know otherwise (the id of a started Run, the outcome of a cancel).
 
 **Decision note:** the responsibility model is settled. TanStack Query + Zustand-first for shared client state + React Hook Form is the recommended baseline; confirm versions and final adoption when adding those dependencies.
 

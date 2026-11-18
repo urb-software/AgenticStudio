@@ -1,6 +1,5 @@
 import { Controller, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ZodResponse } from 'nestjs-zod';
+import { ApiAcceptedResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import {
   EXECUTIONS_PROBLEM_TYPES,
@@ -8,7 +7,6 @@ import {
   runNotFound,
   runNotResumable,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import {
   RunNotResumableError,
   RunSlotTakenError,
@@ -24,17 +22,16 @@ export class ResumeRunEndpoint {
   @Post(':runId/resume')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ operationId: 'resumeRun' })
-  @ZodResponse({ status: 202, type: RunResponseDto })
+  @ApiAcceptedResponse({ description: 'The resume is accepted.' })
   @ApiProblemResponses({
     404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})`,
     409:
       `The run did not stop at the usage limit with a session (${EXECUTIONS_PROBLEM_TYPES.runNotResumable}), ` +
       `or its project or the server has no free place (${EXECUTIONS_PROBLEM_TYPES.resumeSlotTaken})`,
   })
-  async resume(@Param('runId') runId: string) {
+  async resume(@Param('runId') runId: string): Promise<void> {
     try {
-      const { run, preparedFollowUp } = await this.handler.execute({ runId });
-      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp));
+      await this.handler.execute({ runId });
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof RunNotResumableError) throw runNotResumable();

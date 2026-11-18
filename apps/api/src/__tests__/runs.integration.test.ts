@@ -184,8 +184,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       const created = await startRun(project.id, { task: 'Fix the login bug', provider: 'codex' });
 
       expect(created.status).toBe(201);
-      expect(created.body).toEqual({
-        id: expect.stringMatching(UUID),
+      expect(created.body).toEqual({ id: expect.stringMatching(UUID) });
+      const read = (await getRun(created.body.id)).body;
+      expect(read).toEqual({
+        id: created.body.id,
         projectId: project.id,
         provider: 'codex',
         task: 'Fix the login bug',
@@ -205,13 +207,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
             role: 'operator',
             kind: 'task',
             text: 'Fix the login bug',
-            at: created.body.createdAt,
+            at: read.createdAt,
           },
         ],
-      });
-      // The Run page also learns whether a Follow-up is possible.
-      expect((await getRun(created.body.id)).body).toEqual({
-        ...created.body,
+        // The Run page also learns whether a Follow-up is possible.
         followUp: { allowed: false, reason: 'not_finished' },
       });
       const projectRuns = await http()
@@ -219,8 +218,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         .set('Cookie', cookie);
       expect(projectRuns.status).toBe(200);
       // Lists leave the conversation out.
-      const { messages: _messages, ...listed } = created.body;
+      const { messages: _messages, followUp: _followUp, ...listed } = read;
       void _messages;
+      void _followUp;
       expect(projectRuns.body).toEqual([listed]);
       expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listed]);
     });
@@ -246,7 +246,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       const project = await readyProject('Shop');
 
       const trimmed = await startRun(project.id, { task: '  Fix it \n', provider: 'codex' });
-      expect(trimmed.body.task).toBe('Fix it');
+      expect((await getRun(trimmed.body.id)).body.task).toBe('Fix it');
       const longest = await startRun(project.id, { task: 'x'.repeat(20_000), provider: 'codex' });
       expect(longest.status).toBe(201);
     });
@@ -832,7 +832,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
         const requested = await retryDelivery(run.id);
         expect(requested.status).toBe(202);
-        expect(requested.body).toMatchObject({
+        expect(requested.body).toEqual({});
+        expect((await getRun(run.id)).body).toMatchObject({
           id: run.id,
           state: 'failed',
           deliveryRetryRequested: true,
@@ -1226,15 +1227,13 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const cancelled = await cancel(run.id);
 
         expect(cancelled.status).toBe(202);
-        expect(cancelled.body).toMatchObject({
+        expect(cancelled.body).toEqual({ outcome: 'cancelled' });
+        // The Run page reads the Run, which also says whether a Follow-up is possible.
+        expect((await getRun(run.id)).body).toMatchObject({
           id: run.id,
           state: 'cancelled',
           finishedAt: clock.current.toISOString(),
           cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
-        });
-        // The Run page also says whether a Follow-up is possible.
-        expect((await getRun(run.id)).body).toEqual({
-          ...cancelled.body,
           followUp: { allowed: false, reason: 'no_session' },
         });
         expect((await claim()).status).toBe(204);
@@ -1247,7 +1246,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await report(run.id, { state: 'running' });
         await report(run.id, { state: 'waiting_for_operator' });
 
-        expect((await cancel(run.id)).body).toMatchObject({ state: 'cancelled' });
+        expect((await cancel(run.id)).body).toEqual({ outcome: 'cancelled' });
         const next = await queuedRun(project.id, 'Next task');
         expect((await claim()).body.runId).toBe(next.id);
       });
@@ -1261,13 +1260,18 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
         const requested = await cancel(run.id);
         expect(requested.status).toBe(202);
-        expect(requested.body).toMatchObject({ state: 'running', cancelRequestedAt: requestedAt });
-        expect(requested.body).not.toHaveProperty('cancellation');
+        expect(requested.body).toEqual({ outcome: 'cancel_requested' });
+        expect((await getRun(run.id)).body).toMatchObject({
+          state: 'running',
+          cancelRequestedAt: requestedAt,
+        });
+        expect((await getRun(run.id)).body).not.toHaveProperty('cancellation');
 
         advance(5);
         const repeated = await cancel(run.id);
         expect(repeated.status).toBe(202);
-        expect(repeated.body.cancelRequestedAt).toBe(requestedAt);
+        expect(repeated.body).toEqual({ outcome: 'cancel_requested' });
+        expect((await getRun(run.id)).body.cancelRequestedAt).toBe(requestedAt);
 
         const beat = await heartbeat(run.id);
         expect(beat.status).toBe(200);
@@ -1655,9 +1659,11 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         advance(60);
         const answered = await answer(run.id, { text: '  PostgreSQL  ' });
         expect(answered.status).toBe(202);
-        expect(answered.body.state).toBe('queued');
-        expect(answered.body).not.toHaveProperty('question');
-        expect(answered.body.messages.at(-1)).toEqual({
+        expect(answered.body).toEqual({});
+        const afterAnswer = (await getRun(run.id)).body;
+        expect(afterAnswer.state).toBe('queued');
+        expect(afterAnswer).not.toHaveProperty('question');
+        expect(afterAnswer.messages.at(-1)).toEqual({
           role: 'operator',
           kind: 'answer',
           text: 'PostgreSQL',
@@ -1784,7 +1790,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const next = await queuedRun(project.id, 'Third');
         // The answered Run keeps its project's place: another worker gets nothing.
         expect((await claim(W2)).status).toBe(204);
-        expect((await cancel(second.id)).body).toMatchObject({ state: 'cancelled' });
+        expect((await cancel(second.id)).body).toEqual({ outcome: 'cancelled' });
         expect((await claim(W2)).body.runId).toBe(next.id);
       });
 
@@ -1913,10 +1919,12 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
         const resumed = await resume(run.id);
         expect(resumed.status).toBe(202);
-        expect(resumed.body).toMatchObject({ state: 'queued' });
-        expect(resumed.body).not.toHaveProperty('failure');
-        expect(resumed.body).not.toHaveProperty('resumable');
-        expect(resumed.body.messages.at(-1)).toMatchObject({
+        expect(resumed.body).toEqual({});
+        const afterResume = (await getRun(run.id)).body;
+        expect(afterResume).toMatchObject({ state: 'queued' });
+        expect(afterResume).not.toHaveProperty('failure');
+        expect(afterResume).not.toHaveProperty('resumable');
+        expect(afterResume.messages.at(-1)).toMatchObject({
           role: 'operator',
           kind: 'answer',
           text: 'Continue where you stopped.',
@@ -2168,15 +2176,17 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       advance(60);
       const sent = await followUp(run.id, { text: '  Also handle HEAD requests.  ' });
       expect(sent.status).toBe(202);
-      expect(sent.body).toMatchObject({
+      expect(sent.body).toEqual({});
+      const afterSend = (await getRun(run.id)).body;
+      expect(afterSend).toMatchObject({
         state: 'queued',
         followUps: 1,
         followUp: { allowed: false, reason: 'follow_up_queued' },
         pullRequest: PULL_REQUEST,
       });
-      expect(sent.body).not.toHaveProperty('finishedAt');
-      expect(sent.body).not.toHaveProperty('delivery');
-      expect(sent.body.messages.at(-1)).toEqual({
+      expect(afterSend).not.toHaveProperty('finishedAt');
+      expect(afterSend).not.toHaveProperty('delivery');
+      expect(afterSend.messages.at(-1)).toEqual({
         role: 'operator',
         kind: 'follow_up',
         text: 'Also handle HEAD requests.',
@@ -2274,13 +2284,15 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const sent = await bringUp(run.id, { note: '  Keep our config.  ' });
 
         expect(sent.status).toBe(202);
-        expect(sent.body).toMatchObject({
+        expect(sent.body).toEqual({});
+        const afterSend = (await getRun(run.id)).body;
+        expect(afterSend).toMatchObject({
           state: 'queued',
           followUps: 1,
           followUp: { allowed: false, reason: 'follow_up_queued' },
           pullRequest: PULL_REQUEST,
         });
-        expect(sent.body.messages.at(-1)).toEqual({
+        expect(afterSend.messages.at(-1)).toEqual({
           role: 'operator',
           kind: 'follow_up',
           text: 'Keep our config.',
@@ -2423,7 +2435,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const sent = await bringUp(run.id);
 
         expect(sent.status).toBe(202);
-        expect(sent.body.messages.at(-1)).toMatchObject({
+        expect(sent.body).toEqual({});
+        const afterSend = (await getRun(run.id)).body;
+        expect(afterSend.messages.at(-1)).toMatchObject({
           kind: 'follow_up',
           text: '',
           source: 'bring_up_to_date',
@@ -2554,8 +2568,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
       const sent = await followUp(run.id, { text: 'Try again, smaller.' });
       expect(sent.status).toBe(202);
-      expect(sent.body).toMatchObject({ state: 'queued' });
-      expect(sent.body).not.toHaveProperty('failure');
+      expect(sent.body).toEqual({});
+      const afterSend = (await getRun(run.id)).body;
+      expect(afterSend).toMatchObject({ state: 'queued' });
+      expect(afterSend).not.toHaveProperty('failure');
     });
 
     it('takes a Follow-up on a cancelled Run, and a queued Follow-up can be cancelled', async () => {
@@ -2567,11 +2583,12 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       await report(run.id, { state: 'waiting_for_operator' });
       const cancel = () =>
         http().post(`/api/runs/${run.id}/cancel`).set({ Origin: STUDIO_ORIGIN, Cookie: cookie });
-      expect((await cancel()).body.state).toBe('cancelled');
+      expect((await cancel()).body).toEqual({ outcome: 'cancelled' });
 
       expect((await followUp(run.id, { text: 'Go on after all.' })).status).toBe(202);
       const cancelled = await cancel();
-      expect(cancelled.body).toMatchObject({ state: 'cancelled', followUps: 1 });
+      expect(cancelled.body).toEqual({ outcome: 'cancelled' });
+      expect((await getRun(run.id)).body).toMatchObject({ state: 'cancelled', followUps: 1 });
       // Cancelled before it was claimed: nothing is handed out, and it can be followed up again.
       expect((await claim()).status).toBe(204);
       expect((await getRun(run.id)).body.followUp).toEqual({
@@ -2792,7 +2809,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
       const sent = await followUp(run.id, { text: 'Fix the compile error.' });
       expect(sent.status).toBe(202);
-      expect(sent.body.messages.slice(1)).toEqual([
+      expect(sent.body).toEqual({});
+      const afterSend = (await getRun(run.id)).body;
+      expect(afterSend.messages.slice(1)).toEqual([
         {
           role: 'studio',
           kind: 'part_end',
@@ -2807,7 +2826,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           at: expect.stringMatching(ISO_8601),
         },
       ]);
-      expect(sent.body).not.toHaveProperty('failure');
+      expect(afterSend).not.toHaveProperty('failure');
     });
 
     // A delivery that pushed before it failed still records the push.

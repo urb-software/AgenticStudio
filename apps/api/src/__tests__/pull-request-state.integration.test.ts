@@ -961,15 +961,17 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
         .send({ text: 'Only fix the unit tests.', source: 'pull_request_checks' });
 
       expect(sent.status).toBe(202);
-      expect(sent.body).toMatchObject({ state: 'queued', followUps: 1 });
-      const messages = sent.body.messages as { kind: string; text: string; source?: string }[];
+      expect(sent.body).toEqual({});
+      const run = (await getRun(runId)).body;
+      expect(run).toMatchObject({ state: 'queued', followUps: 1 });
+      const messages = run.messages as { kind: string; text: string; source?: string }[];
       expect(messages.at(-1)).toMatchObject({
         kind: 'follow_up',
         text: 'Only fix the unit tests.',
         source: 'pull_request_checks',
       });
       expectProblem(await prepared(runId), 404, PROBLEM.preparedFollowUpNotFound);
-      expect(sent.body.pullRequest).not.toHaveProperty('failingChecksPreparation');
+      expect(run.pullRequest).not.toHaveProperty('failingChecksPreparation');
     });
 
     it('keeps the normal Follow-up rules: an unknown source is invalid, a refused send keeps the draft', async () => {
@@ -996,7 +998,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       const sent = await followUp(runId);
 
       expect(sent.status).toBe(202);
-      expect(sent.body.messages.at(-1)).not.toHaveProperty('source');
+      expect((await getRun(runId)).body.messages.at(-1)).not.toHaveProperty('source');
       expect((await prepared(runId)).status).toBe(200);
     });
 

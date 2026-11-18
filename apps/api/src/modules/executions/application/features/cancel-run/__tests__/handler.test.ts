@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { RunAlreadyFinishedError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
-import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { CancelRunHandler } from '../handler.js';
 
@@ -33,9 +32,7 @@ describe('CancelRunHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     now = T1;
-    handler = new CancelRunHandler(runs, new InMemoryPreparedFollowUpRepository(runs), {
-      now: () => now,
-    });
+    handler = new CancelRunHandler(runs, { now: () => now });
     run = (
       await runs.start({
         projectId: PROJECT,
@@ -50,7 +47,8 @@ describe('CancelRunHandler', () => {
   });
 
   it('cancels a queued Run at once, by the operator', async () => {
-    expect((await handler.execute({ runId: run.id })).run).toMatchObject({
+    expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancelled' });
+    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
       state: 'cancelled',
       cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
       finishedAt: T1,
@@ -62,7 +60,8 @@ describe('CancelRunHandler', () => {
     await transition('preparing', 'running');
     await transition('running', 'waiting_for_operator');
 
-    expect((await handler.execute({ runId: run.id })).run).toMatchObject({
+    expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancelled' });
+    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
       state: 'cancelled',
       cancellation: { by: 'operator' },
       finishedAt: T1,
@@ -76,7 +75,8 @@ describe('CancelRunHandler', () => {
       await runs.claimNext(WORKER, T0);
       if (state === 'running') await transition('preparing', 'running');
 
-      expect((await handler.execute({ runId: run.id })).run).toMatchObject({
+      expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancel_requested' });
+      expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
         state,
         cancelRequestedAt: T1,
         claimedBy: WORKER,
@@ -90,7 +90,8 @@ describe('CancelRunHandler', () => {
     await handler.execute({ runId: run.id });
     now = T2;
 
-    expect((await handler.execute({ runId: run.id })).run).toMatchObject({
+    expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancel_requested' });
+    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
       state: 'preparing',
       cancelRequestedAt: T1,
     });

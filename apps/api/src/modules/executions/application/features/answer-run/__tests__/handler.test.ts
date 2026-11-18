@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
 import { RunNotWaitingError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
-import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { AnswerRunHandler } from '../handler.js';
 
@@ -53,9 +52,7 @@ describe('AnswerRunHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new AnswerRunHandler(runs, new InMemoryPreparedFollowUpRepository(runs), {
-      now: () => T1,
-    });
+    handler = new AnswerRunHandler(runs, { now: () => T1 });
     await runs.start({
       projectId: PROJECT,
       provider: 'codex',
@@ -71,8 +68,9 @@ describe('AnswerRunHandler', () => {
   it('stores the answer after the question and queues the Run to resume', async () => {
     await ask();
 
-    const { run: answered } = await handler.execute({ runId: run.id, text: 'PostgreSQL' });
+    expect(await handler.execute({ runId: run.id, text: 'PostgreSQL' })).toBeUndefined();
 
+    const answered = (await runs.findById(run.id))!.snapshot();
     expect(answered).toMatchObject({ state: 'queued', waitingSince: null });
     expect(answered.messages).toEqual([
       { kind: 'question', question: QUESTION, at: T0 },

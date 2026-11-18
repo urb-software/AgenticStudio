@@ -195,34 +195,28 @@ export function useProviderAvailability(opening: number, enabled: boolean) {
 }
 
 /**
- * "Retry delivery" (Issue #102): asks the agent worker to repeat only the delivery of a Run
- * whose delivery failed. The 202 answer (the Run, retry requested) replaces the cached Run, so
- * the page polls it until the worker reports the outcome; every Run list is read again.
+ * "Retry delivery": asks the agent worker to repeat only the delivery of a Run whose delivery
+ * failed. The answer has no body: the Run and every Run list are read again, and the mutation
+ * stays pending until the Run is read, so the page keeps showing the current Run until then.
  */
 export function useRetryDelivery(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.retryRunDelivery(runId),
-    onSuccess: async (run: RunOutput) => {
-      queryClient.setQueryData(runKey(run.id), run);
-      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
   });
 }
 
 /**
- * Answers the agent's question (Issue #103). The 202 answer (the Run, queued to resume)
- * replaces the cached Run, so the page polls it again; every Run list is read again. A 409
- * reads the Run again at once.
+ * Answers the agent's question. The answer has no body: the Run and every Run list are read
+ * again, and the mutation stays pending until the Run is read. A 409 reads the Run again at
+ * once.
  */
 export function useAnswerRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: AnswerRunRequest) => api.answerRun(runId, request),
-    onSuccess: async (run: RunOutput) => {
-      queryClient.setQueryData(runKey(run.id), run);
-      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
     // The Run moved on (answered elsewhere, cancelled): read it at once, not at the next poll
     // (review Spec-2 of #128).
     onError: async (error: unknown) => {
@@ -234,20 +228,19 @@ export function useAnswerRun(runId: string) {
 }
 
 /**
- * Sends a Follow-up to a finished Run (Issue #141). The 202 answer (the Run, queued for the
- * Follow-up) replaces the cached Run, so the page polls it again; every Run list is read again.
- * A 409 (the Run cannot take one now) reads the Run again at once, so the page says why.
+ * Sends a Follow-up to a finished Run. The answer has no body: the Run and every Run list are
+ * read again, and the mutation stays pending until the Run is read. A 409 (the Run cannot take
+ * one now) reads the Run again at once, so the page says why.
  */
 export function useFollowUpRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: FollowUpRunRequest) => api.followUpRun(runId, request),
-    onSuccess: async (run: RunOutput) => {
-      queryClient.setQueryData(runKey(run.id), run);
-      // Issue #145: a sent Follow-up removes the prepared one.
-      queryClient.removeQueries({ queryKey: preparedFollowUpKey(run.id) });
-      // Issue #146: and the loaded Review comments it was prepared from.
-      queryClient.removeQueries({ queryKey: reviewCommentsKey(run.id) });
+    onSuccess: async () => {
+      // A sent Follow-up removes the prepared one, and the loaded Review comments it was
+      // prepared from.
+      queryClient.removeQueries({ queryKey: preparedFollowUpKey(runId) });
+      queryClient.removeQueries({ queryKey: reviewCommentsKey(runId) });
       await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
     },
     onError: async (error: unknown) => {
@@ -259,19 +252,15 @@ export function useFollowUpRun(runId: string) {
 }
 
 /**
- * Asks for the Run's branch to be brought up to date (Issue #147): the Run, queued as a Follow-up
- * of that source, replaces the cached Run, so the page polls it again; every Run list is read
- * again. A 409 (the Run cannot take a Follow-up now) reads the Run again at once, so the page says
- * why.
+ * Asks for the Run's branch to be brought up to date. The answer has no body: the Run and every
+ * Run list are read again, and the mutation stays pending until the Run is read. A 409 (the Run
+ * cannot take a Follow-up now) reads the Run again at once, so the page says why.
  */
 export function useBringUpToDateRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: BringUpToDateRequest) => api.bringUpToDateRun(runId, request),
-    onSuccess: async (run: RunOutput) => {
-      queryClient.setQueryData(runKey(run.id), run);
-      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
     onError: async (error: unknown) => {
       if (error instanceof ApiError && error.status === 409) {
         await queryClient.invalidateQueries({ queryKey: runKey(runId) });
@@ -389,18 +378,15 @@ export function useDiscardPreparedFollowUp(runId: string) {
 }
 
 /**
- * "Resume run" (Issue #105): resumes a Run stopped at the subscription's usage limit. The 202
- * answer (the Run, queued) replaces the cached Run, so the page follows it; every Run list is
- * read again. A 409 (resumed elsewhere) reads the Run again at once.
+ * "Resume run": resumes a Run stopped at the subscription's usage limit. The answer has no body:
+ * the Run and every Run list are read again, and the mutation stays pending until the Run is
+ * read. A 409 (resumed elsewhere) reads the Run again at once.
  */
 export function useResumeRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.resumeRun(runId),
-    onSuccess: async (run: RunOutput) => {
-      queryClient.setQueryData(runKey(run.id), run);
-      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
     onError: async (error: unknown) => {
       if (error instanceof ApiError && error.status === 409) {
         await queryClient.invalidateQueries({ queryKey: runKey(runId) });
@@ -410,32 +396,27 @@ export function useResumeRun(runId: string) {
 }
 
 /**
- * Starts a Run. The 201 answer seeds the Run's own query (its page shows it at once), and
- * every Run list of this module is read again.
+ * Starts a Run. The answer is the new Run's id, which the caller opens; the Run itself is read by
+ * its page, and every Run list of this module is read again.
  */
 export function useStartRun(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: StartRunRequest) => api.startRun(projectId, request),
-    onSuccess: async (run: RunOutput) => {
-      queryClient.setQueryData(runKey(run.id), run);
-      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
   });
 }
 
 /**
- * Cancels a Run (Issue #100). The 202 answer replaces the Run's own query (cancelled at once,
- * or with its cancel request), and every Run list of this module is read again.
+ * Cancels a Run. The answer says whether it was cancelled at once or a cancel was requested that
+ * the agent worker still has to confirm; the Run page shows either from the Run it reads. The Run
+ * and every Run list are read again, and the mutation stays pending until the Run is read.
  */
 export function useCancelRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.cancelRun(runId),
-    onSuccess: async (run: RunOutput) => {
-      queryClient.setQueryData(runKey(run.id), run);
-      await queryClient.invalidateQueries({ queryKey: RUNS_KEY });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
     // A refusal (e.g. the Run finished meanwhile) also means the page's Run is out of date.
     onError: () => queryClient.invalidateQueries({ queryKey: runKey(runId) }),
   });
