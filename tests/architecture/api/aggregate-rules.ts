@@ -38,7 +38,8 @@ export const CHILD_ENTITIES: Record<string, string[]> = {
 const HANDLER_FILE = /^src\/modules\/([^/]+)\/application\/features\/[^/]+\/handler\.ts$/;
 const REPOSITORY_FILE = /^src\/modules\/([^/]+)\/domain\/repositories\/[^/]+\.ts$/;
 const ENTRY_POINT_FILE = /^src\/modules\/([^/]+)\/entry-points\//;
-const DOMAIN_CLASS_FILE = /^src\/modules\/([^/]+)\/domain\/(entities|value-objects)\/(?!.*__tests__\/)[^/]+\.ts$/;
+const DOMAIN_CLASS_FILE =
+  /^src\/modules\/([^/]+)\/domain\/(entities|value-objects)\/(?!.*__tests__\/)[^/]+\.ts$/;
 const VALUE_OBJECT_FILE = /^src\/modules\/([^/]+)\/domain\/value-objects\//;
 /** An id type, the one thing an entity file may take from another entity file. */
 const ID_TYPE_NAME = /Id$/;

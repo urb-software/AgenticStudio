@@ -567,6 +567,17 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: 'A public static method of an entity or value object returns its own class',
   },
   {
+    fixture: 'domain-static-in-class-expression',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
+    fixture: 'domain-imports-node-module',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
+  },
+  {
     fixture: 'domain-static-method-returns-another-type',
     expected: ['api-domain-static-is-a-factory'],
     qualityRow:
