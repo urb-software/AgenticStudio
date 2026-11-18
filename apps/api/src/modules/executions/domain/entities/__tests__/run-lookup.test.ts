@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RunLookup } from '../run-lookup.js';
 
-// Issue #183: the lookup's lifecycle (requested, claimed, done or failed) is the entity's. Handing
-// out requests is an atomic step of the store, paired with LookupHandOutRule.
 const T0 = new Date('2026-11-17T10:00:00.000Z');
 const T1 = new Date('2026-11-17T10:01:00.000Z');
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
@@ -10,7 +8,6 @@ const OTHER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 
 const requested = () =>
   RunLookup.request({ id: 'l-1', runId: 'r-1', kind: 'pull_request_state', now: T0 });
-/** A lookup the store handed to WORKER. */
 const claimed = () =>
   RunLookup.restore({
     ...requested().snapshot(),
@@ -106,7 +103,6 @@ describe('RunLookup', () => {
         retryAt: new Date(T1.getTime() + 30_000),
         error: 'Rate limited.',
       });
-      // A re-sent answer of the same rate limit changes nothing.
       expect(lookup.fail(WORKER, 'Rate limited.', 30, T1)).toBe('duplicate');
     });
 

@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { NewRunDiff } from '../../value-objects/run-diff.js';
 import { RunDiff } from '../run-diff.js';
 
-// Issue #183: the Run diff is an aggregate root of its own: what a worker reported, replacing the
-// stored diffs. It refuses a diff state that is not Git object ids (review S-1 of #149).
 const ID = 'a'.repeat(40);
 const diffs: Record<'run' | 'last', NewRunDiff> = {
   run: { kind: 'unavailable', reason: 'No Working copy.' },

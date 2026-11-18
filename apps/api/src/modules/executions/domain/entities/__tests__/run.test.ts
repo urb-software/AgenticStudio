@@ -6,7 +6,6 @@ import type { RunState } from '../../value-objects/run-state.js';
 import { LongWaitRule } from '../../value-objects/run-sweep-rules.js';
 import { AT, runData } from './run-fixtures.js';
 
-// Issue #100: the long-wait rule.
 describe('long-wait rule', () => {
   const since = new Date('2026-11-01T12:00:00.000Z');
   const waiting = (waitingDays: number, overrides: Partial<RunData> = {}): RunData =>
@@ -45,7 +44,6 @@ describe('long-wait rule', () => {
   });
 });
 
-// Issue #103: the agent's open question and the operator's answer that resumes the session.
 describe('questions and answers', () => {
   const question = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
   const asked = runData({ messages: [{ kind: 'question', question, at: AT }] });
@@ -65,14 +63,12 @@ describe('questions and answers', () => {
     expect(Run.restore({ ...answered, sessionRef: null }).resumeMessage()).toBeNull();
     expect(Run.restore(asked).isResumable).toBe(false);
     expect(Run.restore(asked).resumeMessage()).toBeNull();
-    // Claimed to resume, it still carries the answer for the worker.
     const claimed = { ...answered, state: 'preparing' as const };
     expect(Run.restore(claimed).resumeMessage()?.text).toBe('PostgreSQL');
     expect(Run.restore(claimed).isResumable).toBe(false);
   });
 });
 
-// Issue #141: a Follow-up reopens a finished Run.
 describe('Follow-ups', () => {
   const finished = runData({
     state: 'succeeded',
@@ -80,7 +76,6 @@ describe('Follow-ups', () => {
     workingCopy: { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false },
     stepCount: 3,
   });
-  /** A Run restored from `patch` over a finished one; a state that needs its result gets one. */
   const restored = (patch: Partial<RunData> = {}) => {
     const state = patch.state ?? finished.state;
     return Run.restore({
@@ -113,7 +108,6 @@ describe('Follow-ups', () => {
     expect(restored({ pullRequestStatus: known('closed') }).followUpEligibility(available)).toEqual(
       { allowed: false, reason: 'pull_request_closed' },
     );
-    // The next lookup finds it open again.
     expect(restored({ pullRequestStatus: known('open') }).followUpEligibility(available)).toEqual({
       allowed: true,
     });
@@ -147,7 +141,6 @@ describe('Follow-ups', () => {
     ['working_copy_removed', { workingCopy: null }],
     ['working_copy_removed', { workingCopyRemovedAt: AT }],
     ['step_total_reached', { stepCount: 50 }],
-    // Issue #142: the pull request is over, or gone.
     ['pull_request_merged', { pullRequestStatus: known('merged') }],
     ['pull_request_closed', { pullRequestStatus: known('closed') }],
     ['pull_request_missing', { pullRequestStatus: known('missing') }],

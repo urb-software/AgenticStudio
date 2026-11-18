@@ -4,8 +4,6 @@ import { type RunSnapshot } from '../run-snapshot.js';
 import { RunNotHeldError } from '../../errors/run-errors.js';
 import { Task } from '../../value-objects/task.js';
 
-// Issue #183: the Run's snapshot, the Run step it creates, what the lookups change of its pull
-// request status, and the held-Run rule of the Run diff.
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-17T10:00:00.000Z');
 const T1 = new Date('2026-11-17T11:00:00.000Z');
@@ -50,8 +48,6 @@ describe('Run.snapshot', () => {
   });
 });
 
-// Issue #184: the Run is its value objects, and storage still holds the flat record. Every field of
-// a stored Run, set to a value that is not its default, goes through the grouped objects and back.
 describe('restoring a Run from its flat record and giving it back (Issue #184)', () => {
   const sessionRef = 'agent-session-1';
   const full: RunSnapshot = {
@@ -132,9 +128,7 @@ describe('restoring a Run from its flat record and giving it back (Issue #184)',
     const run = Run.restore(full);
 
     expect(run.snapshot()).toEqual(full);
-    // Nothing is lost between the groups: the record has exactly the fields the Run keeps.
     expect(Object.keys(run.snapshot()).sort()).toEqual(Object.keys(full).sort());
-    // And the Run reads them through its value objects, one per concept.
     expect(run.lifecycle.state).toBe('failed');
     expect(run.delivery.state).toBe('failed');
     expect(run.delivery.requested).toBe(true);
@@ -199,7 +193,6 @@ describe('the Run step', () => {
     ]);
     expect(run.progress.stepCount).toBe(3);
 
-    // The limit is the Run's: the next step is over its allowance of 3, so the Run fails.
     expect(report(run)).toEqual({ status: 'step_limit' });
     expect(run.lifecycle.state).toBe('failed');
     expect(run.pendingChanges().steps).toHaveLength(1);

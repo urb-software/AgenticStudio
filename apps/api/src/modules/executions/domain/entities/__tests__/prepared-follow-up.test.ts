@@ -76,7 +76,6 @@ describe('the Follow-up prepared from failing checks (Issue #145)', () => {
       LogRedaction.of([]),
     );
 
-    // The fence around the log is longer than any run of backticks inside it.
     expect(text).toContain('`````text\nbefore');
     expect(text).toContain('more\n`````');
   });

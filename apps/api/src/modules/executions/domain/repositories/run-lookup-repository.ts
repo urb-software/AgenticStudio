@@ -3,7 +3,6 @@ import type { LookupHandOutRule } from '../value-objects/lookup-hand-out-rule.js
 import type { ReviewCommentScope } from '../value-objects/review-comments.js';
 import type { LookupKind } from '../value-objects/run-lookup.js';
 
-/** A lookup a worker claimed: what it needs to answer, nothing more. */
 export interface ClaimedLookup {
   id: string;
   kind: LookupKind;
@@ -12,17 +11,12 @@ export interface ClaimedLookup {
   pullRequestNumber: number;
   runBranch: string;
   integrationBranch: string;
-  /** Issue #146: what a `review_comments` lookup loads. */
   reviewComments?: { scope: ReviewCommentScope; since?: Date };
 }
 
-/**
- * Where the latest load of a Run's Review comments stands, read from its lookups: under way (also
- * while it waits, or waits out a rate limit), or why the latest one failed.
- */
 export interface ReviewCommentsLoad {
   loading: boolean;
-  /** The worker's words for the latest load when it failed (redacted); null otherwise. */
+  /** Redacted; null unless the latest load failed. */
   error: string | null;
 }
 
@@ -30,45 +24,31 @@ export interface ReviewCommentsLoad {
 export const RUN_LOOKUP_REPOSITORY = Symbol('RUN_LOOKUP_REPOSITORY');
 
 /**
- * The store of lookups (Issue #142): requests Studio records for the agent worker. A lookup's
- * rules are the {@link RunLookup}'s own; what the Run, the prepared Follow-up or the Review comments
- * get from an answer is saved by the same transaction through their own repositories (the
- * module's `RunTransactions`). What stays here, besides loading and saving, is what no single lookup
- * can do: handing out the waiting requests (`claim`, one atomic step under the claim lock, paired
- * with {@link LookupHandOutRule}). At most one request is open per Run and kind; a partial unique
- * index backs that in the schema.
+ * At most one request is open per Run and kind; a partial unique index backs that in the schema.
+ * `claim` is one atomic step under the claim lock, paired with {@link LookupHandOutRule}.
  */
 export interface RunLookupRepository {
-  /** Stores a new request. */
   add(lookup: RunLookup): Promise<void>;
 
-  /** Stores what changed on a lookup: its status, claim, retry, finish, error and result. */
   save(lookup: RunLookup): Promise<void>;
 
-  /** The lookup with this id, or `null`. */
   findById(id: string): Promise<RunLookup | null>;
 
   /**
-   * The lookup with this id, or `null`, read `FOR UPDATE`: for a transaction that decides from it
-   * and saves it, so a claim that lands between the read and the save is seen, not overwritten. The lock only
-   * holds on a transaction-bound repository (`RunTransactions`); on the plain one it ends at once.
+   * Read `FOR UPDATE`, so a claim between the read and the save is seen, not overwritten. The lock
+   * holds only on a transaction-bound repository; on the plain one it ends at once.
    */
   findByIdForUpdate(id: string): Promise<RunLookup | null>;
 
-  /** The Run's open lookup (requested or claimed) of `kind`, or `null`. */
+  /** Open means requested or claimed. */
   findOpen(runId: string, kind: LookupKind): Promise<RunLookup | null>;
 
-  /**
-   * Hands up to the rule's limit of waiting requests to `workerId`, oldest first, first returning
-   * the claims older than the lease to the queue (all as the rule says). Any worker may claim: a
-   * lookup needs no Working copy. Joins the Run for what the worker needs to answer (its remote,
-   * pull request and branches), read-only.
-   */
+  /** Oldest first, first returning the claims older than the lease to the queue. Any worker may claim. */
   claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]>;
 
-  /** Removes lookups that finished (done or failed) before `before`; returns how many. */
+  /** Returns how many were removed. */
   deleteFinishedBefore(before: Date): Promise<number>;
 
-  /** Where the latest `review_comments` load of the Run stands; an unknown Run has no load. */
+  /** An unknown Run has no load. */
   findReviewCommentsLoad(runId: string): Promise<ReviewCommentsLoad>;
 }

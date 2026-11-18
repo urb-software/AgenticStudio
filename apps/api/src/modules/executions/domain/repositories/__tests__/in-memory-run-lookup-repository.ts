@@ -7,7 +7,7 @@ import type { ClaimedLookup } from '../run-lookup-repository.js';
 import type { RunLookupRepository } from '../run-lookup-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
-/** A lookup as the fake keeps it: plain and mutable, so a test can set one up in any state. */
+/** Plain and mutable, so a test can set a lookup up in any state. */
 export type FakeLookup = {
   -readonly [K in keyof Omit<RunLookupSnapshot, 'result'>]: RunLookupSnapshot[K];
 } & { result?: unknown };
@@ -15,13 +15,7 @@ export type FakeLookup = {
 const entity = (stored: FakeLookup): RunLookup =>
   RunLookup.restore({ ...stored, result: stored.result ?? null });
 
-/**
- * In-memory adapter of {@link RunLookupRepository} for handler tests, with the database
- * adapter's rules: one open lookup per Run and kind, and the hand-out follows the
- * {@link LookupHandOutRule} over the lookups and their Runs in the given Run store. It stores
- * lookups only: what an answer does to the Run, the prepared Follow-up or the Review comments is
- * the transaction's, through their own fakes.
- */
+/** In-memory {@link RunLookupRepository}: one open lookup per Run and kind; the hand-out follows {@link LookupHandOutRule}. */
 export class InMemoryRunLookupRepository implements RunLookupRepository {
   readonly lookups: FakeLookup[] = [];
 
@@ -58,7 +52,6 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
   }
 
   claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]> {
-    // A claim that outlived its lease goes back to the queue first, as the statement does.
     for (const lookup of this.lookups) {
       if (rule.claimExpired(lookup)) {
         Object.assign(lookup, { status: 'requested', claimedBy: null, claimedAt: null });
@@ -114,7 +107,6 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
       (lookup) => lookup.runId === runId && lookup.kind === 'review_comments',
     );
     const open = own.find((lookup) => lookup.status === 'requested' || lookup.status === 'claimed');
-    // The latest request; of equal times, the one recorded last.
     const latest = own.reduce<FakeLookup | undefined>(
       (best, lookup) =>
         best === undefined || lookup.requestedAt.getTime() >= best.requestedAt.getTime()

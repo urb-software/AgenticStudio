@@ -4,11 +4,7 @@ import type { FollowUpSource } from '../../value-objects/follow-up.js';
 import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
-/**
- * In-memory adapter of {@link PreparedFollowUpRepository} for handler tests, with the database
- * adapter's rules: one per Run, a new preparation replaces it, discarding what is not there is
- * fine. The storage is the Run fake's `prepared` map, so a test can set up and read it.
- */
+/** In-memory {@link PreparedFollowUpRepository}; stores in the Run fake's `prepared` map. */
 export class InMemoryPreparedFollowUpRepository implements PreparedFollowUpRepository {
   constructor(private readonly runs: InMemoryRunRepository) {}
 
