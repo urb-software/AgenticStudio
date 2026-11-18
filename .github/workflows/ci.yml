@@ -112,9 +112,9 @@ jobs:
       - run: pnpm architecture:api
       # Structure report (Issue #170, docs/engineering/quality.md §8): the largest files, domain files
       # over 400 lines, methods per repository interface, public methods per handler, collaborators
-      # per module and files per feature, with the change against the base branch, in this job's
-      # summary. A step of this job, never a required status: it cannot fail the build
-      # (continue-on-error, and the script exits 0).
+      # per module, files per feature and the comment-to-code ratio, with the change against the base
+      # branch, in this job's summary. A step of this job, never a required status: it cannot fail
+      # the build (continue-on-error, and the script exits 0).
       - name: Structure report
         if: ${{ !cancelled() }}
         continue-on-error: true

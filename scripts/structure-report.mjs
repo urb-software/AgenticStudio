@@ -7,11 +7,14 @@
 //   - the number of methods per repository interface,
 //   - the number of public methods per handler,
 //   - the number of collaborators per module (files directly in `application/`),
-//   - the number of files per feature (`application/features/<feature>/`, tests included).
+//   - the number of files per feature (`application/features/<feature>/`, tests included),
+//   - the comment-to-code ratio per production file across the API, the agent worker and the shared
+//     packages, with the files above 0.25 flagged (rule 14).
 //
 // With `--base-ref <git ref>` it also reads the same tree at that ref and shows, beside each number,
-// the change against it ("new" when the base has no such file, interface, handler or feature). CI
-// passes the pull request's base commit and appends the output to the job summary.
+// the change against it ("new" when the base has no such file, interface, handler or feature; for
+// the comment ratio, the change in the number of flagged files). CI passes the pull request's base
+// commit and appends the output to the job summary.
 //
 //   node scripts/structure-report.mjs [--source <apps/api dir>] [--base-ref <git ref>] [--top <n>]
 import { execFileSync } from 'node:child_process';
@@ -20,11 +23,18 @@ import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { countLines, listSourceFiles } from './comment-rules.mjs';
 
 const repoRoot = join(import.meta.dirname, '..');
 
 /** Rule 13 of backend.md §3: a file under a module's `domain/` over this many lines is flagged. */
 const DOMAIN_LINE_LIMIT = 400;
+
+/** Rule 14: a file whose comment lines are above this share of its code lines is flagged. */
+export const COMMENT_RATIO_LIMIT = 0.25;
+
+/** How many files of the comment ratio table are shown. */
+const COMMENT_TABLE_ROWS = 30;
 
 /** Production TypeScript under `src/`: no tests and no declaration files. */
 const isProduction = (path) =>
@@ -43,6 +53,45 @@ function listFiles(dir) {
 
 const parse = (dir, path) =>
   ts.createSourceFile(path, readFileSync(join(dir, path), 'utf8'), ts.ScriptTarget.Latest);
+
+/**
+ * The comment-to-code ratio of every production file under `root` (the repository root) that the
+ * comment checks cover: tests (`__tests__/`, `*.test.*`) and `tests/architecture` are test code.
+ * Counting follows scripts/comment-rules.mjs, so the report and the checks agree.
+ */
+export function measureComments(root) {
+  const files = {};
+  for (const path of listSourceFiles(root)) {
+    if (!isProduction(path) || path.startsWith('tests/')) continue;
+    const counted = countLines(readFileSync(join(root, path), 'utf8'), path);
+    if (counted && counted.code > 0) {
+      files[path] = { ...counted, ratio: counted.comment / counted.code };
+    }
+  }
+  return files;
+}
+
+const flagged = (files) =>
+  Object.entries(files).filter(([, file]) => file.ratio > COMMENT_RATIO_LIMIT);
+
+function commentSection(current, base, top = COMMENT_TABLE_ROWS) {
+  const rows = flagged(current).sort((a, b) => b[1].ratio - a[1].ratio || a[0].localeCompare(b[0]));
+  const change = base ? delta(rows.length, flagged(base).length) : '';
+  const lines = [
+    `### Comment-to-code ratio (rule 14: above ${COMMENT_RATIO_LIMIT} is flagged; reported, not enforced)`,
+    '',
+    `Flagged files: ${rows.length} of ${Object.keys(current).length}${change}.`,
+    '',
+    '| File | Ratio | Comment lines | Code lines |',
+    '| --- | ---: | ---: | ---: |',
+  ];
+  if (rows.length === 0) lines.push('| (none) | 0 | 0 | 0 |');
+  for (const [name, file] of rows.slice(0, top)) {
+    lines.push(`| \`${name}\` | ${file.ratio.toFixed(2)} | ${file.comment} | ${file.code} |`);
+  }
+  if (rows.length > top) lines.push('', `Top ${top} of ${rows.length}.`);
+  return lines.join('\n');
+}
 
 /** The measurements of the API source tree at `apiDir` (a directory holding `src/`). */
 export function measure(apiDir) {
@@ -202,14 +251,18 @@ export function report(current, base, top = 10) {
     }),
     '',
   );
+  if (current.comments) out.push(commentSection(current.comments, base?.comments), '');
   return out.join('\n');
 }
 
-/** The API tree as it was at `ref`, extracted to a temporary directory (undefined if it cannot be). */
+/** What the comparison reads from the base: the API source and the other trees of the comment ratio. */
+const BASE_PATHS = ['apps/api/src', 'apps/agent-worker', 'packages', 'tests/architecture'];
+
+/** The trees as they were at `ref`, extracted to a temporary directory (undefined if it cannot be). */
 function extractBase(ref) {
   const directory = mkdtempSync(join(tmpdir(), 'structure-report-base-'));
   try {
-    const archive = execFileSync('git', ['archive', ref, 'apps/api/src'], {
+    const archive = execFileSync('git', ['archive', ref, ...BASE_PATHS], {
       cwd: repoRoot,
       maxBuffer: 256 * 1024 * 1024,
     });
@@ -231,12 +284,14 @@ function main(argv) {
   const top = Number(option('--top') ?? 10);
   const baseRef = option('--base-ref');
   const current = measure(source);
+  current.comments = measureComments(repoRoot);
   let base;
   if (baseRef) {
     const directory = extractBase(baseRef);
     if (directory) {
       try {
         base = measure(join(directory, 'apps', 'api'));
+        base.comments = measureComments(directory);
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
