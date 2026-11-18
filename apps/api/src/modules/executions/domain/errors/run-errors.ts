@@ -51,7 +51,6 @@ export class RunNotResumableError extends Error {
  * another Run of its project is active, or the server's places are.
  */
 export class RunSlotTakenError extends Error {
-  /** `maxPlaces`: the server's limit, shown in the message of the `server` scope. */
   constructor(scope: 'project');
   constructor(scope: 'server', maxPlaces: number);
   constructor(

@@ -8,6 +8,7 @@ import {
   hasExportModifier,
   isErrorClass,
   COMPANION_FILE,
+  ENTITY_FILE,
   moduleImports,
   parse,
   repositoryContract,
@@ -39,8 +40,6 @@ export const CHILD_ENTITIES: Record<string, string[]> = {
   ],
 };
 
-export const ENTITY_FILE =
-  /^src\/modules\/([^/]+)\/domain\/entities\/(?![^/]*-(?:snapshot|data|facts)\.ts$)[^/]+\.ts$/;
 const HANDLER_FILE = /^src\/modules\/([^/]+)\/application\/features\/[^/]+\/handler\.ts$/;
 const REPOSITORY_FILE = /^src\/modules\/([^/]+)\/domain\/repositories\/[^/]+\.ts$/;
 const ENTRY_POINT_FILE = /^src\/modules\/([^/]+)\/entry-points\//;
@@ -350,9 +349,7 @@ function isEntityClass(
 /**
  * A repository interface serves one aggregate root (rule 11): the file refers to exactly one
  * file in `domain/entities/`, and no method returns a type taken from `domain/value-objects/`
- * or from a companion file (`-data`, `-facts` or another root's snapshot: a record with no
- * behaviour is never the thing a store returns), except the snapshot of its own entity,
- * `entities/<entity>-snapshot.ts`.
+ * or from a companion file other than its own entity's snapshot.
  */
 function repositoryViolations(baseDir: string, path: string): Violation[] {
   const source = parse(baseDir, path);

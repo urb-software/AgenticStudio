@@ -11,7 +11,7 @@ import {
   RepositoryNotVerifiableError,
 } from '../../errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../repository-connection.js';
-import { type StoredRepositoryConnection } from '../repository-connection-snapshot.js';
+import { type StoredRepositoryConnection } from '../repository-connection-data.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const SHA = 'a'.repeat(40);

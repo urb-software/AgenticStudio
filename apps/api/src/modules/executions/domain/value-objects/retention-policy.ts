@@ -128,12 +128,8 @@ export class RetentionPolicy {
   }
 
   /**
-   * What the single-Run answers (the Run page, the refresh, the Follow-up command and the
-   * preparation of failing checks) add to a Run: whether it can take a Follow-up now and until
-   * when it stays open to one, and whether any agent worker is connected (Issues #141, #142,
-   * #143). The handler fetched `latestWorker` (the latest report of any agent worker) and
-   * `overLimit` (the per-Project limit removes the Run), and took `eligibility` and `facts`
-   * from the Run.
+   * Whether the Run can take a Follow-up now and until when, and whether any agent worker is
+   * connected. `overLimit`: the per-Project limit removes the Run.
    */
   runView(
     eligibility: FollowUpEligibility,

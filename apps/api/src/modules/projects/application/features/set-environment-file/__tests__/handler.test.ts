@@ -3,7 +3,7 @@ import {
   EnvironmentFilePathTrackedError,
   InvalidEnvironmentFileContentError,
   InvalidEnvironmentFilePathError,
-} from '../../../../domain/value-objects/environment-file.js';
+} from '../../../../domain/errors/environment-file-errors.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';

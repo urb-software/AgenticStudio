@@ -1,6 +1,3 @@
-/** The owner label of the content in the secret store (ADR 0001, Issue #76). */
-export const ENVIRONMENT_FILE_SECRET_OWNER = 'projects.environment-file';
-
 /** The path is not an acceptable Environment file path; `message` says why, for the operator. */
 export class InvalidEnvironmentFilePathError extends Error {
   constructor(message: string) {

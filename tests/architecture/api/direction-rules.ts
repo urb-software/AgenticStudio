@@ -4,13 +4,8 @@ import { listDirectories, listFiles, type Violation } from '../harness';
 import { moduleImports, target } from './syntax';
 
 /**
- * The two checks that keep the references inside a module's `domain/` pointing one way (Issue
- * #203, ADR 0003): nothing under `value-objects/` or `errors/` imports from `entities/`, and no
- * import cycle exists inside `domain/`. Syntax and file tree only, as in `layout-rules.ts`: each
- * file is parsed on its own, without type checking, so the checks work on fixtures. Both apply to
- * every module under `src/modules/`, by path pattern, and count every way of reaching another
- * file (type-only imports, `export … from`, `export *`, side-effect, dynamic and import-type
- * references). Tests (`__tests__/`, `*.test.ts`) are not checked.
+ * Keeps references inside a module's `domain/` one-way. Counts every import form, type-only ones
+ * included; tests are not checked.
  */
 export const DIRECTION_RULES = [
   'api-domain-leaves-do-not-import-entities',

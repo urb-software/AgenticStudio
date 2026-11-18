@@ -3,7 +3,7 @@ import {
   NoUsableCloneError,
   RepositoryBusyError,
 } from '../../errors/repository-connection-errors.js';
-import type { StoredRepositoryConnection } from '../../entities/repository-connection-snapshot.js';
+import type { StoredRepositoryConnection } from '../../entities/repository-connection-data.js';
 import { RepositoryFailure } from '../repository-failure.js';
 import { RepositoryLifecycle } from '../repository-lifecycle.js';
 import { REPOSITORY_STATES, type RepositoryState } from '../repository-state.js';

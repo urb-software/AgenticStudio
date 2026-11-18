@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { describeGate } from '../suite';
+import { directionViolations } from './direction-rules';
 import { fileViolations } from './file-rules';
 import { apiGate } from './gate';
 
@@ -866,8 +867,7 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entity-file-exports-one-class-and-no-function'],
     qualityRow: 'A `domain/entities/` file exports a second class or any function',
   },
-  // The direction of references inside `domain/` and the type-only companions of an entity (Issue
-  // #203).
+  // Direction of references inside `domain/`, and the type-only companions of an entity.
   {
     fixture: 'domain-leaves-import-smaller-leaves-and-entities-import-leaves',
     expected: [],
@@ -908,6 +908,10 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-domain-has-no-import-cycles', 'api-no-circular'],
     qualityRow:
       "A module's `domain/` has an import cycle, type-only imports and `export … from` included",
+  },
+  {
+    fixture: 'domain-cycle-in-a-test-is-not-checked',
+    expected: ['api-no-circular'],
   },
   {
     fixture: 'entity-companions-export-types-only',
@@ -963,6 +967,12 @@ describe('architecture:api precision', () => {
         to: 'exports the function round',
       },
     ]);
+  });
+
+  it('the direction checks ignore the files of __tests__/', () => {
+    expect(directionViolations(join(fixtures, 'domain-cycle-in-a-test-is-not-checked'))).toEqual(
+      [],
+    );
   });
 
   it('an overloaded type guard is not reported (review of #190)', () => {

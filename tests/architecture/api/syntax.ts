@@ -228,13 +228,17 @@ export function repositoryContract(
   return undefined;
 }
 
-/**
- * The type-only companions of an entity, beside it in `domain/entities/` (backend.md §2, ADR 0003,
- * Issue #203): `<aggregate>-snapshot.ts`, `<aggregate>-data.ts`, `<aggregate>-facts.ts` and
- * `<aggregate>-<operation>-facts.ts`. Recognised by the suffix alone.
- */
-export const COMPANION_FILE =
-  /^src\/modules\/([^/]+)\/domain\/entities\/[^/]+-(?:snapshot|data|facts)\.ts$/;
+const COMPANION_SUFFIX = 'snapshot|data|facts';
+
+/** A type-only companion of an entity, recognised by its file suffix alone. */
+export const COMPANION_FILE = new RegExp(
+  `^src/modules/([^/]+)/domain/entities/[^/]+-(?:${COMPANION_SUFFIX})\\.ts$`,
+);
+
+/** An entity file: a file of `domain/entities/` that is not a companion. */
+export const ENTITY_FILE = new RegExp(
+  `^src/modules/([^/]+)/domain/entities/(?![^/]*-(?:${COMPANION_SUFFIX})\\.ts$)[^/]+\\.ts$`,
+);
 
 /**
  * What a file exports that exists at run time: classes, functions, variables, enums, namespaces,

@@ -6,11 +6,11 @@ import {
   RepositoryAlreadyConnectedError,
   RepositoryNotVerifiableError,
 } from '../errors/repository-connection-errors.js';
+import type { RepositoryConnectionSnapshot } from './repository-connection-snapshot.js';
 import type {
   RepositoryConnectionData,
-  RepositoryConnectionSnapshot,
   StoredRepositoryConnection,
-} from './repository-connection-snapshot.js';
+} from './repository-connection-data.js';
 import { RepositoryFailure } from '../value-objects/repository-failure.js';
 import { RepositoryLifecycle } from '../value-objects/repository-lifecycle.js';
 

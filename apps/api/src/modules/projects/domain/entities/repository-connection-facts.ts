@@ -1,4 +1,4 @@
-import type { StoredRepositoryConnection } from './repository-connection-snapshot.js';
+import type { StoredRepositoryConnection } from './repository-connection-data.js';
 
 /** What a Connect (or a Retry) stores before the Clone is made. */
 export interface ConnectAttempt {
