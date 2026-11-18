@@ -679,7 +679,7 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'executions-entry-point-imports-type-from-entities-and-error-from-errors-file',
     expected: [],
     qualityRow:
-      '`entry-points/` imports an error class from an errors file in `domain/value-objects/`',
+      '`entry-points/` imports an error class from an errors file in `domain/errors/`',
   },
   {
     fixture: 'executions-entry-point-imports-entity-class',

@@ -31,8 +31,9 @@ modules/{module}/
     ports/                 interfaces the handlers need from outside
     <collaborator>.ts      rare, specifically named, last resort (rule 3)
   domain/
-    entities/              aggregate roots and their child entities: classes
-    value-objects/         classes that validate on creation; policies; records of a root with no behaviour; an aggregate's errors and fact types
+    entities/              aggregate roots and their child entities: classes; beside each entity its type-only companions <aggregate>-snapshot.ts, -data.ts, -facts.ts and <aggregate>-<operation>-facts.ts
+    errors/                the aggregate's error classes, one <aggregate>-errors.ts per aggregate
+    value-objects/         classes that validate on creation; policies; rules; records of a root with no behaviour
     repositories/          interfaces only
   entry-points/
     http/
@@ -129,13 +130,19 @@ Practical tests for a candidate root:
 
 A **child entity** has an identity only within its root and is created, changed and bounded through that root. A **value object** has no identity: it is defined by its values, is immutable (a change returns a new value) and validates on creation; where it owns no rule beyond its shape it may be a plain type (§10).
 
-**An aggregate root is always a class in `domain/entities/`**; at minimum it produces its snapshot. A record with no behaviour that is not a root lives in `domain/value-objects/`.
+**An aggregate root is always a class in `domain/entities/`**; at minimum it produces its snapshot. A record with no behaviour that is not a root lives in `domain/value-objects/`. The snapshot, stored data shape and fact types of an aggregate are type-only files beside its entity (see "Direction of references" below), and its errors are in `domain/errors/`.
 
 **When unsure, make them separate roots.** Joining two things into one aggregate needs a stated rule that spans them; keeping them apart needs none.
 
+### Direction of references inside `domain/`
+
+References point one way (Issue #203, [ADR 0003](adr/0003-api-module-layout.md) amendment): an entity may use value objects, errors and its companions; a value object may use smaller value objects; an error may use value objects; nothing under `value-objects/` or `errors/` imports from `entities/`, and `domain/` has no import cycle. A rule or policy that needs facts about an entity takes an input type it declares itself (the retention policy takes `RetentionFacts`, the sweep rules `RunSweepFacts`); the entity and the handlers map into it. A number shown in an error message is passed to the error by whoever raises it.
+
+The type-only companions of an entity are recognised by file suffix: `<aggregate>-snapshot.ts`, `<aggregate>-data.ts` (the stored shape), `<aggregate>-facts.ts` and, when the facts are split by the operation they serve, `<aggregate>-<operation>-facts.ts` (for example `run-resume-facts.ts`). A companion exports types and interfaces only; every other file in `domain/entities/` is an entity file with the existing checks. No facts file imports more than about a third of the module's domain files.
+
 ### Current aggregates
 
-This is the model the code follows (the tickets of Epic #160: #182 and #185 for `projects`, #183 and #184 for `executions`). The roots are pinned in `tests/architecture/api/pinned/aggregate-roots.json`, so adding or removing one is a reviewed decision. In `projects` every non-root file of an aggregate (snapshot, stored record, facts, errors) sits in `domain/value-objects/`, so `domain/entities/` holds only the root classes.
+This is the model the code follows (the tickets of Epic #160: #182 and #185 for `projects`, #183 and #184 for `executions`). The roots are pinned in `tests/architecture/api/pinned/aggregate-roots.json`, so adding or removing one is a reviewed decision. Since Epic #160 (#203) the snapshot, stored record and fact types of an aggregate sit beside its entity as type-only companion files, and its errors in `domain/errors/`; `domain/value-objects/` holds value objects, policies and rules only.
 
 | Module | Aggregate roots | Child entities | Value objects and plain records |
 | --- | --- | --- | --- |
