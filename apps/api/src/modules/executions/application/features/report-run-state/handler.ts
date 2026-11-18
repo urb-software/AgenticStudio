@@ -3,7 +3,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { type PullRequestState } from '../../../domain/value-objects/run-pull-request-status.js';
+import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
 import { type RunFailure } from '../../../domain/value-objects/run-failure.js';
+import { type RunState } from '../../../domain/value-objects/run-state.js';
+import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
@@ -18,8 +21,14 @@ import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 export interface ReportRunStateInput {
   runId: string;
   workerId: string;
+  state: RunState;
+  failure: RunFailure | null;
+  workingCopy?: RunWorkingCopy | null;
+  delivery?: RunDeliveryOutcome | null;
+  sessionRef?: string | null;
   pushedCommit?: string | null;
   pullRequestState?: PullRequestState | null;
+  bringUpToDateStarted?: { baseCommit: string; integrationCommit: string } | null;
   unchanged?: boolean;
   unchangedDetail?: string | null;
 }
