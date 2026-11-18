@@ -63,12 +63,20 @@ export class RunDelivery {
     };
   }
 
+  /** What a Follow-up that brings the Run branch up to date reports when there was nothing to bring. */
+  get alreadyUpToDateDetail(): string {
+    return (
+      `The Run branch already has everything ${this.integrationBranch} has, so nothing was changed: ` +
+      'no agent was started and nothing was pushed.'
+    );
+  }
+
   get hasPullRequest(): boolean {
     return this.pullRequest !== null;
   }
 
   /** An outcome without a pull request keeps the Run's. */
-  static outcomePatch(outcome: RunDeliveryOutcome): Partial<RunDeliveryStored> {
+  outcomePatch(outcome: RunDeliveryOutcome): Partial<RunDeliveryStored> {
     return {
       delivery: outcome.outcome,
       ...(outcome.outcome === 'delivered' ? { pullRequest: { ...outcome.pullRequest } } : {}),

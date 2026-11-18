@@ -140,19 +140,20 @@ describe('the hand-out rule', () => {
 
   it('holds a place exactly for the states that hold one', () => {
     const base = { claimedBy: null, sessionRef: null, followUpQueued: false } as const;
+    const rule = HandOutRule.for(W1);
 
-    expect(HandOutRule.holdsPlace({ ...base, state: 'queued' })).toBe(false);
-    expect(HandOutRule.holdsPlace({ ...base, state: 'queued', sessionRef: 's' })).toBe(true);
+    expect(rule.holdsPlace({ ...base, state: 'queued' })).toBe(false);
+    expect(rule.holdsPlace({ ...base, state: 'queued', sessionRef: 's' })).toBe(true);
     expect(
-      HandOutRule.holdsPlace({ ...base, state: 'queued', sessionRef: 's', followUpQueued: true }),
+      rule.holdsPlace({ ...base, state: 'queued', sessionRef: 's', followUpQueued: true }),
     ).toBe(false);
-    expect(HandOutRule.holdsPlace({ ...base, state: 'failed' })).toBe(false);
-    expect(HandOutRule.holdsPlace({ ...base, state: 'failed', claimedBy: W1 })).toBe(true);
+    expect(rule.holdsPlace({ ...base, state: 'failed' })).toBe(false);
+    expect(rule.holdsPlace({ ...base, state: 'failed', claimedBy: W1 })).toBe(true);
     for (const state of ['preparing', 'running', 'waiting_for_operator'] as const) {
-      expect(HandOutRule.holdsPlace({ ...base, state })).toBe(true);
+      expect(rule.holdsPlace({ ...base, state })).toBe(true);
     }
     for (const state of ['succeeded', 'cancelled', 'timed_out'] as const) {
-      expect(HandOutRule.holdsPlace({ ...base, state })).toBe(false);
+      expect(rule.holdsPlace({ ...base, state })).toBe(false);
     }
   });
 });

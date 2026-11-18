@@ -38,13 +38,6 @@ export class RunConversation {
     return { messages: [...this.messages] };
   }
 
-  static alreadyUpToDateDetail(integrationBranch: string): string {
-    return (
-      `The Run branch already has everything ${integrationBranch} has, so nothing was changed: ` +
-      'no agent was started and nothing was pushed.'
-    );
-  }
-
   append(message: RunMessage): RunConversation {
     return new RunConversation([...this.messages, message]);
   }

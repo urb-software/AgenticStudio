@@ -7,7 +7,7 @@ import { GitOperationError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { DisconnectRepositoryHandler } from '../handler.js';
-import { DeployKey } from '../../../../domain/value-objects/deploy-key.js';
+import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
@@ -166,7 +166,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
         integrationBranch: 'dev',
         deployKey,
       });
-      const pending = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+      const pending = testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
       await connections.change(projectId, (r) => {
         r.awaitHostKey(pending);
       });

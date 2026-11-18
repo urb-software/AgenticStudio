@@ -58,6 +58,16 @@ Records that carry a rule (a limit, a format, a cut, a redaction) were plain typ
 - A list of allowed values is a union type. The second form of factory is an instance method of an aggregate root (a Run adding a Run step); there is no standalone factory, because it would be a stateless domain object and a creation that outgrows its class signals a missing concept. Factory names say what they do: `of`, `create`, `from…`, `restore`, or a descriptive name such as `load` or `afterWaiting`.
 - Four gate rules keep this, with a passing and a failing fixture each ([Quality](../../engineering/quality.md) §4 and §5). No behaviour changes.
 
+## Amendment, 2026-11-18 (Epic #160, Issue #216): no rule in a static method or a top-level function
+
+The value object rule left two ways to keep a rule without an object: a static method that is not a factory, and an unexported function at the top of a file. Rules 4, 9 and 13 are refined ([Backend](../backend.md) §3 and §10):
+
+- A public static method of an entity or value object is a factory that returns its own class (optionally with `| undefined` or `| null`) and declares it. A private static may only prepare data for such a factory. Every other rule is an instance method; a question asked before an object exists is answered by creating the object first, or by a small value object that owns it (a remote address, a lease, a normalized name).
+- Policies and rules are instances built by a factory from their configuration; their checks are instance methods.
+- A top-level function in `domain/` is an exported type guard, or unexported, at most ten lines and naming no domain type. A class has at least one instance member, so a namespace of statics is not allowed.
+- The domain imports no runtime module (`node:crypto`, `fs`, `dns`, `timers`, `child_process`, `net` and the like). Generating a Deploy key therefore lives in the infrastructure adapter behind the Deploy key port; the domain keeps what a Deploy key comment is. From `crypto` the domain may import only `createHash` (deterministic, no I/O: the SHA-256 fingerprint of a public host key); a random source, key generation, any other name and a default or namespace import fail, and no path is exempt.
+- Four gate rules keep this, with a passing and a failing fixture each ([Quality](../../engineering/quality.md) §4 and §5). No behaviour changes.
+
 ## Consequences
 
 - **A feature's handler and its endpoint are in two folders** (`application/features/<feature>/` and `entry-points/http/<caller>/`), so reading one use case end to end means opening both.

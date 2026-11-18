@@ -3,7 +3,7 @@ import type { StoredRepositoryConnection } from './repository-connection-data.js
 export interface ConnectAttempt {
   projectId: string;
   url: string;
-  /** The remote's identity (`RepositoryUrl.identityOf`); unique across Projects. */
+  /** The remote's identity (`RemoteIdentity`); unique across Projects. */
   identity: string;
   integrationBranch: string;
   /**

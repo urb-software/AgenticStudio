@@ -12,32 +12,6 @@ export const KNOWN_SECRET_MIN_LENGTH = 4;
 const URL_SCHEME_SEPARATOR = /:\/\//g;
 const WHITESPACE = /\s/g;
 
-/**
- * Everything up to the last `@` of the whitespace-free token, so a password holding `@`, `/` or `:`
- * is masked whole. A scan, not a regex: linear time.
- */
-function maskUrlUserinfo(text: string): string {
-  let output = '';
-  let copied = 0;
-  URL_SCHEME_SEPARATOR.lastIndex = 0;
-  for (
-    let separator = URL_SCHEME_SEPARATOR.exec(text);
-    separator;
-    separator = URL_SCHEME_SEPARATOR.exec(text)
-  ) {
-    const start = separator.index + separator[0].length;
-    WHITESPACE.lastIndex = start;
-    const end = WHITESPACE.exec(text)?.index ?? text.length;
-    const at = text.slice(start, end).lastIndexOf('@');
-    if (at >= 0) {
-      output += `${text.slice(copied, start)}${REDACTED}`;
-      copied = start + at;
-    }
-    URL_SCHEME_SEPARATOR.lastIndex = end;
-  }
-  return output + text.slice(copied);
-}
-
 const PRIVATE_KEY_BLOCK =
   /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----|$)/g;
 
@@ -85,7 +59,7 @@ export class LogRedaction {
 
   text(text: string): string {
     let redacted = this.replaceKnownValues(text).replace(PRIVATE_KEY_BLOCK, REDACTED);
-    redacted = maskUrlUserinfo(redacted)
+    redacted = this.maskUrlUserinfo(redacted)
       .replace(AUTHORIZATION_VALUE, `$1${REDACTED}`)
       .replace(BEARER_VALUE, `$1${REDACTED}`);
     return TOKEN_SHAPES.reduce((current, shape) => current.replace(shape, REDACTED), redacted);
@@ -146,5 +120,31 @@ export class LogRedaction {
         subject: this.text(commit.subject),
       })),
     };
+  }
+
+  /**
+   * Everything up to the last `@` of the whitespace-free token, so a password holding `@`, `/` or `:`
+   * is masked whole. A scan, not a regex: linear time.
+   */
+  private maskUrlUserinfo(text: string): string {
+    let output = '';
+    let copied = 0;
+    URL_SCHEME_SEPARATOR.lastIndex = 0;
+    for (
+      let separator = URL_SCHEME_SEPARATOR.exec(text);
+      separator;
+      separator = URL_SCHEME_SEPARATOR.exec(text)
+    ) {
+      const start = separator.index + separator[0].length;
+      WHITESPACE.lastIndex = start;
+      const end = WHITESPACE.exec(text)?.index ?? text.length;
+      const at = text.slice(start, end).lastIndexOf('@');
+      if (at >= 0) {
+        output += `${text.slice(copied, start)}${REDACTED}`;
+        copied = start + at;
+      }
+      URL_SCHEME_SEPARATOR.lastIndex = end;
+    }
+    return output + text.slice(copied);
   }
 }

@@ -202,6 +202,46 @@ export const QUALITY_TABLE = [
     expected: 'PASS',
     gate: 'api',
   },
+  {
+    row: 'A public static method of an entity or value object returns its own class',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A public static method of an entity or value object returns something else, or declares no return type',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/` top-level function is an exported type guard, or a short unexported helper without domain types',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/` unexported function is over ten lines or names a domain type',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/` class has an instance member, or is an error class',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/` class has no instance member',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: '`domain/` imports no runtime module (tests are not checked)',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
+    expected: 'FAIL',
+    gate: 'api',
+  },
   { row: '`domain/` imports only `domain/` and plain libraries', expected: 'PASS', gate: 'api' },
   { row: '`domain/` imports from `application/ports/`', expected: 'FAIL', gate: 'api' },
   {

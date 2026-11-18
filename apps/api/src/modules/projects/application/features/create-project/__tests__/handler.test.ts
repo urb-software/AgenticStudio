@@ -8,6 +8,7 @@ import {
   ProjectName,
 } from '../../../../domain/value-objects/project-name.js';
 import { CreateProjectHandler } from '../handler.js';
+import { NormalizedName } from '../../../../domain/value-objects/normalized-name.js';
 import { ProjectNameTakenError } from '../../../../domain/errors/project-errors.js';
 
 class InMemoryProjectRepository implements ProjectRepository {
@@ -45,11 +46,11 @@ const { cases: NORMALIZATION_CASES } = JSON.parse(readFileSync(VECTOR, 'utf8')) 
   cases: { name: string; input: string; expected: string }[];
 };
 
-describe('ProjectName.normalize: shared project-name normalization vector', () => {
+describe('NormalizedName.of: shared project-name normalization vector', () => {
   it.each(NORMALIZATION_CASES.map((c) => [c.name, c.input, c.expected] as const))(
     '%s',
     (_name, input, expected) => {
-      expect(ProjectName.normalize(input)).toBe(expected);
+      expect(NormalizedName.of(input).value).toBe(expected);
     },
   );
 });

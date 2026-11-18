@@ -12,7 +12,7 @@ export class LongWaitRule {
     return new LongWaitRule(now);
   }
 
-  static candidate(run: Pick<RunSweepFacts, 'state'>): boolean {
+  candidate(run: Pick<RunSweepFacts, 'state'>): boolean {
     return run.state === 'waiting_for_operator';
   }
 

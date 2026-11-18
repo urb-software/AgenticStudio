@@ -1,6 +1,8 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { DeployKey } from '../deploy-key.js';
+import { Ed25519DeployKeyGenerator } from '../ed25519-deploy-key-generator.js';
+
+const generator = new Ed25519DeployKeyGenerator();
 
 class WireReader {
   private offset = 0;
@@ -72,9 +74,9 @@ function decodePrivateKey(armoured: string) {
   };
 }
 
-describe('DeployKey.generate', () => {
+describe('Ed25519DeployKeyGenerator.generate', () => {
   it('generates an ed25519 key pair: OpenSSH private key and a one-line public key', () => {
-    const { privateKey, publicKey } = DeployKey.generate('studio-acme-shop');
+    const { privateKey, publicKey } = generator.generate('studio-acme-shop');
 
     const [type, data, comment, ...rest] = publicKey.split(' ');
     expect(type).toBe('ssh-ed25519');
@@ -118,23 +120,9 @@ describe('DeployKey.generate', () => {
   });
 
   it('generates a new key pair every time', () => {
-    const a = DeployKey.generate('studio-a');
-    const b = DeployKey.generate('studio-a');
+    const a = generator.generate('studio-a');
+    const b = generator.generate('studio-a');
     expect(a.publicKey).not.toBe(b.publicKey);
     expect(a.privateKey).not.toBe(b.privateKey);
-  });
-});
-
-describe('DeployKey.commentFor', () => {
-  it.each([
-    ['Acme Shop', 'studio-Acme-Shop'],
-    ['  shop  ', 'studio-shop'],
-    ['café / api', 'studio-caf-api'],
-    ['a.b_c-d', 'studio-a.b_c-d'],
-    ['$(rm -rf)', 'studio-rm-rf'],
-    ['ü', 'studio-project'],
-    ['x'.repeat(100), `studio-${'x'.repeat(64)}`],
-  ])('turns %j into %j', (name, comment) => {
-    expect(DeployKey.commentFor(name)).toBe(comment);
   });
 });

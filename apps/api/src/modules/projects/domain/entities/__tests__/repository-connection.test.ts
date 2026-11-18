@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DeployKey } from '../../value-objects/deploy-key.js';
+import { testDeployKey } from '../../value-objects/__tests__/test-deploy-key.js';
 import { HostKey } from '../../value-objects/host-key.js';
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
 import { type ConnectAttempt } from '../repository-connection-facts.js';
@@ -18,7 +18,7 @@ const SHA = 'a'.repeat(40);
 const NEW_SHA = 'b'.repeat(40);
 const AT = new Date('2026-11-13T10:00:00.000Z');
 const FAILURE = RepositoryFailure.of('host_unreachable', 'fatal: x');
-const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string => testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
 const DEPLOY_KEY = { publicKey: 'ssh-ed25519 AAAA studio', secretRef: 'secret-1' };
 
 const attempt = (overrides: Partial<ConnectAttempt> = {}): ConnectAttempt => ({
@@ -222,15 +222,15 @@ describe('RepositoryConnection', () => {
       const previous = failedWithoutClone();
       const same = { url: previous.url, integrationBranch: previous.integrationBranch };
 
-      expect(RepositoryConnection.failureWhenCloneNotScheduled(previous, same)).toBe(FAILURE);
-      expect(RepositoryConnection.failureWhenCloneNotScheduled(previous)).toBe(FAILURE);
+      expect(RepositoryFailure.whenCloneNotScheduled(previous, same)).toBe(FAILURE);
+      expect(RepositoryFailure.whenCloneNotScheduled(previous)).toBe(FAILURE);
       const others = [
-        RepositoryConnection.failureWhenCloneNotScheduled(previous, {
+        RepositoryFailure.whenCloneNotScheduled(previous, {
           ...same,
           integrationBranch: 'x',
         }),
-        RepositoryConnection.failureWhenCloneNotScheduled(ready()),
-        RepositoryConnection.failureWhenCloneNotScheduled(null, same),
+        RepositoryFailure.whenCloneNotScheduled(ready()),
+        RepositoryFailure.whenCloneNotScheduled(null, same),
       ];
       for (const other of others) expect(other).toEqual(RepositoryFailure.notStarted());
     });

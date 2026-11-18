@@ -117,6 +117,27 @@ export class RepositoryFailure {
     return RepositoryFailure.of('unknown', UNEXPECTED_FAILURE_DETAIL);
   }
 
+  /**
+   * The failure for a clone that could not be scheduled: the failed Repository's own failure when
+   * this attempt repeats it (same `settings`, or none given), else "the clone could not be started".
+   */
+  static whenCloneNotScheduled(
+    previous: {
+      url: string;
+      integrationBranch: string;
+      isFailed: boolean;
+      failure: RepositoryFailure | null;
+    } | null,
+    settings?: { url: string; integrationBranch: string },
+  ): RepositoryFailure {
+    const sameSettings =
+      settings === undefined ||
+      (previous?.url === settings.url && previous.integrationBranch === settings.integrationBranch);
+    return previous?.isFailed && previous.failure && sameSettings
+      ? previous.failure
+      : RepositoryFailure.notStarted();
+  }
+
   static notStarted(): RepositoryFailure {
     return RepositoryFailure.of('unknown', NOT_STARTED_DETAIL);
   }

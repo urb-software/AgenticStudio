@@ -14,7 +14,7 @@ import {
   HOST_KEY_CHANGED_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
 } from '../../../../domain/value-objects/repository-failure.js';
-import { DeployKey } from '../../../../domain/value-objects/deploy-key.js';
+import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
@@ -266,7 +266,7 @@ describe('FetchCloneHandler', () => {
 
   describe('an SSH Repository', () => {
     const SSH_URL = 'ssh://git@git.example.com:2222/acme/shop.git';
-    const pinned = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+    const pinned = testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
 
     async function fetchingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');

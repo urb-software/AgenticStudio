@@ -72,23 +72,33 @@ describe('the long-wait rule', () => {
   });
 
   it('lists only Runs waiting for the operator', () => {
-    expect(LongWaitRule.candidate({ state: 'waiting_for_operator' })).toBe(true);
-    expect(LongWaitRule.candidate({ state: 'queued' })).toBe(false);
+    expect(LongWaitRule.at(NOW).candidate({ state: 'waiting_for_operator' })).toBe(true);
+    expect(LongWaitRule.at(NOW).candidate({ state: 'queued' })).toBe(false);
   });
 });
 
 describe('the gone-worker rule', () => {
   it('calls a requested, unheld delivery retry pending', () => {
     const retry = { state: 'failed' as const, deliveryRequested: true, claimedBy: null };
-    expect(GoneWorkerRule.pendingDeliveryRetry(retry)).toBe(true);
-    expect(GoneWorkerRule.pendingDeliveryRetry({ ...retry, claimedBy: 'w' })).toBe(false);
-    expect(GoneWorkerRule.pendingDeliveryRetry({ ...retry, deliveryRequested: false })).toBe(false);
+    expect(GoneWorkerRule.at(NOW, 60).pendingDeliveryRetry(retry)).toBe(true);
+    expect(GoneWorkerRule.at(NOW, 60).pendingDeliveryRetry({ ...retry, claimedBy: 'w' })).toBe(
+      false,
+    );
+    expect(
+      GoneWorkerRule.at(NOW, 60).pendingDeliveryRetry({ ...retry, deliveryRequested: false }),
+    ).toBe(false);
   });
 
   it('calls a queued Run with an agent session a pending resume', () => {
-    expect(GoneWorkerRule.pendingResume({ state: 'queued', sessionRef: 's' })).toBe(true);
-    expect(GoneWorkerRule.pendingResume({ state: 'queued', sessionRef: null })).toBe(false);
-    expect(GoneWorkerRule.pendingResume({ state: 'failed', sessionRef: 's' })).toBe(false);
+    expect(GoneWorkerRule.at(NOW, 60).pendingResume({ state: 'queued', sessionRef: 's' })).toBe(
+      true,
+    );
+    expect(GoneWorkerRule.at(NOW, 60).pendingResume({ state: 'queued', sessionRef: null })).toBe(
+      false,
+    );
+    expect(GoneWorkerRule.at(NOW, 60).pendingResume({ state: 'failed', sessionRef: 's' })).toBe(
+      false,
+    );
   });
 });
 

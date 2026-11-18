@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RemoteAddress, type RemoteAddressRange } from '../remote-address.js';
+import { RemoteAddress } from '../remote-address.js';
+import type { RemoteAddressRange } from '../remote-address-range.js';
+import { HostLiteral } from '../host-literal.js';
 
-describe('RemoteAddress.classify', () => {
+describe('RemoteAddress.range', () => {
   it.each<[string, RemoteAddressRange]>([
     ['0.0.0.0', 'blocked'],
     ['0.1.2.3', 'blocked'],
@@ -35,7 +37,7 @@ describe('RemoteAddress.classify', () => {
     ['192.169.0.0', 'public'],
     ['223.255.255.255', 'public'],
   ])('IPv4 %s is %s', (address, range) => {
-    expect(RemoteAddress.classify(address)).toBe(range);
+    expect(RemoteAddress.of(address).range).toBe(range);
   });
 
   it.each<[string, RemoteAddressRange]>([
@@ -74,42 +76,42 @@ describe('RemoteAddress.classify', () => {
     ['2001:0:4136:e378:8000:63bf:3fff:fdd2', 'blocked'],
     ['2001:4860:4860::8888', 'public'],
   ])('IPv6 %s is %s', (address, range) => {
-    expect(RemoteAddress.classify(address)).toBe(range);
+    expect(RemoteAddress.of(address).range).toBe(range);
   });
 
   it.each(['', 'localhost', '1.2.3', '256.0.0.1', '1.2.3.4.5', '::g', '1::2::3', '[::1]'])(
     'treats %j, which is not an address, as blocked',
     (text) => {
-      expect(RemoteAddress.classify(text)).toBe('blocked');
+      expect(RemoteAddress.of(text).range).toBe('blocked');
     },
   );
 });
 
-describe('RemoteAddress.isAllowed', () => {
+describe('RemoteAddress.isAllowedUnder', () => {
   it('allows public addresses always, private ones only with the opt-in, blocked ones never', () => {
-    expect(RemoteAddress.isAllowed('8.8.8.8', false)).toBe(true);
-    expect(RemoteAddress.isAllowed('10.0.0.5', false)).toBe(false);
-    expect(RemoteAddress.isAllowed('10.0.0.5', true)).toBe(true);
-    expect(RemoteAddress.isAllowed('169.254.169.254', true)).toBe(false);
-    expect(RemoteAddress.isAllowed('fd00:ec2::254', true)).toBe(false);
-    expect(RemoteAddress.isAllowed('fd20:ce::254', false)).toBe(false);
-    expect(RemoteAddress.isAllowed('fd20:ce::254', true)).toBe(false);
-    expect(RemoteAddress.isAllowed('100.100.100.200', true)).toBe(false);
+    expect(RemoteAddress.of('8.8.8.8').isAllowedUnder(false)).toBe(true);
+    expect(RemoteAddress.of('10.0.0.5').isAllowedUnder(false)).toBe(false);
+    expect(RemoteAddress.of('10.0.0.5').isAllowedUnder(true)).toBe(true);
+    expect(RemoteAddress.of('169.254.169.254').isAllowedUnder(true)).toBe(false);
+    expect(RemoteAddress.of('fd00:ec2::254').isAllowedUnder(true)).toBe(false);
+    expect(RemoteAddress.of('fd20:ce::254').isAllowedUnder(false)).toBe(false);
+    expect(RemoteAddress.of('fd20:ce::254').isAllowedUnder(true)).toBe(false);
+    expect(RemoteAddress.of('100.100.100.200').isAllowedUnder(true)).toBe(false);
   });
 });
 
-describe('RemoteAddress.refusedRange', () => {
+describe('RemoteAddress.refusedUnder', () => {
   it('names the range that refuses an address, or null when it is allowed', () => {
-    expect(RemoteAddress.refusedRange('8.8.8.8', false)).toBeNull();
-    expect(RemoteAddress.refusedRange('10.0.0.5', false)).toBe('private');
-    expect(RemoteAddress.refusedRange('10.0.0.5', true)).toBeNull();
-    expect(RemoteAddress.refusedRange('169.254.169.254', true)).toBe('blocked');
-    expect(RemoteAddress.refusedRange('fd20:ce::254', true)).toBe('blocked');
-    expect(RemoteAddress.refusedRange('not an address', true)).toBe('blocked');
+    expect(RemoteAddress.of('8.8.8.8').refusedUnder(false)).toBeNull();
+    expect(RemoteAddress.of('10.0.0.5').refusedUnder(false)).toBe('private');
+    expect(RemoteAddress.of('10.0.0.5').refusedUnder(true)).toBeNull();
+    expect(RemoteAddress.of('169.254.169.254').refusedUnder(true)).toBe('blocked');
+    expect(RemoteAddress.of('fd20:ce::254').refusedUnder(true)).toBe('blocked');
+    expect(RemoteAddress.of('not an address').refusedUnder(true)).toBe('blocked');
   });
 });
 
-describe('RemoteAddress.literalOf', () => {
+describe('HostLiteral.of', () => {
   it.each([
     ['github.com'],
     ['git.example.test'],
@@ -118,7 +120,7 @@ describe('RemoteAddress.literalOf', () => {
     ['0x7f.example'],
     ['host-0x1'],
   ])('%s is a host name', (host) => {
-    expect(RemoteAddress.literalOf(host)).toEqual({ kind: 'name' });
+    expect(HostLiteral.of(host)).toEqual({ kind: 'name' });
   });
 
   it.each([
@@ -137,7 +139,7 @@ describe('RemoteAddress.literalOf', () => {
     ['[::ffff:7f00:1]', '::ffff:7f00:1'],
     ['[FE80::1]', 'fe80::1'],
   ])('%s is the address %s', (host, address) => {
-    expect(RemoteAddress.literalOf(host)).toEqual({ kind: 'address', address });
+    expect(HostLiteral.of(host)).toEqual({ kind: 'address', address });
   });
 
   it.each([
@@ -151,6 +153,6 @@ describe('RemoteAddress.literalOf', () => {
     ['[::g]'],
     ['[1::2::3]'],
   ])('%s is a numeric host that is no valid address', (host) => {
-    expect(RemoteAddress.literalOf(host)).toEqual({ kind: 'invalid' });
+    expect(HostLiteral.of(host)).toEqual({ kind: 'invalid' });
   });
 });

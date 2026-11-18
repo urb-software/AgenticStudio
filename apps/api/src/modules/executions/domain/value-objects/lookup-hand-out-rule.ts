@@ -42,12 +42,12 @@ export class LookupHandOutRule {
     );
   }
 
-  static readonly queueOrder = (a: LookupHandOutView, b: LookupHandOutView): number =>
+  private readonly queueOrder = (a: LookupHandOutView, b: LookupHandOutView): number =>
     a.requestedAt.getTime() - b.requestedAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
   next<T extends LookupHandOutView>(lookups: readonly T[], runs: readonly LookupRunView[]): T[] {
     return [...lookups]
-      .sort(LookupHandOutRule.queueOrder)
+      .sort(this.queueOrder)
       .filter((lookup) =>
         this.takes(
           lookup,

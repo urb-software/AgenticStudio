@@ -1,3 +1,5 @@
+import { NormalizedName } from './normalized-name.js';
+
 export const PROJECT_NAME_MIN_LENGTH = 1;
 export const PROJECT_NAME_MAX_LENGTH = 100;
 
@@ -22,16 +24,8 @@ export class ProjectName {
     readonly uniquenessKey: string,
   ) {}
 
-  /**
-   * Normalizes to NFC first (so NFC and NFD spellings are one name), then trims and collapses
-   * whitespace runs to one space. Case is kept. Idempotent, so it can run again after the HTTP edge.
-   */
-  static normalize(raw: string): string {
-    return raw.normalize('NFC').trim().replace(/\s+/gu, ' ');
-  }
-
   static parse(raw: string): ProjectName {
-    const value = ProjectName.normalize(raw);
+    const value = NormalizedName.of(raw).value;
     const length = ProjectName.codePointLength(value);
     if (length < PROJECT_NAME_MIN_LENGTH) {
       throw new InvalidProjectNameError('empty');

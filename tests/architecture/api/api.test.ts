@@ -96,7 +96,10 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-contracts-self-contained', 'api-features-no-reachable-adapters'],
   },
   { fixture: 'contracts-import-domain', expected: ['api-contracts-self-contained'] },
-  { fixture: 'domain-imports-file-system', expected: ['api-domain-independent'] },
+  {
+    fixture: 'domain-imports-file-system',
+    expected: ['api-domain-independent', 'api-domain-no-runtime-modules'],
+  },
   {
     fixture: 'module-root-file-reexports-adapter',
     expected: ['api-module-layout', 'api-features-no-reachable-adapters'],
@@ -534,13 +537,107 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'domain-class-of-methods-returning-another-class',
-    expected: ['api-domain-no-class-of-methods-returning-another-class'],
+    expected: [
+      'api-domain-no-class-of-methods-returning-another-class',
+      'api-domain-static-is-a-factory',
+    ],
     qualityRow: 'A `domain/` class only has methods returning another class',
   },
   {
     fixture: 'domain-class-with-state-and-a-method-returning-another-class',
     expected: [],
     qualityRow: 'A `domain/` class has state, or methods returning its own class',
+  },
+  {
+    fixture: 'domain-static-methods-return-their-class',
+    expected: [],
+    qualityRow: 'A public static method of an entity or value object returns its own class',
+  },
+  {
+    fixture: 'domain-static-method-returns-another-type',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
+    fixture: 'domain-static-method-without-return-type',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
+    fixture: 'domain-static-accessor',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
+    fixture: 'domain-unexported-class-with-static-rule',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
+    fixture: 'domain-static-function-property',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
+    fixture: 'domain-short-helper-without-domain-types',
+    expected: [],
+    qualityRow:
+      'A `domain/` top-level function is an exported type guard, or a short unexported helper without domain types',
+  },
+  {
+    fixture: 'domain-long-helper',
+    expected: ['api-domain-top-level-function-is-a-guard-or-helper'],
+    qualityRow: 'A `domain/` unexported function is over ten lines or names a domain type',
+  },
+  {
+    fixture: 'domain-helper-names-a-domain-type',
+    expected: ['api-domain-top-level-function-is-a-guard-or-helper'],
+    qualityRow: 'A `domain/` unexported function is over ten lines or names a domain type',
+  },
+  {
+    fixture: 'domain-error-class-without-members',
+    expected: [],
+    qualityRow: 'A `domain/` class has an instance member, or is an error class',
+  },
+  {
+    fixture: 'domain-class-with-only-statics',
+    expected: ['api-domain-class-has-instance-member'],
+    qualityRow: 'A `domain/` class has no instance member',
+  },
+  {
+    fixture: 'domain-test-imports-node-crypto',
+    expected: [],
+    qualityRow: '`domain/` imports no runtime module (tests are not checked)',
+  },
+  {
+    fixture: 'domain-hashes-with-create-hash',
+    expected: [],
+    qualityRow: '`domain/` imports no runtime module (tests are not checked)',
+  },
+  {
+    fixture: 'domain-imports-random-bytes-from-crypto',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
+  },
+  {
+    fixture: 'domain-imports-crypto-namespace',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
+  },
+  {
+    fixture: 'domain-imports-node-crypto',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
+  },
+  {
+    fixture: 'domain-imports-bare-dns',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
   },
   {
     fixture: 'domain-imports-only-domain-and-plain-libraries',

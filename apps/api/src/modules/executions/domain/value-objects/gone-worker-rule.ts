@@ -33,13 +33,13 @@ export class GoneWorkerRule {
     return seen < this.seenBefore;
   }
 
-  static pendingDeliveryRetry(
+  pendingDeliveryRetry(
     run: Pick<RunSweepFacts, 'state' | 'deliveryRequested' | 'claimedBy'>,
   ): boolean {
     return run.state === 'failed' && run.deliveryRequested && run.claimedBy === null;
   }
 
-  static pendingResume(run: Pick<RunSweepFacts, 'state' | 'sessionRef'>): boolean {
+  pendingResume(run: Pick<RunSweepFacts, 'state' | 'sessionRef'>): boolean {
     return run.state === 'queued' && run.sessionRef !== null;
   }
 }

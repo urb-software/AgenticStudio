@@ -7,6 +7,7 @@ import {
   RemoteHeldByOtherProjectError,
 } from '../../../domain/errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
+import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
 import { type RepositoryConnectionSnapshot } from '../../../domain/entities/repository-connection-snapshot.js';
 import {
   PROJECT_REPOSITORY,
@@ -119,7 +120,7 @@ export class ConnectRepositoryHandler {
     try {
       await this.jobs.start(input.projectId, 'clone');
     } catch (error) {
-      const failure = RepositoryConnection.failureWhenCloneNotScheduled(previous, {
+      const failure = RepositoryFailure.whenCloneNotScheduled(previous, {
         url: url.value,
         integrationBranch: branch.value,
       });
