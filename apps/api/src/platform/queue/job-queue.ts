@@ -47,9 +47,9 @@ export interface QueueDefinition<P extends JobPayload> {
   /** Lower-case letters, digits and dashes; unique per application. */
   readonly name: string;
   /**
-   * Runs one job and must stop promptly when `job.signal` aborts. The job, its id and its
-   * worker slot stay busy until this settles and `onFailed` runs only afterwards, so no late
-   * write follows the failure report. Resolving after an abort still counts as a failure.
+   * Runs one job and must stop promptly when `job.signal` aborts (check `signal.aborted` or
+   * `throwIfAborted()`, not only the `abort` event). Its id and slot stay busy until this settles
+   * and `onFailed` runs only afterwards; resolving after an abort still counts as a failure.
    */
   process(job: RunningJob<P>): Promise<void>;
   /**
@@ -77,15 +77,15 @@ export interface EnqueueOptions {
 /** The handle a module gets back from {@link JobQueues.register}. */
 export interface JobQueue<P extends JobPayload> {
   /**
-   * Adds a job under a caller-supplied id (1–200 of `A-Za-z0-9._-`, not all digits); a
-   * finished one does not block it, and racing enqueues can both succeed (owner state guards).
-   * Throws JobAlreadyActiveError if waiting or running, QueueUnavailableError if no Redis.
+   * Adds a job under a caller-supplied id (1–200 of `A-Za-z0-9._-`, not all digits). Racing
+   * enqueues can both succeed: the loser is told it was accepted though only the winner's job runs.
+   * Throws JobAlreadyActiveError if waiting or running, QueueUnavailableError if Redis is down.
    */
   enqueue(id: string, payload: P, options?: EnqueueOptions): Promise<void>;
   /**
-   * Cancels a job (running: aborted, `onFailed` gets `cancelled`; waiting: removed); false if
-   * nothing to cancel. `settleTimeoutMs` waits for processor, `onFailed` and a free id, else
-   * JobStillRunningError; QueueUnavailableError when Redis is unreachable.
+   * Cancels a job: a running one is aborted (`onFailed` gets `cancelled`) and this returns once
+   * signalled, its id busy until the processor settles; a waiting one is removed without
+   * `onFailed`. `settleTimeoutMs` waits for that, else JobStillRunningError; false if none.
    */
   cancel(id: string, options?: CancelOptions): Promise<boolean>;
 }

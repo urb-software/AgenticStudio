@@ -232,8 +232,8 @@ const environmentSchema = z.object({
   STUDIO_RUN_STEP_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
   STUDIO_RUN_MAX_STEPS: z.coerce.number().int().min(1).max(100).default(10),
   STUDIO_RUN_WAITING_DAYS: z.coerce.number().int().min(1).max(365).default(14),
-  // STUDIO_RUN_MAX_STEPS is the allowance per part and per Follow-up; a Run at this many
-  // Run steps in total takes no further Follow-up.
+  // STUDIO_RUN_MAX_STEPS is the allowance of the first part and of each Follow-up; a Run at
+  // this many Run steps in total takes no further Follow-up.
   STUDIO_RUN_MAX_TOTAL_STEPS: z.coerce.number().int().min(1).max(10_000).default(50),
   STUDIO_RUN_LOG_MAX_BYTES: z.coerce
     .number()
@@ -243,9 +243,9 @@ const environmentSchema = z.object({
     .default(8 * 1024 * 1024),
   // Days an Environment file snapshot is kept while its failed delivery can be retried.
   STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7),
-  // How long a finished Run's agent-side Working copy is kept; Studio decides, the worker
-  // removes. No pull request: _DAYS after the Run, at most _MAX_PER_PROJECT Runs per Project.
-  // With one: _OPEN_PR_IDLE_DAYS without activity or _AFTER_PR_END_HOURS after merge/close.
+  // How long a finished Run's agent-side Working copy is kept; Studio decides, the worker removes.
+  // No pull request: _DAYS after the Run, at most _MAX_PER_PROJECT per Project. With one:
+  // _OPEN_PR_IDLE_DAYS idle or _AFTER_PR_END_HOURS after merge/close, whichever comes first.
   STUDIO_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
   STUDIO_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
   STUDIO_RETENTION_OPEN_PR_IDLE_DAYS: z.coerce.number().int().min(1).max(3650).default(30),

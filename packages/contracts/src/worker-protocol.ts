@@ -631,8 +631,9 @@ export const reportRunStateRequestSchema = z
      */
     pullRequestState: pullRequestStateSchema.optional(),
     /**
-     * With `running` of a bring-up-to-date claim only: the merge started. Studio keeps both
-     * commits and hands them back with every later claim of the part.
+     * With `running` of a bring-up-to-date claim only: the merge started. `baseCommit` is the Run
+     * branch before it, `integrationCommit` the integration commit merged; Studio hands both back
+     * with every later claim of the part.
      */
     bringUpToDateStarted: z
       .strictObject({ baseCommit: commitIdSchema, integrationCommit: commitIdSchema })
@@ -1003,8 +1004,8 @@ const providerReasonSchema = z.string().min(1).max(PROVIDER_REASON_MAX_LENGTH);
 
 /**
  * The disk the worker keeps Working copies and caches on, measured at most every ten minutes.
- * Sizes are bytes of data (a file linked from two places counts once); `minFreeBytes` is the free
- * space below which it prepares no new Run (`STUDIO_WORKER_MIN_FREE_GB`).
+ * Sizes are bytes of data (a file linked from two places counts once); `keptRuns` counts the Run
+ * directories held; `minFreeBytes` is the free space below which no new Run is prepared.
  */
 const DISK_BYTES_MAX = Number.MAX_SAFE_INTEGER;
 export const workerDiskSchema = z.strictObject({
@@ -1124,6 +1125,7 @@ export const pullRequestStateResultSchema = z
     aheadBy: z.int().min(0).max(PG_INT_MAX).optional(),
     mergeable: z.boolean().optional(),
     checksCommit: commitIdSchema.optional(),
+    /** Empty means none are configured or reported. */
     checks: z.array(pullRequestCheckSchema).max(PULL_REQUEST_CHECKS_MAX).optional(),
     /** The Git host refused to report checks (the Agent account lacks the permission). */
     checksUnavailable: z.literal(true).optional(),

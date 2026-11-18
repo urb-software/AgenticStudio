@@ -85,9 +85,9 @@ export const FAKE_NOTES_FILE = 'FAKE_NOTES.md';
 const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
 
 /**
- * Runner with scripted outcomes, chosen by {@link FakeScenario}: deterministic, no provider, no
- * network. `resume` continues only the Run's own session; a Follow-up plays the scenario its text
- * names. The scenarios: docs/architecture/agent-worker.md.
+ * Runner with scripted outcomes ({@link FakeScenario}): deterministic, no provider, no network.
+ * `resume` continues only the Run's own session; a Follow-up or bring-up note plays the scenario
+ * its text names; `print-env` prints Studio-placed files. See docs/architecture/agent-worker.md.
  */
 export class FakeRunner implements Runner {
   private readonly slowMs: number;

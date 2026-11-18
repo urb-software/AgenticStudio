@@ -22,6 +22,7 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
 /**
  * The agent worker's production files allowed to import `node:child_process`: the spawn boundary,
  * which checks the provider gate before it creates a process, and the helper-process runner.
+ * Adding a file here is a reviewed architecture change.
  */
 export const AGENT_WORKER_PROCESS_FILES = [
   'apps/agent-worker/src/spawn-boundary.ts',

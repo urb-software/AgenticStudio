@@ -18,7 +18,8 @@ import { diffBaseOf, type PreparedRun } from './working-copy.js';
 
 /**
  * Snapshots a Run's Working copy as a Git tree through a temporary index (the real index and the
- * refs stay untouched) and diffs it within the configured limits.
+ * refs stay untouched) and diffs it within the configured limits. The diff state comes back from
+ * Studio with the claim, so nothing the agent writes decides it.
  */
 
 /** What the worker sends about a Run's diffs: the report without the worker id. */

@@ -1,4 +1,4 @@
-/** The known_hosts parsing shared by the configuration and the Git adapter, so both agree. */
+/** The known_hosts parsing shared by configuration and Git adapter; stores or logs no key. */
 
 /** The host key types Studio accepts, in configuration and for a Git operation. */
 export const SSH_HOST_KEY_TYPES = [

@@ -10,7 +10,10 @@ import { SessionCookie } from './session-cookie.js';
 import { SessionStore } from './session-store.js';
 import { SessionGuard } from './session.guard.js';
 
-/** Operator login/session/logout, plus the global mutation-origin and session guards. */
+/**
+ * Operator login/session/logout, plus the global guards, which run in this order: the
+ * mutation-origin check, then the deny-by-default session check.
+ */
 @Module({
   controllers: [AuthController],
   providers: [

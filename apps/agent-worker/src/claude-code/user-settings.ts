@@ -9,7 +9,7 @@ import {
 /**
  * The agent user's own Claude Code settings still load (the Mode keeps the user setting source), so
  * an agent could plant hooks, env, an API key helper or MCP servers there: both files must be
- * absent or hold only `$schema`, else the step is refused. Only key names are reported.
+ * absent or hold only `$schema`, else the step is refused until the operator reviews them.
  */
 
 /** User-level files that must be absent, relative to the home directory. */

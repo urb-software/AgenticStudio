@@ -12,7 +12,7 @@ export const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
 
 const fieldErrorSchema = z.object({ path: z.string(), message: z.string() });
 
-/** The one error payload of the API; `errors[].path` is dot notation (`tags.1`). */
+/** The one error payload of the API; `errors[].path` is dot notation (`tags.1`) for `setError`. */
 export const problemDetailsSchema = z
   .object({
     type: z.string(),

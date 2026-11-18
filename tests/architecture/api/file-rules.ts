@@ -90,7 +90,7 @@ function functionLike(node: ts.Expression | undefined): ts.SignatureDeclaration 
 /**
  * Functions a file exports, where declared or by a later `export { name }`: declarations, arrow
  * or function expressions (also behind `as`/`satisfies`) and `export default`; an overload counts
- * once.
+ * once, as a type guard when all its overloads are.
  */
 function exportedFunctions(source: ts.SourceFile): ExportedFunction[] {
   const later = exportedLater(source);

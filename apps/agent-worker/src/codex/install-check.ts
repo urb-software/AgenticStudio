@@ -4,8 +4,8 @@ import { posix } from 'node:path';
 
 /**
  * The complete-install check at worker start: the bare `codex` release binary is not complete
- * (its tools fail without the code-mode host), so the standalone installer's package layout is
- * required around the resolved binary. Only file metadata is read, never content.
+ * (its tools fail without the code-mode host), so the standalone package's `bin/` host and
+ * `codex-path/rg` are required beside the resolved binary. Only file metadata is read.
  */
 
 /** The package files a complete standalone install has, relative to the package directory. */

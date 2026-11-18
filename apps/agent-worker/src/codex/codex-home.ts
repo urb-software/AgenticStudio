@@ -195,8 +195,8 @@ export interface PreparedCodexHome {
 
 /**
  * Writes Studio's Codex configuration into the agent user's Codex home, serialised across worker
- * processes with a lock file. `current` are Working copies to mark untrusted besides those under
- * the data directory (the step's own, which may lie elsewhere).
+ * processes with a lock file and landing by rename, so a starting CLI never reads half a file.
+ * `current`: Working copies to mark untrusted besides those under the data directory.
  */
 export async function prepareCodexHome(
   options: CodexHomeOptions,

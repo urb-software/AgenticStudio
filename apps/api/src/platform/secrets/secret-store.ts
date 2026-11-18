@@ -19,7 +19,7 @@ export interface SecretStore {
   /**
    * Returns the value behind `reference`.
    * @throws {SecretNotFoundError} no such secret.
-   * @throws {SecretDecryptionFailedError} it does not authenticate; fails closed.
+   * @throws {SecretDecryptionFailedError} it does not authenticate (tampered, wrong/unknown key).
    */
   get(reference: SecretReference): Promise<string>;
   /** Deletes the secret behind `reference`; a no-op when it does not exist. */
@@ -36,7 +36,10 @@ export interface SecretStore {
 /** DI token for the {@link SecretStore}. */
 export const SECRET_STORE = Symbol('SECRET_STORE');
 
-/** Base of the typed errors; messages are fixed: no value, ciphertext, key or reference. */
+/**
+ * Base of the typed errors; messages are fixed (no value, ciphertext, key or reference) and no
+ * lower-level error is attached as a cause.
+ */
 export abstract class SecretStoreError extends Error {}
 
 export class SecretNotFoundError extends SecretStoreError {

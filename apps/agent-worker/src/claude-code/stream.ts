@@ -85,6 +85,7 @@ export class ClaudeStream {
       case 'user':
         return this.toolResults(event);
       case 'system':
+        // A permission denial is only a notice: it does not fail the step.
         return event.subtype === 'permission_denied' ? [this.denial(event)] : [];
       case 'rate_limit_event':
         return this.rateLimit(event);
