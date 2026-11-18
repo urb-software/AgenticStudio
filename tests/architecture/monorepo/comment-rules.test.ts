@@ -13,13 +13,22 @@ describe('comment rules', () => {
   it.each([
     ['clean', []],
     ['number-in-string-passes', []],
-    ['long-run-split-by-code-passes', []],
+    ['trailing-run-is-not-merged-passes', []],
+    ['generated-header-excluded-passes', []],
     ['long-with-reason-passes', []],
     ['web-and-generated-excluded', []],
     ['issue-number-fails', ['comment-no-issue-reference']],
     ['issue-number-in-block-fails', ['comment-no-issue-reference']],
     ['issue-link-fails', ['comment-no-issue-reference']],
     ['step-number-fails', ['comment-no-issue-reference']],
+    ['trailing-issue-number-fails', ['comment-no-issue-reference']],
+    ['parameter-and-jsx-issue-number-fails', ['comment-no-issue-reference']],
+    ['jsx-issue-number-fails', ['comment-no-issue-reference']],
+    ['cross-repo-reference-fails', ['comment-no-issue-reference']],
+    ['trailing-long-block-fails', ['comment-max-lines']],
+    ['long-tag-needs-space-fails', ['comment-max-lines']],
+    ['directive-exempts-only-itself-fails', ['comment-max-lines']],
+    ['declaration-file-fails', ['comment-max-lines']],
     ['long-block-fails', ['comment-max-lines']],
     ['long-run-fails', ['comment-max-lines']],
     ['long-without-reason-fails', ['comment-long-needs-reason']],
@@ -61,7 +70,7 @@ describe('comment rules', () => {
   it('measures production files only, with the ratio of the comment rules', () => {
     const measured = measureComments(join(FIXTURES, 'clean'));
     expect(Object.keys(measured)).toEqual(['apps/api/src/clean.ts']);
-    expect(measured['apps/api/src/clean.ts']?.comment).toBe(7);
+    expect(measured['apps/api/src/clean.ts']?.comment).toBe(8);
   });
 
   it('finds no violation in the repository', () => {

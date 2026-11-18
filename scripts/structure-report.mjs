@@ -36,6 +36,12 @@ export const COMMENT_RATIO_LIMIT = 0.25;
 /** How many files of the comment ratio table are shown. */
 const COMMENT_TABLE_ROWS = 30;
 
+/** Test code for the comment ratio: `__tests__/`, `*.test.*`, `*.spec.*` and `tests/`. */
+const isTest = (path) =>
+  /(^|\/)__tests__\//.test(path) ||
+  /\.(test|spec)\.[cm]?[jt]sx?$/.test(path) ||
+  path.startsWith('tests/');
+
 /** Production TypeScript under `src/`: no tests and no declaration files. */
 const isProduction = (path) =>
   /\.tsx?$/.test(path) &&
@@ -62,7 +68,7 @@ const parse = (dir, path) =>
 export function measureComments(root) {
   const files = {};
   for (const path of listSourceFiles(root)) {
-    if (!isProduction(path) || path.startsWith('tests/')) continue;
+    if (isTest(path)) continue;
     const counted = countLines(readFileSync(join(root, path), 'utf8'), path);
     if (counted && counted.code > 0) {
       files[path] = { ...counted, ratio: counted.comment / counted.code };

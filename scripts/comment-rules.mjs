@@ -11,18 +11,21 @@ export const MAX_COMMENT_LINES = 3;
 const ROOTS = ['apps/api/src', 'apps/agent-worker', 'packages', 'tests/architecture'];
 const SOURCE = /\.(?:[cm]?[jt]s|tsx)$/;
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', 'coverage', 'generated']);
-const GENERATED_HEADER = /@generated|auto-?generated|do not edit/i;
+const GENERATED_HEADER = /@generated|auto-?generated|generated (?:by|file)|do not edit/i;
+
+/** A generated file (by its header) is not hand-written: neither check applies to it. */
+export const isGenerated = (text) => GENERATED_HEADER.test(text.slice(0, 300));
 
 /** Tool directives are not comments for rule 14. */
 const DIRECTIVE =
   /^\s*(?:eslint-(?:disable|enable)|@ts-expect-error|@ts-ignore|@ts-nocheck|prettier-ignore|\/\s*<reference)/;
 
-const ISSUE_REFERENCE = /(?<![\w&])#\d+(?!\w)|github\.com\/[^\s/]+\/[^\s/]+\/(?:issues|pull)\/\d+/i;
-const LONG_COMMENT_TAG = /@long-comment(?<reason>[^\n]*)/;
+const ISSUE_REFERENCE = /(?<!&)#\d+(?!\w)|github\.com\/[^\s/]+\/[^\s/]+\/(?:issues|pull)\/\d+/i;
+const LONG_COMMENT_TAG = /@long-comment(?=\s|$)(?<reason>[^\n]*)/;
 
 /** Whether `path` (relative, forward slashes) is covered by the comment checks. */
 export function inScope(path) {
-  if (!SOURCE.test(path) || path.endsWith('.d.ts') || path.endsWith('.d.mts')) return false;
+  if (!SOURCE.test(path)) return false;
   if (path.split('/').some((segment) => SKIPPED_DIRECTORIES.has(segment))) return false;
   if (path.startsWith('tests/architecture/fixtures/')) return false;
   return ROOTS.some((root) => path.startsWith(`${root}/`));
@@ -62,8 +65,8 @@ function leafTokens(node, source, out) {
 /**
  * The comments of one file, found by the TypeScript scanner (never by a pattern over code), as
  * blocks: one block comment, or a run of own-line `//` comments. `lines` counts text lines only:
- * blank lines and a lone comment opener or closer do not count. A trailing comment on a code
- * line is a block of its own. Also the number of lines that hold code.
+ * blank lines, a lone comment opener or closer and directive lines do not count. A comment that
+ * starts on a code line is a block of its own. Also the number of lines that hold code.
  */
 export function analyse(text, fileName = 'file.ts') {
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
@@ -79,9 +82,11 @@ export function analyse(text, fileName = 'file.ts') {
         codeLines.add(line);
       }
     }
-    for (const range of ts.getLeadingCommentRanges(text, token.getFullStart()) ?? []) {
-      ranges.set(range.pos, range);
-    }
+    const found = [
+      ...(ts.getLeadingCommentRanges(text, token.getFullStart()) ?? []),
+      ...(ts.getTrailingCommentRanges(text, token.end) ?? []),
+    ];
+    for (const range of found) ranges.set(range.pos, range);
   }
 
   const blocks = [];
@@ -103,8 +108,7 @@ export function analyse(text, fileName = 'file.ts') {
           .split('\n')
           .map((line) => line.replace(/^\s*\*+/, ''));
     const texts = body.map((line) => line.trim());
-    const directive = DIRECTIVE.test(texts.find((line) => line !== '') ?? '');
-    const lines = directive ? 0 : texts.filter((line) => line !== '').length;
+    const lines = texts.filter((line) => line !== '' && !DIRECTIVE.test(line)).length;
     const block = {
       startLine: startLine + 1,
       endLine: lineOf(range.end) + 1,
@@ -133,6 +137,7 @@ export function analyse(text, fileName = 'file.ts') {
 /** The violations of both checks in one file: `{ rule, line, message }`. */
 export function checkText(text, fileName = 'file.ts') {
   const violations = [];
+  if (isGenerated(text)) return violations;
   for (const block of analyse(text, fileName).blocks) {
     const joined = block.texts.join('\n');
     if (ISSUE_REFERENCE.test(joined)) {
@@ -173,7 +178,7 @@ export function checkTree(root) {
 
 /** Comment lines and code lines of one file, for the structure report; undefined for a generated file. */
 export function countLines(text, fileName = 'file.ts') {
-  if (GENERATED_HEADER.test(text.slice(0, 300))) return undefined;
+  if (isGenerated(text)) return undefined;
   const { blocks, codeLines } = analyse(text, fileName);
   return { comment: blocks.reduce((sum, block) => sum + block.lines, 0), code: codeLines };
 }
