@@ -86,8 +86,13 @@ export interface ClaimedRun {
 
 type ClaimExtras = Pick<
   ClaimedRun,
-  'environmentFile' | 'replaceEnvironmentFile' | 'studioPaths' | 'completedSteps' | 'nextSeq'
-> & { diffState?: RunDiffStateInput | null };
+  | 'environmentFile'
+  | 'replaceEnvironmentFile'
+  | 'studioPaths'
+  | 'completedSteps'
+  | 'nextSeq'
+  | 'diffState'
+>;
 
 const claimedRun = (run: Run, extras: ClaimExtras): ClaimedRun => ({
   id: run.id,

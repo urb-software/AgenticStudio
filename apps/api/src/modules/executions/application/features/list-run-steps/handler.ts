@@ -6,7 +6,7 @@ import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
-const checkSchema = z.strictObject({
+export const storedCheckSchema = z.strictObject({
   name: z.string().min(1).max(200),
   result: z.enum(['passed', 'failed', 'not_run']),
   detail: z.string().max(4000).optional(),
@@ -15,7 +15,7 @@ const checkSchema = z.strictObject({
 const shownResultSchema = z.object({
   outcome: z.enum(['done', 'needs_input']),
   summary: z.string(),
-  checks: z.array(checkSchema).optional(),
+  checks: z.array(storedCheckSchema).optional(),
 });
 
 export interface RunStepView {

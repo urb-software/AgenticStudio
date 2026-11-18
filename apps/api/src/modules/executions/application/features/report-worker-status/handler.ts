@@ -1,12 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Provider } from '../../../domain/value-objects/provider.js';
+import type { WorkerRunnerMode } from '../../../domain/value-objects/worker-runner-mode.js';
 import type { WorkerDiskFigures } from '../../../domain/value-objects/worker-disk-figures.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
 export interface ReportWorkerStatusInput {
   workerId: string;
-  runner: string;
+  runner: WorkerRunnerMode;
   providers: Record<Provider, boolean>;
   providerReasons?: Partial<Record<Provider, string>>;
   disk?: WorkerDiskFigures;

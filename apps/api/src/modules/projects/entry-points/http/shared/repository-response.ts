@@ -109,7 +109,7 @@ export class RepositoryResponseDto extends createZodDto(repositoryResponseSchema
 export type RepositorySummaryResponse = z.infer<typeof repositorySummarySchema>;
 export type RepositoryResponse = z.infer<typeof repositoryResponseSchema>;
 
-export interface RepositoryView {
+export interface RepositoryResponseSource {
   state: RepositoryResponse['state'];
   url: string;
   integrationBranch: string;
@@ -126,7 +126,7 @@ export interface RepositoryView {
 }
 
 export function toRepositorySummary(
-  repository: Pick<RepositoryView, 'state' | 'url' | 'integrationBranch'>,
+  repository: Pick<RepositoryResponseSource, 'state' | 'url' | 'integrationBranch'>,
 ): RepositorySummaryResponse {
   return {
     state: repository.state,
@@ -135,7 +135,7 @@ export function toRepositorySummary(
   };
 }
 
-export function toRepositoryResponse(repository: RepositoryView): RepositoryResponse {
+export function toRepositoryResponse(repository: RepositoryResponseSource): RepositoryResponse {
   const { failure } = repository;
   return {
     ...toRepositorySummary(repository),

@@ -1,10 +1,11 @@
-import type { ProjectSnapshot } from '../../../domain/entities/project.js';
-
 export interface GetProjectInput {
   projectId: string;
 }
 
-export type GetProjectResult = ProjectSnapshot;
+export interface GetProjectResult {
+  id: string;
+  name: string;
+}
 
 export class GetProjectHandler {
   async execute(input: GetProjectInput): Promise<GetProjectResult> {

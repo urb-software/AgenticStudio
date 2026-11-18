@@ -160,7 +160,7 @@ An object with an identity that outlives its values, and rules about what can ha
 An immutable object defined by its values, with no identity of its own; a change returns a new value. It validates on creation and owns the rules about the concept it names (a Run's state with its transitions); where it owns no rule beyond its shape it may be a plain type.
 
 **Snapshot**:
-An entity's current values as read-only plain data, produced by the entity. It is what a handler returns where its result contains a whole aggregate; an entity class itself never leaves the application layer.
+An entity's current values as read-only plain data, produced by the entity: the shape between an entity and its repository. Handlers, entry points and `contracts/` never use it; an entity class itself never leaves the application layer.
 
 ### Cross-cutting
 

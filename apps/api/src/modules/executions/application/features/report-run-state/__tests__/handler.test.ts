@@ -22,7 +22,6 @@ describe('ReportRunStateHandler', () => {
   let notified: string[];
   let released: string[];
 
-  /** Reports, then reads the Run as it is stored. */
   const report = async (input: Partial<ReportRunStateInput>) => {
     await handler.execute({
       runId: run.id,

@@ -87,6 +87,12 @@ describe('FetchRepositoryHandler', () => {
       publicKey: null,
       hostKeyFingerprint: null,
     });
+    expect(await stored()).toMatchObject({
+      projectId: PROJECT,
+      deployKeySecret: null,
+      pinnedHostKey: null,
+      pendingHostKey: null,
+    });
     expect(jobs.started).toEqual([[PROJECT, 'fetch']]);
     // No Git runs in the request: the fetch happens in the background job.
     expect(git.calls).toEqual([]);

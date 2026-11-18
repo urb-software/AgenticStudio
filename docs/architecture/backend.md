@@ -110,7 +110,7 @@ Rules 10 to 13 apply to the API only, as rules 1 to 9 do.
 
 | Handler | Returns |
 | --- | --- |
-| A command the caller needs the result of | The ids and values the caller needs, never the whole aggregate |
+| A command the caller needs the result of | The ids and values the caller needs; the shared read model of the aggregate only where the response shows the aggregate whole (create a Project, connect, verify and fetch a Repository, set an Environment file) |
 | A command with nothing to show | Nothing, or only the id of what it created |
 | A query for one aggregate | A view type: the shared read model of the aggregate when several features show it whole (the Run, the Project, the Repository connection, the Environment file), otherwise one owned by the feature, built from the entity's readable fields |
 | A query that combines or computes | A view type owned by the feature that produces it (a read shape is not a domain concept) |

@@ -200,10 +200,7 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'consumer-deep-imports-event-file',
     expected: ['api-events-imported-via-contracts-index'],
   },
-  {
-    fixture: 'http-dto-named-event',
-    expected: ['api-application-no-worker-protocol-or-entry-points'],
-  },
+  { fixture: 'http-dto-named-event', expected: [] },
   { fixture: 'unresolved-generated-client-import', expected: ['api-local-imports-resolve'] },
   {
     fixture: 'database-package-unresolved-import',
@@ -249,7 +246,7 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'module-imports-other-module-http-shared',
-    expected: ['api-no-cross-module-private', 'api-application-no-worker-protocol-or-entry-points'],
+    expected: ['api-no-cross-module-private'],
   },
   {
     fixture: 'application-imports-only-domain-ports-and-own-files',
@@ -573,6 +570,11 @@ describeGate('api', apiGate, 'apps/api', [
       'A public static method of an entity or value object returns something else, or declares no return type',
   },
   {
+    fixture: 'domain-imports-bare-module',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
+  },
+  {
     fixture: 'domain-imports-node-module',
     expected: ['api-domain-no-runtime-modules'],
     qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
@@ -713,7 +715,7 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: '`entry-points/` imports a class from `domain/entities/`',
   },
   {
-    fixture: 'handler-returns-snapshot-and-exports-input-and-result',
+    fixture: 'handler-returns-view-and-exports-input-and-result',
     expected: [],
     qualityRow:
       'A handler returns ids, values or a view type of its own, and exports its input and result types',
@@ -1162,6 +1164,16 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'billing-handler-input-holds-domain-class',
+    expected: ['api-handler-input-plain-data'],
+    qualityRow: ROW_INPUT_FAIL,
+  },
+  {
+    fixture: 'billing-handler-input-imports-class-with-alias',
+    expected: ['api-handler-input-plain-data'],
+    qualityRow: ROW_INPUT_FAIL,
+  },
+  {
+    fixture: 'billing-handler-input-intersection-at-parameter',
     expected: ['api-handler-input-plain-data'],
     qualityRow: ROW_INPUT_FAIL,
   },

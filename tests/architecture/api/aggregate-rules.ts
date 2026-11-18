@@ -120,7 +120,14 @@ function handlerInputViolations(
       statement.name.text === inputName,
   );
   if (!declaration) return [];
+  const aliases = importAliases(source);
   const references: TypeReference[] = [];
+  const execute = handler.members.find(
+    (member): member is ts.MethodDeclaration =>
+      ts.isMethodDeclaration(member) && member.name.getText() === 'execute',
+  );
+  const parameterType = execute?.parameters[0]?.type;
+  if (parameterType) references.push(...typeReferencesDeep(parameterType, source));
   if (ts.isTypeAliasDeclaration(declaration)) {
     references.push(...typeReferencesDeep(declaration.type, source));
   } else {
@@ -136,8 +143,15 @@ function handlerInputViolations(
   return references
     .filter((reference) => {
       const to = referenceTarget(reference, path, imported);
-      return to !== undefined && domainClasses.get(to)?.includes(reference.leaf) === true;
+      const name =
+        reference.text === reference.root
+          ? (aliases.get(reference.root) ?? reference.leaf)
+          : reference.leaf;
+      return to !== undefined && domainClasses.get(to)?.includes(name) === true;
     })
+    .filter(
+      (reference, index, all) => all.findIndex((other) => other.text === reference.text) === index,
+    )
     .map((reference) => ({
       rule: 'api-handler-input-plain-data',
       from: path,
@@ -348,6 +362,19 @@ function handlerViolations(
     }
     return found;
   });
+}
+
+/** `import { X as N }` → `N → X`, for the names a file renames on import. */
+function importAliases(source: ts.SourceFile): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const statement of source.statements) {
+    const bindings = ts.isImportDeclaration(statement) && statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) {
+      if (element.propertyName) aliases.set(element.name.text, element.propertyName.text);
+    }
+  }
+  return aliases;
 }
 
 /** What a file imports by local name (named, default and namespace): `local name → specifier`. */

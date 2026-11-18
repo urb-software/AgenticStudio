@@ -1,7 +1,4 @@
-/**
- * What the operator may see of a Project's Environment file, as read-only plain data: never the
- * content, never the secret store's reference to it (security.md §3).
- */
+/** The Environment file's path, size and time as read-only plain data: never the content. */
 export interface EnvironmentFileSnapshot {
   readonly path: string;
   /** UTF-8 bytes of the content. */
