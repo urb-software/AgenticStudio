@@ -63,7 +63,7 @@ describe('StartRunHandler', () => {
     workerReports(true);
   });
 
-  it('copies the limits in force onto the Run (Issue #100)', async () => {
+  it('copies the limits in force onto the Run', async () => {
     const { run } = await start();
 
     expect(run.limits).toEqual(LIMITS);
@@ -109,7 +109,7 @@ describe('StartRunHandler', () => {
     expect(runs.runs).toEqual([]);
   });
 
-  describe('provider availability (Issue #101)', () => {
+  describe('provider availability', () => {
     it.each([
       [
         'the worker reports it switched off',

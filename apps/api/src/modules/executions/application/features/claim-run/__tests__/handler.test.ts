@@ -98,7 +98,7 @@ describe('ClaimRunHandler', () => {
     expect((await runs.findById(c1.id))?.lifecycle.state).toBe('queued');
   });
 
-  it('fails a Run without a remote URL as preparation_failed and hands out the next (review of #117)', async () => {
+  it('fails a Run without a remote URL as preparation_failed and hands out the next', async () => {
     const orphan = await runs.start({
       projectId: A,
       provider: 'codex',
@@ -120,7 +120,7 @@ describe('ClaimRunHandler', () => {
     });
   });
 
-  describe('delivery retries (Issue #102)', () => {
+  describe('delivery retries', () => {
     const WORKING_COPY = {
       runBranch: 'agent/x-r0b8e5c2d',
       commits: [],
@@ -161,7 +161,7 @@ describe('ClaimRunHandler', () => {
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
     });
 
-    it('hands out a retry without the Environment file content, keeping its recorded path (#104)', async () => {
+    it('hands out a retry without the Environment file content, keeping its recorded path', async () => {
       const run = await queue(A);
       await runs.claimNext(WORKER, T0);
       await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'x' });
@@ -192,7 +192,7 @@ describe('ClaimRunHandler', () => {
       expect(secrets.values.size).toBe(0);
     });
 
-    it('continues the log of a retry after the stored events, with the steps taken (#103)', async () => {
+    it('continues the log of a retry after the stored events, with the steps taken', async () => {
       const run = await queue(A);
       await runs.claimNext(WORKER, T0);
       await runs.transitionClaimed({
@@ -238,7 +238,7 @@ describe('ClaimRunHandler', () => {
       });
     });
 
-    it("hands a retry back where the Run's diffs stand (Issue #144, review S-1 of #149)", async () => {
+    it("hands a retry back where the Run's diffs stand", async () => {
       const run = await failedDelivery(A);
       const state = {
         resultTree: 'b'.repeat(40),
@@ -256,7 +256,7 @@ describe('ClaimRunHandler', () => {
       });
     });
 
-    it('hands a retry only to the worker that started the Run, which has its Working copy (review R4)', async () => {
+    it('hands a retry only to the worker that started the Run, which has its Working copy', async () => {
       const run = await failedDelivery(A);
       await runs.requestDeliveryRetry(run.id);
 
@@ -270,7 +270,7 @@ describe('ClaimRunHandler', () => {
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
     });
 
-    it('fails and releases at once a retry with no recorded Run branch (review R5)', async () => {
+    it('fails and releases at once a retry with no recorded Run branch', async () => {
       const run = await failedDelivery(A, false);
       await runs.requestDeliveryRetry(run.id);
 
@@ -322,7 +322,7 @@ describe('ClaimRunHandler', () => {
     });
   });
 
-  describe('resumes (Issue #103)', () => {
+  describe('resumes', () => {
     const WORKING_COPY = {
       runBranch: 'agent/x-r0b8e5c2d',
       commits: [],
@@ -428,7 +428,7 @@ describe('ClaimRunHandler', () => {
       });
     });
 
-    it('hands a resume without the Environment file content, keeping its snapshot and path (#104)', async () => {
+    it('hands a resume without the Environment file content, keeping its snapshot and path', async () => {
       files.set(A, { path: '.env', content: 'A=test-only-1' });
       const queued = await queue(A);
       const started = await handler.execute({ workerId: WORKER });
@@ -497,7 +497,7 @@ describe('ClaimRunHandler', () => {
     expect((await runs.findById(b1.id))?.lifecycle.failure?.code).toBe('worker_lost');
   });
 
-  it('cancels a Run left waiting too long before it hands out work (Issue #100)', async () => {
+  it('cancels a Run left waiting too long before it hands out work', async () => {
     const waiting = await queue(A);
     await handler.execute({ workerId: WORKER });
     for (const [from, to] of [
@@ -524,7 +524,7 @@ describe('ClaimRunHandler', () => {
     });
   });
 
-  it("times out a Run whose step ran past its limit plus Studio's grace (review of #121)", async () => {
+  it("times out a Run whose step ran past its limit plus Studio's grace", async () => {
     const stuck = await queue(A);
     await handler.execute({ workerId: WORKER });
     await runs.transitionClaimed({
@@ -582,7 +582,7 @@ describe('ClaimRunHandler', () => {
   });
 });
 
-describe('ClaimRunHandler with Environment files (Issue #104)', () => {
+describe('ClaimRunHandler with Environment files', () => {
   const FILE = { path: '.env', content: 'DB_PASSWORD=test-only-pw-1\n' };
   let runs: InMemoryRunRepository;
   let secrets: InMemorySecretStore;

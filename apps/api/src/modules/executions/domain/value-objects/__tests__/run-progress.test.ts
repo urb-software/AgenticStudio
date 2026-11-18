@@ -47,14 +47,14 @@ describe('RunProgress', () => {
     expect(started().with({ stepCount: 50 }).reachedStepTotal).toBe(true);
   });
 
-  it('says which limit was reached and that no further step was started (Issue #100)', () => {
+  it('says which limit was reached and that no further step was started', () => {
     expect(started().stepLimitFailure()).toEqual({
       code: 'step_limit',
       detail: 'The run reached its limit of 10 run steps; no further step was started.',
     });
   });
 
-  it('says a Follow-up reached its own limit (Issue #141)', () => {
+  it('says a Follow-up reached its own limit', () => {
     expect(started().with({ followUpCount: 1 }).stepLimitFailure()).toEqual({
       code: 'step_limit',
       detail: 'The Follow-up reached its limit of 10 run steps; no further step was started.',

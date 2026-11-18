@@ -506,7 +506,7 @@ describe('FollowUpRunHandler', () => {
     expect(queued.pullRequestStatus.refreshRequestedAt).toEqual(T1);
   });
 
-  it('still accepts the Follow-up when asking for the pull request state fails (review S6 of #152)', async () => {
+  it('still accepts the Follow-up when asking for the pull request state fails', async () => {
     const run = await finished('succeeded');
     executions.requests.request = () => Promise.reject(new Error('The database is busy'));
 
@@ -579,7 +579,7 @@ describe('FollowUpRunHandler', () => {
       detail: 'The Follow-up reached its limit of 10 run steps; no further step was started.',
     });
   });
-  describe('until when a Run is open to Follow-ups (Issue #143)', () => {
+  describe('until when a Run is open to Follow-ups', () => {
     const view = (run: Run, at = T1) => runView(run, workers, at, LEASE.seconds, RETENTION);
 
     it('says the Run with a pull request is open until 30 days after its last activity', async () => {

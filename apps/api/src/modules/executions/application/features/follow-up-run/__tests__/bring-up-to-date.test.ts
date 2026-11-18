@@ -272,7 +272,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
       expect((await runs.findById(run.id))!.conversation.currentUpdateStart()).toBeUndefined();
     });
 
-    describe('a merge an earlier part left behind (review R2-1 of #154)', () => {
+    describe('a merge an earlier part left behind', () => {
       const START = { baseCommit: 'a'.repeat(40), integrationCommit: MERGED };
 
       async function failedPart() {

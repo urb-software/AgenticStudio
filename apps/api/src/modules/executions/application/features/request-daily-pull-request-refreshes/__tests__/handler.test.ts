@@ -73,7 +73,7 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     expect(lookups.lookups).toHaveLength(before);
   });
 
-  it('asks a Run whose lookups keep failing once a day, not at every pass (review S2 of #152)', async () => {
+  it('asks a Run whose lookups keep failing once a day, not at every pass', async () => {
     const failing = await readRun(null, null);
     const stored = runs.runs.find((candidate) => candidate.id === failing)!;
     stored.pullRequestStatus = {
@@ -91,7 +91,7 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     expect(await handler.execute()).toEqual({ requested: 1 });
   });
 
-  it('removes finished lookups older than a week and keeps the rest (review S10 of #152)', async () => {
+  it('removes finished lookups older than a week and keeps the rest', async () => {
     const run = await readRun('open', 1);
     const at = (days: number) => new Date(now.getTime() - days * 24 * HOUR);
     const entry = {

@@ -61,7 +61,7 @@ const run = {
   >[0]['messages'],
 };
 
-describe('Run response: conversation (Issue #103)', () => {
+describe('Run response: conversation', () => {
   it('shows the open question of a waiting Run, with its options and recommendation', () => {
     const response = runResponseSchema.parse(toRunResponse(run));
 
@@ -110,7 +110,7 @@ describe('Run response: conversation (Issue #103)', () => {
   });
 });
 
-describe('Run response: resuming after the usage limit (Issue #105)', () => {
+describe('Run response: resuming after the usage limit', () => {
   const stopped = {
     ...run,
     state: 'failed' as const,
@@ -134,7 +134,7 @@ describe('Run response: resuming after the usage limit (Issue #105)', () => {
   });
 });
 
-describe('Run response: Follow-ups (Issue #141)', () => {
+describe('Run response: Follow-ups', () => {
   const C1 = 'c'.repeat(40);
   const C2 = 'd'.repeat(40);
   const C3 = 'e'.repeat(40);
@@ -185,14 +185,14 @@ describe('Run response: Follow-ups (Issue #141)', () => {
     expect(toRunListItem(followedUp).followUps).toBe(1);
   });
 
-  it('leaves the pushed state unknown when the pushed commit is not listed (review S5)', () => {
+  it('leaves the pushed state unknown when the pushed commit is not listed', () => {
     const response = runResponseSchema.parse(
       toRunResponse({ ...followedUp, pushedCommit: 'f'.repeat(40) }),
     );
     expect(response.commits?.every((commit) => !('pushed' in commit))).toBe(true);
   });
 
-  it("shows a part's end as Studio's record (review S1)", () => {
+  it("shows a part's end as Studio's record", () => {
     const response = runResponseSchema.parse(
       toRunResponse({
         ...followedUp,
@@ -227,7 +227,7 @@ describe('Run response: Follow-ups (Issue #141)', () => {
     expect(refused.followUp).toEqual({ allowed: false, reason: 'step_total_reached' });
   });
 
-  it('says until when the Run is open to Follow-ups, when it is (Issue #143)', () => {
+  it('says until when the Run is open to Follow-ups, when it is', () => {
     const open = runResponseSchema.parse(
       toRunResponse(followedUp, { allowed: true, openUntil: T2 }),
     );
@@ -243,7 +243,7 @@ describe('Run response: Follow-ups (Issue #141)', () => {
   });
 });
 
-describe('Run response: pull request state (Issue #142)', () => {
+describe('Run response: pull request state', () => {
   const REFRESHED = new Date('2026-11-16T12:00:00.000Z');
   const withPullRequest = (status: Partial<typeof NO_PULL_REQUEST_STATUS>) => ({
     ...run,

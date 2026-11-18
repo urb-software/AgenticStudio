@@ -5,7 +5,7 @@ import { TimeOutOverdueStepsHandler } from '../handler.js';
 
 const NOW = new Date('2026-11-17T12:00:00.000Z');
 
-describe('TimeOutOverdueStepsHandler (review of #121)', () => {
+describe('TimeOutOverdueStepsHandler', () => {
   it('asks the store to time out overdue steps at the clock time with the grace period', async () => {
     const calls: [Date, number][] = [];
     const runs = {

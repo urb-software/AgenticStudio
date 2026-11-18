@@ -47,7 +47,7 @@ async function take(stream: AsyncGenerator<RunLogStreamItem>, count: number) {
   return items;
 }
 
-describe('a Run log, paged and live (Issue #99)', () => {
+describe('a Run log, paged and live', () => {
   let runs: InMemoryRunRepository;
   let log: InMemoryRunLog;
   let signal: TestSignal;

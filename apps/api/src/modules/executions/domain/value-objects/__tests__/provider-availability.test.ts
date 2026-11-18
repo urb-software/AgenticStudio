@@ -46,7 +46,7 @@ describe('WorkerStatus.providerAvailability', () => {
     ]);
   });
 
-  it("shows the worker's reason for a switched-on provider it cannot run (Issue #105)", () => {
+  it("shows the worker's reason for a switched-on provider it cannot run", () => {
     const reported = {
       ...status({ claude_code: true, codex: false }),
       providerReasons: {

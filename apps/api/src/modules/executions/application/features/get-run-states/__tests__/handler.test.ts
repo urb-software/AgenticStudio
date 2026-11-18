@@ -113,7 +113,7 @@ describe('GetRunStatesHandler', () => {
     expect((await runs.findById(active.id))!.claim.workingCopyRemovedAt).toBeNull();
   });
 
-  describe('what the worker does with a Working copy (Issue #143)', () => {
+  describe('what the worker does with a Working copy', () => {
     const NOW = new Date('2026-12-01T12:00:00.000Z');
     const ago = (ms: number) => new Date(NOW.getTime() - ms);
 

@@ -112,7 +112,7 @@ describe('RefreshPullRequestHandler', () => {
     expect(lookups.lookups).toHaveLength(1);
   });
 
-  it('does not ask again on opening within a minute of a lookup that failed (review S1 of #152)', async () => {
+  it('does not ask again on opening within a minute of a lookup that failed', async () => {
     connect();
     const run = await deliveredRun(runs);
     await handler.execute({ runId: run.id, onOpen: true });

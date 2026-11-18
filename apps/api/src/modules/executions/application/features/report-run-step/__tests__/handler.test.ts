@@ -62,7 +62,7 @@ describe('ReportRunStepHandler', () => {
     });
   }
 
-  it('redacts every string of the result before storing it (Issue #99)', async () => {
+  it('redacts every string of the result before storing it', async () => {
     await running();
     const result = {
       outcome: 'done',
@@ -87,7 +87,7 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
-  it('never redacts the enum fields, even when a known value equals one (#104, #119 review)', async () => {
+  it('never redacts the enum fields, even when a known value equals one', async () => {
     handler = new ReportRunStepHandler(
       runs,
       { now: () => T1 },
@@ -137,7 +137,7 @@ describe('ReportRunStepHandler', () => {
     ]);
   });
 
-  it('keeps the latest reported Working copy state on the Run (Issue #98)', async () => {
+  it('keeps the latest reported Working copy state on the Run', async () => {
     await running();
     expect((await runs.findById(run.id))?.workingCopy).toBeNull();
 
@@ -159,7 +159,7 @@ describe('ReportRunStepHandler', () => {
     expect((await runs.findById(run.id))?.workingCopy).toEqual(WORKING_COPY);
   });
 
-  it('records the checks the agent reported failed in the latest step (Issue #102)', async () => {
+  it('records the checks the agent reported failed in the latest step', async () => {
     await running();
     const checks = [
       { name: 'lint', result: 'passed' },

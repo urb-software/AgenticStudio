@@ -14,7 +14,7 @@ const failed = (name: string, excerpt: string | undefined, url = 'https://ci.tes
     ...(excerpt === undefined ? { note: 'Log unavailable: the log has expired.' } : { excerpt }),
   }) satisfies FailedCheckLog;
 
-describe('the Follow-up prepared from failing checks (Issue #145)', () => {
+describe('the Follow-up prepared from failing checks', () => {
   it('has an introduction, then each failed check with its name, link and log', () => {
     const draft = PreparedFollowUp.fromFailingChecks(
       {

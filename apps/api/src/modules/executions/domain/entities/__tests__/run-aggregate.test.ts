@@ -48,7 +48,7 @@ describe('Run.snapshot', () => {
   });
 });
 
-describe('restoring a Run from its flat record and giving it back (Issue #184)', () => {
+describe('restoring a Run from its flat record and giving it back', () => {
   const sessionRef = 'agent-session-1';
   const full: RunSnapshot = {
     id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',

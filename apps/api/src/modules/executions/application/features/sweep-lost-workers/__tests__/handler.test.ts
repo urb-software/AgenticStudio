@@ -141,7 +141,7 @@ describe('SweepLostWorkersHandler', () => {
     expect(runs.runs[0]?.state).toBe('queued');
   });
 
-  describe('a requested delivery retry whose worker is gone (review N2 of #122)', () => {
+  describe('a requested delivery retry whose worker is gone', () => {
     async function pendingRetry() {
       const run = await claimed(PROJECTS[0]);
       for (const [from, to] of [
@@ -208,7 +208,7 @@ describe('SweepLostWorkersHandler', () => {
       expect((await runs.findById(run.id))?.delivery.requested).toBe(false);
     });
   });
-  describe('an answered Run whose worker is gone (Issue #103)', () => {
+  describe('an answered Run whose worker is gone', () => {
     async function answered() {
       const run = await claimed(PROJECTS[0]);
       await runs.transitionClaimed({

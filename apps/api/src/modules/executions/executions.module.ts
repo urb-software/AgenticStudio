@@ -279,6 +279,7 @@ export class ExecutionsModule {
         {
           provide: RUN_SWEEPS_SETTINGS,
           useFactory: (config: AppConfig): RunSweepsSettings => ({
+            // Half the lease, at most every 30 s: a lost worker is noticed within one lease.
             intervalMs: Math.min(30_000, (config.workerLeaseSeconds * 1000) / 2),
           }),
           inject: [APP_CONFIG],

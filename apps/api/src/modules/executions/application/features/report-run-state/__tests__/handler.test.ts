@@ -79,7 +79,7 @@ describe('ReportRunStateHandler', () => {
     });
   });
 
-  it("releases the Run's Environment file snapshot once it is final, not before (Issue #104)", async () => {
+  it("releases the Run's Environment file snapshot once it is final, not before", async () => {
     await report({ state: 'running' });
     expect(released).toEqual([]);
 
@@ -154,7 +154,7 @@ describe('ReportRunStateHandler', () => {
     );
   });
 
-  it('redacts known values from the failure detail and commit subjects before storing them (#104)', async () => {
+  it('redacts known values from the failure detail and commit subjects before storing them', async () => {
     await report({ state: 'running' });
 
     const failed = await report({
@@ -178,14 +178,14 @@ describe('ReportRunStateHandler', () => {
     expect(released).toEqual([]);
   });
 
-  it('wakes the live log streams of the Run on every change, so they can end (Issue #99)', async () => {
+  it('wakes the live log streams of the Run on every change, so they can end', async () => {
     await report({ state: 'running' });
     await report({ state: 'succeeded' });
 
     expect(notified).toEqual([run.id, run.id]);
   });
 
-  it("records a failed Run's Working copy state with its failure (Issue #98)", async () => {
+  it("records a failed Run's Working copy state with its failure", async () => {
     await report({ state: 'running' });
     const workingCopy = {
       runBranch: 'agent/x-r0b8e5c2d',
@@ -250,7 +250,7 @@ describe('ReportRunStateHandler', () => {
     await expect(report({ state: 'running' })).rejects.toBeInstanceOf(RunNotHeldError);
   });
 
-  describe('delivery (Issue #102)', () => {
+  describe('delivery', () => {
     const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
     const DELIVERY_FAILED = {
       code: 'delivery_failed',
@@ -330,7 +330,7 @@ describe('ReportRunStateHandler', () => {
       });
     });
 
-    it('keeps the snapshot of a failed delivery, redacts what its retry reports, and releases it once delivered (#104)', async () => {
+    it('keeps the snapshot of a failed delivery, redacts what its retry reports, and releases it once delivered', async () => {
       await heldRetry();
       expect(released).toEqual([]);
 
@@ -537,7 +537,7 @@ describe('ReportRunStateHandler', () => {
     });
   });
 
-  describe('a Run stopped at the usage limit (Issue #105)', () => {
+  describe('a Run stopped at the usage limit', () => {
     const WORKING_COPY = { runBranch: 'agent/x-r1', commits: [], hasUncommittedChanges: false };
     const USAGE_LIMIT = { code: 'usage_limit' as const, detail: 'The usage limit was reached.' };
 
@@ -573,7 +573,7 @@ describe('ReportRunStateHandler', () => {
       expect(released).toEqual([run.id]);
     });
   });
-  describe('a bring-up-to-date request (Issue #147)', () => {
+  describe('a bring-up-to-date request', () => {
     const MERGED = 'b'.repeat(40);
     const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
 

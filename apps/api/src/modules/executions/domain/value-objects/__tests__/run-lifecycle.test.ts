@@ -135,7 +135,7 @@ describe('RunLifecycle', () => {
     expect(RunLifecycle.start().with({ cancelRequestedAt: AT }).cancelRequested).toBe(true);
   });
 
-  it('can retry the delivery only when failed with delivery_failed (Issue #102)', () => {
+  it('can retry the delivery only when failed with delivery_failed', () => {
     const of = (state: RunState, code?: 'delivery_failed' | 'usage_limit') =>
       RunLifecycle.restore(
         stored({ state, ...(code === undefined ? {} : { failure: failure(code) }) }),
@@ -145,7 +145,7 @@ describe('RunLifecycle', () => {
     expect(of('succeeded').canRetryDelivery).toBe(false);
   });
 
-  it('keeps the Environment file for a retry or a resume only (Issues #102, #105)', () => {
+  it('keeps the Environment file for a retry or a resume only', () => {
     const failed = (code: 'delivery_failed' | 'usage_limit' | 'agent_failed') =>
       RunLifecycle.restore(stored({ state: 'failed', failure: failure(code) }));
     expect(failed('delivery_failed').keepsEnvironmentFileForRetry).toBe(true);
@@ -189,7 +189,7 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
     expect(RunLifecycle.restore(stored({ state: 'running' })).partEnd(null)).toBeNull();
   });
 
-  it('gives back the result a part_end recorded, telling the cancel author from its reason (Issue #147)', () => {
+  it('gives back the result a part_end recorded, telling the cancel author from its reason', () => {
     expect(
       RunLifecycle.earlierResult({
         state: 'failed',

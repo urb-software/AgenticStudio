@@ -28,7 +28,7 @@ function handler(status: Partial<RecordedWorkerStatus> | undefined, now = T0) {
   );
 }
 
-describe('GetAgentWorkerHandler (Issue #143)', () => {
+describe('GetAgentWorkerHandler', () => {
   it('says nothing is connected before any report, and when the report is stale', async () => {
     expect(await handler(undefined).execute()).toEqual({ connected: false });
     expect(await handler({ disk: DISK }, new Date(T0.getTime() + 61_000)).execute()).toEqual({

@@ -179,7 +179,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     }
   });
 
-  it('keeps where the diffs stand for the next claim; an unavailable report keeps it (review S-1 of #149)', async () => {
+  it('keeps where the diffs stand for the next claim; an unavailable report keeps it', async () => {
     const diff = diffOf([]);
     await report.execute({
       runId: run.id,
@@ -201,7 +201,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
     expect(await diffs.findState(run.id)).toEqual(STATE);
   });
 
-  it('cuts a reason that redaction lengthened to what is stored (review L-2 of #149)', async () => {
+  it('cuts a reason that redaction lengthened to what is stored', async () => {
     secrets = ['true'];
     await report.execute({
       runId: run.id,

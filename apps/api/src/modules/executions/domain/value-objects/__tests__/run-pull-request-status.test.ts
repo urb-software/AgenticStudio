@@ -22,7 +22,7 @@ describe('RunPullRequestStatus.pageRefreshDue', () => {
     expect(status({ state: 'open', refreshedAt: ago(59) }).pageRefreshDue(NOW)).toBe(false);
   });
 
-  it('counts from the last attempt: a failed lookup is not repeated on every open (review S1 of #152)', () => {
+  it('counts from the last attempt: a failed lookup is not repeated on every open', () => {
     const failed = { refreshError: 'GitHub could not be reached.', lastAttemptAt: ago(30) };
     expect(status(failed).pageRefreshDue(NOW)).toBe(false);
     expect(status({ ...failed, lastAttemptAt: ago(60) }).pageRefreshDue(NOW)).toBe(true);
@@ -63,7 +63,7 @@ describe('RunPullRequestStatus.hasFailedCheck', () => {
   });
 });
 
-describe('RunPullRequestStatus.followUpRefusal and the ended states (Issues #142, #143)', () => {
+describe('RunPullRequestStatus.followUpRefusal and the ended states', () => {
   it('refuses a Follow-up for a merged, closed or missing pull request only', () => {
     expect(status({ state: 'merged' }).followUpRefusal).toBe('pull_request_merged');
     expect(status({ state: 'closed' }).followUpRefusal).toBe('pull_request_closed');

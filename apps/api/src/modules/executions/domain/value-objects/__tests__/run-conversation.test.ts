@@ -93,7 +93,7 @@ describe('RunConversation.resumeMessage', () => {
     });
   });
 
-  it('words a bring-up-to-date request without a note with the default text (Issue #147)', () => {
+  it('words a bring-up-to-date request without a note with the default text', () => {
     expect(of(bringUp()).resumeMessage(true)).toEqual({
       text: RunConversation.BRING_UP_TO_DATE_DEFAULT_TEXT,
       reason: 'bring_up_to_date',

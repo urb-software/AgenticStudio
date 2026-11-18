@@ -157,7 +157,7 @@ describe('Follow-ups', () => {
     ).toEqual({ allowed: false, reason: 'provider_unavailable' });
   });
 
-  it('can refresh the pull request only with one and a known Run branch (Issue #142)', () => {
+  it('can refresh the pull request only with one and a known Run branch', () => {
     const pullRequest = { url: 'https://github.com/a/b/pull/1', number: 1 };
     const workingCopy = { runBranch: 'agent/x-r1', commits: [], hasUncommittedChanges: false };
     expect(restored({ pullRequest, workingCopy }).canRefreshPullRequest()).toBe(true);

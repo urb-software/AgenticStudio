@@ -82,7 +82,7 @@ describe('Environment file snapshots', () => {
     expect(secrets.values.has(orphan)).toBe(false);
   });
 
-  it('keeps the snapshot of a failed delivery that can be retried, for the retention period (#125 review)', async () => {
+  it('keeps the snapshot of a failed delivery that can be retried, for the retention period', async () => {
     const run = await claimedWithSnapshot(PROJECT, 'A=test-only-retry');
     for (const [from, to] of [
       ['preparing', 'running'],

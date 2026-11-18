@@ -9,7 +9,7 @@ const slots = (perSession: number, total: number) =>
     streamsTotal: total,
   });
 
-describe('LogStreamSlots (Issue #99 review)', () => {
+describe('LogStreamSlots', () => {
   it('allows a set number of streams per session', () => {
     const limit = slots(2, 10);
     const first = limit.acquire('a');
