@@ -21,7 +21,12 @@ export class HandOutRule {
     return new HandOutRule(workerId);
   }
 
-  static holdsPlace(
+  /** The rule for counting the places Runs hold, which belong to no worker in particular. */
+  static countingPlaces(): HandOutRule {
+    return new HandOutRule('');
+  }
+
+  holdsPlace(
     run: Pick<HandOutView, 'state' | 'claimedBy' | 'sessionRef' | 'followUpQueued'>,
   ): boolean {
     return (
@@ -52,7 +57,7 @@ export class HandOutRule {
   next<T extends HandOutView>(runs: readonly T[]): T | undefined {
     return [...runs].sort(HandOutRule.queueOrder).find((candidate) => {
       if (!this.takes(candidate)) return false;
-      const others = runs.filter((run) => run.id !== candidate.id && HandOutRule.holdsPlace(run));
+      const others = runs.filter((run) => run.id !== candidate.id && this.holdsPlace(run));
       return (
         others.length < HandOutRule.MAX_PLACES &&
         !others.some((other) => other.projectId === candidate.projectId)

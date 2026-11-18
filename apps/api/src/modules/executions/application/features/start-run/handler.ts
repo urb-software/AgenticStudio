@@ -12,7 +12,8 @@ import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { PROVIDER_UNAVAILABLE_REASONS } from '../../../domain/value-objects/provider-unavailable-reason.js';
-import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
+import { Lease } from '../../../domain/value-objects/lease.js';
+import { WorkerPresence } from '../../../domain/value-objects/worker-presence.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_LIMITS, type RunLimitsSetting } from '../../ports/run-limits.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -76,11 +77,12 @@ export class StartRunHandler {
   }
 
   private assertAvailable(provider: Provider): void {
-    const availability = WorkerStatus.providerAvailability(
+    const availability = WorkerPresence.of(
       this.statuses.latest(),
-      this.clock.now(),
-      this.lease.seconds,
-    ).find((candidate) => candidate.id === provider);
+      Lease.ofSeconds(this.lease.seconds),
+    )
+      .providerAvailability(this.clock.now())
+      .find((candidate) => candidate.id === provider);
     if (!availability || availability.reason) {
       throw new ProviderUnavailableError(
         provider,

@@ -84,10 +84,10 @@ describe('the log store follows the rule of the domain (PostgreSQL + Redis via T
 
         const stored = await log().append(created.id, worker, [event] as never, 1_000_000);
 
-        const expected = LogAppendRule.allows(
-          { state: created.state as never, claimedBy: created.claimedBy },
-          worker,
-        );
+        const expected = LogAppendRule.for(worker).allows({
+          state: created.state as never,
+          claimedBy: created.claimedBy,
+        });
         expect(stored !== null).toBe(expected);
         expect(await db().runEvent.count({ where: { runId: created.id } })).toBe(expected ? 1 : 0);
       });

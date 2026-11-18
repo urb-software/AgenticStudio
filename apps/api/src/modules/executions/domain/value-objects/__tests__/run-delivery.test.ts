@@ -44,7 +44,7 @@ describe('RunDelivery', () => {
 
   it('sets the fields of a delivery outcome; one without a pull request keeps the Run’s', () => {
     expect(
-      RunDelivery.outcomePatch({
+      RunDelivery.start('dev').outcomePatch({
         outcome: 'delivered',
         pullRequest: PULL_REQUEST,
         pushedCommit: 'b'.repeat(40),
@@ -54,15 +54,17 @@ describe('RunDelivery', () => {
       pullRequest: PULL_REQUEST,
       pushedCommit: 'b'.repeat(40),
     });
-    expect(RunDelivery.outcomePatch({ outcome: 'none' })).toEqual({ delivery: 'none' });
-    expect(RunDelivery.outcomePatch({ outcome: 'none', branchPushed: true })).toEqual({
+    expect(RunDelivery.start('dev').outcomePatch({ outcome: 'none' })).toEqual({
+      delivery: 'none',
+    });
+    expect(RunDelivery.start('dev').outcomePatch({ outcome: 'none', branchPushed: true })).toEqual({
       delivery: 'none',
     });
   });
 
   it('copies the pull request of an outcome', () => {
     const outcome = { outcome: 'delivered' as const, pullRequest: { ...PULL_REQUEST } };
-    const patch = RunDelivery.outcomePatch(outcome);
+    const patch = RunDelivery.start('dev').outcomePatch(outcome);
     expect(patch.pullRequest).toEqual(PULL_REQUEST);
     expect(patch.pullRequest).not.toBe(outcome.pullRequest);
   });

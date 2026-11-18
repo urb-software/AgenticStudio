@@ -383,7 +383,7 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       ]);
       const rule = LongWaitRule.at(NOW);
       const before = await runs().listNewestFirst();
-      const candidates = before.filter((run) => LongWaitRule.candidate(run)).map((run) => run.id);
+      const candidates = before.filter((run) => rule.candidate(run)).map((run) => run.id);
       const selected = new Set(before.filter((run) => rule.selects(run)).map((run) => run.id));
       expect(selected.size).toBe(2);
 
@@ -431,9 +431,10 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
         { kind: 'fresh', project: 6 },
         { kind: 'waiting', project: 7 },
       ]);
+      const rule = GoneWorkerRule.at(NOW, LEASE_SECONDS);
       const before = await runs().listNewestFirst();
-      const retries = before.filter((run) => GoneWorkerRule.pendingDeliveryRetry(run));
-      const resumes = before.filter((run) => GoneWorkerRule.pendingResume(run));
+      const retries = before.filter((run) => rule.pendingDeliveryRetry(run));
+      const resumes = before.filter((run) => rule.pendingResume(run));
       expect(retries).toHaveLength(1);
       expect(resumes).toHaveLength(2);
       const failure = { code: 'delivery_failed', detail: 'gone' } as const;
@@ -451,8 +452,8 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
         resumes.map((run) => run.lastClaimedBy).sort(),
       );
       for (const run of before) {
-        const pendingRetry = GoneWorkerRule.pendingDeliveryRetry(run);
-        const pendingResume = GoneWorkerRule.pendingResume(run);
+        const pendingRetry = rule.pendingDeliveryRetry(run);
+        const pendingResume = rule.pendingResume(run);
         expect(await runs().abandonDeliveryRetry(run.id, failure, NOW)).toBe(pendingRetry);
         expect(
           await runs().abandonResume(run.id, { code: 'preparation_failed', detail: 'gone' }, NOW),

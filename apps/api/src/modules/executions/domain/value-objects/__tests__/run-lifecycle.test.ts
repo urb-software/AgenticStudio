@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RunCancellation } from '../run-cancellation.js';
 import { IllegalRunTransitionError } from '../../errors/run-errors.js';
+import { EarlierResult } from '../earlier-result.js';
 import { RunLifecycle, type RunLifecycleStored } from '../run-lifecycle.js';
 import { RUN_STATES, FINAL_RUN_STATES, isFinalRunState, type RunState } from '../run-state.js';
 
@@ -27,6 +28,14 @@ const stored = (patch: Partial<RunLifecycleStored> = {}): RunLifecycleStored => 
   ...RunLifecycle.start().toStored(),
   ...patch,
 });
+const inState = (state: RunState): RunLifecycle =>
+  RunLifecycle.restore(
+    stored({
+      state,
+      failure: state === 'failed' ? failure('agent_failed') : null,
+      cancellation: state === 'cancelled' ? { by: 'operator', reason: 'Cancelled.' } : null,
+    }),
+  );
 const failure = (code: 'delivery_failed' | 'usage_limit' | 'agent_failed') => ({
   code,
   detail: 'It broke.',
@@ -47,8 +56,8 @@ describe('RunLifecycle transitions', () => {
   });
 
   it.each(LEGAL)('allows %s -> %s', (from, to) => {
-    expect(RunLifecycle.canTransition(from, to)).toBe(true);
-    expect(() => RunLifecycle.assertTransition(from, to)).not.toThrow();
+    expect(inState(from).canTransitionTo(to)).toBe(true);
+    expect(() => inState(from).assertTransitionTo(to)).not.toThrow();
   });
 
   it('rejects every other transition', () => {
@@ -56,8 +65,8 @@ describe('RunLifecycle transitions', () => {
     for (const from of RUN_STATES) {
       for (const to of RUN_STATES) {
         if (legal.has(`${from}->${to}`)) continue;
-        expect(RunLifecycle.canTransition(from, to), `${from} -> ${to}`).toBe(false);
-        expect(() => RunLifecycle.assertTransition(from, to)).toThrow(IllegalRunTransitionError);
+        expect(inState(from).canTransitionTo(to), `${from} -> ${to}`).toBe(false);
+        expect(() => inState(from).assertTransitionTo(to)).toThrow(IllegalRunTransitionError);
       }
     }
   });
@@ -67,12 +76,12 @@ describe('RunLifecycle transitions', () => {
     expect(final).toEqual(['succeeded', 'failed', 'cancelled', 'timed_out']);
     expect([...FINAL_RUN_STATES]).toEqual(final);
     for (const from of final) {
-      expect(RUN_STATES.some((to) => RunLifecycle.canTransition(from, to))).toBe(false);
+      expect(RUN_STATES.some((to) => inState(from).canTransitionTo(to))).toBe(false);
     }
   });
 
   it('names both states in the error', () => {
-    expect(() => RunLifecycle.assertTransition('succeeded', 'running')).toThrow(
+    expect(() => inState('succeeded').assertTransitionTo('running')).toThrow(
       'A Run cannot go from succeeded to running.',
     );
   });
@@ -193,36 +202,36 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
 
   it('gives back the result a part_end recorded, telling the cancel author from its reason', () => {
     expect(
-      RunLifecycle.earlierResult({
+      EarlierResult.of({
         state: 'failed',
         failureCode: 'agent_failed',
         delivery: null,
         detail: 'It broke.',
-      }),
+      }).toStored(),
     ).toEqual({ state: 'failed', failure: failure('agent_failed'), cancellation: null });
     expect(
-      RunLifecycle.earlierResult({
+      EarlierResult.of({
         state: 'cancelled',
         failureCode: null,
         delivery: null,
         detail: 'Cancelled by the operator.',
-      }).cancellation,
+      }).toStored().cancellation,
     ).toEqual({ by: 'operator', reason: 'Cancelled by the operator.' });
     expect(
-      RunLifecycle.earlierResult({
+      EarlierResult.of({
         state: 'cancelled',
         failureCode: null,
         delivery: null,
         detail: 'Cancelled automatically: the run waited too long.',
-      }).cancellation?.by,
+      }).toStored().cancellation?.by,
     ).toBe('system');
     expect(
-      RunLifecycle.earlierResult({
+      EarlierResult.of({
         state: 'succeeded',
         failureCode: null,
         delivery: 'none',
         detail: '',
-      }),
+      }).toStored(),
     ).toEqual({ state: 'succeeded', failure: null, cancellation: null });
   });
 });

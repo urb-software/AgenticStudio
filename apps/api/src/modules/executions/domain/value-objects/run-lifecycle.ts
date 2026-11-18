@@ -1,6 +1,6 @@
 import type { RunPartEnd } from './run-part-end.js';
 import type { RunDeliveryState } from './run-delivery.js';
-import { RunCancellation } from './run-cancellation.js';
+import type { RunCancellation } from './run-cancellation.js';
 import { IllegalRunTransitionError } from '../errors/run-errors.js';
 import type { RunFailure } from './run-failure.js';
 import { isFinalRunState, isRunState, type RunState } from './run-state.js';
@@ -85,16 +85,12 @@ export class RunLifecycle {
     };
   }
 
-  static canTransition(from: RunState, to: RunState): boolean {
-    return RunLifecycle.TRANSITIONS[from].includes(to);
-  }
-
-  static assertTransition(from: RunState, to: RunState): void {
-    if (!RunLifecycle.canTransition(from, to)) throw new IllegalRunTransitionError(from, to);
+  canTransitionTo(to: RunState): boolean {
+    return RunLifecycle.TRANSITIONS[this.state].includes(to);
   }
 
   assertTransitionTo(to: RunState): void {
-    RunLifecycle.assertTransition(this.state, to);
+    if (!this.canTransitionTo(to)) throw new IllegalRunTransitionError(this.state, to);
   }
 
   get isFinal(): boolean {
@@ -136,26 +132,6 @@ export class RunLifecycle {
       failureCode: this.failure?.code ?? null,
       delivery,
       detail: this.failure?.detail ?? this.cancellation?.reason ?? '',
-    };
-  }
-
-  /** The cancel's author is told from its reason, which only the cancellation's wording fixes. */
-  static earlierResult(
-    end: RunPartEnd,
-  ): Pick<RunLifecycleStored, 'state' | 'failure' | 'cancellation'> {
-    return {
-      state: end.state,
-      failure:
-        end.state === 'failed' && end.failureCode
-          ? { code: end.failureCode, detail: end.detail }
-          : null,
-      cancellation:
-        end.state === 'cancelled'
-          ? {
-              by: end.detail.startsWith(RunCancellation.OPERATOR_PREFIX) ? 'operator' : 'system',
-              reason: end.detail,
-            }
-          : null,
     };
   }
 }

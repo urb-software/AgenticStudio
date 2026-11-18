@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type RecordedWorkerStatus } from '../recorded-worker-status.js';
-import { WorkerStatus } from '../worker-status.js';
+import { Lease } from '../lease.js';
+import { WorkerPresence } from '../worker-presence.js';
 
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = 60;
@@ -14,10 +15,13 @@ const status = (
   reportedAt: new Date(NOW.getTime() - ageSeconds * 1000),
 });
 
-describe('WorkerStatus.providerAvailability', () => {
+describe('WorkerPresence.providerAvailability', () => {
   it('offers the providers the worker enables, and names why the others are not', () => {
     expect(
-      WorkerStatus.providerAvailability(status({ claude_code: true, codex: false }), NOW, LEASE),
+      WorkerPresence.of(
+        status({ claude_code: true, codex: false }),
+        Lease.ofSeconds(LEASE),
+      ).providerAvailability(NOW),
     ).toEqual([
       { id: 'claude_code', name: 'Claude Code', available: true },
       { id: 'codex', name: 'Codex', available: false, reason: 'Switched off on the agent worker' },
@@ -25,7 +29,7 @@ describe('WorkerStatus.providerAvailability', () => {
   });
 
   it('offers nothing when no worker has reported', () => {
-    expect(WorkerStatus.providerAvailability(undefined, NOW, LEASE)).toEqual([
+    expect(WorkerPresence.of(undefined, Lease.ofSeconds(LEASE)).providerAvailability(NOW)).toEqual([
       {
         id: 'claude_code',
         name: 'Claude Code',
@@ -39,9 +43,13 @@ describe('WorkerStatus.providerAvailability', () => {
   it('keeps a report for the lease, then counts it as no worker connected', () => {
     const both = { claude_code: true, codex: true };
     expect(
-      WorkerStatus.providerAvailability(status(both, LEASE), NOW, LEASE).every((p) => p.available),
+      WorkerPresence.of(status(both, LEASE), Lease.ofSeconds(LEASE))
+        .providerAvailability(NOW)
+        .every((p) => p.available),
     ).toBe(true);
-    expect(WorkerStatus.providerAvailability(status(both, LEASE + 1), NOW, LEASE)).toEqual([
+    expect(
+      WorkerPresence.of(status(both, LEASE + 1), Lease.ofSeconds(LEASE)).providerAvailability(NOW),
+    ).toEqual([
       expect.objectContaining({ available: false, reason: 'No agent worker is connected' }),
       expect.objectContaining({ available: false, reason: 'No agent worker is connected' }),
     ]);
@@ -56,7 +64,7 @@ describe('WorkerStatus.providerAvailability', () => {
       },
     };
 
-    expect(WorkerStatus.providerAvailability(reported, NOW, LEASE)).toEqual([
+    expect(WorkerPresence.of(reported, Lease.ofSeconds(LEASE)).providerAvailability(NOW)).toEqual([
       {
         id: 'claude_code',
         name: 'Claude Code',

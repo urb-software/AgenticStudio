@@ -312,7 +312,7 @@ export class InMemoryRunRepository implements RunRepository {
   ): Promise<Run | null> {
     return this.changeStored(runId, (run, stored) => {
       const others = this.runs.filter(
-        (other) => other.id !== runId && HandOutRule.holdsPlace(other),
+        (other) => other.id !== runId && HandOutRule.countingPlaces().holdsPlace(other),
       );
       mutate(run, {
         projectPlaceTaken: others.some((other) => other.projectId === stored.projectId),

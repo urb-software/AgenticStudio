@@ -9,9 +9,16 @@ import type { LogAppendFacts } from './log-append-facts.js';
 export class LogAppendRule {
   static readonly STATES = CLAIMED_RUN_STATES;
 
-  static allows(run: LogAppendFacts, workerId: string): boolean {
+  private constructor(readonly workerId: string) {}
+
+  static for(workerId: string): LogAppendRule {
+    return new LogAppendRule(workerId);
+  }
+
+  allows(run: LogAppendFacts): boolean {
     return (
-      (LogAppendRule.STATES as readonly string[]).includes(run.state) && run.claimedBy === workerId
+      (LogAppendRule.STATES as readonly string[]).includes(run.state) &&
+      run.claimedBy === this.workerId
     );
   }
 }

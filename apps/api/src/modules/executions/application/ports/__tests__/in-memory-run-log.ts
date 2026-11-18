@@ -22,7 +22,7 @@ export class InMemoryRunLog implements RunLog {
     maxBytes: number,
   ): Promise<number | null> {
     const run = this.runs.runs.find((candidate) => candidate.id === runId);
-    if (!run || !LogAppendRule.allows(run, workerId)) {
+    if (!run || !LogAppendRule.for(workerId).allows(run)) {
       return Promise.resolve(null);
     }
     const stored = this.events.get(runId) ?? [];

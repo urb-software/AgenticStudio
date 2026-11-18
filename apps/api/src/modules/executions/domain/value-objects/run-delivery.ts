@@ -68,7 +68,7 @@ export class RunDelivery {
   }
 
   /** An outcome without a pull request keeps the Run's. */
-  static outcomePatch(outcome: RunDeliveryOutcome): Partial<RunDeliveryStored> {
+  outcomePatch(outcome: RunDeliveryOutcome): Partial<RunDeliveryStored> {
     return {
       delivery: outcome.outcome,
       ...(outcome.outcome === 'delivered' ? { pullRequest: { ...outcome.pullRequest } } : {}),

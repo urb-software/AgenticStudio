@@ -7,6 +7,7 @@ import { RunConversation } from '../value-objects/run-conversation.js';
 import { type BringUpDetails } from '../value-objects/bring-up-details.js';
 import type { RunMessage } from '../value-objects/run-message.js';
 import type { RunData } from './run-data.js';
+import { EarlierResult } from '../value-objects/earlier-result.js';
 import { RunDelivery } from '../value-objects/run-delivery.js';
 import {
   DeliveryNotRetryableError,
@@ -39,7 +40,8 @@ import { isClaimedRunState, isFinalRunState, type RunState } from '../value-obje
 import { RunCancellation } from '../value-objects/run-cancellation.js';
 import { RunWorkerClaim } from '../value-objects/run-worker-claim.js';
 import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
-import { WorkerStatus } from '../value-objects/worker-status.js';
+import { Lease } from '../value-objects/lease.js';
+import { WorkerPresence } from '../value-objects/worker-presence.js';
 import { RunStep } from './run-step.js';
 import type { RunStepSnapshot } from './run-step-snapshot.js';
 
@@ -245,11 +247,11 @@ export class Run {
   }
 
   followUpFacts(workers: WorkerFacts, now: Date, leaseSeconds: number): FollowUpFacts {
-    const provider = WorkerStatus.providerAvailability(workers.latest, now, leaseSeconds).find(
-      (candidate) => candidate.id === this.provider,
-    );
+    const provider = WorkerPresence.of(workers.latest, Lease.ofSeconds(leaseSeconds))
+      .providerAvailability(now)
+      .find((candidate) => candidate.id === this.provider);
     return {
-      workerAvailable: WorkerStatus.isWithinLease(workers.holderLastSeen, now, leaseSeconds),
+      workerAvailable: Lease.ofSeconds(leaseSeconds).covers(workers.holderLastSeen, now),
       providerAvailable: provider?.available === true,
     };
   }
@@ -392,7 +394,7 @@ export class Run {
       ...(to === 'running' ? { stepStartedAt: now } : {}),
       ...(isFinalRunState(to) ? { finishedAt: now } : {}),
       ...(keepsWorkingCopy && report.workingCopy ? { workingCopy: report.workingCopy } : {}),
-      ...(delivery ? RunDelivery.outcomePatch(delivery) : {}),
+      ...(delivery ? this.delivery.outcomePatch(delivery) : {}),
       ...(failure?.code === 'delivery_failed' ? { delivery: 'failed' as const } : {}),
       // A delivery that pushed before it failed still records the push.
       ...(pushedCommit ? { pushedCommit } : {}),
@@ -422,7 +424,7 @@ export class Run {
       finishedAt: now,
       ...(report.workingCopy ? { workingCopy: report.workingCopy } : {}),
       ...(delivery
-        ? { state: 'succeeded' as const, failure: null, ...RunDelivery.outcomePatch(delivery) }
+        ? { state: 'succeeded' as const, failure: null, ...this.delivery.outcomePatch(delivery) }
         : {
             failure: failure!,
             delivery: 'failed' as const,
@@ -453,7 +455,7 @@ export class Run {
       at: now,
     });
     this.apply({
-      ...RunLifecycle.earlierResult(before),
+      ...EarlierResult.of(before).toStored(),
       delivery: before.delivery,
       claimedBy: null,
       heartbeatAt: null,

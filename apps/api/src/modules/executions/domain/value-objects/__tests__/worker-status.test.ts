@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type RecordedWorkerStatus } from '../recorded-worker-status.js';
+import { Lease } from '../lease.js';
 import { WorkerStatus } from '../worker-status.js';
 
 const NOW = new Date('2026-11-15T12:00:00.000Z');
@@ -60,11 +61,11 @@ describe('WorkerStatus', () => {
     expect(status.reasonFor('codex')).toBe('Unsupported CLI version');
   });
 
-  describe('isWithinLease', () => {
+  describe('Lease.covers', () => {
     it('is true up to the lease and false after it, and false when never seen', () => {
-      expect(WorkerStatus.isWithinLease(at(LEASE), NOW, LEASE)).toBe(true);
-      expect(WorkerStatus.isWithinLease(at(LEASE + 1), NOW, LEASE)).toBe(false);
-      expect(WorkerStatus.isWithinLease(undefined, NOW, LEASE)).toBe(false);
+      expect(Lease.ofSeconds(LEASE).covers(at(LEASE), NOW)).toBe(true);
+      expect(Lease.ofSeconds(LEASE).covers(at(LEASE + 1), NOW)).toBe(false);
+      expect(Lease.ofSeconds(LEASE).covers(undefined, NOW)).toBe(false);
     });
   });
 });
