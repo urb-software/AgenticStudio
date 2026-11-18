@@ -1,4 +1,4 @@
-import type { RecordedWorkerStatus } from '../../domain/value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../../domain/value-objects/recorded-worker-status.js';
 
 export const WORKER_STATUS_STORE = Symbol('WORKER_STATUS_STORE');
 

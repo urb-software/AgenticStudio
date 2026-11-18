@@ -1,15 +1,6 @@
 import { RepositoryUrl } from './repository-url.js';
-
-export interface KnownHost {
-  /** Lower-case known_hosts names: `host`, or `[host]:port` for a port other than 22. */
-  readonly hosts: readonly string[];
-  readonly key: string;
-}
-
-export interface HostKeyFacts {
-  readonly url: string;
-  readonly pinnedHostKey: string | null;
-}
+import type { KnownHost } from './known-host.js';
+import type { HostKeyFacts } from './host-key-facts.js';
 
 /**
  * The host keys Studio trusts for a Repository's Git host: those configured for it and the one pinned

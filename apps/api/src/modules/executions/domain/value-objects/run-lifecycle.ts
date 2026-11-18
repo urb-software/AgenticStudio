@@ -1,4 +1,4 @@
-import type { RunPartEnd } from './run-conversation.js';
+import type { RunPartEnd } from './run-part-end.js';
 import type { RunDeliveryState } from './run-delivery.js';
 import { RunCancellation } from './run-cancellation.js';
 import { IllegalRunTransitionError } from '../errors/run-errors.js';

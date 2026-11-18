@@ -1,38 +1,15 @@
 import type { FollowUpEligibility } from './follow-up-eligibility.js';
-import { isEndedPullRequestState, type PullRequestState } from './run-pull-request-status.js';
-import { isFinalRunState, type RunState } from './run-state.js';
-import { WorkerStatus, type RecordedWorkerStatus } from './worker-status.js';
-
-export interface RetentionFacts {
-  state: RunState;
-  finishedAt: Date | null;
-  hasPullRequest: boolean;
-  /**
-   * `null` (never read, or a lookup that never succeeded) counts as open: a Git host outage never
-   * causes removal.
-   */
-  pullRequestState: PullRequestState | null;
-  pullRequestEndedAt: Date | null;
-  lastActivityAt: Date;
-}
-
-export interface RetentionSettings {
-  days: number;
-  maxPerProject: number;
-  openPullRequestIdleDays: number;
-  hoursAfterPullRequestEnd: number;
-}
+import { isEndedPullRequestState } from './pull-request-state.js';
+import { isFinalRunState } from './run-state.js';
+import { WorkerStatus } from './worker-status.js';
+import { type RecordedWorkerStatus } from './recorded-worker-status.js';
+import type { RetentionFacts } from './retention-facts.js';
+import type { RetentionSettings } from './retention-settings.js';
+import type { LimitedRun } from './limited-run.js';
+import type { FollowUpView } from './follow-up-view.js';
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
-
-export interface LimitedRun {
-  runId: string;
-  projectId: string;
-  finishedAt: Date;
-}
-
-export type FollowUpView = FollowUpEligibility & { openUntil?: Date; removalPending?: true };
 
 export class RetentionPolicy {
   readonly days: number;

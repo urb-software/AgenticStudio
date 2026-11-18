@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { RunConversation, type RunMessage } from '../run-conversation.js';
+import { RunConversation } from '../run-conversation.js';
+import { type RunMessage } from '../run-message.js';
 
 const at = new Date('2026-11-16T12:00:00.000Z');
 const question: RunMessage = { kind: 'question', question: { text: 'Which?' }, at };

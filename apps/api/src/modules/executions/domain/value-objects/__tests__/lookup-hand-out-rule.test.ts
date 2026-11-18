@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LookupHandOutRule, type LookupHandOutView } from '../lookup-hand-out-rule.js';
+import { LookupHandOutRule } from '../lookup-hand-out-rule.js';
+import { type LookupHandOutView } from '../lookup-hand-out-view.js';
 
 const NOW = new Date('2026-11-17T12:00:00.000Z');
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);

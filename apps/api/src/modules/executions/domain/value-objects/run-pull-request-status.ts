@@ -1,79 +1,14 @@
 import type { FollowUpRefusal } from './follow-up-refusal.js';
-
-/**
- * `missing`: the pull request, or the Run branch it came from, no longer exists. The worker
- * protocol's list is pinned to this one by a test.
- */
-export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
-export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
-
-export type EndedPullRequestState = Extract<PullRequestState, 'merged' | 'closed' | 'missing'>;
-
-export function isEndedPullRequestState(
-  state: PullRequestState | null,
-): state is EndedPullRequestState {
-  return state === 'merged' || state === 'closed' || state === 'missing';
-}
-
-/** The worker protocol's list is pinned to this one by a test. */
-export const PULL_REQUEST_CHECK_STATES = [
-  'queued',
-  'running',
-  'passed',
-  'failed',
-  'skipped',
-  'cancelled',
-] as const;
-export type PullRequestCheckState = (typeof PULL_REQUEST_CHECK_STATES)[number];
-
-export interface PullRequestCheck {
-  name: string;
-  state: PullRequestCheckState;
-  durationSeconds?: number;
-  url: string;
-}
-
-/**
- * `unavailable`: the Git host refused to tell them (the Agent account lacks the permission). An
- * empty list means none are configured or reported for that commit.
- */
-export type RunPullRequestChecks =
-  { unavailable: true } | { unavailable?: false; commit: string; checks: PullRequestCheck[] };
+import {
+  isEndedPullRequestState,
+  type EndedPullRequestState,
+  type PullRequestState,
+} from './pull-request-state.js';
+import type { RunPullRequestChecks } from './run-pull-request-checks.js';
+import type { PullRequestStateResult } from './pull-request-state-result.js';
+import type { StoredPullRequestStatus } from './stored-pull-request-status.js';
 
 export type FailingChecksPreparation = 'preparing' | 'ready' | 'failed';
-
-export interface PullRequestStateResult {
-  state: PullRequestState;
-  behindBy?: number;
-  aheadBy?: number;
-  mergeable?: boolean;
-  checksCommit?: string;
-  checks?: PullRequestCheck[];
-  checksUnavailable?: true;
-}
-
-/**
- * `state` is `null` until the first lookup succeeded, and is kept when a later one fails
- * (`refreshError` then says why). Every field is `null` for a Run without a pull request.
- */
-export interface StoredPullRequestStatus {
-  state: PullRequestState | null;
-  behindBy: number | null;
-  aheadBy: number | null;
-  mergeable: boolean | null;
-  refreshedAt: Date | null;
-  refreshError: string | null;
-  retryAt: Date | null;
-  refreshRequestedAt: Date | null;
-  lastAttemptAt: Date | null;
-  checks: RunPullRequestChecks | null;
-  prepareRequestedAt: Date | null;
-  prepareError: string | null;
-  /**
-   * `null` while it is not over (a reopened one is cleared). Working copy retention counts from it.
-   */
-  endedAt: Date | null;
-}
 
 const PAGE_REFRESH_MIN_AGE_SECONDS = 60;
 

@@ -7,7 +7,7 @@ import {
   T0,
   WORKER,
 } from '../../../../domain/repositories/__tests__/delivered-run.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';

@@ -7,7 +7,7 @@ import {
 } from '../../../../entry-points/http/shared/run-response.js';
 import { preparedFollowUpResponseSchema } from '../../../../entry-points/http/operator/get-prepared-follow-up/schema.js';
 import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
-import type { PullRequestStateResult } from '../../../../domain/value-objects/run-pull-request-status.js';
+import type { PullRequestStateResult } from '../../../../domain/value-objects/pull-request-state-result.js';
 import {
   deliveredRun,
   PULL_REQUEST,

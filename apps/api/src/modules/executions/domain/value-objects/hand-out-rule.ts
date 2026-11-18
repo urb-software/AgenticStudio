@@ -1,16 +1,5 @@
 import type { RunState } from './run-state.js';
-
-export interface HandOutView {
-  id: string;
-  projectId: string;
-  state: RunState;
-  claimedBy: string | null;
-  sessionRef: string | null;
-  followUpQueued: boolean;
-  deliveryRequested: boolean;
-  lastClaimedBy: string | null;
-  createdAt: Date;
-}
+import type { HandOutView } from './hand-out-view.js';
 
 /**
  * The store hands a Run out in one atomic step under the claim lock, re-checking Runs another

@@ -11,10 +11,8 @@ import { Run } from '../../../domain/entities/run.js';
 import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
-import {
-  PROVIDER_UNAVAILABLE_REASONS,
-  WorkerStatus,
-} from '../../../domain/value-objects/worker-status.js';
+import { PROVIDER_UNAVAILABLE_REASONS } from '../../../domain/value-objects/provider-unavailable-reason.js';
+import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_LIMITS, type RunLimitsSetting } from '../../ports/run-limits.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';

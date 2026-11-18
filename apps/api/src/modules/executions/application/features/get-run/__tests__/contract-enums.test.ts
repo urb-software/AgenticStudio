@@ -1,5 +1,6 @@
 import {
   ANSWER_MAX_LENGTH as WORKER_ANSWER_MAX_LENGTH,
+  FAILURE_DETAIL_MAX_LENGTH as WORKER_FAILURE_DETAIL_MAX_LENGTH,
   FOLLOW_UP_MAX_LENGTH as WORKER_FOLLOW_UP_MAX_LENGTH,
   LOOKUP_KINDS as WORKER_LOOKUP_KINDS,
   LOOKUP_CLAIM_MAX as WORKER_LOOKUP_CLAIM_MAX,
@@ -46,16 +47,14 @@ import {
 import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
 import { FOLLOW_UP_REFUSALS } from '../../../../domain/value-objects/follow-up-refusal.js';
 import { PROVIDERS } from '../../../../domain/value-objects/provider.js';
-import {
-  PULL_REQUEST_CHECK_STATES,
-  PULL_REQUEST_STATES,
-} from '../../../../domain/value-objects/run-pull-request-status.js';
+import { PULL_REQUEST_CHECK_STATES } from '../../../../domain/value-objects/pull-request-check-state.js';
+import { PULL_REQUEST_STATES } from '../../../../domain/value-objects/pull-request-state.js';
 import { RESUME_REASONS } from '../../../../domain/value-objects/run-resume.js';
 import { RUN_CANCELLED_BY } from '../../../../domain/value-objects/run-cancelled-by.js';
 import { RUN_DELIVERIES } from '../../../../domain/value-objects/run-delivery.js';
 import { RUN_FAILURE_CODES } from '../../../../domain/value-objects/run-failure-code.js';
+import { RunFailure } from '../../../../domain/value-objects/run-failure.js';
 import { RUN_STATES } from '../../../../domain/value-objects/run-state.js';
-import { FollowUpText } from '../../../../domain/value-objects/follow-up-text.js';
 import { FOLLOW_UP_SOURCES } from '../../../../domain/value-objects/follow-up-source.js';
 import { TASK_MAX_LENGTH } from '../../../../domain/value-objects/task.js';
 import { RUN_EVENT_KINDS } from '../../../../domain/value-objects/run-event.js';
@@ -113,8 +112,9 @@ describe('Run enums of the HTTP contract and the worker protocol', () => {
     expect([...WORKER_FAILURE_CODES]).toEqual([...RUN_FAILURE_CODES]);
     expect(WORKER_TASK_MAX_LENGTH).toBe(TASK_MAX_LENGTH);
     // The Follow-up and the answer travel in the same payload field.
-    expect(WORKER_FOLLOW_UP_MAX_LENGTH).toBe(FollowUpText.MAX_LENGTH);
+    expect(WORKER_FOLLOW_UP_MAX_LENGTH).toBe(RunConversation.FOLLOW_UP_MAX_LENGTH);
     expect(WORKER_ANSWER_MAX_LENGTH).toBe(RunConversation.ANSWER_MAX_LENGTH);
+    expect(WORKER_FAILURE_DETAIL_MAX_LENGTH).toBe(RunFailure.DETAIL_MAX_LENGTH);
     expect([...WORKER_RESUME_REASONS]).toEqual([...RESUME_REASONS]);
   });
 

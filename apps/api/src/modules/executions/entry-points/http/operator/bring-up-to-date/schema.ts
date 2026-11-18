@@ -1,13 +1,15 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { FollowUpText } from '../../../../domain/value-objects/follow-up-text.js';
+import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
 
 export const bringUpToDateRequestSchema = z
   .strictObject({
     note: z
       .string()
       .trim()
-      .max(FollowUpText.MAX_LENGTH, { error: `Use at most ${FollowUpText.MAX_LENGTH} characters.` })
+      .max(RunConversation.FOLLOW_UP_MAX_LENGTH, {
+        error: `Use at most ${RunConversation.FOLLOW_UP_MAX_LENGTH} characters.`,
+      })
       .optional(),
   })
   .meta({ id: 'BringUpToDateRequest' });

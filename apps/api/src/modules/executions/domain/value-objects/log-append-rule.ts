@@ -1,9 +1,5 @@
-import { CLAIMED_RUN_STATES, type RunState } from './run-state.js';
-
-export interface LogAppendFacts {
-  state: RunState;
-  claimedBy: string | null;
-}
+import { CLAIMED_RUN_STATES } from './run-state.js';
+import type { LogAppendFacts } from './log-append-facts.js';
 
 /**
  * The store appends in one atomic step under the Run's row lock, so the duplicate filter and the

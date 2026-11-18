@@ -6,7 +6,7 @@ import {
   ProviderUnavailableError,
 } from '../../../../domain/errors/run-errors.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { StartRunHandler } from '../handler.js';
 

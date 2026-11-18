@@ -3,8 +3,9 @@ import { HandOutRule } from '../value-objects/hand-out-rule.js';
 import type { FollowUpEligibility } from '../value-objects/follow-up-eligibility.js';
 import type { FollowUpRefusal } from '../value-objects/follow-up-refusal.js';
 import { PROVIDERS } from '../value-objects/provider.js';
-import { RunConversation, type BringUpDetails } from '../value-objects/run-conversation.js';
-import type { RunMessage } from '../value-objects/run-conversation.js';
+import { RunConversation } from '../value-objects/run-conversation.js';
+import { type BringUpDetails } from '../value-objects/bring-up-details.js';
+import type { RunMessage } from '../value-objects/run-message.js';
 import type { RunData } from './run-data.js';
 import { RunDelivery } from '../value-objects/run-delivery.js';
 import {
@@ -23,18 +24,16 @@ import type { RunFailure } from '../value-objects/run-failure.js';
 import type { FollowUpConsumption, FollowUpOrigin } from './run-follow-up-facts.js';
 import type { FollowUpFacts, WorkerFacts } from './run-worker-facts.js';
 import type { ResumeFacts } from './run-resume-facts.js';
-import type { RetentionFacts } from '../value-objects/retention-policy.js';
+import type { RetentionFacts } from '../value-objects/retention-facts.js';
 import type { RunChanges } from './run-change-facts.js';
 import type { RunStartInput } from './run-start-facts.js';
 import type { RunStateReport } from './run-report-facts.js';
 import type { RunStepOutcome, RunStepRecord } from './run-step-facts.js';
 import { RunLifecycle } from '../value-objects/run-lifecycle.js';
 import { RunProgress } from '../value-objects/run-progress.js';
-import {
-  RunPullRequestStatus,
-  type PullRequestState,
-  type PullRequestStateResult,
-} from '../value-objects/run-pull-request-status.js';
+import { RunPullRequestStatus } from '../value-objects/run-pull-request-status.js';
+import { type PullRequestState } from '../value-objects/pull-request-state.js';
+import { type PullRequestStateResult } from '../value-objects/pull-request-state-result.js';
 import type { RunResume } from '../value-objects/run-resume.js';
 import { isClaimedRunState, isFinalRunState, type RunState } from '../value-objects/run-state.js';
 import { RunCancellation } from '../value-objects/run-cancellation.js';

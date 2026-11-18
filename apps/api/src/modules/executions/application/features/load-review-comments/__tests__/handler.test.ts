@@ -19,7 +19,7 @@ import type { InMemoryRunLookupRepository } from '../../../../domain/repositorie
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { GetReviewCommentsHandler } from '../../get-review-comments/handler.js';

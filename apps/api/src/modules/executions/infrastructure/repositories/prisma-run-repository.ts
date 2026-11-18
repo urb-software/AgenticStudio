@@ -27,11 +27,10 @@ import { Run } from '../../domain/entities/run.js';
 import { type RunSnapshot } from '../../domain/entities/run-snapshot.js';
 import { RunSlotTakenError } from '../../domain/errors/run-errors.js';
 import { RUN_DELIVERIES, type RunDeliveryState } from '../../domain/value-objects/run-delivery.js';
-import { type RunMessage, type RunPartEnd } from '../../domain/value-objects/run-conversation.js';
-import {
-  type RunPullRequestChecks,
-  type PullRequestState,
-} from '../../domain/value-objects/run-pull-request-status.js';
+import { type RunMessage } from '../../domain/value-objects/run-message.js';
+import { type RunPartEnd } from '../../domain/value-objects/run-part-end.js';
+import { type RunPullRequestChecks } from '../../domain/value-objects/run-pull-request-checks.js';
+import { type PullRequestState } from '../../domain/value-objects/pull-request-state.js';
 import { type RunWorkingCopy } from '../../domain/value-objects/run-working-copy.js';
 import type { FollowUpSource } from '../../domain/value-objects/follow-up-source.js';
 import { HandOutRule } from '../../domain/value-objects/hand-out-rule.js';

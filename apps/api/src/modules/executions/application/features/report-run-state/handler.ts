@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type PullRequestState } from '../../../domain/value-objects/run-pull-request-status.js';
+import { type PullRequestState } from '../../../domain/value-objects/pull-request-state.js';
 import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
 import { RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { type RunState } from '../../../domain/value-objects/run-state.js';

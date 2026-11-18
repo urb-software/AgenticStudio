@@ -1,19 +1,5 @@
-import { type LookupStatus } from './lookup-status.js';
-
-export interface LookupHandOutView {
-  id: string;
-  runId: string;
-  status: LookupStatus;
-  requestedAt: Date;
-  claimedAt: Date | null;
-  retryAt: Date | null;
-}
-
-export interface LookupRunView {
-  id: string;
-  hasPullRequest: boolean;
-  hasRunBranch: boolean;
-}
+import type { LookupHandOutView } from './lookup-hand-out-view.js';
+import type { LookupRunView } from './lookup-run-view.js';
 
 /**
  * The store hands lookups out in one atomic step, skipping lookups another claim holds; `next` is

@@ -3,7 +3,7 @@ import type { RunConversationStored } from '../value-objects/run-conversation.js
 import type { RunDeliveryStored } from '../value-objects/run-delivery.js';
 import type { RunLifecycleStored } from '../value-objects/run-lifecycle.js';
 import type { RunProgressStored } from '../value-objects/run-progress.js';
-import type { StoredPullRequestStatus } from '../value-objects/run-pull-request-status.js';
+import type { StoredPullRequestStatus } from '../value-objects/stored-pull-request-status.js';
 import type { RunWorkerClaimStored } from '../value-objects/run-worker-claim.js';
 import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
 

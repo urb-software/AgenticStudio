@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DeployKey } from '../deploy-key.js';
-import { type KnownHost, TrustedHostKeys } from '../trusted-host-keys.js';
+import { type KnownHost } from '../known-host.js';
+import { TrustedHostKeys } from '../trusted-host-keys.js';
 
 const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 const GITHUB_KEY = hostKey();

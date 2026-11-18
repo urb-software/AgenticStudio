@@ -3,7 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PreparedFollowUp } from '../../../domain/entities/prepared-follow-up.js';
 import { ReviewComments } from '../../../domain/entities/review-comments.js';
 import type { RunLookup } from '../../../domain/entities/run-lookup.js';
-import type { PullRequestStateResult } from '../../../domain/value-objects/run-pull-request-status.js';
+import type { PullRequestStateResult } from '../../../domain/value-objects/pull-request-state-result.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,

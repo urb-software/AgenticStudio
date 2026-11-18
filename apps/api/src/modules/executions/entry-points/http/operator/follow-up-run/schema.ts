@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import { followUpSourceSchema } from '../../shared/run-response.js';
 import { ReviewComment } from '../../../../domain/value-objects/review-comment.js';
-import { FollowUpText } from '../../../../domain/value-objects/follow-up-text.js';
+import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
 
 export const followUpRunRequestSchema = z
   .strictObject({
@@ -10,8 +10,8 @@ export const followUpRunRequestSchema = z
       .string()
       .trim()
       .min(1, { error: 'Enter a Follow-up.' })
-      .max(FollowUpText.MAX_LENGTH, {
-        error: `Use at most ${FollowUpText.MAX_LENGTH} characters.`,
+      .max(RunConversation.FOLLOW_UP_MAX_LENGTH, {
+        error: `Use at most ${RunConversation.FOLLOW_UP_MAX_LENGTH} characters.`,
       }),
     source: followUpSourceSchema.optional(),
     reviewCommentIds: z

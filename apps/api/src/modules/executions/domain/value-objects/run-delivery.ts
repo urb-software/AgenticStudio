@@ -1,10 +1,7 @@
+import type { RunPullRequest } from './run-pull-request.js';
+
 export const RUN_DELIVERIES = ['none', 'delivered', 'failed'] as const;
 export type RunDeliveryState = (typeof RUN_DELIVERIES)[number];
-
-export interface RunPullRequest {
-  url: string;
-  number: number;
-}
 
 export type RunDeliveryOutcome =
   /** `branchPushed`: only for a Run cancelled after its push, before a pull request. */

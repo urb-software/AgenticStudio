@@ -1,4 +1,4 @@
-import type { RecordedWorkerStatus } from '../value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../value-objects/recorded-worker-status.js';
 
 /** What the Run's handler fetched about the agent workers, as values. */
 export interface WorkerFacts {

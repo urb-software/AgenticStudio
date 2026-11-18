@@ -1,3 +1,5 @@
+import type { HostLiteral } from './host-literal.js';
+
 /**
  * The address policy for Git remotes (security.md §4): `blocked` addresses are never connected to,
  * `private` ones only under `STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true`, the rest are `public`. Pure; shared
@@ -123,12 +125,6 @@ function classifyIpv6(groups: number[]): RemoteAddressRange {
   if ((g0 & 0xffc0) === 0xfec0) return 'private';
   return 'public';
 }
-
-export type HostLiteral =
-  | { kind: 'name' }
-  | { kind: 'address'; address: string }
-  /** Looks numeric (every label is a number), but is no valid address: refused. */
-  | { kind: 'invalid' };
 
 const NUMERIC_LABEL = /^(?:0x[\da-f]*|\d+)$/i;
 

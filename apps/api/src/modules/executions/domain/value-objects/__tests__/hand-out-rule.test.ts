@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { type HandOutView, HandOutRule } from '../hand-out-rule.js';
+import { type HandOutView } from '../hand-out-view.js';
+import { HandOutRule } from '../hand-out-rule.js';
 
 const W1 = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const W2 = '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FollowUpText } from '../../value-objects/follow-up-text.js';
+import { RunConversation } from '../../value-objects/run-conversation.js';
 import { LogRedaction } from '../../value-objects/log-redaction.js';
 import { PreparedFollowUp } from '../prepared-follow-up.js';
 import type { FailedCheckLog } from '../../value-objects/failed-check-log.js';
@@ -108,7 +108,7 @@ describe('the Follow-up prepared from failing checks', () => {
       LogRedaction.of([]),
     );
 
-    expect(draft.text.length).toBeLessThanOrEqual(FollowUpText.MAX_LENGTH);
+    expect(draft.text.length).toBeLessThanOrEqual(RunConversation.FOLLOW_UP_MAX_LENGTH);
     expect(draft.items).toHaveLength(4);
     expect(draft.text).toContain('a line 299');
     expect(draft.text).toContain('d line 299');
@@ -126,7 +126,7 @@ describe('the Follow-up prepared from failing checks', () => {
       LogRedaction.of([]),
     );
 
-    expect(draft.text.length).toBeLessThanOrEqual(FollowUpText.MAX_LENGTH);
+    expect(draft.text.length).toBeLessThanOrEqual(RunConversation.FOLLOW_UP_MAX_LENGTH);
     expect(draft.items.length).toBeLessThan(100);
     expect(draft.text).toMatch(/\(\d+ more failed checks are not listed here/);
   });
@@ -142,7 +142,7 @@ describe('the Follow-up prepared from failing checks', () => {
       LogRedaction.of([]),
     );
 
-    expect(draft.text.length).toBeLessThanOrEqual(FollowUpText.MAX_LENGTH);
+    expect(draft.text.length).toBeLessThanOrEqual(RunConversation.FOLLOW_UP_MAX_LENGTH);
     expect(draft.text).toContain('Log omitted: too long to include here.');
   });
 });
