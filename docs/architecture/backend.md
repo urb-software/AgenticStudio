@@ -99,7 +99,9 @@ Rules 1 to 9 and rules 10 to 13 were approved by the operator on 2026-11-17 (Epi
 12. **Aggregates refer to each other by id.** A root never holds or loads another root. A rule that needs facts from another aggregate receives them as values (consistent with rule 6).
 13. **One concept per file.** An entity file holds the entity class and nothing else. Each value object, an aggregate's errors and its fact types have their own files. `domain/` exports no loose functions other than type guards. There is no line limit; size is reported, not enforced.
 
-Rules 10 to 13 apply to the API only, as rules 1 to 9 do.
+14. **Comments explain why, briefly, and only when the code cannot.** Unlike rules 1 to 13, this rule is repository-wide: it covers every package and tests, not the API only. The full text, the planned enforcement and an example are in [Quality](../engineering/quality.md) §5 (rule 14) and in [AGENTS.md](../../AGENTS.md) §2a.
+
+Rules 1 to 13 apply to the API only; rule 14 applies everywhere.
 
 ### What a handler returns (rule 10)
 

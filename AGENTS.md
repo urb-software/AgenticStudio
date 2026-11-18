@@ -23,6 +23,16 @@
 - Follow the repository's current conventions. No mandatory empty layers, command bus, or domain events in an MVP slice.
 - Agree on API/event contracts before splitting BE/FE work, with one canonical definition per public contract. HTTP: Zod 4 → `nestjs-zod`/Swagger OpenAPI → generated Fetch client. Persistence: Prisma adapters behind ports. See the backend/frontend architecture and bootstrap plan.
 
+## 2a. Code comments (rule 14)
+
+**Comments explain why, briefly, and only when the code cannot.** The rule applies to the whole repository. Full text, enforcement and example: `docs/engineering/quality.md` §5 (rule 14).
+
+- **A comment is for:** a constraint or invariant the code does not show; a security reason; a concurrency or atomicity guarantee; a workaround with its cause; the contract of a port or repository method (what it guarantees, what an empty result means, what it throws).
+- **A comment is never for:** what the name and types already say; history (what changed, moved or was removed); an Issue or pull request number (`#<digits>` or a link); the definition of a glossary term; restating an architecture rule.
+- **Form:** at most three lines; anything longer belongs in a document, with a one-line pointer. A class or file header is one sentence or absent. Tests rely on the test name and follow the same rule.
+- **Exception:** a longer comment carries the tag `@long-comment <reason>` with a non-empty reason.
+- Existing code is brought in line by the clean-up tickets of Epic #160; the web app follows later. Do not add comments that break the rule to match a neighbour.
+
 ## 3. Git & context isolation
 
 - **Source of truth:** the GitHub Issue. Hierarchy, stage and blocked rules are canonical in `docs/engineering/issue-workflow.md`; read it before marking an Issue Ready, taking a ticket, or closing an Issue. In short:
