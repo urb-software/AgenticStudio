@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EnvironmentFileContent } from '../environment-file-content.js';
 
-// Issue #104: the values of a Run's Environment file that log redaction replaces. Test values.
-
 describe('EnvironmentFileContent', () => {
   it('takes the value of each KEY=VALUE line, with or without export, quotes stripped', () => {
     const content = [

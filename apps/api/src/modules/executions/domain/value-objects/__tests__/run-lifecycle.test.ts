@@ -4,7 +4,6 @@ import { IllegalRunTransitionError } from '../../errors/run-errors.js';
 import { RunLifecycle, type RunLifecycleStored } from '../run-lifecycle.js';
 import { RUN_STATES, FINAL_RUN_STATES, isFinalRunState, type RunState } from '../run-state.js';
 
-// Issue #96: the Run state machine, enforced in the domain. No database: the value object alone.
 const LEGAL: [RunState, RunState][] = [
   ['queued', 'preparing'],
   ['preparing', 'running'],
@@ -12,7 +11,6 @@ const LEGAL: [RunState, RunState][] = [
   ['running', 'waiting_for_operator'],
   ['running', 'succeeded'],
   ['running', 'failed'],
-  // Issue #103: the operator's answer queues the Run again; a worker claims it to resume.
   ['waiting_for_operator', 'queued'],
   ['queued', 'cancelled'],
   ['preparing', 'cancelled'],
@@ -160,7 +158,6 @@ describe('RunLifecycle', () => {
   });
 });
 
-// Review S1 of #150: a part's end is recorded in the conversation when a Follow-up reopens the Run.
 describe('RunLifecycle.partEnd and earlierResult', () => {
   it('records how a finished part ended: state, failure, delivery and the reason', () => {
     expect(

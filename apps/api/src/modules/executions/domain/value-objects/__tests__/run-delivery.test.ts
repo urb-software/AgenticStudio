@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RunDelivery } from '../run-delivery.js';
 
-// Issue #102, #141: how a Run was delivered. No database.
 const PULL_REQUEST = { url: 'https://github.com/a/b/pull/7', number: 7 };
 
 describe('RunDelivery', () => {

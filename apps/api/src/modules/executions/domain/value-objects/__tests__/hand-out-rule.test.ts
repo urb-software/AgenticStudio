@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type HandOutView, HandOutRule } from '../hand-out-rule.js';
 
-// Issue #169: the hand-out rule, stated on a set of Runs without a database. The integration test
-// `run-rules.integration.test.ts` proves the store's atomic hand-out picks what `next` picks here.
 const W1 = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const W2 = '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a';
 
@@ -35,7 +33,6 @@ const ids = (runs: readonly HandOutView[], worker = W1) => {
   const left = [...runs];
   for (let next = rule.next(left); next; next = rule.next(left)) {
     handed.push(next.id);
-    // The handed-out Run holds its place from now on, as the store records it.
     const index = left.findIndex((candidate) => candidate.id === next.id);
     left[index] = { ...next, state: 'running', claimedBy: worker };
   }
@@ -91,7 +88,6 @@ describe('the hand-out rule', () => {
     });
 
     it('lets an answered Run keep its place while it waits, and hands it out despite it', () => {
-      // Its own place does not count against it, but it blocks the project's other Runs.
       const queue = [answered('a', 'p1'), run('q', 'p1')];
 
       expect(HandOutRule.for(W1).next(queue)?.id).toBe('a');

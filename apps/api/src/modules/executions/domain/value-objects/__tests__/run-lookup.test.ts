@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LookupFailure, STORED_RETRY_DELAY_MAX_SECONDS } from '../run-lookup.js';
 
-// Issue #142: when a lookup is retried.
 describe('LookupFailure.retryDelaySeconds', () => {
   it('retries only a rate limit, after what the Git host asked, bounded', () => {
     expect(

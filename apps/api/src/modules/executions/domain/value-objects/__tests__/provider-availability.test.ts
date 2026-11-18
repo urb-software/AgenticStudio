@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type RecordedWorkerStatus, WorkerStatus } from '../worker-status.js';
 
-// Issue #101: which providers Studio offers, from the latest agent worker status.
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = 60;
 const status = (
@@ -52,7 +51,6 @@ describe('WorkerStatus.providerAvailability', () => {
       ...status({ claude_code: true, codex: false }),
       providerReasons: {
         claude_code: 'Claude Code 2.2.0 is not a supported version (>=2.1.325 <2.2.0).',
-        // A reason never turns a switched-off provider into anything else.
         codex: 'not installed',
       },
     };

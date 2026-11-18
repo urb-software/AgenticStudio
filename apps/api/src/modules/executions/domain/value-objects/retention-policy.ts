@@ -3,61 +3,34 @@ import { isEndedPullRequestState, type PullRequestState } from './run-pull-reque
 import { isFinalRunState, type RunState } from './run-state.js';
 import { WorkerStatus, type RecordedWorkerStatus } from './worker-status.js';
 
-/** What Studio knows about a Run that decides how long its Working copy is kept (Issue #143). */
 export interface RetentionFacts {
   state: RunState;
-  /** Set exactly in a final state. */
   finishedAt: Date | null;
-  /** Whether the Run has a pull request (it was delivered). */
   hasPullRequest: boolean;
-  /**
-   * The pull request's state as last read. `null` (never read, or a lookup that never succeeded)
-   * counts as open: a Git host outage never causes removal.
-   */
+  /** `null` (never read, or a lookup that never succeeded) counts as open: a Git host outage never causes removal. */
   pullRequestState: PullRequestState | null;
-  /** When the pull request was first read as merged, closed or missing; `null` while it is not. */
   pullRequestEndedAt: Date | null;
-  /** The latest Run step, Answer or Follow-up (or the Run's creation). */
   lastActivityAt: Date;
 }
 
-/**
- * The periods and limits of the `STUDIO_RETENTION_*` settings (Issue #143), as plain values to
- * build a {@link RetentionPolicy} from.
- */
 export interface RetentionSettings {
-  /** A finished Run without a pull request keeps its Working copy this many days... */
   days: number;
-  /** ...and at most this many such Runs per Project keep it. */
   maxPerProject: number;
-  /** A Run with a pull request keeps it until this many days without activity... */
   openPullRequestIdleDays: number;
-  /** ...or this many hours after the pull request was merged or closed, whichever is first. */
   hoursAfterPullRequestEnd: number;
 }
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
 
-/** One final Run of a Project that the limit counts. */
 export interface LimitedRun {
   runId: string;
   projectId: string;
   finishedAt: Date;
 }
 
-/**
- * A Run's Follow-up eligibility with, when the Run is open to one, until when (Issue #143), or
- * that its removal is pending: its date passed, or the per-Project limit removes it, and the
- * agent worker's next hourly sweep takes the Working copy.
- */
 export type FollowUpView = FollowUpEligibility & { openUntil?: Date; removalPending?: true };
 
-/**
- * How long a finished Run's Working copy is kept (Issue #143, ADR 0002): the periods and limits
- * of the `STUDIO_RETENTION_*` settings, answering for a Run's {@link RetentionFacts}. Studio
- * decides; the agent worker removes what Studio says.
- */
 export class RetentionPolicy {
   readonly days: number;
   readonly maxPerProject: number;
@@ -76,15 +49,8 @@ export class RetentionPolicy {
   }
 
   /**
-   * Until when a Run's Working copy is kept at least (Issue #143, ADR 0002), or `null` when it is
-   * not a candidate for removal at all (the Run is not final: queued, preparing, running or
-   * waiting for the operator).
-   * - A Run with a pull request: the earlier of the pull request's end plus
-   *   `hoursAfterPullRequestEnd`, and the last activity plus `openPullRequestIdleDays`. A pull
-   *   request that is open, draft or of unknown state has no end. The per-Project limit never
-   *   applies to it.
-   * - Any other Run: `days` after it finished (its latest result); the per-Project limit applies
-   *   ({@link RetentionPolicy.isLimited}, {@link RetentionPolicy.overLimit}).
+   * `null` when the Run is not final. With a pull request: the earlier of its end plus `hoursAfterPullRequestEnd` and the last
+   * activity plus `openPullRequestIdleDays`. Otherwise `days` after it finished.
    */
   keepUntil(facts: RetentionFacts): Date | null {
     if (!isFinalRunState(facts.state) || facts.finishedAt === null) return null;
@@ -103,15 +69,10 @@ export class RetentionPolicy {
     );
   }
 
-  /** Whether the per-Project limit counts (and may remove) this Run: a final Run without a pull request. */
   isLimited(facts: Pick<RetentionFacts, 'state' | 'hasPullRequest'>): boolean {
     return isFinalRunState(facts.state) && !facts.hasPullRequest;
   }
 
-  /**
-   * The Runs the per-Project limit removes (Issue #143): of each Project's limited Runs, all but
-   * the newest `maxPerProject` by finish time. A Run with a pull request is never in `runs`.
-   */
   overLimit(runs: readonly LimitedRun[]): Set<string> {
     const byProject = new Map<string, LimitedRun[]>();
     for (const run of runs) {
@@ -127,10 +88,6 @@ export class RetentionPolicy {
     return over;
   }
 
-  /**
-   * Whether the Run can take a Follow-up now and until when, and whether any agent worker is
-   * connected. `overLimit`: the per-Project limit removes the Run.
-   */
   runView(
     eligibility: FollowUpEligibility,
     facts: RetentionFacts,
@@ -145,12 +102,6 @@ export class RetentionPolicy {
     };
   }
 
-  /**
-   * A Run's Follow-up eligibility with, when the Run is open to one, until when it stays open
-   * (Issue #143): it can take one now, or only waits for its worker or Provider to be available.
-   * Not once the Working copy is gone, the pull request is over, or the Run is not finished.
-   * `overLimit`: the per-Project limit removes it.
-   */
   followUpView(
     eligibility: FollowUpEligibility,
     facts: RetentionFacts,

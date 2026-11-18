@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LogRedaction, REDACTED } from '../log-redaction.js';
 
-// Issue #99: redaction happens before a Run event is stored. Best effort: known secret values
-// of the Run, token-shaped strings and credential-bearing URLs become `••••••[redacted]`.
 // Token-shaped fixtures are assembled at runtime so no literal looks like a committed secret.
 const repeat = (alphabet: string, length: number) =>
   Array.from({ length }, (_, i) => alphabet[i % alphabet.length]).join('');

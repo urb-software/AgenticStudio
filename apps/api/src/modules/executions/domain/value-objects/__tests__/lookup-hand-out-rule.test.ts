@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { LookupHandOutRule, type LookupHandOutView } from '../lookup-hand-out-rule.js';
 import { LOOKUP_CLAIM_MAX, LOOKUP_LEASE_SECONDS } from '../run-lookup.js';
 
-// Issue #183: which lookups an agent worker is handed (the store's statement follows this rule;
-// run-lookup-rules.integration.test.ts proves it over PostgreSQL).
 const NOW = new Date('2026-11-17T12:00:00.000Z');
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
 const later = (seconds: number) => new Date(NOW.getTime() + seconds * 1000);
