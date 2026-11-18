@@ -627,7 +627,7 @@ describe.runIf(process.platform === 'linux')(
       });
     });
 
-    describe('remote address policy (Issue #69)', () => {
+    describe('remote address policy', () => {
       const settingsOf = (args: string[]) =>
         args.flatMap((arg, i) => (args[i - 1] === '-c' ? [arg] : []));
       const keyscanStub = () => writeFakeKeyscan(root, recordDir, { stdout: '' });

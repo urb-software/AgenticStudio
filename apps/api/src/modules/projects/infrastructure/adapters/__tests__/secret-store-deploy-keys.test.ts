@@ -55,7 +55,7 @@ describe('SecretStoreDeployKeys', () => {
     expect(JSON.stringify(created)).not.toContain('PRIVATE KEY');
   });
 
-  it('stores the private half under the Deploy-key owner label (Issue #76)', async () => {
+  it('stores the private half under the Deploy-key owner label', async () => {
     const { secretRef } = await keys.create('Shop');
 
     expect(secrets.owners.get(secretRef)).toBe('projects.deploy-key');

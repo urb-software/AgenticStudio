@@ -264,7 +264,7 @@ describe('FetchCloneHandler', () => {
     });
   });
 
-  describe('an SSH Repository (Issue #62)', () => {
+  describe('an SSH Repository', () => {
     const SSH_URL = 'ssh://git@git.example.com:2222/acme/shop.git';
     const pinned = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 

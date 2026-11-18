@@ -36,7 +36,7 @@ describe('SystemGitAdapter production wiring', () => {
     });
   });
 
-  it('refuses loopback and private remotes unless STUDIO_GIT_ALLOW_PRIVATE_REMOTES opts in (Issue #69)', () => {
+  it('refuses loopback and private remotes unless STUDIO_GIT_ALLOW_PRIVATE_REMOTES opts in', () => {
     expect(systemGitSettings(testConfig()).allowPrivateRemotes).toBe(false);
     expect(
       systemGitSettings(testConfig({ gitAllowPrivateRemotes: true })).allowPrivateRemotes,

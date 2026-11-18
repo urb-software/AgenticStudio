@@ -278,7 +278,7 @@ describe('CloneRepositoryHandler', () => {
     expect((await connections.find(other))?.state).toBe('ready');
   });
 
-  describe('an SSH Repository (Issue #62)', () => {
+  describe('an SSH Repository', () => {
     const SSH_URL = 'git@github.com:acme/shop.git';
     const trusted = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
     const pinned = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');

@@ -112,7 +112,7 @@ describe('ConnectRepositoryHandler', () => {
     expect(jobs.started).toEqual([[PROJECT, 'clone']]);
   });
 
-  describe('IP-literal URLs under the address policy (Issue #69)', () => {
+  describe('IP-literal URLs under the address policy', () => {
     it.each(['https://169.254.169.254/acme/shop.git', 'git@0x7f.1:acme/shop.git'])(
       'rejects %s by default as a field error, storing nothing',
       async (url) => {
@@ -175,7 +175,7 @@ describe('ConnectRepositoryHandler', () => {
     ).rejects.toBeInstanceOf(InvalidRepositoryUrlError);
   });
 
-  describe('over SSH (Issue #62)', () => {
+  describe('over SSH', () => {
     it('generates a Deploy key and stores the Repository awaiting_key, without a job or Git', async () => {
       const repository = await handler().execute({
         projectId: PROJECT,
@@ -341,7 +341,7 @@ describe('ConnectRepositoryHandler', () => {
       expect(jobs.started).toEqual([]);
     });
 
-    describe('when deleting the replaced Deploy key fails (Issue #76)', () => {
+    describe('when deleting the replaced Deploy key fails', () => {
       let warnings: string[];
 
       beforeEach(() => {

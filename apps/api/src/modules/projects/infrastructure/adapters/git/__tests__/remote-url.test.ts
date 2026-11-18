@@ -100,7 +100,7 @@ describe('sshEndpoint', () => {
   });
 });
 
-describe('remoteEndpoint (Issue #69)', () => {
+describe('remoteEndpoint', () => {
   it.each([
     ['https://github.com/owner/repo.git', { host: 'github.com', port: 443 }],
     ['https://git.example.test:8443/owner/repo.git', { host: 'git.example.test', port: 8443 }],

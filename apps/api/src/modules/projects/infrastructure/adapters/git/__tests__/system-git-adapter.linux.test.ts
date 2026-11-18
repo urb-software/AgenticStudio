@@ -130,7 +130,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       await expect(git.readBranchCommit(PROJECT_ID, 'dev')).resolves.toEqual({ commit: next });
     });
 
-    it('tells whether a path is tracked at a commit of the Clone (Issue #104)', async () => {
+    it('tells whether a path is tracked at a commit of the Clone', async () => {
       const git = adapter();
       const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');
 
@@ -417,7 +417,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
     });
   });
 
-  describe('HTTPS remotes: pinned to the checked address, redirects refused (Issue #69)', () => {
+  describe('HTTPS remotes: pinned to the checked address, redirects refused', () => {
     const HOST = 'git.studio-fixture.test';
     let certDir: string;
     let caFile: string;

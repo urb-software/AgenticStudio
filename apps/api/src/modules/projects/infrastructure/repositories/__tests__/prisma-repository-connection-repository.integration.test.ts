@@ -185,7 +185,7 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
     });
   });
 
-  describe('two projects racing for one remote (#72)', () => {
+  describe('two projects racing for one remote', () => {
     it.each([1, 2, 3, 4, 5])(
       'connects exactly one; the other is told which project holds the remote (round %i)',
       async () => {
@@ -220,7 +220,7 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
     );
   });
 
-  describe('a remote default branch over 255 characters (#72)', () => {
+  describe('a remote default branch over 255 characters', () => {
     it('stores the failure without it, instead of failing the write', async () => {
       await connections.connect({
         projectId,
@@ -242,7 +242,7 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
     });
   });
 
-  describe('the interrupted migration (#72)', () => {
+  describe('the interrupted migration', () => {
     it('moves the failures stored as unknown / "Interrupted" to interrupted, and only those', async () => {
       const other = (await projects.add(ProjectName.parse('Other'))).id;
       // Test setup only: failures as the earlier code stored them.

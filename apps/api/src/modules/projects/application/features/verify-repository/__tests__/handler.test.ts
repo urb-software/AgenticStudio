@@ -224,7 +224,7 @@ describe('VerifyRepositoryHandler', () => {
       expect(jobs.started).toEqual([]);
     });
 
-    it('says Git gave no explanation when the host key scan fails without output, not that Studio stopped (#72)', async () => {
+    it('says Git gave no explanation when the host key scan fails without output, not that Studio stopped', async () => {
       git.scanHostKey.mockRejectedValueOnce(new GitOperationError('unknown'));
       await awaitingKey(UNLISTED_URL);
 

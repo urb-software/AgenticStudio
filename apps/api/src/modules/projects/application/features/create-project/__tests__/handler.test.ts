@@ -115,7 +115,7 @@ describe('CreateProjectHandler: project name normalization', () => {
     expect(projects.stored).toEqual([]);
   });
 
-  it('stores the name in Unicode NFC (Issue #30 decision 1)', async () => {
+  it('stores the name in Unicode NFC', async () => {
     const { handler, projects } = setUp();
     const nfd = 'Cafe\u0301 Ore\u0301';
 
