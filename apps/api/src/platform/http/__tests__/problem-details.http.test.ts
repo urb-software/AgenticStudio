@@ -25,8 +25,7 @@ import {
   serviceUnavailable,
 } from '../problem-details.js';
 
-// Test-only endpoints: no production endpoint takes input yet (#12 DoR clarification 1).
-// They are registered in this test's root module only, never in the production app.
+// Test-only endpoints, registered in this test's root module only, never in the production app.
 // Public: this suite tests error mapping, not auth (covered in platform/auth).
 const probeInputSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -231,7 +230,7 @@ describe('problem+json error mapping', () => {
     expect(response.body.type).toBe('about:blank');
   });
 
-  it('refuses a field problem outside 4xx, whose text a 5xx would otherwise keep (#72)', () => {
+  it('refuses a field problem outside 4xx, whose text a 5xx would otherwise keep', () => {
     expect(() => new FieldProblemException(500, 'Disk /var/data is full.', [])).toThrow(RangeError);
     expect(() => new FieldProblemException(302, 'Moved.', [])).toThrow(RangeError);
   });
@@ -264,7 +263,7 @@ describe('problem+json error mapping', () => {
     expectNoInternals(response);
   });
 
-  it('answers serviceUnavailable() with the generic 503 body, unlogged (Issue #70)', async () => {
+  it('answers serviceUnavailable() with the generic 503 body, unlogged', async () => {
     const before = logger.lines.length;
     const server = app.getHttpServer();
 
@@ -333,7 +332,7 @@ describe('problem+json error mapping', () => {
   });
 });
 
-describe('HandledServerErrorException (platform-only, Issue #70)', () => {
+describe('HandledServerErrorException', () => {
   it('is a 503', () => {
     expect(new HandledServerErrorException().getStatus()).toBe(503);
   });

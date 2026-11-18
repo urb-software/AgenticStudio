@@ -230,7 +230,7 @@ describe('operator authentication (Redis via Testcontainers)', () => {
       expect(await redis.ttl(key!)).toBeGreaterThan(SESSION_TTL_SECONDS - 60);
     });
 
-    // #24 operator decision: a session ends 30 days after login, however active it is.
+    // A session ends 30 days after login, however active it is.
     describe('absolute lifetime of 30 days (fake clock)', () => {
       const LOGIN_TIME = new Date('2026-11-01T08:00:00.000Z');
       const DAY_MS = 24 * 60 * 60 * 1000;
@@ -283,7 +283,7 @@ describe('operator authentication (Redis via Testcontainers)', () => {
         );
       });
 
-      // #33 review: a login on a fast clock must not stretch the lifetime once corrected.
+      // A login on a fast clock must not stretch the lifetime once the clock is corrected.
       it('tolerates a login time up to 5 minutes in the future (clock skew)', async () => {
         const cookie = cookiePair(sessionCookie(await login(PASSWORD)));
 
@@ -563,7 +563,7 @@ describe('client IP behind a trusted proxy', () => {
     expectProblem(await loginFrom('198.51.100.99, 203.0.113.7'), 429);
   });
 
-  // #24 operator decision: IPv6 counts per /64, IPv4-mapped IPv6 as its IPv4 address.
+  // IPv6 counts per /64, IPv4-mapped IPv6 as its IPv4 address.
   it('limits IPv6 clients per /64, not per address', async () => {
     for (let host = 1; host <= 5; host += 1) {
       expectProblem(await loginFrom(`2001:db8:1:2::${host}`), 401);
@@ -597,7 +597,7 @@ describe('client IP behind a trusted proxy', () => {
     expect(retryAfter).toBeLessThanOrEqual(60 * 60);
   });
 
-  // #24: the operator recovery documented in security.md §8 uses these exact keys.
+  // The operator recovery documented in security.md §8 uses these exact keys.
   it('lifts the global lockout when the operator deletes the global failure counter', async () => {
     for (let client = 1; client <= 10; client += 1) {
       for (let attempt = 1; attempt <= 5; attempt += 1) {
@@ -617,7 +617,7 @@ describe('client IP behind a trusted proxy', () => {
   });
 });
 
-// #24: production cookie attributes behind an https Studio origin.
+// Production cookie attributes behind an https Studio origin.
 describe('session cookie for an https Studio origin', () => {
   const HTTPS_ORIGIN = 'https://studio.example.test';
   let redisService: TestService;

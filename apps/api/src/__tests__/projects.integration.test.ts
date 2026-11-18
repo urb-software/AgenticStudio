@@ -11,9 +11,8 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Story #16, main seam: the real app over HTTP, with PostgreSQL and Redis from Testcontainers.
-// It lives outside src/modules/ because building the whole app reaches the database client,
-// which architecture:api forbids for anything under a feature folder (tests included).
+// The real app over HTTP (PostgreSQL and Redis via Testcontainers), outside src/modules/ because
+// building the whole app reaches the database client, which architecture:api forbids there.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -167,7 +166,7 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(await listedNames()).toEqual([]);
     });
 
-    it('rejects an unknown field with 400: the request schema is closed (#72)', async () => {
+    it('rejects an unknown field with 400: the request schema is closed', async () => {
       const response = await createProject({ name: 'Agentic Studio', owner: 'someone' });
 
       expectProblem(response, 400);

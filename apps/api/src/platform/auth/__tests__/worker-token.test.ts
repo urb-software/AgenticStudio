@@ -2,7 +2,7 @@ import { createHash, createSecretKey, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { verifyWorkerToken } from '../worker-token.js';
 
-// Issue #96: the worker token check. Throwaway tokens generated per run; none is committed.
+// The worker token check; throwaway tokens generated per run, none committed.
 const TOKEN = randomBytes(32).toString('base64');
 const DIGEST = createSecretKey(createHash('sha256').update(TOKEN).digest());
 

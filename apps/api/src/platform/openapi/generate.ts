@@ -6,10 +6,8 @@ import { AppModule } from '../../app.module.js';
 import { buildApp } from '../../app.js';
 import { createOpenApiDocument } from './openapi.js';
 
-// Offline generator for `pnpm contracts:generate`: builds the app without listening
-// and without a database or Redis (both clients connect lazily, and no queue worker starts),
-// then writes the document.
-// The placeholder config is never used to connect anywhere.
+// Offline generator for `pnpm contracts:generate`: needs no database or Redis (clients connect
+// lazily, no queue worker starts). The placeholder config never connects anywhere.
 const outputPath = process.argv[2];
 if (!outputPath) {
   throw new Error('Usage: node dist/platform/openapi/generate.js <output.json>');

@@ -6,7 +6,7 @@ import { REDIS_CLIENT } from './redis.js';
 /** 12 hours of inactivity (security.md §8). */
 export const SESSION_TTL_SECONDS = 12 * 60 * 60;
 
-/** 30 days after login, however active the session is (security.md §8, #24). */
+/** 30 days after login, however active the session is (security.md §8). */
 export const SESSION_ABSOLUTE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
@@ -48,10 +48,7 @@ function keyOf(sessionId: string): string {
   return `auth:session:${createHash('sha256').update(sessionId).digest('hex')}`;
 }
 
-/**
- * Server-side operator sessions in Redis, with a sliding inactivity TTL and an absolute
- * lifetime counted from login.
- */
+/** Operator sessions in Redis: sliding inactivity TTL plus an absolute lifetime from login. */
 @Injectable()
 export class SessionStore {
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}

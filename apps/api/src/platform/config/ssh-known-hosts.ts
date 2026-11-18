@@ -1,9 +1,4 @@
-/**
- * The known_hosts vocabulary Studio uses for SSH host trust (Issue #62), shared by the
- * `STUDIO_SSH_KNOWN_HOSTS` configuration and the `projects` Git adapter, so both accept
- * exactly the same host keys and name hosts the same way. Plain functions over strings; no
- * key is stored or logged here.
- */
+/** The known_hosts parsing shared by the configuration and the Git adapter, so both agree. */
 
 /** The host key types Studio accepts, in configuration and for a Git operation. */
 export const SSH_HOST_KEY_TYPES = [

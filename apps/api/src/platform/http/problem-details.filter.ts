@@ -21,8 +21,8 @@ import {
 import { redactSecrets } from './redact.js';
 
 /**
- * Maps every error to RFC 9457 problem+json. Only 4xx details (and the fixed text of a
- * deliberate {@link ProblemException}) reach the client; other 5xx responses are generic and the cause is logged server-side under the
+ * Maps every error to RFC 9457 problem+json. Only 4xx details and a {@link ProblemException}'s
+ * fixed text reach the client; other 5xx are generic, with the cause logged under the
  * correlation id, so stacks, paths, configuration and database errors never leak.
  */
 @Catch()

@@ -46,7 +46,7 @@ function routes(controllers: Controller[]): string[] {
     .sort();
 }
 
-describe('route and guard inventory (Epic #160, Issue #162)', () => {
+describe('route and guard inventory', () => {
   it('lists every route of projects and executions with its authentication and guards', () => {
     // Reached through the composition root: nothing outside a module imports its internals.
     // Only the two modules under test are listed; the platform's controllers are not.

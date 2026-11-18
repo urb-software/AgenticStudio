@@ -33,9 +33,8 @@ import {
 } from '../index.js';
 import { SecretsModule } from '../secrets.module.js';
 
-// Issue #57: the SecretStore port against real PostgreSQL (Testcontainers), through the app's
-// DI container as a consumer would use it. Assertions go through the port; the secrets table
-// is read or changed directly only to observe storage at rest or to simulate tampering.
+// The SecretStore port against real PostgreSQL (Testcontainers), through the app's DI container;
+// the secrets table is read or changed directly only to observe storage at rest or to tamper.
 
 /** A throwaway value shaped like the PEM-style keys the store will hold: multi-line, non-ASCII. */
 const SECRET_VALUE =
@@ -43,7 +42,7 @@ const SECRET_VALUE =
 /** Text a test trigger puts into a PostgreSQL error next to the ciphertext it was given. */
 const DB_ERROR_MARKER = 'db-error-carries-ciphertext';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-/** The owner label of the values this suite stores (Issue #76). */
+/** The owner label of the values this suite stores. */
 const TEST_OWNER = { owner: 'tests.secret-store' } as const;
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -295,7 +294,7 @@ describe('SecretStore (PostgreSQL via Testcontainers)', () => {
     expect(await store.get(kept)).toBe('kept throwaway value');
   });
 
-  describe('owner labels (Issue #76)', () => {
+  describe('owner labels', () => {
     const DEPLOY_KEYS = { owner: 'projects.deploy-key' } as const;
 
     it('stores the owner label with the value', async () => {

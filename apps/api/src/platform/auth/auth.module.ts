@@ -10,11 +10,7 @@ import { SessionCookie } from './session-cookie.js';
 import { SessionStore } from './session-store.js';
 import { SessionGuard } from './session.guard.js';
 
-/**
- * Operator authentication: login/session/logout, plus two global guards that run in
- * this order on every route: the mutation Origin/content-type check, then the
- * deny-by-default session check.
- */
+/** Operator login/session/logout, plus the global mutation-origin and session guards. */
 @Module({
   controllers: [AuthController],
   providers: [
@@ -28,8 +24,7 @@ import { SessionGuard } from './session.guard.js';
     { provide: APP_GUARD, useClass: MutationOriginGuard },
     { provide: APP_GUARD, useClass: SessionGuard },
   ],
-  // Read-only, for long-lived responses that must notice a logout or expiry (the live Run log,
-  // #99): never the session store itself (#104, from the #119 review).
+  // Read-only, so a long-lived response can notice logout or expiry; never the session store.
   exports: [OperatorSessionCheck],
 })
 export class AuthModule {}

@@ -11,14 +11,9 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #167 (Epic #160), concurrency evidence: the operator-triggered operations on a Run
-// (answer, Follow-up, cancel, delivery retry, resume after the usage limit) against themselves and
-// against what the agent worker reports. Each case loops ITERATIONS times with real concurrency
-// (two HTTP requests started together on separate database connections) and checks the outcome
-// that may never differ: exactly one winner where the operation is not repeatable, one consistent
-// final Run, and never a message, a place or a result that the loser could have stored. These
-// tests were written against the code before the operations moved into the Run class and pass on
-// both; they run in the pull request's CI (the race is the evidence, so a reviewer re-runs them).
+// Concurrency evidence for the operator-triggered operations on a Run, against themselves and the
+// agent worker's reports: each case loops ITERATIONS times with two requests started together
+// and checks the outcome that may never differ (one winner, one consistent final Run).
 
 const ITERATIONS = 25;
 const CASE_TIMEOUT = 180_000;
@@ -244,7 +239,7 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
         for (let i = 0; i < ITERATIONS; i++) {
           await freshIteration();
           const runId = await waitingRun();
-          // The Run has now waited longer than its waiting period: the next claim cancels it.
+          // The Run has waited longer than its waiting period: the next claim cancels it.
           clock.current = new Date(clock.current.getTime() + 15 * 24 * 60 * 60 * 1000);
 
           const [answered, claimed] = await race(answer(runId), claim());
@@ -635,10 +630,7 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
     );
   });
 
-  // Issue #169 (Epic #160): what the agent worker triggers on a Run, against itself, against the
-  // operator and against the sweeps. Written first against the code before the worker-triggered
-  // operations moved into the Run class; every case here but the claim whose Run is cancelled in
-  // between (an expected failure on that code, fixed by the atomic hand-out) passed on it.
+  // What the agent worker triggers on a Run, against itself, the operator and the sweeps.
   describe('what the agent worker triggers', () => {
     const W2 = randomUUID();
     const claimAs = (workerId: string) => worker('runs/claim', { workerId });
@@ -745,10 +737,9 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
       );
     });
 
-    // A cancel of a queued Run that lands after the claim read the Run and before it updated it.
-    // The test holds the Run's row (as the cancel's own transaction does), starts the claim, and
-    // commits the cancel once the claim is done or waits for the row. Only the claim of dev's
-    // code can fail here, with a database "not found" (Issue #167's review; Epic #160).
+    // A cancel of a queued Run that lands after the claim read the Run and before it updated it:
+    // the test holds the Run's row (as the cancel's own transaction does), starts the claim, and
+    // commits the cancel once the claim is done or waits for the row.
     describe('a claim and a cancel of the Run it would hand out', () => {
       it(
         'gets the next eligible Run or nothing, never an error, when the cancel lands in between',
@@ -832,9 +823,7 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
     });
 
     // The same race with real concurrency: a cancel (at once, as the Run is queued) and a claim
-    // started together. Not marked as an expected failure on dev's code: there the window is hit
-    // only now and then, so these cases would pass or fail by chance; the held-row case above is
-    // the deterministic one.
+    // started together. Hit only now and then, so the held-row case above is the deterministic one.
     describe('a claim and a cancel started together', () => {
       const holder = async (runId: string) =>
         (

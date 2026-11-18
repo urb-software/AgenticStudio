@@ -3,18 +3,14 @@ import type { Redis } from 'ioredis';
 import { clientIpLimitKey } from './client-ip-limit-key.js';
 import { REDIS_CLIENT } from './redis.js';
 
-/**
- * Epic #8 decision 4: 5 failures per IP per 15 min, about 50 failures per hour overall.
- * "Per IP" is per IPv4 address or per IPv6 /64 (#24, {@link clientIpLimitKey}).
- */
+/** 5 failures per IP ({@link clientIpLimitKey}) per 15 min; about 50 per hour overall. */
 export const LOGIN_LIMITS = {
   perIp: { maxFailures: 5, windowMs: 15 * 60 * 1000 },
   global: { maxFailures: 50, windowMs: 60 * 60 * 1000 },
 } as const;
 
-// Atomically: refuse when a counter is at its limit (returning the longest wait), else
-// reserve one failure on both counters. Reserving before the password check means
-// concurrent attempts cannot all slip past a check-then-increment race.
+// Atomic: refuse at the limit (returning the longest wait), else reserve a failure on both
+// counters, so concurrent attempts cannot slip past a check-then-increment race.
 const RESERVE = `
 local ipCount = tonumber(redis.call('GET', KEYS[1]) or '0')
 local globalCount = tonumber(redis.call('GET', KEYS[2]) or '0')
@@ -40,7 +36,6 @@ redis.call('PEXPIRE', KEYS[2], ARGV[4], 'NX')
 return 0
 `;
 
-// A successful login is not a failure: reset the IP counter and return the global reservation.
 const RELEASE = `
 redis.call('DEL', KEYS[1])
 if tonumber(redis.call('GET', KEYS[2]) or '0') > 0 then
@@ -62,7 +57,7 @@ export type LoginAttempt = { allowed: true } | { allowed: false; retryAfterSecon
 export class LoginRateLimiter {
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
-  /** Call before verifying a password; the reservation stands unless {@link succeeded} is called. */
+  /** Call before verifying a password; the reservation stands unless {@link succeeded} runs. */
   async reserve(clientIp: string): Promise<LoginAttempt> {
     const { perIp, global } = LOGIN_LIMITS;
     const waitMs = Number(

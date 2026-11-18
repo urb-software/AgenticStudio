@@ -23,11 +23,9 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Story #62, main seam: the real app over HTTP (PostgreSQL and Redis via Testcontainers, the
-// real job queue, the real Git adapter) against throwaway OpenSSH + Git servers built from the
-// Git adapter's fixture (#59). Every key, host key and known_hosts entry is generated at run
-// time; nothing is committed. Linux only (CI runs it; the guard at the end fails CI if it was
-// skipped). Playwright does not cover SSH: these tests are the end-to-end evidence.
+// SSH Repositories over HTTP on the real app (PostgreSQL, Redis, job queue, Git adapter) against
+// throwaway OpenSSH + Git servers, Linux only; every key is generated at run time and none is
+// committed.
 
 const linux = process.platform === 'linux';
 const SERVER_CONTEXT = join(
@@ -372,7 +370,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     });
   });
 
-  it('a host presenting another key than the pinned one fails with host_key_mismatch on a Retry (#72)', async () => {
+  it('a host presenting another key than the pinned one fails with host_key_mismatch on a Retry', async () => {
     const id = await createProject('Pinned');
     const { publicKey } = (await connect(id, urlOf(unlisted))).body;
     // The operator confirms the host key, but the Deploy key is not added yet: auth_failed,
@@ -435,9 +433,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     expect(second.body).not.toHaveProperty('hostKeyFingerprint');
   });
 
-  // Issue #165 (Epic #160): the verification steps against each other and a disconnect, 25
-  // iterations each with real concurrency. Written against the code before the Repository
-  // connection became a class; they pass on both.
+  // The verification steps against each other and a disconnect, 25 iterations of real concurrency.
   describe('simultaneous requests on one SSH Repository', () => {
     const ITERATIONS = 25;
 
@@ -562,14 +558,14 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
 
     // 503: the queue cannot schedule the clone (test setup: a key of the wrong type where the
     // job's hash goes makes every Redis call on it fail). This relies on the platform queue's
-    // BullMQ key layout (`<prefix>:<queue>:<job id>`), acceptable in a test (#72, won't fix).
+    // BullMQ key layout (`<prefix>:<queue>:<job id>`), acceptable in a test.
     const redis = new Redis(services.config.redisUrl);
     const jobKey = `studio:queue:repository-git:repository-${c}`;
     try {
       await redis.set(jobKey, 'not a job');
       const unavailable = await verify(c);
       expect(unavailable.status).toBe(503);
-      // The generic 5xx body, unchanged by the switch to serviceUnavailable() (Issue #70).
+      // The generic 5xx body.
       expect(unavailable.body).toEqual({
         type: 'about:blank',
         title: 'Service Unavailable',

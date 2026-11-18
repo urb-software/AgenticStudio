@@ -12,9 +12,8 @@ const OPERATOR_PASSWORD = 'test-only operator password 5d21';
 export const STUDIO_ORIGIN = 'http://localhost:4300';
 
 /**
- * Real PostgreSQL (with the committed migrations applied) and Redis for HTTP tests
- * of the whole app. One set serves several app instances, so a test can restart the
- * app and see what an earlier instance persisted.
+ * Real PostgreSQL (migrated) and Redis for HTTP tests of the whole app, shared by app instances
+ * so a test can restart the app and see what an earlier instance persisted.
  */
 export interface StudioServices {
   config: AppConfig;

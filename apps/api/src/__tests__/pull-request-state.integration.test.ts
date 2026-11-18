@@ -12,10 +12,9 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #142, main seam: the state of a Run's pull request over HTTP on the real app with
-// PostgreSQL and Redis from Testcontainers. The operator asks for a refresh; the agent worker's
-// side is driven over the worker routes exactly as the worker calls them (claim the lookups,
-// report what it read). A controlled clock drives the lease and the retries, so no test waits.
+// The state of a Run's pull request over HTTP on the real app (PostgreSQL and Redis via
+// Testcontainers), with the worker's side driven over its routes and a controlled clock for the
+// lease and the retries.
 
 // A throwaway worker token generated per run; no token is committed.
 const WORKER_TOKEN = randomBytes(32).toString('base64');
@@ -82,7 +81,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
     kind: 'pull_request_state',
     result,
   });
-  /** The worker's status report, as it sends one with every poll (Issue #101). */
+  /** The worker's status report, as it sends one with every poll. */
   const connectWorker = async () => {
     const status = await asWorker('status', {
       workerId: W1,
@@ -243,7 +242,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       expect(run.body.pullRequest.refreshError).toMatch(/agent worker is not connected/);
     });
 
-    it('records one lookup when many refreshes arrive at once (review S6 of #152)', async () => {
+    it('records one lookup when many refreshes arrive at once', async () => {
       const runId = await deliveredRun();
 
       const answers = await Promise.all(Array.from({ length: 6 }, () => refresh(runId)));
@@ -254,7 +253,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       expect(Number(count[0]!.count)).toBe(1);
     });
 
-    it('does not ask again on opening within a minute of a failed lookup, and does after it (review S1 of #152)', async () => {
+    it('does not ask again on opening within a minute of a failed lookup, and does after it', async () => {
       const runId = await deliveredRun();
       await refresh(runId, { onOpen: true });
       const id = (await claimLookups()).body[0].id as string;
@@ -528,7 +527,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
     });
   });
 
-  // Issue #143: how long the Working copy of a Run with a pull request is kept, decided by Studio.
+  // How long the Working copy of a Run with a pull request is kept, decided by Studio.
   describe('Working copy retention by pull request state', () => {
     const HOUR = 60 * 60_000;
     const DAY = 24 * HOUR;
@@ -726,7 +725,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       expect((await asWorker('runs/claim', { workerId: W1 })).status).toBe(204);
     });
   });
-  // Issue #145: Pull request checks with the state, and the Follow-up prepared from failing ones.
+  // Pull request checks with the state, and the Follow-up prepared from failing ones.
   describe('pull request checks and failing checks', () => {
     const COMMIT = 'c'.repeat(40);
     const checks = [
@@ -1042,7 +1041,7 @@ describe('pull request state API (PostgreSQL + Redis via Testcontainers)', () =>
       expect(Number(left[0]!.count)).toBe(0);
     });
 
-    it('clears the checks and the branch position when a Follow-up refusal observes an ended pull request (review N1 of #152)', async () => {
+    it('clears the checks and the branch position when a Follow-up refusal observes an ended pull request', async () => {
       const runId = await runWithChecks();
       const before = await db().run.findUniqueOrThrow({ where: { id: runId } });
       expect(before.prBehindBy).toBe(0);

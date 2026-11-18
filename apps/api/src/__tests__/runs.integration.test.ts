@@ -18,10 +18,9 @@ import {
 } from './studio-test-app.js';
 import { WITHOUT_QUEUE_WORKERS } from './test-config.js';
 
-// Issue #96, main seam: the real app over HTTP with PostgreSQL and Redis from Testcontainers.
-// The operator starts and reads Runs; the agent worker's side is driven over the worker routes
-// exactly as the worker calls them. A controlled clock drives the lease, so no test waits.
-// Lives outside src/modules/ because building the whole app reaches the database client.
+// The Run API over HTTP on the real app (PostgreSQL and Redis via Testcontainers), outside
+// src/modules/ because building the app reaches the database client; the worker's side is driven
+// over its routes with a controlled clock for the lease.
 
 // A throwaway worker token generated per run; no token is committed.
 const WORKER_TOKEN = randomBytes(32).toString('base64');
@@ -114,7 +113,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
     commits: [{ id: 'c'.repeat(40), subject: 'Add GET /health' }],
     hasUncommittedChanges: false,
   };
-  /** The next step number per Run, as the worker numbers its steps (review of #121). */
+  /** The next step number per Run, as the worker numbers its steps. */
   const nextStep = new Map<string, number>();
   const reportStep = async (
     runId: string,
@@ -137,7 +136,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
     worker('states', { workerId: W1, runIds }, token);
   const heartbeat = (runId: string, workerId = W1) => worker(`${runId}/heartbeat`, { workerId });
 
-  /** `POST /api/worker/status` as the agent worker sends it (Issue #101). */
+  /** `POST /api/worker/status` as the agent worker sends it. */
   const workerStatus = (
     providers: object = BOTH_ENABLED,
     workerId = W1,
@@ -171,10 +170,10 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
   beforeEach(async () => {
     // Test isolation only; CASCADE also empties runs and run_steps.
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
-    // The last lease renewal at API start (review of #121) is per test as well.
+    // The last lease renewal at API start is per test as well.
     await db().$executeRaw`TRUNCATE TABLE run_lease_renewals`;
     clock.current = new Date();
-    // A connected agent worker with both providers switched on (Issue #101).
+    // A connected agent worker with both providers switched on.
     expect((await workerStatus()).status).toBe(204);
   });
 
@@ -193,14 +192,14 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         state: 'queued',
         startCommit: project.head,
         createdAt: expect.stringMatching(ISO_8601),
-        // Issue #104: set when the Run is claimed.
+        // Set when the Run is claimed.
         environmentFileSupplied: false,
-        // Issue #100: the limits in force, copied onto the Run when it is started.
+        // The limits in force, copied onto the Run when it is started.
         limits: LIMITS,
-        // Issue #141: no Run step and no Follow-up yet.
+        // No Run step and no Follow-up yet.
         steps: { used: 0, usedInPart: 0 },
         followUps: 0,
-        // Issue #103: the conversation starts with the Task.
+        // The conversation starts with the Task.
         messages: [
           {
             role: 'operator',
@@ -210,7 +209,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           },
         ],
       });
-      // Issue #141: the Run page also learns whether a Follow-up is possible.
+      // The Run page also learns whether a Follow-up is possible.
       expect((await getRun(created.body.id)).body).toEqual({
         ...created.body,
         followUp: { allowed: false, reason: 'not_finished' },
@@ -219,7 +218,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         .get(`/api/projects/${project.id}/runs`)
         .set('Cookie', cookie);
       expect(projectRuns.status).toBe(200);
-      // Lists leave the conversation out (Issue #103, coordinator decision).
+      // Lists leave the conversation out.
       const { messages: _messages, ...listed } = created.body;
       void _messages;
       expect(projectRuns.body).toEqual([listed]);
@@ -306,7 +305,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(notReady.body.detail).toMatch(/not ready/);
     });
 
-    it('summarizes the Runs under way and waiting for the operator (Issue #115)', async () => {
+    it('summarizes the Runs under way and waiting for the operator', async () => {
       const summary = () => http().get('/api/runs/summary').set('Cookie', cookie);
       expect((await summary()).body).toEqual({ running: 0, waiting: 0 });
       const shop = await readyProject('Shop');
@@ -349,7 +348,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
     });
   });
 
-  describe('provider availability (Issue #101)', () => {
+  describe('provider availability', () => {
     const NO_WORKER = 'No agent worker is connected';
     const SWITCHED_OFF = 'Switched off on the agent worker';
 
@@ -388,7 +387,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(refused.body.detail).toBe(SWITCHED_OFF);
     });
 
-    it("shows the worker's reason for a switched-on provider it cannot run (Issue #105)", async () => {
+    it("shows the worker's reason for a switched-on provider it cannot run", async () => {
       const project = await readyProject('Shop');
       const reason = 'Claude Code 2.2.0 is not a supported version (supported: >=2.1.325 <2.2.0).';
       const call = await http()
@@ -453,7 +452,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       );
     });
 
-    // Issue #143: the agent side's disk figures, shown on the Executions page.
+    // The agent side's disk figures, shown on the Executions page.
     describe('agent worker disk', () => {
       const GIB = 1024 ** 3;
       const DISK = {
@@ -551,17 +550,16 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         provider: 'claude_code',
         task: 'Add a health check',
         startCommit: project.head,
-        // Issue #98: the remote as connected; nothing else about the Repository.
+        // The remote as connected; nothing else about the Repository.
         repository: { remoteUrl: project.url },
-        // Issue #102: the pull request's base, a Run to start (not only to deliver), and no
-        // Studio-placed files yet (#104).
+        // The pull request's base, a Run to start (not only deliver), no Studio-placed files yet.
         integrationBranch: 'dev',
         kind: 'start',
         studioPaths: [],
-        // Issue #100: the limits the worker enforces, and no Run step taken yet.
+        // The limits the worker enforces, and no Run step taken yet.
         limits: { stepMinutes: LIMITS.stepMinutes, maxSteps: LIMITS.maxSteps },
         completedSteps: 0,
-        // Issue #141: the first part of the Run starts its allowance at 0.
+        // The first part of the Run starts its allowance at 0.
         stepsBeforePart: 0,
       });
       const preparing = (await getRun(run.id)).body;
@@ -592,7 +590,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         finishedAt: clock.current.toISOString(),
       });
       expect(finished).not.toHaveProperty('failure');
-      // Issue #98: the Working copy state of the latest step, on the operator's Run.
+      // The Working copy state of the latest step, on the operator's Run.
       expect(finished).toMatchObject({
         runBranch: WORKING_COPY.runBranch,
         commits: WORKING_COPY.commits,
@@ -605,7 +603,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(steps).toEqual([{ index: 1, kind: 'start', result }]);
     });
 
-    it('shows no Working copy state before the first step, then the latest one (Issue #98)', async () => {
+    it('shows no Working copy state before the first step, then the latest one', async () => {
       const project = await readyProject('Shop');
       const run = await queuedRun(project.id);
       await claim();
@@ -634,7 +632,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect((await http().get('/api/runs').set('Cookie', cookie)).body[0]).toMatchObject(later);
     });
 
-    it('rejects a step report without a valid Working copy state with 400 (Issue #98)', async () => {
+    it('rejects a step report without a valid Working copy state with 400', async () => {
       const project = await readyProject('Shop');
       const run = await queuedRun(project.id);
       await claim();
@@ -655,7 +653,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect((await getRun(run.id)).body).not.toHaveProperty('runBranch');
     });
 
-    it('answers the states of known Runs for the retention, leaving out unknown ids (Issue #98)', async () => {
+    it('answers the states of known Runs for the retention, leaving out unknown ids', async () => {
       const project = await readyProject('Shop');
       const finished = await queuedRun(project.id, 'first');
       const queued = await queuedRun(project.id, 'second');
@@ -676,7 +674,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
             runId: finished.id,
             state: 'failed',
             finishedAt: clock.current.toISOString(),
-            // Issue #143: a Run without a pull request is kept seven days from its result.
+            // A Run without a pull request is kept seven days from its result.
             keepUntil: new Date(clock.current.getTime() + 7 * 24 * 60 * 60_000).toISOString(),
           },
           { runId: queued.id, state: 'queued', finishedAt: null },
@@ -694,7 +692,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expectProblem(await runStates(['../../etc']), 400);
     });
 
-    it('removes beyond the newest ten finished Runs with a Working copy and no pull request, and no other (Issue #143)', async () => {
+    it('removes beyond the newest ten finished Runs with a Working copy and no pull request, and no other', async () => {
       const project = await readyProject('Shop');
       const other = await readyProject('Other');
       const withCopy: string[] = [];
@@ -744,7 +742,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(removable).toEqual([withCopy[0]]);
     });
 
-    describe('delivery (Issue #102)', () => {
+    describe('delivery', () => {
       const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
       const DONE = { outcome: 'done', summary: 'Added GET /health.' };
 
@@ -844,7 +842,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const claimed = await claim(W1);
         expect(claimed.status).toBe(200);
         // Only the worker that started the Run gets it (it has the Working copy), with the Run
-        // branch Studio recorded (review R1 and R4 of #122).
+        // branch Studio recorded.
         expect(claimed.body).toMatchObject({
           runId: run.id,
           kind: 'deliver',
@@ -986,7 +984,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    it('accepts a step result of the maximum size within the JSON body limit (review finding 4)', async () => {
+    it('accepts a step result of the maximum size within the JSON body limit', async () => {
       const project = await readyProject('Shop');
       const run = await queuedRun(project.id);
       await claim();
@@ -1005,8 +1003,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         if (room <= 4000) break;
       }
       expect(jsonByteLength(result)).toBe(RUN_STEP_RESULT_MAX_BYTES);
-      // Issue #98: with a Working copy report near its own cap, the body is over Express's
-      // default 100 KiB and still accepted.
+      // With a Working copy report near its own cap, the body is over Express's default 100 KiB
+      // and still accepted.
       const workingCopy = {
         runBranch: WORKING_COPY.runBranch,
         commits: Array.from({ length: 200 }, () => ({
@@ -1024,7 +1022,6 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await reportStep(run.id, { ...result, summary: `é${result.summary.slice(1)}` }),
         400,
       );
-      // A failure report with the same Working copy report fits too (coordinator decision 1).
       expect(
         (
           await report(run.id, {
@@ -1213,8 +1210,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    // Issue #100: cancel in each state, the step limit, long waits, and a Studio restart.
-    describe('cancel and limits (Issue #100)', () => {
+    // Cancel in each state, the step limit, long waits, and a Studio restart.
+    describe('cancel and limits', () => {
       const cancel = (runId: string, origin: string | null = STUDIO_ORIGIN) => {
         const call = http().post(`/api/runs/${runId}/cancel`).set('Cookie', cookie);
         if (origin !== null) call.set('Origin', origin);
@@ -1235,7 +1232,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           finishedAt: clock.current.toISOString(),
           cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
         });
-        // Issue #141: the Run page also says whether a Follow-up is possible.
+        // The Run page also says whether a Follow-up is possible.
         expect((await getRun(run.id)).body).toEqual({
           ...cancelled.body,
           followUp: { allowed: false, reason: 'no_session' },
@@ -1442,9 +1439,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    // Review of #121: a report Studio applied but whose answer the worker never got is sent
-    // again; the repeat changes nothing and succeeds, so the Run goes on.
-    describe('retried reports (review of #121)', () => {
+    // A report Studio applied but whose answer the worker never got is sent again; the repeat
+    // changes nothing and succeeds, so the Run goes on.
+    describe('retried reports', () => {
       it('accepts repeated running, step and end reports without changing or duplicating anything', async () => {
         const project = await readyProject('Shop');
         const run = await queuedRun(project.id);
@@ -1510,7 +1507,6 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expectProblem(await heartbeat(run.id), 409, PROBLEM.runNotHeld);
       });
 
-      // Review round 2 of #121.
       it('records the pull request on a Run cancelled during its delivery', async () => {
         const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/9', number: 9 };
         const project = await readyProject('Shop');
@@ -1581,9 +1577,9 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    // Issue #103: a question pauses the Run, the operator's answer resumes the same session on
-    // the worker that holds the Working copy.
-    describe('questions and answers (Issue #103)', () => {
+    // A question pauses the Run, the operator's answer resumes the same session on the worker that
+    // holds the Working copy.
+    describe('questions and answers', () => {
       const QUESTION = {
         text: 'Which database should the store use?',
         options: ['PostgreSQL', 'SQLite'],
@@ -1650,7 +1646,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         ]);
         // Internal: the session reference never reaches the operator API.
         expect(JSON.stringify(waiting)).not.toContain('session-1');
-        // Lists leave the conversation out (coordinator decision); the state shows it waits.
+        // Lists leave the conversation out; the state shows it waits.
         const [listed] = (await http().get('/api/runs').set('Cookie', cookie)).body;
         expect(listed).toMatchObject({ id: run.id, state: 'waiting_for_operator' });
         expect(listed).not.toHaveProperty('messages');
@@ -1678,7 +1674,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           runBranch: WORKING_COPY.runBranch,
           sessionRef: 'session-1',
           answer: 'PostgreSQL',
-          // The resumed step's events continue after the stored log (note from #99).
+          // The resumed step's events continue after the stored log.
           nextSeq: 4,
           completedSteps: 1,
         });
@@ -1880,7 +1876,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    describe('resume after the usage limit (Issue #105)', () => {
+    describe('resume after the usage limit', () => {
       const USAGE_LIMIT = {
         code: 'usage_limit',
         detail: 'The Claude Code usage limit was reached; it resets at 2026-11-16T17:00:00.000Z.',
@@ -1954,7 +1950,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expect((await getRun(run.id)).body.state).toBe('succeeded');
       });
 
-      it("refuses with 409 while another Run holds the project's place (review R1 of #129)", async () => {
+      it("refuses with 409 while another Run holds the project's place", async () => {
         const project = await readyProject('Shop');
         const run = await limitedRun(project.id);
         // The project is free again: another Run starts and is claimed.
@@ -2120,7 +2116,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
     });
   });
 
-  describe('Follow-ups (Issue #141)', () => {
+  describe('Follow-ups', () => {
     const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
     const C1 = 'c'.repeat(40);
     const C2 = 'd'.repeat(40);
@@ -2262,8 +2258,8 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(JSON.stringify(after)).not.toContain('session-7');
     });
 
-    // Issue #147: a request to bring the Run branch up to date is a Follow-up of its own source.
-    describe('bringing the branch up to date (Issue #147)', () => {
+    // A request to bring the Run branch up to date is a Follow-up of its own source.
+    describe('bringing the branch up to date', () => {
       const MERGED = 'e'.repeat(40);
       const bringUp = (runId: string, body?: unknown, origin: string | null = STUDIO_ORIGIN) => {
         const call = http().post(`/api/runs/${runId}/bring-up-to-date`).set('Cookie', cookie);
@@ -2344,7 +2340,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         expect(next).not.toHaveProperty('bringUpToDate');
       });
 
-      it('hands the next part the base of a bring-up part that failed, and the retry its merged commit (review R2)', async () => {
+      it('hands the next part the base of a bring-up part that failed, and the retry its merged commit', async () => {
         const { run } = await deliveredRun();
         await bringUp(run.id);
         await claim();
@@ -2781,7 +2777,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    // Review S1 of #150: how a part ended stays in the conversation after a Follow-up.
+    // How a part ended stays in the conversation after a Follow-up.
     it("keeps each part's end in the conversation: state, failure and delivery", async () => {
       const project = await readyProject(`Shop ${randomUUID()}`);
       const run = await queuedRun(project.id);
@@ -2814,7 +2810,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(sent.body).not.toHaveProperty('failure');
     });
 
-    // Review S2 of #150: a delivery that pushed before it failed still records the push.
+    // A delivery that pushed before it failed still records the push.
     it('records the pushed commit of a delivery that failed after its push', async () => {
       const { run } = await deliveredRun();
       await followUp(run.id, { text: 'Next.' });
@@ -2842,7 +2838,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    // Review S9 of #150: a removal reported while a Follow-up waits is never dropped.
+    // A removal reported while a Follow-up waits is never dropped.
     it('fails a queued Follow-up whose Working copy was removed meanwhile', async () => {
       const { run } = await deliveredRun();
       expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);
@@ -2860,7 +2856,6 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       });
     });
 
-    // Review S8 of #150.
     it('fails a queued Follow-up whose agent worker is gone as preparation_failed', async () => {
       const { run } = await deliveredRun();
       expect((await followUp(run.id, { text: 'Next.' })).status).toBe(202);

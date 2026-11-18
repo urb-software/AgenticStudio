@@ -40,7 +40,7 @@ describe('database DI against a fresh PostgreSQL', () => {
     expect(applied.map((row) => row.migration_name)).toEqual(committed);
   });
 
-  it('keeps the partial unique index behind the one-active-Run-per-project limit (Issue #96)', async () => {
+  it('keeps the partial unique index behind the one-active-Run-per-project limit', async () => {
     const client = app.get<DatabaseClient>(DATABASE_CLIENT);
 
     const [index] = await client.$queryRaw<{ indexdef: string }[]>`
@@ -50,7 +50,7 @@ describe('database DI against a fresh PostgreSQL', () => {
       /^CREATE UNIQUE INDEX .* ON public\.runs .*\(project_id\) WHERE/,
     );
     expect(index?.indexdef).toMatch(/preparing.*running.*waiting_for_operator/);
-    // Issue #103: an answered Run waiting in the queue for its worker keeps the place.
+    // An answered Run waiting in the queue for its worker keeps the place.
     expect(index?.indexdef).toMatch(/queued.*session_ref IS NOT NULL/);
   });
 
@@ -62,12 +62,12 @@ describe('database DI against a fresh PostgreSQL', () => {
       .filter(
         (line) => line !== '' && !line.startsWith('--') && !line.startsWith('Loaded Prisma config'),
       );
-    // Evidence for review finding 1 on #111: printed in the CI log.
+    // Printed in the CI log, so a drift is visible without rerunning.
     console.info(`prisma migrate diff (database -> schema):\n${script.trim() || '(empty)'}`);
 
-    // Observed on CI (PR #112): Prisma proposes neither dropping the partial index nor any CHECK
-    // constraint. Its only drift is re-asserting every `dbgenerated("now()")` column default
-    // (`SET DEFAULT now()`), a no-op present since the baseline, which is left out here.
+    // Observed on CI: Prisma proposes neither dropping the partial index nor any CHECK constraint.
+    // Its only drift is re-asserting every `dbgenerated("now()")` column default (`SET DEFAULT
+    // now()`), a no-op present since the baseline, which is left out here.
     const noOpDefault = /^(ALTER TABLE "\w+" )?ALTER COLUMN "\w+" SET DEFAULT now\(\)[,;]$/;
     expect(statements.filter((line) => !noOpDefault.test(line))).toEqual([]);
     expect(script).not.toContain('runs_one_active_per_project_key');

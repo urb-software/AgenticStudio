@@ -111,7 +111,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('documents the project detail and repository endpoints (Stories #60, #61 and #63)', () => {
+  it('documents the project detail and repository endpoints', () => {
     const document = createOpenApiDocument(app);
     const ref = (name: string) => ({
       content: { 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } },
@@ -210,7 +210,7 @@ describe('OpenAPI document', () => {
     ]) {
       expect(schemas[name]).toMatchObject({ additionalProperties: false });
     }
-    // Closed request bodies (#72): an unknown field is refused, not silently dropped.
+    // Closed request bodies: an unknown field is refused, not silently dropped.
     for (const name of [
       'CreateProjectRequest',
       'ConnectRepositoryRequest',
@@ -280,7 +280,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('documents the operator run endpoints (Issue #96)', () => {
+  it('documents the operator run endpoints', () => {
     const document = createOpenApiDocument(app);
 
     const start = document.paths['/api/projects/{id}/runs']?.post;
@@ -314,16 +314,16 @@ describe('OpenAPI document', () => {
         'startCommit',
         'createdAt',
         'environmentFileSupplied',
-        // Issue #100: the limits in force are always shown.
+        // The limits in force are always shown.
         'limits',
-        // Issue #141: the Run step totals and how many Follow-ups it had.
+        // The Run step totals and how many Follow-ups it had.
         'steps',
         'followUps',
       ],
     });
   });
 
-  it('documents POST /api/runs/{runId}/follow-up: 202 with the Run, 404, 409, 422 (Issue #141)', () => {
+  it('documents POST /api/runs/{runId}/follow-up: 202 with the Run, 404, 409, 422', () => {
     const document = createOpenApiDocument(app);
 
     const followUp = document.paths['/api/runs/{runId}/follow-up']?.post;
@@ -349,7 +349,7 @@ describe('OpenAPI document', () => {
     );
   });
 
-  it('documents POST /api/runs/{runId}/answer: 202 with the Run, 404, 409, 422 (Issue #103)', () => {
+  it('documents POST /api/runs/{runId}/answer: 202 with the Run, 404, 409, 422', () => {
     const document = createOpenApiDocument(app);
 
     const answer = document.paths['/api/runs/{runId}/answer']?.post;
@@ -375,7 +375,7 @@ describe('OpenAPI document', () => {
     expect(JSON.stringify(document)).not.toMatch(/sessionRef/);
   });
 
-  it("documents a project's Environment file endpoints, none returning the content (Issue #104)", () => {
+  it("documents a project's Environment file endpoints, none returning the content", () => {
     const document = createOpenApiDocument(app);
 
     const path = document.paths['/api/projects/{id}/environment-file'];
@@ -403,7 +403,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('documents POST /api/runs/{runId}/cancel: 202 with the Run, 404, 409 (Issue #100)', () => {
+  it('documents POST /api/runs/{runId}/cancel: 202 with the Run, 404, 409', () => {
     const document = createOpenApiDocument(app);
 
     const cancel = document.paths['/api/runs/{runId}/cancel']?.post;
@@ -419,7 +419,7 @@ describe('OpenAPI document', () => {
     );
   });
 
-  it('documents GET /api/providers with each provider and its availability (Issue #101)', () => {
+  it('documents GET /api/providers with each provider and its availability', () => {
     const document = createOpenApiDocument(app);
 
     const list = document.paths['/api/providers']?.get;
@@ -440,7 +440,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('leaves the worker routes out, so the browser client never contains them (Issue #96)', () => {
+  it('leaves the worker routes out, so the browser client never contains them', () => {
     const document = createOpenApiDocument(app);
 
     expect(Object.keys(document.paths).filter((path) => path.startsWith('/api/worker'))).toEqual(

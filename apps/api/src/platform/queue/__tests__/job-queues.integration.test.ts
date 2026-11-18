@@ -464,7 +464,7 @@ describe('job queues (Redis via Testcontainers)', () => {
       await expect(queue.cancel('sync-unknown')).resolves.toBe(false);
     });
 
-    it('never aborts a newer run with the same id while it waits for the active job to start (Issue #70)', async () => {
+    it('never aborts a newer run with the same id while it waits for the active job to start', async () => {
       // sync-p2 is active but held by a foreign worker, so cancel waits for it to reach a
       // processor here. Meanwhile that job finishes and a new sync-p2 starts in our worker:
       // a different run, which cancel must not abort.
@@ -488,8 +488,8 @@ describe('job queues (Redis via Testcontainers)', () => {
         owner.behaviour = (job) => (job.id === 'sync-p1' ? release.promise : stopsOnAbort(job));
         let queue: JobQueue<Payload>;
         // Several Redis round trips happen inside cancel's wait for the job to start, so the
-        // wait is raised from 1 s: a slow runner cannot fail this falsely (PR #78 P-2, #72).
-        // It stays non-vacuous: `newerStartedFirst` below.
+        // wait is raised from 1 s: a slow runner cannot fail this falsely. Not vacuous:
+        // `newerStartedFirst`.
         ({ app, queue } = await startApp(redisService.url, owner, { startWaitMs: 5_000 }));
         // Keep our only worker slot busy so the foreign worker is the one that takes sync-p2.
         await queue.enqueue('sync-p1', { projectId: 'p1' });
@@ -538,7 +538,7 @@ describe('job queues (Redis via Testcontainers)', () => {
       }
     });
 
-    describe('waiting for the cancelled job to settle (settleTimeoutMs, Issue #63)', () => {
+    describe('waiting for the cancelled job to settle (settleTimeoutMs)', () => {
       it('returns only after the processor and onFailed have finished, with the id free at once', async () => {
         const owner = new RecordingOwner('repository-sync');
         const reported = deferred();
@@ -746,7 +746,7 @@ describe('job queues (Redis via Testcontainers)', () => {
     });
   });
 
-  describe('health check (Issue #70)', () => {
+  describe('health check', () => {
     it('logs a timed-out ping once per outage and once on recovery', async () => {
       const warned = vi.spyOn(Logger.prototype, 'warn');
       const logged = vi.spyOn(Logger.prototype, 'log');
@@ -776,7 +776,7 @@ describe('job queues (Redis via Testcontainers)', () => {
     });
   });
 
-  describe('health check during a Redis outage (Issue #70)', () => {
+  describe('health check during a Redis outage', () => {
     it('logs one outage line and one recovery line, however many probes fail', async () => {
       const proxy = await redisProxy(redisService.url);
       const warned = vi.spyOn(Logger.prototype, 'warn');
@@ -797,9 +797,9 @@ describe('job queues (Redis via Testcontainers)', () => {
         await expect(health.isAvailable()).resolves.toBe(true);
 
         await proxy.down();
-        // The first probes fail at once (connection refused); later ones wait in ioredis's
-        // reconnect backoff until the check's 1 s limit. Probe until one has waited about that
-        // long, so the timed-out path is exercised whatever ioredis's retry timing (#72).
+        // The first probes fail at once (connection refused); later ones wait in ioredis's backoff
+        // until the check's 1 s limit. Probe until one has waited about that long, so the timed-out
+        // path is exercised whatever ioredis's retry timing.
         let timedOut = false;
         for (let probe = 0; probe < 20 && !timedOut; probe += 1) {
           const started = Date.now();

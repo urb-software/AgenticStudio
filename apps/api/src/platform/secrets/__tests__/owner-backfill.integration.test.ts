@@ -11,13 +11,9 @@ import { createApp } from '../../../app.js';
 import type { AppConfig } from '../../config/config.js';
 import { DATABASE_CLIENT, type DatabaseClient } from '../../database/database.module.js';
 
-// Issue #76: the migration that gives every stored secret an owner label backfills the rows
-// that existed before it. The suite applies every committed migration, puts the `secrets`
-// table back into its shape before the migration (no owner column), stores rows the way the
-// earlier code did, then runs the migration's own SQL file. Every existing row becomes a
-// Deploy key (the only secret Studio ever stored, operator decision on #76), so the app's
-// start-up sweep, with its production settings, then deletes the unreferenced ones once they
-// are past the one-hour grace period.
+// The migration that gives every stored secret an owner label backfills earlier rows as Deploy
+// keys (the only secret Studio stored); the start-up sweep then deletes the unreferenced ones
+// past the one-hour grace period.
 
 const MIGRATION = '20261114300000_secret_owner';
 const MINUTE_MS = 60 * 1000;
@@ -66,7 +62,7 @@ describe('secret owner migration (PostgreSQL + Redis via Testcontainers)', () =>
   it('labels every existing secret a Deploy key; the production sweep deletes the unreferenced ones past one hour', async () => {
     // Back to the table before the migration (dropping the column drops its index and CHECK).
     await db().$executeRaw`ALTER TABLE secrets DROP COLUMN owner`;
-    /** A row as the earlier code stored it, `ageMs` old. */
+    /** A row as the pre-migration code stored it, `ageMs` old. */
     const insertSecret = async (ageMs: number): Promise<string> => {
       const [row] = await db().$queryRaw<{ id: string }[]>`
         INSERT INTO secrets (id, ciphertext, nonce, auth_tag, key_version, created_at)

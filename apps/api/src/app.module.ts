@@ -15,12 +15,7 @@ import { SecretsModule } from './platform/secrets/secrets.module.js';
 
 @Module({})
 export class AppModule {
-  /**
-   * Test seams; production passes no options. `queue` tunes the job-queue workers (e.g.
-   * `{ startWorkers: false }` builds the app without Redis, as OpenAPI generation does);
-   * `projects` shortens the Git limits or changes the platform for tests; `executions` passes
-   * a controlled clock.
-   */
+  /** Test seams; production passes none. `{ startWorkers: false }` builds without Redis. */
   static register(
     config: AppConfig,
     options: {

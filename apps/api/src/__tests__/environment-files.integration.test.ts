@@ -13,11 +13,9 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #104, main seam: a Project's Environment file over HTTP on the real app with
-// PostgreSQL and Redis from Testcontainers. The operator sets, replaces and removes it and
-// never gets the content back; the agent worker gets it only with a Run it claimed; the Run's
-// log and step results are redacted with its values. Every value here is a throwaway test value
-// generated per run.
+// A Project's Environment file over HTTP on the real app (PostgreSQL and Redis via
+// Testcontainers): the content never comes back and a Run's log is redacted with its values;
+// every value is a throwaway generated per run.
 
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
@@ -159,7 +157,6 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       const replaced = await put(projectId, { path: 'config/test.env', content: 'A=test-only\n' });
       expect(replaced.status).toBe(200);
       expect(replaced.body).toMatchObject({ path: 'config/test.env', sizeBytes: 12 });
-      // The replaced content was deleted: only the new one is stored.
       const references = await fileContents();
       expect(references).toHaveLength(1);
       expect(await app.get<SecretStore>(SECRET_STORE).get(references[0]!)).toBe('A=test-only\n');
@@ -247,7 +244,6 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
           .send({ path: '.env', content: 'A=x' }),
         403,
       );
-      // The worker token grants nothing here.
       expectProblem(
         await http().get(fileUrl(projectId)).set('Authorization', `Bearer ${WORKER_TOKEN}`),
         401,
@@ -280,7 +276,7 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect(claimed.body).toMatchObject({
         runId,
         kind: 'start',
-        // Issue #102's delivery never commits or pushes what Studio placed.
+        // Delivery never commits or pushes what Studio placed.
         studioPaths: ['config/test.env'],
         environmentFile: { path: 'config/test.env', content: CONTENT },
       });
@@ -357,7 +353,6 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect((await worker(`${first}/state`, { workerId: W1, state: 'running' })).status).toBe(204);
 
       await put(projectId, { path: '.env', content: 'OTHER=test-only-later\n' });
-      // The first Run's log is still redacted with its own snapshot.
       await worker(`${first}/events`, {
         workerId: W1,
         events: [
@@ -388,7 +383,6 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
         runId: second,
         environmentFile: { path: '.env', content: 'OTHER=test-only-later\n' },
       });
-      // After removal, the next Run gets none.
       expect((await worker(`${second}/state`, { workerId: W1, state: 'running' })).status).toBe(
         204,
       );
@@ -408,7 +402,7 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect(none.body).not.toHaveProperty('environmentFile');
     });
 
-    it('keeps the snapshot while a failed delivery can be retried: the retry claim has no content, its reports are redacted (#125 review F1)', async () => {
+    it('keeps the snapshot while a failed delivery can be retried: the retry claim has no content, its reports are redacted', async () => {
       const projectId = await readyProject();
       await put(projectId, { path: '.env', content: CONTENT });
       const runId = await startRun(projectId);
@@ -429,7 +423,6 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
           })
         ).status,
       ).toBe(204);
-      // The delivery can be retried: the snapshot stays.
       expect(await snapshotCount()).toBe(1);
 
       const retry = () =>
@@ -458,7 +451,6 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       expect(run.body.commits[0].subject).toBe(`agent: used ${REDACTED}`);
       expect(await snapshotCount()).toBe(1);
 
-      // Delivered at last: nothing more to redact, the snapshot goes.
       expect((await retry()).status).toBe(202);
       expect((await worker('claim', { workerId: W1 })).body.kind).toBe('deliver');
       expect(
@@ -518,14 +510,12 @@ describe('Environment files API (PostgreSQL + Redis via Testcontainers)', () => 
       for (const response of [events, steps, stream]) expectNoContent(response);
       expect(events.body.events[1].text).toContain(`DB_PASSWORD=${REDACTED}`);
       expect(steps.body.steps[0]).toMatchObject({ outcome: 'done', summary: `Used ${REDACTED}` });
-      // Nothing of the file reached storage either.
       const stored = await db().$queryRaw<{ text: string }[]>`
         SELECT text FROM run_events WHERE run_id = ${runId}::uuid
         UNION ALL SELECT result::text FROM run_steps WHERE run_id = ${runId}::uuid`;
       expect(stored.map((row) => row.text).join('\n')).not.toMatch(
         new RegExp(`${PASSWORD_VALUE}|${KEY_VALUE}`),
       );
-      // The Run is final: its snapshot is gone; the project's file stays.
       expect(await snapshotCount()).toBe(0);
       expect((await get(projectId)).body).toMatchObject({ path: '.env' });
     });

@@ -55,7 +55,7 @@ const passwordHashSchema = z.string().refine(meetsArgon2idBaseline, {
 
 /** Length of the AES-256 master key behind the SecretStore (ADR 0001). */
 const SECRETS_KEY_BYTES = 32;
-/** Standard base64 with padding, as `openssl rand -base64 32` and Node's `toString('base64')` print it. */
+/** Standard base64 with padding, as `openssl rand -base64 32` prints it. */
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const SECRETS_KEY_HINT = 'generate one with `openssl rand -base64 32` (see README.md)';
 
@@ -72,11 +72,11 @@ const secretsKeySchema = z
   })
   .transform((value) => createSecretKey(Buffer.from(value, 'base64')));
 
-/** Shortest accepted agent worker token (Issue #96). */
+/** Shortest accepted agent worker token. */
 export const WORKER_TOKEN_MIN_LENGTH = 32;
 
 /**
- * `STUDIO_WORKER_TOKEN` (Issue #96): the token the agent worker sends on the worker routes.
+ * `STUDIO_WORKER_TOKEN`: the token the agent worker sends on the worker routes.
  * Unset or empty: no token, and every worker route rejects (fail closed). Only its SHA-256
  * digest is kept, as a KeyObject that never prints; messages never echo the value.
  */
@@ -91,10 +91,7 @@ const workerTokenSchema = z
     value === undefined ? null : createSecretKey(createHash('sha256').update(value).digest()),
   );
 
-/**
- * `STUDIO_OPERATOR_GITHUB_LOGIN` (Issue #146): a GitHub login (letters, digits and single
- * hyphens, at most 39 characters), or unset or empty for none.
- */
+/** `STUDIO_OPERATOR_GITHUB_LOGIN`: a GitHub login (letters, digits, single hyphens), or none. */
 const githubLoginSchema = z
   .string()
   .optional()
@@ -151,7 +148,7 @@ export function isSameOrInside(parent: string, child: string): boolean {
 export const SHELL_SAFE_PATH = /^\/[A-Za-z0-9._/-]+$/;
 
 /**
- * `STUDIO_SSH_KNOWN_HOSTS` (Issue #62): the Git hosts Studio trusts without asking, as
+ * `STUDIO_SSH_KNOWN_HOSTS`: the Git hosts Studio trusts without asking, as
  * standard known_hosts lines (see `ssh-known-hosts.ts`, shared with the Git adapter). An
  * empty value trusts no host. Messages name the line number, never its content.
  */
@@ -165,7 +162,7 @@ const sshKnownHostsSchema = z
   });
 
 /**
- * `STUDIO_DATA_DIR` (Clones and other repository data, Epic #55): an absolute, existing,
+ * `STUDIO_DATA_DIR` (Clones and other repository data): an absolute, existing,
  * writable directory outside the repository checkout. Messages never echo the path.
  */
 function dataDirSchema(workspaceRoot: string | undefined) {
@@ -204,7 +201,7 @@ const environmentSchema = z.object({
   // API_PORT, not PORT: `next dev` also reads PORT, so a shell-wide PORT would put
   // both apps on the same port.
   API_PORT: z.coerce.number().int().min(1).max(65535).default(DEFAULT_API_PORT),
-  // Bind address: localhost by default (#17 follow-up); a deployment sets it explicitly.
+  // Bind address: localhost by default; a deployment sets it explicitly.
   API_HOST: z
     .string()
     .refine((value) => isIP(value) !== 0 || /^[a-z\d]([a-z\d.-]*[a-z\d])?$/i.test(value), {
@@ -224,46 +221,37 @@ const environmentSchema = z.object({
   STUDIO_SECRETS_KEY: secretsKeySchema,
   // Test-only: adds `file` remotes to the Git adapter's transports (local fixture remotes).
   STUDIO_GIT_ALLOW_FILE_REMOTES: z.enum(['true', 'false']).default('false'),
-  // Git remotes on loopback and private addresses (Issue #69): closed unless set to true.
+  // Git remotes on loopback and private addresses: closed unless set to true.
   STUDIO_GIT_ALLOW_PRIVATE_REMOTES: z.enum(['true', 'false']).default('false'),
-  // Git hosts trusted without asking (Issue #62): known_hosts lines; may be empty.
   STUDIO_SSH_KNOWN_HOSTS: sshKnownHostsSchema,
-  // Agent worker token (Issue #96); unset rejects every worker route.
   STUDIO_WORKER_TOKEN: workerTokenSchema,
   // How long a claimed Run may go without a heartbeat before it fails as worker_lost.
   STUDIO_WORKER_LEASE_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
-  // Run limits (Issue #100), copied onto every new Run: the longest a Run step may work, the
-  // most Run steps a Run may take, the longest a Run may wait for the operator. The upper
-  // bounds are the worker protocol's (`RUN_STEP_MINUTES_MAX`, `RUN_MAX_STEPS_MAX`).
+  // Run limits copied onto every new Run; the upper bounds are the worker protocol's
+  // (`RUN_STEP_MINUTES_MAX`, `RUN_MAX_STEPS_MAX`).
   STUDIO_RUN_STEP_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
   STUDIO_RUN_MAX_STEPS: z.coerce.number().int().min(1).max(100).default(10),
   STUDIO_RUN_WAITING_DAYS: z.coerce.number().int().min(1).max(365).default(14),
-  // Issue #141: STUDIO_RUN_MAX_STEPS is the allowance of the first part and of each Follow-up;
-  // a Run that has taken this many Run steps in total takes no further Follow-up.
+  // STUDIO_RUN_MAX_STEPS is the allowance per part and per Follow-up; a Run at this many
+  // Run steps in total takes no further Follow-up.
   STUDIO_RUN_MAX_TOTAL_STEPS: z.coerce.number().int().min(1).max(10_000).default(50),
-  // Per-Run log cap in bytes of event text (Issue #99): 64 KiB to 1 GiB, default 8 MiB.
   STUDIO_RUN_LOG_MAX_BYTES: z.coerce
     .number()
     .int()
     .min(64 * 1024)
     .max(1024 * 1024 * 1024)
     .default(8 * 1024 * 1024),
-  // Days a Run's Environment file snapshot is kept while its failed delivery can be retried
-  // (Issue #104, review of #125): 1-90, default 7.
+  // Days an Environment file snapshot is kept while its failed delivery can be retried.
   STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7),
-  // Issue #143: how long a finished Run's Working copy on the agent side is kept. Studio decides;
-  // the agent worker removes what Studio says. Without a pull request: STUDIO_RETENTION_DAYS (7)
-  // after the Run finished, and at most STUDIO_RETENTION_MAX_PER_PROJECT (10) such Runs per
-  // Project. With a pull request: until STUDIO_RETENTION_OPEN_PR_IDLE_DAYS (30) days without
-  // activity, or STUDIO_RETENTION_AFTER_PR_END_HOURS (24) hours after it was merged or closed,
-  // whichever is first.
+  // How long a finished Run's agent-side Working copy is kept; Studio decides, the worker
+  // removes. No pull request: _DAYS after the Run, at most _MAX_PER_PROJECT Runs per Project.
+  // With one: _OPEN_PR_IDLE_DAYS without activity or _AFTER_PR_END_HOURS after merge/close.
   STUDIO_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(7),
   STUDIO_RETENTION_MAX_PER_PROJECT: z.coerce.number().int().min(0).max(1000).default(10),
   STUDIO_RETENTION_OPEN_PR_IDLE_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   STUDIO_RETENTION_AFTER_PR_END_HOURS: z.coerce.number().int().min(0).max(8760).default(24),
-  // Issue #146: the operator's own GitHub login. Review comments written by it are preselected
-  // when the operator loads them; everyone else's are shown unselected. Matched exactly, case-
-  // insensitively. Unset or empty: nothing is preselected.
+  // The operator's own GitHub login, matched case-insensitively; its Review comments are
+  // preselected. Unset or empty: nothing is preselected.
   STUDIO_OPERATOR_GITHUB_LOGIN: githubLoginSchema,
   NODE_ENV: z.string().optional(),
 });
@@ -306,21 +294,21 @@ export interface AppConfig {
   workerToken: KeyObject | null;
   /** Seconds a claimed Run may go without a heartbeat before it fails with `worker_lost`. */
   workerLeaseSeconds: number;
-  /** The limits copied onto every new Run (Issue #100). */
+  /** The limits copied onto every new Run. */
   runLimits: { stepMinutes: number; maxSteps: number; waitingDays: number; maxTotalSteps: number };
   /** Per-Run log cap in UTF-8 bytes of event text (`STUDIO_RUN_LOG_MAX_BYTES`, default 8 MiB). */
   runLogMaxBytes: number;
   /**
    * Days a Run's Environment file snapshot is kept for its log redaction while its failed
-   * delivery can be retried (`STUDIO_RUN_SNAPSHOT_RETENTION_DAYS`, default 7; Issue #104).
+   * delivery can be retried (`STUDIO_RUN_SNAPSHOT_RETENTION_DAYS`, default 7).
    */
   runSnapshotRetentionDays: number;
   /**
-   * The operator's own GitHub login (`STUDIO_OPERATOR_GITHUB_LOGIN`, Issue #146), or `null`:
+   * The operator's own GitHub login (`STUDIO_OPERATOR_GITHUB_LOGIN`), or `null`:
    * the author of the Review comments that are preselected.
    */
   operatorGithubLogin: string | null;
-  /** Working copy retention on the agent side (Issue #143), from the `STUDIO_RETENTION_*` settings. */
+  /** Agent-side Working copy retention, from the `STUDIO_RETENTION_*` settings. */
   retention: {
     days: number;
     maxPerProject: number;
@@ -330,7 +318,7 @@ export interface AppConfig {
 }
 
 export interface LoadConfigOptions {
-  /** The repository checkout the data directory must stay out of; found from this file by default. */
+  /** The repository checkout the data directory must stay out of; found by default. */
   workspaceRoot?: string;
 }
 

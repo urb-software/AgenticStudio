@@ -14,14 +14,9 @@ import { IS_WORKER_ROUTE } from './worker-route.js';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
- * CSRF defense without a token (Epic #8 decision 3), applied to every mutation,
- * public ones (login) included:
- * - `Origin` must equal the Studio origin; without `Origin`, only
- *   `Sec-Fetch-Site: same-origin` is accepted. A foreign `Origin` always loses.
- * - A request body must be `application/json`, which no HTML form can send.
- *
- * Worker routes (Issue #96) skip the Origin check only: no cookie authenticates them, so there
- * is no cross-site request to forge, and the agent worker is not a browser.
+ * Tokenless CSRF defence on every mutation: `Origin` must be the Studio origin (or
+ * `Sec-Fetch-Site: same-origin` without it), and a body must be JSON, which no form can send.
+ * Worker routes skip the Origin check only: no cookie authenticates them.
  */
 @Injectable()
 export class MutationOriginGuard implements CanActivate {
@@ -57,7 +52,6 @@ export class MutationOriginGuard implements CanActivate {
   }
 }
 
-/** A Content-Type, a non-zero Content-Length or chunked encoding all mean a body. */
 function hasBody(request: HttpRequest): boolean {
   const { headers } = request;
   return (

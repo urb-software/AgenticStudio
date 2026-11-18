@@ -1,10 +1,8 @@
 import { stderr, stdin, stdout } from 'node:process';
 import { hashPassword } from './password.js';
 
-// Local helper: prints the Argon2id hash for STUDIO_OPERATOR_PASSWORD_HASH.
-//   pnpm --filter @agentic-studio/api run auth:hash-password
-// The password is read from stdin (hidden when typed in a terminal), never from
-// argv, so it stays out of shell history and process listings. Only the hash is printed.
+// Prints the Argon2id hash for STUDIO_OPERATOR_PASSWORD_HASH (`auth:hash-password`).
+// The password comes from stdin, never argv, so it stays out of shell history and process lists.
 
 const MIN_LENGTH = 12;
 

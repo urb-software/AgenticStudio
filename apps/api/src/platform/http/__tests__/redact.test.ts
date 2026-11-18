@@ -59,7 +59,6 @@ describe('redactSecrets', () => {
     expect(output).not.toMatch(/eyJhbGciOi|dXNlcjpwYXNz|abc-def_123/);
   });
 
-  // #20 review follow-up m8/m9.
   it.each(['refresh_token', 'client_secret', 'id_token', 'pwd', 'passwd', 'X-Api-Key'])(
     'masks the prefixed or abbreviated %s parameter value',
     (name) => {
@@ -125,7 +124,7 @@ describe('redactSecrets', () => {
     }
   });
 
-  // #24: secrets longer than the former 512-character userinfo cap.
+  // Userinfo secrets longer than 512 characters.
   describe('long secrets', () => {
     const long = (length: number) => 'S3cr'.repeat(Math.ceil(length / 4)).slice(0, length);
 
@@ -167,7 +166,7 @@ describe('redactSecrets', () => {
       expect(output).not.toContain(secret.slice(-600));
     });
 
-    // #33 review: the scheme boundary check let these through unmasked.
+    // The scheme boundary check must not let these through unmasked.
     it.each([
       ['a digit before the scheme', '1postgres://u:s3cr3tv4lu3@h/db'],
       ['a dot before the scheme', 'at .postgres://u:s3cr3tv4lu3@h/db'],

@@ -7,19 +7,12 @@ import { AppModule } from './app.module.js';
 import { verifyWorkerToken } from './platform/auth/worker-token.js';
 import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
 
-/**
- * The routes whose bodies may exceed 100 KiB: a Run's step and state reports (worker), and
- * setting a project's Environment file (operator, Issue #104: 64 KiB of content can grow in
- * JSON, e.g. every quote and line break escaped).
- */
+/** Routes whose JSON bodies may exceed 100 KiB: worker step/state reports, Environment file. */
 const LARGE_BODY_ROUTE =
   /^\/api\/(?:worker\/runs\/[^/]+\/(?:steps|state)|projects\/[^/]+\/environment-file)$/;
-/** A Run's diff report (Issue #144): two diffs of up to `RUN_DIFF_MAX_BYTES` each. */
 const RUN_DIFF_ROUTE = /^\/api\/worker\/runs\/[^/]+\/diff$/;
-/** What the JSON body parser treats as JSON (`application/json` and `+json` types). */
 const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i;
 
-/** Builds the HTTP application exactly as production runs it; tests use it too. */
 export async function createApp(
   config: AppConfig,
   options: Parameters<typeof AppModule.register>[1] = {},
@@ -41,20 +34,16 @@ export async function buildApp(
     bodyParser: false,
     ...options,
   });
-  // The worker's step and state reports (Issue #98): up to 192 KiB (WORKER_REQUEST_MAX_BYTES),
-  // since the protocol caps a Run step's result (RUN_STEP_RESULT_MAX_BYTES) and a Working copy
-  // report (WORKING_COPY_REPORT_MAX_BYTES) so such a report always fits; an Environment file
-  // (Issue #104) the same. Parsed first; the general parser then skips a body that is already
-  // parsed.
+  // Sized to the protocol caps so a worker report always fits; an Environment file's JSON
+  // escaping can outgrow its 64 KiB. Parsed first: the general parser skips a parsed body.
   app.useBodyParser('json', {
     limit: WORKER_REQUEST_MAX_BYTES,
     type: (request: IncomingMessage) =>
       LARGE_BODY_ROUTE.test(request.url?.split('?')[0] ?? '') &&
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? ''),
   });
-  // The worker's diff report (Issue #144): up to RUN_DIFF_REQUEST_MAX_BYTES, since the
-  // protocol caps each of its two diffs (RUN_DIFF_MAX_BYTES). Only on this route and only with
-  // the worker token: any other request there gets the 100 KiB parser below.
+  // Two diffs of up to RUN_DIFF_MAX_BYTES each; the larger limit needs the worker token, any
+  // other request there gets the 100 KiB parser below.
   const { workerToken } = app.get<AppConfig>(APP_CONFIG);
   app.useBodyParser('json', {
     limit: RUN_DIFF_REQUEST_MAX_BYTES,
@@ -63,14 +52,12 @@ export async function buildApp(
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
       verifyWorkerToken(workerToken, request.headers.authorization),
   });
-  // Every other route: 100 KiB, Express's default, made explicit.
   app.useBodyParser('json', { limit: '100kb' });
   app.disable('x-powered-by');
   // `request.ip` honours X-Forwarded-For only from the configured trusted proxies
   // (right-most untrusted hop); with none, it is the socket address.
   const { apiTrustedProxies } = app.get<AppConfig>(APP_CONFIG);
   app.set('trust proxy', apiTrustedProxies.length > 0 ? apiTrustedProxies : false);
-  // All HTTP routes live under /api so the web app can proxy them same-origin.
   app.setGlobalPrefix('api');
   return app;
 }

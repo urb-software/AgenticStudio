@@ -24,14 +24,8 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #76: Deploy keys no Repository references are deleted by a sweep at start-up (after
-// the repository queue is reconciled, before its worker starts) and after a Connect fails to
-// delete a replaced key. The real app with PostgreSQL and Redis (Testcontainers) and the real
-// job queue. The two orphan cases of the Issue: a crash between storing a key and saving the
-// Repository (simulated: the key is stored under the Deploy-key label and nothing references
-// it), on every platform; a failed delete when a failed SSH Repository is replaced over HTTPS,
-// on Linux only, because a Connect needs the Git adapter (CI runs it; the guard at the end fails
-// CI if it was skipped). Every value is generated at run time.
+// Orphaned Deploy keys are swept at start-up and after a failed Connect (real app, PostgreSQL and
+// Redis via Testcontainers); the failed-delete case needs the Git adapter, so Linux only.
 
 const linux = process.platform === 'linux';
 /** The owner label `projects` stores Deploy keys under. */
@@ -114,7 +108,7 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
   beforeAll(async () => {
     services = await startStudioServices();
     dataDir = await mkdtemp(join(tmpdir(), 'studio-orphaned-keys-'));
-    // The fixtures (silent servers, closed ports) are on 127.0.0.1: an explicit opt-in (Issue #69).
+    // The fixtures (silent servers, closed ports) are on 127.0.0.1: an explicit opt-in.
     services.config = {
       ...services.config,
       dataDir,
@@ -228,7 +222,7 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
         }
       }
 
-      /** An SSH Repository that failed (its host is unreachable); returns its Deploy key's reference. */
+      /** An SSH Repository that failed (unreachable host); returns its Deploy key reference. */
       async function failedSshRepository(projectId: string): Promise<string> {
         const url = `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`;
         expect((await connect(projectId, url)).status).toBe(201);

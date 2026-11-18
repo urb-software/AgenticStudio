@@ -35,10 +35,10 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     dataDir: tmpdir(),
     gitAllowFileRemotes: false,
     // The production default: loopback and private remotes are refused. Suites whose fixtures
-    // listen on 127.0.0.1 opt in explicitly (Issue #69).
+    // listen on 127.0.0.1 opt in explicitly.
     gitAllowPrivateRemotes: false,
     sshKnownHosts: [],
-    // No worker token: worker routes reject unless a suite sets one (Issue #96).
+    // No worker token: worker routes reject unless a suite sets one.
     workerToken: null,
     workerLeaseSeconds: 60,
     runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
