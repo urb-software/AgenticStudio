@@ -27,8 +27,8 @@ const storedFilesSchema = z.array(
 
 /**
  * That the reporting worker holds the Run is checked under the Run's lock by the calling
- * transaction; a report replaces both scopes (and the state, unless unavailable) in that
- * transaction.
+ * transaction; a report replaces both scopes (and the state, unless
+ * unavailable) in that transaction.
  */
 @Injectable()
 export class PrismaRunDiffRepository implements RunDiffRepository {

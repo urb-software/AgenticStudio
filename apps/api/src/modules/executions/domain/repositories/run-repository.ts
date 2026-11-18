@@ -80,14 +80,14 @@ export interface RunRepository {
 
   /**
    * Hands the oldest eligible Run to `workerId`; a delivery retry or a resumable Run goes only to
-   * the worker that last claimed it. Serialized against concurrent claims. `null` when none is
-   * eligible.
+   * the worker that last claimed it. Serialized against concurrent claims. `null`
+   * when none is eligible.
    */
   claimNext(workerId: string, now: Date): Promise<RunSnapshot | null>;
 
   /**
-   * Only if the Run is still in `from`; `null` if not. For Studio's own sweeps, not the operator's
-   * cancel.
+   * Only if the Run is still in `from`; `null` if not. For Studio's own sweeps,
+   * not the operator's cancel.
    */
   cancelUnheld(
     runId: string,
@@ -136,8 +136,8 @@ export interface RunRepository {
   listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]>;
 
   /**
-   * A `failed` Run held for a delivery retry keeps `failed` with `deliveryFailure`. Returns how
-   * many.
+   * A `failed` Run held for a delivery retry keeps `failed` with
+   * `deliveryFailure`. Returns how many.
    */
   failStaleClaims(
     staleBefore: Date,

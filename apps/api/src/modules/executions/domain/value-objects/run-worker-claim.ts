@@ -20,8 +20,8 @@ export interface RunWorkerClaimStored {
   sessionRef: string | null;
   workingCopyRemovedAt: Date | null;
   /**
-   * A snapshot taken at the claim; later changes to the file affect only later Runs. Never the
-   * content.
+   * A snapshot taken at the claim; later changes to the file affect only later
+   * Runs. Never the content.
    */
   environmentFileSupplied: boolean;
   /** Never committed or pushed by a delivery, a retry too. Not secret, not in the operator API. */

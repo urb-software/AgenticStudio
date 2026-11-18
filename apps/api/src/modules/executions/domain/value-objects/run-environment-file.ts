@@ -1,8 +1,8 @@
 export const RUN_ENVIRONMENT_FILE_SECRET_OWNER = 'executions.run-environment-file';
 
 /**
- * Far longer than a claim takes between storing the snapshot and recording its reference on the
- * Run.
+ * Far longer than a claim takes between storing the snapshot and recording its
+ * reference on the Run.
  */
 export const RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS = 60 * 60 * 1000;
 

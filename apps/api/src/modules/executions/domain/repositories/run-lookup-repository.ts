@@ -44,8 +44,8 @@ export interface RunLookupRepository {
   findOpen(runId: string, kind: LookupKind): Promise<RunLookup | null>;
 
   /**
-   * Oldest first, first returning the claims older than the lease to the queue. Any worker may
-   * claim.
+   * Oldest first, first returning the claims older than the lease to the queue.
+   * Any worker may claim.
    */
   claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]>;
 

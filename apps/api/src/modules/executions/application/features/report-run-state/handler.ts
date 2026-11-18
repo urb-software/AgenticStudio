@@ -84,8 +84,8 @@ export class ReportRunStateHandler {
     }
     this.signal.notify(changed.id);
     // A failed delivery that can be retried, or a Run that can resume after the usage limit, keeps
-    // its snapshot. A bring-up request that changed nothing leaves the Run as it was, snapshot
-    // included.
+    // its snapshot. A bring-up request that changed nothing leaves the Run as
+    // it was, snapshot included.
     if (
       !input.unchanged &&
       changed.claim.environmentFileSupplied &&

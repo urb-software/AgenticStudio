@@ -159,8 +159,8 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * `null` also while its state is unknown (a reopened pull request is open again at the next
-   * lookup).
+   * `null` also while its state is unknown (a reopened pull request is open again
+   * at the next lookup).
    */
   get followUpRefusal(): FollowUpRefusal | null {
     return isEndedPullRequestState(this.state)
@@ -231,8 +231,8 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * With a retry (`retryAt`, a rate limit) the Run stays refreshing, from `requestedAt`, until
-   * then.
+   * With a retry (`retryAt`, a rate limit) the Run stays refreshing,
+   * from `requestedAt`, until then.
    */
   refreshFailed(error: string, retryAt: Date | null, requestedAt: Date): RunPullRequestStatus {
     return this.with({

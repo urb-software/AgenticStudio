@@ -23,8 +23,8 @@ export interface BringUpDetails {
 
 /**
  * Recorded when a Follow-up reopens the Run, before its result is cleared, so the earlier result
- * stays in the conversation. `detail` is the failure detail or the cancellation reason; empty
- * otherwise.
+ * stays in the conversation. `detail` is the failure detail or the
+ * cancellation reason; empty otherwise.
  */
 export interface RunPartEnd {
   state: FinalRunState;

@@ -25,8 +25,8 @@ export interface GetRunDiffFileInput {
 export type GetRunDiffFileResult = RunDiffFileView;
 
 /**
- * The patch was redacted when stored. Throws {@link RunNotFoundError} or {@link
- * RunDiffFileNotFoundError}.
+ * The patch was redacted when stored. Throws {@link RunNotFoundError} or
+ * {@link RunDiffFileNotFoundError}.
  */
 @Injectable()
 export class GetRunDiffFileHandler {

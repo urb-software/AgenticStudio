@@ -60,8 +60,8 @@ export class LostWorkerRule {
  */
 export class OverdueStepRule {
   /**
-   * The agent worker stops a step at `stepMinutes`; Studio ends the Run itself only this much
-   * later.
+   * The agent worker stops a step at `stepMinutes`; Studio ends the Run itself
+   * only this much later.
    */
   static readonly GRACE_MINUTES = 5;
 
@@ -116,9 +116,9 @@ export class LongWaitRule {
 }
 
 /**
- * A Run held for a delivery retry or a resume can only be taken by the worker that last claimed it;
- * when that worker has not reported for longer than the lease, they fail. The store gives one up
- * only while it is still pending.
+ * A pending delivery retry or resume can only be taken by the worker that last claimed the Run;
+ * when that worker has not reported for longer than the lease, it fails. The store gives one up only
+ * while it is pending.
  */
 export class GoneWorkerRule {
   private constructor(

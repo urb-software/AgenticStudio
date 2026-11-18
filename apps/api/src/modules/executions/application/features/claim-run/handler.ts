@@ -84,8 +84,8 @@ const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
 
 /**
  * `null` when no Run is eligible. A resume goes only to the worker that last claimed the Run. A
- * Follow-up, or a resume inside one, takes the Project's current Environment file; a delivery retry
- * keeps its snapshot.
+ * Follow-up, or a usage-limit resume inside one, takes the Project's current Environment file;
+ * other resumes keep their snapshot.
  */
 @Injectable()
 export class ClaimRunHandler {
@@ -105,8 +105,8 @@ export class ClaimRunHandler {
   async execute(input: ClaimRunInput): Promise<ClaimRunResult> {
     const { workerId } = input;
     const now = this.clock.now();
-    // Sweeps first, so lost workers free their places and long-waiting Runs end before the
-    // hand-out.
+    // Sweeps first, so lost workers free their places and long-waiting Runs
+    // end before the hand-out.
     const lost = LostWorkerRule.at(now, this.lease.seconds);
     await this.runs.failStaleClaims(lost.staleBefore, lost.failure, lost.deliveryFailure, now);
     for (const waiting of await this.runs.listWaiting()) {
@@ -145,8 +145,8 @@ export class ClaimRunHandler {
         await this.snapshots.releaseFor(run.id);
         continue;
       }
-      // A Run without a remote (its Repository was removed) fails here instead of reaching a
-      // worker.
+      // A Run without a remote (its Repository was removed) fails here instead
+      // of reaching a worker.
       const reachable = run.remoteUrl !== '' && run.integrationBranch !== '';
       const resume = RunConversation.of(run.messages).resumeMessage(run.sessionRef !== null);
       if (resume !== null) {

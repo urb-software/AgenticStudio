@@ -45,8 +45,8 @@ export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplication
         this.logger.log(`Renewed the lease of ${renewed} held run(s) at start.`);
       }
     } catch (error) {
-      // Not fatal: the sweep still runs; at worst a Run whose worker kept going fails as
-      // worker_lost.
+      // Not fatal: the sweep still runs; at worst a Run whose worker kept
+      // going fails as worker_lost.
       this.logger.warn(
         `Renewing the leases of held runs at start failed: ${redactSecrets(
           error instanceof Error ? error.message : String(error),

@@ -21,8 +21,8 @@ export interface RunTransactionRepositories {
 export interface RunTransactions {
   /**
    * Runs `work` in one transaction that takes the Run's row lock (`FOR UPDATE`) first; it rolls
-   * back if `work` throws. Throws {@link RunNotFoundError} (without calling `work`) for an unknown
-   * id.
+   * back if `work` throws. Throws {@link RunNotFoundError} (without calling `work`)
+   * for an unknown id.
    */
   withRunLocked<T>(
     runId: string,

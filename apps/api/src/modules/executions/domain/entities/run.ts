@@ -232,8 +232,8 @@ export class Run {
   resumeAfterUsageLimit(now: Date, facts: ResumeFacts): void {
     if (
       !this.canResumeAfterUsageLimit ||
-      // The resumed step's log is redacted with the snapshot; a Run in a Follow-up works without
-      // it.
+      // The resumed step's log is redacted with the snapshot; a Run in a
+      // Follow-up works without it.
       (this.claim.environmentFileSupplied &&
         !facts.environmentFileSnapshotKept &&
         !this.progress.inFollowUp)
@@ -267,8 +267,8 @@ export class Run {
     if (!this.lifecycle.isFinal || this.claim.isHeld || this.delivery.requested) {
       return refuse('not_finished');
     }
-    // Nothing to update once the pull request is over; a reopened one is open again at the next
-    // lookup.
+    // Nothing to update once the pull request is over; a reopened one is open again
+    // at the next lookup.
     const ended = this.pullRequestStatus.followUpRefusal;
     if (ended !== null) return refuse(ended);
     if (!this.claim.hasSession) return refuse('no_session');
@@ -468,8 +468,8 @@ export class Run {
   }
 
   /**
-   * `false` when nothing was recorded: not held by `workerId`, or the Follow-up has a start
-   * already.
+   * `false` when nothing was recorded: not held by `workerId`, or the Follow-up
+   * has a start already.
    */
   recordUpdateStart(
     workerId: string,
@@ -630,8 +630,8 @@ export class Run {
   }
 
   /**
-   * Throws {@link RunNotHeldError} unless the worker holds the Run, also `failed` for a delivery
-   * retry.
+   * Throws {@link RunNotHeldError} unless the worker holds the Run, also `failed`
+   * for a delivery retry.
    */
   assertDiffReportableBy(workerId: string): void {
     const held =

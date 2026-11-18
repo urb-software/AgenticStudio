@@ -9,7 +9,7 @@ export type FollowUpOrigin =
   | { source: 'review_comments'; comments: FollowUpComments | null };
 
 /**
- * What a Follow-up used up beyond the Run; the caller removes it in the transaction that saves the
- * Run.
+ * What a Follow-up used up beyond the Run; the caller removes it in the transaction
+ * that saves the Run.
  */
 export type FollowUpConsumption = Exclude<FollowUpSource, 'bring_up_to_date'>;

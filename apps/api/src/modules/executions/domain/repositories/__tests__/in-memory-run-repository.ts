@@ -362,8 +362,8 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  // Test setup shortcuts, not part of the Run repository: they return `null` (or `false`) when
-  // refused.
+  // Test setup shortcuts, not part of the Run repository: they return `null`
+  // (or `false`) when refused.
 
   /** The operator answers the open question; `null` if the Run is not waiting with one. */
   async answer(runId: string, text: string, now: Date): Promise<Run | null> {
