@@ -76,9 +76,8 @@ describe('ClaimRunHandler', () => {
 
     const claimed = await handler.execute({ workerId: WORKER });
 
-    expect(claimed).toMatchObject({
-      id: first.id,
-      state: 'preparing',
+    expect(claimed).toMatchObject({ id: first.id, state: 'preparing' });
+    expect((await runs.findById(first.id))!.snapshot()).toMatchObject({
       claimedBy: WORKER,
       startedAt: T0,
     });
@@ -155,6 +154,8 @@ describe('ClaimRunHandler', () => {
       expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: run.id,
         state: 'failed',
+      });
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
         deliveryRequested: true,
         claimedBy: WORKER,
       });
@@ -186,8 +187,10 @@ describe('ClaimRunHandler', () => {
       expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: run.id,
         state: 'failed',
-        environmentFilePath: '.env',
         environmentFile: null,
+      });
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
+        environmentFilePath: '.env',
       });
       expect(secrets.values.size).toBe(0);
     });
@@ -389,11 +392,13 @@ describe('ClaimRunHandler', () => {
       expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: run.id,
         state: 'preparing',
-        claimedBy: WORKER,
-        startedAt: T0,
         sessionRef: 'session-1',
         completedSteps: 1,
         nextSeq: 4,
+      });
+      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
+        claimedBy: WORKER,
+        startedAt: T0,
       });
     });
 
@@ -465,8 +470,10 @@ describe('ClaimRunHandler', () => {
 
       expect(await handler.execute({ workerId: WORKER })).toMatchObject({
         id: queued.id,
-        environmentFilePath: '.env',
         environmentFile: null,
+      });
+      expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
+        environmentFilePath: '.env',
       });
       expect(await runs.findEnvironmentFileSecret(queued.id)).toBe(snapshot);
       expect(secrets.values.size).toBe(1);
@@ -673,9 +680,11 @@ describe('ClaimRunHandler with Environment files', () => {
       id: queued.id,
       replaceEnvironmentFile: true,
       environmentFile: current,
+      studioPaths: ['.env', 'config/.env'],
+    });
+    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
       environmentFileSupplied: true,
       environmentFilePath: 'config/.env',
-      studioPaths: ['.env', 'config/.env'],
     });
     expect(secrets.values.has(first!)).toBe(false);
     const snapshot = await runs.findEnvironmentFileSecret(queued.id);
@@ -694,8 +703,10 @@ describe('ClaimRunHandler with Environment files', () => {
     expect(claimed).toMatchObject({
       replaceEnvironmentFile: true,
       environmentFile: null,
-      environmentFileSupplied: false,
       studioPaths: ['.env'],
+    });
+    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
+      environmentFileSupplied: false,
     });
     expect(await runs.findEnvironmentFileSecret(queued.id)).toBeNull();
     expect(secrets.values.size).toBe(0);
@@ -724,7 +735,7 @@ describe('ClaimRunHandler with Environment files', () => {
 
     const claimed = await handler.execute({ workerId: WORKER });
 
-    expect(claimed).toMatchObject({ id: queued.id, environmentFileSupplied: true });
+    expect(claimed).toMatchObject({ id: queued.id });
     expect(claimed?.environmentFile).toEqual(FILE);
     expect((await runs.findById(queued.id))?.claim.environmentFileSupplied).toBe(true);
     const snapshot = await runs.findEnvironmentFileSecret(queued.id);
@@ -748,7 +759,8 @@ describe('ClaimRunHandler with Environment files', () => {
 
     const claimed = await handler.execute({ workerId: WORKER });
 
-    expect(claimed).toMatchObject({ environmentFileSupplied: false, environmentFile: null });
+    expect(claimed).toMatchObject({ environmentFile: null });
+    expect((await runs.findById(queued.id))?.claim.environmentFileSupplied).toBe(false);
     expect(await runs.findEnvironmentFileSecret(queued.id)).toBeNull();
     expect(secrets.values.size).toBe(0);
   });

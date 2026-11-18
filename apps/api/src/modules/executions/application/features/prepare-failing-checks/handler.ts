@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
+import { runView, type RunView } from '../../run-view.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
@@ -30,7 +30,7 @@ export interface PrepareFailingChecksInput {
 }
 
 export interface PrepareFailingChecksResult {
-  run: RunSnapshot;
+  run: RunView;
   followUp: FollowUpView;
   workerConnected: boolean;
   preparedFollowUp: boolean;
@@ -74,7 +74,7 @@ export class PrepareFailingChecksHandler {
       latest: this.workers.latest(),
     };
     const view = {
-      run: run.snapshot(),
+      run: runView(run),
       ...this.retention.runView(
         run.followUpAvailability(workers, now, this.lease.seconds),
         run.retentionFacts(),

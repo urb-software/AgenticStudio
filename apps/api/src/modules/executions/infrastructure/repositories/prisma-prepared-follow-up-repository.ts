@@ -2,8 +2,7 @@ import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
-import type { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
-import type { PreparedFollowUpSnapshot } from '../../domain/entities/prepared-follow-up-snapshot.js';
+import { PreparedFollowUp } from '../../domain/entities/prepared-follow-up.js';
 import type { PreparedFollowUpRepository } from '../../domain/repositories/prepared-follow-up-repository.js';
 import type { FollowUpSource } from '../../domain/value-objects/follow-up-source.js';
 import type { Executor } from './executor.js';
@@ -21,15 +20,15 @@ const itemsSchema = z.array(
 export class PrismaPreparedFollowUpRepository implements PreparedFollowUpRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
-  async find(runId: string): Promise<PreparedFollowUpSnapshot | null> {
+  async find(runId: string): Promise<PreparedFollowUp | null> {
     const row = await this.db.runPreparedFollowUp.findUnique({ where: { runId } });
     if (!row) return null;
-    return {
+    return PreparedFollowUp.restore({
       // The CHECK constraint fixes the source; the items were written by the preparation.
       source: row.source as FollowUpSource,
       text: row.text,
       items: itemsSchema.parse(row.items),
-    };
+    });
   }
 
   async findRunIdsAmong(runIds: readonly string[]): Promise<ReadonlySet<string>> {

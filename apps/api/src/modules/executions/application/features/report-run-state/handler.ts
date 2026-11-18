@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { type PullRequestState } from '../../../domain/value-objects/pull-request-state.js';
 import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
 import { RunFailure } from '../../../domain/value-objects/run-failure.js';
+import type { RunFailureCode } from '../../../domain/value-objects/run-failure-code.js';
 import { type RunState } from '../../../domain/value-objects/run-state.js';
 import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
@@ -21,7 +21,7 @@ export interface ReportRunStateInput {
   runId: string;
   workerId: string;
   state: RunState;
-  failure: RunFailure | null;
+  failure: { code: RunFailureCode; detail: string } | null;
   workingCopy?: RunWorkingCopy | null;
   delivery?: RunDeliveryOutcome | null;
   sessionRef?: string | null;
@@ -32,9 +32,7 @@ export interface ReportRunStateInput {
   unchangedDetail?: string | null;
 }
 
-export interface ReportRunStateResult {
-  run: RunSnapshot;
-}
+export type ReportRunStateResult = void;
 
 /**
  * Decided by the Run's `reportState` under its row lock; wakes the Run's live log streams.
@@ -53,31 +51,31 @@ export class ReportRunStateHandler {
 
   async execute(input: ReportRunStateInput): Promise<ReportRunStateResult> {
     if (!isRunId(input.runId)) throw new RunNotFoundError();
-    input = await this.redacted(input);
+    const report = await this.redacted(input);
     let applied = false;
     // Under the Run's row lock, a cancel, an Answer or a sweep that came first is seen as the state
     // it left.
-    const changed = await this.runs.change(input.runId, (run) => {
+    const changed = await this.runs.change(report.runId, (run) => {
       applied = run.reportState(
-        input.workerId,
+        report.workerId,
         {
-          state: input.state,
-          failure: input.failure,
-          workingCopy: input.workingCopy ?? null,
-          delivery: input.delivery ?? null,
-          sessionRef: input.sessionRef ?? null,
-          pushedCommit: input.pushedCommit ?? null,
-          bringUpToDateStarted: input.bringUpToDateStarted ?? null,
-          unchanged: input.unchanged === true,
-          unchangedDetail: input.unchangedDetail ?? null,
+          state: report.state,
+          failure: report.failure,
+          workingCopy: report.workingCopy ?? null,
+          delivery: report.delivery ?? null,
+          sessionRef: report.sessionRef ?? null,
+          pushedCommit: report.pushedCommit ?? null,
+          bringUpToDateStarted: report.bringUpToDateStarted ?? null,
+          unchanged: report.unchanged === true,
+          unchangedDetail: report.unchangedDetail ?? null,
         },
         this.clock.now(),
       );
     });
     if (!changed) throw new RunNotFoundError();
-    if (!applied) return { run: changed.snapshot() };
-    if (input.failure?.code === 'preparation_failed' && input.pullRequestState) {
-      const observed = input.pullRequestState;
+    if (!applied) return;
+    if (report.failure?.code === 'preparation_failed' && report.pullRequestState) {
+      const observed = report.pullRequestState;
       const at = this.clock.now();
       await this.runs.change(changed.id, (run) => run.recordObservedPullRequestState(observed, at));
     }
@@ -86,18 +84,21 @@ export class ReportRunStateHandler {
     // its snapshot. A bring-up request that changed nothing leaves the Run as
     // it was, snapshot included.
     if (
-      !input.unchanged &&
+      !report.unchanged &&
       changed.claim.environmentFileSupplied &&
       changed.lifecycle.isFinal &&
       !changed.lifecycle.keepsEnvironmentFileForRetry
     ) {
       await this.snapshots.releaseFor(changed.id);
     }
-    return { run: changed.snapshot() };
   }
 
-  private async redacted(input: ReportRunStateInput): Promise<ReportRunStateInput> {
-    if (!input.failure && !input.workingCopy && !input.unchangedDetail) return input;
+  private async redacted(
+    input: ReportRunStateInput,
+  ): Promise<Omit<ReportRunStateInput, 'failure'> & { failure: RunFailure | null }> {
+    if (!input.failure && !input.workingCopy && !input.unchangedDetail) {
+      return { ...input, failure: null };
+    }
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
     return {
       ...input,

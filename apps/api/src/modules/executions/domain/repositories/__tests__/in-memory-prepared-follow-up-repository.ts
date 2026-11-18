@@ -1,5 +1,4 @@
-import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
-import type { PreparedFollowUpSnapshot } from '../../entities/prepared-follow-up-snapshot.js';
+import { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type { FollowUpSource } from '../../value-objects/follow-up-source.js';
 import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
@@ -8,8 +7,11 @@ import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 export class InMemoryPreparedFollowUpRepository implements PreparedFollowUpRepository {
   constructor(private readonly runs: InMemoryRunRepository) {}
 
-  find(runId: string): Promise<PreparedFollowUpSnapshot | null> {
-    return Promise.resolve(this.runs.prepared.get(runId) ?? null);
+  find(runId: string): Promise<PreparedFollowUp | null> {
+    const stored = this.runs.prepared.get(runId);
+    return Promise.resolve(
+      stored ? PreparedFollowUp.restore({ ...stored, items: [...stored.items] }) : null,
+    );
   }
 
   findRunIdsAmong(runIds: readonly string[]): Promise<ReadonlySet<string>> {

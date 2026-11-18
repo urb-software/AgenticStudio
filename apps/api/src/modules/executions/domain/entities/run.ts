@@ -26,6 +26,7 @@ import type { FollowUpConsumption, FollowUpOrigin } from './run-follow-up-facts.
 import type { FollowUpFacts, WorkerFacts } from './run-worker-facts.js';
 import type { ResumeFacts } from './run-resume-facts.js';
 import type { RetentionFacts } from '../value-objects/retention-facts.js';
+import type { RunSweepFacts } from '../value-objects/run-sweep-facts.js';
 import type { RunChanges } from './run-change-facts.js';
 import type { RunStartInput } from './run-start-facts.js';
 import type { RunStateReport } from './run-report-facts.js';
@@ -288,6 +289,19 @@ export class Run {
       pullRequestState: this.pullRequestStatus.state,
       pullRequestEndedAt: this.pullRequestStatus.endedAt,
       lastActivityAt: this.progress.lastActivityAt,
+    };
+  }
+
+  sweepFacts(): RunSweepFacts {
+    return {
+      state: this.lifecycle.state,
+      claimedBy: this.claim.claimedBy,
+      heartbeatAt: this.claim.heartbeatAt,
+      stepStartedAt: this.progress.stepStartedAt,
+      waitingSince: this.progress.waitingSince,
+      limits: this.progress.limits,
+      deliveryRequested: this.delivery.requested,
+      sessionRef: this.claim.sessionRef,
     };
   }
 

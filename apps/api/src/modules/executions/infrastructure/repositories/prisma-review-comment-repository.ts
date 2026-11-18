@@ -15,11 +15,11 @@ export class PrismaReviewCommentRepository implements ReviewCommentRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
   async find(runId: string): Promise<ReviewComments | null> {
-    const snapshot = await this.findSnapshot(runId);
+    const snapshot = await this.read(runId);
     return snapshot === null ? null : ReviewComments.restore(snapshot);
   }
 
-  async findSnapshot(runId: string): Promise<ReviewCommentsSnapshot | null> {
+  private async read(runId: string): Promise<ReviewCommentsSnapshot | null> {
     const row = await this.db.runReviewCommentSet.findUnique({ where: { runId } });
     if (!row) return null;
     const comments = commentsSchema.safeParse(row.comments);

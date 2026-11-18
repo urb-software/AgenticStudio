@@ -61,7 +61,7 @@ describe('AppendRunEventsHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!;
+    run = (await runs.claimNext(WORKER, T0))!.snapshot();
     build();
   });
 

@@ -2,7 +2,6 @@ import type { Provider } from '../value-objects/provider.js';
 import type { PullRequestState } from '../value-objects/pull-request-state.js';
 import type { ResumeFacts } from '../entities/run-resume-facts.js';
 import type { Run } from '../entities/run.js';
-import type { RunSnapshot } from '../entities/run-snapshot.js';
 import type { RunCancellation } from '../value-objects/run-cancellation.js';
 import type { RunFailure } from '../value-objects/run-failure.js';
 import type { RunState } from '../value-objects/run-state.js';
@@ -72,9 +71,9 @@ export interface RunRepository {
   ): Promise<Run | null>;
 
   /** Newest first (creation time, then id). `messages` is empty: `findById` reads it. */
-  listNewestFirst(): Promise<RunSnapshot[]>;
+  listNewestFirst(): Promise<Run[]>;
 
-  listByProjectNewestFirst(projectId: string): Promise<RunSnapshot[]>;
+  listByProjectNewestFirst(projectId: string): Promise<Run[]>;
 
   summarize(): Promise<RunsSummary>;
 
@@ -83,7 +82,7 @@ export interface RunRepository {
    * the worker that last claimed it. Serialized against concurrent claims. `null`
    * when none is eligible.
    */
-  claimNext(workerId: string, now: Date): Promise<RunSnapshot | null>;
+  claimNext(workerId: string, now: Date): Promise<Run | null>;
 
   /**
    * Only if the Run is still in `from`; `null` if not. For Studio's own sweeps,
@@ -94,9 +93,9 @@ export interface RunRepository {
     from: 'queued' | 'waiting_for_operator',
     cancellation: RunCancellation,
     now: Date,
-  ): Promise<RunSnapshot | null>;
+  ): Promise<Run | null>;
 
-  listWaiting(): Promise<RunSnapshot[]>;
+  listWaiting(): Promise<Run[]>;
 
   /**
    * At most once per lease period, stored, so an API that keeps restarting cannot keep a dead

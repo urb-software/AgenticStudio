@@ -19,7 +19,7 @@ export class CancelLongWaitingRunsHandler {
     const rule = LongWaitRule.at(now);
     let cancelled = 0;
     for (const run of await this.runs.listWaiting()) {
-      const cancellation = rule.cancellationFor(run);
+      const cancellation = rule.cancellationFor(run.sweepFacts());
       if (!cancellation) continue;
       // Conditional: an answer or an operator's cancel in between wins.
       if (await this.runs.cancelUnheld(run.id, 'waiting_for_operator', cancellation, now)) {

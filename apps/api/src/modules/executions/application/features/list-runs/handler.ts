@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
+import { runView, type RunView } from '../../run-view.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
@@ -7,7 +7,7 @@ import {
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 
 export type ListRunsResult = {
-  run: RunSnapshot;
+  run: RunView;
   preparedFollowUp: boolean;
 }[];
 
@@ -22,6 +22,6 @@ export class ListRunsHandler {
   async execute(): Promise<ListRunsResult> {
     const runs = await this.runs.listNewestFirst();
     const prepared = await this.preparedFollowUps.findRunIdsAmong(runs.map((run) => run.id));
-    return runs.map((run) => ({ run, preparedFollowUp: prepared.has(run.id) }));
+    return runs.map((run) => ({ run: runView(run), preparedFollowUp: prepared.has(run.id) }));
   }
 }

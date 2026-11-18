@@ -17,7 +17,6 @@ import { type FollowUpOrigin } from '../../entities/run-follow-up-facts.js';
 import { type ResumeFacts } from '../../entities/run-resume-facts.js';
 import { type RunStepRecord } from '../../entities/run-step-facts.js';
 import { Run } from '../../entities/run.js';
-import { type RunSnapshot } from '../../entities/run-snapshot.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { isFinalRunState } from '../../value-objects/run-state.js';
 import { type RunCancellation } from '../../value-objects/run-cancellation.js';
@@ -144,8 +143,8 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve();
   }
 
-  listNewestFirst(): Promise<RunSnapshot[]> {
-    return Promise.resolve([...this.runs].reverse().map((run) => this.listed(run).snapshot()));
+  listNewestFirst(): Promise<Run[]> {
+    return Promise.resolve([...this.runs].reverse().map((run) => this.listed(run)));
   }
 
   summarize(): Promise<RunsSummary> {
@@ -157,16 +156,16 @@ export class InMemoryRunRepository implements RunRepository {
     });
   }
 
-  listByProjectNewestFirst(projectId: string): Promise<RunSnapshot[]> {
+  listByProjectNewestFirst(projectId: string): Promise<Run[]> {
     return Promise.resolve(
       [...this.runs]
         .reverse()
         .filter((run) => run.projectId === projectId)
-        .map((run) => this.listed(run).snapshot()),
+        .map((run) => this.listed(run)),
     );
   }
 
-  claimNext(workerId: string, now: Date): Promise<RunSnapshot | null> {
+  claimNext(workerId: string, now: Date): Promise<Run | null> {
     const next = HandOutRule.for(workerId).next(this.runs);
     if (!next) return Promise.resolve(null);
     if (next.state === 'queued') {
@@ -182,7 +181,7 @@ export class InMemoryRunRepository implements RunRepository {
     } else {
       Object.assign(next, { claimedBy: workerId, heartbeatAt: now });
     }
-    return Promise.resolve(this.view(next).snapshot());
+    return Promise.resolve(this.view(next));
   }
 
   listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {
@@ -212,7 +211,7 @@ export class InMemoryRunRepository implements RunRepository {
     from: 'queued' | 'waiting_for_operator',
     cancellation: RunCancellation,
     now: Date,
-  ): Promise<RunSnapshot | null> {
+  ): Promise<Run | null> {
     const run = this.runs.find((candidate) => candidate.id === runId);
     if (!run || run.state !== from) return Promise.resolve(null);
     Object.assign(run, {
@@ -222,14 +221,14 @@ export class InMemoryRunRepository implements RunRepository {
       waitingSince: null,
       followUpQueued: false,
     });
-    return Promise.resolve(this.view(run).snapshot());
+    return Promise.resolve(this.view(run));
   }
 
-  listWaiting(): Promise<RunSnapshot[]> {
+  listWaiting(): Promise<Run[]> {
     return Promise.resolve(
       this.runs
         .filter((run) => run.state === 'waiting_for_operator')
-        .map((run) => this.listed(run).snapshot()),
+        .map((run) => this.listed(run)),
     );
   }
 

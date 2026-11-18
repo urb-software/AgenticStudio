@@ -1,12 +1,11 @@
 import type { PreparedFollowUp } from '../entities/prepared-follow-up.js';
-import type { PreparedFollowUpSnapshot } from '../entities/prepared-follow-up-snapshot.js';
 import type { FollowUpSource } from '../value-objects/follow-up-source.js';
 
 export const PREPARED_FOLLOW_UP_REPOSITORY = Symbol('PREPARED_FOLLOW_UP_REPOSITORY');
 
 /** At most one prepared Follow-up per Run. */
 export interface PreparedFollowUpRepository {
-  find(runId: string): Promise<PreparedFollowUpSnapshot | null>;
+  find(runId: string): Promise<PreparedFollowUp | null>;
 
   findRunIdsAmong(runIds: readonly string[]): Promise<ReadonlySet<string>>;
 
