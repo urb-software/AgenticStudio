@@ -266,11 +266,7 @@ describe('FetchCloneHandler', () => {
 
   describe('an SSH Repository', () => {
     const SSH_URL = 'ssh://git@git.example.com:2222/acme/shop.git';
-    const pinned = new Ed25519DeployKeyGenerator()
-      .generate('host')
-      .publicKey.split(' ')
-      .slice(0, 2)
-      .join(' ');
+    const pinned = testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
 
     async function fetchingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');

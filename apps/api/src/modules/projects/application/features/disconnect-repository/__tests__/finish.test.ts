@@ -166,11 +166,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
         integrationBranch: 'dev',
         deployKey,
       });
-      const pending = new Ed25519DeployKeyGenerator()
-        .generate('host')
-        .publicKey.split(' ')
-        .slice(0, 2)
-        .join(' ');
+      const pending = testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
       await connections.change(projectId, (r) => {
         r.awaitHostKey(pending);
       });

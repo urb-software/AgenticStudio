@@ -280,16 +280,8 @@ describe('CloneRepositoryHandler', () => {
 
   describe('an SSH Repository', () => {
     const SSH_URL = 'git@github.com:acme/shop.git';
-    const trusted = new Ed25519DeployKeyGenerator()
-      .generate('host')
-      .publicKey.split(' ')
-      .slice(0, 2)
-      .join(' ');
-    const pinned = new Ed25519DeployKeyGenerator()
-      .generate('host')
-      .publicKey.split(' ')
-      .slice(0, 2)
-      .join(' ');
+    const trusted = testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
+    const pinned = testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
 
     async function connectingOverSsh(pinnedHostKey: string | null) {
       const deployKey = await deployKeys.create('Shop');
