@@ -75,6 +75,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - A file under `domain/value-objects/` exports a constant that is not a list of allowed values (an array or object of literals written `as const`) only if it also exports a class (Issue #215).
 - A file under `domain/value-objects/` exports at most one class (error classes aside) or, with no class, at most one record; with a class, any record it exports is named after the class. Lists of allowed values, the union types derived from them, type guards and typed-id brands are not records (Issue #215).
 - No directory named `factories` under a module's `domain/` or `application/` (tests are not checked), and no class under `domain/` whose public members are all methods returning a different class (Issue #215). The check for static methods that do not return an instance of their class is Issue #216.
+- In `domain/`, tests not checked: a public static method of a class under `entities/` or `value-objects/` declares its own class as its return type (optionally with `| undefined` or `| null`), and a public static function property or accessor is refused; private statics may only prepare data for a factory. A top-level function is an exported type guard, or unexported, at most ten lines and naming no type declared in or imported from `domain/`. A class other than an `Error` subclass has at least one instance member. Nothing imports `node:crypto` or `crypto`, `fs`, `fs/promises`, `child_process`, `net`, `dns`, `dns/promises`, `http`, `https`, `tls`, `dgram`, `timers`, `timers/promises` or `worker_threads`, in the `node:` or the bare form. The one exemption, named in the check, is the SHA-256 fingerprint of a public host key (`host-key.ts`): it is deterministic and uses no random source, key or file.
 - The methods of every repository interface are pinned in `tests/architecture/api/pinned/repository-methods.json`, each with its kind (`load`, `save`, `query`, `atomic` or `set-wide`): adding, renaming or removing a method fails `pinned.test.ts` until the record is changed in review, and each atomic or set-wide method carries a one-line reason it cannot be a load, a call on the domain object and a save. The failure message names the file and says what to do.
 - The files directly in a module's `application/` folder are pinned in `tests/architecture/api/pinned/application-collaborators.json`, each with the step of rule 3 that was tried and why it did not apply: a new one fails until the record is changed in review. The Epic aimed for none; one remains (`executions/application/run-lookup-requests.ts`, with its reason in the record).
 - The three pinned records state decisions and are never an allowlist: no entry makes a violation of a gate check pass. The pull request template's checkbox points to them.
@@ -177,6 +178,14 @@ Positive and negative fixtures prove the rules catch violations:
 | A `domain/value-objects/` file exports a constant that is not a list beside a class | PASS |
 | A `domain/` class only has methods returning another class | FAIL |
 | A `domain/` class has state, or methods returning its own class | PASS |
+| A public static method of an entity or value object returns its own class | PASS |
+| A public static method of an entity or value object returns something else, or declares no return type | FAIL |
+| A `domain/` top-level function is an exported type guard, or a short unexported helper without domain types | PASS |
+| A `domain/` unexported function is over ten lines or names a domain type | FAIL |
+| A `domain/` class has an instance member, or is an error class | PASS |
+| A `domain/` class has no instance member | FAIL |
+| `domain/` imports no runtime module (tests are not checked) | PASS |
+| `domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module | FAIL |
 | `domain/` imports only `domain/` and plain libraries | PASS |
 | `domain/` imports from `application/ports/` | FAIL |
 | A domain test imports only the domain and test helpers | PASS |

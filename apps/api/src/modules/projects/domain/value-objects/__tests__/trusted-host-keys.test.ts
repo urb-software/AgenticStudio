@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { Ed25519DeployKeyGenerator } from '../../../infrastructure/adapters/ed25519-deploy-key-generator.js';
+import { testDeployKey } from './test-deploy-key.js';
 import { type KnownHost } from '../known-host.js';
 import { KnownHostName } from '../known-host-name.js';
 import { TrustedHostKeys } from '../trusted-host-keys.js';
 
-const hostKey = (): string =>
-  new Ed25519DeployKeyGenerator().generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string => testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
 const GITHUB_KEY = hostKey();
 const GITHUB_SECOND_KEY = hostKey();
 const PORT_KEY = hostKey();

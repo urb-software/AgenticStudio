@@ -3,7 +3,9 @@ function classifyAddress(address: string): string {
 }
 
 export class RemoteAddress {
-  static classify(address: string): string {
-    return classifyAddress(address);
+  private constructor(readonly range: string) {}
+
+  static of(address: string): RemoteAddress {
+    return new RemoteAddress(classifyAddress(address));
   }
 }

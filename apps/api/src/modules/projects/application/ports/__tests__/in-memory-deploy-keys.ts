@@ -1,6 +1,6 @@
 import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
 import { type RepositoryConnection } from '../../../domain/entities/repository-connection.js';
-import { Ed25519DeployKeyGenerator } from '../../../infrastructure/adapters/ed25519-deploy-key-generator.js';
+import { testDeployKey } from '../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { DeployKeyComment } from '../../../domain/value-objects/deploy-key-comment.js';
 import { type KnownHost } from '../../../domain/value-objects/known-host.js';
 import { TrustedHostKeys } from '../../../domain/value-objects/trusted-host-keys.js';
@@ -20,9 +20,7 @@ export class InMemoryDeployKeys implements DeployKeys {
   ) {}
 
   async create(projectName: string): Promise<StoredDeployKey> {
-    const { privateKey, publicKey } = new Ed25519DeployKeyGenerator().generate(
-      DeployKeyComment.of(projectName).value,
-    );
+    const { privateKey, publicKey } = testDeployKey(DeployKeyComment.of(projectName).value);
     return {
       publicKey,
       secretRef: await this.secrets.put(privateKey, { owner: DEPLOY_KEY_SECRET_OWNER }),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { RemoteAddress, type RemoteAddressRange } from '../remote-address.js';
+import { RemoteAddress } from '../remote-address.js';
+import type { RemoteAddressRange } from '../remote-address-range.js';
 import { HostLiteral } from '../host-literal.js';
 
 describe('RemoteAddress.range', () => {

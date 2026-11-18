@@ -14,7 +14,7 @@ import {
   HOST_KEY_CHANGED_DETAIL,
   UNEXPECTED_FAILURE_DETAIL,
 } from '../../../../domain/value-objects/repository-failure.js';
-import { Ed25519DeployKeyGenerator } from '../../../../infrastructure/adapters/ed25519-deploy-key-generator.js';
+import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';

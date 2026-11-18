@@ -10,7 +10,7 @@ import {
 } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
-import { Ed25519DeployKeyGenerator } from '../../../../infrastructure/adapters/ed25519-deploy-key-generator.js';
+import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { HostKey } from '../../../../domain/value-objects/host-key.js';
 import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
@@ -25,8 +25,7 @@ import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.j
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const TRUSTED_URL = 'git@github.com:acme/shop.git';
 const UNLISTED_URL = 'ssh://git@git.example.com:2222/acme/shop.git';
-const hostKey = (): string =>
-  new Ed25519DeployKeyGenerator().generate('host').publicKey.split(' ').slice(0, 2).join(' ');
+const hostKey = (): string => testDeployKey('host').publicKey.split(' ').slice(0, 2).join(' ');
 const GITHUB_KEY = hostKey();
 
 describe('VerifyRepositoryHandler', () => {

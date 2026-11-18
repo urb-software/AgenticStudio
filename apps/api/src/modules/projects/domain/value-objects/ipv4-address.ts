@@ -1,4 +1,4 @@
-import type { RemoteAddressRange } from './remote-address.js';
+import type { RemoteAddressRange } from './remote-address-range.js';
 
 type Ipv4Range = readonly [base: number, prefix: number];
 

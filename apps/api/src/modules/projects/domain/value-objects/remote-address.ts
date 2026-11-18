@@ -1,13 +1,12 @@
 import { Ipv4Address } from './ipv4-address.js';
 import { Ipv6Address } from './ipv6-address.js';
+import type { RemoteAddressRange } from './remote-address-range.js';
 
 /**
  * The address policy for Git remotes (security.md §4): `blocked` addresses are never connected to,
  * `private` ones only under `STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true`, the rest are `public`. Pure; shared
  * by URL validation and the Git adapter, which checks every address a host name resolves to.
  */
-export type RemoteAddressRange = 'public' | 'private' | 'blocked';
-
 export const PRIVATE_REMOTES_SETTING = 'STUDIO_GIT_ALLOW_PRIVATE_REMOTES';
 
 export const REFUSED_RANGE_REASON: Record<Exclude<RemoteAddressRange, 'public'>, string> = {

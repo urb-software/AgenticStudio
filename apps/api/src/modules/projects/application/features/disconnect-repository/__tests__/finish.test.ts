@@ -7,7 +7,7 @@ import { GitOperationError } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { DisconnectRepositoryHandler } from '../handler.js';
-import { Ed25519DeployKeyGenerator } from '../../../../infrastructure/adapters/ed25519-deploy-key-generator.js';
+import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';

@@ -1,5 +1,5 @@
 import { Ipv4Address } from './ipv4-address.js';
-import type { RemoteAddressRange } from './remote-address.js';
+import type { RemoteAddressRange } from './remote-address-range.js';
 
 /** An IPv6 address as its eight 16-bit groups. */
 export class Ipv6Address {
