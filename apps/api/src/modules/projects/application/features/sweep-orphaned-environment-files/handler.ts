@@ -10,8 +10,8 @@ import {
 } from '../../ports/environment-file-contents.js';
 
 /**
- * Only contents past the grace period are candidates (two first saves can race); a referenced one
- * is never deleted. Never throws.
+ * A content is orphaned when two first saves race; only contents past the grace period are
+ * candidates, and a referenced one is never deleted. Never throws.
  */
 @Injectable()
 export class SweepOrphanedEnvironmentFilesHandler {
