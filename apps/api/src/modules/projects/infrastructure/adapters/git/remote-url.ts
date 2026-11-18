@@ -6,17 +6,13 @@ export type GitTransport = 'ssh' | 'https' | 'file';
 
 export interface RemoteUrl {
   transport: GitTransport;
-  /** The URL as passed to Git: validated, never a local path or option-like value. */
   url: string;
 }
 
 const HOSTNAME =
   /^(?=.{1,253}$)[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
-/** A bracketed IPv6 literal as the URL parser normalizes it. */
 const IPV6_LITERAL = /^\[[\da-f:.]+\]$/i;
-/** An SSH login name: no option-like or shell-significant characters. */
 const SSH_USER = /^[a-z_][a-z\d._-]{0,31}$/i;
-/** `user@host:path`, the scp-like SSH syntax (no slash before the colon). */
 const SCP_LIKE = /^([^@/:\s]+)@([^@/:\s]+):(.+)$/;
 // eslint-disable-next-line no-control-regex -- the point is to reject control characters
 const UNSAFE_CHARACTERS = /[\s\u0000-\u001f\u007f\\]/;
@@ -29,7 +25,7 @@ function checkHost(host: string): void {
   if (!HOSTNAME.test(host) && !IPV6_LITERAL.test(host)) {
     reject('the host is not a valid host name');
   }
-  // A numeric host the resolver would read some other way than intended (Issue #69).
+  // A numeric host the resolver would read some other way than intended.
   if (RemoteAddress.literalOf(host).kind === 'invalid') reject('the host is not a valid host name');
 }
 
@@ -108,9 +104,7 @@ export function parseRemoteUrl(
   return { transport, url: url.href };
 }
 
-/** Where a remote's server listens. */
 export interface RemoteEndpoint {
-  /** Host name or IP address, without brackets. */
   host: string;
   port: number;
 }

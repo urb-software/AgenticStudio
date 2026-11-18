@@ -34,17 +34,11 @@ export interface SetEnvironmentFileInput {
   content: string;
 }
 
-/** What the operator may see of the file that was set. */
 export type SetEnvironmentFileResult = EnvironmentFileSnapshot;
 
 /**
- * Command (Issue #104): sets the project's Environment file, new or replacing the one there.
- * The content is stored in the secret store ({@link EnvironmentFileContents}); the project keeps the
- * reference with the path, size and time, and the replaced content is deleted. When the
- * project's Clone is ready, a path tracked at the integration branch's current commit is
- * refused (the agent worker re-checks against the Run's start commit). Returns what the
- * operator may see. Throws {@link ProjectNotFoundError}, `InvalidEnvironmentFilePathError`
- * (including {@link EnvironmentFilePathTrackedError}) or `InvalidEnvironmentFileContentError`.
+ * Throws {@link ProjectNotFoundError}, `InvalidEnvironmentFilePathError` (including
+ * {@link EnvironmentFilePathTrackedError}) or `InvalidEnvironmentFileContentError`.
  */
 @Injectable()
 export class SetEnvironmentFileHandler {

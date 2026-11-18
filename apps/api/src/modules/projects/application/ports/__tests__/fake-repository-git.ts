@@ -40,7 +40,6 @@ export class FakeRepositoryGit implements RepositoryGit {
 
   scanHostKey = vi.fn<RepositoryGit['scanHostKey']>(() => Promise.reject(new Error('not used')));
 
-  /** The Git operations called so far, in order. */
   get calls(): string[] {
     return OPERATIONS.flatMap((name) =>
       this[name].mock.invocationCallOrder.map((order) => ({ name, order })),

@@ -19,9 +19,8 @@ export interface RemoveEnvironmentFileInput {
 }
 
 /**
- * Command (Issue #104): removes the project's Environment file and deletes its content from
- * the secret store. Runs claimed earlier keep their own snapshot; later Runs get none.
- * Removing a file that is not there changes nothing. Throws {@link ProjectNotFoundError}.
+ * Removing none changes nothing; Runs claimed earlier keep their snapshot. Throws
+ * {@link ProjectNotFoundError}.
  */
 @Injectable()
 export class RemoveEnvironmentFileHandler {

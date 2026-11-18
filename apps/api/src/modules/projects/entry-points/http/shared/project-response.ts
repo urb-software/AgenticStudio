@@ -2,10 +2,8 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 /**
- * A project in API responses: the create response and each list item. Shared by several
- * features of this module, so it lives in contracts/http/ (backend.md §2), not in one
- * feature's schema.ts. Within this module only: other modules must not import it, and it is
- * not re-exported from a contracts/index.ts. Self-contained: it takes a plain shape.
+ * A project in API responses (create and list items). Within this module only: other modules
+ * must not import it.
  */
 export const projectResponseSchema = z
   .object({

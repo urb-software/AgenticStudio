@@ -13,21 +13,7 @@ import {
 } from '../../ports/deploy-keys.js';
 
 /**
- * Feature: deleting Deploy keys no Repository references (Issue #76). A key is orphaned when
- * the process stops between storing it and saving the Repository's reference, or when its
- * delete fails after a failed SSH Repository was replaced over HTTPS.
- *
- * Only secrets under the Deploy-key owner label are candidates, and of those only the ones
- * older than the grace period, by the secret store's clock. A candidate any Repository still
- * references, in any state, is never deleted. A key older than the grace period becomes
- * referenced again only by a Retry that keeps it, and that Retry is saved only while its
- * Repository still references the key (`keepsDeployKey`), so a key the sweep found
- * unreferenced is never saved again.
- *
- * Runs at start-up, after the repository queue is reconciled and before its worker starts
- * (`RepositoryStartupRecovery`), and after a Connect fails to delete a key (Connect repeats the selection inline, #163). Each delete is
- * logged by the secret's id only. Never throws: a failure is logged (redacted) and the next
- * sweep tries again.
+ * Only keys past the grace period are candidates; a referenced key is never deleted. Never throws.
  */
 @Injectable()
 export class SweepOrphanedDeployKeysHandler {

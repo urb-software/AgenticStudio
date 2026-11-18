@@ -2,14 +2,11 @@ import { generateKeyPairSync, randomBytes } from 'node:crypto';
 
 /** A newly generated Deploy key. `privateKey` goes to the secret store only. */
 export interface GeneratedDeployKey {
-  /** OpenSSH private key (`-----BEGIN OPENSSH PRIVATE KEY-----`), unencrypted. */
   privateKey: string;
-  /** One OpenSSH public key line: `ssh-ed25519 <base64> <comment>`. */
   publicKey: string;
 }
 
 const ED25519 = 'ssh-ed25519';
-/** Longest Deploy key comment after `studio-`. */
 const COMMENT_NAME_MAX_LENGTH = 64;
 
 function sshString(value: Buffer | string): Buffer {
@@ -26,18 +23,15 @@ function uint32(value: number): Buffer {
 }
 
 /**
- * The project's Deploy key (Issue #62): the SSH key pair Studio generates to reach a private
- * Repository. Generation is random, from Node's crypto; nothing here stores, logs or sends a
- * key.
+ * The project's Deploy key: the SSH key pair Studio generates to reach a private Repository; nothing
+ * here stores, logs or sends a key.
  */
 export class DeployKey {
   private constructor() {}
 
   /**
-   * Generates an ed25519 Deploy key with Node's crypto, serialised to the formats OpenSSH
-   * reads: the `openssh-key-v1` private key (no passphrase: it lives in the secret store and
-   * is written owner-only for one Git operation at a time) and a public key line with
-   * `comment`.
+   * Generates an ed25519 Deploy key in the formats OpenSSH reads. No passphrase: the key lives in the
+   * secret store and is written owner-only for one Git operation at a time.
    */
   static generate(comment: string): GeneratedDeployKey {
     const { privateKey } = generateKeyPairSync('ed25519');

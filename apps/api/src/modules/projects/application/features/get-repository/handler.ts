@@ -15,12 +15,10 @@ export interface GetRepositoryInput {
   projectId: string;
 }
 
-/** The project's Repository, or `null` when none is connected. */
 export type GetRepositoryResult = RepositoryConnectionSnapshot | null;
 
 /**
- * Query: the project's Repository (the web app polls it while `connecting`), or `null` when
- * none is connected. Throws {@link ProjectNotFoundError} for an unknown project.
+ * `null` when none is connected. Throws {@link ProjectNotFoundError} for an unknown project.
  */
 @Injectable()
 export class GetRepositoryHandler {

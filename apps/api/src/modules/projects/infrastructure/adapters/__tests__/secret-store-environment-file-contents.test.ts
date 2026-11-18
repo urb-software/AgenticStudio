@@ -6,8 +6,6 @@ import {
   SecretStoreEnvironmentFileContents,
 } from '../secret-store-environment-file-contents.js';
 
-// Issue #104: Environment file contents in the secret store, under their own owner label.
-
 describe('SecretStoreEnvironmentFileContents', () => {
   let secrets: InMemorySecretStore;
   let contents: SecretStoreEnvironmentFileContents;

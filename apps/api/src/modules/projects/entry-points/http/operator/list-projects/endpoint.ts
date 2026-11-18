@@ -5,7 +5,6 @@ import { toProjectResponse } from '../../shared/project-response.js';
 import { ListProjectsHandler } from '../../../../application/features/list-projects/handler.js';
 import { ProjectListResponseDto } from './schema.js';
 
-/** `GET /api/projects`, behind the global session guard. */
 @ApiTags('projects')
 @Controller('projects')
 export class ListProjectsEndpoint {

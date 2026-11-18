@@ -1,12 +1,10 @@
 import { REFUSED_RANGE_REASON, RemoteAddress } from './remote-address.js';
 
-/** Longest accepted Repository URL, in characters (the Git adapter's own limit). */
 export const REPOSITORY_URL_MAX_LENGTH = 2048;
 
 const EXAMPLE = 'e.g. https://github.com/owner/repo.git';
 const SSH_EXAMPLE = 'e.g. git@github.com:owner/repo.git';
 
-/** The URL is not one a Repository can be connected with; `message` is the field error. */
 export class InvalidRepositoryUrlError extends Error {
   constructor(message: string) {
     super(message);
@@ -14,11 +12,8 @@ export class InvalidRepositoryUrlError extends Error {
   }
 }
 
-/** A scheme followed by `://`. */
 const SCHEME = /^([a-z][a-z\d+.-]*):\/\//i;
-/** `user@host:path`, the scp-like SSH syntax (no slash before the colon). */
 const SCP_LIKE = /^([^@/:\s]+)@([^@/:\s]+):(.+)$/;
-/** A local path: absolute, relative, home-relative, or a Windows drive or UNC path. */
 const LOCAL_PATH = /^(?:[/.~]|[a-z]:[\\/]|\\\\)/i;
 // eslint-disable-next-line no-control-regex -- the point is to reject control characters
 const UNSAFE_CHARACTERS = /[\s\u0000-\u001f\u007f\\]/;
@@ -28,21 +23,17 @@ const IPV6_LITERAL = /^\[[\da-f:.]+\]$/i;
 /** An SSH login name: no option-like or shell-significant characters (the Git adapter's rule). */
 const SSH_USER = /^[a-z_][a-z\d._-]{0,31}$/i;
 
-/** URL protocols of SSH remotes, whose default port is 22. */
 const SSH_SCHEMES = new Set(['ssh:', 'git+ssh:', 'ssh+git:']);
 
 function invalid(message: string): never {
   throw new InvalidRepositoryUrlError(message);
 }
 
-/** How {@link RepositoryUrl.parse} treats an IP-literal host (Issue #69). */
 export interface AddressPolicy {
-  /** `STUDIO_GIT_ALLOW_PRIVATE_REMOTES`: loopback and private addresses are allowed. */
   allowPrivate: boolean;
 }
 
 export interface RepositoryUrlOptions {
-  /** The test-only fixture-remote setting. */
   allowFileRemotes?: boolean;
   /**
    * Checks an IP-literal host against the address policy (a new URL at Connect). Without it no
@@ -73,13 +64,11 @@ function trimSlashes(path: string): string {
   return path.slice(start, end);
 }
 
-/** The repository path without leading or trailing slashes and without a trailing `.git`. */
 function normalizePath(path: string): string {
   const trimmed = trimSlashes(path);
   return trimmed.toLowerCase().endsWith('.git') ? trimSlashes(trimmed.slice(0, -4)) : trimmed;
 }
 
-/** Where an SSH URL's Git host listens: its host (lower case) and port (22 by default). */
 export interface SshRemote {
   host: string;
   port: number;
@@ -102,20 +91,15 @@ function parseScpLike(
 }
 
 /**
- * The URL a Repository is connected with: public over anonymous HTTPS (Issue #60), or
- * private over SSH with the project's Deploy key (Issue #62), as `user@host:path` or
- * `ssh://`. `file://` is accepted only under the test-only fixture-remote setting. The Git
- * adapter validates the URL again before Git starts; this is the operator-facing rule with
- * field-error messages.
+ * The URL a Repository is connected with: public over anonymous HTTPS, or private over SSH with the
+ * Deploy key (`user@host:path` or `ssh://`). `file://` only under the test-only fixture-remote setting.
+ * The Git adapter validates it again before Git starts.
  */
 export class RepositoryUrl {
   /**
-   * The identity of a remote (Issue #60 clarification 6): host (lower-cased) plus repository
-   * path, without the scheme, user, default port, trailing `/` or `.git`. So the `https://`,
-   * `ssh://git@` and scp-like (`git@host:owner/repo.git`) forms of one repository are the same
-   * remote. A non-default port stays (`host:8443/owner/repo`): two servers on one host are
-   * different remotes. The path keeps its case. Returns `null` for input that names no host
-   * and path.
+   * The identity of a remote: host (lower-cased) plus repository path, without scheme, user, default
+   * port, trailing `/` or `.git`, so the HTTPS, `ssh://` and scp-like forms of one repository are one
+   * remote. A non-default port stays; the path keeps its case. `null` when no host and path.
    */
   static identityOf(input: string): string | null {
     const scp = SCHEME.test(input) ? null : SCP_LIKE.exec(input);
@@ -150,11 +134,8 @@ export class RepositoryUrl {
   }
 
   private constructor(
-    /** The URL as entered (trimmed); what Git is given and what the operator sees. */
     readonly value: string,
-    /** {@link RepositoryUrl.identityOf}: what makes two URLs the same remote. */
     readonly identity: string,
-    /** Set exactly for an SSH URL. */
     readonly ssh: SshRemote | null = null,
   ) {}
 
@@ -220,7 +201,6 @@ export class RepositoryUrl {
     return new RepositoryUrl(input, identity);
   }
 
-  /** An `ssh://[user@]host[:port]/path` URL: a login name, never a password. */
   private static parseSshUrl(
     input: string,
     url: URL,

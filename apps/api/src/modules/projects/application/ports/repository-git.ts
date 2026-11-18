@@ -1,20 +1,15 @@
-/**
- * Git port of the `projects` module: the only way a use case reaches a Repository or its
- * Clone (security.md §4, "Git adapter hardening baseline"). The adapter behind it runs the
- * system `git` binary on Linux only; nothing here depends on how.
- */
+/** Git port: the only way a use case reaches a Repository or its Clone (security.md §4). */
 
 import {
   REPOSITORY_FAILURE_CODES,
   type RepositoryFailureCode,
 } from '../../domain/value-objects/repository-failure.js';
 
-/** DI token for the {@link RepositoryGit} adapter. */
 export const REPOSITORY_GIT = Symbol('REPOSITORY_GIT');
 
 /** SSH material for one operation, supplied by the caller (never stored by the adapter). */
 export interface SshCredentials {
-  /** The Project's Deploy key: an OpenSSH private key, PEM-armoured. */
+  /** An OpenSSH private key, PEM-armoured. */
   privateKey: string;
   /**
    * The only host keys accepted for the remote (at least one): `<key-type> <base64>`, e.g.
@@ -23,7 +18,6 @@ export interface SshCredentials {
   hostKeys: readonly string[];
 }
 
-/** Per-operation options. */
 export interface GitOperationOptions {
   /** Aborts the operation: the Git process tree is killed and the call rejects with an `AbortError`. */
   signal?: AbortSignal;
@@ -36,18 +30,12 @@ export interface GitOperationOptions {
   ssh?: SshCredentials;
 }
 
-/** What the Repository says about itself. */
 export interface RemoteInspection {
   /** The remote's default branch (its `HEAD`), or `null` when it does not advertise one. */
   defaultBranch: string | null;
-  /** Whether the requested branch exists on the remote. */
   branchExists: boolean;
 }
 
-/**
- * The fixed failure reasons of a Git operation (Epic #55): the Repository failure codes, so a
- * reason is stored as it is, except `interrupted`, which only the job records.
- */
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -55,12 +43,9 @@ export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILU
 );
 
 /**
- * Operations on one project are serialized by the adapter (in-process lock: one API
- * process owns the data directory). Errors: {@link GitRequestRejectedError} before Git
- * starts, {@link GitUnsupportedPlatformError} off Linux, an `AbortError` on abort, and
- * {@link GitOperationError} for everything else, unexpected failures as `unknown`. If the
- * API process crashes mid-operation, the Git process it started is orphaned until it ends
- * on its own; start-up removes the stale temporary files and partial Clones.
+ * Operations on one project are serialized by the adapter (in-process lock). Errors:
+ * {@link GitRequestRejectedError} before Git starts, {@link GitUnsupportedPlatformError} off
+ * Linux, `AbortError` on abort, {@link GitOperationError} otherwise (`unknown` if unexpected).
  */
 export interface RepositoryGit {
   /**
@@ -88,16 +73,13 @@ export interface RepositoryGit {
   ): Promise<{ commit: string }>;
 
   /**
-   * Retrieves the host key an `ssh` remote's server presents (`ssh-keyscan`, under the same
-   * isolated environment), within the caller's `timeoutMs` (verify passes 30 s; at most the
-   * adapter's 2-minute limit), preferring ed25519, then ECDSA, then RSA:
-   * `<key-type> <base64>`. Nothing is trusted, stored or authenticated: the caller has the
-   * operator confirm its fingerprint. Fails with `host_unreachable` (or `timeout`) when the
-   * host presents no usable key.
+   * Retrieves the host key an `ssh` remote presents (`<key-type> <base64>`; ed25519, ECDSA,
+   * then RSA). Nothing is trusted or stored: the operator confirms its fingerprint. Fails with
+   * `host_unreachable` (or `timeout`) when the host presents no usable key.
    */
   scanHostKey(remoteUrl: string, options?: GitOperationOptions): Promise<{ hostKey: string }>;
 
-  /** Brings `branch` of the existing Clone up to date with the remote; returns its commit id. */
+  /** Brings `branch` of the existing Clone up to date; throws {@link GitCloneMissingError} without one. */
   fetch(
     projectId: string,
     remoteUrl: string,
@@ -113,9 +95,8 @@ export interface RepositoryGit {
   ): Promise<{ commit: string }>;
 
   /**
-   * Whether `path` (a relative POSIX path, already validated as an Environment file path)
-   * names a file or directory tracked at `commit` in the Project's Clone (Issue #104). Throws
-   * {@link GitCloneMissingError} when there is no Clone, and {@link GitRequestRejectedError}
+   * Whether the validated relative POSIX `path` is tracked at `commit` in the Project's Clone.
+   * Throws {@link GitCloneMissingError} when there is no Clone, {@link GitRequestRejectedError}
    * for a malformed commit id or path.
    */
   isPathTracked(
@@ -129,7 +110,6 @@ export interface RepositoryGit {
   removeClone(projectId: string, options?: GitOperationOptions): Promise<void>;
 }
 
-/** A Git operation failed; `reason` is one of the fixed codes, `detail` is redacted Git output. */
 export class GitOperationError extends Error {
   constructor(
     readonly reason: GitFailureReason,

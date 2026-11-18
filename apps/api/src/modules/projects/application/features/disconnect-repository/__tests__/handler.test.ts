@@ -63,7 +63,6 @@ describe('DisconnectRepositoryHandler', () => {
     });
   }
 
-  /** A late write of an aborted job: whether the transition applied. */
   async function late(write: (repository: RepositoryConnection) => boolean): Promise<boolean> {
     let applied = false;
     await connections.change(PROJECT, (repository) => {
@@ -296,7 +295,7 @@ describe('DisconnectRepositoryHandler', () => {
     expect(jobs.cancelled).toEqual([]);
   });
 
-  it("removes an SSH Repository's Deploy key; connecting again generates a new key pair (Issue #62)", async () => {
+  it("removes an SSH Repository's Deploy key; connecting again generates a new key pair", async () => {
     const connect = new ConnectRepositoryHandler(
       projects,
       connections,

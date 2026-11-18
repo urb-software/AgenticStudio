@@ -2,10 +2,8 @@ import { spawn } from 'node:child_process';
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-/** Why a Git process was killed before it finished. */
 export type InterruptReason = 'timeout' | 'size_limit' | 'aborted';
 
-/** The process was killed (with its whole process tree) before it finished. */
 export class GitProcessInterrupted extends Error {
   constructor(readonly reason: InterruptReason) {
     super(`Git process interrupted: ${reason}`);
@@ -14,7 +12,6 @@ export class GitProcessInterrupted extends Error {
 }
 
 export interface SizeWatch {
-  /** Directory whose disk usage is polled while the process runs. */
   path: string;
   maxBytes: number;
   intervalMs: number;
@@ -26,7 +23,6 @@ export interface RunOptions {
   cwd: string;
   /** The complete environment: nothing is inherited from the API process. */
   env: Record<string, string>;
-  /** Absolute time (ms since the epoch) at which the process is killed. */
   deadline: number;
   signal?: AbortSignal;
   watch?: SizeWatch;
@@ -115,7 +111,6 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
     };
     child.on('error', (error) => {
       spawnError = error;
-      // The binary could not be started: there will be no process to wait for.
       if (child.pid === undefined) {
         settle();
         reject(error);
@@ -135,7 +130,7 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
   });
 }
 
-/** Bytes used by the files under `path`; symlinks are counted, never followed. */
+/** Bytes used by the files under `path`; symlinks are counted, never followed (hostile repository). */
 export async function diskUsage(path: string): Promise<number> {
   let stats;
   try {

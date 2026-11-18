@@ -38,7 +38,6 @@ const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER_PROJECT_ID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 const HTTPS_URL = 'https://git.example.test/owner/repo.git';
 const SSH_URL = 'ssh://git@git.example.test:2222/srv/git/repo.git';
-/** What the injected resolver answers for git.example.test: a public (TEST-NET-3) address. */
 const PUBLIC_ADDRESS = '203.0.113.10';
 // A PEM-shaped placeholder and a public host key: test data, not credentials.
 const SSH_FIXTURE = {
@@ -48,7 +47,6 @@ const SSH_FIXTURE = {
 };
 const SSH: SshCredentials = { privateKey: SSH_FIXTURE.privateKey, hostKeys: [SSH_FIXTURE.hostKey] };
 
-/** A throwaway public key as `<type> <base64>`, generated with ssh-keygen for this run. */
 async function generatedPublicKey(dir: string, type: 'ed25519' | 'ecdsa' | 'rsa'): Promise<string> {
   const path = join(dir, `generated-${type}-${Math.random().toString(16).slice(2)}`);
   const result = spawnSync('ssh-keygen', ['-q', '-t', type, '-N', '', '-f', path]);
@@ -58,7 +56,6 @@ async function generatedPublicKey(dir: string, type: 'ed25519' | 'ecdsa' | 'rsa'
   return `${keyType} ${data}`;
 }
 
-/** Settings every hardened Git command must carry (security.md §4). */
 const HARDENING = [
   'core.hooksPath=/dev/null',
   'core.fsmonitor=false',
@@ -79,10 +76,6 @@ const HARDENING = [
   'fetch.uriProtocols=',
 ];
 
-/**
- * The hardening asserted where the adapter starts processes: stand-in `git` and `ssh`
- * binaries record their arguments, environment and working directory. Linux only.
- */
 describe.runIf(process.platform === 'linux')(
   'SystemGitAdapter at the process-spawn boundary',
   () => {
@@ -90,9 +83,7 @@ describe.runIf(process.platform === 'linux')(
     let dataDir: string;
     let tempRoot: string;
     let recordDir: string;
-    /** Host names the injected resolver was asked for, in order. */
     let lookups: string[];
-    /** The injected resolver's answers; git.example.test resolves to a public address. */
     let answers: Record<string, string[]>;
     const savedEnv = { ...process.env };
 
@@ -154,7 +145,7 @@ describe.runIf(process.platform === 'linux')(
         GIT_DIR: '/tmp/evil-git-dir',
         XDG_CONFIG_HOME: '/tmp/evil-xdg',
         DATABASE_URL: 'postgresql://user:do-not-leak@db/studio',
-        // A proxy would connect for Git, around the address check and the pin (Issue #69).
+        // A proxy would connect for Git, around the address check and the pin.
         http_proxy: 'http://169.254.169.254:80',
         https_proxy: 'http://169.254.169.254:80',
         HTTPS_PROXY: 'http://169.254.169.254:80',
@@ -280,7 +271,7 @@ describe.runIf(process.platform === 'linux')(
       await expect(git.fetch(PROJECT_ID, HTTPS_URL, 'main')).rejects.toMatchObject({
         reason: 'size_limit',
       });
-      // A size_limit fetch leaves no usable Clone: the caller clones again (#61).
+      // A size_limit fetch leaves no usable Clone: the caller clones again.
       expect(await readdir(join(dataDir, 'clones'))).toEqual([]);
     });
 
@@ -459,7 +450,7 @@ describe.runIf(process.platform === 'linux')(
             'PreferredAuthentications=publickey',
             'ForwardX11=no',
             `IdentityFile=${ssh.keyPath}`,
-            // Connects to the checked address; host-key trust stays with the alias (Issue #69).
+            // Connects to the checked address; host-key trust stays with the alias.
             `HostName=${PUBLIC_ADDRESS}`,
           ]),
         );
@@ -636,12 +627,11 @@ describe.runIf(process.platform === 'linux')(
       });
     });
 
-    describe('remote address policy (Issue #69)', () => {
+    describe('remote address policy', () => {
       const settingsOf = (args: string[]) =>
         args.flatMap((arg, i) => (args[i - 1] === '-c' ? [arg] : []));
       const keyscanStub = () => writeFakeKeyscan(root, recordDir, { stdout: '' });
 
-      /** Every operation that reaches a remote, against `url`, with what an ssh remote needs. */
       async function everyRemoteOperation(git: SystemGitAdapter, url: string) {
         const ssh = url.startsWith('ssh:') || url.startsWith('git@') ? { ssh: SSH } : {};
         await mkdir(join(dataDir, 'clones', `${PROJECT_ID}.git`, 'objects', 'pack'), {

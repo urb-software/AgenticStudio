@@ -1,4 +1,3 @@
-/** The path is not an acceptable Environment file path; `message` says why, for the operator. */
 export class InvalidEnvironmentFilePathError extends Error {
   constructor(message: string) {
     super(message);

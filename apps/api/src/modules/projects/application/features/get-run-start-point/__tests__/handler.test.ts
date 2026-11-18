@@ -3,8 +3,6 @@ import { InMemoryProjectRepository } from '../../../../domain/repositories/__tes
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { GetRunStartPointHandler } from '../handler.js';
 
-// Issue #96: the commit a Run starts from, offered to `executions` through the public
-// contracts/index.ts of `projects`.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HEAD = 'c'.repeat(40);
 
@@ -35,12 +33,10 @@ describe('GetRunStartPointHandler', () => {
       r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
     });
 
-    // Issue #98: the remote URL as the operator connected it, so the agent worker can fetch it.
     expect(await handler.forProject(PROJECT)).toEqual({
       status: 'ready',
       startCommit: HEAD,
       remoteUrl: 'https://github.com/acme/shop.git',
-      // Issue #102: the base of the Run's draft pull request.
       integrationBranch: 'dev',
     });
   });

@@ -17,16 +17,10 @@ import {
 } from '../../ports/repository-git.js';
 import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 
-/** Whether `error` is the abort of the job's signal; a processor rethrows it to the queue. */
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
-/**
- * The failure of a Git step of the job, or `undefined` when `error` is not a Git failure (it
- * is then unexpected, and the queue reports it). No trusted host key is a `host_key_mismatch`
- * before Git runs (Issue #62); a Git failure keeps its reason and redacted output.
- */
 function gitStepFailure(error: unknown): RepositoryFailure | undefined {
   if (error instanceof NoTrustedHostKeyError) {
     return RepositoryFailure.noTrustedHostKey();
@@ -36,34 +30,14 @@ function gitStepFailure(error: unknown): RepositoryFailure | undefined {
   return undefined;
 }
 
-/** Stored when the Clone the Repository records is missing on disk. */
 export const CLONE_MISSING_DETAIL =
   "Studio's clone of the repository is missing. Retry to clone it again.";
 
 export interface FetchCloneInput {
   projectId: string;
-  /** The job's abort signal. */
   signal: AbortSignal;
 }
 
-/**
- * Feature: the background fetch of a `fetching` Repository, run by the Repository's job
- * (the job processor under `entry-points/jobs/` calls this for a `fetching` Repository).
- *
- * - Fetches the Integration branch into the existing Clone (the Git adapter's 2-minute limit
- *   and size limit apply), then marks the Repository `ready` with the branch's commit and a
- *   new fetch time, or `failed`. Every write is conditional on the Repository still being
- *   `fetching`.
- * - A failed fetch keeps the Clone and its previous commit and fetch time, except
- *   `size_limit`: the adapter then removes the Clone, so the Repository has no usable Clone
- *   and only a Retry (connect) repairs it (Issue #61 clarification 2). The same holds when the
- *   Clone turns out to be missing on disk.
- * - An SSH Repository (Issue #62) fetches with its Deploy key and only its trusted host keys
- *   (configured or pinned): a host presenting another key fails with `host_key_mismatch`,
- *   never accepted automatically; with no key trusted any more, it fails the same way.
- * - `reconcile` (start-up, before the worker) fails every Repository still `fetching` as
- *   `interrupted`; its Clone stays usable (a killed fetch leaves the refs unchanged).
- */
 @Injectable()
 export class FetchCloneHandler {
   private readonly logger = new Logger('FetchClone');
@@ -103,7 +77,7 @@ export class FetchCloneHandler {
       }
       const failure = gitStepFailure(error);
       if (failure) {
-        // `size_limit`: the adapter removed the Clone (Issue #61 clarification 2).
+        // `size_limit`: the adapter removed the Clone.
         await this.fail(projectId, failure, { cloneKept: failure.code !== 'size_limit' });
         return;
       }

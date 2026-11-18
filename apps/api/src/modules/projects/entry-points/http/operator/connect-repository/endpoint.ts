@@ -33,9 +33,8 @@ import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.j
 const INVALID_REQUEST = 'The request is invalid.';
 
 /**
- * Validates the body with the request schema and answers 422 (not the app-wide 400): the
- * contract of this endpoint (Issue #60). The parameter is typed with the plain request type,
- * so the global pipe leaves it to this one; `@ApiBody` documents the schema.
+ * Validates the body and answers 422 (not the app-wide 400). The parameter is typed with the
+ * plain request type so the global pipe leaves it to this one.
  */
 const UnprocessableBodyPipe = createZodValidationPipe({
   createValidationException: (error) =>
@@ -52,7 +51,6 @@ function fieldError(path: string, message: string): FieldProblemException {
   ]);
 }
 
-/** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
   if (error instanceof InvalidRepositoryUrlError) return fieldError('url', error.message);
@@ -76,13 +74,12 @@ function toHttpError(error: unknown): unknown {
       errors: [{ path: 'url', message: error.message }],
     });
   }
-  // The job may be an earlier clone or a fetch: #61's generic busy problem (#72).
+  // The job may be an earlier clone or a fetch: the generic busy problem.
   if (error instanceof JobAlreadyActiveError) return repositoryBusy();
   if (error instanceof QueueUnavailableError) return queueUnavailable();
   return error;
 }
 
-/** `POST /api/projects/:id/repository`, behind the global session and mutation Origin guards. */
 @ApiTags('projects')
 @Controller('projects')
 export class ConnectRepositoryEndpoint {

@@ -48,7 +48,6 @@ describe('VerifyRepositoryHandler', () => {
     handler = new VerifyRepositoryHandler(projects, connections, git, jobs, deployKeys);
   });
 
-  /** An SSH Repository awaiting its key, as connect stores it. */
   async function awaitingKey(url: string) {
     const deployKey = await deployKeys.create('Shop');
     return connections.connect({
@@ -225,7 +224,7 @@ describe('VerifyRepositoryHandler', () => {
       expect(jobs.started).toEqual([]);
     });
 
-    it('says Git gave no explanation when the host key scan fails without output, not that Studio stopped (#72)', async () => {
+    it('says Git gave no explanation when the host key scan fails without output, not that Studio stopped', async () => {
       git.scanHostKey.mockRejectedValueOnce(new GitOperationError('unknown'));
       await awaitingKey(UNLISTED_URL);
 

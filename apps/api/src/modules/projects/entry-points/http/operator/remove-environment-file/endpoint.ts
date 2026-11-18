@@ -5,10 +5,6 @@ import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.j
 import { RemoveEnvironmentFileHandler } from '../../../../application/features/remove-environment-file/handler.js';
 import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
-/**
- * `DELETE /api/projects/:id/environment-file` (Issue #104), behind the global session and
- * mutation Origin guards. The confirm dialog in the web app is the operator's authorization.
- */
 @ApiTags('projects')
 @Controller('projects')
 export class RemoveEnvironmentFileEndpoint {

@@ -13,7 +13,6 @@ export interface Invocation {
   cwd: string;
 }
 
-/** Behaviour of the fake `git fetch`. */
 export type FakeFetch = 'fail' | 'grow-and-hang' | 'occupy-target';
 
 export async function writeFakeGit(
@@ -25,7 +24,6 @@ export async function writeFakeGit(
     fail: 'echo "fatal: could not read from remote" >&2; exit 128',
     'grow-and-hang':
       'head -c 3000000 /dev/zero > "$gitdir/objects/pack/tmp_pack_fake"; exec sleep 30',
-    // Something else creates the final Clone meanwhile: renaming the partial one fails.
     'occupy-target': 'mkdir -p "${gitdir%.partial-*}/objects"; exit 0',
   };
   const fetch = fetches[options.fetch ?? 'fail'];
@@ -51,7 +49,6 @@ exit 128
   return writeExecutable(join(dir, 'fake-git'), script);
 }
 
-/** Behaviour of the fake `ssh`. */
 export type FakeSsh = 'deny' | 'hang';
 
 export async function writeFakeSsh(

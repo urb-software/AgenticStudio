@@ -15,12 +15,10 @@ export interface GetEnvironmentFileInput {
   projectId: string;
 }
 
-/** What the operator may see of the project's Environment file, or `null` when none is set. */
 export type GetEnvironmentFileResult = EnvironmentFileSnapshot | null;
 
 /**
- * Query (Issue #104): what the operator may see of the project's Environment file (path, size,
- * last change), never its content; `null` when none is set. Throws {@link ProjectNotFoundError}.
+ * Never returns the content. Throws {@link ProjectNotFoundError}.
  */
 @Injectable()
 export class GetEnvironmentFileHandler {

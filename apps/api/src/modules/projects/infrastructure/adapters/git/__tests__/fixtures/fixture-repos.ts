@@ -12,11 +12,8 @@ import { pathToFileURL } from 'node:url';
 export type FixtureFile = string | Buffer | { symlink: string } | { executable: string };
 
 export interface Fixture {
-  /** Path of the bare fixture Repository. */
   path: string;
-  /** Its `file://` URL (allowed only when the test adds `file` to the transports). */
   url: string;
-  /** Path of the working copy the fixture was committed from. */
   work: string;
 }
 
@@ -59,7 +56,6 @@ function writeFiles(work: string, files: Record<string, FixtureFile>): void {
   }
 }
 
-/** Creates `<root>/<name>.git` with one commit of `files` on `branch`. */
 export function createFixture(
   root: string,
   name: string,
@@ -87,7 +83,6 @@ export function createFixture(
   return { path, url: pathToFileURL(path).href, work };
 }
 
-/** Adds a commit of `files` to the fixture and pushes it; returns the new commit id. */
 export function addCommit(
   fixture: Fixture,
   files: Record<string, FixtureFile>,

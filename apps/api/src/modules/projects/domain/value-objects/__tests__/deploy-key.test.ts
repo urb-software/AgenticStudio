@@ -2,7 +2,6 @@ import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { DeployKey } from '../deploy-key.js';
 
-/** Reads SSH wire-format fields (uint32, and strings as uint32 length + bytes) in order. */
 class WireReader {
   private offset = 0;
 
@@ -32,7 +31,6 @@ class WireReader {
   }
 }
 
-/** Decodes an `openssh-key-v1` private key (unencrypted) into its parts. */
 function decodePrivateKey(armoured: string) {
   const lines = armoured.trim().split('\n');
   expect(lines[0]).toBe('-----BEGIN OPENSSH PRIVATE KEY-----');
@@ -94,16 +92,13 @@ describe('DeployKey.generate', () => {
     });
     expect(decoded.check1).toBe(decoded.check2);
     expect(decoded.sectionLength % 8).toBe(0);
-    // Padding is 1, 2, 3, … up to the 8-byte block.
     expect([...decoded.padding]).toEqual([...decoded.padding].map((_, i) => i + 1));
     expect(decoded.padding.length).toBeLessThan(8);
-    // The public blob is the one of the public key line.
     expect(decoded.publicBlob.toString('base64')).toBe(data);
     expect(decoded.publicKey).toHaveLength(32);
     expect(decoded.secretBytes).toHaveLength(64);
     expect(decoded.secretBytes.subarray(32)).toEqual(decoded.publicKey);
 
-    // The seed and the public key are a real ed25519 pair.
     const toBase64Url = (bytes: Buffer) => bytes.toString('base64url');
     const key = createPrivateKey({
       key: {

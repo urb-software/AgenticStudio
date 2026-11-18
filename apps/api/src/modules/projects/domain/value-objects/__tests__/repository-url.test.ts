@@ -11,7 +11,7 @@ function rejection(input: string, options?: Parameters<typeof RepositoryUrl.pars
   throw new Error(`expected ${JSON.stringify(input)} to be rejected`);
 }
 
-describe('RepositoryUrl.identityOf (Issue #60 clarification 6)', () => {
+describe('RepositoryUrl.identityOf', () => {
   const SAME_REMOTE = [
     'https://github.com/acme/shop',
     'https://github.com/acme/shop.git',
@@ -66,7 +66,6 @@ describe('RepositoryUrl.identityOf (Issue #60 clarification 6)', () => {
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 
-  // PR #71 review S-SP6 (c), pinned by #72: more edge cases of the identity.
   it.each([
     ['resolves "." segments', 'https://github.com/acme/./shop.git', 'github.com/acme/shop'],
     ['resolves ".." segments', 'https://github.com/acme/x/../shop.git', 'github.com/acme/shop'],
@@ -89,7 +88,7 @@ describe('RepositoryUrl.identityOf (Issue #60 clarification 6)', () => {
     expect(RepositoryUrl.identityOf(input)).toBe(identity);
   });
 
-  it('does not decode percent-encoding: a known limit of #60 (out of scope for #72)', () => {
+  it('does not decode percent-encoding: a known limit', () => {
     expect(RepositoryUrl.identityOf('https://github.com/acme/%73hop')).toBe(
       'github.com/acme/%73hop',
     );
@@ -177,7 +176,7 @@ describe('RepositoryUrl.parse', () => {
     expect(rejection(input)).toEqual(expect.any(String));
   });
 
-  describe('SSH URLs (Issue #62)', () => {
+  describe('SSH URLs', () => {
     it.each([
       [
         'scp-like',
@@ -253,7 +252,7 @@ describe('RepositoryUrl.parse', () => {
     expect(rejection('file://host/tmp/shop.git', { allowFileRemotes: true })).toMatch(/host/);
   });
 
-  describe('IP-literal hosts under the address policy (Issue #69)', () => {
+  describe('IP-literal hosts under the address policy', () => {
     const closed = { addressPolicy: { allowPrivate: false } };
     const open = { addressPolicy: { allowPrivate: true } };
 

@@ -43,7 +43,6 @@ describe('FetchCloneHandler', () => {
     handler.execute({ projectId: PROJECT, signal });
   const stored = () => connections.find(PROJECT);
 
-  /** A Repository connected with commit OLD, now `fetching`. */
   async function fetching(integrationBranch = 'dev') {
     await connections.connect({
       projectId: PROJECT,
@@ -265,7 +264,7 @@ describe('FetchCloneHandler', () => {
     });
   });
 
-  describe('an SSH Repository (Issue #62)', () => {
+  describe('an SSH Repository', () => {
     const SSH_URL = 'ssh://git@git.example.com:2222/acme/shop.git';
     const pinned = DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
 

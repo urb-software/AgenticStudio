@@ -12,15 +12,12 @@ import { NoTrustedHostKeyError } from '../../domain/errors/repository-connection
 import { DeployKey } from '../../domain/value-objects/deploy-key.js';
 import { TrustedHostKeys } from '../../domain/value-objects/trusted-host-keys.js';
 
-/** DI token for {@link SshTrustSettings}. */
 export const SSH_TRUST_SETTINGS = Symbol('SSH_TRUST_SETTINGS');
 
 export interface SshTrustSettings {
-  /** The Git hosts trusted without asking (`STUDIO_SSH_KNOWN_HOSTS`). */
   knownHosts: readonly SshKnownHost[];
 }
 
-/** {@link DeployKeys} over the platform's secret store (ADR 0001). */
 @Injectable()
 export class SecretStoreDeployKeys implements DeployKeys {
   constructor(

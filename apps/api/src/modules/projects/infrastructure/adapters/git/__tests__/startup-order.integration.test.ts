@@ -36,15 +36,9 @@ import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositori
 import { ENVIRONMENT_FILE_CONTENTS } from '../../../../application/ports/environment-file-contents.js';
 import { InMemoryEnvironmentFileContents } from '../../../../application/ports/__tests__/in-memory-environment-file-contents.js';
 
-// Issue #60 clarification 11: the Git adapter's start-up sweep (its `onModuleInit`) removes
-// leftovers of any age, so no clone or fetch may reconcile or run before it has finished. The
-// repository queue is registered in `onModuleInit`, and the platform queue reconciles and
-// starts its workers in `onApplicationBootstrap`; Nest runs every `onModuleInit` before any
-// `onApplicationBootstrap`. This pins that order with a deliberately slow sweep, on the real
-// platform queue (BullMQ on Redis via Testcontainers, PR #71 review S-SP6 (a), #72): a job
-// already waiting in Redis at start-up runs only after the sweep and the reconciliation.
-// It lives next to the Git adapter, whose sweep it orders, because only infrastructure/ may
-// reach a concrete client (BullMQ, Redis) from inside the module (`architecture:api`).
+// The Git adapter's start-up sweep (`onModuleInit`) must finish before the platform queue
+// reconciles or runs a job (`onApplicationBootstrap`). Pinned with a slow sweep on the real queue
+// (BullMQ on Redis); it lives in infrastructure/, the only layer that may reach BullMQ.
 
 const PROJECT = '7f3e2a1b-4c5d-4e6f-8a9b-0c1d2e3f4a5b';
 const events: string[] = [];
@@ -89,7 +83,6 @@ class RecordingSecrets extends InMemorySecretStore {
   }
 }
 
-/** The repository job wiring of `ProjectsModule`, on the real platform queue. */
 function startupContext(
   redisUrl: string,
   tuning?: QueueWorkerTuning,
@@ -105,7 +98,6 @@ function startupContext(
       { provide: DEPLOY_KEY_SWEEP_SETTINGS, useValue: { gracePeriodMs: 0 } },
       { provide: DEPLOY_KEYS, useClass: SecretStoreDeployKeys },
       SweepOrphanedDeployKeysHandler,
-      // Issue #104: the Environment file orphan sweep runs in the same reconciliation.
       { provide: ENVIRONMENT_FILE_REPOSITORY, useClass: InMemoryEnvironmentFileRepository },
       { provide: ENVIRONMENT_FILE_CONTENTS, useClass: InMemoryEnvironmentFileContents },
       SweepOrphanedEnvironmentFilesHandler,
@@ -129,7 +121,6 @@ function startupContext(
   return NestFactory.createApplicationContext(StartupModule, { logger: false });
 }
 
-/** Polls until `check` passes or the deadline expires (no fixed sleeps). */
 async function eventually(check: () => void, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -180,7 +171,7 @@ describe('repository job start-up order (Redis via Testcontainers)', () => {
       expect(events.indexOf('projects: pending disconnects resumed')).toBeGreaterThan(
         sweepFinished,
       );
-      // Issue #76: after reconciliation (pending disconnects delete their own keys first).
+      // After reconciliation (pending disconnects delete their own keys first).
       expect(events.indexOf('secrets: orphaned Deploy keys swept')).toBeGreaterThan(
         events.indexOf('projects: pending disconnects resumed'),
       );

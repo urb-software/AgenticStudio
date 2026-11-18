@@ -8,23 +8,15 @@ import {
   GitRequestRejectedError,
 } from '../../../application/ports/repository-git.js';
 
-/** Resolves a host name to every address the system resolver returns for it. */
 export type ResolveHost = (host: string) => Promise<string[]>;
 
-/** The system resolver (`getaddrinfo`, so `/etc/hosts` too), every address in its order. */
 export const systemResolveHost: ResolveHost = async (host) =>
   (await lookup(host, { all: true, order: 'verbatim' })).map((entry) => entry.address);
 
 /**
- * The addresses Studio may connect to for `host` (Issue #69, security.md §4): an IP literal
- * as itself (normalized from any numeric form), a host name as every address it resolves to.
- * Every address must be allowed by the policy, or the operation fails with
- * `remote_not_allowed` before Git starts; a host that does not resolve fails with
- * `host_unreachable`. The caller pins the connection to the returned addresses, so Git's own
- * lookup cannot answer differently (DNS rebinding).
- *
- * @param host a host name or IP address; an IPv6 address with or without brackets
- * @param resolve the lookup, raced by the caller against the operation's deadline
+ * The addresses Studio may connect to for `host` (security.md §4): an IP literal as itself, a
+ * name as every address it resolves to. A disallowed address fails with `remote_not_allowed`,
+ * an unresolvable host with `host_unreachable`; the caller pins the connection (DNS rebinding).
  */
 export async function checkedAddresses(
   host: string,

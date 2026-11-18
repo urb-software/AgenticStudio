@@ -10,14 +10,8 @@ import {
 } from '../../ports/environment-file-contents.js';
 
 /**
- * Feature (Issue #104): deleting Environment file contents no project references any more,
- * like the Deploy-key sweep (Issue #76), after a grace period of an hour. A content is orphaned when
- * the process stops between storing it and saving the project's reference, when deleting a
- * replaced or removed content fails, or when two first saves race. Only secrets under the
- * Environment file owner label and older than the grace period are candidates; a referenced
- * one is never deleted. Runs at start-up, after the Deploy-key sweep (`RepositoryStartupRecovery`); never
- * throws (a failure is logged, redacted, and the next start-up tries again). Each delete is
- * logged by the secret's id only.
+ * A content is orphaned when two first saves race; only contents past the grace period are
+ * candidates, and a referenced one is never deleted. Never throws.
  */
 @Injectable()
 export class SweepOrphanedEnvironmentFilesHandler {

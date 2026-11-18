@@ -6,7 +6,6 @@ export class ProjectNameTakenError extends Error {
   }
 }
 
-/** No project has this id. */
 export class ProjectNotFoundError extends Error {
   constructor() {
     super('The project does not exist.');

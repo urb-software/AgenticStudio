@@ -27,42 +27,30 @@ import {
 } from './remote-url.js';
 
 /**
- * The lowest Git that supports every mechanism the adapter relies on:
- * `http.curloptResolve` (2.37; pins HTTPS to the checked address, Issue #69),
- * `GIT_CONFIG_GLOBAL` (2.32; with `GIT_CONFIG_NOSYSTEM` it isolates the host's Git
- * configuration), `--no-write-fetch-head` (2.29), `protocol.allow` / `GIT_ALLOW_PROTOCOL`,
- * `http.followRedirects`, `core.hooksPath`, `ls-remote --symref` and `init --template=` (all
- * older).
+ * The lowest Git with every mechanism the adapter relies on: `http.curloptResolve` (2.37, pins
+ * HTTPS to the checked address), `GIT_CONFIG_GLOBAL` (2.32, isolates the host's Git
+ * configuration) and `--no-write-fetch-head` (2.29).
  */
 export const MIN_GIT_VERSION = '2.37.0';
 
-/** Production limits (security.md §4). The adapter takes them as inputs; tests pass smaller ones. */
 export const PRODUCTION_GIT_LIMITS = {
   cloneTimeoutMs: 10 * 60 * 1000,
   fetchTimeoutMs: 2 * 60 * 1000,
   maxCloneBytes: 2 * 1024 ** 3,
 } as const;
 
-/** Production transports: exactly `ssh` and `https` (security.md §4). */
 export const PRODUCTION_TRANSPORTS: readonly GitTransport[] = ['ssh', 'https'];
 
 export interface SystemGitSettings {
-  /** Absolute data directory; Clones live in `<dataDir>/clones/`. */
   dataDir: string;
   allowedTransports: readonly GitTransport[];
-  /** Limit for a clone. */
   cloneTimeoutMs: number;
-  /** Limit for a fetch, and for the other operations. */
   fetchTimeoutMs: number;
-  /** Largest disk usage of a Clone, in bytes. */
   maxCloneBytes: number;
   /** How often a running clone or fetch measures the Clone's disk usage. Default 1 s. */
   sizePollIntervalMs?: number;
-  /** Default `process.platform`; anything but `linux` is unsupported. */
   platform?: NodeJS.Platform;
-  /** Default `git` from `PATH`. */
   gitBinary?: string;
-  /** Default `ssh` from `PATH`. */
   sshBinary?: string;
   /** Default `ssh-keyscan` from `PATH` (part of the OpenSSH client). */
   keyscanBinary?: string;
@@ -71,16 +59,14 @@ export interface SystemGitSettings {
    * Default `<dataDir>/tmp`, created owner-only; never inside a Clone.
    */
   tempRoot?: string;
-  /** Receives redacted Git output of failed operations. Default: the Nest logger. */
   log?: (message: string) => void;
   /** The user whose stale leftovers the start-up sweep may remove. Default `process.getuid()`. */
   uid?: number;
   /**
-   * `STUDIO_GIT_ALLOW_PRIVATE_REMOTES` (Issue #69): whether remotes on loopback and private
-   * addresses are allowed. Link-local, metadata, multicast and reserved addresses never are.
+   * `STUDIO_GIT_ALLOW_PRIVATE_REMOTES`: whether loopback and private remote addresses are
+   * allowed. Link-local, metadata, multicast and reserved addresses never are.
    */
   allowPrivateRemotes: boolean;
-  /** Default: the system resolver. Tests inject one. */
   resolveHost?: ResolveHost;
   /**
    * Test-only: a CA certificate file Git trusts for HTTPS, for local TLS fixture servers.
@@ -105,10 +91,9 @@ export function systemGitSettings(config: AppConfig): SystemGitSettings {
 }
 
 /**
- * Hardening applied to every Git command (security.md §4): hooks never run, credential
- * helpers and fsmonitor are off, only the allowed transports work, submodules are never
- * recursed into, LFS never smudges, no background maintenance outlives the command, and an
- * HTTP redirect is never followed (it could lead past the address check, Issue #69).
+ * Hardening of every Git command (security.md §4): no hooks, credential helpers, fsmonitor,
+ * submodules, LFS smudge or background maintenance; only the allowed transports; no HTTP
+ * redirect (it could lead past the address check).
  */
 function hardeningArgs(transports: readonly GitTransport[]): string[] {
   return [
@@ -133,13 +118,11 @@ function hardeningArgs(transports: readonly GitTransport[]): string[] {
 }
 
 /**
- * A remote whose host was checked against the address policy (Issue #69): Git and ssh
+ * A remote whose host was checked against the address policy: Git and ssh
  * connect only to `addresses`, never to what a second lookup might return.
  */
 interface CheckedRemote extends RemoteUrl {
-  /** `null` for a `file` remote. */
   endpoint: RemoteEndpoint | null;
-  /** The allowed addresses of the host, in resolver order; empty for a `file` remote. */
   addresses: string[];
 }
 
@@ -152,7 +135,6 @@ function sshAddress(addresses: string[]): string {
   return addresses.find((address) => !address.includes(':')) ?? addresses[0]!;
 }
 
-/** `-c` settings that pin an https remote's host to its checked addresses (curl's resolve list). */
 function pinArgs(remote: CheckedRemote): string[] {
   if (remote.transport !== 'https' || !remote.endpoint) return [];
   const { host, port } = remote.endpoint;
@@ -164,24 +146,18 @@ function pinArgs(remote: CheckedRemote): string[] {
   return ['-c', `http.curloptResolve=${host}:${port}:${addresses.join(',')}`];
 }
 
-/** Alias the supplied host key is pinned to, whatever host or port the URL names. */
 const HOST_KEY_ALIAS = 'studio-remote';
 const PRIVATE_KEY =
   /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----\n[\s\S]+\n-----END [A-Z0-9 ]*PRIVATE KEY-----\n?$/;
 const GIT_VERSION = /^git version (\d+)\.(\d+)\.(\d+)/;
-/** Host key types `scanHostKey` asks for, and its preference among them (first wins). */
 const SCANNED_KEY_TYPES = 'ed25519,ecdsa,rsa';
 const SCAN_PREFERENCE = [/^ssh-ed25519$/, /^ecdsa-sha2-/, /^ssh-rsa$/];
-/** Longest ssh-keyscan connection timeout, in seconds. */
 const MAX_SCAN_TIMEOUT_S = 30;
-/** Prefix of per-operation private directories. */
 const OPERATION_DIR_PREFIX = 'studio-git-';
 /** A leftover is stale once it is older than the clone limit plus this margin. */
 const STALE_MARGIN_MS = 5 * 60 * 1000;
-/** Git lock files at the top of a Clone that a killed process may leave behind. */
 const TOP_LEVEL_LOCK = /\.lock$/;
 
-/** A full commit id (SHA-1 or SHA-256). */
 const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 function isValidBranchName(branch: string): boolean {
@@ -217,7 +193,6 @@ function abortError(): Error {
 }
 
 interface OperationContext {
-  /** Private, owner-only directory: working directory and HOME of every command. */
   dir: string;
   env: Record<string, string>;
   deadline: number;
@@ -229,17 +204,9 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
- * The `projects` Git adapter: runs the system `git` binary under the fixed hardening
- * baseline of security.md §4. Linux only.
- *
- * Operations on one project are serialized by an in-process lock (one API process). Any
- * failure other than the port's typed errors and `AbortError` becomes
- * `GitOperationError('unknown')`; the raw error goes, redacted, to the server log only.
- *
- * Residual risk: if the API process itself dies, the detached Git process group of a
- * running operation is orphaned and keeps running without Studio's time and size limits
- * until Git finishes or fails on its own. The start-up sweep then removes stale
- * per-operation directories (with any SSH key) and partial Clones.
+ * Runs the system `git` under the hardening baseline (security.md §4); Linux only. Project
+ * operations are serialized by an in-process lock. If the API dies, the orphaned Git group runs
+ * without Studio's limits; the start-up sweep later removes its directories and keys.
  */
 export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly paths: ClonePaths;
@@ -251,7 +218,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly tempRoot: string;
   private readonly sizePollIntervalMs: number;
   private readonly log: (message: string) => void;
-  /** Per-project tail of the operation queue: operations on one Clone never overlap. */
   private readonly locks = new Map<string, Promise<unknown>>();
   /** Whether per-operation directories live in the default `<dataDir>/tmp`, owned by this process. */
   private readonly ownsTempRoot: boolean;
@@ -281,11 +247,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
-   * Removes leftovers of operations a crash interrupted, before any operation runs: every
-   * partial Clone, and the per-operation directories (which may hold a Deploy key) owned by
-   * this user. One API process owns the data directory, so nothing in it is live at
-   * start-up; only a custom temp root, which may be shared, keeps directories younger than
-   * the clone limit plus a margin. A failing entry is logged (redacted) and skipped.
+   * One API process owns the data directory, so nothing in it is live at start-up: removes partial
+   * Clones and this user's per-operation directories (may hold a Deploy key). A shared custom
+   * temp root keeps those younger than the clone limit plus a margin.
    */
   private async sweepStaleLeftovers(): Promise<void> {
     const staleBefore = Date.now() - this.settings.cloneTimeoutMs - STALE_MARGIN_MS;
@@ -501,7 +465,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
           );
         } catch (error) {
           if (error instanceof GitOperationError && error.reason === 'size_limit') {
-            // Killed mid-transfer or finished past the limit: no usable Clone remains (#61).
+            // Killed mid-transfer or finished past the limit: no usable Clone remains.
             await rm(clone, { recursive: true, force: true });
           } else {
             // A killed fetch leaves Git's temporary packs; the refs are unchanged.
@@ -619,7 +583,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     });
   }
 
-  /** Runs `work` after every earlier operation on the project has settled. */
   private async exclusive<T>(projectId: string, work: () => Promise<T>): Promise<T> {
     const previous = this.locks.get(projectId) ?? Promise.resolve();
     const current = previous.then(work, work);
@@ -690,9 +653,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
-   * Checks the remote's host against the address policy before any process reaches it
-   * (Issue #69): its addresses are resolved once, under the operation's deadline and abort
-   * signal, and every one must be allowed. Git and ssh are then pinned to them.
+   * Checks the remote's host against the address policy before any process reaches it: resolved
+   * once, under the operation's deadline, every address must be allowed; Git and ssh are pinned.
    */
   private async checkRemote(context: OperationContext, remote: RemoteUrl): Promise<CheckedRemote> {
     const endpoint = remoteEndpoint(remote);
@@ -705,7 +667,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     return { ...remote, endpoint, addresses };
   }
 
-  /** `work`, unless the operation's deadline passes (`timeout`) or it is aborted first. */
   private async withinDeadline<T>(context: OperationContext, work: Promise<T>): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
     let onAbort: (() => void) | undefined;
@@ -776,11 +737,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
-   * Writes the Deploy key (owner-only) and the trusted host keys into the operation's
-   * private directory and returns the environment that makes Git's `ssh` use exactly
-   * them: no agent, no other identity, no user or system SSH configuration, strict
-   * host-key checking, and a connection to the checked `address` only (`HostName`; host-key
-   * trust stays with the alias).
+   * Writes the Deploy key (owner-only) and trusted host keys into the private directory; returns
+   * the environment that makes `ssh` use only them: no agent, no user or system configuration,
+   * strict host-key checking, the checked `address` only (host-key trust stays with the alias).
    */
   private async sshEnvironment(
     context: OperationContext,
@@ -932,7 +891,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     );
   }
 
-  /** Runs a binary in the operation's directory and environment, under its deadline. */
   private async run(context: OperationContext, binary: string, args: string[], watch?: SizeWatch) {
     try {
       return await runGitProcess({
@@ -980,7 +938,6 @@ async function removeStaleLocks(gitDir: string): Promise<void> {
   await removeIn(join(gitDir, 'refs'), true);
 }
 
-/** Git's temporary files left by a killed fetch (packs being received). */
 async function removeTemporaryObjects(gitDir: string): Promise<void> {
   const packDir = join(gitDir, 'objects', 'pack');
   let names: string[];

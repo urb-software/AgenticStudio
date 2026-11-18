@@ -1,19 +1,10 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 
-/**
- * Public entry point of the `projects` module for other modules (backend.md §3). Nothing here
- * imports the module's internals; the module binds {@link RUN_START_POINTS} to its own
- * implementation and exports it through its Nest module.
- */
-
-/** DI token of {@link RunStartPoints}. */
 export const RUN_START_POINTS = Symbol('RUN_START_POINTS');
 
 /**
- * Where a Run of a project would start (Issue #96): the current commit of the integration
- * branch when the project's Repository is `ready`, the Repository's remote URL as the operator
- * connected it (Issue #98; never a credential) and its integration branch (Issue #102: the
- * base of the Run's draft pull request), otherwise why there is none.
+ * Where a Run of a project would start: the integration branch's current commit when the
+ * Repository is `ready`, its remote URL (never a credential) and branch, otherwise why not.
  */
 export type RunStartPoint =
   | { status: 'ready'; startCommit: string; remoteUrl: string; integrationBranch: string }
@@ -21,19 +12,16 @@ export type RunStartPoint =
   | { status: 'no_repository' }
   | { status: 'repository_not_ready' };
 
-/** What `projects` tells other modules about starting a Run (Issue #96). */
 export interface RunStartPoints {
   /** The start point of a Run of this project; an id that is not a UUID names no project. */
   forProject(projectId: string): Promise<RunStartPoint>;
 }
 
-/** DI token of {@link RunEnvironmentFiles}. */
 export const RUN_ENVIRONMENT_FILES = Symbol('RUN_ENVIRONMENT_FILES');
 
 /**
- * What `projects` tells `executions` about a project's Environment file (Issue #104): its path
- * and content, a secret value (test values only), for the agent worker that claims a Run, never
- * for an operator response or a log. The shape is the worker protocol's `EnvironmentFile`.
+ * A project's Environment file for the agent worker that claims a Run: path and content (a
+ * secret), never for an operator response or a log. The shape is the worker protocol's.
  */
 export interface RunEnvironmentFiles {
   /** The project's current Environment file, or `null` when none is set. */

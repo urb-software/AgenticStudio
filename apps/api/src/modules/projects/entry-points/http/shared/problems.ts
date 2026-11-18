@@ -4,26 +4,18 @@ import {
   serviceUnavailable,
 } from '../../../../../platform/http/problem-details.js';
 
-/**
- * Problem `type` URIs of the projects API (RFC 9457 §3.1.1), shared by several features of
- * this module. Each names one deliberate error; generic validation errors stay `about:blank`.
- */
+/** Problem `type` URIs of the projects API (RFC 9457); generic validation errors stay `about:blank`. */
 export const PROJECTS_PROBLEM_TYPES = {
-  /** 404: no project has this id. */
   projectNotFound: 'urn:agentic-studio:problem:project-not-found',
-  /** 404: the project has no Repository. */
   noRepository: 'urn:agentic-studio:problem:no-repository',
-  /** 409: the project already has a Repository that is connecting or connected. */
   repositoryAlreadyConnected: 'urn:agentic-studio:problem:repository-already-connected',
   /** 409: another project holds the same remote; a field error on `url` names it. */
   remoteAlreadyConnected: 'urn:agentic-studio:problem:remote-already-connected',
-  /** 409: a connect or fetch of the Repository is still running. */
   repositoryBusy: 'urn:agentic-studio:problem:repository-busy',
   /** 409: the Repository has no usable Clone to fetch into; Retry (connect) makes one. */
   noUsableClone: 'urn:agentic-studio:problem:no-usable-clone',
   /** 409: the Repository is not waiting for its Deploy key or host key to be verified. */
   repositoryNotVerifiable: 'urn:agentic-studio:problem:repository-not-verifiable',
-  /** 501: repository features need a Linux API host. */
   unsupportedPlatform: 'urn:agentic-studio:problem:unsupported-platform',
 } as const;
 
@@ -36,7 +28,6 @@ export function projectNotFound(): ProblemException {
   });
 }
 
-/** 404 for a project without a Repository. */
 export function noRepository(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: PROJECTS_PROBLEM_TYPES.noRepository,
@@ -45,7 +36,6 @@ export function noRepository(): ProblemException {
   });
 }
 
-/** 409 while a connect or fetch of the Repository is still running (#61). */
 export function repositoryBusy(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: PROJECTS_PROBLEM_TYPES.repositoryBusy,

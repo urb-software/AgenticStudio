@@ -91,7 +91,6 @@ function toRepository(row: RepositoryRow): RepositoryConnection {
   });
 }
 
-/** The columns of the fields a change of the Repository sets (and of the identity, when it is replaced). */
 function changedColumns(changes: RepositoryChanges) {
   const { failure, deployKeySecret, ...plain } = changes.fields;
   return {
@@ -109,7 +108,6 @@ function changedColumns(changes: RepositoryChanges) {
   };
 }
 
-/** The columns of a new Repository: every stored field and the remote's identity. */
 function createColumns(repository: RepositoryConnection, identity: string) {
   const stored = repository.snapshot();
   return {
@@ -132,19 +130,9 @@ function createColumns(repository: RepositoryConnection, identity: string) {
 }
 
 /**
- * PostgreSQL adapter of {@link RepositoryConnectionRepository}: the `repositories` table only.
- * Unique indexes, not prior reads, decide duplicates: the `repositories` primary key (one per
- * project) and `repositories.url_normalized` (one project per remote) for Connect. Every change
- * of an existing Repository locks its row `FOR UPDATE`, lets the {@link RepositoryConnection}
- * class change itself, and saves what it changed in the same transaction; the rules are the
- * class's, none is written in a query. A usable Clone is recorded by its commit: `head_sha` is
- * set exactly while one exists. Only a `disconnecting` Repository is ever deleted (the last
- * step of a Disconnect).
- *
- * No operation changes this root together with another one, so none needs a transaction that
- * spans two stores: the Project's existence and the name of the Project that holds a remote
- * are read from `ProjectRepository` by the handler (the Project never changes after it is
- * created, and the foreign key refuses a Repository of a project that is gone).
+ * PostgreSQL adapter of {@link RepositoryConnectionRepository}: unique indexes, not prior reads,
+ * decide duplicates; a change locks the row `FOR UPDATE` and saves in the same transaction.
+ * Only a `disconnecting` Repository is ever deleted.
  */
 @Injectable()
 export class PrismaRepositoryConnectionRepository implements RepositoryConnectionRepository {

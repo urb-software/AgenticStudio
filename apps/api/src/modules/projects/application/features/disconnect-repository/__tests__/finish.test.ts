@@ -155,7 +155,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     expect(git.removeClone).not.toHaveBeenCalled();
   });
 
-  describe('an SSH Repository (Issue #62)', () => {
+  describe('an SSH Repository', () => {
     async function connectOverSsh(projectId: string) {
       projects.addProject(projectId, 'ssh');
       const deployKey = await deployKeys.create('ssh');

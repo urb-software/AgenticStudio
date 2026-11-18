@@ -7,10 +7,9 @@ import {
 } from '../../../../../platform/secrets/index.js';
 
 /**
- * An in-memory {@link SecretStore} for handler tests: values and owner labels by reference,
- * stamped with the store's own clock `now` (milliseconds, advanced by the test). `failWith`
- * makes the next calls reject (an unavailable store); `failNextDeleteWith` makes only the next
- * delete reject. Like the port, it refuses a malformed owner label or age.
+ * An in-memory {@link SecretStore} for handler tests, on its own clock `now` (ms, set by the
+ * test). `failWith` makes the next calls reject; `failNextDeleteWith` only the next delete.
+ * Like the port, it refuses a malformed owner label or age.
  */
 export class InMemorySecretStore implements SecretStore {
   readonly values = new Map<SecretReference, string>();
@@ -63,7 +62,6 @@ export class InMemorySecretStore implements SecretStore {
   }
 }
 
-/** The port's owner label format (`SecretOwner`). */
 function isOwner(owner: string): boolean {
   return owner.length <= 64 && /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/.test(owner);
 }

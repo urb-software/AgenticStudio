@@ -5,10 +5,7 @@ import {
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
-/**
- * `PUT /api/projects/:id/environment-file` body (Issue #104). Only the lengths are checked
- * here; the handler explains a refused path or content (422 with a field error).
- */
+/** `PUT /api/projects/:id/environment-file` body; only lengths are checked, the handler explains the rest. */
 export const setEnvironmentFileRequestSchema = z
   .strictObject({
     path: z

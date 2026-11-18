@@ -15,17 +15,8 @@ import { RepositoryFailure } from '../value-objects/repository-failure.js';
 import { RepositoryLifecycle } from '../value-objects/repository-lifecycle.js';
 
 /**
- * The Repository connected to a Project (at most one per Project): a class that owns its
- * lifecycle. Starting a connect, awaiting a Deploy key or a host key, verifying, completing or
- * failing a clone, starting and finishing a fetch, and disconnecting are methods that check
- * their own preconditions. The operator's operations refuse with a domain error when they do
- * not apply; what a Git job reports late (it ended after a Disconnect or a restart) returns
- * `false` and changes nothing. The store saves {@link RepositoryConnection.pendingChanges} in
- * one transaction under the Repository's row lock, so two simultaneous changes cannot both win.
- *
- * It cannot be built in an invalid state: only {@link RepositoryConnection.start} and
- * {@link RepositoryConnection.restore} make one. Its fields are readable and never assigned
- * from outside.
+ * The Repository connected to a Project: it owns its lifecycle, and the store saves
+ * {@link RepositoryConnection.pendingChanges} in one transaction under the row lock.
  */
 export class RepositoryConnection {
   declare readonly projectId: RepositoryConnectionData['projectId'];
@@ -69,12 +60,10 @@ export class RepositoryConnection {
     return new RepositoryConnection({ ...stored }, { fields: {} });
   }
 
-  /** The state as a plain record (a copy), for what crosses a boundary. */
   snapshot(): RepositoryConnectionSnapshot {
     return RepositoryConnection.withDerived(this.stored());
   }
 
-  /** What changed since the Repository was started or restored; the store saves exactly this. */
   pendingChanges(): RepositoryChanges {
     const pending = this.#changes;
     return { ...pending, fields: { ...pending.fields } };
@@ -88,16 +77,10 @@ export class RepositoryConnection {
     return this.lifecycle.pendingOperation;
   }
 
-  /** Whether the operator disconnected it and its data is still being removed. */
   get isDisconnecting(): boolean {
     return this.lifecycle.isDisconnecting;
   }
 
-  /**
-   * Whether "Verify and clone" applies (Issue #62): an SSH Repository (it has a Deploy key)
-   * without a Clone that is `awaiting_key`, `awaiting_host_key`, or `failed` (Retry keeps the
-   * Deploy key).
-   */
   get isVerifiable(): boolean {
     return this.lifecycle.isVerifiable;
   }
@@ -107,10 +90,7 @@ export class RepositoryConnection {
     if (!this.isVerifiable) throw new RepositoryNotVerifiableError();
   }
 
-  /**
-   * The Deploy key a Retry of a failed Repository keeps (Issue #76), or `null` for any other
-   * Repository.
-   */
+  /** The Deploy key a Retry of a failed Repository keeps, or `null` for any other Repository. */
   get retainedDeployKey(): { publicKey: string; secretRef: string } | null {
     return this.lifecycle.isFailed && this.deployKeySecret && this.publicKey
       ? { secretRef: this.deployKeySecret, publicKey: this.publicKey }
@@ -137,10 +117,8 @@ export class RepositoryConnection {
   }
 
   /**
-   * The failure a Repository takes when its clone could not be scheduled after it was stored:
-   * the failed Repository's own failure when this attempt repeats it (same `settings`, or none
-   * given), else "the clone could not be started". `previous` is the Repository before the
-   * attempt, or `null`.
+   * The failure for a clone that could not be scheduled: the failed Repository's own failure when
+   * this attempt repeats it (same `settings`, or none given), else "the clone could not be started".
    */
   static failureWhenCloneNotScheduled(
     previous: RepositoryConnection | null,
@@ -192,10 +170,9 @@ export class RepositoryConnection {
   }
 
   /**
-   * Starts the clone of a verified SSH Repository: → `connecting`, the failure and any pending
-   * host key cleared. Without `confirmed`, from any verifiable state. With it, only from
-   * `awaiting_host_key` with exactly that pending host key, which is then pinned. Otherwise
-   * {@link RepositoryNotVerifiableError}.
+   * Starts the clone of a verified SSH Repository: → `connecting`, clearing the failure and any pending
+   * host key. Without `confirmed`, from any verifiable state. With it, only from `awaiting_host_key` with
+   * exactly that host key, which is then pinned. Otherwise {@link RepositoryNotVerifiableError}.
    */
   startVerifiedClone(confirmed: { pendingHostKey: string } | null): void {
     this.assertVerifiable();
@@ -289,10 +266,9 @@ export class RepositoryConnection {
   }
 
   /**
-   * Any state → `disconnecting`: the failure, any pending host key and the Clone's commit and
-   * fetch time are cleared (the Clone is about to be removed). Repeating it changes nothing.
-   * From then on no transition out of `connecting` or `fetching` applies, so a job still
-   * running cannot overwrite it.
+   * Any state → `disconnecting`, clearing the failure, pending host key and the Clone's commit and
+   * fetch time. Idempotent; no transition out of `connecting` or `fetching` applies afterwards, so a
+   * running job cannot overwrite it.
    */
   startDisconnect(): void {
     this.apply({
@@ -358,7 +334,6 @@ export class RepositoryConnection {
     Object.assign(this, RepositoryConnection.withDerived({ ...this.stored(), ...patch }));
   }
 
-  /** The stored fields with the ones derived from them: the Clone flag and the fingerprint. */
   private static withDerived(stored: StoredRepositoryConnection): RepositoryConnectionData {
     const shown = stored.pendingHostKey ?? stored.pinnedHostKey;
     return {
@@ -368,7 +343,6 @@ export class RepositoryConnection {
     };
   }
 
-  /** The fields of a new attempt: no Clone, no failure, and the Deploy key if the remote is SSH. */
   private static newAttempt(attempt: ConnectAttempt): StoredRepositoryConnection {
     return {
       projectId: attempt.projectId,

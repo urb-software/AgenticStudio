@@ -6,7 +6,6 @@ import type {
   RepositoryOperation,
 } from '../../application/ports/repository-jobs.js';
 
-/** The one queue of background Git operations on Repositories (platform/queue). */
 export const REPOSITORY_QUEUE = 'repository-git';
 
 /**
@@ -24,15 +23,14 @@ const TIMEOUT_MS: Record<RepositoryOperation, number> = {
 };
 
 /**
- * How long a disconnect waits for a cancelled operation to stop (#63 clarification 1). The Git
- * adapter kills an aborted Git process tree at once, so this only bounds a stuck processor.
+ * How long a disconnect waits for a cancelled operation to stop. The Git adapter kills an
+ * aborted Git process tree at once, so this only bounds a stuck processor.
  */
 export const CANCEL_SETTLE_TIMEOUT_MS = 10_000;
 
 /** Operations of different projects run in parallel up to this; one project's never overlap. */
 export const REPOSITORY_JOB_CONCURRENCY = 2;
 
-/** The job payload: identifiers only (#60 clarification 2, #61 clarification 8). */
 type RepositoryJobPayload = { projectId: string };
 
 /**
@@ -54,15 +52,9 @@ export interface RepositoryJobEvents {
 }
 
 /**
- * The {@link RepositoryJobs} port over the platform queue. It owns the queue: its name, time
- * limits, concurrency and the deterministic job id. It registers the queue during module
- * initialisation and hands every event of a job to the {@link RepositoryJobEvents} the module
- * wiring gave it ({@link deliverTo}); the platform reconciles and starts the worker only after
- * the application has bootstrapped, so after the Git adapter's start-up sweep (`onModuleInit`),
- * which must finish before any Git job (#60 clarification 11).
- *
- * The events are delivered through a call after construction, not injected, because the
- * processor's handlers (a Disconnect cancels the job) depend on this adapter.
+ * The {@link RepositoryJobs} port over the platform queue; it owns the queue's name, limits and
+ * job id. The platform starts the worker after bootstrap, so after the Git adapter's start-up
+ * sweep. Events arrive through {@link deliverTo}, not injection: the handlers depend on this adapter.
  */
 @Injectable()
 export class QueueRepositoryJobs implements RepositoryJobs, OnModuleInit {
@@ -71,7 +63,6 @@ export class QueueRepositoryJobs implements RepositoryJobs, OnModuleInit {
 
   constructor(private readonly queues: JobQueues) {}
 
-  /** Sets where the queue's events go; called by the module wiring before initialisation. */
   deliverTo(events: RepositoryJobEvents): void {
     this.events = events;
   }
