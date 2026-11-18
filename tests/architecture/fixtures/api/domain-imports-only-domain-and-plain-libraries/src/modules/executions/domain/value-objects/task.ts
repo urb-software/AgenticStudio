@@ -1,4 +1,12 @@
 import { z } from 'zod';
-import { RETENTION_DAYS } from './retention-days.js';
+import { RetentionDays } from './retention-days.js';
 
-export const taskSchema = z.string().max(RETENTION_DAYS);
+export class Task {
+  static readonly schema = z.string().max(RetentionDays.DEFAULT);
+
+  private constructor(readonly text: string) {}
+
+  static of(text: string): Task {
+    return new Task(Task.schema.parse(text));
+  }
+}
