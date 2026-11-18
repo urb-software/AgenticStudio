@@ -28,21 +28,20 @@ import { studioPathspecs } from './studio-paths.js';
 import { diffBaseOf, onBranch, type PreparedRun, readRunFile } from './working-copy.js';
 
 /**
- * Delivery of a Run's result (Issue #102, ADR 0002): after a `done` Run step the worker commits
- * what the agent left (never a file Studio placed), pushes exactly the Run branch and opens a
- * draft pull request as the Agent account. A delivery retry repeats it from the Working copy.
+ * Commits what the agent left (never a Studio-placed file), pushes exactly the Run branch and
+ * opens a draft pull request as the Agent account.
  */
 
 /** The delivery could not be completed; `detail` says why and what to check (no token, no path). */
 export class DeliveryFailedError extends Error {
   /**
    * @param branchPushed the Run branch was already pushed when the delivery failed (the pull
-   * request could not be opened): a cancelled Run records it (review of #124).
+   * request could not be opened): a cancelled Run records it.
    */
   constructor(
     readonly detail: string,
     readonly branchPushed = false,
-    /** With `branchPushed` (Issue #141): the commit the push left the remote Run branch at. */
+    /** With `branchPushed`: the commit the push left the remote Run branch at. */
     readonly pushedCommit?: string,
   ) {
     super(detail);
@@ -64,11 +63,9 @@ export interface DeliveryPort {
     signal: AbortSignal,
   ): Promise<void>;
   /**
-   * Pushes the Run branch and opens (or reuses) its draft pull request; `none` when the Run
-   * branch has no commits beyond the start commit. Issue #141: a Run with a recorded pull
-   * request (`pullRequestNumber`) delivers to it only: refused before the push when it is no
-   * longer open, its title and description replaced when the agent gave new ones; a delivered
-   * result carries the pushed commit. Throws {@link DeliveryFailedError}.
+   * Pushes the Run branch and opens (or reuses) its draft pull request; `none` when it has no
+   * commits beyond the start commit. With a recorded `pullRequestNumber` it delivers to that
+   * one only, refused before the push when it is no longer open. Throws {@link DeliveryFailedError}.
    */
   deliver(
     prepared: PreparedRun,
@@ -111,13 +108,8 @@ const FOOTER_CHECKS_MAX = 50;
 export const NO_WORKING_COPY = 'Working copy no longer exists';
 
 /**
- * Commits, pushes and opens pull requests for Runs (Issue #102). Every Git command goes
- * through the worker's hardened {@link GitRunner}. The push is exactly
- * `git push -- <remote> refs/heads/<Run branch>:refs/heads/<Run branch>`: one ref, never
- * `--force`, so it updates the remote Run branch only by a fast-forward (a remote branch with
- * commits this Run lacks is refused) and never touches any other branch. The Agent account's
- * token reaches Git only for an HTTPS push, as an `http.extraHeader` in that command's
- * environment; SSH remotes use the agent user's own SSH setup.
+ * Every Git command goes through the hardened {@link GitRunner}; the push is one ref, never
+ * `--force`, and the token reaches Git only as an HTTPS `http.extraHeader`, never SSH or argv.
  */
 export class Deliveries implements DeliveryPort {
   constructor(private readonly options: DeliveriesOptions) {}
@@ -135,8 +127,8 @@ export class Deliveries implements DeliveryPort {
       { mode: 0o600 },
     );
     const local = this.local(prepared, signal);
-    // Review S4 of #154: a merge still open is never committed (`add --all` would mark its
-    // conflicted files resolved, markers included). The worker completes or aborts it first.
+    // A merge still open is never committed (`add --all` would mark conflicted files resolved,
+    // markers included): the worker completes or aborts it first.
     const mergeOpen = await git
       .run(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD^{commit}'], local)
       .then(() => true)
@@ -150,8 +142,7 @@ export class Deliveries implements DeliveryPort {
           'branch up to date again, or look at the Working copy on the agent side.',
       );
     }
-    // Review R2-5: any unmerged path (a cherry-pick, a revert or a stash that conflicted too) is
-    // refused for the same reason.
+    // Any unmerged path (cherry-pick, revert or stash that conflicted) is refused likewise.
     const unmerged = await git.run(['diff', '--name-only', '--diff-filter=U', '-z'], local);
     if (unmerged.length > 0) {
       throw new DeliveryFailedError(
@@ -266,8 +257,8 @@ export class Deliveries implements DeliveryPort {
       token,
       apiUrl: this.options.github.apiUrl,
     });
-    // Issue #141: a Run delivers to at most one pull request. The one Studio recorded must still
-    // be open; a merged or closed one stops the delivery before anything is pushed.
+    // A Run delivers to at most one pull request: the recorded one must still be open, else the
+    // delivery stops before anything is pushed.
     const recorded = run.pullRequestNumber;
     if (recorded !== undefined) {
       const state = await this.pullRequestCall(run, () =>
@@ -284,13 +275,12 @@ export class Deliveries implements DeliveryPort {
     const pushedCommit = await this.push(prepared, run, target.transport, token, signal);
 
     const content = pullRequestContent(run, prepared, result);
-    // Review S7 of #150: only what the agent gave replaces the old text; a title alone keeps the
-    // description (whose footer is Studio's).
+    // Only what the agent gave replaces the old text; a title alone keeps the description (whose
+    // footer is Studio's).
     const update = result.pullRequest?.body.trim() ? content : { title: content.title };
     const pushed = { branchPushed: true, pushedCommit };
     if (recorded !== undefined) {
-      // Repeated delivery: the same pull request; new title and description only when the
-      // agent gave them (the footer is always Studio's).
+      // Repeated delivery: the same pull request; new text only when the agent gave it.
       const state = await this.pullRequestCall(
         run,
         async () => {
@@ -340,7 +330,7 @@ export class Deliveries implements DeliveryPort {
     };
   }
 
-  /** A pull request call; a refusal becomes a {@link DeliveryFailedError} saying what was pushed. */
+  /** A pull request call; a refusal becomes a {@link DeliveryFailedError} naming what was pushed. */
   private async pullRequestCall<T>(
     run: RunPayload,
     call: () => Promise<T>,
@@ -363,7 +353,7 @@ export class Deliveries implements DeliveryPort {
 
   async locate(run: RunPayload): Promise<{ prepared: PreparedRun; result: RunStepResult }> {
     // The Run branch and start commit come from Studio, never from `run.json`, which the agent
-    // could rewrite (review R1 of #122).
+    // could rewrite.
     if (run.kind !== 'deliver' || run.runBranch === undefined) {
       throw new DeliveryFailedError('Studio sent no recorded Run branch for this delivery.');
     }
@@ -409,14 +399,9 @@ export class Deliveries implements DeliveryPort {
   }
 
   /**
-   * `git push -- <remote> <Run branch>:<Run branch>`: the one command that leaves the host. It
-   * runs in a fresh repository the worker makes beside the Working copy (`push.git`), holding
-   * only the Run branch fetched from it: the Working copy's own `.git/config`, which the agent
-   * could write (a URL rewrite, a proxy, a credential helper), never applies to the push. An
-   * HTTPS push also ignores the agent user's global Git configuration, and its header is scoped
-   * to `https://github.com/` (review of #122). `push.git` is made without templates and without
-   * any user or system configuration, so nothing the agent wrote there reaches it (review R2).
-   * Only a Run branch of this Run is ever pushed, never the integration branch (review R1).
+   * `git push -- <remote> <Run branch>:<Run branch>`: the one command that leaves the host. It runs
+   * in a fresh repository without templates or user/system config, holding only the Run branch, so
+   * the agent-writable `.git/config` never applies; the header is scoped to `https://github.com/`.
    */
   private async push(
     prepared: PreparedRun,
@@ -435,7 +420,7 @@ export class Deliveries implements DeliveryPort {
     const ref = `refs/heads/${prepared.runBranch}`;
     const pushDir = posix.join(prepared.runDir, 'push.git');
     const local = { cwd: prepared.runDir, timeoutMs: GIT_TIMEOUTS.local, signal, ceiling: dataDir };
-    // No templates and no user config for making and filling push.git (review R2 of #122).
+    // No templates and no user config for making and filling push.git.
     const isolated = { ...local, userConfig: false as const };
     await rm(pushDir, { recursive: true, force: true });
     let pushedTip = '';
@@ -467,7 +452,7 @@ export class Deliveries implements DeliveryPort {
           ['push.gpgSign', 'false'],
           ['push.recurseSubmodules', 'no'],
           // The Agent account for this one HTTPS push only: in the environment, never argv
-          // or a config file (coordinator decision on #102), and only for github.com.
+          // or a config file, and only for github.com.
           ...(transport === 'https'
             ? [
                 [
@@ -580,9 +565,7 @@ function checkName(name: string): string {
 
 /**
  * The pull request's title and description: the agent's own, or a title from the Task and the
- * summary as the description. A plain notice comes first when the agent reported failing
- * checks, and Studio's fixed footer last: the Run, the Provider, the start commit and the
- * agent's account of its checks.
+ * summary as description, a notice first when checks failed, and Studio's fixed footer last.
  */
 export function pullRequestContent(
   run: RunPayload,

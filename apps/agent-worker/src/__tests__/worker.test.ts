@@ -34,7 +34,7 @@ import {
 } from '../worker.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from '../working-copy.js';
 
-// Issue #96: the worker loop against a recording fake of the worker routes.
+// The worker loop against a recording fake of the worker routes.
 const payload = (task: string, n = 1): RunPayload => ({
   runId: `0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1${n}`,
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
@@ -55,7 +55,7 @@ const REPORT: WorkingCopyReport = {
   hasUncommittedChanges: true,
 };
 
-/** Issue #98: a recording fake of the Working copies (the real one: working-copy.linux.test.ts). */
+/** A recording fake of the Working copies (the real one: working-copy.linux.test.ts). */
 class FakeWorkingCopies implements WorkingCopyPort {
   readonly prepared: string[] = [];
   readonly reported: string[] = [];
@@ -80,7 +80,7 @@ class FakeWorkingCopies implements WorkingCopyPort {
   /** When set, reading the Working copy fails. */
   reportFailure: Error | undefined;
 
-  /** Issue #103: the kept Working copies a resume located; `locateFailure` when it is gone. */
+  /** The kept Working copies a resume located; `locateFailure` when it is gone. */
   readonly located: string[] = [];
   locateFailure: Error | undefined;
 
@@ -109,7 +109,7 @@ const DELIVERED: RunDelivery = {
   pullRequest: { url: 'https://github.com/acme/shop/pull/7', number: 7 },
 };
 
-/** Issue #102: a recording fake of the delivery (the real one: delivery.linux.test.ts). */
+/** A recording fake of the delivery (the real one: delivery.linux.test.ts). */
 class FakeDeliveries implements DeliveryPort {
   readonly calls: [string, string][] = [];
   delivery: RunDelivery = DELIVERED;
@@ -126,9 +126,9 @@ class FakeDeliveries implements DeliveryPort {
   }
   /** When set, delivering waits until it is aborted (a slow push). */
   deliverHangs = false;
-  /** When set, delivering resolves only once this promise does (review of #121). */
+  /** When set, delivering resolves only once this promise does. */
   deliverGate: Promise<void> | undefined;
-  /** Thrown once the gate opened (review of #124: the pull request failed after the push). */
+  /** Thrown once the gate opened. */
   deliverFailureAfterGate: Error | undefined;
 
   async deliver(
@@ -166,7 +166,7 @@ class FakeDeliveries implements DeliveryPort {
   }
 }
 
-/** Issue #144: a diff with one file, as the fake computes it (the real one: run-diff.linux.test.ts). */
+/** A diff with one file, as the fake computes it (the real one: run-diff.linux.test.ts). */
 const DIFF = {
   baseCommit: 'a'.repeat(40),
   includesUnpushed: true,
@@ -174,7 +174,7 @@ const DIFF = {
   files: [{ path: 'src/app.ts', status: 'modified' as const, additions: 1, deletions: 0 }],
 };
 
-/** Issue #144: where the fake's diffs stand. */
+/** Where the fake's diffs stand. */
 const DIFF_STATE = {
   resultTree: 'e'.repeat(40),
   resultCommit: 'c'.repeat(40),
@@ -182,7 +182,7 @@ const DIFF_STATE = {
   previousCommit: 'a'.repeat(40),
 };
 
-/** Issue #144: a recording fake of the diffs. */
+/** A recording fake of the diffs. */
 class FakeRunDiffs implements RunDiffPort {
   readonly calls: [string, string, boolean?][] = [];
   failure: Error | undefined;
@@ -212,8 +212,7 @@ class FakeRunDiffs implements RunDiffPort {
   }
 }
 
-/** Issue #142: a fake of the lookups: what the pull request state is, and how often it was served. */
-/** Issue #147: a recording fake of the branch update (the real one: branch-update.linux.test.ts). */
+/** A recording fake of the branch update (the real one: branch-update.linux.test.ts). */
 class FakeBranchUpdates implements BranchUpdatePort {
   /** `start`, `complete <expected>`, `abort <base>` (`-` when none), in order. */
   readonly calls: string[] = [];
@@ -277,9 +276,9 @@ class RecordingApi implements WorkerApi {
   readonly calls: [string, string, unknown?][] = [];
   claims = 0;
   heartbeatError: Error | undefined;
-  /** What the heartbeat answers: whether the operator asked to cancel (Issue #100). */
+  /** What the heartbeat answers: whether the operator asked to cancel. */
   cancelRequested = false;
-  /** Issue #100: while set, every report fails as if Studio were unreachable. */
+  /** While set, every report fails as if Studio were unreachable. */
   studioDown: Error | undefined;
   eventsError: Error | undefined;
   claimError: Error | undefined;
@@ -303,12 +302,9 @@ class RecordingApi implements WorkerApi {
     }
     return this.queue.shift() ?? null;
   }
-  /**
-   * Review of #121: reports Studio applies but whose answer is lost (a network error after the
-   * commit), by label: `running`, `step`, or the end state.
-   */
+  /** Reports Studio applies but whose answer is lost, by label: running, step or the end state. */
   readonly loseAnswerOf = new Set<string>();
-  /** Review of #121: the next state report is refused with this error. */
+  /** The next state report is refused with this error. */
   stateRefusal: Error | undefined;
   private answer(label: string) {
     if (!this.loseAnswerOf.delete(label)) return;
@@ -348,7 +344,7 @@ class RecordingApi implements WorkerApi {
     if (this.studioDown) throw this.studioDown;
     this.calls.push(['diff', runId, report]);
   }
-  /** The state and step reports; the diffs (Issue #144) have their own tests. */
+  /** The state and step reports; the diffs have their own tests. */
   reports() {
     return this.calls.filter(
       ([kind]) => kind !== 'heartbeat' && kind !== 'status' && kind !== 'events' && kind !== 'diff',
@@ -371,7 +367,7 @@ const STATUS = { runner: 'fake', providers: { claude_code: true, codex: true } }
 const silent = { info: () => undefined, error: () => undefined };
 let worker: AgentWorker | undefined;
 
-/** Issue #100: the Run step's process groups and the Run's containers, as recording fakes. */
+/** The Run step's process groups and the Run's containers, as recording fakes. */
 class FakeProcesses {
   terminated: { graceMs: number }[] = [];
   released = 0;
@@ -407,7 +403,7 @@ function startWorker(
   api: RecordingApi,
   runner: Runner = new FakeRunner({ slowMs: 60_000 }),
   workingCopies: WorkingCopyPort = new FakeWorkingCopies(),
-  /** The Deliveries fake (Issue #102), or the Issue #100 extras. */
+  /** The Deliveries fake, or the step-process extras. */
   fourth: DeliveryPort | Extras = {},
   more: Extras = {},
 ) {
@@ -453,8 +449,7 @@ afterEach(async () => {
 });
 
 describe('AgentWorker', () => {
-  // Issue #142: the lookups run in a loop of their own, whatever the worker carries.
-  describe('lookups (Issue #142)', () => {
+  describe('lookups', () => {
     it('serves lookups while it is idle, and keeps going after a failed serve', async () => {
       const lookups = new FakeLookups();
       lookups.failure = new Error('The Studio API answered 500');
@@ -473,7 +468,6 @@ describe('AgentWorker', () => {
       const before = lookups.served;
       await until(() => lookups.served >= before + 3);
 
-      // Still carrying: no end report yet.
       expect(api.reports()).toHaveLength(1);
     });
 
@@ -508,7 +502,7 @@ describe('AgentWorker', () => {
     ]);
   });
 
-  it('commits what is left before the step report, and delivers after it (Issue #102)', async () => {
+  it('commits what is left before the step report, and delivers after it', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -526,7 +520,7 @@ describe('AgentWorker', () => {
     expect(seen).toEqual({ commit: 1, deliver: 2 });
   });
 
-  it('reports "No changes" as succeeded with the delivery none (Issue #102)', async () => {
+  it('reports "No changes" as succeeded with the delivery none', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -542,7 +536,7 @@ describe('AgentWorker', () => {
     ]);
   });
 
-  it('reports a failed delivery as delivery_failed, after the step result (Issue #102)', async () => {
+  it('reports a failed delivery as delivery_failed, after the step result', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -563,7 +557,7 @@ describe('AgentWorker', () => {
     ]);
   });
 
-  it('still reports the step result when committing the leftovers fails (Issue #102)', async () => {
+  it('still reports the step result when committing the leftovers fails', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -580,7 +574,7 @@ describe('AgentWorker', () => {
     expect(deliveries.calls.map(([step]) => step)).toEqual(['commit']);
   });
 
-  it('reports a stop during the delivery as delivery_failed, so it can be retried (review of #122)', async () => {
+  it('reports a stop during the delivery as delivery_failed, so it can be retried', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -596,7 +590,7 @@ describe('AgentWorker', () => {
     });
   });
 
-  describe("the Run's diffs (Issue #144)", () => {
+  describe("the Run's diffs", () => {
     const kinds = (api: RecordingApi) =>
       api
         .reportsWithDiffs()
@@ -707,7 +701,7 @@ describe('AgentWorker', () => {
       ]);
     });
 
-    it('a delivery retry reports them whatever its outcome (review S-2 of #149)', async () => {
+    it('a delivery retry reports them whatever its outcome', async () => {
       const retry = (n: number) => ({
         ...payload('Add a feature', n),
         kind: 'deliver' as const,
@@ -743,7 +737,7 @@ describe('AgentWorker', () => {
     });
   });
 
-  it('delivers nothing for a question or a failed Run (Issue #102)', async () => {
+  it('delivers nothing for a question or a failed Run', async () => {
     const api = new RecordingApi([payload('[fake:question]'), payload('[fake:fail]', 2)]);
     const deliveries = new FakeDeliveries();
     startWorker(api, undefined, undefined, deliveries);
@@ -753,7 +747,7 @@ describe('AgentWorker', () => {
     expect(deliveries.calls).toEqual([]);
   });
 
-  it('on a delivery claim only delivers from the kept Working copy: no preparation, no step (Issue #102)', async () => {
+  it('on a delivery claim only delivers from the kept Working copy: no preparation, no step', async () => {
     const run = {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
@@ -790,7 +784,7 @@ describe('AgentWorker', () => {
     expect(workingCopies.prepared).toEqual([]);
   });
 
-  it('reports a delivery retry whose Working copy is gone as delivery_failed (Issue #102)', async () => {
+  it('reports a delivery retry whose Working copy is gone as delivery_failed', async () => {
     const run = {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
@@ -816,7 +810,7 @@ describe('AgentWorker', () => {
     ]);
   });
 
-  it('keeps every failure of a delivery retry a delivery_failed, without the error text (Issue #102)', async () => {
+  it('keeps every failure of a delivery retry a delivery_failed, without the error text', async () => {
     const run = {
       ...payload('Add a feature'),
       kind: 'deliver' as const,
@@ -838,7 +832,7 @@ describe('AgentWorker', () => {
     expect(JSON.stringify(api.reports())).not.toContain('/secret/path');
   });
 
-  it('prepares the Working copy while preparing, before it reports running (Issue #98)', async () => {
+  it('prepares the Working copy while preparing, before it reports running', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const workingCopies = new FakeWorkingCopies();
@@ -853,7 +847,7 @@ describe('AgentWorker', () => {
     expect(workingCopies.reported).toEqual([run.runId]);
   });
 
-  it('runs the step in the Working copy with the Run step environment (Issue #98)', async () => {
+  it('runs the step in the Working copy with the Run step environment', async () => {
     const inputs: StartRunStepInput[] = [];
     const recording: Runner = {
       // eslint-disable-next-line require-yield
@@ -878,7 +872,7 @@ describe('AgentWorker', () => {
     });
   });
 
-  it('gives the Environment file to the Working copy only, never to the runner (Issue #104)', async () => {
+  it('gives the Environment file to the Working copy only, never to the runner', async () => {
     const inputs: StartRunStepInput[] = [];
     const prepared: RunPayload[] = [];
     const recording: Runner = {
@@ -910,7 +904,7 @@ describe('AgentWorker', () => {
     expect(JSON.stringify(api.calls)).not.toContain('test-only-pw');
   });
 
-  it('fails the Run with preparation_failed and its detail, starting no Run step (Issue #98)', async () => {
+  it('fails the Run with preparation_failed and its detail, starting no Run step', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const workingCopies = new FakeWorkingCopies();
@@ -943,7 +937,7 @@ describe('AgentWorker', () => {
     expect(started).toBe(false);
   });
 
-  it("sends a crashed step's Working copy state with the failure (Issue #98)", async () => {
+  it("sends a crashed step's Working copy state with the failure", async () => {
     const run = payload('[fake:crash]');
     const api = new RecordingApi([run]);
     startWorker(api);
@@ -985,7 +979,7 @@ describe('AgentWorker', () => {
     expect(JSON.stringify(api.reports())).not.toContain('/secret/path');
   });
 
-  it("forwards the step's events between markers, before it reports the step (Issue #99)", async () => {
+  it("forwards the step's events between markers, before it reports the step", async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     startWorker(api);
@@ -1058,7 +1052,6 @@ describe('AgentWorker', () => {
       {
         state: 'failed',
         failure: { code: 'agent_failed', detail: 'The fake agent failed.' },
-        // Coordinator decision on #98: what the failed step left in the Working copy.
         workingCopy: REPORT,
       },
     ]);
@@ -1075,7 +1068,7 @@ describe('AgentWorker', () => {
     expect(JSON.stringify(api.reports()[1])).not.toContain('crashed');
   });
 
-  it('reports a usage limit as usage_limit, with the session to resume later (Issue #105)', async () => {
+  it('reports a usage limit as usage_limit, with the session to resume later', async () => {
     const limited: Runner = {
       async *start(): RunStep {
         yield { type: 'notice', text: 'Usage limit reached.' };
@@ -1137,7 +1130,7 @@ describe('AgentWorker', () => {
     await until(() => api.calls.filter(([kind]) => kind === 'heartbeat').length >= 3);
   });
 
-  it('reports its status before every claim (Issue #101)', async () => {
+  it('reports its status before every claim', async () => {
     const api = new RecordingApi([]);
     startWorker(api);
 
@@ -1148,8 +1141,7 @@ describe('AgentWorker', () => {
     expect(api.calls[0]?.[2]).toEqual(STATUS);
   });
 
-  // Issue #143: the disk figures go with the status, once measured.
-  it('adds the disk figures to its status report once they are measured (Issue #143)', async () => {
+  it('adds the disk figures to its status report once they are measured', async () => {
     const figures = {
       workingCopiesBytes: 5_000_000,
       cachesBytes: 1_000_000,
@@ -1215,7 +1207,7 @@ describe('AgentWorker', () => {
     expect(api.reports()).toEqual([['state', run.runId, { state: 'running' }]]);
   });
 
-  it('on stop abandons a call in flight instead of waiting for the API (review of #112)', async () => {
+  it('on stop abandons a call in flight instead of waiting for the API', async () => {
     const api = new RecordingApi([]);
     api.claimHangs = true;
     const running = startWorker(api);
@@ -1254,8 +1246,7 @@ describe('AgentWorker', () => {
     expect(api.claims).toBe(claims);
   });
 
-  // Issue #100: cancel, the time limit, the step limit, a Studio outage.
-  describe('cancel and limits (Issue #100)', () => {
+  describe('cancel and limits', () => {
     it('stops a running step when the heartbeat carries a cancel, and reports cancelled', async () => {
       const run = payload('[fake:slow]');
       const api = new RecordingApi([run]);
@@ -1271,7 +1262,6 @@ describe('AgentWorker', () => {
         ['state', run.runId, { state: 'running' }],
         ['state', run.runId, { state: 'cancelled', workingCopy: REPORT }],
       ]);
-      // The step's process groups are stopped and the Run's containers removed.
       expect(processes.terminated).toEqual([{ graceMs: 50 }]);
       expect(processes.released).toBe(1);
       expect(resources.cleaned).toEqual(['studio-run-0b8e5c2d1f3a']);
@@ -1379,7 +1369,7 @@ describe('AgentWorker', () => {
       expect(workingCopies.prepared).toEqual([]);
     });
 
-    it('checks the provider gate before preparing the Working copy (note on #117)', async () => {
+    it('checks the provider gate before preparing the Working copy', async () => {
       const run = payload('Add a feature');
       const api = new RecordingApi([run]);
       const workingCopies = new FakeWorkingCopies();
@@ -1453,9 +1443,7 @@ describe('AgentWorker', () => {
     });
   });
 
-  // Review of #121: Studio applied a report but the answer was lost; the worker sends it again
-  // (Studio treats the repeat as a no-op) and the Run goes on, numbered so nothing is doubled.
-  describe('reports whose answer is lost (review of #121)', () => {
+  describe('reports whose answer is lost', () => {
     it.each(['running', 'step', 'succeeded'])(
       'sends the %s report again and carries the Run to its end',
       async (label) => {
@@ -1476,7 +1464,6 @@ describe('AgentWorker', () => {
         );
         const steps = api.reports().filter(([kind]) => kind === 'step');
         expect(steps.every(([, , body]) => (body as { index: number }).index === 1)).toBe(true);
-        // Not abandoned: nothing reported failed, and the worker claims the next Run.
         await until(() => api.claims >= 2);
       },
     );
@@ -1498,8 +1485,6 @@ describe('AgentWorker', () => {
     });
   });
 
-  // Issue #100 with #102: a cancel stops the Run before anything is pushed; during a push it
-  // still ends the Run as cancelled (the push is aborted).
   describe('cancel and delivery', () => {
     it('pushes nothing for a Run cancelled during its step', async () => {
       const run = payload('[fake:slow]');
@@ -1515,7 +1500,7 @@ describe('AgentWorker', () => {
       expect(deliveries.calls.filter(([step]) => step === 'deliver')).toEqual([]);
     });
 
-    it('lets a delivery the operator cancels finish, and records its pull request on the cancelled Run (review of #121)', async () => {
+    it('lets a delivery the operator cancels finish, and records its pull request on the cancelled Run', async () => {
       const run = payload('Add a feature');
       const api = new RecordingApi([run]);
       const deliveries = new FakeDeliveries();
@@ -1533,7 +1518,7 @@ describe('AgentWorker', () => {
     });
   });
 
-  it('records the pushed Run branch when the pull request fails after a cancel (review of #124)', async () => {
+  it('records the pushed Run branch when the pull request fails after a cancel', async () => {
     const run = payload('Add a feature');
     const api = new RecordingApi([run]);
     const deliveries = new FakeDeliveries();
@@ -1553,8 +1538,7 @@ describe('AgentWorker', () => {
       delivery: { outcome: 'none', branchPushed: true },
     });
   });
-  // Issue #103: an answered Run resumes the same agent session in the kept Working copy.
-  describe('resume (Issue #103)', () => {
+  describe('resume', () => {
     const resumePayload = (task: string, completedSteps = 1, n = 1): RunPayload => ({
       ...payload(task, n),
       kind: 'resume',
@@ -1615,7 +1599,7 @@ describe('AgentWorker', () => {
       ]);
     });
 
-    it("continues a delivery retry's log after the stored events (coordinator decision)", async () => {
+    it("continues a delivery retry's log after the stored events", async () => {
       const run = {
         ...payload('Add a feature'),
         kind: 'deliver' as const,
@@ -1635,7 +1619,7 @@ describe('AgentWorker', () => {
       expect(api.events()[0]).toMatchObject({ seq: 7, stepIndex: 2, kind: 'notice' });
     });
 
-    it("numbers the resumed step's events after the stored log (note from #99)", async () => {
+    it("numbers the resumed step's events after the stored log", async () => {
       const run = resumePayload('[fake:question]');
       const api = new RecordingApi([run]);
       startWorker(api);
@@ -1717,8 +1701,7 @@ describe('AgentWorker', () => {
       expect(workingCopies.located).toEqual([]);
     });
 
-    // Issue #147: a request to bring the Run branch up to date merges the integration branch first.
-    describe('bringing the branch up to date (Issue #147)', () => {
+    describe('bringing the branch up to date', () => {
       const bringUpPayload = (note: string, overrides: Partial<RunPayload> = {}): RunPayload => ({
         ...resumePayload('Add a feature', 3),
         answer: note,
@@ -1867,7 +1850,6 @@ describe('AgentWorker', () => {
             'The integration branch dev could not be fetched. Nothing was changed: the Run is as it was before the request.',
         });
         expect(runner.resumed).toEqual([]);
-        // Nothing was merged, so there is nothing to undo.
         expect(updates.calls).toEqual([STALE, 'start']);
       });
 
@@ -1888,7 +1870,6 @@ describe('AgentWorker', () => {
 
         await until(() => stateReports(api).length === 2);
 
-        // The Run branch goes back to where it was before the part (review S3 of #154).
         expect(updates.calls).toEqual([STALE, 'start', `complete ${MERGED}`, `abort ${BASE}`]);
         expect(stateReports(api)[1]).toMatchObject({
           state: 'failed',
@@ -2035,7 +2016,7 @@ describe('AgentWorker', () => {
         expect(workingCopies.located).toEqual([run.runId]);
       });
 
-      it('resets the branch to where an earlier update began when that part never succeeded (review R2-1)', async () => {
+      it('resets the branch to where an earlier update began when that part never succeeded', async () => {
         const run = bringUpPayload('More', {
           resumeReason: 'follow_up',
           bringUpToDate: undefined,
@@ -2087,8 +2068,7 @@ describe('AgentWorker', () => {
       });
     });
 
-    // Issue #141: a Follow-up continues the session of a finished Run as a new part of it.
-    describe('a Follow-up (Issue #141)', () => {
+    describe('a Follow-up', () => {
       const followUpPayload = (text: string, overrides: Partial<RunPayload> = {}): RunPayload => ({
         ...resumePayload('Add a feature', 3),
         answer: text,
@@ -2124,8 +2104,7 @@ describe('AgentWorker', () => {
         expect(api.reports()[1]?.[2]).toMatchObject({ index: 4, kind: 'resume' });
       });
 
-      // Issue #142: the pull request is read right before the agent would start.
-      describe('the pull request state (Issue #142)', () => {
+      describe('the pull request state', () => {
         it.each([
           ['merged', 'was merged on GitHub'],
           ['closed', 'was closed on GitHub'],
@@ -2153,7 +2132,6 @@ describe('AgentWorker', () => {
                 detail: expect.stringContaining(words),
               },
             });
-            // Review S4 of #152: the failure report carries the state it read.
             expect(api.reports()[0]?.[2]).toMatchObject({ pullRequestState: state });
             expect(notices(api)).toEqual([
               `Follow-up 2 not started: the pull request is ${state === 'missing' ? 'not found' : state}`,
@@ -2241,7 +2219,6 @@ describe('AgentWorker', () => {
         expect(workingCopies.located).toEqual([]);
       });
 
-      // Review S7 of #150: the usage limit pauses a Follow-up; its resume goes on with it.
       it('pauses a Follow-up at the usage limit and says so when it resumes', async () => {
         class LimitedRunner extends RecordingRunner {
           // eslint-disable-next-line require-yield
@@ -2267,7 +2244,6 @@ describe('AgentWorker', () => {
         expect(notices(resumedApi)).toEqual(['Follow-up 2 resumed', 'Follow-up 2 ended: done']);
       });
 
-      // Review S8 of #150.
       it.each([
         ['fails', '[fake:fail]'],
         ['crashes', '[fake:crash]'],
@@ -2303,7 +2279,6 @@ describe('AgentWorker', () => {
         expect(api.reports()[2]?.[2]).toMatchObject({ state: 'succeeded', delivery: DELIVERED });
       });
 
-      // Review S2 of #150: a delivery that failed after its push still says what it pushed.
       it('reports the pushed commit of a delivery that failed after its push', async () => {
         const api = new RecordingApi([followUpPayload('More')]);
         const deliveries = new FakeDeliveries();
@@ -2321,7 +2296,7 @@ describe('AgentWorker', () => {
         });
       });
 
-      it('passes the claim to the Working copy, which replaces the Environment file (review S3)', async () => {
+      it('passes the claim to the Working copy, which replaces the Environment file', async () => {
         const run = followUpPayload('More', {
           replaceEnvironmentFile: true,
           studioPaths: ['.env'],
@@ -2340,7 +2315,6 @@ describe('AgentWorker', () => {
         startWorker(api, runner, new Recording());
         await until(() => api.reports().length === 3);
         expect(located[0]).toMatchObject({ replaceEnvironmentFile: true });
-        // The content never reaches the runner.
         expect(runner.resumed[0]?.run).not.toHaveProperty('environmentFile');
       });
     });

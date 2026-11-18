@@ -1,15 +1,9 @@
 import { runProcess } from './process-runner.js';
 
 /**
- * Git for the agent worker (Issue #98). Every call runs the system `git` from an argument
- * array, without a shell, in its own process group, with prompts disabled and a time limit;
- * a timeout or an abort kills the whole group. Repository content is untrusted: hooks never
- * run, submodules are never recursed into, LFS never smudges, and only the `file`, `https`
- * and `ssh` transports work (no `ext::` or `fd::` helpers).
- *
- * Unlike Studio's hardened Git adapter (which serves Studio's own Clones), the worker keeps
- * the agent user's own Git configuration: that is where the agent side's Git credentials
- * live (the server set-up, #107). The worker writes no credential anywhere.
+ * Git for the agent worker: the system `git` from an argument array (no shell, own process group,
+ * time limit). Repository content is untrusted: hooks never run, no submodules, no LFS smudge,
+ * only `file`/`https`/`ssh` transports. It keeps the agent user's own Git config (its credentials).
  */
 
 /** Transports a worker's Git command may use (`protocol.allow`, `GIT_ALLOW_PROTOCOL`). */
@@ -17,9 +11,8 @@ export const WORKER_GIT_TRANSPORTS = ['file', 'https', 'ssh'] as const;
 export type GitTransport = (typeof WORKER_GIT_TRANSPORTS)[number];
 
 /**
- * Transports for talking to a Project's remote in production: never `file` (a local path is
- * not a Repository; coordinator decision on #98). Local commands (the Working copy's clone of
- * the cache) use `file`.
+ * Transports for a Project's remote in production: never `file` (a local path is not a
+ * Repository); local commands (the Working copy's clone of the cache) use `file`.
  */
 export const REMOTE_GIT_TRANSPORTS: readonly GitTransport[] = ['https', 'ssh'];
 
@@ -44,7 +37,7 @@ export const GIT_HARDENING: readonly string[] = [
   'maintenance.auto=false',
   'i18n.logOutputEncoding=UTF-8',
   // A redirect could lead an https fetch to another host, and packfile URIs (protocol v2)
-  // let a server point Git elsewhere (security.md §4; review of #117, P1).
+  // let a server point Git elsewhere.
   'http.followRedirects=false',
   'fetch.uriProtocols=',
 ].flatMap((setting) => ['-c', setting]);
@@ -69,9 +62,7 @@ export class GitCommandError extends Error {
 }
 
 export interface GitOptions {
-  /** Working directory of the command. */
   cwd: string;
-  /** Time limit in milliseconds. */
   timeoutMs: number;
   signal?: AbortSignal;
   /** `GIT_CEILING_DIRECTORIES`: Git never looks for a repository above these. */
@@ -79,22 +70,16 @@ export interface GitOptions {
   /** The transports this command may use (default: all of {@link WORKER_GIT_TRANSPORTS}). */
   transports?: readonly GitTransport[];
   /**
-   * Settings for this one command, passed through the environment (`GIT_CONFIG_COUNT`,
-   * `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`): never on the command line, where other users
-   * of the host could read them, and never in a config file (Issue #102: the Agent account's
-   * push header).
+   * Settings for this one command, through the environment (`GIT_CONFIG_COUNT`, ...): never on the
+   * command line, where other users of the host could read them, nor in a config file.
    */
   config?: readonly (readonly [key: string, value: string])[];
   /**
-   * `false`: the agent user's own global Git configuration is not read either
-   * (`GIT_CONFIG_GLOBAL=/dev/null`), so nothing the agent could have written there (a URL
-   * rewrite, a proxy, a credential helper) applies. For the token-carrying HTTPS push (#102).
+   * `false`: the agent user's global Git configuration is not read either (`GIT_CONFIG_GLOBAL`), so
+   * nothing the agent wrote there (URL rewrite, proxy, credential helper) applies to the push.
    */
   userConfig?: false;
-  /**
-   * `GIT_INDEX_FILE`: an absolute path to a temporary index for this one command (Issue #144:
-   * the diff stages the Working copy into its own index, never the real one).
-   */
+  /** `GIT_INDEX_FILE`: a temporary index for this one command, never the real one. */
   indexFile?: string;
   /** Most standard output kept (default: the process runner's 4 MiB); the rest is dropped. */
   maxStdout?: number;
@@ -103,7 +88,6 @@ export interface GitOptions {
 export interface GitRunnerOptions {
   /** The environment Git starts from (default: the worker's). `GIT_*` variables are dropped. */
   env?: Record<string, string | undefined>;
-  /** The Git binary (default: `git` on the PATH). */
   binary?: string;
 }
 
@@ -146,7 +130,7 @@ export class GitRunner {
     this.binary = options.binary ?? 'git';
   }
 
-  /** Runs `git <hardening> <args>`; resolves with its standard output, rejects with {@link GitCommandError}. */
+  /** Runs `git <hardening> <args>`: standard output, or rejects with {@link GitCommandError}. */
   async run(args: readonly string[], options: GitOptions): Promise<string> {
     const command = args[0] ?? '';
     const transports = options.transports ?? WORKER_GIT_TRANSPORTS;

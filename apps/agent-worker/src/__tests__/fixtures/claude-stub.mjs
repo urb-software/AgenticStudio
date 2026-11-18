@@ -1,15 +1,7 @@
 #!/usr/bin/env node
-// A stand-in for the Claude Code CLI in regular tests (Issue #105): no network, no login, no
-// model. It replays a recorded stream-json event stream (claude-recordings/<name>.ndjson,
-// shaped like CLI 2.1.325's) and records how it was started, so tests can assert the exact
-// arguments, the environment, the working directory and standard input at the spawn boundary.
-//
-// - `--version` prints a supported version.
-// - The scenario is the `[stub:<name>]` token in the prompt (the argument after `-p`); a
-//   resumed step (`--resume <id>`) defaults to `resume` and reports the session it resumed.
-// - `slow` prints the init event and waits (for stop tests); it exits on SIGINT like the CLI.
-// - Each call is appended as one JSON line to `../claude-stub-calls.ndjson` (beside the
-//   Working copy, in the Run's directory).
+// A stand-in for the Claude Code CLI that replays claude-recordings/<name>.ndjson, picked by the
+// `[stub:<name>]` token in the prompt, and appends how it was started to
+// `../claude-stub-calls.ndjson` beside the Working copy.
 import { appendFileSync, fstatSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

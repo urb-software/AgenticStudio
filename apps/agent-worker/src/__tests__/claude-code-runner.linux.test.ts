@@ -23,11 +23,8 @@ import { installManagedGuardrails } from './fixtures/managed-guardrails.js';
 import { StepProcesses } from '../step-processes.js';
 import { git, isolatedGitEnv } from './fixtures/git-fixture.js';
 
-// Issue #105: the Claude Code runner with a real process: the stub executable
-// (fixtures/claude-stub.mjs) replays recorded streams and records how it was started. No real
-// CLI, no network. A hostile repository proves that nothing of its agent configuration reaches
-// the CLI's arguments, settings, environment or instructions. Linux only, like the worker: runs
-// in CI, skips elsewhere.
+// The Claude Code runner with a real process: a stub executable replays recorded streams, and a
+// hostile repository proves its agent configuration never reaches the CLI.
 
 const STUB = fileURLToPath(new URL('./fixtures/claude-stub.mjs', import.meta.url));
 const SESSION = '8f14e45f-ceea-4c8b-9f2e-1f5a7b3c9d20';
@@ -74,7 +71,7 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
       git: new GitRunner(),
       env: workerEnv(),
       maxTurns: 50,
-      // Issue #134: the real check, on managed files installed under the test's root.
+      // The real check, on managed files installed under the test's root.
       managed: new ManagedGuardrails({ root: join(root, 'managed'), ownerUid: process.getuid!() }),
     });
   const payload = (task: string): RunPayload => ({
@@ -225,7 +222,7 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     expect(argv.join('\n')).not.toMatch(/\.claude\/|\.mcp\.json|hostile|evil/i);
     expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('user');
     expect(argv).toContain('--strict-mcp-config');
-    // Settings: empty per Run (Issue #134: Studio's guardrails are the managed settings).
+    // Settings: empty per Run; the guardrails are the managed settings.
     const settings = JSON.parse(readFileSync(join(runDir, 'claude-settings.json'), 'utf8'));
     expect(settings).toEqual({});
     // Instructions: the text of CLAUDE.md, AGENTS.md and the inside import, nothing else.
@@ -248,7 +245,7 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     });
   });
 
-  it('refuses a step, starting nothing, when the managed guard script was changed (Issue #134)', async () => {
+  it('refuses a step, starting nothing, when the managed guard script was changed', async () => {
     const guard = join(root, 'managed', 'usr/local/lib/agentic-studio/guardrails/claude-guard.mjs');
     writeFileSync(guard, 'process.exit(0);', { flag: 'a' });
 
@@ -314,7 +311,7 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     expect(denied.events.map((event) => event.type)).toContain('notice');
   });
 
-  it('is stopped through its process group, like every Run step (Issue #100)', async () => {
+  it('is stopped through its process group, like every Run step', async () => {
     const abort = new AbortController();
     const step = drain(runner().start(input('x [stub:slow]', abort.signal)));
     step.catch(() => undefined);

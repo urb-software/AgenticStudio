@@ -7,16 +7,12 @@ import {
 } from '../user-level-files.js';
 
 /**
- * The agent user's own Claude Code settings (reviews R4 and N1 of #129). The approved Mode
- * keeps the user setting source (`--setting-sources user`), so `~/.claude/settings.json` and
- * `~/.claude/settings.local.json` still load, and an agent could write them through Bash for
- * later Runs (hooks, env, an API key helper, plugins, status line, permissions, MCP servers).
- * Coordinator decision: both files must be absent or hold only `$schema`. Before every Run step
- * the worker refuses to start the CLI otherwise; the operator reviews the file. Only key names
- * are ever reported, never values.
+ * The agent user's own Claude Code settings still load (the Mode keeps the user setting source), so
+ * an agent could plant hooks, env, an API key helper or MCP servers there: both files must be
+ * absent or hold only `$schema`, else the step is refused. Only key names are reported.
  */
 
-/** User-level files that must be absent (review C2 of #133); relative to the home directory. */
+/** User-level files that must be absent, relative to the home directory. */
 export const CLAUDE_USER_LEVEL_FILES: UserLevelFiles = {
   absent: ['.claude/CLAUDE.md'],
   empty: [
@@ -73,7 +69,7 @@ export async function userSettingsProblem(home: string | undefined): Promise<str
   if (unreadable.length > 0) {
     return `Claude Code user settings could not be checked (${unreadable.join(', ')}); the operator must review them.`;
   }
-  // Review C2 of #133: user-level instructions, agents, commands and skills load in every Run.
+  // User-level instructions, agents, commands and skills load in every Run.
   return userLevelFilesProblem(
     'Claude Code',
     await presentUserLevelFiles(home, CLAUDE_USER_LEVEL_FILES),

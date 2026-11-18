@@ -9,7 +9,7 @@ export interface AgentSession {
   ref: string;
 }
 
-/** Removes what the provider CLIs keep on the agent side for a Working copy (Issue #143). */
+/** Removes what the provider CLIs keep on the agent side for a Working copy. */
 export interface AgentSessionFiles {
   remove(repoDir: string, session?: AgentSession): Promise<void>;
 }
@@ -25,21 +25,9 @@ export function claudeProjectDirectoryName(repoDir: string): string {
 const CODEX_SESSION_FILE = /^rollout-[0-9T:_-]+-([0-9a-f-]{36})\.jsonl$/i;
 
 /**
- * The files the provider CLIs keep for a Run under the agent user's home directory (Issue #143),
- * removed together with the Run's Working copy so session history does not pile up:
- * - Claude Code: the directory `~/.claude/projects/<the Working copy's path, every character that
- *   is not a letter or digit as a dash>` (its session transcripts for that working directory);
- * - Codex: the session file `~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-<time>-<session id>.jsonl`
- *   of the Run's session id.
- * Nothing else is touched: not the logins, not other projects' or sessions' files, not
- * `~/.claude/settings*` or `~/.codex/config.toml` (Studio rewrites the Codex trust entries of the
- * Working copies that remain after every removal pass).
- *
- * Paths come only from the Working copy's path (derived from the Run id, validated as a UUID) and
- * the session id (accepted only as a UUID, the way both CLIs name sessions), joined onto
- * directories under `home`; each directory on the way must be a real directory, a symlink is
- * never followed (a link in place of the file or directory is removed itself), and a missing
- * file is no error.
+ * The provider CLIs' session files for a Run under `home` (Claude Code's project directory, Codex's
+ * session file), removed with its Working copy; paths come only from validated UUIDs, a symlink
+ * is removed, never followed, a missing file is no error, nothing else is touched.
  */
 export class AgentSessions implements AgentSessionFiles {
   constructor(

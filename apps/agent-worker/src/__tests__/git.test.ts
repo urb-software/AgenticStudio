@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GIT_HARDENING, maskCredentials } from '../git.js';
 
-// Issue #98 (review of #117): what the worker's Git commands always carry, and what its log
-// never shows.
+// What the worker's Git commands always carry, and what its log never shows.
 describe('maskCredentials', () => {
   it.each([
     ['https://user:secret@host.test/repo.git', 'https://***@host.test/repo.git'],

@@ -10,8 +10,7 @@ import {
   sandboxNotice,
 } from '../codex/cli-options.js';
 
-// Issue #106: how the worker starts the Codex CLI: exactly the compliance record's command,
-// a minimal environment, a supported version range and the prompt.
+// How the worker starts the Codex CLI: the approved command, a minimal environment, the versions.
 
 const files = codexStepFiles('/data/runs/r1');
 

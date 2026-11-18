@@ -5,17 +5,9 @@ import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Studio's managed guardrails (Issue #134): the provider CLIs' root-owned configuration (Claude
- * Code's managed settings, Codex's managed configuration and requirements) and the guard script
- * their hooks run. The server setup installs them from the worker's own guardrails folder
- * (`guardrails/managed-files.txt` says which file goes where); the agent user cannot change them.
- * GUARDRAILS, NOT THE SECURITY BOUNDARY (ADR 0002, security.md §2).
- *
- * At start and before every Run step the worker checks a provider's files: each a real file (never
- * a symbolic link), owned by root, writable by nobody else, in a directory only root can change,
- * and byte-equal (SHA-256) to the worker's own copy; and the hooks' interpreter
- * ({@link HOOK_INTERPRETER}) a real root-owned file. Anything else makes the provider unavailable
- * at start, or fails the step. There is no fallback to agent-writable copies.
+ * Studio's managed guardrails (root-owned CLI configuration and the guard script, installed by the
+ * server setup), checked at start and before every Run step: real root-owned files, writable by
+ * nobody else, byte-equal (SHA-256) to the worker's copy; else unavailable, with no fallback.
  */
 
 /** The worker's guardrails folder: `apps/agent-worker/guardrails` (from `src/` and `dist/`). */
@@ -28,15 +20,14 @@ export const GUARDRAILS_DIR = fileURLToPath(new URL('../guardrails/', import.met
 export const HOOK_INTERPRETER = '/usr/local/bin/node';
 
 /**
- * The launcher the managed hooks start the interpreter with, `env -i` and a fixed PATH, so
- * nothing of the session's environment reaches the guard (review H1 of #136). Root-owned (the
- * operating system's coreutils).
+ * The launcher the managed hooks start the interpreter with (`env -i` and a fixed PATH), so nothing
+ * of the session's environment reaches the guard. Root-owned (the operating system's coreutils).
  */
 export const HOOK_LAUNCHER = '/usr/bin/env';
 
 /**
  * The manifest in the guardrails folder: `<provider> <file> <installed path>` per line, or
- * `<provider> absent <path>` for a managed input of the CLI that must not exist (review L1).
+ * `<provider> absent <path>` for a managed input of the CLI that must not exist.
  */
 export const MANAGED_FILES_MANIFEST = 'managed-files.txt';
 
@@ -137,7 +128,7 @@ export class ManagedGuardrails implements ManagedGuardrailsCheck {
       if (file.provider !== provider) continue;
       if (!(await this.intact(file))) return `managed guardrails missing or changed: ${file.path}`;
     }
-    // Other managed inputs the CLI would merge into Studio's policy (review L1 of #136).
+    // Other managed inputs the CLI would merge into Studio's policy.
     for (const { provider: owner, path } of await readAbsentPaths(this.dir)) {
       if (owner !== provider) continue;
       if (!(await this.absent(posix.join(this.root, path)))) {

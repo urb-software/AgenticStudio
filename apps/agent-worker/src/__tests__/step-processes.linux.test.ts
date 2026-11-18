@@ -9,9 +9,7 @@ import { composeProjectName, runDirectories } from '../run-layout.js';
 import { isSignallableGroup, terminateProcessGroups } from '../spawn-boundary.js';
 import { StepProcesses } from '../step-processes.js';
 
-// Issue #100: stopping the whole process tree of a Run step, and the leftovers of a worker
-// that crashed. Real processes (tests only start them with node:child_process); the agent
-// worker is Linux-only, so this suite runs on Linux (CI) and skips elsewhere.
+// Stopping the whole process tree of a Run step, and the leftovers of a crashed worker.
 
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const silent = { info: () => undefined, error: () => undefined };
@@ -121,7 +119,7 @@ describe.skipIf(process.platform !== 'linux')('Run step process groups (Linux)',
     expect(existsSync(file)).toBe(false);
   });
 
-  // Review of #121: a recorded group is signalled only if it is provably the step's own.
+  // A recorded group is signalled only if it is provably the step's own.
   describe('leftovers of a worker that crashed', () => {
     /** Writes the Run's record file; returns its path. */
     function recordFile(lines: string[]): string {

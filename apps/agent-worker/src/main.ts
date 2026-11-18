@@ -21,7 +21,7 @@ import { AgentWorker, type WorkerLogger } from './worker.js';
 import { loadWorkerId } from './worker-identity.js';
 import { WorkingCopies } from './working-copy.js';
 
-// The agent worker process (Issue #96). It runs on the host as the agent user and only calls
+// The agent worker process. It runs on the host as the agent user and only calls
 // the Studio API with the worker token; it has no database, Redis or secret-store access.
 // Fail fast: a wrong platform or an invalid environment stops it before it polls.
 try {
@@ -39,12 +39,11 @@ try {
   process.exit(1);
 }
 
-// The provider switches were read once, above; a change takes a restart (Issue #101).
+// The provider switches were read once, above; a change takes a restart.
 const switches = new ProviderGate(config.providers);
-// Issue #105: a switched-on Claude Code whose CLI is missing or of an unsupported version is
-// unavailable (with the reason) for the life of the process. The check starts `claude
-// --version` through the spawn boundary, so only when the switch is on and the CLI is used.
-// Issue #106: the same for Codex, which must also be a complete standalone install.
+// A switched-on provider whose CLI is missing or unsupported is unavailable (with the reason) for
+// the life of the process; the check starts `<cli> --version` through the spawn boundary, and
+// Codex must also be a complete standalone install.
 const unavailable: { claude_code?: string; codex?: string } = {};
 if (config.runner === 'cli' && switches.isEnabled('claude_code')) {
   const check = await probeClaudeCode(
@@ -60,7 +59,7 @@ if (config.runner === 'cli' && switches.isEnabled('codex')) {
   );
   if (!check.ok) unavailable.codex = check.reason;
 }
-// Issue #134: Studio's guardrails for both CLIs are root-owned managed files the server setup
+// Studio's guardrails for both CLIs are root-owned managed files the server setup
 // installs; a switched-on provider whose files are missing or changed is unavailable.
 if (config.runner === 'cli') {
   const managed = new ManagedGuardrails();
@@ -100,7 +99,7 @@ const runner = new RunnerDispatcher(
 const reasons = gate.reasons();
 
 // Kept in the data directory across restarts: a delivery retry goes to the worker that started
-// the Run, which holds its Working copy (Issue #102, review R4 of #122).
+// the Run, which holds its Working copy.
 const workerId = await loadWorkerId(config.dataDir);
 const logger: WorkerLogger = {
   info: (message) => console.log(`[agent-worker ${workerId}] ${message}`),
@@ -113,7 +112,7 @@ const api = new StudioApi({
   timeoutMs: config.requestTimeoutMs,
 });
 const resources = new DockerRunResources(undefined, logger);
-// Issue #143: the disk figures for the status report and the free-space guard of new Runs.
+// The disk figures for the status report and the free-space guard of new Runs.
 const disk = new DiskMonitor({
   dataDir: config.dataDir,
   minFreeBytes: config.minFreeBytes,
@@ -126,7 +125,7 @@ const workingCopies = new WorkingCopies({
   freeSpace: disk,
   agentGitName: config.agentGitName,
   agentGitEmail: config.agentGitEmail,
-  // A local (file) remote only for a development or test worker (coordinator decision, #98).
+  // A local (file) remote only for a development or test worker.
   allowFileRemotes: config.environment !== 'production',
   logger,
 });
@@ -142,7 +141,7 @@ const worker = new AgentWorker({
   },
   disk,
   workingCopies,
-  // Issue #147: the integration branch merged into a Run branch on the operator's request.
+  // The integration branch merged into a Run branch on the operator's request.
   branchUpdates: new BranchUpdates({
     dataDir: config.dataDir,
     git,
@@ -151,7 +150,7 @@ const worker = new AgentWorker({
     agentGitEmail: config.agentGitEmail,
     logger,
   }),
-  // Issue #102: the Agent account's token stays on the agent side (the worker's own .env).
+  // The Agent account's token stays on the agent side (the worker's own .env).
   deliveries: new Deliveries({
     dataDir: config.dataDir,
     git,
@@ -161,14 +160,14 @@ const worker = new AgentWorker({
     github: config.agentGitHub,
     logger,
   }),
-  // Issue #142: the state of a Run's pull request, read through the Agent account (reads only).
+  // The state of a Run's pull request, read through the Agent account (reads only).
   lookups: new PullRequestLookups({
     api,
     github: config.agentGitHub,
     allowFileRemotes: config.environment !== 'production',
     logger,
   }),
-  // Issue #144: the Run's diffs, within the configured limits.
+  // The Run's diffs, within the configured limits.
   diffs: new RunDiffs({ dataDir: config.dataDir, git, limits: config.diffLimits, logger }),
   pollMs: config.pollMs,
   heartbeatMs: config.heartbeatMs,
@@ -176,7 +175,7 @@ const worker = new AgentWorker({
   logger,
 });
 
-// Issue #100: a previous worker that crashed during a Run step may have left its processes
+// A previous worker that crashed during a Run step may have left its processes
 // and containers behind. Stop them before anything else runs; the Run is not resumed (Studio
 // fails it as worker_lost). A failure is logged and the next start tries again.
 try {
@@ -190,13 +189,13 @@ try {
   logger.error(`Cleaning up after a previous worker failed: ${(error as Error).message}`);
 }
 
-// Working copy retention (Issue #98): at start (which also removes leftover directories
+// Working copy retention: at start (which also removes leftover directories
 // without a known Run) and hourly; a failed pass is logged and retried at the next one.
 const retention = new Retention({
   dataDir: config.dataDir,
   runStates: (runIds, signal, removedRunIds) => api.runStates(runIds, signal, removedRunIds),
   resources,
-  // Issue #143: the provider CLIs' session files of a removed Working copy go with it.
+  // The provider CLIs' session files of a removed Working copy go with it.
   ...(process.env.HOME?.startsWith('/') && process.env.HOME !== '/'
     ? { sessions: new AgentSessions(process.env.HOME, logger) }
     : {}),
@@ -205,7 +204,7 @@ const retention = new Retention({
 });
 const retentionAbort = new AbortController();
 let sweeping: Promise<void> | undefined;
-// Issue #106: a removed Working copy's untrusted entry leaves Studio's Codex configuration with it.
+// A removed Working copy's untrusted entry leaves Studio's Codex configuration with it.
 const codexInUse = config.runner === 'cli' && gate.isEnabled('codex');
 const sweep = () => {
   sweeping ??= retention

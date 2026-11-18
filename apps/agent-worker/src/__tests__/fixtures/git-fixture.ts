@@ -2,10 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-// Issue #98: fixture repositories for the worker's Working copy tests: a bare "remote" reached
-// through a file:// URL, filled from a scratch clone. No network; Linux only, like the worker.
+// Fixture repositories for the Working copy tests: a bare "remote" reached through a file:// URL.
 
-/** A Git environment of its own: no system or user configuration of the machine running the tests. */
+/** A Git environment with none of the host machine's system or user configuration. */
 export function isolatedGitEnv(home: string): Record<string, string> {
   return {
     PATH: process.env.PATH ?? '/usr/bin:/bin',

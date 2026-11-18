@@ -1,17 +1,7 @@
 #!/usr/bin/env node
-// A stand-in for the Codex CLI in regular tests (Issue #106): no network, no login, no model.
-// It replays a recorded `codex exec --json` stream (codex-recordings/<name>.jsonl) and records
-// how it was started, so tests can assert the exact arguments, the environment, the working
-// directory and standard input at the spawn boundary.
-//
-// - `--version` prints a supported version (`codex-cli 0.169.0`).
-// - The scenario is the `[stub:<name>]` token on standard input (the prompt or the answer); a
-//   resumed step (`exec ... resume <id> -`) defaults to `resume` and reports the session it resumed.
-// - A first step writes the recording's last agent message to the `--output-last-message` file.
-// - `slow` prints `thread.started` and waits (for stop tests); it exits on SIGINT like the CLI.
-// - `no-result` prints an error to standard error and exits 2 without an event.
-// - Each call is appended as one JSON line to `../codex-stub-calls.ndjson` (beside the Working
-//   copy, in the Run's directory), with the Codex home's config.toml as the CLI would read it.
+// A stand-in for the Codex CLI that replays codex-recordings/<name>.jsonl, picked by the
+// `[stub:<name>]` token on standard input, and appends how it was started to
+// `../codex-stub-calls.ndjson` beside the Working copy.
 import { appendFileSync, fstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -4,7 +4,7 @@ import { lstat, readdir, statfs } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { cachesDirectory, isUuid, runsDirectory } from './run-layout.js';
 
-/** How often the disk is measured at most (Issue #143). */
+/** How often the disk is measured at most. */
 export const DISK_MEASURE_INTERVAL_MS = 10 * 60_000;
 
 /** Why no new Run is prepared: the free space is below the threshold. Safe to show (no path). */
@@ -45,11 +45,9 @@ function gib(bytes: number): string {
 }
 
 /**
- * The disk the worker keeps Working copies and caches on (Issue #143). `snapshot()` is the figures
- * of the latest measurement, taken at most every ten minutes in the background (walking a
- * Working copy tree is not free), for the worker's status report. `assertEnoughFreeSpace()`
- * reads the free space right now, so a new Run is refused the moment the disk is short rather
- * than up to ten minutes later.
+ * The disk the worker keeps Working copies and caches on. `snapshot()` is the latest measurement,
+ * taken at most every ten minutes in the background (walking a tree is not free);
+ * `assertEnoughFreeSpace()` reads the free space now, so a new Run is refused at once.
  */
 export class DiskMonitor {
   private figures: WorkerDisk | undefined;
@@ -141,12 +139,9 @@ async function countRuns(runsDir: string): Promise<number> {
 }
 
 /**
- * Bytes of data under `root`, links not followed; a `root` that is a link or not a directory
- * counts 0 (nothing outside the data directory is measured). A file with several hard links (a
- * clone made with `--local` links the cache's objects) counts once across everything measured
- * with the same `seen` set. A file that vanishes while it is measured (a Run being removed)
- * counts 0; an entry that cannot be read (a permission error) is skipped and counted in
- * `skipped`, so the figures say they are partial.
+ * Bytes of data under `root`, links not followed; a `root` that is a link or no directory counts 0.
+ * Hard-linked files count once per `seen` set; a vanished file counts 0 and an unreadable entry
+ * is skipped and counted in `skipped`, so the figures say they are partial.
  */
 async function treeBytes(
   root: string,

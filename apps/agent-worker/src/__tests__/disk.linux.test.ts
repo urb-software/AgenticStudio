@@ -13,8 +13,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DiskMonitor, LowFreeSpaceError } from '../disk.js';
 
-// Issue #143: what the worker measures of its disk and how it refuses new Runs, on a real
-// directory tree with the file system's free space faked. Linux only, like the worker.
+// What the worker measures of its disk and how it refuses new Runs, with free space faked.
 
 const GIB = 1024 ** 3;
 

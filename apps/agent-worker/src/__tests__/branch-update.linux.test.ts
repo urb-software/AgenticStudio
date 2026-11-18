@@ -19,8 +19,7 @@ import { PreparationFailedError, type PreparedRun, WorkingCopies } from '../work
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
 import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
 
-// Issue #147: bringing a Run branch up to date, on a real Working copy and a fixture remote
-// (file://, no network). Linux only, like the worker; runs in CI on Linux.
+// Bringing a Run branch up to date, on a real Working copy and a file:// fixture remote.
 
 const AGENT = { agentGitName: 'Studio Agent', agentGitEmail: 'agent@example.test' };
 const DONE: RunStepResult = {
@@ -186,7 +185,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     const prepared = await prepare(run);
     agentCommits(prepared, { 'run.txt': 'y\n' }, 'Run change');
     const before = headOf(prepared);
-    // Review S9 of #154: what is uncommitted stays exactly as it is.
+    // What is uncommitted stays exactly as it is.
     writeFileSync(join(prepared.repoDir, 'wip.ts'), 'export const WIP = 1;\n');
 
     const start = await updates().start(prepared, run, signal());
@@ -371,7 +370,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     });
   });
 
-  describe('conflicts that are not text (review S5 of #154)', () => {
+  describe('conflicts that are not text', () => {
     /** A binary file both sides added: git leaves "ours" in the tree, without a marker. */
     async function binaryConflict() {
       const run = payload();
@@ -407,7 +406,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     });
   });
 
-  describe('undoing an update that did not end well (review S3 of #154)', () => {
+  describe('undoing an update that did not end well', () => {
     it('resets the Run branch to the commit before the merge, so a second request merges again', async () => {
       const { run, prepared } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
       const start = await updates().start(prepared, run, signal());
@@ -447,7 +446,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     });
   });
 
-  describe('what a part that never reached the worker left behind (review R2 of #154)', () => {
+  describe('what a part that never reached the worker left behind', () => {
     it('does not reset a branch whose commits past the base were pushed', async () => {
       const { run, prepared } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
       const start = await updates().start(prepared, run, signal());
@@ -500,7 +499,7 @@ describe.skipIf(process.platform !== 'linux')('BranchUpdates', () => {
     });
   });
 
-  describe('the Run own changes after a merge (review S1 of #154)', () => {
+  describe('the Run own changes after a merge', () => {
     it('counts the Run commits from the merged integration commit, not from the start commit', async () => {
       const { run, prepared, tip } = await behind({ 'main.txt': 'x\n' }, { 'run.txt': 'y\n' });
       await updates().start(prepared, run, signal());

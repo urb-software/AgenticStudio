@@ -1,4 +1,4 @@
-/** Helpers for a provider CLI's own output (Issues #105, #106). */
+/** Helpers for a provider CLI's own output. */
 
 /** Longest CLI reason taken into a failure detail. */
 const REASON_MAX = 500;

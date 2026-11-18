@@ -3,11 +3,9 @@ import { posix } from 'node:path';
 import type { AgentDefinition } from '../agent-definition/index.js';
 
 /**
- * The instructions file of a Claude Code Run step (Issue #105, ADR 0002): the built-in agent
- * definition, then the text of the repository's `CLAUDE.md` and `AGENTS.md` at the Run's start
- * commit, each in a clearly delimited, untrusted "project conventions" block. The CLI loads none
- * of the repository's own agent configuration (`--setting-sources user`), so this text is the
- * only thing of it the agent sees, and only as text.
+ * The instructions file of a Claude Code step: the agent definition, then the repository's
+ * `CLAUDE.md` and `AGENTS.md` at the start commit as delimited, untrusted text (the CLI loads none
+ * of the repository's own configuration, so this is all of it the agent sees).
  */
 
 /** Largest instructions file, in UTF-8 bytes; the rest is cut with a notice. */
@@ -113,7 +111,7 @@ async function collect(
 /**
  * Builds the instructions file. `marker` is a random code per step: only lines carrying it
  * delimit a block, so a repository cannot fake the end of its own block. `roots` are the
- * repository's instruction files to read (Codex: `AGENTS.md` only, Issue #106).
+ * repository's instruction files to read (Codex: `AGENTS.md` only).
  */
 export async function buildInstructions(
   definition: AgentDefinition,

@@ -18,9 +18,7 @@ import {
 } from '../github.js';
 import { type LookupApi, PullRequestLookups } from '../pull-request-lookups.js';
 
-// Issue #142: the worker answers pull request lookups through the Agent account, after a scope
-// check, with reads only. The Git host is a recording fake of the reader; the real client is
-// tested against a stub of GitHub in github.test.ts.
+// Pull request lookups through the Agent account, against a recording fake of the reader.
 
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const BRANCH = 'agent/add-a-feature-r0b8e5c2d';
@@ -254,7 +252,7 @@ describe('PullRequestLookups', () => {
       });
     });
 
-    it('reports a failure, not a missing pull request, when only the comparison answered 404 (review S3 of #152)', async () => {
+    it('reports a failure, not a missing pull request, when only the comparison answered 404', async () => {
       reader.branch = null;
       reader.branchPresent = true;
 
@@ -332,7 +330,7 @@ describe('PullRequestLookups', () => {
     });
   });
 
-  describe('pull request checks (Issue #145)', () => {
+  describe('pull request checks', () => {
     const check = (overrides: Partial<CheckReport> = {}): CheckReport => ({
       name: 'build',
       state: 'passed',
@@ -798,8 +796,6 @@ describe('PullRequestLookups', () => {
     });
   });
 
-  // Issue #146: Review comments are read, never written; each kind, resolved threads and the
-  // Agent account's own comments, the "since" filter and the limits.
   describe('review comments', () => {
     const at = (minutes: number) => new Date(Date.UTC(2026, 10, 16, 10, minutes)).toISOString();
     const ask = (reviewComments: LookupPayload['reviewComments'] = { scope: 'unresolved' }) =>
@@ -1015,8 +1011,7 @@ describe('PullRequestLookups', () => {
   });
 });
 
-// Issue #142: the lookups start no agent CLI, and nothing they import can: the modules that
-// spawn processes (the spawn boundary, the runners, Git) are not in their import closure.
+// The lookups must start no process: the spawn boundary, runners and Git are not in their imports.
 describe('what pull request lookups can reach', () => {
   const src = join(dirname(fileURLToPath(import.meta.url)), '..');
 

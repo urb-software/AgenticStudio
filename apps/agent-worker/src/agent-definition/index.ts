@@ -7,10 +7,8 @@ import {
 import { z } from 'zod';
 
 /**
- * The built-in agent definition (Issue #103): the instructions every real runner gives its agent
- * (Claude Code: #105, Codex: #106) besides the Task. It states the structured result a Run step
- * ends with and when the agent stops to ask the operator. The fake runner ignores it. A change
- * of wording that changes behaviour gets a new version, so a Run's log can say which one it ran.
+ * The built-in agent definition: the instructions every real runner gives its agent besides the
+ * Task. A wording change that changes behaviour gets a new version, so a Run's log says which ran.
  */
 export interface AgentDefinition {
   /** `<date>.<n>`, raised whenever the text changes. */
@@ -80,10 +78,8 @@ Everything you write is shown to the operator as plain text; never rely on marku
 };
 
 /**
- * The structured result the agent ends a step with, as the agent writes it (Issue #105): the
- * worker protocol's Run step result without the session reference, which the runner takes from
- * the CLI's stream. A real runner gives its JSON Schema ({@link AGENT_RESULT_JSON_SCHEMA}) to its
- * CLI (Claude Code: `--json-schema`); the worker still validates the result against the protocol.
+ * The structured result the agent ends a step with: the protocol's Run step result without the
+ * session reference (the runner takes it from the stream); the worker still validates it.
  */
 export const agentResultSchema = z.strictObject({
   outcome: z.enum(['done', 'needs_input']),
@@ -96,10 +92,8 @@ export const agentResultSchema = z.strictObject({
 });
 
 /**
- * {@link agentResultSchema} as JSON Schema text, for the CLI's schema option. Draft-07 keywords
- * and no `$schema` key: Claude Code 2.1.325 refuses a schema that names draft 2020-12 ("no
- * schema with key or ref", coordinator smoke of #105), and an unannotated draft-07 schema is
- * valid under its validator's default draft.
+ * {@link agentResultSchema} as JSON Schema text for the CLI. Draft-07 keywords, no `$schema` key:
+ * Claude Code 2.1.325 refuses a schema that names draft 2020-12.
  */
 export const AGENT_RESULT_JSON_SCHEMA = (() => {
   const { $schema, ...schema } = z.toJSONSchema(agentResultSchema, { target: 'draft-7' });

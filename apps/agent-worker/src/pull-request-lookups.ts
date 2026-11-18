@@ -30,25 +30,8 @@ import type { StudioApi } from './studio-api.js';
 const LOGS_BUDGET_MS = 90_000;
 
 /**
- * Pull request lookups (Issue #142): the agent worker answers Studio's questions about a Run's
- * pull request through the Agent account. Everything it does here is a read: it starts no agent
- * CLI, changes nothing on the Git host and needs no Working copy.
- *
- * A lookup is limited to the Run's own pull request, and the worker checks that before it
- * answers: the remote must name a GitHub repository, the Run branch must be one Studio would
- * have named for this Run (`agent/…-r<run id>`), and the pull request must come from exactly
- * that branch of that repository and have been opened by the Agent account. Anything else is
- * rejected as `scope_mismatch`, and nothing beyond that one pull request is read.
- *
- * Issue #145: a `pull_request_state` lookup of a draft or open pull request also reads the checks
- * of its latest commit, and a `failing_check_logs` lookup reads the end of the log of each failed
- * check. Both are reads through the same scope check; a log is untrusted text that is only
- * capped and cleaned of control characters here (Studio redacts it before it is stored).
- *
- * Issue #146: a `review_comments` lookup reads the pull request's reviews, inline comments and
- * conversation comments (and which review threads are resolved) through the same scope check, and
- * answers with the unresolved ones written by anyone but the Agent account. A comment is untrusted
- * text; nothing here posts, replies to or resolves anything.
+ * Read-only answers to Studio's questions about a Run's own pull request, after a scope check
+ * that rejects anything else as `scope_mismatch` and reads nothing beyond that pull request.
  */
 
 /** What a lookup needs to know about the Run's pull request. */
@@ -93,8 +76,8 @@ export interface LookupService {
   /** Claims the waiting lookups and answers each; returns how many it handled. */
   serve(signal: AbortSignal): Promise<number>;
   /**
-   * The state of the pull request a Follow-up would update (Issue #142): read before the agent
-   * is started. `unknown` when it could not be read: that never stops a Follow-up.
+   * The state of the pull request a Follow-up would update, read before the agent is started:
+   * `unknown` when it could not be read, which never stops a Follow-up.
    */
   followUpState(run: RunPayload, signal: AbortSignal): Promise<PullRequestStateName | 'unknown'>;
 }
@@ -263,8 +246,7 @@ export class PullRequestLookups implements LookupService {
 
   /**
    * Reads the Run's pull request, after the scope check; throws {@link LookupRefusal}. With
-   * `withChecks` (Issue #145) a draft or open pull request also gets the checks of its latest
-   * commit.
+   * `withChecks` a draft or open pull request also gets the checks of its latest commit.
    */
   private async read(
     target: PullRequestTarget,
@@ -285,7 +267,7 @@ export class PullRequestLookups implements LookupService {
       );
       if (position === null) {
         // A 404 also answers a missing integration branch: only a Run branch that is really gone
-        // is a missing pull request (review S3 of #152).
+        // is a missing pull request.
         if (await reader.branchExists(repository, target.runBranch, signal)) {
           throw new LookupRefusal(
             'failed',
@@ -313,9 +295,8 @@ export class PullRequestLookups implements LookupService {
   }
 
   /**
-   * The checks of the pull request's latest commit (Issue #145). When GitHub refuses to tell
-   * (the Agent account lacks the permission), the answer says so instead of failing the lookup:
-   * the pull request's state is still worth having.
+   * The checks of the pull request's latest commit. When GitHub refuses to tell (the Agent
+   * account lacks the permission), the answer says so instead of failing the lookup.
    */
   private async readChecks(
     reader: PullRequestReader,
@@ -352,9 +333,9 @@ export class PullRequestLookups implements LookupService {
   }
 
   /**
-   * The failed checks of the pull request's latest commit with the end of each job's log
-   * (Issue #145), after the scope check; throws {@link LookupRefusal}. A log that cannot be
-   * read leaves the check in the answer with the reason.
+   * The failed checks of the latest commit with the end of each job's log, after the scope check;
+   * throws {@link LookupRefusal}. A log is untrusted text, only capped and cleaned of control
+   * characters here (Studio redacts it); one that cannot be read stays in the answer with a reason.
    */
   private async readFailingCheckLogs(
     target: PullRequestTarget,
@@ -391,9 +372,9 @@ export class PullRequestLookups implements LookupService {
   }
 
   /**
-   * The unresolved Review comments of the Run's pull request (Issue #146), after the scope check;
-   * throws {@link LookupRefusal}. A pull request that is merged or closed can still be read; one
-   * that is gone cannot. The whole read stays within the lookup's time budget.
+   * The unresolved Review comments of the Run's pull request, after the scope check; throws
+   * {@link LookupRefusal}. A comment is untrusted text, and nothing here posts, replies or
+   * resolves; a merged or closed pull request can be read, a gone one cannot.
    */
   private async readReviewComments(
     target: PullRequestTarget,

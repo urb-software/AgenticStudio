@@ -2,10 +2,7 @@ import { runStepResultSchema } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
 import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 
-// Issue #105: the structured result's JSON Schema the Claude Code runner passes with
-// `--json-schema`. CLI 2.1.325 refuses a schema naming draft 2020-12 ("no schema with key or ref
-// https://json-schema.org/draft/2020-12/schema", coordinator smoke on PR #129), so the schema
-// carries no `$schema` and uses draft-07 keywords only. Pinned in full.
+// The schema carries no `$schema` and draft-07 keywords only: CLI 2.1.325 refuses draft 2020-12.
 
 const schema = JSON.parse(AGENT_RESULT_JSON_SCHEMA) as Record<string, unknown>;
 

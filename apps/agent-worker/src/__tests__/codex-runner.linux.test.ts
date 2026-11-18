@@ -25,14 +25,8 @@ import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '.
 import { StepProcesses } from '../step-processes.js';
 import { git, isolatedGitEnv } from './fixtures/git-fixture.js';
 
-// Issue #106: the Codex runner with a real process: the stub executable
-// (fixtures/codex-stub.mjs) replays recorded streams and records how it was started, including
-// the Codex configuration it would read. No real CLI, no network. A hostile repository proves
-// that none of its project configuration, hooks, rules, MCP servers or skills reaches the CLI's
-// arguments, environment, prompt or the agent user's configuration, and that the Working copy is
-// marked untrusted before the CLI starts; its AGENTS.md text reaches the agent only as the
-// worker's delimited untrusted block. What the real CLI loads is the controlled smoke's part
-// (scripts/smoke-codex.mjs). Linux only, like the worker: runs in CI, skips elsewhere.
+// The Codex runner with a real process: a stub executable replays recorded streams, and a hostile
+// repository proves its configuration never reaches the CLI (what the real CLI loads: smoke-codex).
 
 const STUB = fileURLToPath(new URL('./fixtures/codex-stub.mjs', import.meta.url));
 const THREAD = '0199a8f2-6c1e-7d43-9b2a-5e8f1c3d7a90';
@@ -104,7 +98,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
       git: new GitRunner(),
       env: workerEnv(),
       sandbox: 'workspace-write',
-      // Issue #134: the real check, on managed files installed under the test's root.
+      // The real check, on managed files installed under the test's root.
       managed: new ManagedGuardrails({ root: join(root, 'managed'), ownerUid: process.getuid!() }),
     });
   const payload = (task: string): RunPayload => ({
@@ -240,7 +234,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     const { argv, config, stdinText } = calls()[0]!;
     // The configuration the CLI read at its start: Studio's, with this Working copy untrusted.
     expect(config).toContain(`[projects."${repoDir}"]\ntrust_level = "untrusted"\n`);
-    // Since #134 the settings are managed (/etc/codex/managed_config.toml); only trust entries here.
+    // The settings are managed (/etc/codex/managed_config.toml); only trust entries here.
     expect(config).not.toContain('network_access');
     expect(config).not.toMatch(
       /hostile|evil|danger-full-access|on-request|HOSTILE_MARKER|"trusted"/,
@@ -263,7 +257,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     );
   });
 
-  it('removes a hook or an allow rule the agent planted at user level before the CLI starts (Issue #134)', async () => {
+  it('removes a hook or an allow rule the agent planted at user level before the CLI starts', async () => {
     mkdirSync(join(home, '.codex', 'rules'), { recursive: true });
     writeFileSync(
       join(home, '.codex', 'hooks.json'),
@@ -283,7 +277,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     expect(calls()[0]!.config).not.toMatch(/^\s*\[+hooks/m);
   });
 
-  it('refuses a step, starting nothing, when a managed Codex file is missing (Issue #134)', async () => {
+  it('refuses a step, starting nothing, when a managed Codex file is missing', async () => {
     rmSync(join(root, 'managed', 'etc/codex/requirements.toml'));
 
     await expect(drain(runner().start(input('x')))).rejects.toThrow(
@@ -335,7 +329,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     );
   });
 
-  it('is stopped through its process group, like every Run step (Issue #100)', async () => {
+  it('is stopped through its process group, like every Run step', async () => {
     const abort = new AbortController();
     const step = drain(runner().start(input('x [stub:slow]', abort.signal)));
     step.catch(() => undefined);

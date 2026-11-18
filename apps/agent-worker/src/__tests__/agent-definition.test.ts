@@ -2,8 +2,7 @@ import { QUESTION_OPTIONS_MAX } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
 import { AGENT_DEFINITION } from '../agent-definition/index.js';
 
-// Issue #103: the built-in agent definition every real runner gives its agent. These tests pin
-// the rules that decide when the agent stops to ask the operator.
+// The built-in agent definition's rules for when the agent stops to ask the operator.
 describe('built-in agent definition', () => {
   const text = AGENT_DEFINITION.text;
 
@@ -32,7 +31,7 @@ describe('built-in agent definition', () => {
     expect(text).toMatch(/assumptions.*pull request description/is);
   });
 
-  it('tells the agent how to carry on after Studio merged the integration branch (Issue #147)', () => {
+  it('tells the agent how to carry on after Studio merged the integration branch', () => {
     expect(text).toMatch(/merge the integration branch into the\s+Run branch/i);
     expect(text).toMatch(/remove every conflict marker/i);
     expect(text).toMatch(/Never abort the merge, rebase, reset,\s+rewrite history or push/i);

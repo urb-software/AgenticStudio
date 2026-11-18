@@ -3,8 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GitHubPullRequests, parseGitHubRemote, PullRequestFailedError } from '../github.js';
 import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
 
-// Issue #102: the Agent account's side of GitHub. The remote names the repository; the pull
-// request client talks to a local stub of the REST API, never to real GitHub.
+// The Agent account's side of GitHub, against a local stub of the REST API, never real GitHub.
 
 describe('parseGitHubRemote', () => {
   it('reads owner and repository from the https and SSH forms of a GitHub remote', () => {
@@ -153,7 +152,7 @@ describe('GitHubPullRequests', () => {
     expect(error).toBeInstanceOf(PullRequestFailedError);
   });
 
-  describe('one pull request by number (Issue #141)', () => {
+  describe('one pull request by number', () => {
     const pull = { owner: 'acme', repo: 'shop', number: 41 };
     const signal = () => new AbortController().signal;
 
@@ -204,8 +203,7 @@ describe('GitHubPullRequests', () => {
     });
   });
 
-  // Issue #142: the reads a pull request lookup makes.
-  describe('reads for a lookup (Issue #142)', () => {
+  describe('reads for a lookup', () => {
     const pull = { owner: 'acme', repo: 'shop', number: 41 };
     const signal = () => new AbortController().signal;
     const branch = 'agent/add-pagination-r0b8e5c2d';
@@ -249,7 +247,7 @@ describe('GitHubPullRequests', () => {
       expect(await client().position(repository, 'dev', branch, signal())).toBeNull();
     });
 
-    it('tells whether a branch exists (review S3 of #152)', async () => {
+    it('tells whether a branch exists', async () => {
       const repository = { owner: 'acme', repo: 'shop' };
 
       expect(await client().branchExists(repository, branch, signal())).toBe(true);
@@ -317,8 +315,7 @@ describe('GitHubPullRequests', () => {
     });
   });
 
-  // Issue #145: the checks of a commit and the log of an Actions job.
-  describe('checks and job logs (Issue #145)', () => {
+  describe('checks and job logs', () => {
     const repository = { owner: 'acme', repo: 'shop' };
     const signal = () => new AbortController().signal;
     const sha = 'c'.repeat(40);
@@ -483,8 +480,7 @@ describe('GitHubPullRequests', () => {
     });
   });
 
-  // Issue #146: the reads for the Review comments of a pull request.
-  describe('review comments (Issue #146)', () => {
+  describe('review comments', () => {
     const pull = { owner: 'acme', repo: 'shop', number: 41 };
     const signal = () => new AbortController().signal;
 

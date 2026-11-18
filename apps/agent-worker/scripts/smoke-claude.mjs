@@ -1,45 +1,7 @@
 #!/usr/bin/env node
-// Controlled real-CLI smoke of the Claude Code runner (Issues #105, #134). NOT PART OF CI.
-//
-// Run by the coordinator on the local WSL test worker, as the agent user, with the operator's
-// approval to switch Claude Code on for the duration of the smoke only (DoR of #105, #134).
-// Studio's guardrails are root-owned managed files since #134: install them first, as root, and
-// remove them afterwards (scripts/smoke-guardrails.sh):
-//
-//   pnpm run build:packages && pnpm --filter @agentic-studio/agent-worker run build
-//   # as root: a root-owned copy of the same commit, and install from it (review M1 of #136)
-//   sudo SMOKE_NODE_BIN="$(command -v node)" bash \
-//     /usr/local/src/agentic-studio-smoke/apps/agent-worker/scripts/smoke-guardrails.sh install
-//   CLAUDE_CODE_ENABLED=true node apps/agent-worker/scripts/smoke-claude.mjs
-//   sudo bash /usr/local/src/agentic-studio-smoke/apps/agent-worker/scripts/smoke-guardrails.sh remove
-//
-// It runs the runner directly (no Studio, no database) on a throwaway Git repository in a
-// temporary directory, deleted afterwards (pass --keep to keep it):
-//   1. the version check;
-//   2. one start with a trivial change;
-//   3. one question, then a resume with the answer (same session);
-//   4. a tool call that starts a container through the agent user's rootless Docker, with the
-//      full approved Mode (--permission-prompts none and Studio's --settings; note from #94);
-//   5. Studio's managed hook blocks a command only it refuses (`echo` is allowed; the command
-//      names a credential path), a write outside the Working copy is refused (the native
-//      blockWritesOutsideWorkingDirectories lock and the hook), and the step still ends;
-//   6. `git push` to a local bare remote does not land;
-//   7. the CLI started directly with the record's options (the worker itself refuses user
-//      settings with hooks or rules): a hook and allow rules planted in ~/.claude/settings.json and
-//      `disableAllHooks`, a hook, an allow rule and an `env` with NODE_OPTIONS (agent code)
-//      in the per-Run --settings file take no effect, and the managed
-//      hook still blocks (review H1 of #136). ~/.claude/settings.json is restored afterwards.
-//   8. a Follow-up after the finished step 1 (Issue #158): the runner resumes the same session with
-//      `reason: 'follow_up'` and a small instruction; the result is done, the session is the same
-//      and hello.txt follows the instruction;
-//   9. bring up to date with a conflict (Issue #158): a local `integration` branch and the Run
-//      branch change the same line of conflict.txt; the worker's own BranchUpdates merges it (the
-//      repository itself stands in for the Project's cache), the runner resumes the session with
-//      the worker's bring-up instruction, then the worker's complete() finishes the merge. Checked:
-//      no unmerged paths, no conflict markers, a merge commit with both parents, nothing pushed.
-// It prints only redacted summary lines: outcomes, counts and yes/no checks. Never the agent's
-// output, the session id, the environment or file content. The CLI uses the agent user's own
-// subscription login; this script never reads it.
+// Real-CLI smoke of the Claude Code runner, NOT PART OF CI: run it as the agent user after
+// installing the managed guardrails; it prints redacted lines only and never reads the login.
+// Procedure and checks: docs/architecture/agent-worker.md.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -89,7 +51,7 @@ line(
   `version check: ${version.ok ? `${version.version} (supported)` : `FAILED: ${version.reason}`}`,
 );
 if (!version.ok) process.exit(1);
-// Issue #134: the runner refuses every step without the managed files; say so up front.
+// The runner refuses every step without the managed files; say so up front.
 const managed = await new ManagedGuardrails().problem('claude_code');
 line(`managed guardrails: ${managed === null ? 'in place' : `FAILED: ${managed}`}`);
 if (managed !== null) {
@@ -320,10 +282,7 @@ const read = (path) => {
   }
 };
 
-/**
- * Step 8: a Follow-up after a step that ended `done` resumes the same session (Issue #141), as
- * the worker does for a Follow-up: the runner's `resume` with `reason: 'follow_up'`.
- */
+/** Step 8: a Follow-up after a `done` step resumes the same session (`reason: 'follow_up'`). */
 async function followUpStep(finished) {
   if (!finished.result?.sessionRef) {
     failures += 1;
@@ -350,12 +309,9 @@ async function followUpStep(finished) {
 }
 
 /**
- * Step 9: bring the Run branch up to date with a conflict (Issue #147). A local branch
- * `integration` and the Run branch `smoke-run` change the same line of conflict.txt; the worker's
- * own BranchUpdates (dist/branch-update.js) fetches `integration` from this repository (the stand-in
- * for the Project's cache), merges it and leaves the conflict open; the runner resumes the session
- * with the worker's bring-up instruction; then the worker's own complete() finishes the merge.
- * Nothing is pushed.
+ * Step 9: the worker's BranchUpdates merges a local `integration` branch into the Run branch with a
+ * conflict (the repository stands in for the Project's cache), the runner resumes the session
+ * and the worker's complete() finishes the merge; nothing is pushed.
  */
 async function bringUpToDateStep(finished) {
   if (!finished.result?.sessionRef) {

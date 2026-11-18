@@ -21,8 +21,8 @@ export interface RetentionOptions {
   /** The worker's data directory (`<dataDir>/runs/<runId>`). */
   dataDir: string;
   /**
-   * Asks Studio for the states of Runs (the worker route `runs/states`); Issue #141: reports the
-   * Runs whose Working copies were removed and not yet reported (`removedRunIds`).
+   * Asks Studio for the states of Runs (the worker route `runs/states`) and reports the Runs whose
+   * Working copies were removed and not yet reported (`removedRunIds`).
    */
   runStates(
     runIds: readonly string[],
@@ -32,7 +32,7 @@ export interface RetentionOptions {
   /** Removes a Run's containers, networks and volumes. */
   resources: RunResources;
   /**
-   * Removes the session files the provider CLIs keep for a Run's Working copy (Issue #143),
+   * Removes the session files the provider CLIs keep for a Run's Working copy,
    * after its containers and before its directory; without it none are removed.
    */
   sessions?: AgentSessionFiles;
@@ -43,7 +43,7 @@ export interface RetentionOptions {
 
 /**
  * Why a Run directory was removed: no Run is known for it, or Studio said the Run's Working copy
- * is no longer kept (Issue #143; Studio's reasons are its own business).
+ * is no longer kept.
  */
 export type RemovalReason = 'unknown_run' | 'retention_ended';
 
@@ -52,22 +52,12 @@ export interface RetentionOutcome {
 }
 
 /**
- * The retention of Working copies (Issue #98, ADR 0002; Issue #143). Studio decides: it knows each
- * Run's pull request, its last activity and its Project's other Runs, and answers, for each Run
- * directory the worker asks about, whether the Working copy is kept (`keepUntil`) or `removable`.
- * The worker removes:
- * - a directory without a known Run (unknown id, or not a Run id at all);
- * - the Working copy of a final Run that Studio says is `removable`.
- * The Working copy of a Run that is not final (queued, preparing, running, waiting for the
- * operator) is never removed, nor the one the worker is carrying; a final Run without an answer
- * to remove is kept. Removing a Working copy first removes the Run's containers, networks and
- * volumes, then the agent session files of its Working copy (Issue #143; a failure there is logged and
- * does not keep the Working copy); if the containers cannot be removed, the directory is kept
- * and the next pass tries again. If Studio cannot
- * be asked, no Working copy is removed (only entries that cannot be a Run directory at all).
+ * Retention of Working copies: Studio decides which are `removable`; the worker removes those and
+ * directories that are no Run's, never a non-final Run's nor the one in progress (with Studio
+ * unreachable only non-Run entries). Containers go first: if they cannot be removed, it stays.
  */
 export class Retention {
-  /** Removed Run Working copies Studio has not been told of yet (Issue #141). */
+  /** Removed Run Working copies Studio has not been told of yet. */
   private readonly unreported = new Set<string>();
 
   constructor(private readonly options: RetentionOptions) {}
@@ -84,7 +74,7 @@ export class Retention {
   }
 
   /**
-   * Tells Studio which Working copies were removed (Issue #141), so the Run page no longer
+   * Tells Studio which Working copies were removed, so the Run page no longer
    * offers a Follow-up. On a failure they stay pending and go with the next sweep's first
    * request; the sweep itself is not failed by it.
    */
@@ -137,7 +127,7 @@ export class Retention {
 
     const states = new Map<string, RunStatesResponse[number]>();
     for (let i = 0; i < runIds.length; i += RUN_STATES_REQUEST_MAX) {
-      // The first request also carries removals an earlier sweep could not report (#141).
+      // The first request also carries removals an earlier sweep could not report.
       const pending = i === 0 ? this.pendingBatch() : [];
       const answer = await this.options.runStates(
         runIds.slice(i, i + RUN_STATES_REQUEST_MAX),

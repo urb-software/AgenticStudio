@@ -3,9 +3,8 @@ import globals from 'globals';
 import { baseConfig, prettierConfig } from '../../eslint.base.mjs';
 
 /**
- * Ways to load code that the dependency graph (architecture:monorepo) cannot see, banned in
- * the worker's production code so nothing reaches node:child_process past the spawn boundary
- * (Issue #101, review of #116).
+ * Ways to load code that the dependency graph cannot see, banned so nothing reaches
+ * node:child_process past the spawn boundary.
  */
 const LOADER_PROPERTIES = '/^(binding|_linkedBinding|dlopen|getBuiltinModule)$/';
 
@@ -25,7 +24,7 @@ export const HIDDEN_LOADING_RULES = {
       message: 'No createRequire in the agent worker: it loads modules the gate cannot see.',
     },
     // The process loader properties, on any object (globalThis.process, an alias), dotted or
-    // as a string key (review round 2 of #116).
+    // as a string key.
     {
       selector: `MemberExpression[property.name=${LOADER_PROPERTIES}]`,
       message: 'process loader properties are not allowed in the agent worker.',

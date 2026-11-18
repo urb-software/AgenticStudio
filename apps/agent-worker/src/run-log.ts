@@ -8,7 +8,7 @@ import {
 } from '@agentic-studio/contracts';
 import { isRunLost, type StudioApi } from './studio-api.js';
 
-/** The notice sent once when the worker's buffer overflows (Issue #99 decision). */
+/** The notice sent once when the worker's buffer overflows. */
 export const WORKER_BUFFER_NOTICE = 'log truncated (worker buffer)';
 
 /** Batches are sent this often while events wait. */
@@ -41,7 +41,7 @@ export interface RunLogOptions {
   bufferMax?: number;
   /**
    * The seq of the first event (default 1): a resumed Run continues after the seqs Studio
-   * stored, or Studio would drop its events as duplicates (Issue #103).
+   * stored, or Studio would drop its events as duplicates.
    */
   firstSeq?: number;
   /** Buffer bound in UTF-8 bytes of event text (tests make it small). */
@@ -49,13 +49,9 @@ export interface RunLogOptions {
 }
 
 /**
- * Forwards one Run's events to Studio (Issue #99). Events are numbered per Run from 1 (a
- * resumed Run: from where Studio's log ends, Issue #103), cut to
- * the per-event cap, buffered (bounded), and sent in order in batches every 500 ms or as soon
- * as 100 wait. A failed send is retried with backoff; Studio ignores seqs it already stored,
- * so a retry never duplicates. The buffer holds at most 10 000 events and 16 MiB of text;
- * when it overflows, further output is dropped and one
- * {@link WORKER_BUFFER_NOTICE} is sent. A step's structured result does not go through here.
+ * Forwards one Run's events to Studio, numbered per Run (a resumed Run continues Studio's log), cut
+ * to the per-event cap, buffered (10 000 events, 16 MiB; overflow is dropped with one
+ * {@link WORKER_BUFFER_NOTICE}) and sent in order; a failed send is retried, never duplicated.
  */
 export class RunLog {
   private seq = 0;

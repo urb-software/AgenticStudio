@@ -15,8 +15,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentSessions, claudeProjectDirectoryName } from '../agent-sessions.js';
 
-// Issue #143: the provider CLIs' session files that go with a removed Working copy, in a throwaway
-// home directory. Linux only, like the worker.
+// The provider CLIs' session files that go with a removed Working copy, in a throwaway home.
 
 describe.skipIf(process.platform !== 'linux')('AgentSessions', () => {
   let home: string;

@@ -8,12 +8,9 @@ import {
 } from './spawn-boundary.js';
 
 /**
- * The process groups one Run step started (Issue #100). Each is recorded in memory and in the
- * Run's directory, one line per group with the boot id and the leader's start time (review of
- * #121: pids are reused, so recovery trusts a record only from the same boot and leader), so
- * the worker can stop the whole tree of the step when it is cancelled, over its time limit or
- * the worker stops, and so a worker that crashed can stop what is left when it starts again
- * (`leftovers.ts`).
+ * The process groups one Run step started, kept in memory and in the Run's directory with the boot
+ * id and the leader's start time (pids are reused: recovery trusts a record only from the same
+ * boot and leader), so the whole tree can be stopped, also after a worker crash (`leftovers.ts`).
  */
 export class StepProcesses implements ProcessGroupRegistry {
   private readonly groups = new Set<number>();

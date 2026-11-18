@@ -12,18 +12,16 @@ import { CODEX_SANDBOX_MODES, type CodexSandboxMode } from './codex/cli-options.
 import { readProviderSwitches } from './provider-gate.js';
 import type { ProviderBinaries } from './spawn-boundary.js';
 
-/** The GitHub REST API the worker opens pull requests through by default (Issue #102). */
 export const DEFAULT_GITHUB_API_URL = 'https://api.github.com';
 
-/** Shortest accepted worker token; the API applies the same rule (Issue #96). */
+/** Shortest accepted worker token; the API applies the same rule. */
 export const WORKER_TOKEN_MIN_LENGTH = 32;
 
-/** Where the worker is deployed; it decides whether the fake runner is allowed (Issue #101). */
 export const WORKER_ENVIRONMENTS = ['production', 'development', 'test'] as const;
 export type WorkerEnvironment = (typeof WORKER_ENVIRONMENTS)[number];
 
 /**
- * The provider CLI binaries the spawn boundary starts (review of #116): a command name looked up
+ * The provider CLI binaries the spawn boundary starts: a command name looked up
  * on PATH, or an absolute path. Never a relative path (it would depend on the working directory)
  * and never arguments or shell syntax.
  */
@@ -54,7 +52,6 @@ const intervalMs = (fallback: number) =>
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 const environmentSchema = z.object({
-  // Where the worker reaches the Studio API (it always calls Studio; nothing calls it).
   STUDIO_API_URL: z.url({ protocol: /^https?$/, error: 'is required: the Studio API URL' }),
   // Messages never echo the token.
   STUDIO_WORKER_TOKEN: z
@@ -64,16 +61,13 @@ const environmentSchema = z.object({
     }),
   STUDIO_WORKER_POLL_MS: intervalMs(5000),
   STUDIO_WORKER_HEARTBEAT_MS: intervalMs(10_000),
-  // Longest wait for one call to the Studio API before it is abandoned.
   STUDIO_WORKER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(30_000),
-  // How Runs are carried out (Issue #101): the provider CLI, or the scripted fake runner.
   STUDIO_WORKER_RUNNER: z.enum(WORKER_RUNNER_MODES).default('cli'),
   // Production unless said otherwise; only development and test allow the fake runner and a
-  // local (file) remote for a Run (Issue #98).
+  // local (file) remote for a Run.
   STUDIO_WORKER_ENVIRONMENT: z.enum(WORKER_ENVIRONMENTS).default('production'),
   CLAUDE_CODE_BIN: binary(DEFAULT_PROVIDER_BINARIES.claude_code),
   CODEX_CLI_BIN: binary(DEFAULT_PROVIDER_BINARIES.codex),
-  // Issue #98: where the worker keeps the per-project caches and the Runs' directories.
   STUDIO_WORKER_DATA_DIR: z
     .string({ error: 'is required: an absolute directory path' })
     .refine((value) => value.startsWith('/'), { message: 'must be an absolute path' })
@@ -91,19 +85,18 @@ const environmentSchema = z.object({
     .string({ error: "is required: the Agent account's email for commits" })
     .max(320)
     .regex(/^[^\s<>@]+@[^\s<>@]+$/, { message: 'must be an email address' }),
-  // Issue #143: free disk space (GiB) the worker keeps; below it no new Run is prepared and
+  // Free disk space (GiB) the worker keeps; below it no new Run is prepared and
   // Studio warns. Retention itself is Studio's (`STUDIO_RETENTION_*` in the API's environment).
   STUDIO_WORKER_MIN_FREE_GB: z.coerce.number().min(0).max(100_000).default(10),
-  // Issue #100: how long a stopped Run step's processes get after the interrupt (SIGINT)
+  // How long a stopped Run step's processes get after the interrupt (SIGINT)
   // before the worker kills their whole process group (SIGKILL).
   STUDIO_WORKER_KILL_GRACE_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
-  // Issue #105: the bound on agent turns per Claude Code Run step (`--max-turns`).
   STUDIO_CLAUDE_MAX_TURNS: z.coerce.number().int().min(1).max(1000).default(200),
-  // Issue #106: the Codex sandbox mode, set from the rootless Docker trial (ADR 0002). Only
+  // The Codex sandbox mode, set from the rootless Docker trial (ADR 0002). Only
   // `workspace-write` (network access on, in Studio's Codex configuration); anything else is
   // refused at start.
   STUDIO_CODEX_SANDBOX: z.enum(CODEX_SANDBOX_MODES).default('workspace-write'),
-  // Issue #102: the Agent account's GitHub token, from the worker's own .env only (Studio stores
+  // The Agent account's GitHub token, from the worker's own .env only (Studio stores
   // none). Printable ASCII without spaces, so it can never inject a header. Empty means unset.
   // Messages never echo it.
   STUDIO_AGENT_GITHUB_TOKEN: z
@@ -113,7 +106,7 @@ const environmentSchema = z.object({
       message: 'must be one token without spaces or control characters',
     })
     .optional(),
-  // Issue #144: limits of a Run's diffs, in KiB of patch (as JSON) per file and per diff, and
+  // Limits of a Run's diffs, in KiB of patch (as JSON) per file and per diff, and
   // the most files a diff lists. Never above the worker protocol's own limits.
   STUDIO_WORKER_DIFF_FILE_MAX_KIB: z.coerce
     .number()
@@ -140,7 +133,7 @@ const environmentSchema = z.object({
 });
 
 /**
- * Studio-side settings that must never reach the agent worker (ADR 0002, review of #112): it
+ * Studio-side settings that must never reach the agent worker: it
  * holds no database, Redis, secret-store or operator credentials. If any is present in its
  * environment (e.g. Studio's root .env was loaded), the worker refuses to start.
  */
@@ -157,11 +150,8 @@ export interface WorkerConfig {
   apiUrl: string;
   /** Sent as `Authorization: Bearer`; never logged. */
   token: string;
-  /** Pause between two claims when there is no work. */
   pollMs: number;
-  /** Interval of heartbeats while the worker carries a Run. */
   heartbeatMs: number;
-  /** Timeout of one call to the Studio API. */
   requestTimeoutMs: number;
   /** `cli` (default) or `fake`; `fake` only in a development or test environment. */
   runner: WorkerRunnerMode;
@@ -171,40 +161,31 @@ export interface WorkerConfig {
   providers: ProviderSwitches;
   /** The CLI binary per provider (`CLAUDE_CODE_BIN`, `CODEX_CLI_BIN`), for the spawn boundary. */
   providerBinaries: ProviderBinaries;
-  /** Absolute directory of the per-project caches and the Runs' directories (Issue #98). */
   dataDir: string;
-  /** The Agent account's Git identity, set in each Working copy. */
   agentGitName: string;
   agentGitEmail: string;
-  /** Free disk space in bytes below which no new Run is prepared (Issue #143); 0 turns it off. */
+  /** Free disk space in bytes below which no new Run is prepared; 0 turns it off. */
   minFreeBytes: number;
-  /** Grace between the interrupt and the kill of a stopped Run step's processes (Issue #100). */
+  /** Grace between the interrupt and the kill of a stopped Run step's processes. */
   killGraceMs: number;
-  /** The bound on agent turns per Claude Code Run step (Issue #105). */
   claudeMaxTurns: number;
-  /** The Codex sandbox mode in force (Issue #106). */
   codexSandbox: CodexSandboxMode;
-  /** The Agent account on GitHub (Issue #102): its token (if configured) and the API base URL. */
   agentGitHub: AgentGitHubConfig;
-  /** Limits of a Run's diffs (Issue #144). */
   diffLimits: RunDiffLimits;
 }
 
-/** Limits of a Run's diffs (Issue #144), in bytes of patch as JSON and in files. */
+/** Limits of a Run's diffs, in bytes of patch as JSON and in files. */
 export interface RunDiffLimits {
   /** A file whose patch is larger is listed "too large to show". */
   filePatchBytes: number;
   /** Once the patches of a diff reach this, the remaining files are listed without content. */
   patchBytes: number;
-  /** Most files a diff lists. */
   files: number;
 }
 
-/** How the worker reaches GitHub as the Agent account (Issue #102). */
 export interface AgentGitHubConfig {
   /** Never logged, never written to a Working copy; absent when not configured. */
   token?: string;
-  /** Base URL of the GitHub REST API, without a trailing slash. */
   apiUrl: string;
 }
 

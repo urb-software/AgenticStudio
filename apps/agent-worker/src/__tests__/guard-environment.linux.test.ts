@@ -7,12 +7,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readGuardrailSettings } from '../claude-code/guardrails.js';
 import { HOOK_INTERPRETER, HOOK_LAUNCHER } from '../managed-guardrails.js';
 
-// Review H1 of #136: an agent can put an `env` block into a settings file Claude Code reloads
-// during a step, and a hook process inherits the session's environment. The managed hooks
-// therefore run the guard through `/usr/bin/env -i` with a fixed PATH, and the guard never reads
-// HOME or TMPDIR. Here the hook commands exactly as the managed files define them (only the
-// installed Node.js and guard paths swapped for this checkout's) run with a hostile environment.
-// Linux only, like the worker: runs in CI, skips elsewhere.
+// An agent can inject an `env` block via a reloaded settings file, so the managed hook commands run
+// the guard through `/usr/bin/env -i` with a fixed PATH and the guard never reads HOME or TMPDIR.
+// Here they run, as the managed files define them, with a hostile environment.
 
 const GUARD = fileURLToPath(new URL('../../guardrails/claude-guard.mjs', import.meta.url));
 const INSTALLED_GUARD = '/usr/local/lib/agentic-studio/guardrails/claude-guard.mjs';

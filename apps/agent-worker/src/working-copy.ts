@@ -29,10 +29,7 @@ import {
   runsDirectory,
 } from './run-layout.js';
 
-/**
- * A Run's prepared Working copy (Issue #98): where it is, its Run branch, and the environment
- * its Run steps get.
- */
+/** A Run's prepared Working copy: where it is, its Run branch, and its Run steps' environment. */
 export interface PreparedRun {
   runId: string;
   /** The Run's own directory: the Working copy and, beside it, the Task and the Run file. */
@@ -42,9 +39,8 @@ export interface PreparedRun {
   runBranch: string;
   startCommit: string;
   /**
-   * Issue #147 (review S1 of #154): where the Run's own changes are counted from, in its diffs and
-   * its commit list: the integration branch commit the Run branch last merged (as the pull request
-   * counts from the merge base), else the start commit. The worker moves it on when a merge starts.
+   * Where the Run's own changes are counted from in diffs and commit lists: the integration commit
+   * the Run branch last merged (as the pull request counts), else the start commit.
    */
   diffBase?: string;
   /** Variables every Run step of this Run gets, e.g. `COMPOSE_PROJECT_NAME`. */
@@ -64,8 +60,8 @@ export interface RunFile {
   startCommit: string;
   composeProjectName: string;
   /**
-   * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment
-   * file (#104): never committed or pushed (Issue #102). Absent in a Run file from before #102.
+   * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment file:
+   * never committed or pushed. Absent in a Run file written before this field existed.
    */
   studioPaths?: string[];
 }
@@ -77,15 +73,14 @@ export interface WorkingCopyPort {
   /** The Working copy's state after a Run step, for the step report. */
   report(prepared: PreparedRun, signal: AbortSignal): Promise<WorkingCopyReport>;
   /**
-   * For a resume (Issue #103): the Run's kept Working copy, unchanged since its question, on
-   * the Run branch Studio recorded. Throws {@link PreparationFailedError} ("Working copy no
-   * longer exists — run again") when it is gone. Review S3 of #150: with
-   * `replaceEnvironmentFile`, the Studio-placed files are replaced by the claim's new snapshot.
+   * For a resume: the Run's kept Working copy, unchanged since its question, on the Run branch
+   * Studio recorded. Throws {@link PreparationFailedError} when it is gone. With
+   * `replaceEnvironmentFile` the Studio-placed files are replaced by the claim's new snapshot.
    */
   locate(run: RunPayload, signal?: AbortSignal): Promise<PreparedRun>;
 }
 
-/** Why a resume cannot go on (Issue #103): its Working copy was removed. */
+/** Why a resume cannot go on: its Working copy was removed. */
 export const RESUME_NO_WORKING_COPY =
   'Working copy no longer exists — run again: retention or a clean-up removed it.';
 
@@ -116,9 +111,8 @@ export interface WorkingCopiesOptions {
   allowFileRemotes: boolean;
   logger: WorkingCopyLogger;
   /**
-   * Issue #143: checked before a new Run's Working copy is made; throws {@link LowFreeSpaceError}
-   * when the disk is short, so the Run fails with `preparation_failed` instead of filling it.
-   * A resume (a Follow-up, an Answer) and a delivery use the Working copy they have: not checked.
+   * Checked before a new Run's Working copy is made; throws {@link LowFreeSpaceError} when the
+   * disk is short. A resume and a delivery use the Working copy they have: not checked.
    */
   freeSpace?: { assertEnoughFreeSpace(): Promise<void> };
 }
@@ -137,18 +131,8 @@ export const STUDIO_EXCLUDE_SECTION =
   '\n# AI Agent Studio: files Studio places in this Working copy; never committed.\n';
 
 /**
- * Prepares and inspects Working copies (Issue #98, ADR 0002). Per Run:
- * 1. the Project's cache (`<dataDir>/cache/<projectId>.git`, a bare repository with every
- *    branch of the remote) is created on first use, or refreshed (`fetch --prune`); a cache
- *    whose remote differs from the Run's is discarded and rebuilt;
- * 2. the start commit must be in the cache (else `preparation_failed`);
- * 3. the Working copy is a local clone of the cache (objects hardlinked: it shares the
- *    cache's history on disk), checked out at exactly the start commit on the Run branch;
- * 4. its Git identity is the Agent account's, its `origin` the Project's remote URL; no
- *    credential is written. The Task and the Run file sit beside it, outside the repository;
- * 5. the Run's Environment file, if it has one (Issue #104), is written at its path in the
- *    Working copy, owner-only, listed under Studio's section of `.git/info/exclude` and in the
- *    Run file's `studioPaths`, so it is never committed; it goes with the Working copy.
+ * Prepares and inspects Working copies: a cache per Project, cloned per Run, no credential kept.
+ * The preparation steps: docs/architecture/agent-worker.md.
  */
 export class WorkingCopies implements WorkingCopyPort {
   constructor(private readonly options: WorkingCopiesOptions) {}
@@ -252,7 +236,7 @@ export class WorkingCopies implements WorkingCopyPort {
 
   async locate(run: RunPayload, signal?: AbortSignal): Promise<PreparedRun> {
     // The Run branch and start commit come from Studio, never from `run.json`, which the agent
-    // could rewrite (as for a delivery retry, review R1 of #122).
+    // could rewrite.
     if (run.kind !== 'resume' || run.runBranch === undefined) {
       throw new PreparationFailedError('Studio sent no recorded Run branch for this resume.');
     }
@@ -341,13 +325,9 @@ export class WorkingCopies implements WorkingCopyPort {
   }
 
   /**
-   * Writes the Run's Environment file into the Working copy (Issue #104), owner-only (0600).
-   * Refused when the path is tracked at the start commit (a tracked file is never
-   * overwritten), or when any part of it is a symlink or not a directory (repository content
-   * is untrusted: nothing is written outside the Working copy). Missing parent directories are
-   * created inside the Working copy; the file itself is created new, never written through.
-   * Issue #143 (carried from the review of #141): a Follow-up's rewrite also refuses a path the
-   * Run branch's current commit tracks (`runBranch`), which the agent may have added since.
+   * Writes the Run's Environment file into the Working copy, owner-only (0600). Refused when the
+   * path is tracked (at the start commit or `runBranch`'s) or goes through a symlink or a non-
+   * directory; the file is created new, never written through.
    */
   private async placeEnvironmentFile(
     repoDir: string,
@@ -410,10 +390,9 @@ export class WorkingCopies implements WorkingCopyPort {
   }
 
   /**
-   * Review S3 of #150: a Follow-up works with the Project's current Environment file. Every
-   * Studio-placed file (the earlier path too) is removed from the Working copy, never through a
-   * symlink, then the claim's new file, if any, is written as at the start and listed in the
-   * Working copy's exclude section and the Run file, so it is never committed.
+   * A Follow-up works with the Project's current Environment file: every Studio-placed file is
+   * removed (never through a symlink), then the claim's new file, if any, is written, so none is
+   * committed.
    */
   private async replaceEnvironmentFile(
     paths: ReturnType<typeof runDirectories>,
@@ -452,10 +431,9 @@ export class WorkingCopies implements WorkingCopyPort {
   }
 
   /**
-   * Brings the Project's cache up to date with its remote (Issue #147) and returns its path: the
-   * one place the worker fetches from the network. The same rules as at a Run's start: only an
-   * https or SSH remote (a development or test worker also takes a local one), a cache of another
-   * remote is rebuilt. Throws {@link PreparationFailedError} with a clear detail.
+   * Brings the Project's cache up to date with its remote, the one place the worker fetches from
+   * the network, and returns its path. Same remote rules as at a Run's start. Throws
+   * {@link PreparationFailedError} with a clear detail.
    */
   async refreshProjectCache(run: RunPayload, signal: AbortSignal): Promise<string> {
     const remoteUrl = run.repository.remoteUrl;
@@ -529,7 +507,7 @@ export class WorkingCopies implements WorkingCopyPort {
     });
   }
 
-  /** The start commit must be in the cache; one direct fetch is tried for a commit no branch holds. */
+  /** The start commit must be in the cache; one direct fetch is tried for one no branch holds. */
   private async ensureCommit(cacheDir: string, commit: string, signal: AbortSignal) {
     const { git, dataDir } = this.options;
     const options = { cwd: cacheDir, timeoutMs: GIT_TIMEOUTS.local, signal, ceiling: dataDir };
@@ -606,11 +584,7 @@ function shorten(subject: string): string {
   return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
 
-/**
- * Whether the Working copy at `repoDir` has the Run branch checked out (`HEAD` is
- * `refs/heads/<runBranch>`); false when it cannot be read (Issue #103 decision: resume and
- * delivery retries check it before they go on).
- */
+/** Whether the Working copy has the Run branch checked out; false when it cannot be read. */
 export async function onBranch(
   git: GitRunner,
   repoDir: string,
@@ -641,9 +615,8 @@ export async function readRunFile(path: string): Promise<RunFile | null> {
 }
 
 /**
- * Removes a Studio-placed file from the Working copy (review S3 of #150): only a file or a
- * symlink at exactly that path, reached through real directories; a path that leads through a
- * symlink or a file is left alone (nothing outside the Working copy is touched).
+ * Removes a Studio-placed file: only a file or symlink at exactly that path, reached through real
+ * directories, so nothing outside the Working copy is touched.
  */
 async function removeStudioFile(repoDir: string, path: string): Promise<void> {
   const segments = path.split('/');

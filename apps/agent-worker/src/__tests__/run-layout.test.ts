@@ -7,7 +7,6 @@ import {
   UnsafeIdentifierError,
 } from '../run-layout.js';
 
-// Issue #98: names and paths of a Run on the agent side, built only from identifiers.
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const OTHER_RUN_ID = '7c1d9e3a-4b5f-4a6c-8d7e-9f0a1b2c3d4e';
 const PROJECT_ID = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';

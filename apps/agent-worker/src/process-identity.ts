@@ -2,12 +2,11 @@ import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
 
 /**
- * What identifies a process beyond its pid (review of #121), read from the Linux process table:
+ * What identifies a process beyond its pid, read from the Linux process table:
  * pids are reused, so a recorded process group is trusted after a restart only if it is from
  * the same boot and its leader still has the same start time.
  */
 
-/** The process table; tests may point elsewhere. */
 export const PROC_DIR = '/proc';
 
 /** The kernel's id of the current boot, or `undefined` when it cannot be read. */

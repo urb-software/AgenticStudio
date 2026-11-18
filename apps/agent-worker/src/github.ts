@@ -8,10 +8,8 @@ import {
 import { z } from 'zod';
 
 /**
- * The Agent account's side of GitHub (Issue #102, ADR 0002): which GitHub repository a
- * Project's remote names, and the draft pull request of a Run branch. GitHub is the only
- * supported host. The token comes from the worker's own environment and is sent only to the
- * configured API, never logged.
+ * The Agent account's side of GitHub: its token comes from the worker's environment, goes only to
+ * the configured API and is never logged.
  */
 
 /** A GitHub repository named by a Project's remote, and how the remote is reached. */
@@ -38,10 +36,8 @@ function repository(
 }
 
 /**
- * The GitHub repository a remote names: `https://github.com/<owner>/<repo>[.git]`,
- * `git@github.com:<owner>/<repo>[.git]` or `ssh://git@github.com[:port]/<owner>/<repo>[.git]`.
- * `null` for any other host or shape ("Git host not supported"). A development or test worker
- * (`allowFileRemotes`) also takes a `file://` fixture remote, named by its last two path parts.
+ * The GitHub repository a remote names (https, scp-like or `ssh://` form), `null` for any other
+ * host or shape; with `allowFileRemotes` a `file://` fixture remote is named by its last two parts.
  */
 export function parseGitHubRemote(
   remoteUrl: string,
@@ -91,8 +87,7 @@ export interface OpenedPullRequest extends PullRequestRef {
 
 /**
  * The pull request could not be found or opened; `message` says what to check, never a token.
- * Issue #142: `status` is GitHub's answer when it refused, and `retryAfterSeconds` is set when
- * the refusal is a rate limit (how long GitHub asks to wait).
+ * `status` is GitHub's answer when it refused; `retryAfterSeconds` is set for a rate limit.
  */
 export class PullRequestFailedError extends Error {
   constructor(
@@ -105,14 +100,14 @@ export class PullRequestFailedError extends Error {
   }
 }
 
-/** One pull request of a repository, by number (Issue #141). */
+/** One pull request of a repository, by number. */
 export interface PullRequestNumber {
   owner: string;
   repo: string;
   number: number;
 }
 
-/** A pull request's state on GitHub (Issue #141): open, or closed (merged or not). */
+/** A pull request's state on GitHub: open, or closed (merged or not). */
 export interface PullRequestState extends PullRequestRef {
   state: 'open' | 'closed';
   merged: boolean;
@@ -121,12 +116,9 @@ export interface PullRequestState extends PullRequestRef {
 /** The pull request client the delivery uses ({@link GitHubPullRequests} in production). */
 export interface PullRequestClient {
   openDraft(target: PullRequestTarget, signal: AbortSignal): Promise<OpenedPullRequest>;
-  /** The Run's recorded pull request, by number (Issue #141). */
+  /** The Run's recorded pull request, by number. */
   get(pull: PullRequestNumber, signal: AbortSignal): Promise<PullRequestState>;
-  /**
-   * Replaces the pull request's title and, when given, its description (Issue #141; review S7
-   * of #150: a title alone keeps the description).
-   */
+  /** Replaces the pull request's title and, when given, its description (a title alone keeps it). */
   update(
     pull: PullRequestNumber & { title: string; body?: string },
     signal: AbortSignal,
@@ -134,9 +126,8 @@ export interface PullRequestClient {
 }
 
 /**
- * A pull request as a lookup reads it (Issue #142): where it stands, whether GitHub says it can
- * be merged, and the facts the lookup's scope check needs (which branch of which repository it
- * comes from, and who opened it).
+ * A pull request as a lookup reads it: its state, mergeability and the facts the scope check
+ * needs (head branch and repository, and who opened it).
  */
 export interface PullRequestDetails extends PullRequestRef {
   state: 'open' | 'closed';
@@ -147,15 +138,14 @@ export interface PullRequestDetails extends PullRequestRef {
   headRef: string;
   /** `owner/repo` of the head branch, `null` when its repository is gone. */
   headRepository: string | null;
-  /** The pull request's latest commit (Issue #145). */
+  /** The pull request's latest commit. */
   headSha: string;
   author: string | null;
 }
 
 /**
- * One check of a commit as the Git host reports it (Issue #145), from a check run or a commit
- * status. `jobId` is set for a GitHub Actions job, whose log can be read; `summary` is the
- * check's own short text, when it has one.
+ * One check of a commit, from a check run or a commit status. `jobId` is set for a GitHub Actions
+ * job, whose log can be read; `summary` is the check's own short text, if any.
  */
 export interface CheckReport {
   name: string;
@@ -166,10 +156,10 @@ export interface CheckReport {
   summary?: string;
 }
 
-/** What reading one job log gave (Issue #145): its last lines, or why there is none. */
+/** What reading one job log gave: its last lines, or why there is none. */
 export type JobLogOutcome = { log: string } | { unavailable: string };
 
-/** One review as the Git host reports it (Issue #146): its summary and verdict, not its comments. */
+/** One review as the Git host reports it: its summary and verdict, not its comments. */
 export interface ReviewReport {
   id: number;
   author: string;
@@ -180,12 +170,12 @@ export interface ReviewReport {
   submittedAt: string | undefined;
 }
 
-/** One inline comment on the pull request's diff (Issue #146). */
+/** One inline comment on the pull request's diff. */
 export interface InlineCommentReport {
   id: number;
   author: string;
   path: string;
-  /** The line it is on now, or the one it was made on when the diff has moved; none for a file comment. */
+  /** The line it is on now, or the one it was made on when the diff moved; none for a file one. */
   line: number | undefined;
   /** The diff lines around it, as GitHub gives them (a hunk). */
   diffHunk: string | undefined;
@@ -193,7 +183,7 @@ export interface InlineCommentReport {
   createdAt: string;
 }
 
-/** One conversation comment on the pull request (Issue #146). */
+/** One conversation comment on the pull request. */
 export interface ConversationCommentReport {
   id: number;
   author: string;
@@ -207,16 +197,15 @@ export interface Listing<T> {
   more: boolean;
 }
 
-/** A Run branch's position against the integration branch (Issue #142). */
+/** A Run branch's position against the integration branch. */
 export interface BranchPosition {
   behindBy: number;
   aheadBy: number;
 }
 
 /**
- * The reads a pull request lookup makes through the Agent account (Issue #142), all `GET`:
- * the pull request, how far its branch is from the integration branch, and who the Agent
- * account is. The client the delivery uses ({@link PullRequestClient}) does not need them.
+ * The reads a pull request lookup makes through the Agent account, all `GET`; the delivery's
+ * {@link PullRequestClient} does not need them.
  */
 export interface PullRequestReader {
   details(pull: PullRequestNumber, signal: AbortSignal): Promise<PullRequestDetails>;
@@ -227,10 +216,7 @@ export interface PullRequestReader {
     head: string,
     signal: AbortSignal,
   ): Promise<BranchPosition | null>;
-  /**
-   * Whether the branch still exists (review S3 of #152: told apart from a missing integration
-   * branch when a comparison answers 404).
-   */
+  /** Whether the branch still exists, to tell it from a missing integration branch on a 404. */
   branchExists(
     repository: { owner: string; repo: string },
     branch: string,
@@ -239,8 +225,8 @@ export interface PullRequestReader {
   /** The login of the Agent account (the token's own user). */
   viewer(signal: AbortSignal): Promise<string>;
   /**
-   * The checks of a commit (Issue #145): its check runs and combined statuses, at most
-   * {@link PULL_REQUEST_CHECKS_MAX}. `fallbackUrl` is the link of a check that has none of its own.
+   * The checks of a commit: its check runs and combined statuses, at most
+   * {@link PULL_REQUEST_CHECKS_MAX}. `fallbackUrl` is the link of a check that has none.
    */
   checks(
     repository: { owner: string; repo: string },
@@ -249,29 +235,29 @@ export interface PullRequestReader {
     signal: AbortSignal,
   ): Promise<CheckReport[]>;
   /**
-   * The end of a GitHub Actions job's log (Issue #145), plain text; `unavailable` says why when
-   * GitHub does not give it (no permission, expired, too large).
+   * The end of a GitHub Actions job's log as plain text; `unavailable` says why when GitHub does
+   * not give it (no permission, expired, too large).
    */
   jobLog(
     repository: { owner: string; repo: string },
     jobId: number,
     signal: AbortSignal,
   ): Promise<JobLogOutcome>;
-  /** The pull request's reviews (Issue #146), oldest first; of a long listing the newest ten pages. */
+  /** The pull request's reviews, oldest first; of a long listing the newest ten pages. */
   reviews(pull: PullRequestNumber, signal: AbortSignal): Promise<Listing<ReviewReport>>;
-  /** The inline comments on the pull request's diff (Issue #146), oldest first; of a long listing the newest ten pages. */
+  /** The inline comments on the diff, oldest first; of a long listing the newest ten pages. */
   inlineComments(
     pull: PullRequestNumber,
     signal: AbortSignal,
   ): Promise<Listing<InlineCommentReport>>;
-  /** The conversation comments on the pull request (Issue #146), oldest first; of a long listing the newest ten pages. */
+  /** The conversation comments, oldest first; of a long listing the newest ten pages. */
   conversationComments(
     pull: PullRequestNumber,
     signal: AbortSignal,
   ): Promise<Listing<ConversationCommentReport>>;
   /**
-   * The ids of the inline comments in resolved review threads (Issue #146), through the GraphQL
-   * API (a read-only query): GitHub's REST API does not tell which threads are resolved.
+   * The ids of inline comments in resolved review threads, via a read-only GraphQL query: the
+   * REST API does not tell which threads are resolved.
    */
   resolvedInlineCommentIds(pull: PullRequestNumber, signal: AbortSignal): Promise<Set<number>>;
 }
@@ -1025,9 +1011,9 @@ export class GitHubPullRequests implements PullRequestClient, PullRequestReader 
 }
 
 /**
- * How long GitHub asks to wait when it refused for a rate limit (Issue #142): a 429, or a 403
- * that says so (`retry-after`, or `x-ratelimit-remaining: 0` until `x-ratelimit-reset`);
- * `undefined` for any other refusal. At least one second.
+ * How long GitHub asks to wait when it refused for a rate limit: a 429, or a 403 that says so
+ * (`retry-after`, or `x-ratelimit-remaining: 0` until `x-ratelimit-reset`); `undefined` for any
+ * other refusal. At least one second.
  */
 function rateLimitWait(response: Response, now = Date.now()): number | undefined {
   const retryAfter = response.headers.get('retry-after');

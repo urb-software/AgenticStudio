@@ -7,11 +7,9 @@ import {
 } from '../provider-environment.js';
 
 /**
- * How the agent worker starts the Claude Code CLI (Issue #105): exactly the options of the
- * approved compliance record's Mode (docs/engineering/provider-compliance/
- * 2026-11-14-claude-code-cli.md, revised 2026-11-16), a minimal environment and a supported
- * version range. Changing any of them is a revalidation trigger of the record and needs the
- * operator.
+ * How the worker starts the Claude Code CLI: exactly the options of the approved compliance record
+ * (docs/engineering/provider-compliance/), a minimal environment, a supported version range;
+ * changing any of them needs revalidation by the operator.
  */
 
 /** The supported CLI versions: tested with 2.1.325; `--permission-prompts` needs 2.1.259. */
@@ -68,12 +66,9 @@ export const CLAUDE_CODE_MISSING =
   'and restart the worker.';
 
 /**
- * The only variables of the worker's environment a Claude Code process gets (coordinator
- * decision on #105, shared with Codex since #106): {@link PROVIDER_PASSED_VARIABLES}. Everything
- * else is dropped, in particular `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
- * `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL`, every `CLAUDE_CODE_USE_*` (they would override
- * the subscription login: compliance record, technical finding 5) and all of Studio's and the
- * worker's own settings (the worker token, the Agent account's token).
+ * The only worker variables a Claude Code process gets ({@link PROVIDER_PASSED_VARIABLES}); the
+ * rest is dropped: API keys, auth tokens and `CLAUDE_CODE_USE_*` would override the subscription
+ * login, and the worker and Agent account tokens must never reach the agent.
  */
 export const CLAUDE_CODE_PASSED_VARIABLES = PROVIDER_PASSED_VARIABLES;
 
@@ -93,7 +88,7 @@ export interface ClaudeArgumentsInput {
   prompt: string;
   /** Studio's allowed tool rules (from its guardrail settings file). */
   allowedTools: readonly string[];
-  /** The per-Run settings file in the Run's directory (`{}` since #134: the guardrails are managed). */
+  /** The per-Run settings file in the Run's directory (`{}`: the guardrails are managed). */
   settingsFile: string;
   /** The agent definition and the repository's instruction text, in the Run's directory. */
   instructionsFile: string;
@@ -106,12 +101,9 @@ export interface ClaudeArgumentsInput {
 }
 
 /**
- * The CLI's arguments, exactly the record's Mode (revised 2026-11-16): a non-interactive step
- * with streamed JSON events, prompts disabled (anything that would prompt is denied), Studio's
- * allowed tools and guardrail settings, only the user's own setting source (no project settings,
- * hooks or `.mcp.json`), no MCP configuration but Studio's (none), a bound on turns, Studio's
- * instructions file and the structured result's schema. A resumed step adds `--resume`. Never
- * `--bare`: bare mode does not read the subscription login.
+ * The CLI's arguments, exactly the record's Mode: non-interactive, prompts disabled (anything that
+ * would prompt is denied), only the user's setting source (no project settings, hooks or MCP).
+ * Never `--bare`: it does not read the subscription login.
  */
 export function claudeArguments(input: ClaudeArgumentsInput): string[] {
   return [
@@ -147,9 +139,7 @@ export function claudeArguments(input: ClaudeArgumentsInput): string[] {
  */
 export function claudePrompt(kind: 'task' | ResumeReason, text: string): string {
   if (kind === 'task') return `The operator's Task:\n\n${text}`;
-  // Issue #141: a Follow-up is a further instruction to the finished Task, not an answer.
   if (kind === 'follow_up') return `The operator's Follow-up:\n\n${text}`;
-  // Issue #147: the worker's own instruction after it merged the integration branch.
   if (kind === 'bring_up_to_date') {
     return `Studio's instruction to bring the branch up to date:\n\n${text}`;
   }

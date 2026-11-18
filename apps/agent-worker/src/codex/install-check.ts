@@ -3,19 +3,9 @@ import { access, realpath, stat } from 'node:fs/promises';
 import { posix } from 'node:path';
 
 /**
- * The complete-install check at worker start (Issue #106, compliance record, technical finding
- * 7): the bare `codex` binary from a release archive is not a complete install (its tools fail
- * without the code-mode host). The supported install is the official standalone installer, which
- * unpacks the package into `$CODEX_HOME/packages/standalone/releases/<version>-<target>/` and
- * links the command on PATH to its `bin/codex`:
- *
- *   <package>/bin/codex
- *   <package>/bin/codex-code-mode-host
- *   <package>/codex-path/rg
- *
- * Method: resolve the configured binary (`CODEX_CLI_BIN`, on PATH or absolute) with symbolic
- * links followed, and require that layout around it. Only file metadata is read, never content,
- * and nothing in the Codex home but the package (never the login or the session files).
+ * The complete-install check at worker start: the bare `codex` release binary is not complete
+ * (its tools fail without the code-mode host), so the standalone installer's package layout is
+ * required around the resolved binary. Only file metadata is read, never content.
  */
 
 /** The package files a complete standalone install has, relative to the package directory. */

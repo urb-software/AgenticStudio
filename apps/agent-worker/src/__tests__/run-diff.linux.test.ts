@@ -10,8 +10,7 @@ import { RunDiffs, RunDiffUnavailableError } from '../run-diff.js';
 import { type PreparedRun, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
 
-// Issue #144: a Run's diffs computed from a real Working copy on fixture repositories (file://,
-// no network). Linux only, like the worker; runs in CI on Linux.
+// A Run's diffs computed from a real Working copy on fixture repositories.
 
 const AGENT = { agentGitName: 'Studio Agent', agentGitEmail: 'agent@example.test' };
 const LIMITS = { filePatchBytes: 256 * 1024, patchBytes: 2048 * 1024, files: 1000 };
@@ -116,7 +115,6 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     );
     inRepo(prepared, ['mv', 'src/old-name.ts', 'src/new-name.ts']);
     inRepo(prepared, ['commit', '--quiet', '-m', 'Rename']);
-    // Uncommitted and untracked changes are part of the diff.
     agentWrites(prepared, { 'README.md': '# Shop\n\nMore.\n', 'notes/todo.md': 'Todo\n' });
 
     const computed = await diffs().compute(prepared, run, signal());
@@ -155,7 +153,6 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     expect(binary).not.toHaveProperty('patch');
     // The first result: "since the previous result" is the whole Run.
     expect(last).toEqual(whole);
-    // What Studio's route accepts.
     expect(
       reportRunDiffRequestSchema.safeParse({ workerId: WORKER_ID, ...computed.report }).success,
     ).toBe(true);
@@ -199,7 +196,7 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     const firstHead = inRepo(prepared, ['rev-parse', 'HEAD']);
     const subject = diffs();
     const first = await subject.compute(prepared, run, signal());
-    // Studio keeps the state and hands it back with the next claim (review S-1 of #149).
+    // Studio keeps the state and hands it back with the next claim.
     expect(first.report.state).toMatchObject({
       resultCommit: firstHead,
       previousCommit: run.startCommit,
@@ -302,7 +299,7 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     );
   });
 
-  it('ignores a state whose objects are not the trees and commits it names (review S-1 of #149)', async () => {
+  it('ignores a state whose objects are not the trees and commits it names', async () => {
     const run = payload();
     const prepared = await prepare(run);
     agentWrites(prepared, { 'one.md': 'one\n' }, 'Change');
@@ -324,7 +321,7 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
     expect(computed.report.run.includesUnpushed).toBe(true);
   });
 
-  it('a committed Studio-placed path does not keep the changes unpushed (review S-4 of #149)', async () => {
+  it('a committed Studio-placed path does not keep the changes unpushed', async () => {
     const run = payload({
       studioPaths: ['.env'],
       environmentFile: { path: '.env', content: 'SECRET=test-only-value\n' },

@@ -34,11 +34,8 @@ import { WorkingCopies } from '../working-copy.js';
 import { createRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
 import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
 
-// Issue #96, the whole backbone: the real worker loop, in process, against the real Studio API
-// (its production build, as a separate process) on PostgreSQL and Redis from Testcontainers.
-// The worker reaches the API over HTTP only, as in production; the database client here is
-// test setup (a project with a ready Repository) and is never handed to the worker.
-// The agent worker is Linux-only, so this suite runs on Linux (CI) and skips elsewhere.
+// The real worker loop against the production-built Studio API, reached over HTTP only, as in
+// production.
 
 const ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 const API_MAIN = join(ROOT, 'apps', 'api', 'dist', 'main.js');
@@ -47,7 +44,7 @@ const STUDIO_ORIGIN = 'http://localhost:4300';
 // Throwaway values generated per run; none is committed.
 const OPERATOR_PASSWORD = randomBytes(18).toString('base64');
 const WORKER_TOKEN = randomBytes(32).toString('base64');
-// Issue #102: the Agent account's token of this run, for the stub of GitHub only.
+// The Agent account's token of this run, for the stub of GitHub only.
 const AGENT_GITHUB_TOKEN = `ghp_${randomBytes(18).toString('hex')}`;
 
 type RunView = {
@@ -90,34 +87,30 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
   let redis: TestService;
   let db: DatabaseClient;
   let api: ChildProcess;
-  // Everything the API process writes (Issue #104: the leak test reads it); stderr is also
-  // passed on, as before.
+  // Everything the API process writes (the leak test reads it); stderr is also passed on.
   let apiOutput = '';
   let apiUrl: string;
   let cookie: string;
   let dataDir: string;
-  // Issue #98: the agent side's data directory and a fixture remote (file://, no network).
   let fixtures: string;
   let workerDataDir: string;
   let gitEnv: Record<string, string>;
   let remoteUrl: string;
   let remoteHead: string;
   let remoteDir: string;
-  // Issue #102: a local stub of GitHub's pull request API; nothing reaches real GitHub.
   let github: StubGitHub;
   const workers: AgentWorker[] = [];
 
-  // What the workers log (the leak test reads it).
   const workerLogs: string[] = [];
   const logger = {
     info: (message: string) => void workerLogs.push(message),
     error: (message: string) => void workerLogs.push(message),
   };
 
-  /** The Run's containers (Issue #100): recorded, never the CI host's Docker. */
+  /** The Run's containers: recorded, never the CI host's Docker. */
   const cleanedUp: string[] = [];
 
-  /** The worker as main.ts composes it in fake mode (Issue #101): the gate before the runner. */
+  /** The worker as main.ts composes it in fake mode: the gate before the runner. */
   function startWorker(
     token = WORKER_TOKEN,
     providers = BOTH_ENABLED,
@@ -131,7 +124,6 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
       git,
       agentGitName: 'Studio Agent',
       agentGitEmail: 'agent@example.test',
-      // The fixture remote is a file:// URL: a test worker.
       allowFileRemotes: true,
       logger,
     });
@@ -190,7 +182,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     return project!.id;
   }
 
-  /** A connected worker's status report, so Studio accepts new Runs (Issue #101). */
+  /** A connected worker's status report, so Studio accepts new Runs. */
   async function announceWorker(providers = BOTH_ENABLED): Promise<void> {
     await new StudioApi({ apiUrl, token: WORKER_TOKEN, workerId: randomUUID() }).reportStatus({
       runner: 'fake',
@@ -270,8 +262,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
         STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
         STUDIO_DATA_DIR: dataDir,
         STUDIO_WORKER_TOKEN: WORKER_TOKEN,
-        // Issue #143: Studio decides the retention; a Run finished without a pull request is
-        // removable at once, so the sweep below has something to remove.
+        // A Run finished without a pull request is removable at once.
         STUDIO_RETENTION_DAYS: '0',
       },
     });
@@ -303,7 +294,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
   afterEach(async () => {
     await Promise.all(workers.splice(0).map((worker) => worker.stop()));
-    // Test isolation (review of #112): no Run of one test (e.g. one waiting for the operator,
+    // Test isolation: no Run of one test (e.g. one waiting for the operator,
     // which stays active) may hold a server-wide slot in the next. CASCADE empties runs too.
     await db.$executeRaw`TRUNCATE TABLE projects CASCADE`;
   });
@@ -337,10 +328,8 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
     expect(run.state).toBe('succeeded');
     expect(run).not.toHaveProperty('failure');
-    // Issue #102: nothing changed, so nothing was pushed and no pull request opened.
     expect(run.delivery).toBe('none');
     expect(run).not.toHaveProperty('pullRequest');
-    // Issue #98: the Working copy's state reaches the operator's Run.
     expect(run).toMatchObject({
       runBranch: `agent/add-a-health-check-r${runId.slice(0, 8)}`,
       commits: [],
@@ -348,7 +337,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     });
   });
 
-  it('records the commit the fake runner makes and delivers it as a draft pull request (Issues #98, #102)', async () => {
+  it('records the commit the fake runner makes and delivers it as a draft pull request', async () => {
     const runId = await startRun('[fake:commit] Add a file');
     startWorker();
 
@@ -363,8 +352,6 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
       delivery: 'delivered',
       pullRequest: { url: expect.stringMatching(/^https:\/\/github\.com\/acme\/shop\/pull\/\d+$/) },
     });
-    // The Run branch reached the remote at the reported commit, and a draft pull request
-    // against the integration branch was opened as the Agent account.
     expect(git(remoteDir, ['rev-parse', `refs/heads/${runBranch}`], gitEnv)).toBe(
       run.commits?.[0]?.id,
     );
@@ -377,7 +364,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(github.requests.at(-1)?.authorization).toBe(`Bearer ${AGENT_GITHUB_TOKEN}`);
   });
 
-  it('commits what the fake runner leaves uncommitted, then delivers it (Issues #98, #102)', async () => {
+  it('commits what the fake runner leaves uncommitted, then delivers it', async () => {
     const runId = await startRun('[fake:dirty] Leave a file');
     startWorker();
 
@@ -389,7 +376,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     });
   });
 
-  it('never commits or pushes the Environment file: the delivered Run branch does not contain it (Issue #104)', async () => {
+  it('never commits or pushes the Environment file: the delivered Run branch does not contain it', async () => {
     await announceWorker();
     const projectId = await readyProject();
     const set = await fetch(`${apiUrl}/api/projects/${projectId}/environment-file`, {
@@ -415,7 +402,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(pushed).not.toContain('config/test.env');
   });
 
-  it("reports the Run's diffs: both changed files, never the Environment file, pushed after the delivery (Issue #144)", async () => {
+  it("reports the Run's diffs: both changed files, never the Environment file, pushed after the delivery", async () => {
     await announceWorker();
     const projectId = await readyProject();
     const set = await fetch(`${apiUrl}/api/projects/${projectId}/environment-file`, {
@@ -440,7 +427,6 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
       expect(diff.status).toBe(200);
       expect(await diff.json()).toMatchObject({
         baseCommit: remoteHead,
-        // The delivery pushed everything, so the stored diff says so.
         includesUnpushed: false,
         truncated: false,
         files: [
@@ -457,7 +443,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect((await read('diff/file?scope=run&path=config/test.env')).status).toBe(404);
   });
 
-  it('fails a delivery GitHub refuses as delivery_failed, and delivers on "Retry delivery" (Issue #102)', async () => {
+  it('fails a delivery GitHub refuses as delivery_failed, and delivers on "Retry delivery"', async () => {
     const runId = await startRun('[fake:commit] Retry me');
     github.failCreate = 502;
     startWorker();
@@ -485,7 +471,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(github.created.length).toBe(created + 1);
   });
 
-  it('fails a Run whose start commit the remote does not have as preparation_failed (Issue #98)', async () => {
+  it('fails a Run whose start commit the remote does not have as preparation_failed', async () => {
     const runId = await startRun('Add a health check');
     await db.$executeRaw`UPDATE runs SET start_commit = ${'f'.repeat(40)} WHERE id = ${runId}::uuid`;
     startWorker();
@@ -501,7 +487,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     });
   });
 
-  it("applies the retention rules with the Runs' states from Studio (Issue #98)", async () => {
+  it("applies the retention rules with the Runs' states from Studio", async () => {
     const finished = await startRun('Add a health check');
     startWorker();
     await runReaches(finished, ['succeeded']);
@@ -539,7 +525,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(cleaned).not.toContain(composeProjectName(waiting));
   });
 
-  it("forwards the Run's log to Studio, redacted, readable by the operator (Issue #99)", async () => {
+  it("forwards the Run's log to Studio, redacted, readable by the operator", async () => {
     const runId = await startRun('Print a token [fake:secret]');
     startWorker();
 
@@ -562,7 +548,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(events[3]!.text).toBe('••••••[redacted]');
   });
 
-  it('writes the Environment file for the Run, and its content leaks into no response, log or stored event when the agent prints it (Issue #104)', async () => {
+  it('writes the Environment file for the Run, and its content leaks into no response, log or stored event when the agent prints it', async () => {
     // Throwaway test values generated per run.
     const password = `test-only-pw-${randomBytes(8).toString('hex')}`;
     const apiKey = `test-only-key-${randomBytes(8).toString('hex')}`;
@@ -629,7 +615,6 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(run).toMatchObject({
       state: 'failed',
       failure: { code: 'agent_failed', detail: 'The fake agent failed.' },
-      // Coordinator decision on #98: the failed step's Working copy state is recorded too.
       runBranch: `agent/fake-fail-break-it-r${runId.slice(0, 8)}`,
       commits: [],
       hasUncommittedChanges: false,
@@ -652,8 +637,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     );
   });
 
-  // Issue #103: the operator answers through the API; the same worker resumes the session.
-  describe('answering a question (Issue #103)', () => {
+  describe('answering a question', () => {
     const answer = (runId: string, text: string) =>
       fetch(`${apiUrl}/api/runs/${runId}/answer`, {
         method: 'POST',
@@ -670,7 +654,6 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
       expect(waiting.question).toMatchObject({ options: ['Option A', 'Option B'] });
 
       expect((await answer(runId, 'Option A')).status).toBe(202);
-      // The resumed step asks again; the Working copy and session stay the same.
       await until(
         () => getRun(runId) as Promise<RunView & { messages: { kind: string }[] }>,
         (run) => run.state === 'waiting_for_operator' && run.messages.length === 4,
@@ -719,10 +702,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     });
   });
 
-  // Issue #100: cancel, the time limit and process-tree termination through the real API.
-  // Review of #121: Studio applies a report, but its answer never reaches the worker (the
-  // connection drops after the commit). The worker sends it again; the real API treats the repeat
-  // as a no-op, so the Run still ends succeeded with exactly one stored Run step.
+  // The connection drops after Studio commits a report; the real API treats the repeat as a no-op.
   it('carries a Run through reports whose answers are lost, without a duplicate step', async () => {
     const lost = new Set(['running', 'steps', 'succeeded']);
     const lossy: typeof fetch = async (input, init) => {
@@ -750,7 +730,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect(steps?.count).toBe(1);
   });
 
-  describe('cancel and time limit (Issue #100)', () => {
+  describe('cancel and time limit', () => {
     const cancel = (runId: string) =>
       fetch(`${apiUrl}/api/runs/${runId}/cancel`, {
         method: 'POST',
@@ -798,7 +778,6 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
 
       const run = await runReaches(runId, ['cancelled', 'failed', 'succeeded']);
       expect(run).toMatchObject({ state: 'cancelled', cancellation: { by: 'operator' } });
-      // The Working copy is kept for inspection, and its state recorded.
       expect(run.runBranch).toMatch(/^agent\//);
       expect(cleanedUp).toContain(composeProjectName(runId));
     });
@@ -850,7 +829,7 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
     expect((await getRun(runId)).state).toBe('queued');
   });
 
-  describe('provider switches (Issue #101)', () => {
+  describe('provider switches', () => {
     it('fails a Run for a provider switched off on the worker with provider_disabled', async () => {
       // Studio accepted the Run while a worker enabled Claude Code; the worker that claims it
       // has it switched off. The worker's own check is authoritative.

@@ -8,17 +8,9 @@ import { agentResultSchema } from '../agent-definition/index.js';
 import { AgentFailedError, UsageLimitError } from '../runner.js';
 
 /**
- * Reads the CLI's `--output-format stream-json --verbose` output of one Run step (Issue #105):
- * one JSON object per line. The recorded streams of the tested CLI version (the stub's
- * recordings) define the shapes relied on here; unknown types and fields are ignored, never a
- * failure.
- *
- * - `system`/`init` → the session id (also taken from any event that carries one first);
- * - `assistant` text → `message`; a `Bash` tool call → `command` (the command, verbatim);
- * - `user` tool result → `output`;
- * - `system`/`permission_denied` → `notice` (a denial does not fail the step);
- * - `rate_limit_event` with status `rejected` → the usage limit, with its reset time;
- * - `result` → the structured result (`structured_output`, from `--json-schema`).
+ * Reads the CLI's `--output-format stream-json --verbose` output of one Run step (one JSON object
+ * per line). The recorded streams of the tested CLI version define the shapes; unknown types and
+ * fields are ignored, never a failure.
  */
 
 /** Longest text of one runner event (the protocol's limit). */
@@ -172,8 +164,7 @@ export class ClaudeStream {
     }
     const result = this.result;
     if (result && !result.isError && result.subtype === 'success' && end.exitCode === 0) {
-      // The agent's part first, strictly (review R2 of #129): the session comes only from the
-      // stream, never from the agent's output.
+      // The session comes only from the stream, never from the agent's output.
       const agent = agentResultSchema.safeParse(result.structured);
       const parsed = agent.success
         ? runStepResultSchema.safeParse({

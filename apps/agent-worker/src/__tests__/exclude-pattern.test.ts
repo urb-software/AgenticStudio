@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { excludePattern } from '../working-copy.js';
 
-// Issue #104: the `.git/info/exclude` line for a Studio-placed file matches exactly its path.
-
 describe('excludePattern', () => {
   it.each([
     ['.env', '/.env'],

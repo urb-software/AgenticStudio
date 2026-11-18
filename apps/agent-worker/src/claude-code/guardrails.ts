@@ -4,19 +4,9 @@ import { z } from 'zod';
 import { GUARDRAILS_DIR } from '../managed-guardrails.js';
 
 /**
- * Studio's guardrail settings for Claude Code (Issues #105, #134):
- * `guardrails/claude-managed-settings.json` (allowed tools, deny rules, managed-only hooks and
- * permission rules, the PreToolUse hook) and `guardrails/claude-guard.mjs` (the hook), in the
- * agent worker's own folder, never the repository's. GUARDRAILS, NOT THE SECURITY BOUNDARY
- * (ADR 0002, security.md §2).
- *
- * Since #134 the server setup installs both, root-owned, as Claude Code's managed settings
- * (`/etc/claude-code/managed-settings.json`) and the guard script the managed hook runs; the
- * worker checks them before every step (managed-guardrails.ts). Managed settings load whatever
- * `--setting-sources` says, above `--settings`. The per-Run `--settings` file holds nothing
- * (`{}`): the compliance record's command keeps the option. `--allowedTools` still gets the
- * managed allow rules (the record's command too; the CLI ignores it under
- * `allowManagedPermissionRulesOnly`).
+ * Studio's guardrail settings for Claude Code (managed settings plus the PreToolUse guard script),
+ * installed root-owned by the server setup and checked before every step (managed-guardrails.ts).
+ * Guardrails, not the security boundary (ADR 0002); the per-Run `--settings` file stays `{}`.
  */
 
 export const GUARDRAIL_FILES = {
@@ -52,7 +42,7 @@ type GuardrailSettings = z.infer<typeof guardrailSettingsSchema>;
 export interface PreparedSettings {
   /** The per-Run settings file in the Run's directory (`--settings`): `{}`. */
   settingsFile: string;
-  /** The allowed tool rules (`--allowedTools`), exactly the managed settings' `permissions.allow`. */
+  /** The allowed tool rules (`--allowedTools`): the managed settings' `permissions.allow`. */
   allowedTools: string[];
 }
 

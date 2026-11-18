@@ -2,7 +2,7 @@ import { reviewCommentsResultSchema } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
 import { buildReviewComments, type ReviewCommentSources } from '../review-comments.js';
 
-// Issue #146: the worker's mapping of what the Git host lists to the worker protocol's comments.
+// The worker's mapping of what the Git host lists to the worker protocol's comments.
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 16, 10, minutes)).toISOString();
 

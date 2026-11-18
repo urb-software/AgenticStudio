@@ -3,7 +3,7 @@ import {
   FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH,
 } from '@agentic-studio/contracts';
 
-/** Lines of a job log kept for the operator (Issue #145), counted from the end. */
+/** Lines of a job log kept for the operator, counted from the end. */
 export const EXCERPT_LINES = 200;
 
 /** A byte order mark some logs start with. */
@@ -21,10 +21,9 @@ const ANSI = /\u001B\[[0-9;?]*[ -/]*[@-~]/g;
 const CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
 
 /**
- * The last lines of a job log as plain text for the operator's preview (Issue #145): the line
- * timestamps, colour codes and control characters removed, the last {@link EXCERPT_LINES} lines,
- * and at most `maxBytes` UTF-8 bytes of those (the end is kept: it is where a job says why it
- * failed). The text is untrusted; nothing here interprets it.
+ * The last {@link EXCERPT_LINES} lines of a job log as plain text for the operator's preview, at
+ * most `maxBytes` UTF-8 bytes of the end (where a job says why it failed), without timestamps,
+ * colour codes and control characters. The text is untrusted; nothing here interprets it.
  */
 export function logExcerpt(
   log: string,

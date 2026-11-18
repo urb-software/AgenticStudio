@@ -18,10 +18,8 @@ import { type ProviderCli, spawnProviderCli } from '../spawn-boundary.js';
 import { AgentWorker, type WorkerApi } from '../worker.js';
 import type { WorkingCopyPort } from '../working-copy.js';
 
-// Issue #101: the eight required negative tests of the provider enablement gate
-// (docs/engineering/quality.md §10). The process-spawn boundary itself is mocked: every test
-// asserts whether `node:child_process` spawn was called, not only the reported status. No
-// provider credentials, no network, no real CLI.
+// The negative tests of the provider enablement gate, with spawn mocked so each asserts whether
+// it was called (docs/engineering/quality.md §10).
 
 const spawn = vi.hoisted(() => vi.fn());
 vi.mock('node:child_process', () => ({ spawn }));
@@ -51,7 +49,7 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
   studioPaths: [],
 });
 
-/** Where the spawn boundary registers a CLI's process group (Issue #100); recorded here. */
+/** Where the spawn boundary registers a CLI's process group; recorded here. */
 class RecordingGroups {
   readonly groups: number[] = [];
   register(group: number) {
@@ -60,10 +58,10 @@ class RecordingGroups {
 }
 const NO_GROUPS = new RecordingGroups();
 
-/** Issue #98: where a Run step works; these tests never touch it. */
+/** Where a Run step works; these tests never touch it. */
 const WORKSPACE = { repoDir: '/nonexistent/repo', runDir: '/nonexistent', env: {} };
 
-/** The Working copies as a stub (Issue #98): preparation and its report need no Git. */
+/** The Working copies as a stub: preparation and its report need no Git. */
 const prepared: string[] = [];
 const workingCopies: WorkingCopyPort = {
   prepare: async (run) => (
@@ -81,7 +79,7 @@ const workingCopies: WorkingCopyPort = {
   },
 };
 
-/** Issue #102: delivery is not what this suite is about (delivery.linux.test.ts). */
+/** Delivery is not what this suite is about (delivery.linux.test.ts). */
 const deliveries: DeliveryPort = {
   commit: async () => undefined,
   deliver: async () => ({ outcome: 'none' }),
@@ -90,7 +88,7 @@ const deliveries: DeliveryPort = {
   },
 };
 
-/** Issue #144: diffs are not what this suite is about (run-diff.linux.test.ts). */
+/** Diffs are not what this suite is about (run-diff.linux.test.ts). */
 const diffs: RunDiffPort = {
   compute: async () => {
     throw new RunDiffUnavailableError('not computed in this suite');
@@ -105,7 +103,7 @@ const DONE: RunStepResult = { outcome: 'done', summary: 'done' };
 /** The spawn boundary's inputs with the default binaries (`claude`, `codex`). */
 const cliOf = (gate: ProviderGate): ProviderCli => ({ gate, binaries: DEFAULT_PROVIDER_BINARIES });
 
-/** Stands in for a real provider runner (#105, #106): it starts its CLI through the boundary. */
+/** Stands in for a provider runner: it starts its CLI through the spawn boundary. */
 class CliRunner implements Runner {
   constructor(private readonly cli: ProviderCli) {}
 
@@ -145,7 +143,7 @@ class OneRunApi implements WorkerApi {
     return { cancelRequested: false };
   }
   async reportState(_runId: string, report: { state: string; workingCopy?: unknown }) {
-    // The Working copy state that goes with a failure (Issue #98) is tested in worker.test.ts.
+    // The Working copy state that goes with a failure is tested in worker.test.ts.
     const { workingCopy, ...rest } = report;
     void workingCopy;
     if (report.state !== 'running') this.final = rest;
@@ -154,11 +152,7 @@ class OneRunApi implements WorkerApi {
 
 const silent = { info: () => undefined, error: () => undefined };
 
-/**
- * Starts the worker as main.ts composes it (switches read from the environment once, the
- * dispatcher in front of the provider runners), lets it carry one Run, and returns the Run's
- * final state report.
- */
+/** Starts the worker as main.ts composes it, lets it carry one Run and returns its final report. */
 async function carry(
   env: Record<string, string | undefined>,
   run: RunPayload,
@@ -255,7 +249,7 @@ describe('provider enablement gate (quality.md §10)', () => {
       expect(spawn).not.toHaveBeenCalled();
     });
 
-    it('not even a fetch: the worker checks the gate before preparing the Working copy (note on #117)', async () => {
+    it('not even a fetch: the worker checks the gate before preparing the Working copy', async () => {
       prepared.length = 0;
 
       expect(await carry({}, payload('codex'))).toEqual(disabled('codex'));
@@ -407,7 +401,7 @@ describe('provider enablement gate (quality.md §10)', () => {
   });
 });
 
-describe("the spawn boundary starts only the provider's own binary (review of #116)", () => {
+describe("the spawn boundary starts only the provider's own binary", () => {
   const enabled = new ProviderGate({ claude_code: true, codex: true });
 
   it('resolves claude and codex from the provider by default', () => {
@@ -451,7 +445,7 @@ describe("the spawn boundary starts only the provider's own binary (review of #1
     expect(spawn).toHaveBeenCalledWith('codex', ['exec'], { shell: false, detached: true });
   });
 
-  it('starts the CLI in its own process group and registers it with the Run step (Issue #100)', () => {
+  it('starts the CLI in its own process group and registers it with the Run step', () => {
     const groups = new RecordingGroups();
     spawn.mockImplementation(() => Object.assign(new EventEmitter(), { pid: 4242 }));
 
@@ -469,7 +463,7 @@ describe("the spawn boundary starts only the provider's own binary (review of #1
   });
 });
 
-describe("the negative tests on the Claude Code runner's spawn path (Issue #105)", () => {
+describe("the negative tests on the Claude Code runner's spawn path", () => {
   const claudeRunner = (cli: ProviderCli) =>
     new ClaudeCodeRunner({
       cli,
@@ -518,7 +512,7 @@ describe("the negative tests on the Claude Code runner's spawn path (Issue #105)
   });
 });
 
-describe("the negative tests on the Codex runner's spawn path (Issue #106)", () => {
+describe("the negative tests on the Codex runner's spawn path", () => {
   const codexRunner = (cli: ProviderCli) =>
     new CodexRunner({
       cli,
