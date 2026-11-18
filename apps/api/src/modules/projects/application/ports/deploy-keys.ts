@@ -28,6 +28,7 @@ export interface StoredDeployKey {
  * half is never returned except inside {@link SshCredentials}, and never logged.
  */
 export interface DeployKeys {
+  /** Generates a Deploy key for the project and stores its private half. */
   create(projectName: string): Promise<StoredDeployKey>;
   /**
    * The SSH material for one Git operation on the Repository, or `undefined` when it has no

@@ -70,7 +70,7 @@ const REPOSITORY_JOB_ROUTING = Symbol('REPOSITORY_JOB_ROUTING');
 
 /**
  * Test seam: shorter Git limits or another platform; production passes nothing. `platform` can
- * only make the Linux-only guard refuse more (security.md §4); see moved-ports-entry.md.
+ * only make the Linux-only guard refuse more (security.md §4); see backend.md, "Test seam".
  */
 export interface ProjectsModuleOptions {
   gitSettings?: Partial<

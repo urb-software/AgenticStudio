@@ -91,8 +91,8 @@ export class DisconnectRepositoryHandler {
   }
 
   /**
-   * Runs every cleanup step, then deletes the record. True when nothing is left; false on a
-   * failure (logged, redacted), which leaves the Repository `disconnecting`. Never throws.
+   * Runs the cleanup steps in order, stopping at the first failure, then deletes the record. True
+   * when nothing is left; false on a failure (logged, redacted): it stays `disconnecting`. Never throws.
    */
   async finish(projectId: string): Promise<boolean> {
     let repository: RepositoryConnection | null;

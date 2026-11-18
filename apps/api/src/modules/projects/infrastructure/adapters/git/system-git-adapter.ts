@@ -247,9 +247,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
-   * Removes leftovers of interrupted operations before any runs: partial Clones and this user's
-   * per-operation directories (may hold a Deploy key). A custom, possibly shared temp root
-   * keeps directories younger than the clone limit plus a margin; failures are logged redacted.
+   * One API process owns the data directory, so nothing in it is live at start-up: removes partial
+   * Clones and this user's per-operation directories (may hold a Deploy key). A shared custom
+   * temp root keeps those younger than the clone limit plus a margin.
    */
   private async sweepStaleLeftovers(): Promise<void> {
     const staleBefore = Date.now() - this.settings.cloneTimeoutMs - STALE_MARGIN_MS;

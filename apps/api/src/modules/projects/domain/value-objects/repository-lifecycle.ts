@@ -21,8 +21,8 @@ export interface StorableConnection {
 
 /**
  * The lifecycle of a Repository connection: its starting state, which operations each state accepts
- * (the guards) and which state and field combinations a store may hold. The transition table lives here
- * only.
+ * (the guards) and which state and field combinations a store may hold. Which transitions are
+ * allowed lives here only.
  */
 export class RepositoryLifecycle {
   private constructor(private readonly facts: LifecycleFacts) {}

@@ -9,6 +9,7 @@ export const REPOSITORY_GIT = Symbol('REPOSITORY_GIT');
 
 /** SSH material for one operation, supplied by the caller (never stored by the adapter). */
 export interface SshCredentials {
+  /** An OpenSSH private key, PEM-armoured. */
   privateKey: string;
   /**
    * The only host keys accepted for the remote (at least one): `<key-type> <base64>`, e.g.
@@ -53,6 +54,7 @@ export interface RepositoryGit {
    */
   assertSupported(): void;
 
+  /** Checks that the remote answers; reports whether `branch` exists and its default branch. */
   inspectRemote(
     remoteUrl: string,
     branch: string,
@@ -77,6 +79,7 @@ export interface RepositoryGit {
    */
   scanHostKey(remoteUrl: string, options?: GitOperationOptions): Promise<{ hostKey: string }>;
 
+  /** Brings `branch` of the existing Clone up to date; throws {@link GitCloneMissingError} without one. */
   fetch(
     projectId: string,
     remoteUrl: string,
@@ -84,6 +87,7 @@ export interface RepositoryGit {
     options?: GitOperationOptions,
   ): Promise<{ commit: string }>;
 
+  /** The commit id of `branch` in the Project's Clone. */
   readBranchCommit(
     projectId: string,
     branch: string,

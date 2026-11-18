@@ -171,8 +171,8 @@ export class RepositoryConnection {
 
   /**
    * Starts the clone of a verified SSH Repository: → `connecting`, clearing the failure and any pending
-   * host key. With `confirmed`, only from `awaiting_host_key` with exactly that host key, which is then
-   * pinned. Otherwise {@link RepositoryNotVerifiableError}.
+   * host key. Without `confirmed`, from any verifiable state. With it, only from `awaiting_host_key` with
+   * exactly that host key, which is then pinned. Otherwise {@link RepositoryNotVerifiableError}.
    */
   startVerifiedClone(confirmed: { pendingHostKey: string } | null): void {
     this.assertVerifiable();

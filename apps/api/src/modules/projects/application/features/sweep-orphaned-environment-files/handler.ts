@@ -10,7 +10,8 @@ import {
 } from '../../ports/environment-file-contents.js';
 
 /**
- * Only contents past the grace period are candidates; a referenced one is never deleted. Never throws.
+ * Only contents past the grace period are candidates (two first saves can race); a referenced one
+ * is never deleted. Never throws.
  */
 @Injectable()
 export class SweepOrphanedEnvironmentFilesHandler {

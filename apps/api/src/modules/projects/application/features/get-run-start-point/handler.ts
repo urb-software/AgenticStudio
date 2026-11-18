@@ -17,7 +17,7 @@ export interface GetRunStartPointInput {
 export type GetRunStartPointResult = RunStartPoint;
 
 /**
- * Only a `ready` Repository qualifies.
+ * Only a `ready` Repository qualifies: while it is fetching, its commit is about to change.
  */
 @Injectable()
 export class GetRunStartPointHandler implements RunStartPoints {

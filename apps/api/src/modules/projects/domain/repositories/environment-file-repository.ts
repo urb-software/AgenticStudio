@@ -3,6 +3,7 @@ import type { EnvironmentFile } from '../entities/environment-file.js';
 export const ENVIRONMENT_FILE_REPOSITORY = Symbol('ENVIRONMENT_FILE_REPOSITORY');
 
 export interface EnvironmentFileRepository {
+  /** The project's Environment file, or `null` when none is set. */
   find(projectId: string): Promise<EnvironmentFile | null>;
 
   /**

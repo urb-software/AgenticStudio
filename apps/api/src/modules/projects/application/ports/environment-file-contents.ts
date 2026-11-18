@@ -5,6 +5,7 @@ export const ENVIRONMENT_FILE_CONTENTS = Symbol('ENVIRONMENT_FILE_CONTENTS');
  * owner label. Nothing logs or returns a content except {@link read}.
  */
 export interface EnvironmentFileContents {
+  /** Stores a content; returns its reference. */
   store(content: string): Promise<string>;
   /** The content behind `reference`, or `null` when it is gone (deleted meanwhile). */
   read(reference: string): Promise<string | null>;

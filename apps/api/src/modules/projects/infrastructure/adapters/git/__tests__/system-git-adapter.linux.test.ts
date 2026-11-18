@@ -260,6 +260,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       });
       const git = adapter();
       await git.clone(PROJECT_ID, fixture.url, 'main');
+      // Git runs reference-transaction on fetch, so a hook of the Clone would reach it.
       await mkdir(join(clonePath(), 'hooks'), { recursive: true });
       for (const name of ['reference-transaction', 'post-fetch', 'pre-auto-gc']) {
         await writeFile(join(clonePath(), 'hooks', name), hook);
@@ -336,6 +337,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       sockets = new Set();
       server = createServer((socket) => {
         sockets.add(socket);
+        // Read what Git sends, so its disconnect is noticed.
         socket.resume();
         socket.on('close', () => sockets.delete(socket));
       });

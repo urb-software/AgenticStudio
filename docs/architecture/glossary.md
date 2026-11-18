@@ -47,7 +47,7 @@ The IP address of a Repository's Git host. Whether Studio may connect to it depe
 _Avoid_: Remote, IP
 
 **Repository lifecycle**:
-The states a connected Repository goes through (awaiting a key, awaiting a host key, connecting, ready, fetching, failed, disconnecting) and which operation each state accepts.
+The states a connected Repository goes through and which operation each state accepts: `awaiting_key` (an SSH Repository whose Deploy key must still be added on the Git host, then verified); `awaiting_host_key` (the Git host is not trusted yet and the operator must confirm its host key); `connecting` (the first Clone is being made); `ready` (the Clone is up to date as of the last fetch); `fetching` (the Clone is being brought up to date); `failed` (the last connect or fetch failed); `disconnecting` (the operator disconnected it and its data is still being removed; the record goes last).
 _Avoid_: Status, workflow
 
 ### `executions`

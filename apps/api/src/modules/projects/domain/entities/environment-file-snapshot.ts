@@ -4,6 +4,7 @@
  */
 export interface EnvironmentFileSnapshot {
   readonly path: string;
+  /** UTF-8 bytes of the content. */
   readonly sizeBytes: number;
   readonly updatedAt: Date;
 }

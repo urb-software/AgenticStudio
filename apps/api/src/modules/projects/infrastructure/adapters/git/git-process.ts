@@ -130,6 +130,7 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
   });
 }
 
+/** Bytes used by the files under `path`; symlinks are counted, never followed (hostile repository). */
 export async function diskUsage(path: string): Promise<number> {
   let stats;
   try {
