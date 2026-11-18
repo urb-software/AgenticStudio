@@ -6,11 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT } from '../suite';
 
-/**
- * Tests of scripts/structure-report.mjs (Issue #170, quality.md §8). The report is not a check, but
- * it must measure what it says, show the change against a base, and never fail. It runs inside
- * `architecture:api`, so no new job or required check is needed.
- */
+/** The report is not a check, but it must measure what it says and never fail. */
 const SCRIPT = join(REPO_ROOT, 'scripts', 'structure-report.mjs');
 
 interface Measured {

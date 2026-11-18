@@ -15,13 +15,7 @@ import {
   target,
 } from './syntax';
 
-/**
- * The four checks that follow from rules 10 to 12 of backend.md §3 (Issue #182): aggregate
- * roots in `domain/entities/`, one repository per root, and handlers that return plain data.
- * Syntax and file tree only, as in `layout-rules.ts`: each file is parsed on its own, without
- * type checking, so the checks work on fixtures. They apply to every module under
- * `src/modules/`, by path pattern (Issue #170): a new module is covered without editing the gate.
- */
+/** Syntax-only checks for rules 10 to 12 of backend.md §3 (aggregates, repositories, handlers). */
 export const AGGREGATE_RULES = [
   'api-entry-points-no-entity-classes',
   'api-handlers-return-plain-data',
@@ -228,11 +222,8 @@ function isPublicMethod(member: ts.ClassElement): member is ts.MethodDeclaration
 }
 
 /**
- * A handler (rule 10) has an `execute` that takes at most one input object and declares its
- * return type. The file exports the input type (`<Name>Input`, when `execute` takes input)
- * and the result type (`<Name>Result`, when it returns something) for the class
- * `<Name>Handler`, and `execute` uses them. No public method of a handler returns an entity
- * class of its module, so a result holds plain data (snapshots, ids, values, view types).
+ * A handler's `execute` takes at most one input object and declares its return type; the file
+ * exports `<Name>Input` and `<Name>Result` and no public method returns an entity class.
  */
 function handlerViolations(
   baseDir: string,

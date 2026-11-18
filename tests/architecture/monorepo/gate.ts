@@ -10,16 +10,9 @@ import {
 } from '../harness';
 
 /**
- * `architecture:monorepo`: the workspace rules of docs/engineering/quality.md §4 and
- * docs/architecture/system.md §5, for apps/api, apps/web, apps/agent-worker,
- * apps/environment-controller and packages/*. Rules are written per app directory, so
- * they already cover the environment-controller app, which does not exist yet; the
- * agent worker (Issue #96) also has its own rule. Paths are relative to the workspace root.
- */
-/**
- * Every packages/* workspace package must be listed here as allowed or forbidden for
- * apps/web (a meta-test enforces it), so a new server-only package cannot reach the web
- * app by default. Forbidden names must also be in SERVER_PACKAGES, which the rules use.
+ * Every packages/* package is listed as allowed or forbidden for apps/web (a meta-test enforces
+ * it), so a new server-only package cannot reach the web app by default; forbidden ones are also
+ * in SERVER_PACKAGES.
  */
 export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[] } = {
   allowed: [],
@@ -27,14 +20,12 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
 };
 
 /**
- * The agent worker's production files allowed to import `node:child_process` (Issue #101):
- * only the spawn boundary, which checks the provider gate before it creates a process. Adding
- * a file here is a reviewed architecture change.
+ * The agent worker's production files allowed to import `node:child_process`: the spawn boundary,
+ * which checks the provider gate before it creates a process, and the helper-process runner.
  */
 export const AGENT_WORKER_PROCESS_FILES = [
   'apps/agent-worker/src/spawn-boundary.ts',
-  // Issue #98 (coordinator-approved): the worker's own helper processes, `git` and `docker`;
-  // never a provider CLI.
+  // Runs the worker's own helper processes (`git`, `docker`), never a provider CLI.
   'apps/agent-worker/src/process-runner.ts',
 ];
 
@@ -42,10 +33,8 @@ export const AGENT_WORKER_PROCESS_FILES = [
 const AGENT_WORKER_PRODUCTION = { path: '^apps/agent-worker/src/', pathNot: '(^|/)__tests__/' };
 
 /**
- * What the agent worker's production code may import besides Node core modules (review of
- * #116): its own files, the worker protocol and zod. Everything else (any other npm or
- * workspace package, e.g. a process wrapper) is denied by default; allowing one is a reviewed
- * change to this list.
+ * What the agent worker's production code may import besides Node core modules: its own files,
+ * the worker protocol and zod. Everything else is denied by default.
  */
 export const AGENT_WORKER_ALLOWED_IMPORTS = [
   '^apps/agent-worker/src/',
@@ -56,7 +45,7 @@ export const AGENT_WORKER_ALLOWED_IMPORTS = [
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',
-  // Generated Prisma client: kept as graph leaves, so imports of it are still checked.
+  // Kept as graph leaves, so imports of the generated Prisma client are still checked.
   doNotFollow: '^packages/database/src/generated/',
   resolveWorkspacePackagesToSource: true,
   forbidden: [

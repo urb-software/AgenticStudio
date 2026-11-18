@@ -4,22 +4,18 @@ import ts from 'typescript';
 import { listFiles, type Violation } from '../harness';
 
 /**
- * The SecretStore boundary (ADR 0001, docs/architecture/backend.md §2, Issue #57). Only
- * `platform/secrets/` handles ciphertext and the master key. The import side is enforced
- * with Dependency Cruiser rules in gate.ts; these source-level rules cover what an import
- * edge cannot show: the Prisma `secret` delegate reached through any database client, raw
- * SQL on the `secrets` table, and reads of `secretsKey` from the configuration.
- * Syntax only, like source-rules.ts, and tests are included: a test outside
- * `platform/secrets/` goes through the port as well.
+ * Only `platform/secrets/` handles ciphertext and the master key (ADR 0001). These rules cover what
+ * an import edge cannot show: the Prisma `secret` delegate, raw SQL on `secrets`, `secretsKey`
+ * reads. Tests are included: they go through the port as well.
  */
 export const SECRETS_SOURCE_RULES = ['api-secret-model-in-secrets-only', 'api-secrets-key-reads'];
 
 const SECRETS_DIR = /^src\/platform\/secrets\//;
 const CONFIG_DIR = /^src\/platform\/config\//;
-/** The Prisma delegate of the `Secret` model (`db.secret.findUnique`, `tx.secret`, `{ secret } = db`). */
+/** The Prisma delegate of the `Secret` model (`db.secret`, `tx.secret`, `{ secret } = db`). */
 const SECRET_DELEGATE = 'secret';
 const SECRETS_KEY = 'secretsKey';
-/** Raw SQL naming the table: `FROM secrets`, `INTO "secrets"`, `UPDATE secrets`, `TABLE secrets`. */
+/** Raw SQL naming the table: `FROM secrets`, `INTO "secrets"`, `UPDATE secrets`. */
 const SECRETS_TABLE_SQL = /\b(from|into|update|join|table)\s+(\w+\.)?"?secrets"?(?![\w-])/i;
 
 export function secretsViolations(baseDir: string): Violation[] {

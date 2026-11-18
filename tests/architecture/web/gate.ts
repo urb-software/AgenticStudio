@@ -109,7 +109,5 @@ export const webGate: Gate = {
     },
   ],
   unitCycles: { rule: 'web-no-module-cycle', unit: /^(src\/modules\/[^/]+)\// },
-  // Styling: design-system imports, colour literals and style= colours (frontend.md, "Styling
-  // and UI components").
   structural: { rules: STYLING_RULES, check: stylingViolations },
 };

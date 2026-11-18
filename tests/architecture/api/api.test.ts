@@ -201,7 +201,6 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'event-namespace-alias', expected: ['api-event-publisher-owned'] },
   { fixture: 'event-namespace-reexport', expected: ['api-event-publisher-owned'] },
   { fixture: 'event-interface-alias', expected: ['api-event-publisher-owned'] },
-  // SecretStore boundary (ADR 0001, backend.md §2, Issue #57).
   { fixture: 'secrets-used-through-entry-points', expected: [] },
   { fixture: 'module-imports-secrets-internals', expected: ['api-secrets-via-entry-points'] },
   {
@@ -210,7 +209,6 @@ describeGate('api', apiGate, 'apps/api', [
   },
   { fixture: 'module-uses-secret-model', expected: ['api-secret-model-in-secrets-only'] },
   { fixture: 'module-reads-secrets-key', expected: ['api-secrets-key-reads'] },
-  // Platform-only handled 503 and queue health view (Issue #70).
   { fixture: 'platform-only-handled-error-and-queue-health', expected: [] },
   {
     fixture: 'module-imports-handled-server-error',
@@ -231,14 +229,12 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'module-reaches-queue-health-via-port',
     expected: ['api-queue-health-platform-only'],
   },
-  // Cross-module use through the public contracts/index.ts only (backend.md §2, Issue #96).
   { fixture: 'module-uses-other-module-public-contract', expected: [] },
   {
     fixture: 'module-imports-other-module-http-contract',
     expected: ['api-contracts-only-index-and-events', 'api-cross-module-contracts-index-only'],
   },
   { fixture: 'module-imports-other-module-http-shared', expected: ['api-no-cross-module-private'] },
-  // The checks the approved module layout makes possible (Issue #162).
   {
     fixture: 'application-imports-only-domain-ports-and-own-files',
     expected: [],
@@ -254,7 +250,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-application-no-platform-queue'],
     qualityRow: '`application/` imports an HTTP, schema, OpenAPI, queue or scheduler API',
   },
-  // A test of `application/` may import the queue port's error classes (Issue #164).
   {
     fixture: 'application-test-imports-platform-queue',
     expected: [],
@@ -294,7 +289,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entry-points-no-ports-or-infrastructure'],
     qualityRow: '`entry-points/` imports a repository interface, port or infrastructure file',
   },
-  // Features are independent, in `executions` (Issue #166) and `projects` (Issue #164).
   {
     fixture: 'projects-feature-imports-own-files-ports-and-domain',
     expected: [],
@@ -470,7 +464,6 @@ describeGate('api', apiGate, 'apps/api', [
     ],
     qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
   },
-  // `domain/` has no services, imports no port, and its tests need no database (Issue #168).
   {
     fixture: 'domain-has-no-services-directory',
     expected: [],
@@ -520,7 +513,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entities-are-classes-with-non-public-constructors'],
     qualityRow: '`domain/entities/` file exports a class with a public constructor, or no class',
   },
-  // Aggregate roots and handler results (Issue #182): `projects`; `executions` is added by #183.
   {
     fixture: 'entry-point-imports-entity-type',
     expected: [],
@@ -596,7 +588,7 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'entity-imports-another-entity',
     expected: ['api-entities-do-not-import-entities'],
     qualityRow: 'An entity file imports another entity file for anything else',
-  }, // Rule 13, one concept per file (Issues #185, #184): `projects` and `executions`.
+  },
   {
     fixture: 'entity-projects-one-class-and-nothing-else',
     expected: [],
@@ -673,9 +665,7 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-domain-exports-no-function-but-type-guards'],
     qualityRow: '`domain/` exports a function other than a type guard',
   },
-  // The error half of the entry-point exemption (Issue #184): an entity file exports no error
-  // class any more, so an entry point takes an error from the root's errors file under
-  // `domain/value-objects/`, and a type from the entity file.
+  // An entry point takes an error from the root's errors file, a type from the entity file.
   {
     fixture: 'executions-entry-point-imports-type-from-entities-and-error-from-errors-file',
     expected: [],
@@ -709,8 +699,6 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'executions-repository-refers-to-another-root-and-the-run-step',
     expected: ['api-repository-refers-to-one-entity'],
   },
-  // Every structure check applies to any module under `src/modules/`, by path pattern: `billing`
-  // is a module the app does not have, and each rule is broken in it (Issue #170).
   {
     fixture: 'billing-feature-imports-another-feature',
     expected: ['api-features-no-feature-imports'],
@@ -759,7 +747,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-domain-exports-no-function-but-type-guards'],
     qualityRow: ROW_NEW_MODULE,
   },
-  // An application collaborator never imports a feature (backend.md §3 rule 3, Issue #170).
   {
     fixture: 'application-collaborator-imports-ports-and-domain',
     expected: [],
@@ -770,7 +757,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-collaborators-no-feature-imports'],
     qualityRow: 'An application collaborator imports `application/features/`',
   },
-  // The shared import parser sees side-effect imports and dynamic `import()` (review of #174).
   {
     fixture: 'feature-imports-another-feature-side-effect',
     expected: ['api-features-no-feature-imports'],
@@ -791,7 +777,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entry-points-no-ports-or-infrastructure'],
     qualityRow: ROW_PORT_ANY_ROUTE,
   },
-  // Ports nested deeper, and port tokens re-exported through a handler (review of #172).
   {
     fixture: 'entry-point-imports-nested-port-file',
     expected: ['api-entry-points-no-ports-or-infrastructure'],
@@ -817,8 +802,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: [],
     qualityRow: ROW_ERROR_THROUGH_HANDLER,
   },
-  // Handler methods with no declared return type, function-typed repository properties and
-  // qualified names (review of #188).
   {
     fixture: 'handler-method-without-return-type',
     expected: ['api-handlers-return-plain-data'],
@@ -841,7 +824,6 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow:
       'A repository interface returns another value object, or the snapshot of another root',
   },
-  // `satisfies`, `export const X = class {}` and overloads (review of #190).
   {
     fixture: 'domain-exports-arrow-function-with-satisfies',
     expected: ['api-domain-exports-no-function-but-type-guards'],
@@ -867,7 +849,6 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-entity-file-exports-one-class-and-no-function'],
     qualityRow: 'A `domain/entities/` file exports a second class or any function',
   },
-  // Direction of references inside `domain/`, and the type-only companions of an entity.
   {
     fixture: 'domain-leaves-import-smaller-leaves-and-entities-import-leaves',
     expected: [],
@@ -948,7 +929,6 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow:
       'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
   },
-  // The complete approved layout, the example for a new module (backend.md §2, Issue #170).
   {
     fixture: 'reference-module',
     expected: [],
@@ -959,7 +939,7 @@ describeGate('api', apiGate, 'apps/api', [
 describe('architecture:api precision', () => {
   const fixtures = join(import.meta.dirname, '..', 'fixtures', 'api');
 
-  it('an overloaded function is one export, reported once (review of #190)', () => {
+  it('an overloaded function is one export, reported once', () => {
     expect(fileViolations(join(fixtures, 'domain-exports-overloaded-function'))).toEqual([
       {
         rule: 'api-domain-exports-no-function-but-type-guards',
@@ -975,7 +955,7 @@ describe('architecture:api precision', () => {
     );
   });
 
-  it('an overloaded type guard is not reported (review of #190)', () => {
+  it('an overloaded type guard is not reported', () => {
     expect(fileViolations(join(fixtures, 'domain-exports-overloaded-type-guard'))).toEqual([]);
   });
 });
