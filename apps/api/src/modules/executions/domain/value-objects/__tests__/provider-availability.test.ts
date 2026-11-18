@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { type RecordedWorkerStatus, WorkerStatus } from '../worker-status.js';
+import { type RecordedWorkerStatus } from '../recorded-worker-status.js';
+import { WorkerStatus } from '../worker-status.js';
 
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = 60;

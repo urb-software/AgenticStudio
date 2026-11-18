@@ -1,6 +1,7 @@
 import type { RunDiff } from '../../entities/run-diff.js';
-import type { RunDiffScope } from '../../value-objects/run-diff.js';
-import type { NewRunDiff, RunDiffState } from '../../value-objects/run-diff.js';
+import type { RunDiffScope } from '../../value-objects/run-diff-scope.js';
+import type { NewRunDiff } from '../../value-objects/new-run-diff.js';
+import type { RunDiffStateInput } from '../../value-objects/run-diff-state.js';
 import type { RunDiffFileView, StoredRunDiff } from '../run-diff-repository.js';
 import type { RunDiffRepository } from '../run-diff-repository.js';
 
@@ -10,7 +11,7 @@ import type { RunDiffRepository } from '../run-diff-repository.js';
  */
 export class InMemoryRunDiffRepository implements RunDiffRepository {
   readonly diffs = new Map<string, Record<RunDiffScope, NewRunDiff & { reportedAt: Date }>>();
-  readonly states = new Map<string, RunDiffState>();
+  readonly states = new Map<string, RunDiffStateInput>();
 
   replace(report: RunDiff, now: Date): Promise<void> {
     const { runId, diffs, state } = report;
@@ -42,7 +43,7 @@ export class InMemoryRunDiffRepository implements RunDiffRepository {
     return Promise.resolve(file ? structuredClone(file) : null);
   }
 
-  findState(runId: string): Promise<RunDiffState | null> {
+  findState(runId: string): Promise<RunDiffStateInput | null> {
     const state = this.states.get(runId);
     return Promise.resolve(state ? structuredClone(state) : null);
   }

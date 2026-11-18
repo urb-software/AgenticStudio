@@ -14,6 +14,7 @@ import {
 import { AGGREGATE_RULES, aggregateViolations } from './aggregate-rules';
 import { DIRECTION_RULES, directionViolations } from './direction-rules';
 import { FILE_RULES, fileViolations } from './file-rules';
+import { VALUE_OBJECT_RULES, valueObjectViolations } from './value-object-rules';
 import { LAYOUT_RULES, APPLICATION_FORBIDDEN_PACKAGES, layoutViolations } from './layout-rules';
 import { SECRETS_SOURCE_RULES, secretsViolations } from './secrets-rules';
 import { SOURCE_RULES, sourceViolations } from './source-rules';
@@ -350,6 +351,7 @@ export const apiGate: Gate = {
       ...LAYOUT_RULES,
       ...AGGREGATE_RULES,
       ...FILE_RULES,
+      ...VALUE_OBJECT_RULES,
       ...DIRECTION_RULES,
       ...SECRETS_SOURCE_RULES,
     ],
@@ -361,6 +363,7 @@ export const apiGate: Gate = {
       ...layoutViolations(baseDir),
       ...aggregateViolations(baseDir),
       ...fileViolations(baseDir),
+      ...valueObjectViolations(baseDir),
       ...directionViolations(baseDir),
       ...secretsViolations(baseDir),
     ],

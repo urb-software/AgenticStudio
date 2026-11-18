@@ -1,10 +1,9 @@
-import { FAILURE_DETAIL_MAX_LENGTH } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type PullRequestState } from '../../../domain/value-objects/run-pull-request-status.js';
+import { type PullRequestState } from '../../../domain/value-objects/pull-request-state.js';
 import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
-import { type RunFailure } from '../../../domain/value-objects/run-failure.js';
+import { RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { type RunState } from '../../../domain/value-objects/run-state.js';
 import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
@@ -113,5 +112,5 @@ export class ReportRunStateHandler {
 
 /** Redaction can lengthen the detail; it is stored within the contract's limit. */
 function cutDetail(failure: RunFailure): RunFailure {
-  return { ...failure, detail: failure.detail.slice(0, FAILURE_DETAIL_MAX_LENGTH) };
+  return RunFailure.of(failure.code, failure.detail);
 }

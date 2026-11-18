@@ -1,9 +1,10 @@
 import type { PreparedFollowUpSnapshot } from './prepared-follow-up-snapshot.js';
-import { FOLLOW_UP_MAX_LENGTH, type FollowUpSource } from '../value-objects/follow-up.js';
+import { RunConversation } from '../value-objects/run-conversation.js';
+import { type FollowUpSource } from '../value-objects/follow-up-source.js';
 import { CheckLink } from '../value-objects/check-link.js';
 import type { PreparedFollowUpItem } from '../value-objects/prepared-follow-up-item.js';
 import type { LogRedaction } from '../value-objects/log-redaction.js';
-import type { FailingCheckLogsResult } from '../value-objects/run-lookup.js';
+import type { FailingCheckLogsResult } from '../value-objects/failing-check-logs-result.js';
 
 /** What a Follow-up prepared from failing checks is prepared from. */
 const SOURCE: FollowUpSource = 'pull_request_checks';
@@ -121,12 +122,12 @@ export class PreparedFollowUp {
       const bare =
         section(entry, undefined, entry.excerpt === undefined ? entry.note : OMITTED_NOTE).length +
         2;
-      if (used + bare > FOLLOW_UP_MAX_LENGTH) break;
+      if (used + bare > RunConversation.FOLLOW_UP_MAX_LENGTH) break;
       used += bare;
       fitting.push(entry);
     }
     // What is left is shared between the logs, each getting at most its own excerpt.
-    let spare = FOLLOW_UP_MAX_LENGTH - used;
+    let spare = RunConversation.FOLLOW_UP_MAX_LENGTH - used;
     let remaining = fitting.filter((entry) => entry.excerpt !== undefined).length;
     const items: PreparedFollowUpItem[] = [];
     for (const entry of fitting) {

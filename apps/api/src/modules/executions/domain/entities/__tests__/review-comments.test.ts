@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { LogRedaction, REDACTED } from '../../value-objects/log-redaction.js';
-import type { ReviewComment } from '../../value-objects/review-comments.js';
+import { ReviewComment, type ReviewCommentInput } from '../../value-objects/review-comment.js';
 import { ReviewComments } from '../review-comments.js';
 
-const comment = (overrides: Partial<ReviewComment> = {}): ReviewComment => ({
+const BOM = String.fromCharCode(0xfeff);
+
+const comment = (overrides: Partial<ReviewCommentInput> = {}): ReviewCommentInput => ({
   id: 'conversation-1',
   author: 'octocat',
   kind: 'conversation',
@@ -12,10 +14,23 @@ const comment = (overrides: Partial<ReviewComment> = {}): ReviewComment => ({
   ...overrides,
 });
 
-describe('ReviewComments.sanitize', () => {
+const sanitize = (
+  comments: readonly ReviewCommentInput[],
+  truncated: boolean,
+  redaction: LogRedaction,
+) =>
+  ReviewComments.load({
+    scope: 'unresolved',
+    comments,
+    truncated,
+    redaction,
+    loadedAt: new Date('2026-11-16T12:00:00.000Z'),
+  });
+
+describe('ReviewComments.load', () => {
   it('redacts the Run known secret values and token-shaped strings, in text and diff context', () => {
     const token = `ghp_${'a'.repeat(36)}`;
-    const { comments } = ReviewComments.sanitize(
+    const { comments } = sanitize(
       [
         comment({
           kind: 'inline',
@@ -35,7 +50,7 @@ describe('ReviewComments.sanitize', () => {
   });
 
   it('removes control characters but keeps line breaks and markup as plain text', () => {
-    const { comments } = ReviewComments.sanitize(
+    const { comments } = sanitize(
       [comment({ text: 'a\u0000b\tc\nd <i>e</i> [f](http://evil.test)\u001B' })],
       false,
       LogRedaction.of([]),
@@ -45,7 +60,7 @@ describe('ReviewComments.sanitize', () => {
   });
 
   it('cuts a text to 8 KiB in UTF-8 bytes at a character boundary and marks the cut', () => {
-    const { comments, truncated } = ReviewComments.sanitize(
+    const { comments, truncated } = sanitize(
       [comment({ text: 'é'.repeat(5000) })],
       false,
       LogRedaction.of([]),
@@ -57,9 +72,32 @@ describe('ReviewComments.sanitize', () => {
     expect(comments[0]!.text).not.toContain('�');
   });
 
+  it('cuts a diff context to 2 KiB and says that the set was cut', () => {
+    const { comments, truncated } = sanitize(
+      [comment({ kind: 'inline', id: 'inline-1', diffContext: 'é'.repeat(2000) })],
+      false,
+      LogRedaction.of([]),
+    );
+
+    expect(Buffer.byteLength(comments[0]!.diffContext!, 'utf8')).toBeLessThanOrEqual(2 * 1024);
+    expect(comments[0]?.textCut).toBeUndefined();
+    expect(truncated).toBe(true);
+  });
+
+  it('keeps a leading U+FEFF when it cuts a text', () => {
+    const { comments } = sanitize(
+      [comment({ text: `${BOM}${'a'.repeat(8 * 1024 + 10)}` })],
+      false,
+      LogRedaction.of([]),
+    );
+
+    expect(comments[0]?.textCut).toBe(true);
+    expect(comments[0]?.text).toBe(`${BOM}${'a'.repeat(8 * 1024 - 3)}`);
+  });
+
   it('holds a text to the limit after redaction, which can lengthen it', () => {
     // 700 short secrets each become a 16-character marker: the text grows past 8 KiB.
-    const { comments } = ReviewComments.sanitize(
+    const { comments } = sanitize(
       [comment({ text: 'abcd '.repeat(700) })],
       false,
       LogRedaction.of(['abcd']),
@@ -74,7 +112,7 @@ describe('ReviewComments.sanitize', () => {
       comment({ id: `conversation-${index + 1}` }),
     );
 
-    const { comments, truncated } = ReviewComments.sanitize(many, false, LogRedaction.of([]));
+    const { comments, truncated } = sanitize(many, false, LogRedaction.of([]));
 
     expect(comments).toHaveLength(100);
     expect(comments[0]?.id).toBe('conversation-6');
@@ -82,18 +120,34 @@ describe('ReviewComments.sanitize', () => {
   });
 
   it('keeps what the worker said was truncated, and says nothing more for a clean set', () => {
-    expect(ReviewComments.sanitize([comment()], true, LogRedaction.of([])).truncated).toBe(true);
-    expect(ReviewComments.sanitize([comment()], false, LogRedaction.of([])).truncated).toBe(false);
+    expect(sanitize([comment()], true, LogRedaction.of([])).truncated).toBe(true);
+    expect(sanitize([comment()], false, LogRedaction.of([])).truncated).toBe(false);
   });
 
   it('never shows a login that redaction would change half-masked', () => {
-    const { comments } = ReviewComments.sanitize(
+    const { comments } = sanitize(
       [comment({ author: 'octocat' })],
       false,
       LogRedaction.of(['octocat']),
     );
 
     expect(comments[0]?.author).toBe('unknown');
+  });
+});
+
+describe('ReviewComments.restore', () => {
+  it('keeps a stored text as it is, without cutting or redacting it', () => {
+    const long = 'é'.repeat(5000);
+    const set = ReviewComments.restore({
+      scope: 'unresolved',
+      comments: [comment({ text: long, diffContext: 'x'.repeat(3000) })],
+      truncated: false,
+      loadedAt: new Date('2026-11-16T12:00:00.000Z'),
+    });
+
+    expect(set.comments[0]?.text).toBe(long);
+    expect(set.comments[0]?.diffContext).toHaveLength(3000);
+    expect(ReviewComment.restore(comment({ text: long })).text).toBe(long);
   });
 });
 
@@ -144,20 +198,27 @@ describe('selecting comments', () => {
   });
 
   it('lists the distinct authors in order of appearance', () => {
-    expect(ReviewComments.distinctAuthors(set.comments)).toEqual(['a', 'b']);
+    expect(set.distinctAuthors()).toEqual(['a', 'b']);
     const many = Array.from({ length: 30 }, (_, index) => comment({ author: `user-${index}` }));
-    expect(ReviewComments.distinctAuthors(many)).toHaveLength(20);
+    expect(
+      ReviewComments.restore({
+        scope: 'unresolved',
+        comments: many,
+        truncated: false,
+        loadedAt: new Date('2026-11-16T12:00:00.000Z'),
+      }).distinctAuthors(),
+    ).toHaveLength(20);
   });
 });
 
-describe('ReviewComments.isByOperator', () => {
+describe('ReviewComment.isBy', () => {
   it('matches the configured login exactly, ignoring case', () => {
-    expect(ReviewComments.isByOperator('Octo-Cat', 'octo-cat')).toBe(true);
-    expect(ReviewComments.isByOperator('octo-cat2', 'octo-cat')).toBe(false);
-    expect(ReviewComments.isByOperator('octo', 'octo-cat')).toBe(false);
+    expect(ReviewComment.restore(comment({ author: 'Octo-Cat' })).isBy('octo-cat')).toBe(true);
+    expect(ReviewComment.restore(comment({ author: 'octo-cat2' })).isBy('octo-cat')).toBe(false);
+    expect(ReviewComment.restore(comment({ author: 'octo' })).isBy('octo-cat')).toBe(false);
   });
 
   it('matches nobody when no login is configured', () => {
-    expect(ReviewComments.isByOperator('octo-cat', null)).toBe(false);
+    expect(ReviewComment.restore(comment({ author: 'octo-cat' })).isBy(null)).toBe(false);
   });
 });

@@ -7,14 +7,10 @@ import type { LookupHandOutRule } from '../../domain/value-objects/lookup-hand-o
 import {
   REVIEW_COMMENT_SCOPES,
   type ReviewCommentScope,
-} from '../../domain/value-objects/review-comments.js';
+} from '../../domain/value-objects/review-comment-scope.js';
 import { type ReviewCommentsLoad } from '../../domain/repositories/run-lookup-repository.js';
-import {
-  LOOKUP_KINDS,
-  LOOKUP_STATUSES,
-  type LookupKind,
-  type LookupStatus,
-} from '../../domain/value-objects/run-lookup.js';
+import { LOOKUP_KINDS, type LookupKind } from '../../domain/value-objects/lookup-kind.js';
+import { LOOKUP_STATUSES, type LookupStatus } from '../../domain/value-objects/lookup-status.js';
 import { type ClaimedLookup } from '../../domain/repositories/run-lookup-repository.js';
 import { type Executor, inTransaction } from './executor.js';
 

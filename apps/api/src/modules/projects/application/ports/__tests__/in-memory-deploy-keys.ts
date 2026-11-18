@@ -1,10 +1,8 @@
 import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
 import { type RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { DeployKey } from '../../../domain/value-objects/deploy-key.js';
-import {
-  type KnownHost,
-  TrustedHostKeys,
-} from '../../../domain/value-objects/trusted-host-keys.js';
+import { type KnownHost } from '../../../domain/value-objects/known-host.js';
+import { TrustedHostKeys } from '../../../domain/value-objects/trusted-host-keys.js';
 import { DEPLOY_KEY_SECRET_OWNER, type DeployKeys, type StoredDeployKey } from '../deploy-keys.js';
 import type { SshCredentials } from '../repository-git.js';
 import { InMemorySecretStore } from './in-memory-secret-store.js';

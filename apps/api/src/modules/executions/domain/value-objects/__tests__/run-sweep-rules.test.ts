@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  GoneWorkerRule,
-  LeaseRenewalRule,
-  LongWaitRule,
-  LostWorkerRule,
-  OverdueStepRule,
-} from '../run-sweep-rules.js';
+import { GoneWorkerRule } from '../gone-worker-rule.js';
+import { LeaseRenewalRule } from '../lease-renewal-rule.js';
+import { LongWaitRule } from '../long-wait-rule.js';
+import { LostWorkerRule } from '../lost-worker-rule.js';
+import { OverdueStepRule } from '../overdue-step-rule.js';
 
 const NOW = new Date('2026-11-17T12:00:00.000Z');
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);

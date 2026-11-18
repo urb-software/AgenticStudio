@@ -2,13 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HandOutRule } from '../../../domain/value-objects/hand-out-rule.js';
-import {
-  GoneWorkerRule,
-  LeaseRenewalRule,
-  LongWaitRule,
-  LostWorkerRule,
-  OverdueStepRule,
-} from '../../../domain/value-objects/run-sweep-rules.js';
+import { GoneWorkerRule } from '../../../domain/value-objects/gone-worker-rule.js';
+import { LeaseRenewalRule } from '../../../domain/value-objects/lease-renewal-rule.js';
+import { LongWaitRule } from '../../../domain/value-objects/long-wait-rule.js';
+import { LostWorkerRule } from '../../../domain/value-objects/lost-worker-rule.js';
+import { OverdueStepRule } from '../../../domain/value-objects/overdue-step-rule.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   DATABASE_CLIENT,

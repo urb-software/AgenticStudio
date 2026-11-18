@@ -1,7 +1,4 @@
-export interface RunCommit {
-  id: string;
-  subject: string;
-}
+import type { RunCommit } from './run-commit.js';
 
 export interface RunWorkingCopy {
   runBranch: string;

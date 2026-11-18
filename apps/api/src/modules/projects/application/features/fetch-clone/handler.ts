@@ -1,10 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
-import {
-  RepositoryFailure,
-  type UnfinishedJob,
-} from '../../../domain/value-objects/repository-failure.js';
+import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
+import { type UnfinishedJob } from '../../../domain/value-objects/unfinished-job.js';
 import {
   REPOSITORY_CONNECTION_REPOSITORY,
   type RepositoryConnectionRepository,

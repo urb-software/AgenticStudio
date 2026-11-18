@@ -1,6 +1,6 @@
-import type { RunPartEnd } from './run-conversation.js';
+import type { RunPartEnd } from './run-part-end.js';
 import type { RunDeliveryState } from './run-delivery.js';
-import { OPERATOR_CANCELLATION_PREFIX, type RunCancellation } from './run-cancellation.js';
+import { RunCancellation } from './run-cancellation.js';
 import { IllegalRunTransitionError } from '../errors/run-errors.js';
 import type { RunFailure } from './run-failure.js';
 import { isFinalRunState, isRunState, type RunState } from './run-state.js';
@@ -152,7 +152,7 @@ export class RunLifecycle {
       cancellation:
         end.state === 'cancelled'
           ? {
-              by: end.detail.startsWith(OPERATOR_CANCELLATION_PREFIX) ? 'operator' : 'system',
+              by: end.detail.startsWith(RunCancellation.OPERATOR_PREFIX) ? 'operator' : 'system',
               reason: end.detail,
             }
           : null,

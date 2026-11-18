@@ -1,4 +1,5 @@
-import type { FollowUpComments, FollowUpSource } from '../value-objects/follow-up.js';
+import type { FollowUpComments } from '../value-objects/follow-up-comments.js';
+import type { FollowUpSource } from '../value-objects/follow-up-source.js';
 
 /**
  * Where a Follow-up's text came from; `comments` is `null` when the selection is not all in the

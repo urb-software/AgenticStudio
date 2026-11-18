@@ -162,6 +162,46 @@ export const QUALITY_TABLE = [
   },
   { row: 'A module has no `domain/services/` directory', expected: 'PASS', gate: 'api' },
   { row: 'A module has a `domain/services/` directory', expected: 'FAIL', gate: 'api' },
+  {
+    row: 'A `domain/value-objects/` file exports one class or one record, with the lists and guards that describe it',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/value-objects/` file exports a constant that is not a list of allowed values and no class',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/value-objects/` file exports two classes, two records, or a record not named after its class',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A module has no `factories` directory under `domain/` or `application/` (tests are not checked)',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/value-objects/` file exports a constant that is not a list beside a class',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A module has a `factories` directory under `domain/` or `application/`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/` class only has methods returning another class',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `domain/` class has state, or methods returning its own class',
+    expected: 'PASS',
+    gate: 'api',
+  },
   { row: '`domain/` imports only `domain/` and plain libraries', expected: 'PASS', gate: 'api' },
   { row: '`domain/` imports from `application/ports/`', expected: 'FAIL', gate: 'api' },
   {

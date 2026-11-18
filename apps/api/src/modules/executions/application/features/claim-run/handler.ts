@@ -1,6 +1,6 @@
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { RunDiffState } from '../../../domain/value-objects/run-diff.js';
+import type { RunDiffStateInput } from '../../../domain/value-objects/run-diff-state.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -14,7 +14,7 @@ import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects
 import { IllegalRunTransitionError, RunNotHeldError } from '../../../domain/errors/run-errors.js';
 import type { RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { RunConversation } from '../../../domain/value-objects/run-conversation.js';
-import { type RunFailure } from '../../../domain/value-objects/run-failure.js';
+import { RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
@@ -22,44 +22,38 @@ import {
   ENVIRONMENT_FILE_SNAPSHOTS,
   type EnvironmentFileSnapshots,
 } from '../../ports/environment-file-snapshots.js';
-import {
-  LongWaitRule,
-  LostWorkerRule,
-  OverdueStepRule,
-} from '../../../domain/value-objects/run-sweep-rules.js';
+import { LongWaitRule } from '../../../domain/value-objects/long-wait-rule.js';
+import { LostWorkerRule } from '../../../domain/value-objects/lost-worker-rule.js';
+import { OverdueStepRule } from '../../../domain/value-objects/overdue-step-rule.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
-const NO_REMOTE: RunFailure = {
-  code: 'preparation_failed',
-  detail:
-    "The run has no repository remote to prepare from (the project's repository was removed).",
-};
+const NO_REMOTE = RunFailure.of(
+  'preparation_failed',
+  "The run has no repository remote to prepare from (the project's repository was removed).",
+);
 
-const NOT_DELIVERABLE: RunFailure = {
-  code: 'delivery_failed',
-  detail:
-    'The run cannot be delivered: it has no repository remote, integration branch or recorded ' +
+const NOT_DELIVERABLE = RunFailure.of(
+  'delivery_failed',
+  'The run cannot be delivered: it has no repository remote, integration branch or recorded ' +
     'Run branch.',
-};
+);
 
-const ENVIRONMENT_FILE_UNAVAILABLE: RunFailure = {
-  code: 'preparation_failed',
-  detail:
-    "Studio could not read the project's Environment file for this run. Start the run again; " +
+const ENVIRONMENT_FILE_UNAVAILABLE = RunFailure.of(
+  'preparation_failed',
+  "Studio could not read the project's Environment file for this run. Start the run again; " +
     'if it keeps failing, set the Environment file again.',
-};
+);
 
-const NOT_RESUMABLE: RunFailure = {
-  code: 'preparation_failed',
-  detail:
-    'Working copy no longer exists — run again: Studio has no recorded Working copy, repository ' +
+const NOT_RESUMABLE = RunFailure.of(
+  'preparation_failed',
+  'Working copy no longer exists — run again: Studio has no recorded Working copy, repository ' +
     'remote or integration branch for this run.',
-};
+);
 
-const WORKING_COPY_REMOVED: RunFailure = {
-  code: 'preparation_failed',
-  detail: "Working copy no longer exists — run again: the agent worker's retention removed it.",
-};
+const WORKING_COPY_REMOVED = RunFailure.of(
+  'preparation_failed',
+  "Working copy no longer exists — run again: the agent worker's retention removed it.",
+);
 
 export interface ClaimedRun extends RunSnapshot {
   environmentFile: EnvironmentFile | null;
@@ -68,7 +62,7 @@ export interface ClaimedRun extends RunSnapshot {
   studioPaths: string[];
   completedSteps: number;
   nextSeq: number;
-  diffState?: RunDiffState | null;
+  diffState?: RunDiffStateInput | null;
 }
 
 export interface ClaimRunInput {
@@ -236,7 +230,7 @@ export class ClaimRunHandler {
 
   private async progress(
     run: RunSnapshot,
-  ): Promise<{ completedSteps: number; nextSeq: number; diffState: RunDiffState | null }> {
+  ): Promise<{ completedSteps: number; nextSeq: number; diffState: RunDiffStateInput | null }> {
     const [lastSeq, diffState] = await Promise.all([
       this.logs.lastSeq(run.id),
       this.diffs.findState(run.id),

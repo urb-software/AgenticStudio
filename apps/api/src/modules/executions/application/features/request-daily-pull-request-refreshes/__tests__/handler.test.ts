@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { PullRequestState } from '../../../../domain/value-objects/run-pull-request-status.js';
+import type { PullRequestState } from '../../../../domain/value-objects/pull-request-state.js';
 import { deliveredRun, T0 } from '../../../../domain/repositories/__tests__/delivered-run.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';

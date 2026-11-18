@@ -1,53 +1,8 @@
-import type { FollowUpComments, FollowUpSource } from './follow-up.js';
-import type { RunDeliveryState } from './run-delivery.js';
-import type { RunFailureCode } from './run-failure.js';
 import { RunResume } from './run-resume.js';
-import type { FinalRunState } from './run-state.js';
-
-/** The agent's text: never markup. */
-export interface RunQuestion {
-  text: string;
-  options?: string[];
-  recommendation?: string;
-}
-
-/**
- * For a bring-up-to-date request the Follow-up's text is the operator's optional note (empty when
- * there is none).
- */
-export interface BringUpDetails {
-  mergedCommit?: string;
-  updateBase?: string;
-  updateTip?: string;
-}
-
-/**
- * Recorded when a Follow-up reopens the Run, before its result is cleared, so the earlier result
- * stays in the conversation. `detail` is the failure detail or the
- * cancellation reason; empty otherwise.
- */
-export interface RunPartEnd {
-  state: FinalRunState;
-  failureCode: RunFailureCode | null;
-  delivery: RunDeliveryState | null;
-  detail: string;
-}
-
-export type RunFollowUpMessage = {
-  kind: 'follow_up';
-  text: string;
-  at: Date;
-  source?: FollowUpSource;
-  sourceComments?: FollowUpComments;
-} & BringUpDetails;
-
-export type RunPartEndMessage = { kind: 'part_end'; at: Date } & RunPartEnd;
-
-export type RunMessage =
-  | { kind: 'question'; question: RunQuestion; at: Date }
-  | { kind: 'answer'; text: string; at: Date }
-  | RunFollowUpMessage
-  | RunPartEndMessage;
+import type { BringUpDetails } from './bring-up-details.js';
+import type { RunFollowUpMessage } from './run-follow-up-message.js';
+import type { RunPartEndMessage } from './run-part-end-message.js';
+import type { RunMessage } from './run-message.js';
 
 export interface RunConversationStored {
   messages: RunMessage[];
@@ -55,6 +10,9 @@ export interface RunConversationStored {
 
 export class RunConversation {
   static readonly ANSWER_MAX_LENGTH = 10_000;
+
+  /** The text of a Follow-up: the same limit as an answer, pinned to the worker protocol by a test. */
+  static readonly FOLLOW_UP_MAX_LENGTH = 10_000;
 
   /** Sent to the agent as the next message of its session, stored as the operator's answer. */
   static readonly USAGE_LIMIT_RESUME_TEXT = 'Continue where you stopped.';

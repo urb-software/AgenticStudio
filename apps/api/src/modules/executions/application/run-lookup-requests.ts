@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { RunLookup } from '../domain/entities/run-lookup.js';
-import type { ReviewCommentsRequest } from '../domain/value-objects/review-comments.js';
-import { type LookupKind, type LookupRequestOutcome } from '../domain/value-objects/run-lookup.js';
+import type { ReviewCommentsRequest } from '../domain/value-objects/review-comments-request.js';
+import { type LookupKind } from '../domain/value-objects/lookup-kind.js';
+import { type LookupRequestOutcome } from '../domain/value-objects/lookup-request-outcome.js';
 import { RUN_TRANSACTIONS, type RunTransactions } from './ports/run-transactions.js';
 import { RunNotFoundError } from '../domain/errors/run-errors.js';
 

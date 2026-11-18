@@ -1,4 +1,6 @@
 import { REFUSED_RANGE_REASON, RemoteAddress } from './remote-address.js';
+import type { AddressPolicy } from './address-policy.js';
+import type { SshRemote } from './ssh-remote.js';
 
 export const REPOSITORY_URL_MAX_LENGTH = 2048;
 
@@ -27,10 +29,6 @@ const SSH_SCHEMES = new Set(['ssh:', 'git+ssh:', 'ssh+git:']);
 
 function invalid(message: string): never {
   throw new InvalidRepositoryUrlError(message);
-}
-
-export interface AddressPolicy {
-  allowPrivate: boolean;
 }
 
 export interface RepositoryUrlOptions {
@@ -67,11 +65,6 @@ function trimSlashes(path: string): string {
 function normalizePath(path: string): string {
   const trimmed = trimSlashes(path);
   return trimmed.toLowerCase().endsWith('.git') ? trimSlashes(trimmed.slice(0, -4)) : trimmed;
-}
-
-export interface SshRemote {
-  host: string;
-  port: number;
 }
 
 function parseScpLike(

@@ -1,6 +1,6 @@
 import type { PreparedFollowUp } from '../entities/prepared-follow-up.js';
 import type { PreparedFollowUpSnapshot } from '../entities/prepared-follow-up-snapshot.js';
-import type { FollowUpSource } from '../value-objects/follow-up.js';
+import type { FollowUpSource } from '../value-objects/follow-up-source.js';
 
 export const PREPARED_FOLLOW_UP_REPOSITORY = Symbol('PREPARED_FOLLOW_UP_REPOSITORY');
 

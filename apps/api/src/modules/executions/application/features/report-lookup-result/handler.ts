@@ -1,9 +1,9 @@
-import { LOOKUP_ERROR_MAX_LENGTH, type LookupResultRequest } from '@agentic-studio/contracts';
+import { type LookupResultRequest } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { PreparedFollowUp } from '../../../domain/entities/prepared-follow-up.js';
 import { ReviewComments } from '../../../domain/entities/review-comments.js';
 import type { RunLookup } from '../../../domain/entities/run-lookup.js';
-import type { PullRequestStateResult } from '../../../domain/value-objects/run-pull-request-status.js';
+import type { PullRequestStateResult } from '../../../domain/value-objects/pull-request-state-result.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,
@@ -11,10 +11,8 @@ import {
 } from '../../../domain/repositories/run-lookup-repository.js';
 import { CheckLink } from '../../../domain/value-objects/check-link.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
-import {
-  type LookupAnswerOutcome,
-  LookupFailure,
-} from '../../../domain/value-objects/run-lookup.js';
+import { type LookupAnswerOutcome } from '../../../domain/value-objects/lookup-answer-outcome.js';
+import { LookupFailure } from '../../../domain/value-objects/lookup-failure.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 import {
@@ -83,33 +81,30 @@ export class ReportLookupResultHandler {
     const pull = (await this.runs.findById(runId))?.delivery.pullRequest;
     const fallbackUrl = pull ? `${pull.url}/checks` : 'https://github.com';
     if (answer.kind === 'review_comments') {
-      // Untrusted text from the Git host: redacted and capped before it is stored.
-      const clean = ReviewComments.sanitize(
-        answer.result.comments,
-        answer.result.truncated,
-        redaction,
-      );
       await this.answer(runId, lookupId, async (lookup, repositories) => {
+        // Untrusted text from the Git host: redacted and capped before it is stored.
+        const loaded =
+          lookup.scope === null
+            ? null
+            : ReviewComments.load({
+                scope: lookup.scope,
+                comments: answer.result.comments,
+                truncated: answer.result.truncated,
+                redaction,
+                loadedAt: now,
+              });
         // The comments are kept in the Run's set only, not twice.
         const outcome = lookup.complete(
           answer.workerId,
-          { comments: clean.comments.length, truncated: clean.truncated },
+          { comments: loaded?.comments.length ?? 0, truncated: loaded?.truncated ?? false },
           now,
         );
         if (outcome !== 'stored') return outcome;
-        if (lookup.scope === null) {
+        if (loaded === null) {
           throw new Error('Unexpected review comment scope in the database: null');
         }
         await repositories.lookups.save(lookup);
-        await repositories.reviewComments.replace(
-          runId,
-          ReviewComments.load({
-            scope: lookup.scope,
-            comments: clean.comments,
-            truncated: clean.truncated,
-            loadedAt: now,
-          }),
-        );
+        await repositories.reviewComments.replace(runId, loaded);
         return outcome;
       });
       return;
@@ -172,12 +167,12 @@ export class ReportLookupResultHandler {
     answer: Extract<LookupResultRequest, { ok: false }>,
     now: Date,
   ): Promise<void> {
-    const error = LogRedaction.NONE.text(answer.error).slice(0, LOOKUP_ERROR_MAX_LENGTH);
-    const retry = LookupFailure.of({
-      code: answer.code,
-      error,
-      retryAfterSeconds: answer.retryAfterSeconds,
-    }).retryDelaySeconds;
+    const failure = LookupFailure.of(
+      { code: answer.code, error: answer.error, retryAfterSeconds: answer.retryAfterSeconds },
+      LogRedaction.NONE,
+    );
+    const { error } = failure;
+    const retry = failure.retryDelaySeconds;
     await this.answer(runId, lookupId, async (lookup, repositories) => {
       const outcome = lookup.fail(answer.workerId, error, retry, now);
       if (outcome !== 'stored') return outcome;

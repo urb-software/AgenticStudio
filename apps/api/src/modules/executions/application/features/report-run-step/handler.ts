@@ -1,7 +1,7 @@
 import { runStepResultSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import { type RunQuestion } from '../../../domain/value-objects/run-conversation.js';
+import { type RunQuestion } from '../../../domain/value-objects/run-question.js';
 import {
   type RunStepOutcome,
   type RunStepRecord,

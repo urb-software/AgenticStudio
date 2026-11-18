@@ -4,7 +4,7 @@ import { DATABASE_CLIENT } from '../../../../platform/database/database.module.j
 import { ReviewComments } from '../../domain/entities/review-comments.js';
 import { type ReviewCommentsSnapshot } from '../../domain/entities/review-comments-snapshot.js';
 import type { ReviewCommentRepository } from '../../domain/repositories/review-comment-repository.js';
-import type { ReviewCommentScope } from '../../domain/value-objects/review-comments.js';
+import type { ReviewCommentScope } from '../../domain/value-objects/review-comment-scope.js';
 import type { Executor } from './executor.js';
 import { commentsSchema } from './review-comment-json.js';
 
@@ -38,7 +38,7 @@ export class PrismaReviewCommentRepository implements ReviewCommentRepository {
   }
 
   async replace(runId: string, set: ReviewComments): Promise<void> {
-    const comments = set.comments as unknown as Prisma.InputJsonValue;
+    const comments = set.snapshot().comments as unknown as Prisma.InputJsonValue;
     await this.db.runReviewCommentSet.upsert({
       where: { runId },
       create: {

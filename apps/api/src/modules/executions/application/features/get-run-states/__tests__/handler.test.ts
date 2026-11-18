@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import {
-  RetentionPolicy,
-  type RetentionSettings,
-} from '../../../../domain/value-objects/retention-policy.js';
+import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
+import { type RetentionSettings } from '../../../../domain/value-objects/retention-settings.js';
 import { GetRunStatesHandler } from '../handler.js';
 
 const SETTINGS: RetentionSettings = {

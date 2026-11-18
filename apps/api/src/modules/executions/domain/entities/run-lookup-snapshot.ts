@@ -1,5 +1,6 @@
-import type { ReviewCommentScope } from '../value-objects/review-comments.js';
-import type { LookupKind, LookupStatus } from '../value-objects/run-lookup.js';
+import type { ReviewCommentScope } from '../value-objects/review-comment-scope.js';
+import type { LookupKind } from '../value-objects/lookup-kind.js';
+import type { LookupStatus } from '../value-objects/lookup-status.js';
 
 /** A lookup's current values; {@link RunLookup.snapshot}. */
 export interface RunLookupSnapshot {

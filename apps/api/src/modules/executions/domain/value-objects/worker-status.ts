@@ -1,25 +1,8 @@
-import { PROVIDER_NAMES, type WorkerStatusReport } from '@agentic-studio/contracts';
+import { PROVIDER_NAMES } from '@agentic-studio/contracts';
 import { PROVIDERS, type Provider } from './provider.js';
-
-/** Studio keeps it in memory only. */
-export interface RecordedWorkerStatus extends WorkerStatusReport {
-  workerId: string;
-  reportedAt: Date;
-}
-
-/** Shown to the operator as is. */
-export const PROVIDER_UNAVAILABLE_REASONS = {
-  switchedOff: 'Switched off on the agent worker',
-  noWorker: 'No agent worker is connected',
-} as const;
-export type ProviderUnavailableReason = string;
-
-export interface ProviderAvailability {
-  id: Provider;
-  name: string;
-  available: boolean;
-  reason?: ProviderUnavailableReason;
-}
+import type { RecordedWorkerStatus } from './recorded-worker-status.js';
+import type { ProviderAvailability } from './provider-availability.js';
+import { PROVIDER_UNAVAILABLE_REASONS } from './provider-unavailable-reason.js';
 
 /** Studio takes the answer from the report alone; the worker's own check stays authoritative. */
 export class WorkerStatus {

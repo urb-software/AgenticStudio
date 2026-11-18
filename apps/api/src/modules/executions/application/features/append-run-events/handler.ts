@@ -1,7 +1,7 @@
-import { cutToBytes, RUN_EVENT_TEXT_MAX_BYTES } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
-import type { RunEvent, RunEventKind } from '../../../domain/value-objects/run-event.js';
+import { RunEvent } from '../../../domain/value-objects/run-event.js';
+import type { RunEventKind } from '../../../domain/value-objects/run-event-kind.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import {
   RUN_REPOSITORY,
@@ -47,18 +47,9 @@ export class AppendRunEventsHandler {
       throw new RunNotFoundError();
     }
     const redaction = LogRedaction.of(await this.secrets.forRun(input.runId));
-    const events = input.events.map((event): RunEvent => {
-      // Redaction first: it can lengthen a text, and the cut must not split a secret open.
-      const { text, cut } = cutToBytes(redaction.text(event.text), RUN_EVENT_TEXT_MAX_BYTES);
-      return {
-        seq: event.seq,
-        at: new Date(event.at),
-        stepIndex: event.stepIndex,
-        kind: event.kind,
-        text,
-        truncated: event.truncated === true || cut,
-      };
-    });
+    const events = input.events.map((event) =>
+      RunEvent.load({ ...event, at: new Date(event.at) }, redaction),
+    );
     const stored = await this.log.append(
       input.runId,
       input.workerId,

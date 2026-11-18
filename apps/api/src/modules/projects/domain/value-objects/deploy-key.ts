@@ -1,10 +1,5 @@
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
-
-/** A newly generated Deploy key. `privateKey` goes to the secret store only. */
-export interface GeneratedDeployKey {
-  privateKey: string;
-  publicKey: string;
-}
+import type { GeneratedDeployKey } from './generated-deploy-key.js';
 
 const ED25519 = 'ssh-ed25519';
 const COMMENT_NAME_MAX_LENGTH = 64;

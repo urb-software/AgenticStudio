@@ -1,4 +1,4 @@
-import type { RecordedWorkerStatus } from '../../domain/value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../../domain/value-objects/recorded-worker-status.js';
 import type { WorkerStatusStore } from '../../application/ports/worker-status-store.js';
 
 /** Single API process: the latest worker status lives in memory. */

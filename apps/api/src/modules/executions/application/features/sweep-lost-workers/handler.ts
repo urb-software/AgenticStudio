@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { GoneWorkerRule, LostWorkerRule } from '../../../domain/value-objects/run-sweep-rules.js';
+import { GoneWorkerRule } from '../../../domain/value-objects/gone-worker-rule.js';
+import { LostWorkerRule } from '../../../domain/value-objects/lost-worker-rule.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {

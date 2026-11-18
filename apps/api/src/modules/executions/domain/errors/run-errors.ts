@@ -1,7 +1,7 @@
-import type { FollowUpRefusal } from '../value-objects/follow-up.js';
+import type { FollowUpRefusal } from '../value-objects/follow-up-refusal.js';
 import type { Provider } from '../value-objects/provider.js';
 import type { RunState } from '../value-objects/run-state.js';
-import type { ProviderUnavailableReason } from '../value-objects/worker-status.js';
+import type { ProviderUnavailableReason } from '../value-objects/provider-unavailable-reason.js';
 
 export class DeliveryNotRetryableError extends Error {
   constructor() {

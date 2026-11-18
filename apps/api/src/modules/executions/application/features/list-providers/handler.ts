@@ -1,8 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  type ProviderAvailability,
-  WorkerStatus,
-} from '../../../domain/value-objects/worker-status.js';
+import { type ProviderAvailability } from '../../../domain/value-objects/provider-availability.js';
+import { WorkerStatus } from '../../../domain/value-objects/worker-status.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';

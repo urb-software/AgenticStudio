@@ -475,6 +475,74 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: 'A module has a `domain/services/` directory',
   },
   {
+    fixture: 'value-object-class-owns-its-limit-input-and-error',
+    expected: [],
+    qualityRow:
+      'A `domain/value-objects/` file exports one class or one record, with the lists and guards that describe it',
+  },
+  {
+    fixture: 'value-object-exports-constant-without-a-class',
+    expected: ['api-value-object-constant-needs-a-class'],
+    qualityRow:
+      'A `domain/value-objects/` file exports a constant that is not a list of allowed values and no class',
+  },
+  {
+    fixture: 'value-object-class-and-unrelated-record',
+    expected: ['api-value-object-file-is-one-concept'],
+    qualityRow:
+      'A `domain/value-objects/` file exports two classes, two records, or a record not named after its class',
+  },
+  {
+    fixture: 'value-object-two-classes',
+    expected: ['api-value-object-file-is-one-concept'],
+    qualityRow:
+      'A `domain/value-objects/` file exports two classes, two records, or a record not named after its class',
+  },
+  {
+    fixture: 'value-object-two-records',
+    expected: ['api-value-object-file-is-one-concept'],
+    qualityRow:
+      'A `domain/value-objects/` file exports two classes, two records, or a record not named after its class',
+  },
+  {
+    fixture: 'value-object-constant-beside-a-class',
+    expected: [],
+    qualityRow:
+      'A `domain/value-objects/` file exports a constant that is not a list beside a class',
+  },
+  {
+    fixture: 'domain-has-no-factories-directory',
+    expected: [],
+    qualityRow:
+      'A module has no `factories` directory under `domain/` or `application/` (tests are not checked)',
+  },
+  {
+    fixture: 'domain-test-factories-directory-is-not-checked',
+    expected: [],
+    qualityRow:
+      'A module has no `factories` directory under `domain/` or `application/` (tests are not checked)',
+  },
+  {
+    fixture: 'domain-has-factories-directory',
+    expected: ['api-domain-no-factories-directory'],
+    qualityRow: 'A module has a `factories` directory under `domain/` or `application/`',
+  },
+  {
+    fixture: 'application-has-factories-directory',
+    expected: ['api-domain-no-factories-directory'],
+    qualityRow: 'A module has a `factories` directory under `domain/` or `application/`',
+  },
+  {
+    fixture: 'domain-class-of-methods-returning-another-class',
+    expected: ['api-domain-no-class-of-methods-returning-another-class'],
+    qualityRow: 'A `domain/` class only has methods returning another class',
+  },
+  {
+    fixture: 'domain-class-with-state-and-a-method-returning-another-class',
+    expected: [],
+    qualityRow: 'A `domain/` class has state, or methods returning its own class',
+  },
+  {
     fixture: 'domain-imports-only-domain-and-plain-libraries',
     expected: [],
     qualityRow: '`domain/` imports only `domain/` and plain libraries',

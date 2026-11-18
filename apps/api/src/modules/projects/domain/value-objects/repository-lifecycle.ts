@@ -1,23 +1,7 @@
 import { NoUsableCloneError, RepositoryBusyError } from '../errors/repository-connection-errors.js';
-import type { RepositoryFailure } from './repository-failure.js';
 import { isRepositoryState, type RepositoryState } from './repository-state.js';
-
-export interface LifecycleFacts {
-  readonly state: RepositoryState;
-  readonly hasClone: boolean;
-  readonly hasDeployKey: boolean;
-}
-
-export interface StorableConnection {
-  state: RepositoryState;
-  headSha: string | null;
-  lastFetchedAt: Date | null;
-  failure: RepositoryFailure | null;
-  publicKey: string | null;
-  deployKeySecret: string | null;
-  pinnedHostKey: string | null;
-  pendingHostKey: string | null;
-}
+import type { LifecycleFacts } from './lifecycle-facts.js';
+import type { StorableConnection } from './storable-connection.js';
 
 /**
  * The lifecycle of a Repository connection: its starting state, which operations each state accepts

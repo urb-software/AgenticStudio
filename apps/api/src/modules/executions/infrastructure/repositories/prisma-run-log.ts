@@ -2,11 +2,8 @@ import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import { type Executor, inTransaction } from './executor.js';
-import {
-  RUN_EVENT_KINDS,
-  type RunEvent,
-  type RunEventKind,
-} from '../../domain/value-objects/run-event.js';
+import { type RunEvent } from '../../domain/value-objects/run-event.js';
+import { RUN_EVENT_KINDS, type RunEventKind } from '../../domain/value-objects/run-event-kind.js';
 import { LogCap } from '../../domain/value-objects/log-cap.js';
 import { LogAppendRule } from '../../domain/value-objects/log-append-rule.js';
 import type { RunLog } from '../../application/ports/run-log.js';

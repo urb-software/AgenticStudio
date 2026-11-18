@@ -6,10 +6,7 @@ import {
 } from '../../errors/run-errors.js';
 import { Run } from '../run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
-import {
-  OPERATOR_CANCELLATION,
-  OPERATOR_CANCELLATION_BRANCH_PUSHED,
-} from '../../value-objects/run-cancellation.js';
+import { RunCancellation } from '../../value-objects/run-cancellation.js';
 import { type RunData } from '../run-data.js';
 import { type RunState } from '../../value-objects/run-state.js';
 import { type RunStateReport } from '../run-report-facts.js';
@@ -244,7 +241,7 @@ describe('a state the agent worker reports', () => {
 
     expect(run.snapshot()).toMatchObject({
       state: 'cancelled',
-      cancellation: OPERATOR_CANCELLATION,
+      cancellation: RunCancellation.OPERATOR,
       finishedAt: T1,
       claimedBy: null,
     });
@@ -270,7 +267,7 @@ describe('a state the agent worker reports', () => {
     expect(run.snapshot()).toMatchObject({
       state: 'cancelled',
       delivery: 'none',
-      cancellation: OPERATOR_CANCELLATION_BRANCH_PUSHED,
+      cancellation: RunCancellation.OPERATOR_BRANCH_PUSHED,
     });
   });
 

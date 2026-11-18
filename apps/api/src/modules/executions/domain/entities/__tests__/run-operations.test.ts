@@ -7,7 +7,7 @@ import {
   RunNotWaitingError,
   RunSlotTakenError,
 } from '../../errors/run-errors.js';
-import { FOLLOW_UP_REFUSALS } from '../../value-objects/follow-up.js';
+import { FOLLOW_UP_REFUSALS } from '../../value-objects/follow-up-refusal.js';
 import { type FollowUpFacts } from '../run-worker-facts.js';
 import { type FollowUpOrigin } from '../run-follow-up-facts.js';
 import { type ResumeFacts } from '../run-resume-facts.js';
@@ -18,7 +18,7 @@ import { RunPullRequestStatus } from '../../value-objects/run-pull-request-statu
 import { type RunData } from '../run-data.js';
 import { type RunState } from '../../value-objects/run-state.js';
 import { ReviewComments } from '../review-comments.js';
-import type { ReviewComment } from '../../value-objects/review-comments.js';
+import type { ReviewCommentInput } from '../../value-objects/review-comment.js';
 import { ReviewCommentsNotLoadedError } from '../../errors/run-errors.js';
 import { Task } from '../../value-objects/task.js';
 
@@ -505,14 +505,14 @@ describe('Run.followUp', () => {
     }
     throw new Error('The Follow-up was accepted.');
   };
-  const comment = (id: string, author: string): ReviewComment => ({
+  const comment = (id: string, author: string): ReviewCommentInput => ({
     id,
     author,
     kind: 'conversation',
     text: `Comment ${id}`,
     createdAt: T0.toISOString(),
   });
-  const loaded = (...comments: ReviewComment[]): ReviewComments =>
+  const loaded = (...comments: ReviewCommentInput[]): ReviewComments =>
     ReviewComments.restore({
       scope: 'unresolved',
       comments,

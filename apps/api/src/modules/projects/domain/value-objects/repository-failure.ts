@@ -1,3 +1,5 @@
+import type { UnfinishedJob } from './unfinished-job.js';
+
 /**
  * Why a Repository is `failed`: the fixed reason codes, the one list of the API. The Git port's
  * reasons are these but `interrupted`; the HTTP enum and the database CHECK constraint match.
@@ -21,15 +23,6 @@ export const REPOSITORY_FAILURE_CODES = [
   'unknown',
 ] as const;
 export type RepositoryFailureCode = (typeof REPOSITORY_FAILURE_CODES)[number];
-
-/**
- * Why the job of a clone or fetch ended without finishing on its own: the processor's own
- * error, or the reason the queue aborted it. It has the shape of the queue's failure report,
- * which the job's entry point passes on; the domain and the application name no queue.
- */
-export type UnfinishedJob =
-  | { reason: 'error'; error: unknown }
-  | { reason: 'cancelled' | 'timeout' | 'stalled' | 'shutdown' };
 
 export const FAILURE_DETAIL_MAX_LENGTH = 2000;
 

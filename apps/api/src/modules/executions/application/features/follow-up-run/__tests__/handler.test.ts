@@ -5,12 +5,12 @@ import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/worker-status.js';
+import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { FollowUpRunHandler } from '../handler.js';
 import { ReviewComments } from '../../../../domain/entities/review-comments.js';
-import type { ReviewComment } from '../../../../domain/value-objects/review-comments.js';
+import type { ReviewCommentInput } from '../../../../domain/value-objects/review-comment.js';
 import { ReviewCommentsNotLoadedError } from '../../../../domain/errors/run-errors.js';
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -205,7 +205,7 @@ describe('FollowUpRunHandler', () => {
   });
 
   describe('a Follow-up prepared from review comments', () => {
-    const comment = (id: string, author: string): ReviewComment => ({
+    const comment = (id: string, author: string): ReviewCommentInput => ({
       id,
       author,
       kind: 'conversation',

@@ -47,6 +47,17 @@ After the entity files were split by concept, `domain/value-objects/` held thing
 - `domain/value-objects/` holds value objects, policies and rules only. Inside `domain/`, references point one way: entities use value objects, value objects use smaller value objects, nothing under `value-objects/` or `errors/` imports from `entities/`, and there is no import cycle. A rule or policy takes an input type it declares itself.
 - Two gate checks keep this ([Quality](../../engineering/quality.md) §4 and §5). No behaviour changes.
 
+## Amendment, 2026-11-18 (Epic #160, Issue #215): value objects own their rules
+
+Records that carry a rule (a limit, a format, a cut, a redaction) were plain types with their rule enforced in a handler or beside them, and files under `domain/value-objects/` mixed lists, limits, records and classes. Rule 9 is refined ([Backend](../backend.md) §3 and §10):
+
+- A record with a rule becomes a value object class with a non-public constructor. Its limits are `static readonly` members of the class; a request schema takes them from the class and keeps its own shape check (rule 7).
+- A class is built by static factories that return the class: `of`, `create` and `from…` validate; `restore` rebuilds from storage and does not validate again. A factory enforces exactly what was enforced before, at the same moment and with the same result.
+- A static method that is not a factory is an instance method of the object it is about. Issue #215 does this for the files it reshapes; Issue #216 does it for the rest and adds the check for static methods.
+- A file under `domain/value-objects/` holds one class or one record, plus the lists, unions, type guards and typed-id brands that describe it. A constant that is not a list of allowed values is allowed only beside a class. There is no `factories/` directory under `domain/` or `application/`, and no class under `domain/` whose public members are all methods returning another class.
+- A list of allowed values is a union type. The second form of factory is an instance method of an aggregate root (a Run adding a Run step); there is no standalone factory, because it would be a stateless domain object and a creation that outgrows its class signals a missing concept. Factory names say what they do: `of`, `create`, `from…`, `restore`, or a descriptive name such as `load` or `afterWaiting`.
+- Four gate rules keep this, with a passing and a failing fixture each ([Quality](../../engineering/quality.md) §4 and §5). No behaviour changes.
+
 ## Consequences
 
 - **A feature's handler and its endpoint are in two folders** (`application/features/<feature>/` and `entry-points/http/<caller>/`), so reading one use case end to end means opening both.

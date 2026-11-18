@@ -1,5 +1,8 @@
 import {
   ANSWER_MAX_LENGTH as WORKER_ANSWER_MAX_LENGTH,
+  FAILURE_DETAIL_MAX_LENGTH as WORKER_FAILURE_DETAIL_MAX_LENGTH,
+  LOOKUP_ERROR_MAX_LENGTH as WORKER_LOOKUP_ERROR_MAX_LENGTH,
+  RUN_EVENT_TEXT_MAX_BYTES as WORKER_RUN_EVENT_TEXT_MAX_BYTES,
   FOLLOW_UP_MAX_LENGTH as WORKER_FOLLOW_UP_MAX_LENGTH,
   LOOKUP_KINDS as WORKER_LOOKUP_KINDS,
   LOOKUP_CLAIM_MAX as WORKER_LOOKUP_CLAIM_MAX,
@@ -28,14 +31,10 @@ import {
   reviewCommentResponseSchema,
   reviewCommentsResponseSchema,
 } from '../../../../entry-points/http/shared/review-comments-response.js';
-import {
-  REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES,
-  REVIEW_COMMENT_KINDS,
-  REVIEW_COMMENT_SCOPES,
-  REVIEW_COMMENT_TEXT_MAX_BYTES,
-  REVIEW_COMMENTS_MAX,
-  REVIEW_VERDICTS,
-} from '../../../../domain/value-objects/review-comments.js';
+import { ReviewComment } from '../../../../domain/value-objects/review-comment.js';
+import { REVIEW_COMMENT_KINDS } from '../../../../domain/value-objects/review-comment-kind.js';
+import { REVIEW_COMMENT_SCOPES } from '../../../../domain/value-objects/review-comment-scope.js';
+import { REVIEW_VERDICTS } from '../../../../domain/value-objects/review-verdict.js';
 import {
   followUpRefusalSchema,
   followUpSourceSchema,
@@ -48,28 +47,23 @@ import {
   runStateSchema,
 } from '../../../../entry-points/http/shared/run-response.js';
 import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
-import { FOLLOW_UP_REFUSALS } from '../../../../domain/value-objects/follow-up.js';
+import { FOLLOW_UP_REFUSALS } from '../../../../domain/value-objects/follow-up-refusal.js';
 import { PROVIDERS } from '../../../../domain/value-objects/provider.js';
-import {
-  PULL_REQUEST_CHECK_STATES,
-  PULL_REQUEST_STATES,
-} from '../../../../domain/value-objects/run-pull-request-status.js';
+import { PULL_REQUEST_CHECK_STATES } from '../../../../domain/value-objects/pull-request-check-state.js';
+import { PULL_REQUEST_STATES } from '../../../../domain/value-objects/pull-request-state.js';
 import { RESUME_REASONS } from '../../../../domain/value-objects/run-resume.js';
-import { RUN_CANCELLED_BY } from '../../../../domain/value-objects/run-cancellation.js';
+import { RUN_CANCELLED_BY } from '../../../../domain/value-objects/run-cancelled-by.js';
 import { RUN_DELIVERIES } from '../../../../domain/value-objects/run-delivery.js';
-import { RUN_FAILURE_CODES } from '../../../../domain/value-objects/run-failure.js';
+import { RUN_FAILURE_CODES } from '../../../../domain/value-objects/run-failure-code.js';
+import { RunEvent } from '../../../../domain/value-objects/run-event.js';
+import { RunFailure } from '../../../../domain/value-objects/run-failure.js';
 import { RUN_STATES } from '../../../../domain/value-objects/run-state.js';
-import {
-  FOLLOW_UP_MAX_LENGTH,
-  FOLLOW_UP_SOURCES,
-} from '../../../../domain/value-objects/follow-up.js';
+import { FOLLOW_UP_SOURCES } from '../../../../domain/value-objects/follow-up-source.js';
 import { TASK_MAX_LENGTH } from '../../../../domain/value-objects/task.js';
-import { RUN_EVENT_KINDS } from '../../../../domain/value-objects/run-event.js';
-import {
-  LOOKUP_CLAIM_MAX,
-  LOOKUP_KINDS,
-  STORED_RETRY_DELAY_MAX_SECONDS,
-} from '../../../../domain/value-objects/run-lookup.js';
+import { RUN_EVENT_KINDS } from '../../../../domain/value-objects/run-event-kind.js';
+import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
+import { LOOKUP_KINDS } from '../../../../domain/value-objects/lookup-kind.js';
+import { LookupFailure } from '../../../../domain/value-objects/lookup-failure.js';
 
 // contracts/http may not import the domain (backend.md §2), and the shared worker protocol
 // cannot import the API, so both carry their own lists; this pins them to the domain's.
@@ -97,11 +91,9 @@ describe('Run enums of the HTTP contract and the worker protocol', () => {
     expect([...WORKER_REVIEW_COMMENT_KINDS]).toEqual([...REVIEW_COMMENT_KINDS]);
     expect([...WORKER_REVIEW_COMMENT_SCOPES]).toEqual([...REVIEW_COMMENT_SCOPES]);
     expect([...WORKER_REVIEW_VERDICTS]).toEqual([...REVIEW_VERDICTS]);
-    expect(WORKER_REVIEW_COMMENTS_MAX).toBe(REVIEW_COMMENTS_MAX);
-    expect(WORKER_REVIEW_COMMENT_TEXT_MAX_BYTES).toBe(REVIEW_COMMENT_TEXT_MAX_BYTES);
-    expect(WORKER_REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES).toBe(
-      REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES,
-    );
+    expect(WORKER_REVIEW_COMMENTS_MAX).toBe(ReviewComment.SET_MAX);
+    expect(WORKER_REVIEW_COMMENT_TEXT_MAX_BYTES).toBe(ReviewComment.TEXT_MAX_BYTES);
+    expect(WORKER_REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES).toBe(ReviewComment.DIFF_CONTEXT_MAX_BYTES);
   });
 
   it('worker protocol: the same Pull request check states', () => {
@@ -111,9 +103,9 @@ describe('Run enums of the HTTP contract and the worker protocol', () => {
   it('worker protocol: the same pull request states and lookup kinds and limits', () => {
     expect([...WORKER_PULL_REQUEST_STATES]).toEqual([...PULL_REQUEST_STATES]);
     expect([...WORKER_LOOKUP_KINDS]).toEqual([...LOOKUP_KINDS]);
-    expect(WORKER_LOOKUP_CLAIM_MAX).toBe(LOOKUP_CLAIM_MAX);
+    expect(WORKER_LOOKUP_CLAIM_MAX).toBe(LookupHandOutRule.CLAIM_MAX);
     expect(WORKER_LOOKUP_RETRY_AFTER_MAX_SECONDS).toBeGreaterThanOrEqual(
-      STORED_RETRY_DELAY_MAX_SECONDS,
+      LookupFailure.RETRY_DELAY_MAX_SECONDS,
     );
   });
 
@@ -123,8 +115,11 @@ describe('Run enums of the HTTP contract and the worker protocol', () => {
     expect([...WORKER_FAILURE_CODES]).toEqual([...RUN_FAILURE_CODES]);
     expect(WORKER_TASK_MAX_LENGTH).toBe(TASK_MAX_LENGTH);
     // The Follow-up and the answer travel in the same payload field.
-    expect(WORKER_FOLLOW_UP_MAX_LENGTH).toBe(FOLLOW_UP_MAX_LENGTH);
+    expect(WORKER_FOLLOW_UP_MAX_LENGTH).toBe(RunConversation.FOLLOW_UP_MAX_LENGTH);
     expect(WORKER_ANSWER_MAX_LENGTH).toBe(RunConversation.ANSWER_MAX_LENGTH);
+    expect(WORKER_FAILURE_DETAIL_MAX_LENGTH).toBe(RunFailure.DETAIL_MAX_LENGTH);
+    expect(WORKER_RUN_EVENT_TEXT_MAX_BYTES).toBe(RunEvent.TEXT_MAX_BYTES);
+    expect(WORKER_LOOKUP_ERROR_MAX_LENGTH).toBe(LookupFailure.ERROR_MAX_LENGTH);
     expect([...WORKER_RESUME_REASONS]).toEqual([...RESUME_REASONS]);
   });
 

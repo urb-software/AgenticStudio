@@ -4,7 +4,7 @@ import {
   RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS,
   RUN_ENVIRONMENT_FILE_SECRET_OWNER,
 } from '../../../domain/value-objects/run-environment-file.js';
-import { LostWorkerRule } from '../../../domain/value-objects/run-sweep-rules.js';
+import { LostWorkerRule } from '../../../domain/value-objects/lost-worker-rule.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { SecretStoreEnvironmentFileSnapshots } from '../environment-file-snapshots.js';

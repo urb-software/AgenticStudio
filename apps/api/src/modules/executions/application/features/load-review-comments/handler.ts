@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ReviewComments } from '../../../domain/entities/review-comments.js';
-import { isRunId } from '../../../domain/value-objects/run-id.js';
 import {
-  type ReviewComment,
-  type ReviewCommentScope,
-} from '../../../domain/value-objects/review-comments.js';
+  ReviewComment,
+  type ReviewCommentInput,
+} from '../../../domain/value-objects/review-comment.js';
+import { isRunId } from '../../../domain/value-objects/run-id.js';
+import { type ReviewCommentScope } from '../../../domain/value-objects/review-comment-scope.js';
 import {
   FollowUpNotAllowedError,
   RunNotFoundError,
@@ -31,7 +31,7 @@ export interface LoadReviewCommentsInput {
   scope: ReviewCommentScope;
 }
 
-export type LoadReviewCommentsComment = ReviewComment & { byOperator: boolean };
+export type LoadReviewCommentsComment = ReviewCommentInput & { byOperator: boolean };
 
 export interface LoadReviewCommentsResult {
   operatorLogin: string | null;
@@ -93,7 +93,7 @@ export class LoadReviewCommentsHandler {
       operatorLogin,
       comments: (set?.comments ?? []).map((comment) => ({
         ...comment,
-        byOperator: ReviewComments.isByOperator(comment.author, operatorLogin),
+        byOperator: ReviewComment.restore(comment).isBy(operatorLogin),
       })),
       truncated: set?.truncated ?? false,
       scope: set?.scope ?? null,

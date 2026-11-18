@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isEndedPullRequestState,
-  PULL_REQUEST_STATES,
-  RunPullRequestStatus,
-  type StoredPullRequestStatus,
-} from '../run-pull-request-status.js';
+import { isEndedPullRequestState, PULL_REQUEST_STATES } from '../pull-request-state.js';
+import { RunPullRequestStatus } from '../run-pull-request-status.js';
+import { type StoredPullRequestStatus } from '../stored-pull-request-status.js';
 
 const NOW = new Date('2026-11-16T12:00:00.000Z');
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);

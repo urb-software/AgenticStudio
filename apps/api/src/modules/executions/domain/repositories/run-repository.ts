@@ -1,5 +1,5 @@
 import type { Provider } from '../value-objects/provider.js';
-import type { PullRequestState } from '../value-objects/run-pull-request-status.js';
+import type { PullRequestState } from '../value-objects/pull-request-state.js';
 import type { ResumeFacts } from '../entities/run-resume-facts.js';
 import type { Run } from '../entities/run.js';
 import type { RunSnapshot } from '../entities/run-snapshot.js';
