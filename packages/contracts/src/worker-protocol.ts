@@ -1004,8 +1004,8 @@ const providerReasonSchema = z.string().min(1).max(PROVIDER_REASON_MAX_LENGTH);
 
 /**
  * The disk the worker keeps Working copies and caches on, measured at most every ten minutes.
- * Sizes are bytes of data (a file linked from two places counts once); `keptRuns` counts the Run
- * directories held; `minFreeBytes` is the free space below which no new Run is prepared.
+ * Sizes are bytes of data (a file linked twice counts once); `keptRuns` counts held Run dirs;
+ * `minFreeBytes` (`STUDIO_WORKER_MIN_FREE_GB`) is the free space below which no Run is prepared.
  */
 const DISK_BYTES_MAX = Number.MAX_SAFE_INTEGER;
 export const workerDiskSchema = z.strictObject({

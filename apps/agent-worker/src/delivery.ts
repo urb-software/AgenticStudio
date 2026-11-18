@@ -400,8 +400,8 @@ export class Deliveries implements DeliveryPort {
 
   /**
    * `git push -- <remote> <Run branch>:<Run branch>`: the one command that leaves the host. It runs
-   * from `push.git`, made without templates or user config and holding only the Run branch, so the
-   * agent-writable `.git/config` never applies; an HTTPS push also skips the user's global config.
+   * from `push.git` (no templates or user config, only the Run branch), so the agent-writable
+   * `.git/config` never applies; HTTPS skips global config and scopes its header to github.com.
    */
   private async push(
     prepared: PreparedRun,

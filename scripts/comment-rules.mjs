@@ -11,7 +11,10 @@ export const MAX_COMMENT_LINES = 3;
 const ROOTS = ['apps/api/src', 'apps/agent-worker', 'packages', 'tests/architecture'];
 const SOURCE = /\.(?:[cm]?[jt]s|tsx)$/;
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', 'coverage', 'generated']);
-const GENERATED_HEADER = /@generated|auto-?generated|generated (?:by|file)|do not edit/i;
+// Only a marker in a comment line of the header counts, never the word in prose: `@generated`,
+// "auto-generated", or "Code generated ... DO NOT EDIT".
+const GENERATED_HEADER =
+  /^[ \t]*(?:\/\/|\/\*+|\*)[^\n]*(?:@generated\b|auto-?generated\b|code generated\b[^\n]*do not edit)/im;
 
 /** A generated file (by its header) is not hand-written: neither check applies to it. */
 export const isGenerated = (text) => GENERATED_HEADER.test(text.slice(0, 300));
@@ -76,6 +79,7 @@ export function analyse(text, fileName = 'file.ts') {
 
   const codeLines = new Set();
   const ranges = new Map();
+  const jsxText = [];
   for (const token of tokens) {
     if (token.kind !== ts.SyntaxKind.EndOfFileToken) {
       for (let line = lineOf(token.getStart(source)); line <= lineOf(token.end - 1); line += 1) {
@@ -87,6 +91,7 @@ export function analyse(text, fileName = 'file.ts') {
       ...(ts.getTrailingCommentRanges(text, token.end) ?? []),
     ];
     for (const range of found) ranges.set(range.pos, range);
+    if (token.kind === ts.SyntaxKind.JsxText) jsxText.push([token.pos, token.end]);
   }
 
   const blocks = [];
@@ -95,7 +100,9 @@ export function analyse(text, fileName = 'file.ts') {
     if (run) blocks.push(run);
     run = undefined;
   };
+  const inJsxText = (range) => jsxText.some(([from, to]) => range.pos >= from && range.pos < to);
   for (const range of [...ranges.values()].sort((a, b) => a.pos - b.pos)) {
+    if (inJsxText(range)) continue;
     const startLine = lineOf(range.pos);
     const raw = text.slice(range.pos, range.end);
     const trailing = codeLines.has(startLine);
