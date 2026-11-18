@@ -25,7 +25,7 @@
 
 ## 2a. Code comments (rule 14)
 
-**Comments explain why, briefly, and only when the code cannot.** The rule applies to the whole repository. Full text, enforcement and example: `docs/engineering/quality.md` §5 (rule 14).
+**Comments explain why, briefly, and only when the code cannot.** The rule applies to the whole repository. Block definition, enforcement and example: `docs/engineering/quality.md` §5.
 
 - **A comment is for:** a constraint or invariant the code does not show; a security reason; a concurrency or atomicity guarantee; a workaround with its cause; the contract of a port or repository method (what it guarantees, what an empty result means, what it throws).
 - **A comment is never for:** what the name and types already say; history (what changed, moved or was removed); an Issue or pull request number (`#<digits>` or a link); the definition of a glossary term; restating an architecture rule.

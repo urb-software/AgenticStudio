@@ -211,7 +211,7 @@ A comment is never for:
 
 - what the name and types already say;
 - history: what changed, moved or was removed;
-- an Issue or pull request number, written as `#<digits>` or as a link to either;
+- an Issue or pull request number, written as `#<digits>` or as a link to either (`#` followed by digits only is a reference, so rewrite any other such use, such as "step #1");
 - the definition of a glossary term;
 - restating an architecture rule.
 
@@ -222,7 +222,7 @@ Form:
 - Tests rely on the test name and follow the same rule.
 - Exception: a longer comment is allowed when it contains the tag `@long-comment <reason>`. The reason is required and must not be empty.
 
-What counts as a comment block: one block comment (`/* */`, `/** */`), or a run of consecutive `//` line comments. Its length is its lines of text; lines that are only `/**`, `/*` or `*/` do not count. These are not comments for this rule: tool directives (`eslint-disable...`, `@ts-expect-error` and `@ts-ignore` with their reason, `prettier-ignore`, triple-slash references), shebangs, and decorator or OpenAPI description text.
+What counts as a comment block: one block comment (`/* */`, `/** */`), or a run of consecutive `//` line comments. Its length is its lines of text; lines that are only `/**`, `/*` or `*/`, and lines with no text (only `*` or empty), do not count. A trailing comment on a code line is not part of a run of `//` comments. These are not comments for this rule: tool directives (`eslint-disable...`, `@ts-expect-error` and `@ts-ignore` with their reason, `prettier-ignore`, triple-slash references), shebangs, and decorator or OpenAPI description text.
 
 Before:
 
@@ -254,9 +254,9 @@ Enforcement (planned, not yet in place; each is introduced by [#207](https://git
 | --- | --- | --- |
 | Lint check: comment length | Fails a comment block longer than three lines without a `@long-comment <reason>` tag, and a tag with an empty reason | #207 |
 | Lint check: Issue or pull request reference | Fails a comment that contains `#<digits>` or a link to an Issue or pull request | #207 |
-| Structure report figure | Reports the comment lines per code line (for the API and the agent worker, tests excluded), with the change against the base branch; reported, not enforced | #207 |
+| Structure report figure | Reports the comment-to-code ratio per file and flags files above 0.25; reported, not blocking | #207 |
 
-Until those exist, rule 14 is review only: the review skill's checklist and the review report's documentation items cover it, and the tickets above are the planned enforcement. Never claim a check for rule 14 passed while it is not implemented (§8).
+Until those exist, rule 14 is review only: the Standards brief of the review skill covers it, and the checks above are the planned enforcement. Never claim a check for rule 14 passed while it is not implemented (§8).
 
 ## 6. Test stack and placement
 
