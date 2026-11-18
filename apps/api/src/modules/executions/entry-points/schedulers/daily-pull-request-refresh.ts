@@ -8,31 +8,18 @@ import {
 import { redactSecrets } from '../../../../platform/http/redact.js';
 import { RequestDailyPullRequestRefreshesHandler } from '../../application/features/request-daily-pull-request-refreshes/handler.js';
 
-/** DI token of the {@link DailyPullRequestRefreshSettings}. */
 export const DAILY_PULL_REQUEST_REFRESH_SETTINGS = Symbol('DAILY_PULL_REQUEST_REFRESH_SETTINGS');
 
-/**
- * When the daily pull request refresh runs (Issue #142). Production: every `intervalMs` from the
- * start. A test passes `manual`, which is handed the pass instead of a timer, so it runs the
- * refresh exactly when it wants to.
- */
 export interface DailyPullRequestRefreshSettings {
   intervalMs: number;
   manual?: (pass: () => Promise<void>) => void;
 }
 
-/** How often the daily refresh looks for states older than a day. */
+// Ticks hourly and takes only states older than a day, so a restarted API catches up.
 export const DAILY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
-/** The first pass after the app has started waits this long (it is not part of start-up). */
 export const DAILY_REFRESH_FIRST_PASS_MS = 60 * 1000;
 
-/**
- * Runs the daily refresh a minute after the app has started, and then every hour (it only takes
- * states older than a day, so each Run is asked about about once a day, and an API that was down
- * catches up soon after it starts). The timer is `unref`'d and cleared on shutdown; a failed
- * pass is logged and tried again at the next tick.
- */
 @Injectable()
 export class DailyPullRequestRefreshScheduler
   implements OnApplicationBootstrap, OnApplicationShutdown
@@ -66,7 +53,6 @@ export class DailyPullRequestRefreshScheduler
     this.timer = undefined;
   }
 
-  /** One pass (also called by tests); never throws. */
   async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;

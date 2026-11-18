@@ -3,11 +3,7 @@ import type { ReviewCommentsSnapshot } from '../../entities/review-comments-snap
 import type { ReviewCommentRepository } from '../review-comment-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
-/**
- * In-memory adapter of {@link ReviewCommentRepository} for handler tests: one loaded set per Run,
- * replaced by each load. The storage is the Run fake's `reviewSets` map, so a test can set up and
- * read it.
- */
+/** In-memory {@link ReviewCommentRepository}; stores in the Run fake's `reviewSets` map. */
 export class InMemoryReviewCommentRepository implements ReviewCommentRepository {
   constructor(private readonly runs: InMemoryRunRepository) {}
 

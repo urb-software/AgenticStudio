@@ -125,52 +125,33 @@ import { RetentionPolicy } from './domain/value-objects/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from './application/ports/worker-lease.js';
 import { WORKER_STATUS_STORE } from './application/ports/worker-status-store.js';
 
-/**
- * Test seams of the module: a controlled clock for the lease and the lost-worker sweep, a
- * shorter keep-alive interval of live log streams, and known secret values of Runs for log
- * redaction in place of the Runs' Environment file snapshots (#104). Production passes nothing.
- */
+/** Test seams: production passes nothing. */
 export interface ExecutionsModuleOptions {
   clock?: Clock;
   logKeepAliveMs?: number;
-  /** Lower stream limits for tests (defaults: 5 per session, 50 in total). */
   logStreamLimits?: { perSession: number; total: number };
   secretValues?: RunSecretValues;
-  /** The daily pull request refresh (Issue #142): a test runs its passes by hand. */
   pullRequestRefresh?: Pick<DailyPullRequestRefreshSettings, 'manual'>;
 }
 
 const SYSTEM_CLOCK: Clock = { now: () => new Date() };
 
-/** An idle live log stream sends a keep-alive comment this often (Issue #99). */
 const LOG_KEEP_ALIVE_MS = 15_000;
 
-/** Most open live log streams per operator session, and in total (Issue #99 review). */
 const LOG_STREAMS_PER_SESSION = 5;
 const LOG_STREAMS_TOTAL = 50;
 
-/**
- * `executions` business module (Issues #96, #99, #100, #103, #142, #144): the operator starts, reads,
- * cancels and answers Runs; the agent
- * worker claims them and reports back over the worker routes (`/api/worker/`, worker token
- * only), including each Run's log, which the operator reads in pages or live. A claimed Run gets
- * a snapshot of its Project's Environment file (Issue #104, `projects`' public
- * `RUN_ENVIRONMENT_FILES` contract), kept in the secret store for its log redaction until it is
- * final. `projects` is passed in by the composition root, which wires its public contracts;
- * this module never imports it otherwise.
- */
 @Module({})
 export class ExecutionsModule {
   static register(projects: DynamicModule, options: ExecutionsModuleOptions = {}): DynamicModule {
     return {
       module: ExecutionsModule,
-      // AuthModule: the live log stream re-checks its operator session (Issue #99 review).
       imports: [DatabaseModule, AuthModule, SecretsModule, projects],
       controllers: [
         StartRunEndpoint,
         ListProjectRunsEndpoint,
         ListRunsEndpoint,
-        // Before GetRunEndpoint: `runs/:runId` would take `runs/summary` (Issue #115).
+        // Before GetRunEndpoint: `runs/:runId` would take `runs/summary`.
         GetRunsSummaryEndpoint,
         GetRunEndpoint,
         CancelRunEndpoint,
@@ -298,8 +279,9 @@ export class ExecutionsModule {
         },
         {
           provide: RUN_SWEEPS_SETTINGS,
-          // Half the lease, and at most every 30 s.
           useFactory: (config: AppConfig): RunSweepsSettings => ({
+            // Half the lease, at most every 30 s: a lost worker is noticed within half a lease
+            // after its lease expires.
             intervalMs: Math.min(30_000, (config.workerLeaseSeconds * 1000) / 2),
           }),
           inject: [APP_CONFIG],

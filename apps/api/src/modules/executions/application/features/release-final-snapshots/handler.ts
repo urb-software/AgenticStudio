@@ -6,10 +6,7 @@ import {
 
 export type ReleaseFinalSnapshotsResult = void;
 
-/**
- * Command (Issue #104): releases the Environment file snapshots of Runs that ended any way.
- * Run on the sweep interval; never throws.
- */
+/** Never throws. */
 @Injectable()
 export class ReleaseFinalSnapshotsHandler {
   constructor(

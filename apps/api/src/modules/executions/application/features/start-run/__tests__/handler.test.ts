@@ -63,7 +63,7 @@ describe('StartRunHandler', () => {
     workerReports(true);
   });
 
-  it('copies the limits in force onto the Run (Issue #100)', async () => {
+  it('copies the limits in force onto the Run', async () => {
     const { run } = await start();
 
     expect(run.limits).toEqual(LIMITS);
@@ -79,9 +79,7 @@ describe('StartRunHandler', () => {
       task: 'Fix the login bug',
       state: 'queued',
       startCommit: HEAD,
-      // Issue #98: recorded with the commit, so the Run fetches the remote the commit is from.
       remoteUrl: REMOTE,
-      // Issue #102: the pull request's base, recorded with the commit it starts from.
       integrationBranch: 'dev',
       delivery: null,
       pullRequest: null,
@@ -111,7 +109,7 @@ describe('StartRunHandler', () => {
     expect(runs.runs).toEqual([]);
   });
 
-  describe('provider availability (Issue #101)', () => {
+  describe('provider availability', () => {
     it.each([
       [
         'the worker reports it switched off',

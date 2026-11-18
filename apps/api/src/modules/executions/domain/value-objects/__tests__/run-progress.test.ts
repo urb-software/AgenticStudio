@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RunProgress } from '../run-progress.js';
 
-// Issue #100, #141: the Run steps taken and what the limits allow. No database.
 const NOW = new Date('2026-11-16T12:00:00.000Z');
 const LIMITS = { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 };
 const started = () => RunProgress.start(LIMITS, NOW);
@@ -38,7 +37,6 @@ describe('RunProgress', () => {
     const first = started();
     expect(first.allowsStep(10)).toBe(true);
     expect(first.allowsStep(11)).toBe(false);
-    // A Follow-up gets its own allowance from the steps taken before it (Issue #141).
     const followUp = first.with({ stepCount: 10, stepsBeforePart: 10, followUpCount: 1 });
     expect(followUp.allowsStep(20)).toBe(true);
     expect(followUp.allowsStep(21)).toBe(false);
@@ -49,14 +47,14 @@ describe('RunProgress', () => {
     expect(started().with({ stepCount: 50 }).reachedStepTotal).toBe(true);
   });
 
-  it('says which limit was reached and that no further step was started (Issue #100)', () => {
+  it('says which limit was reached and that no further step was started', () => {
     expect(started().stepLimitFailure()).toEqual({
       code: 'step_limit',
       detail: 'The run reached its limit of 10 run steps; no further step was started.',
     });
   });
 
-  it('says a Follow-up reached its own limit (Issue #141)', () => {
+  it('says a Follow-up reached its own limit', () => {
     expect(started().with({ followUpCount: 1 }).stepLimitFailure()).toEqual({
       code: 'step_limit',
       detail: 'The Follow-up reached its limit of 10 run steps; no further step was started.',

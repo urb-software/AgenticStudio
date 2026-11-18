@@ -14,11 +14,6 @@ import {
 } from '../../../../domain/errors/run-errors.js';
 import { RetryDeliveryHandler } from '../../../../application/features/retry-delivery/handler.js';
 
-/**
- * `POST /api/runs/:runId/retry-delivery` (Issue #102), behind the global session and mutation
- * Origin guards: 202 with the Run once its delivery retry is requested (an agent worker carries
- * it out), 404 for an unknown Run, 409 unless the Run failed with `delivery_failed`.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class RetryDeliveryEndpoint {

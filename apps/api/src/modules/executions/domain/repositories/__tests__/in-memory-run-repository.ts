@@ -39,12 +39,10 @@ import type {
   RunStateView,
 } from '../run-repository.js';
 
-/** A Run as the fake keeps it: the Run's fields, and what the database keeps beside them. */
 type StoredRun = RunData & {
   environmentFileSecret: string | null;
 };
 
-/** What the tests' setup starts a Run from (the Task as plain text). */
 export interface StartedRun {
   id?: string;
   projectId: string;
@@ -52,15 +50,10 @@ export interface StartedRun {
   task: string;
   startCommit: string;
   remoteUrl: string;
-  /** The limits in force when the Run is started (Issue #100). */
   limits: RunLimits;
   integrationBranch: string;
 }
 
-/**
- * A change of state as the tests' setup states it, with what the store once checked (the state it
- * is in, its holder and its cancel request).
- */
 export interface ClaimedRunChange {
   runId: string;
   workerId: string;
@@ -75,7 +68,6 @@ export interface ClaimedRunChange {
   now: Date;
 }
 
-/** What storing a Run step did, as the tests' setup reads it. */
 export type AppendStepOutcome =
   | { status: 'stored'; index: number; duplicate?: boolean }
   | { status: 'out_of_order'; expected: number }
@@ -83,14 +75,9 @@ export type AppendStepOutcome =
   | { status: 'step_limit' };
 
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
-/** Queued with a session reference: the database adapter's test for a Run queued to resume. */
 const queuedToResume = (run: RunData) => run.state === 'queued' && run.sessionRef !== null;
 
-/**
- * In-memory adapter of {@link RunRepository} for handler tests, with the database adapter's
- * rules: claims honour the concurrency limits in creation order, worker changes are
- * conditional on state and holder, steps are stored only for a held `running` Run.
- */
+/** In-memory {@link RunRepository} for handler tests, following the database adapter's rules. */
 export class InMemoryRunRepository implements RunRepository {
   readonly runs: StoredRun[] = [];
   readonly steps: { runId: string; index: number; step: RunStepRecord }[] = [];
@@ -106,7 +93,6 @@ export class InMemoryRunRepository implements RunRepository {
       remoteUrl: run.remoteUrl,
       integrationBranch: run.delivery.integrationBranch,
       state: 'queued' as const,
-      // Distinct, increasing creation times, like the database's clock.
       createdAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence++)),
       startedAt: null,
       finishedAt: null,
@@ -137,7 +123,6 @@ export class InMemoryRunRepository implements RunRepository {
       pushedCommit: null,
       workingCopyRemovedAt: null,
       pullRequestStatus: RunPullRequestStatus.none().toStored(),
-      // Like the database's default: the Run's creation.
       lastActivityAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence - 1)),
     };
     this.runs.push(created);
@@ -182,7 +167,6 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   claimNext(workerId: string, now: Date): Promise<RunSnapshot | null> {
-    // The hand-out rule over the Runs in creation order, as the database adapter's query follows it.
     const next = HandOutRule.for(workerId).next(this.runs);
     if (!next) return Promise.resolve(null);
     if (next.state === 'queued') {
@@ -190,7 +174,7 @@ export class InMemoryRunRepository implements RunRepository {
         state: 'preparing',
         claimedBy: workerId,
         lastClaimedBy: workerId,
-        // A resumed Run keeps its first start (#103).
+        // A resumed Run keeps its first start.
         startedAt: next.startedAt ?? now,
         heartbeatAt: now,
         followUpQueued: false,
@@ -249,7 +233,6 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  /** The last lease renewal at API start (the database adapter stores it in a table). */
   lastRenewal: Date | null = null;
 
   renewClaimsOncePerLease(now: Date, leaseSeconds: number): Promise<number | null> {
@@ -315,10 +298,8 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  /** Issue #145: the prepared Follow-ups, by Run id (the storage of the prepared store's fake). */
   readonly prepared = new Map<string, PreparedFollowUpSnapshot>();
 
-  /** Issue #146: the loaded Review comments, by Run id (the storage of the Review comments' fake). */
   readonly reviewSets = new Map<string, ReviewComments>();
 
   async change(runId: string, mutate: (run: Run) => void): Promise<Run | null> {
@@ -341,10 +322,7 @@ export class InMemoryRunRepository implements RunRepository {
     });
   }
 
-  /**
-   * Runs `work` on a copy of the Run and keeps what it changed only when it did not throw, like
-   * the database adapter's transaction. Synchronous, so nothing else changes the Run meanwhile.
-   */
+  /** Keeps what `work` changed only when it did not throw, like the database transaction. */
   private changeStored(runId: string, work: (run: Run, stored: StoredRun) => void): Run | null {
     const stored = this.runs.find((candidate) => candidate.id === runId);
     if (!stored) return null;
@@ -354,7 +332,6 @@ export class InMemoryRunRepository implements RunRepository {
     return this.view(stored);
   }
 
-  /** Keeps what the Run's methods changed, as the database adapter's save does. */
   private apply(stored: StoredRun, run: Run): void {
     const runId = stored.id;
     const changes = run.pendingChanges();
@@ -373,22 +350,20 @@ export class InMemoryRunRepository implements RunRepository {
     stored.messages.push(...structuredClone(changes.messages));
   }
 
-  /** Test setup: starts a Run as `StartRunHandler` does (`Run.start`) and stores it. */
   start(input: StartedRun): Promise<Run> {
     return this.add(
       Run.start({
         ...input,
         id: input.id ?? randomUUID(),
         task: Task.of(input.task),
-        // The fake keeps its own distinct, increasing creation times, like the database's clock.
+        // Distinct, increasing creation times, like the database's clock.
         now: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence)),
       }),
     );
   }
 
-  // Test setup shortcuts, not part of the Run repository: the operator's operations and what the
-  // agent worker reports, as the Run's own methods apply them, returning `null` (or `false`) where
-  // the operation is refused.
+  // Test setup shortcuts, not part of the Run repository: they return `null`
+  // (or `false`) when refused.
 
   /** The operator answers the open question; `null` if the Run is not waiting with one. */
   async answer(runId: string, text: string, now: Date): Promise<Run | null> {
@@ -428,10 +403,7 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  /**
-   * A change of state the agent worker reported, as the Run's `reportState` applies it, only
-   * while the Run is still as the setup states (`from`, the cancel request); `null` if refused.
-   */
+  /** Only while the Run is still as `from` and the cancel request state; `null` if refused. */
   async transitionClaimed(change: ClaimedRunChange): Promise<Run | null> {
     return this.refusedAsNull(
       () =>
@@ -523,7 +495,9 @@ export class InMemoryRunRepository implements RunRepository {
     return recorded;
   }
 
-  /** The agent worker reports a bring-up-to-date request that changed nothing; `null` if refused. */
+  /**
+   * The agent worker reports a bring-up-to-date request that changed nothing; `null` if refused.
+   */
   async finishBringUpToDate(
     runId: string,
     workerId: string,
@@ -558,7 +532,9 @@ export class InMemoryRunRepository implements RunRepository {
     return recorded;
   }
 
-  /** The claim gives the `preparing` Run its Environment file; `false` if it is no longer so held. */
+  /**
+   * The claim gives the `preparing` Run its Environment file; `false` if it is no longer so held.
+   */
   async attachEnvironmentFile(
     runId: string,
     workerId: string,
@@ -567,7 +543,9 @@ export class InMemoryRunRepository implements RunRepository {
     return this.replaceEnvironmentFile(runId, workerId, file);
   }
 
-  /** The claim replaces the `preparing` Run's Environment file; `false` if it is no longer so held. */
+  /**
+   * The claim replaces the `preparing` Run's Environment file; `false` if it is no longer so held.
+   */
   async replaceEnvironmentFile(
     runId: string,
     workerId: string,
@@ -702,7 +680,7 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  /** A Run as lists read it: without its conversation (Issue #103), like the database adapter. */
+  /** Without its conversation, like the database adapter's lists. */
   private listed(run: StoredRun): Run {
     return Run.restore({ ...this.data(run), messages: [] });
   }
@@ -713,7 +691,6 @@ export class InMemoryRunRepository implements RunRepository {
 
   private data(run: StoredRun): RunData {
     const { environmentFileSecret, ...rest } = run;
-    // Internal: not part of a Run.
     void environmentFileSecret;
     return structuredClone(rest);
   }

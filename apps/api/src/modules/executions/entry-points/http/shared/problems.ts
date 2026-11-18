@@ -3,62 +3,33 @@ import type { z } from 'zod';
 import { ProblemException } from '../../../../../platform/http/problem-details.js';
 import type { followUpRefusalSchema } from './run-response.js';
 
-/**
- * Problem `type` URIs of the executions API (RFC 9457 §3.1.1), shared by several features of
- * this module. `project-not-found` is the same problem as in the projects API.
- */
 export const EXECUTIONS_PROBLEM_TYPES = {
-  /** 404: no project has this id. */
   projectNotFound: 'urn:agentic-studio:problem:project-not-found',
-  /** 404: no Run has this id. */
   runNotFound: 'urn:agentic-studio:problem:run-not-found',
-  /** 409: the project has no Repository, or it is not ready. */
   repositoryNotReady: 'urn:agentic-studio:problem:repository-not-ready',
-  /** 409: the provider is switched off on the agent worker, or no agent worker is connected. */
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
-  /** 409 (worker routes): the reporting agent worker does not hold the Run. */
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
-  /** 429: this session (or the server) has as many live log streams open as allowed. */
   tooManyLogStreams: 'urn:agentic-studio:problem:too-many-log-streams',
-  /** 409 (worker routes): the reported state does not follow from the Run's state. */
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
-  /** 409: the Run has already reached a final state (Issue #100: cancel). */
   runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
-  /** 409 (worker routes): a Run step beyond the Run's maximum; the Run is now failed (Issue #100). */
   stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
-  /** 409 (worker routes): a Run step's number is not the next one (review of #121). */
   stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
-  /** 409: the Run's delivery cannot be retried (it is not failed with delivery_failed). */
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
-  /** 409: the Run is not waiting for the operator's answer (Issue #103). */
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
-  /** 409: the Run did not stop at the usage limit with a session to resume (Issue #105). */
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
-  /** 409: the Run's project or the server has no free place to resume it in (Issue #105). */
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
-  /** 409: the Run cannot take a Follow-up now (Issue #141); the detail says why. */
   followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
-  /** 404: the Run has no diff yet: no Run step reported a result (Issue #144). */
   runDiffNotFound: 'urn:agentic-studio:problem:run-diff-not-found',
-  /** 404: the Run's diff lists no file at this path (Issue #144). */
   runDiffFileNotFound: 'urn:agentic-studio:problem:run-diff-file-not-found',
-  /** 409: the Run has no pull request whose state could be refreshed (Issue #142). */
   pullRequestNotRefreshable: 'urn:agentic-studio:problem:pull-request-not-refreshable',
-  /** 409: no stored Pull request check of the Run has failed, so there is nothing to send (Issue #145). */
   noFailingChecks: 'urn:agentic-studio:problem:no-failing-checks',
-  /** 409: a load of the Run's Review comments is under way already (Issue #146). */
   reviewCommentsLoadRunning: 'urn:agentic-studio:problem:review-comments-load-running',
-  /** 404: the Run has no prepared Follow-up to review (Issue #145). */
   preparedFollowUpNotFound: 'urn:agentic-studio:problem:prepared-follow-up-not-found',
-  /** 404 (worker routes): no lookup has this id (Issue #142). */
   lookupNotFound: 'urn:agentic-studio:problem:lookup-not-found',
-  /** 409 (worker routes): the lookup is not claimed by the answering worker (Issue #142). */
   lookupNotHeld: 'urn:agentic-studio:problem:lookup-not-held',
-  /** 409 (worker routes): the answer is of another kind than the lookup's (Issue #142). */
   lookupKindMismatch: 'urn:agentic-studio:problem:lookup-kind-mismatch',
 } as const;
 
-/** Why a Run cannot take a Follow-up, for the operator (Issue #141; keyed by the domain's codes). */
 const FOLLOW_UP_REFUSAL_DETAILS: Record<z.infer<typeof followUpRefusalSchema>, string> = {
   pull_request_merged:
     "The run's pull request was merged on GitHub, so there is nothing left to update. Start a new run instead.",
@@ -80,7 +51,6 @@ const FOLLOW_UP_REFUSAL_DETAILS: Record<z.infer<typeof followUpRefusalSchema>, s
     "The agent worker that holds the run's working copy is not connected. Send the Follow-up once it is back.",
 };
 
-/** 409 when the Run cannot take a Follow-up now (Issue #141); the detail says why. */
 export function followUpNotAllowed(
   reason: z.infer<typeof followUpRefusalSchema>,
 ): ProblemException {
@@ -91,7 +61,6 @@ export function followUpNotAllowed(
   });
 }
 
-/** 409: the Run has no pull request to refresh the state of (Issue #142). */
 export function pullRequestNotRefreshable(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.pullRequestNotRefreshable,
@@ -100,7 +69,6 @@ export function pullRequestNotRefreshable(): ProblemException {
   });
 }
 
-/** 409: no Pull request check of the Run is known to have failed (Issue #145). */
 export function noFailingChecks(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.noFailingChecks,
@@ -110,7 +78,6 @@ export function noFailingChecks(): ProblemException {
   });
 }
 
-/** 409: a load of the Run's Review comments is under way already (Issue #146). */
 export function reviewCommentsLoadRunning(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.reviewCommentsLoadRunning,
@@ -119,7 +86,6 @@ export function reviewCommentsLoadRunning(): ProblemException {
   });
 }
 
-/** 404: the Run has no prepared Follow-up (Issue #145). */
 export function preparedFollowUpNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: EXECUTIONS_PROBLEM_TYPES.preparedFollowUpNotFound,
@@ -128,7 +94,6 @@ export function preparedFollowUpNotFound(): ProblemException {
   });
 }
 
-/** 404 on a worker route: no lookup has this id (Issue #142). */
 export function lookupNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: EXECUTIONS_PROBLEM_TYPES.lookupNotFound,
@@ -137,7 +102,6 @@ export function lookupNotFound(): ProblemException {
   });
 }
 
-/** 409 on a worker route: this agent worker does not hold the lookup (any more). */
 export function lookupNotHeld(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.lookupNotHeld,
@@ -146,7 +110,6 @@ export function lookupNotHeld(): ProblemException {
   });
 }
 
-/** 409 on a worker route: the answer is not of the lookup's kind. */
 export function lookupKindMismatch(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.lookupKindMismatch,
@@ -155,7 +118,6 @@ export function lookupKindMismatch(): ProblemException {
   });
 }
 
-/** 404: no Run step of the Run has reported a result, so it has no diff yet (Issue #144). */
 export function runDiffNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: EXECUTIONS_PROBLEM_TYPES.runDiffNotFound,
@@ -164,7 +126,6 @@ export function runDiffNotFound(): ProblemException {
   });
 }
 
-/** 404: the Run's diff of that scope lists no file at the path (Issue #144). */
 export function runDiffFileNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: EXECUTIONS_PROBLEM_TYPES.runDiffFileNotFound,
@@ -173,7 +134,6 @@ export function runDiffFileNotFound(): ProblemException {
   });
 }
 
-/** 404 for an unknown project id (also for an id that is not a UUID). */
 export function projectNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: EXECUTIONS_PROBLEM_TYPES.projectNotFound,
@@ -182,7 +142,6 @@ export function projectNotFound(): ProblemException {
   });
 }
 
-/** 409: only a Run stopped at the usage limit, with an agent session, can be resumed (#105). */
 export function runNotResumable(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.runNotResumable,
@@ -191,7 +150,6 @@ export function runNotResumable(): ProblemException {
   });
 }
 
-/** 409: another Run holds the project's place, or the server's places are taken (#105). */
 export function resumeSlotTaken(detail: string): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.resumeSlotTaken,
@@ -200,7 +158,6 @@ export function resumeSlotTaken(detail: string): ProblemException {
   });
 }
 
-/** 404 for an unknown Run id (also for an id that is not a UUID). */
 export function runNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: EXECUTIONS_PROBLEM_TYPES.runNotFound,
@@ -209,7 +166,6 @@ export function runNotFound(): ProblemException {
   });
 }
 
-/** 409 when a Run cannot start: `detail` says whether there is no Repository or it is not ready. */
 export function repositoryNotReady(detail: string): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.repositoryNotReady,
@@ -218,7 +174,6 @@ export function repositoryNotReady(detail: string): ProblemException {
   });
 }
 
-/** 409 when Studio knows the Run's provider is unavailable; `detail` says why. */
 export function providerUnavailable(detail: string): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.providerUnavailable,
@@ -227,7 +182,6 @@ export function providerUnavailable(detail: string): ProblemException {
   });
 }
 
-/** 429 when a live log stream would exceed the per-session or total limit. */
 export function tooManyLogStreams(): ProblemException {
   return new ProblemException(HttpStatus.TOO_MANY_REQUESTS, {
     type: EXECUTIONS_PROBLEM_TYPES.tooManyLogStreams,
@@ -236,7 +190,6 @@ export function tooManyLogStreams(): ProblemException {
   });
 }
 
-/** 409 on a worker route: this agent worker does not hold the Run (any more). */
 export function runNotHeld(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.runNotHeld,
@@ -245,7 +198,6 @@ export function runNotHeld(): ProblemException {
   });
 }
 
-/** 409 when a Run's delivery cannot be retried (Issue #102). */
 export function deliveryNotRetryable(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.deliveryNotRetryable,
@@ -254,7 +206,6 @@ export function deliveryNotRetryable(): ProblemException {
   });
 }
 
-/** 409 on a worker route: the reported state is not allowed from the Run's state. */
 export function illegalRunTransition(detail: string): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.illegalRunTransition,
@@ -270,7 +221,6 @@ const FINAL_STATE_NAMES: Record<string, string> = {
   timed_out: 'timed out',
 };
 
-/** 409 when cancelling a Run that has already finished; `detail` says how it ended. */
 export function runAlreadyFinished(state: string): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.runAlreadyFinished,
@@ -279,7 +229,6 @@ export function runAlreadyFinished(state: string): ProblemException {
   });
 }
 
-/** 409 on a worker route: the reported Run step is beyond the Run's maximum; the Run failed. */
 export function stepLimitReached(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.stepLimitReached,
@@ -288,7 +237,6 @@ export function stepLimitReached(): ProblemException {
   });
 }
 
-/** 409 on a worker route: the reported Run step is not the next one; nothing was stored. */
 export function stepOutOfOrder(expected: number): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.stepOutOfOrder,
@@ -307,7 +255,6 @@ const NOT_WAITING_DETAILS: Record<string, string> = {
   timed_out: 'The run has already finished: it timed out.',
 };
 
-/** 409 when answering a Run that is not waiting for the operator (Issue #103); says why. */
 export function runNotWaiting(state: string): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.runNotWaiting,

@@ -7,7 +7,6 @@ import {
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
-/** The Run has no prepared Follow-up (none asked for, or it was sent or discarded). */
 export class PreparedFollowUpNotFoundError extends Error {
   constructor() {
     super('The run has no prepared Follow-up.');
@@ -22,9 +21,8 @@ export interface GetPreparedFollowUpInput {
 export type GetPreparedFollowUpResult = PreparedFollowUpSnapshot;
 
 /**
- * Query (Issue #145): the Follow-up Studio prepared from the Run's failing checks, for the
- * operator to review before anything is sent. Throws {@link RunNotFoundError} (also for an id
- * that is not a UUID) or {@link PreparedFollowUpNotFoundError}.
+ * Throws {@link RunNotFoundError} (also for a non-UUID id) or
+ * {@link PreparedFollowUpNotFoundError}.
  */
 @Injectable()
 export class GetPreparedFollowUpHandler {

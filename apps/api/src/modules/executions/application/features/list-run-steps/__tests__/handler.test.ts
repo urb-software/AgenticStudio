@@ -8,7 +8,7 @@ const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 
-describe('ListRunStepsHandler (Issue #99)', () => {
+describe('ListRunStepsHandler', () => {
   it('shows each step result: outcome, summary and checks, redacted like the log', async () => {
     const runs = new InMemoryRunRepository();
     await runs.start({

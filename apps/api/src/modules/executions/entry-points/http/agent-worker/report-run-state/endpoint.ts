@@ -9,11 +9,6 @@ import { RunNotHeldError } from '../../../../domain/repositories/run-repository.
 import { ReportRunStateHandler } from '../../../../application/features/report-run-state/handler.js';
 import { ReportRunStateRequestDto } from './schema.js';
 
-/**
- * `POST /api/worker/runs/:runId/state` (Issue #96), worker token only: 204, 404 for an
- * unknown Run, 409 when this worker does not hold it or the transition is not allowed. Also
- * carries how a Run was delivered and a delivery retry's outcome (Issue #102).
- */
 @WorkerController('runs')
 export class ReportRunStateEndpoint {
   constructor(private readonly handler: ReportRunStateHandler) {}

@@ -5,9 +5,8 @@ import type { RunDiffFileView, StoredRunDiff } from '../run-diff-repository.js';
 import type { RunDiffRepository } from '../run-diff-repository.js';
 
 /**
- * In-memory adapter of {@link RunDiffRepository} for handler tests, with the database adapter's
- * rules: a report replaces both scopes, and `null` keeps the stored state. That the reporting
- * worker holds the Run is the Run's rule, checked by the handler's transaction.
+ * In-memory {@link RunDiffRepository}: a report replaces both scopes, and `null`
+ * keeps the stored state.
  */
 export class InMemoryRunDiffRepository implements RunDiffRepository {
   readonly diffs = new Map<string, Record<RunDiffScope, NewRunDiff & { reportedAt: Date }>>();

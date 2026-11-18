@@ -12,13 +12,6 @@ import { RunNotWaitingError, RunNotFoundError } from '../../../../domain/errors/
 import { AnswerRunHandler } from '../../../../application/features/answer-run/handler.js';
 import { answerRunRequestSchema, AnswerRunRequestDto } from './schema.js';
 
-/**
- * `POST /api/runs/:runId/answer` (Issue #103), behind the global session and mutation Origin
- * guards: 202 with the Run, queued to resume, once the answer is stored; 404 for an unknown Run;
- * 409 unless the Run is waiting for the operator (also a second answer, or one after a cancel);
- * 422 for an empty or too long answer. The body is typed `unknown`, so the global pipe leaves it
- * alone and an invalid body becomes a 422 here; the DTO documents it.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class AnswerRunEndpoint {

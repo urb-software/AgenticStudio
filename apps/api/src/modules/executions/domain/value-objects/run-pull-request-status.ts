@@ -1,27 +1,21 @@
 import type { FollowUpRefusal } from './follow-up.js';
 
 /**
- * Where a Run's pull request stands on the Git host (Issue #142): `draft` and `open` are open;
- * `merged` and `closed` are over; `missing` means the pull request, or the Run branch it came
- * from, no longer exists. The worker protocol's list is pinned to this one by a test.
+ * `missing`: the pull request, or the Run branch it came from, no longer exists. The worker
+ * protocol's list is pinned to this one by a test.
  */
 export const PULL_REQUEST_STATES = ['draft', 'open', 'merged', 'closed', 'missing'] as const;
 export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
 
-/** A pull request state that is an end: merged, closed or not found (Issue #143). */
 export type EndedPullRequestState = Extract<PullRequestState, 'merged' | 'closed' | 'missing'>;
 
-/** Whether a pull request state is an end: merged, closed or not found (Issue #143). */
 export function isEndedPullRequestState(
   state: PullRequestState | null,
 ): state is EndedPullRequestState {
   return state === 'merged' || state === 'closed' || state === 'missing';
 }
 
-/**
- * How a Pull request check stands (Issue #145). The worker protocol's list is pinned to this one
- * by a test.
- */
+/** The worker protocol's list is pinned to this one by a test. */
 export const PULL_REQUEST_CHECK_STATES = [
   'queued',
   'running',
@@ -32,7 +26,6 @@ export const PULL_REQUEST_CHECK_STATES = [
 ] as const;
 export type PullRequestCheckState = (typeof PULL_REQUEST_CHECK_STATES)[number];
 
-/** A Pull request check as the Git host reports it (Issue #145). */
 export interface PullRequestCheck {
   name: string;
   state: PullRequestCheckState;
@@ -41,80 +34,50 @@ export interface PullRequestCheck {
 }
 
 /**
- * The Pull request checks of the pull request's latest commit as the last state lookup read them
- * (Issue #145); `unavailable` when the Git host refused to tell them (the Agent account lacks the
- * permission). An empty list means none are configured or reported for that commit.
+ * `unavailable`: the Git host refused to tell them (the Agent account lacks the permission). An
+ * empty list means none are configured or reported for that commit.
  */
 export type RunPullRequestChecks =
   { unavailable: true } | { unavailable?: false; commit: string; checks: PullRequestCheck[] };
 
-/**
- * Where the preparation of a Follow-up from failing checks stands (Issue #145): the worker is
- * reading the logs (`preparing`), a draft waits for the operator (`ready`) or the reading failed
- * (`failed`, with the reason in {@link StoredPullRequestStatus.prepareError}).
- */
 export type FailingChecksPreparation = 'preparing' | 'ready' | 'failed';
 
-/** What a worker found out about a pull request (Issue #142, #145). */
 export interface PullRequestStateResult {
   state: PullRequestState;
   behindBy?: number;
   aheadBy?: number;
   mergeable?: boolean;
-  /** Issue #145: the checks of the latest commit `checksCommit`, for a draft or open pull request. */
   checksCommit?: string;
   checks?: PullRequestCheck[];
-  /** Issue #145: the Git host refused to tell the checks. */
   checksUnavailable?: true;
 }
 
 /**
- * What Studio knows about the Run's pull request (Issue #142), as storage holds it, from the
- * lookups the agent worker answered through the Agent account; Studio itself never reads the Git
- * host. `state` is `null` until the first lookup succeeded, and is kept when a later one fails
+ * `state` is `null` until the first lookup succeeded, and is kept when a later one fails
  * (`refreshError` then says why). Every field is `null` for a Run without a pull request.
  */
 export interface StoredPullRequestStatus {
   state: PullRequestState | null;
-  /** Commits the Run branch is behind / ahead of the integration branch at that lookup. */
   behindBy: number | null;
   aheadBy: number | null;
-  /** Whether the Git host said it can be merged without conflicts; `null` when it did not say. */
   mergeable: boolean | null;
-  /** When the state was read. */
   refreshedAt: Date | null;
-  /** Why the latest lookup failed; cleared by a success. */
   refreshError: string | null;
-  /** A rate-limited lookup is tried again at this time. */
   retryAt: Date | null;
-  /** Set while a lookup waits for an agent worker or is being answered. */
   refreshRequestedAt: Date | null;
-  /** When a lookup was last requested, whether or not it succeeded (review S1 of #152). */
   lastAttemptAt: Date | null;
-  /** Issue #145: the Pull request checks of the latest commit; `null` until read. */
   checks: RunPullRequestChecks | null;
-  /** Issue #145: set while a preparation of failing checks waits for a worker or is answered. */
   prepareRequestedAt: Date | null;
-  /** Issue #145: why the latest preparation failed; cleared by a new request or a success. */
   prepareError: string | null;
   /**
-   * Issue #143: when a lookup first read the pull request as merged, closed or missing; `null`
-   * while it is not over (a reopened one is cleared). Working copy retention counts from it.
+   * `null` while it is not over (a reopened one is cleared). Working copy retention counts from it.
    */
   endedAt: Date | null;
 }
 
-/** Opening the Run page requests a refresh only if the state is older than this. */
 const PAGE_REFRESH_MIN_AGE_SECONDS = 60;
 
-/**
- * The state of a Run's pull request on the Git host, as Studio last read it (Issue #142): where
- * it stands, its position behind and ahead of the integration branch, the merge verdict, the
- * Pull request checks, and the bookkeeping of the lookups that read them. A change returns a new
- * status.
- */
 export class RunPullRequestStatus {
-  /** The Follow-up refusal for each state in which no pull request is left to update. */
   static readonly ENDED_REFUSALS = {
     merged: 'pull_request_merged',
     closed: 'pull_request_closed',
@@ -151,7 +114,6 @@ export class RunPullRequestStatus {
     this.endedAt = stored.endedAt;
   }
 
-  /** No lookup yet: what a Run starts with. */
   static none(): RunPullRequestStatus {
     return new RunPullRequestStatus({
       state: null,
@@ -197,9 +159,8 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * The Follow-up refusal the pull request's state calls for (Issue #142): nothing to update once
-   * it is merged, closed or missing; `null` otherwise, also while its state is unknown (a
-   * reopened pull request is open again at the next lookup).
+   * `null` also while its state is unknown (a reopened pull request is open again
+   * at the next lookup).
    */
   get followUpRefusal(): FollowUpRefusal | null {
     return isEndedPullRequestState(this.state)
@@ -207,7 +168,6 @@ export class RunPullRequestStatus {
       : null;
   }
 
-  /** Whether the stored Pull request checks include a failed one (Issue #145). */
   get hasFailedCheck(): boolean {
     const checks = this.checks;
     return (
@@ -217,11 +177,6 @@ export class RunPullRequestStatus {
     );
   }
 
-  /**
-   * Whether opening the Run page should request a refresh (Issue #142): never more often than
-   * once a minute (from the last attempt, successful or not), and not while a lookup is open or
-   * a rate limit asks to wait.
-   */
   pageRefreshDue(now: Date): boolean {
     if (this.refreshRequestedAt !== null) return false;
     if (this.retryAt !== null && this.retryAt.getTime() > now.getTime()) return false;
@@ -232,37 +187,24 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * When a pull request was first read as over (Issue #143): the first time it is read as merged,
-   * closed or missing is kept (the retention period counts from it); reading it open or draft
-   * again (a reopened pull request) clears it.
+   * The first time it is read as merged, closed or missing is kept (retention counts from it);
+   * reading it open or draft again clears it.
    */
   private endedAtFor(state: PullRequestState, now: Date): Date | null {
     return isEndedPullRequestState(state) ? (this.endedAt ?? now) : null;
   }
 
-  /**
-   * A lookup of the pull request's state was requested (Issue #142): the Run is refreshing from
-   * `now` on, and the attempt counts for the page-open throttle.
-   */
   refreshRequested(now: Date): RunPullRequestStatus {
     return this.with({ refreshRequestedAt: now, lastAttemptAt: now });
   }
 
-  /**
-   * The reading of the failing checks' logs was requested (Issue #145): the Run is preparing from
-   * `now` on, the last preparation's error cleared. The state refresh's throttle is left alone.
-   */
   preparationRequested(now: Date): RunPullRequestStatus {
     return this.with({ prepareRequestedAt: now, prepareError: null });
   }
 
   /**
-   * What a worker read of the pull request's state replaces what Studio knows (Issues #142, #143,
-   * #145): the state, the branch position, the merge verdict, the Pull request checks and the read
-   * time; the error, the retry time and the refreshing mark are cleared. The answer's own fields
-   * are what is kept: a merged or missing pull request has no branch position, a closed one no
-   * merge verdict, and only an open one has checks. The time the pull request was first read as
-   * over is kept, and a reopened one clears it.
+   * The answer's own fields are what is kept: a merged or missing pull request has no branch
+   * position, a closed one no merge verdict, and only an open one has checks.
    */
   read(result: PullRequestStateResult, now: Date): RunPullRequestStatus {
     return this.with({
@@ -284,15 +226,13 @@ export class RunPullRequestStatus {
     });
   }
 
-  /** A prepared Follow-up was stored for the Run (Issue #145): it is no longer preparing. */
   preparationDone(): RunPullRequestStatus {
     return this.with({ prepareRequestedAt: null, prepareError: null });
   }
 
   /**
-   * A lookup of the pull request's state failed (Issue #142): the Run keeps its last known state
-   * and gets `error`. With a retry (`retryAt`, a rate limit) it stays refreshing, from
-   * `requestedAt`, until then.
+   * With a retry (`retryAt`, a rate limit) the Run stays refreshing,
+   * from `requestedAt`, until then.
    */
   refreshFailed(error: string, retryAt: Date | null, requestedAt: Date): RunPullRequestStatus {
     return this.with({
@@ -302,7 +242,6 @@ export class RunPullRequestStatus {
     });
   }
 
-  /** The reading of the failing checks' logs failed (Issue #145); as {@link refreshFailed}. */
   preparationFailed(error: string, retryAt: Date | null, requestedAt: Date): RunPullRequestStatus {
     return this.with({
       prepareError: error,
@@ -311,11 +250,8 @@ export class RunPullRequestStatus {
   }
 
   /**
-   * The state of the pull request a worker read on its own, right before it refused a Follow-up
-   * (review S4 of #152): the state and its read time replace the Run's, the error is cleared. A
-   * merged, closed or missing pull request has no branch position, merge verdict or checks worth
-   * keeping (review N1 of #152): those are cleared with the state (a closed one keeps its branch
-   * position).
+   * A merged, closed or missing pull request has no branch position, merge verdict or checks worth
+   * keeping: those are cleared with the state (a closed one keeps its branch position).
    */
   observed(state: PullRequestState, now: Date): RunPullRequestStatus {
     const gone = state === 'merged' || state === 'missing';

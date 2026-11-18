@@ -11,25 +11,17 @@ import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface AnswerRunInput {
   runId: string;
-  /** The operator's text: stored as given (the endpoint trims and bounds it). */
   text: string;
 }
 
 export interface AnswerRunResult {
-  /** The Run as it is now, queued again. */
   run: RunSnapshot;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }
 
 /**
- * Command (Issue #103): the operator answers the agent's open question. The answer is stored
- * after the question and the Run goes back to `queued`; the agent worker that holds its Working
- * copy then claims it and resumes the same agent session with the answer as the next Run step.
- * Only a `waiting_for_operator` Run with an open question takes an answer: the Run's `answer`
- * method decides that under the row lock the repository's `change` takes, so a second answer, or
- * one after a cancel, is refused. The answer is the operator's input: stored as given (the
- * endpoint trims and bounds it). Throws `RunNotFoundError` or `RunNotWaitingError`.
+ * The Run's `answer` decides under the row lock, so a second answer, or one after a cancel, is
+ * refused. Throws `RunNotFoundError` or `RunNotWaitingError`.
  */
 @Injectable()
 export class AnswerRunHandler {

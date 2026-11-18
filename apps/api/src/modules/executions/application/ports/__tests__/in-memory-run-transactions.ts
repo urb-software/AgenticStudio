@@ -2,12 +2,8 @@ import type { RunTransactionRepositories, RunTransactions } from '../run-transac
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 /**
- * In-memory adapter of {@link RunTransactions} for handler tests: it hands the in-memory
- * repositories to the callback when the Run exists. The fakes change synchronously and a
- * callback that throws before it saves has changed nothing, so there is no rollback to
- * simulate beyond the lock; the lock order and the atomicity are proved against PostgreSQL by
- * the integration and race tests. Transactions on one Run run one after the other, as the row
- * lock makes them.
+ * In-memory {@link RunTransactions}: the fakes change synchronously, so only the per-Run row lock
+ * is simulated.
  */
 export class InMemoryRunTransactions implements RunTransactions {
   /** The end of the line of transactions on each Run: the Run's row lock. */

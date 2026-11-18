@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { GetRunsSummaryHandler } from '../handler.js';
 
-// Issue #115: the top-bar run indicator reads two counts instead of every Run.
 const PROJECTS = [
   '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
   '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f',

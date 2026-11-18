@@ -4,8 +4,6 @@ import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { EnvironmentFileSecretValues } from '../environment-file-secret-values.js';
 
-// Issue #104: a Run's log redaction gets the values of its Environment file snapshot.
-
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');

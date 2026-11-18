@@ -5,7 +5,6 @@ export const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 export const PROJECT_ID = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';
 export const AT = new Date('2026-11-15T12:00:00.000Z');
 
-/** A stored Run for the Run's unit tests, `waiting_for_operator` unless `overrides` say otherwise. */
 export function runData(overrides: Partial<RunData> = {}): RunData {
   return {
     id: RUN_ID,

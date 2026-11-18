@@ -19,7 +19,7 @@ import {
 
 export interface RefreshPullRequestInput {
   runId: string;
-  /** The Run page's own request on opening: at most one a minute per Run is recorded. */
+  /** Request on opening the Run page: at most one a minute per Run is recorded. */
   onOpen: boolean;
 }
 
@@ -27,18 +27,10 @@ export interface RefreshPullRequestResult {
   run: RunSnapshot;
   followUp: FollowUpView;
   workerConnected: boolean;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }
 
-/**
- * Command (Issue #142): the operator, or the Run page when it opens, asks for the state of the
- * Run's pull request to be read again. Studio only records a request; an agent worker carries it
- * out through the Agent account and reports the result, so the answer is the Run as it is now,
- * marked as refreshing. When a refresh is under way already, it is that one. From the Run page's
- * own request (`onOpen`) at most one request a minute per Run is recorded. Throws
- * {@link RunNotFoundError} or {@link PullRequestNotRefreshableError}.
- */
+/** Throws {@link RunNotFoundError} or {@link PullRequestNotRefreshableError}. */
 @Injectable()
 export class RefreshPullRequestHandler {
   constructor(

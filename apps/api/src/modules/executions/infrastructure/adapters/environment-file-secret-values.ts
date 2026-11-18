@@ -9,10 +9,8 @@ import { EnvironmentFileContent } from '../../domain/value-objects/environment-f
 import type { RunSecretValues } from '../../application/ports/run-secret-values.js';
 
 /**
- * {@link RunSecretValues} from the Run's Environment file snapshot (Issue #104): its values,
- * dotenv style, for log redaction. None when the Run was given no file, or once its snapshot
- * was deleted (the Run is final, and nothing more is stored for it). Any other failure of the
- * secret store propagates, so nothing is stored unredacted.
+ * None when the Run has no file or its snapshot was deleted; any other secret-store failure
+ * propagates, so nothing is stored unredacted.
  */
 @Injectable()
 export class EnvironmentFileSecretValues implements RunSecretValues {

@@ -6,7 +6,6 @@ import {
   type StoredPullRequestStatus,
 } from '../run-pull-request-status.js';
 
-// Issue #142: when a pull request state is looked up. No database: the value object alone.
 const NOW = new Date('2026-11-16T12:00:00.000Z');
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
 const later = (seconds: number) => new Date(NOW.getTime() + seconds * 1000);
@@ -23,11 +22,10 @@ describe('RunPullRequestStatus.pageRefreshDue', () => {
     expect(status({ state: 'open', refreshedAt: ago(59) }).pageRefreshDue(NOW)).toBe(false);
   });
 
-  it('counts from the last attempt: a failed lookup is not repeated on every open (review S1 of #152)', () => {
+  it('counts from the last attempt: a failed lookup is not repeated on every open', () => {
     const failed = { refreshError: 'GitHub could not be reached.', lastAttemptAt: ago(30) };
     expect(status(failed).pageRefreshDue(NOW)).toBe(false);
     expect(status({ ...failed, lastAttemptAt: ago(60) }).pageRefreshDue(NOW)).toBe(true);
-    // An old success does not make a recent failed attempt due.
     expect(
       status({ state: 'open', refreshedAt: ago(3600), lastAttemptAt: ago(10) }).pageRefreshDue(NOW),
     ).toBe(false);
@@ -40,7 +38,6 @@ describe('RunPullRequestStatus.pageRefreshDue', () => {
   });
 });
 
-// Issue #145: only a known failed check can be handed to the agent.
 describe('RunPullRequestStatus.hasFailedCheck', () => {
   const check = (state: 'passed' | 'failed' | 'running') => ({
     name: 'build',
@@ -66,14 +63,13 @@ describe('RunPullRequestStatus.hasFailedCheck', () => {
   });
 });
 
-describe('RunPullRequestStatus.followUpRefusal and the ended states (Issues #142, #143)', () => {
+describe('RunPullRequestStatus.followUpRefusal and the ended states', () => {
   it('refuses a Follow-up for a merged, closed or missing pull request only', () => {
     expect(status({ state: 'merged' }).followUpRefusal).toBe('pull_request_merged');
     expect(status({ state: 'closed' }).followUpRefusal).toBe('pull_request_closed');
     expect(status({ state: 'missing' }).followUpRefusal).toBe('pull_request_missing');
     expect(status({ state: 'open' }).followUpRefusal).toBeNull();
     expect(status({ state: 'draft' }).followUpRefusal).toBeNull();
-    // A pull request of unknown state does not stop a Follow-up.
     expect(status().followUpRefusal).toBeNull();
   });
 
@@ -140,7 +136,6 @@ describe('RunPullRequestStatus changes return a new status', () => {
       refreshedAt: NOW,
       endedAt: NOW,
     });
-    // A closed one keeps its branch position.
     expect(open.observed('closed', NOW).toStored()).toMatchObject({
       state: 'closed',
       behindBy: 2,

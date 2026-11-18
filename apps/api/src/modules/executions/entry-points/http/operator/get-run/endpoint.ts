@@ -7,10 +7,6 @@ import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../share
 import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `GET /api/runs/:runId` (Issue #96), behind the global session guard: the Run with its
- * conversation and whether it can take a Follow-up now (Issue #141).
- */
 @ApiTags('runs')
 @Controller('runs')
 export class GetRunEndpoint {

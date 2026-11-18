@@ -18,7 +18,6 @@ import {
   PullRequestNotRefreshableError,
 } from '../../../domain/errors/run-errors.js';
 
-/** None of the Run's stored Pull request checks has failed: nothing to prepare (Issue #145). */
 export class NoFailingChecksError extends Error {
   constructor() {
     super('No pull request check of the run is known to have failed.');
@@ -34,18 +33,11 @@ export interface PrepareFailingChecksResult {
   run: RunSnapshot;
   followUp: FollowUpView;
   workerConnected: boolean;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }
 
 /**
- * Command (Issue #145): the operator asks for the failing Pull request checks to be turned into a
- * Follow-up. Studio only records a request; an agent worker reads, through the Agent account, the
- * end of the log of each failed check and reports it, and Studio stores the prepared text for
- * the operator to review. Nothing is sent to an agent: sending is the normal Follow-up, on the
- * operator's own action. When a preparation is under way already, it is that one. The answer is
- * the Run as it is now, marked as preparing. Throws {@link RunNotFoundError},
- * {@link PullRequestNotRefreshableError} (no pull request to read) or
+ * Throws {@link RunNotFoundError}, {@link PullRequestNotRefreshableError} or
  * {@link NoFailingChecksError}.
  */
 @Injectable()

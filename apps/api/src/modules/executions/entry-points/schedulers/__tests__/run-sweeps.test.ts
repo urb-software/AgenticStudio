@@ -7,13 +7,10 @@ import { TimeOutOverdueStepsHandler } from '../../../application/features/time-o
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunSweepsScheduler } from '../run-sweeps.js';
 
-// Review of #121: the API renews held Runs' leases when it starts, but at most once per lease
-// period, so an API that keeps crashing and restarting cannot keep a dead worker's Run alive.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
-/** No worker has reported (the sweep only needs it for delivery retries, #102). */
 const STATUSES = { record: () => undefined, latest: () => undefined, lastSeen: () => undefined };
 const NO_SNAPSHOTS = {
   releaseFor: () => Promise.resolve(),
@@ -35,7 +32,6 @@ describe('RunSweepsScheduler at API start', () => {
     });
     const run = (await runs.claimNext(WORKER, T0))!;
     const clock = { current: T0, now: () => clock.current };
-    /** One API start: the schedule boots (renewing leases if allowed) and stops again. */
     const start = async () => {
       const schedule = new RunSweepsScheduler(
         new SweepLostWorkersHandler(runs, clock, LEASE, STATUSES, NO_SNAPSHOTS),
@@ -70,7 +66,6 @@ describe('RunSweepsScheduler at API start', () => {
     const { runs, run, clock, start, sweep } = await setUp();
     clock.current = later(300);
     await start();
-    // The API crashes and restarts every 30 s; the worker is gone.
     for (const at of [330, 345, 359]) {
       clock.current = later(at);
       await start();

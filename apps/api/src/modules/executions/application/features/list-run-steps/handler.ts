@@ -7,7 +7,6 @@ import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
-/** The part of a stored structured result the operator sees at the end of a Run step. */
 const shownResultSchema = z.object({
   outcome: z.enum(['done', 'needs_input']),
   summary: z.string(),
@@ -30,10 +29,8 @@ export interface ListRunStepsInput {
 export type ListRunStepsResult = RunStepView[];
 
 /**
- * Query (Issue #99): the structured result of each reported Run step, shown at the step's end
- * in the log: the summary and the agent's account of its checks. The agent wrote them, so
- * they get the log's redaction: on store (report-run-step) and again here, for rows stored
- * before that. Throws {@link RunNotFoundError}.
+ * Redacted again on read, for rows stored before the redaction on store.
+ * Throws {@link RunNotFoundError}.
  */
 @Injectable()
 export class ListRunStepsHandler {

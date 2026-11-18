@@ -20,10 +20,6 @@ import {
   type StudioServices,
 } from '../../../../../__tests__/studio-test-app.js';
 
-// Issue #183 (Epic #160): the lookup repository keeps the hand-out of lookups, paired with a named
-// rule in the domain. Here the store's statements are run over fixture rows of every kind and must
-// select and change exactly what the rule says on the same rows.
-
 const NOW = new Date('2026-11-17T12:00:00.000Z');
 const LEASE_SECONDS = 120;
 const WORKER = randomUUID();
@@ -46,7 +42,6 @@ describe('the lookup store follows the rule of the domain (PostgreSQL + Redis vi
     await services?.stop();
   });
 
-  /** A Run as a lookup needs it: with or without a pull request and a Run branch. */
   interface RunSpec {
     pullRequest: boolean;
     branch: boolean;
@@ -55,13 +50,11 @@ describe('the lookup store follows the rule of the domain (PostgreSQL + Redis vi
   interface LookupSpec {
     run: number;
     status: 'requested' | 'claimed' | 'done' | 'failed';
-    /** Seconds from now: the request time (negative: in the past). */
     requestedAt: number;
     claimedAt?: number;
     retryAt?: number;
   }
 
-  /** Replaces all Runs and lookups; returns the lookup ids in the order of the specs. */
   async function fixtures(runSpecs: RunSpec[], lookupSpecs: LookupSpec[]) {
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
     const runIds: string[] = [];
@@ -120,7 +113,6 @@ describe('the lookup store follows the rule of the domain (PostgreSQL + Redis vi
     return ids;
   }
 
-  /** What the rule reads of the rows as they stand. */
   async function views(): Promise<{ lookups: LookupHandOutView[]; runs: LookupRunView[] }> {
     const rows = await db().runLookup.findMany();
     const runs = await db().run.findMany({
@@ -207,7 +199,6 @@ describe('the lookup store follows the rule of the domain (PostgreSQL + Redis vi
 
       const handed = await lookups().claim(WORKER, rule);
 
-      // The same lookups, oldest first.
       expect(handed.map((lookup) => lookup.id)).toEqual(expected);
       const after = await states();
       for (const id of ids) {
@@ -215,13 +206,11 @@ describe('the lookup store follows the rule of the domain (PostgreSQL + Redis vi
         if (expected.includes(id)) {
           expect(after[id]).toBe(`claimed/${WORKER}/${NOW.toISOString()}`);
         } else if (rule.claimExpired(lookup)) {
-          // A claim the lease ran out of goes back to the queue, handed out or not.
           expect(after[id]).toBe('requested/-/-');
         } else {
           expect(after[id]).toBe(before[id]);
         }
       }
-      // A second claim finds only what is left.
       const again = await views();
       expect((await lookups().claim(OTHER, rule)).map((lookup) => lookup.id)).toEqual(
         rule.next(again.lookups, again.runs).map((lookup) => lookup.id),

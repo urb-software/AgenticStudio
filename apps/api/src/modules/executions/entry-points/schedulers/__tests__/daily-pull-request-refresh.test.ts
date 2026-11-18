@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RequestDailyPullRequestRefreshesHandler } from '../../../application/features/request-daily-pull-request-refreshes/handler.js';
 import { DailyPullRequestRefreshScheduler } from '../daily-pull-request-refresh.js';
 
-// Issue #142: the daily refresh waits a minute after start, then asks every interval.
 const HOUR = 60 * 60 * 1000;
 const SETTINGS = { intervalMs: HOUR };
 

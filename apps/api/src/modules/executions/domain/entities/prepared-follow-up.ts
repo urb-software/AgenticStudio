@@ -69,10 +69,7 @@ function section(entry: Entry, excerpt: string | undefined, note = entry.note): 
   return lines.join('\n');
 }
 
-/**
- * The Follow-up Studio prepared for the operator to review (Issue #145): never sent by itself.
- * One per Run (the Run's id is the key it is stored and found by); a new preparation replaces it.
- */
+/** The Follow-up Studio prepared for the operator to review; never sent by itself. */
 export class PreparedFollowUp {
   private constructor(
     readonly source: FollowUpSource,
@@ -80,12 +77,10 @@ export class PreparedFollowUp {
     readonly items: PreparedFollowUpItem[],
   ) {}
 
-  /** The current values as read-only plain data. */
   snapshot(): PreparedFollowUpSnapshot {
     return { source: this.source, text: this.text, items: this.items.map((item) => ({ ...item })) };
   }
 
-  /** A stored prepared Follow-up, read back by a repository. */
   static restore(data: {
     source: FollowUpSource;
     text: string;
@@ -95,13 +90,8 @@ export class PreparedFollowUp {
   }
 
   /**
-   * The Follow-up prepared from the failed checks a worker read (Issue #145): an introduction, then
-   * for each failed check its name, link and log excerpt (or why there is none). The text comes from
-   * CI jobs and is untrusted: token-shaped strings are redacted (the log rules), control characters
-   * and line breaks leave the names, and the log sits in a fence the log cannot end. The whole text
-   * is at most the Follow-up's length: the excerpts share what the names, links and the
-   * introduction leave, and checks that do not fit even without a log are counted in a closing line
-   * (the operator sees all on GitHub). The operator reviews and may edit it; nothing sends it.
+   * The text comes from CI jobs and is untrusted: it is redacted, control characters leave the
+   * names, and the log sits in a fence it cannot end. The whole text fits the Follow-up's length.
    */
   static fromFailingChecks(
     result: FailingCheckLogsResult,

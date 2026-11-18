@@ -26,16 +26,6 @@ import { LoadReviewCommentsHandler } from '../../../../application/features/load
 import { loadReviewCommentsRequestSchema, LoadReviewCommentsRequestDto } from './schema.js';
 import { ReviewCommentsLoadRunningError } from '../../../../domain/errors/review-comments-errors.js';
 
-/**
- * `POST /api/runs/:runId/pull-request/review-comments/load` (Issue #146), behind the global
- * session and mutation Origin guards: 202 with the Run's Review comments as they are now, marked
- * as loading while an agent worker reads them; 404 for an unknown Run; 409 for a Run without a
- * pull request, for a Run that cannot take a Follow-up now (the detail says why: the page offers
- * loading only then) and while a load is under way already (it keeps its own scope); 422 for an
- * invalid body.
- * Nothing is sent to an agent, and no agent is started. The body is typed `unknown`, so the
- * global pipe leaves it alone and an invalid body becomes a 422 here.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class LoadReviewCommentsEndpoint {

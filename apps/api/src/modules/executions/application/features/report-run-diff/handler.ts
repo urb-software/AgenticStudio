@@ -18,10 +18,6 @@ import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 export interface ReportRunDiffInput {
   runId: string;
   workerId: string;
-  /**
-   * Both diffs and where they stand (validated by the shared contract), or the reason they are
-   * unavailable.
-   */
   diffs:
     { run: ReportedRunDiff; last: ReportedRunDiff; state: RunDiffState } | { unavailable: string };
 }
@@ -29,16 +25,9 @@ export interface ReportRunDiffInput {
 export type ReportRunDiffResult = void;
 
 /**
- * Command (Issue #144): the agent worker holding a Run reports its diffs after a Run step's
- * result (or why they could not be computed); they replace the Run's stored diffs. Every
- * patch, and the reason, is redacted with the log's rules (security.md §3: the Run's known
- * secret values, such as its Environment file's, and token-shaped strings) before it is
- * stored. The Environment file itself is never part of a diff: the worker leaves it out, and a
- * file at its path (in any spelling) is dropped here too. The diff state is kept for the next
- * resume or delivery claim (review S-1 of #149); an unavailable report keeps the stored one.
- * That the worker holds the Run is the Run's rule, checked under the Run's lock in the same
- * transaction that replaces the diffs (`RunTransactions`). Throws {@link RunNotFoundError} or
- * {@link RunNotHeldError}.
+ * Patches and reasons are redacted with the log's rules; the Environment file's path is dropped in
+ * any spelling. Holding the Run is checked under its lock in the transaction that replaces the
+ * diffs. Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
  */
 @Injectable()
 export class ReportRunDiffHandler {
@@ -72,7 +61,7 @@ export class ReportRunDiffHandler {
           ...(patch === undefined ? {} : { patch: redact(patch) }),
         })),
     });
-    // Redaction can lengthen the reason: cut after it, to what is stored (review L-2 of #149).
+    // Redaction can lengthen the reason: cut after it, to what is stored.
     const reason = (text: string) => redact(text).slice(0, RUN_DIFF_UNAVAILABLE_MAX_LENGTH);
     const diffs: Record<RunDiffScope, NewRunDiff> =
       'unavailable' in input.diffs
@@ -82,7 +71,7 @@ export class ReportRunDiffHandler {
           }
         : { run: stored(input.diffs.run), last: stored(input.diffs.last) };
     const state = 'state' in input.diffs ? input.diffs.state : null;
-    // The diffs refuse a state that is not object ids (review S-1 of #149).
+    // The diffs refuse a state that is not object ids.
     const report = RunDiff.report({ runId: input.runId, diffs, state });
     const now = this.clock.now();
     await this.transactions.withRunLocked(input.runId, async (repositories) => {

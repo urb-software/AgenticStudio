@@ -1,34 +1,25 @@
 /**
- * Review comments (Issue #146): what people wrote on the Run's pull request, loaded on the
- * operator's request through an agent worker and the Agent account. They are untrusted text:
- * anyone can comment on a public pull request, so nothing here reaches an agent unless the
- * operator selects it. The worker protocol's lists are pinned to these by a test.
+ * Untrusted text: anyone can comment on a public pull request, so nothing reaches an agent unless
+ * the operator selects it.
  */
 
-/** What a load asks for: the comments created since the latest result, or all unresolved ones. */
 export const REVIEW_COMMENT_SCOPES = ['since_last_result', 'unresolved'] as const;
 export type ReviewCommentScope = (typeof REVIEW_COMMENT_SCOPES)[number];
 
-/** A review's summary, an inline comment on the diff, or a conversation comment. */
 export const REVIEW_COMMENT_KINDS = ['review', 'inline', 'conversation'] as const;
 export type ReviewCommentKind = (typeof REVIEW_COMMENT_KINDS)[number];
 
 export const REVIEW_VERDICTS = ['commented', 'changes_requested', 'approved'] as const;
 export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
 
-/** Most comments a loaded set holds. */
 export const REVIEW_COMMENTS_MAX = 100;
 
-/** Longest text of one comment, in UTF-8 bytes. */
 export const REVIEW_COMMENT_TEXT_MAX_BYTES = 8 * 1024;
 
-/** Longest diff context of one inline comment, in UTF-8 bytes. */
 export const REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES = 2 * 1024;
 
-/** Most distinct authors a Follow-up records. */
 export const FOLLOW_UP_AUTHORS_MAX = 20;
 
-/** One comment as Studio keeps it: redacted and within its limits. */
 export interface ReviewComment {
   /** Unique within the pull request: `review-<n>`, `inline-<n>` or `conversation-<n>`. */
   id: string;
@@ -39,12 +30,10 @@ export interface ReviewComment {
   diffContext?: string;
   verdict?: ReviewVerdict;
   text: string;
-  /** The text was cut to its size limit. */
   textCut?: true;
   createdAt: string;
 }
 
-/** What a load asks of the worker: the scope and, for the first, when a comment counts as new. */
 export interface ReviewCommentsRequest {
   scope: ReviewCommentScope;
   since: Date | null;

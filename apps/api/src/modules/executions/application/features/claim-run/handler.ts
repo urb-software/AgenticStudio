@@ -35,16 +35,6 @@ const NO_REMOTE: RunFailure = {
     "The run has no repository remote to prepare from (the project's repository was removed).",
 };
 
-/**
- * Command (Issue #96): an agent worker asks for work. Lost workers are swept first (their
- * Runs fail and free their places), Runs waiting too long are cancelled and steps far past
- * their time limit time out (Issue #100); then the oldest eligible queued Run is handed out
- * under the concurrency limits; `null` when there is none. A `failed` Run whose delivery retry
- * was requested is handed out too, for the delivery only (Issue #102). Issue #104: when a
- * Run is started, the Project's Environment file is copied into a Run-scoped secret (the
- * Run's snapshot: log redaction uses it, and later changes to the file affect only later
- * Runs) and handed to the claiming worker only; the Run records its path.
- */
 const NOT_DELIVERABLE: RunFailure = {
   code: 'delivery_failed',
   detail:
@@ -59,7 +49,6 @@ const ENVIRONMENT_FILE_UNAVAILABLE: RunFailure = {
     'if it keeps failing, set the Environment file again.',
 };
 
-/** A resume with nothing recorded to resume in (Issue #103). */
 const NOT_RESUMABLE: RunFailure = {
   code: 'preparation_failed',
   detail:
@@ -67,31 +56,18 @@ const NOT_RESUMABLE: RunFailure = {
     'remote or integration branch for this run.',
 };
 
-/** A resume whose Working copy the agent worker reported removed (review S9 of #150). */
 const WORKING_COPY_REMOVED: RunFailure = {
   code: 'preparation_failed',
   detail: "Working copy no longer exists — run again: the agent worker's retention removed it.",
 };
 
-/**
- * A claimed Run and what goes to the claiming worker with it: the Project's Environment file
- * as it was at the claim (Issue #104), or `null` when the Project has none or the claim is a
- * delivery retry or a resume (the file is already in the Working copy then); how many Run steps
- * it has taken and the seq of its next event (Issue #103: a resumed step continues after the
- * stored log).
- */
 export interface ClaimedRun extends RunSnapshot {
   environmentFile: EnvironmentFile | null;
-  /**
-   * Review S3 of #150: the claim carries a new snapshot of the Project's Environment file (or
-   * none): the worker replaces the Studio-placed files in the Working copy with it.
-   */
   replaceEnvironmentFile: boolean;
-  /** Paths of the files Studio placed in the Working copy: never committed or pushed. */
+  /** Never committed or pushed. */
   studioPaths: string[];
   completedSteps: number;
   nextSeq: number;
-  /** With a resume or delivery claim: where the Run's diffs stand (Issue #144), if reported. */
   diffState?: RunDiffState | null;
 }
 
@@ -99,26 +75,17 @@ export interface ClaimRunInput {
   workerId: string;
 }
 
-/** The Run handed out with what goes with it, or `null` when nothing is eligible. */
 export type ClaimRunResult = ClaimedRun | null;
 
-/** The Studio-placed paths of a Run: its Environment file's, when it has one. */
 const studioPathsOf = (run: Pick<RunSnapshot, 'environmentFilePath'>): string[] =>
   run.environmentFilePath ? [run.environmentFilePath] : [];
 
-/** The snapshot could not be taken; the Run was failed. */
 const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
 
 /**
- * Command (Issue #96): an agent worker asks for work. Lost workers are swept first (their
- * Runs fail and free their places), then the oldest eligible queued Run is handed out under
- * the concurrency limits; `null` when there is none. A `failed` Run whose delivery retry was
- * requested is handed out too, for the delivery only (Issue #102). Issue #104: when a Run is
- * started, the Project's Environment file is copied into a Run-scoped secret (the Run's
- * snapshot: log redaction uses it, and later changes to the file affect only later Runs) and
- * handed to the claiming worker only; the Run records its path. Issue #103: an answered Run is
- * handed out to resume its agent session, only to the worker that started it; it keeps the
- * snapshot it took at its start (no new one, and no content in the claim).
+ * `null` when no Run is eligible. A resume goes only to the worker that last claimed the Run. A
+ * Follow-up, or a usage-limit resume inside one, takes the Project's current Environment file;
+ * other resumes keep their snapshot.
  */
 @Injectable()
 export class ClaimRunHandler {
@@ -138,9 +105,10 @@ export class ClaimRunHandler {
   async execute(input: ClaimRunInput): Promise<ClaimRunResult> {
     const { workerId } = input;
     const now = this.clock.now();
+    // Sweeps first, so lost workers free their places and long-waiting Runs
+    // end before the hand-out.
     const lost = LostWorkerRule.at(now, this.lease.seconds);
     await this.runs.failStaleClaims(lost.staleBefore, lost.failure, lost.deliveryFailure, now);
-    // A Run left waiting too long holds a slot; it is cancelled first (Issue #100).
     for (const waiting of await this.runs.listWaiting()) {
       const cancellation = LongWaitRule.at(now).cancellationFor(waiting);
       // Conditional: an answer or an operator's cancel in between wins.
@@ -148,18 +116,14 @@ export class ClaimRunHandler {
         await this.runs.cancelUnheld(waiting.id, 'waiting_for_operator', cancellation, now);
       }
     }
-    // A step far past its time limit holds a slot too (review of #121: Studio's backstop).
     const overdue = OverdueStepRule.at(now);
     await this.runs.timeOutOverdueSteps(overdue.now, overdue.graceMinutes);
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;
       if (run.state === 'failed') {
-        // A delivery retry (Issue #102): without a remote, an integration branch or a recorded
-        // Run branch there is nothing to deliver; it fails again at once and is released
-        // (review R5 of #122).
+        // Without a remote, integration branch or Run branch there is nothing to deliver.
         if (run.remoteUrl !== '' && run.integrationBranch !== '' && run.workingCopy) {
-          // Its events continue after the stored log (coordinator decision on #103).
           return {
             ...run,
             environmentFile: null,
@@ -178,19 +142,15 @@ export class ClaimRunHandler {
             }
           }
         });
-        // Nothing left to deliver, so nothing more to redact (Issue #104).
         await this.snapshots.releaseFor(run.id);
         continue;
       }
-      // A Run from before Issue #98 whose project had no Repository has no remote to prepare
-      // from (nor an integration branch, Issue #102): it fails with preparation_failed here
-      // instead of reaching a worker (review S6).
+      // A Run without a remote (its Repository was removed) fails here instead
+      // of reaching a worker.
       const reachable = run.remoteUrl !== '' && run.integrationBranch !== '';
       const resume = RunConversation.of(run.messages).resumeMessage(run.sessionRef !== null);
       if (resume !== null) {
-        // Issue #103 (and a Follow-up, #141): the resumed step continues the Run's step
-        // numbers and its log's seqs. Review S9 of #150: a Working copy the worker reported
-        // removed (also while a Follow-up waited) cannot be resumed.
+        // A Working copy the worker reported removed cannot be resumed.
         if (!reachable || !run.workingCopy || run.workingCopyRemovedAt !== null) {
           const failure = run.workingCopyRemovedAt !== null ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
           await this.fail(run, workerId, failure, now);
@@ -205,7 +165,6 @@ export class ClaimRunHandler {
             ...(await this.progress(run)),
           };
         }
-        // Review S3 of #150: a Follow-up works with the Project's current Environment file.
         const environmentFile = await this.snapshot(run, workerId, now, true);
         if (environmentFile === SNAPSHOT_FAILED) continue;
         return {
@@ -241,10 +200,8 @@ export class ClaimRunHandler {
   }
 
   /**
-   * The Project's current Environment file, stored as the Run's snapshot; `null` when it has
-   * none. When it cannot be read or stored, the Run fails (preparation_failed) instead of
-   * starting without the file it should have. `replace` (review S3 of #150, a Follow-up): the
-   * Run's earlier snapshot is deleted first, and the new one (or none) is recorded in its place.
+   * `null` when the Project has no file. A failure fails the Run instead of starting without it.
+   * `replace` deletes the Run's earlier snapshot first.
    */
   private async snapshot(
     run: RunSnapshot,
@@ -277,14 +234,9 @@ export class ClaimRunHandler {
     return SNAPSHOT_FAILED;
   }
 
-  /**
-   * How many Run steps the Run has taken and the seq after its stored log (Issue #103), and where
-   * its diffs stand (Issue #144, review S-1 of #149).
-   */
   private async progress(
     run: RunSnapshot,
   ): Promise<{ completedSteps: number; nextSeq: number; diffState: RunDiffState | null }> {
-    // The Run counts its steps with it; none is loaded to be counted.
     const [lastSeq, diffState] = await Promise.all([
       this.logs.lastSeq(run.id),
       this.diffs.findState(run.id),

@@ -14,11 +14,6 @@ import {
 import { PreparedFollowUpResponseDto } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `GET /api/runs/:runId/pull-request/failing-checks/prepared` (Issue #145), behind the global
- * session guard: the Follow-up prepared from the Run's failing checks; 404 when there is none (or
- * the Run is unknown). Reading it sends nothing.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class GetPreparedFollowUpEndpoint {

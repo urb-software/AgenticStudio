@@ -16,16 +16,6 @@ import { FollowUpNotAllowedError, RunNotFoundError } from '../../../../domain/er
 import { FollowUpRunHandler } from '../../../../application/features/follow-up-run/handler.js';
 import { bringUpToDateRequestSchema, BringUpToDateRequestDto } from './schema.js';
 
-/**
- * `POST /api/runs/:runId/bring-up-to-date` (Issue #147), behind the global session and mutation
- * Origin guards: 202 with the Run, queued for the update, once it is stored; 404 for an unknown
- * Run; 409 when the Run cannot take a Follow-up now (the same reasons, the detail saying why);
- * 422 for a note that is too long. The body is optional and typed `unknown`, so the global pipe
- * leaves it alone and an invalid body becomes a 422 here. It is a Follow-up in every respect
- * (the same eligibility, Run step allowance, concurrency limits, agent session and Working
- * copy), marked `bring_up_to_date`, so it calls the Follow-up handler with that source; the
- * note is the Follow-up's text (empty when there is none).
- */
 @ApiTags('runs')
 @Controller('runs')
 export class BringUpToDateEndpoint {

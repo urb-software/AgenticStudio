@@ -8,7 +8,6 @@ import {
 } from '../../shared/run-response.js';
 import { ListRunsHandler } from '../../../../application/features/list-runs/handler.js';
 
-/** `GET /api/runs` (Issue #96): every project's Runs, newest first; behind the session guard. */
 @ApiTags('runs')
 @Controller('runs')
 export class ListRunsEndpoint {

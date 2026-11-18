@@ -10,15 +10,12 @@ export interface RecordHeartbeatInput {
 }
 
 export interface RecordHeartbeatResult {
-  /** Whether the operator asked to cancel the Run (Issue #100). */
   cancelRequested: boolean;
 }
 
 /**
- * Command (Issue #96): the agent worker holding a Run says it is still alive, which renews
- * its lease. The answer tells it whether the operator asked to cancel the Run (Issue #100).
- * The Run's `recordHeartbeat` decides under its row lock, so a heartbeat and the lost-worker
- * sweep never both win (Issue #169). Throws {@link RunNotFoundError} or `RunNotHeldError`.
+ * Decided under the Run's row lock, so a heartbeat and the lost-worker sweep never both win.
+ * Throws {@link RunNotFoundError} or `RunNotHeldError`.
  */
 @Injectable()
 export class RecordHeartbeatHandler {

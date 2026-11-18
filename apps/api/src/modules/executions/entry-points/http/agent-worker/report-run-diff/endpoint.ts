@@ -6,11 +6,6 @@ import { ReportRunDiffHandler } from '../../../../application/features/report-ru
 import { ReportRunDiffRequestDto } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `POST /api/worker/runs/:runId/diff` (Issue #144), worker token only: 204 once the Run's diffs
- * replace the stored ones, 404 for an unknown Run, 409 unless this worker holds it. Its body
- * may be up to `RUN_DIFF_REQUEST_MAX_BYTES` (the app's body parser for this route).
- */
 @WorkerController('runs')
 export class ReportRunDiffEndpoint {
   constructor(private readonly handler: ReportRunDiffHandler) {}

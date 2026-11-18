@@ -1,6 +1,6 @@
 import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
-/** A Run step's current values as read-only plain data (rule 10); {@link RunStep.snapshot}. */
+/** A Run step's current values; {@link RunStep.snapshot}. */
 export interface RunStepSnapshot {
   /** The step's number within its Run, from 1, in report order. */
   readonly index: number;

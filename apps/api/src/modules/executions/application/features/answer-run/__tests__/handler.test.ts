@@ -5,7 +5,6 @@ import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositor
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { AnswerRunHandler } from '../handler.js';
 
-// Issue #103: the operator answers the agent's question; the Run is queued to resume.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
@@ -18,7 +17,6 @@ describe('AnswerRunHandler', () => {
   let handler: AnswerRunHandler;
   let run: RunSnapshot;
 
-  /** WORKER carries `run` to a question and releases it waiting for the operator. */
   async function ask() {
     await runs.transitionClaimed({
       runId: run.id,

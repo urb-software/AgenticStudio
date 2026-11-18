@@ -12,11 +12,7 @@ export interface DiscardPreparedFollowUpInput {
 
 export type DiscardPreparedFollowUpResult = void;
 
-/**
- * Command (Issue #145): the operator discards the Follow-up prepared from the Run's failing
- * checks without sending it. Discarding what is not there is fine. Throws
- * {@link RunNotFoundError} for an id that is not a UUID.
- */
+/** Discarding what is not there succeeds. Throws {@link RunNotFoundError} for a non-UUID id. */
 @Injectable()
 export class DiscardPreparedFollowUpHandler {
   constructor(

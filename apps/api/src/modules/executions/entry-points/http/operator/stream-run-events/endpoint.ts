@@ -21,14 +21,12 @@ import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 const SEQ = /^\d{1,10}$/;
 const SEQ_MAX = 2_147_483_647;
 
-/** `Last-Event-ID` as a seq, or 0 when absent or not one this stream sent. */
 function seqFromHeader(value: string | undefined): number {
   if (value === undefined || !SEQ.test(value)) return 0;
   const seq = Number(value);
   return seq <= SEQ_MAX ? seq : 0;
 }
 
-/** Waits until the response can take more (`drain`) or is gone (`close`), leaving no listener. */
 async function writable(response: ServerResponse): Promise<void> {
   const done = new AbortController();
   const options = { signal: done.signal };
@@ -43,17 +41,9 @@ async function writable(response: ServerResponse): Promise<void> {
 }
 
 /**
- * `GET /api/runs/:runId/events/stream?after=<seq>` (Issue #99), behind the global session
- * guard: the Run's log as server-sent events. Each message's `id` is the event's seq and its
- * `data` one `RunEvent` as JSON. It opens with a `: connected` comment, and an idle stream
- * sends a `: keep-alive` comment every 15 s. Every 15 s, idle or busy, it checks that the
- * operator session is still valid (a logout or expiry closes the stream; the client's reconnect
- * then gets 401). A busy stream never idles, so the check is timed (#104, from the #119 review). Once the
- * Run is final and every event is sent, it sends one `end` event and closes; a stream that
- * closes without it was dropped, and the client reconnects. It resumes after the larger of
- * `after` and `Last-Event-ID` (a browser reconnect sends the URL's old `after` with a newer
- * header). At most 5 streams per session and 50 in total are open (429 beyond). Proxies must
- * not buffer it: `X-Accel-Buffering: no` asks nginx not to, and README.md documents the rest.
+ * Resumes after the larger of `after` and `Last-Event-ID` (a reconnect sends the URL's old
+ * `after`). The session is re-checked every 15 s, idle or busy; `X-Accel-Buffering: no` keeps nginx
+ * from buffering.
  */
 @ApiTags('runs')
 @Controller('runs')
@@ -112,13 +102,11 @@ export class StreamRunEventsEndpoint {
       'X-Accel-Buffering': 'no',
       Connection: 'keep-alive',
     });
-    // A first comment tells the client (and any proxy) that the stream is open.
     response.write(': connected\n\n');
     let sessionGone = false;
     let sessionCheckedAt = Date.now();
     try {
       for await (const item of stream) {
-        // On every idle tick, and at least once per interval while events keep coming.
         if (item === KEEP_ALIVE || Date.now() - sessionCheckedAt >= this.session.checkIntervalMs) {
           sessionCheckedAt = Date.now();
           if (!(await this.session.isActive(sessionId))) {
@@ -142,7 +130,6 @@ export class StreamRunEventsEndpoint {
         // Backpressure: a slow client catching up on a long log is not buffered in memory.
         if (!response.write(chunk) && !abort.signal.aborted) await writable(response);
       }
-      // The Run is final and every event was sent (not a dropped connection): the client stops.
       if (!abort.signal.aborted && !sessionGone) response.write('event: end\ndata: {}\n\n');
     } catch (error) {
       // The headers are sent, so no problem response is possible: the stream ends and the

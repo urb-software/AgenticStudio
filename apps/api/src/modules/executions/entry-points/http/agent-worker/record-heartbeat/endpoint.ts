@@ -7,11 +7,6 @@ import { RecordHeartbeatHandler } from '../../../../application/features/record-
 import { HeartbeatRequestDto } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `POST /api/worker/runs/:runId/heartbeat` (Issue #96), worker token only: 200 with
- * `{ cancelRequested }` (Issue #100), 404 for an unknown Run, 409 when this worker does not
- * hold it (released, swept, or another's).
- */
 @WorkerController('runs')
 export class RecordHeartbeatEndpoint {
   constructor(private readonly handler: RecordHeartbeatHandler) {}

@@ -6,15 +6,12 @@ import {
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
-/** Which diff of a Run (Issue #144): the whole Run, or since the previous result. */
 export const runDiffScopeSchema = z.enum(RUN_DIFF_SCOPES);
 
-/** `GET /api/runs/:runId/diff` query (Issue #144): which diff. */
 export const getRunDiffQuerySchema = z.strictObject({ scope: runDiffScopeSchema });
 
 export class GetRunDiffQueryDto extends createZodDto(getRunDiffQuerySchema) {}
 
-/** `GET /api/runs/:runId/diff/file` query (Issue #144): which diff, and the file's path. */
 export const getRunDiffFileQuerySchema = z.strictObject({
   scope: runDiffScopeSchema,
   path: z.string().min(1).max(RUN_DIFF_PATH_MAX_LENGTH),
@@ -23,9 +20,7 @@ export const getRunDiffFileQuerySchema = z.strictObject({
 export class GetRunDiffFileQueryDto extends createZodDto(getRunDiffFileQuerySchema) {}
 
 /**
- * One file of `GET /api/runs/:runId/diff/file` (Issue #144): its path (and the previous one of a
- * rename), status, and its unified diff (`patch`, Git's text, redacted like the log), loaded
- * per file. `binary` and `tooLarge` files have no patch; a file listed after the diff reached
+ * `binary` and `tooLarge` files have no patch; a file listed after the diff reached
  * its total limit has none either (the diff is `truncated`).
  */
 export const runDiffFileResponseSchema = z
@@ -41,18 +36,14 @@ export const runDiffFileResponseSchema = z
 
 export class RunDiffFileDto extends createZodDto(runDiffFileResponseSchema) {}
 
-/** One changed file in `GET /api/runs/:runId/diff`: the file without its patch, with its counts. */
 export const runDiffFileSummarySchema = runDiffFileResponseSchema
   .omit({ patch: true })
   .extend({ additions: z.int().min(0), deletions: z.int().min(0) })
   .meta({ id: 'RunDiffFileSummary' });
 
 /**
- * `GET /api/runs/:runId/diff?scope=run|last` (Issue #144): the commit the diff starts from,
- * whether it includes changes that are not pushed, the files, and whether a limit left content
- * or files out. A diff the agent worker could not compute has no base commit, no pushed state
- * and no files, and says why (`unavailableReason`). All text is the repository's and the
- * agent's: plain text.
+ * A diff the agent worker could not compute has no base commit, pushed state or files, and says
+ * why. All text is the repository's and the agent's: plain text.
  */
 export const runDiffResponseSchema = z
   .object({

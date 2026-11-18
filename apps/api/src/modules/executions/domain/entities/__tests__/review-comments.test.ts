@@ -3,9 +3,6 @@ import { LogRedaction, REDACTED } from '../../value-objects/log-redaction.js';
 import type { ReviewComment } from '../../value-objects/review-comments.js';
 import { ReviewComments } from '../review-comments.js';
 
-// Issue #146: Review comments are untrusted text from the Git host. They are redacted with the
-// Run's known secret values and token shapes, held to their limits in UTF-8 bytes, and chosen by id.
-
 const comment = (overrides: Partial<ReviewComment> = {}): ReviewComment => ({
   id: 'conversation-1',
   author: 'octocat',

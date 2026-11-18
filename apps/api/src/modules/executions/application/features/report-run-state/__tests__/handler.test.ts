@@ -20,7 +20,6 @@ describe('ReportRunStateHandler', () => {
   let handler: ReportRunStateHandler;
   let run: RunSnapshot;
   let notified: string[];
-  /** The Runs whose Environment file snapshot the handler released (Issue #104). */
   let released: string[];
 
   const report = async (input: Partial<ReportRunStateInput>) =>
@@ -58,7 +57,6 @@ describe('ReportRunStateHandler', () => {
       integrationBranch: 'dev',
     });
     run = (await runs.claimNext(WORKER, T0))!;
-    // Supplied an Environment file, so its snapshot is released once the Run is done (#104).
     await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot' });
   });
 
@@ -81,7 +79,7 @@ describe('ReportRunStateHandler', () => {
     });
   });
 
-  it("releases the Run's Environment file snapshot once it is final, not before (Issue #104)", async () => {
+  it("releases the Run's Environment file snapshot once it is final, not before", async () => {
     await report({ state: 'running' });
     expect(released).toEqual([]);
 
@@ -90,7 +88,6 @@ describe('ReportRunStateHandler', () => {
     expect(released).toEqual([run.id]);
   });
 
-  // Review S4 of #152: the state the worker read before it refused a Follow-up is recorded.
   it('records the pull request state a refused Follow-up read, with the failure', async () => {
     runs.runs.find((candidate) => candidate.id === run.id)!.pullRequest = {
       url: 'https://github.com/acme/shop/pull/7',
@@ -109,7 +106,6 @@ describe('ReportRunStateHandler', () => {
     expect(stored.pullRequestStatus).toMatchObject({ state: 'merged', refreshedAt: T1 });
   });
 
-  // Review N1 of #152: what an ended pull request cannot have is cleared with the state.
   it.each([
     ['merged', { behindBy: null, aheadBy: null, mergeable: null, checks: null }],
     ['missing', { behindBy: null, aheadBy: null, mergeable: null, checks: null }],
@@ -158,7 +154,7 @@ describe('ReportRunStateHandler', () => {
     );
   });
 
-  it('redacts known values from the failure detail and commit subjects before storing them (#104)', async () => {
+  it('redacts known values from the failure detail and commit subjects before storing them', async () => {
     await report({ state: 'running' });
 
     const failed = await report({
@@ -182,14 +178,14 @@ describe('ReportRunStateHandler', () => {
     expect(released).toEqual([]);
   });
 
-  it('wakes the live log streams of the Run on every change, so they can end (Issue #99)', async () => {
+  it('wakes the live log streams of the Run on every change, so they can end', async () => {
     await report({ state: 'running' });
     await report({ state: 'succeeded' });
 
     expect(notified).toEqual([run.id, run.id]);
   });
 
-  it("records a failed Run's Working copy state with its failure (Issue #98)", async () => {
+  it("records a failed Run's Working copy state with its failure", async () => {
     await report({ state: 'running' });
     const workingCopy = {
       runBranch: 'agent/x-r0b8e5c2d',
@@ -254,7 +250,7 @@ describe('ReportRunStateHandler', () => {
     await expect(report({ state: 'running' })).rejects.toBeInstanceOf(RunNotHeldError);
   });
 
-  describe('delivery (Issue #102)', () => {
+  describe('delivery', () => {
     const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
     const DELIVERY_FAILED = {
       code: 'delivery_failed',
@@ -292,7 +288,6 @@ describe('ReportRunStateHandler', () => {
       });
     });
 
-    /** A failed delivery whose retry the operator requested and `WORKER` claimed. */
     async function heldRetry() {
       await report({ state: 'running' });
       await report({ state: 'failed', failure: DELIVERY_FAILED });
@@ -335,9 +330,8 @@ describe('ReportRunStateHandler', () => {
       });
     });
 
-    it('keeps the snapshot of a failed delivery, redacts what its retry reports, and releases it once delivered (#104)', async () => {
+    it('keeps the snapshot of a failed delivery, redacts what its retry reports, and releases it once delivered', async () => {
       await heldRetry();
-      // The failed delivery can be retried: its Environment file snapshot stays.
       expect(released).toEqual([]);
 
       const failedAgain = await report({
@@ -390,7 +384,6 @@ describe('ReportRunStateHandler', () => {
     await expect(report({ runId: 'nope' })).rejects.toBeInstanceOf(RunNotFoundError);
   });
 
-  // Issue #100: cancel confirmation, time limit, and a cancel that overtakes a step's end.
   describe('cancel and time limit', () => {
     it('ends a running Run as cancelled when the worker confirms a requested cancel', async () => {
       await report({ state: 'running' });
@@ -475,7 +468,6 @@ describe('ReportRunStateHandler', () => {
     });
   });
 
-  // Review of #121: a retried report whose answer was lost changes nothing and succeeds.
   describe('retried reports', () => {
     it('accepts a repeated running report as a no-op', async () => {
       const first = await report({ state: 'running' });
@@ -512,7 +504,6 @@ describe('ReportRunStateHandler', () => {
     });
   });
 
-  // Review round 2 of #121: a cancel that lands during the delivery leaves a trace.
   it('records the pull request a delivery opened on a Run cancelled during it', async () => {
     await report({ state: 'running' });
     await runs.cancel(run.id, T0);
@@ -546,7 +537,7 @@ describe('ReportRunStateHandler', () => {
     });
   });
 
-  describe('a Run stopped at the usage limit (Issue #105)', () => {
+  describe('a Run stopped at the usage limit', () => {
     const WORKING_COPY = { runBranch: 'agent/x-r1', commits: [], hasUncommittedChanges: false };
     const USAGE_LIMIT = { code: 'usage_limit' as const, detail: 'The usage limit was reached.' };
 
@@ -566,7 +557,6 @@ describe('ReportRunStateHandler', () => {
         sessionRef: 'session-7',
         workingCopy: WORKING_COPY,
       });
-      // A resumed step still reports text that needs the Run's redaction.
       expect(released).toEqual([]);
     });
 
@@ -583,12 +573,10 @@ describe('ReportRunStateHandler', () => {
       expect(released).toEqual([run.id]);
     });
   });
-  // Issue #147: a bring-up-to-date request is a Follow-up the worker reports on.
-  describe('a bring-up-to-date request (Issue #147)', () => {
+  describe('a bring-up-to-date request', () => {
     const MERGED = 'b'.repeat(40);
     const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
 
-    /** The Run delivered, then claimed again by WORKER for a request to bring it up to date. */
     async function requested() {
       await report({ state: 'running' });
       await runs.appendStep(
@@ -624,7 +612,6 @@ describe('ReportRunStateHandler', () => {
         updateBase: START.baseCommit,
         updateTip: MERGED,
       });
-      // Nothing is merged for the page until the part succeeded and delivered.
       expect(entry()).not.toHaveProperty('mergedCommit');
       await report({ state: 'succeeded', delivery: { outcome: 'none' } });
       expect(entry()).toMatchObject({ mergedCommit: MERGED });
@@ -665,7 +652,6 @@ describe('ReportRunStateHandler', () => {
         detail: expect.stringContaining('already has everything dev has'),
       });
       expect(notified).toContain(run.id);
-      // The worker's retry of the same report changes nothing.
       expect(await report({ state: 'succeeded', unchanged: true })).toMatchObject({
         state: 'succeeded',
       });
@@ -696,7 +682,6 @@ describe('ReportRunStateHandler', () => {
         report({ workerId: OTHER_WORKER, state: 'succeeded', unchanged: true }),
       ).rejects.toBeInstanceOf(RunNotHeldError);
 
-      // A Follow-up that is not a bring-up request has no earlier result to return to.
       await runs.finishBringUpToDate(run.id, WORKER, 'x', T1);
       await runs.queueFollowUp(run.id, 'Plain.', T1);
       await runs.claimNext(WORKER, T1);

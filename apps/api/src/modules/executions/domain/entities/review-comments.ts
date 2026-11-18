@@ -27,17 +27,10 @@ function cutToBytes(text: string, maxBytes: number): { text: string; cut: boolea
   return { text: bytes.subarray(0, end).toString('utf8'), cut: true };
 }
 
-/**
- * The Review comments of a Run (Issue #146): what people wrote on its pull request, as its latest
- * load left them (at most one set per Run, replaced by each load and removed when a Follow-up
- * prepared from it is sent). An aggregate root of its own: it refers to its Run by id (the key it
- * is stored and found by) and holds nothing of the Run. The Follow-up that sends some of them gets
- * the facts about the selection as values ({@link ReviewComments.selection}).
- */
+/** What people wrote on a Run's pull request, as its latest load left it. */
 export class ReviewComments {
   readonly scope: ReviewCommentScope;
   readonly comments: readonly ReviewComment[];
-  /** More comments existed than are kept, or a text was cut. */
   readonly truncated: boolean;
   readonly loadedAt: Date;
 
@@ -48,17 +41,14 @@ export class ReviewComments {
     this.loadedAt = data.loadedAt;
   }
 
-  /** The set a load of the Run's Review comments came to (already sanitized), loaded at `loadedAt`. */
   static load(data: ReviewCommentsSnapshot): ReviewComments {
     return new ReviewComments(data);
   }
 
-  /** A set as storage holds it. */
   static restore(data: ReviewCommentsSnapshot): ReviewComments {
     return new ReviewComments(data);
   }
 
-  /** The current values as read-only plain data. */
   snapshot(): ReviewCommentsSnapshot {
     return {
       scope: this.scope,
@@ -69,12 +59,8 @@ export class ReviewComments {
   }
 
   /**
-   * The comments a worker read, as Studio stores them (Issue #146): token-shaped strings and the
-   * Run's known secret values redacted (`redaction`), control characters removed, each text and
-   * diff context cut to its size in UTF-8 bytes (after the redaction, which can change a text's
-   * length), and at most {@link REVIEW_COMMENTS_MAX} kept (the latest). `truncated` says that
-   * anything was cut or left out. The text stays plain text: nothing here interprets markup or
-   * links.
+   * Redacts, removes control characters and cuts each text to its byte size (after the redaction,
+   * which can change its length); keeps at most the latest {@link REVIEW_COMMENTS_MAX}.
    */
   static sanitize(
     comments: readonly ReviewComment[],
@@ -113,7 +99,7 @@ export class ReviewComments {
     return { comments: result, truncated };
   }
 
-  /** The comments by the ids the operator selected, in the set's order; `null` if any is unknown. */
+  /** `null` if any id is unknown. */
   select(ids: readonly string[]): ReviewComment[] | null {
     const wanted = new Set(ids);
     if (wanted.size !== ids.length) return null;
@@ -121,23 +107,17 @@ export class ReviewComments {
     return selected.length === wanted.size ? selected : null;
   }
 
-  /**
-   * What a Follow-up prepared from the comments with these ids records: how many, and whose (at
-   * most the Follow-up's cap of distinct authors, in order of appearance); `null` if any is not in
-   * the set. The values the Run's `followUp` takes, so the Run never sees the comments themselves.
-   */
+  /** `null` if any id is not in the set; the Run never sees the comments themselves. */
   selection(ids: readonly string[]): FollowUpComments | null {
     const selected = this.select(ids);
     if (selected === null) return null;
     return { count: selected.length, authors: ReviewComments.distinctAuthors(selected) };
   }
 
-  /** The distinct authors of the comments, in order of appearance, at most the Follow-up's cap. */
   static distinctAuthors(comments: readonly ReviewComment[]): string[] {
     return [...new Set(comments.map((comment) => comment.author))].slice(0, FOLLOW_UP_AUTHORS_MAX);
   }
 
-  /** Whether a comment was written by the operator's own account (exact, case-insensitive). */
   static isByOperator(author: string, operatorLogin: string | null): boolean {
     return operatorLogin !== null && author.toLowerCase() === operatorLogin.toLowerCase();
   }

@@ -7,8 +7,6 @@ import {
 } from '../../../../domain/value-objects/retention-policy.js';
 import { GetRunStatesHandler } from '../handler.js';
 
-// Issue #98: the agent worker asks which of its Runs are final, and since when, to apply the
-// retention rules to their Working copies. Issue #143: Studio decides what the worker removes.
 const SETTINGS: RetentionSettings = {
   days: 7,
   maxPerProject: 10,
@@ -85,7 +83,6 @@ describe('GetRunStatesHandler', () => {
     ]);
   });
 
-  // Issue #141: the worker reports the Working copies its retention removed.
   it("records the removed Working copies of final Runs the reporting worker started, and no other's", async () => {
     const finished = await add(PROJECT);
     const active = await add(OTHER_PROJECT);
@@ -116,11 +113,10 @@ describe('GetRunStatesHandler', () => {
     expect((await runs.findById(active.id))!.claim.workingCopyRemovedAt).toBeNull();
   });
 
-  describe('what the worker does with a Working copy (Issue #143)', () => {
+  describe('what the worker does with a Working copy', () => {
     const NOW = new Date('2026-12-01T12:00:00.000Z');
     const ago = (ms: number) => new Date(NOW.getTime() - ms);
 
-    /** A final Run of `projectId`, finished `finishedAgo` before NOW, set up as given. */
     async function finished(
       projectId: string,
       finishedAgo: number,

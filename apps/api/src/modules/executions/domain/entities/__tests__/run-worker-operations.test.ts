@@ -14,9 +14,6 @@ import { type RunData } from '../run-data.js';
 import { type RunState } from '../../value-objects/run-state.js';
 import { type RunStateReport } from '../run-report-facts.js';
 
-// Issue #169: what the agent worker reports for a Run is a method of the Run. Each allowed and
-// each refused report is checked here without a database: the Run decides from its own state, the
-// worker that reports and the time passed in, and records what changed for the store to save.
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const PROJECT_ID = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
@@ -76,7 +73,6 @@ function data(overrides: Partial<RunData> = {}): RunData {
   };
 }
 
-/** A state with the fields that go with it, as storage holds a Run in that state. */
 function inState(state: RunState, overrides: Partial<RunData> = {}): Run {
   const byState: Partial<Record<RunState, Partial<RunData>>> = {
     preparing: { claimedBy: WORKER, lastClaimedBy: WORKER, heartbeatAt: T0, startedAt: T0 },
@@ -110,7 +106,6 @@ const report = (overrides: Partial<RunStateReport> = {}): RunStateReport => ({
   ...overrides,
 });
 
-/** The failing delivery of a Run a worker holds for a retry. */
 const retrying = (overrides: Partial<RunData> = {}) =>
   inState('failed', {
     failure: DELIVERY_FAILED,

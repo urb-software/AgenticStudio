@@ -5,7 +5,6 @@ import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
-/** Events per page when the caller names no limit, and the most it may ask for. */
 export const RUN_EVENTS_PAGE = { default: 500, max: 1000 } as const;
 
 export interface ListRunEventsInput {
@@ -16,14 +15,10 @@ export interface ListRunEventsInput {
 
 export interface ListRunEventsResult {
   events: RunEvent[];
-  /** The seq to pass as `after` for the next page; absent on the last page. */
   next?: number;
 }
 
-/**
- * Query (Issue #99): one page of a Run's stored log, the events after `after` in seq order.
- * Throws {@link RunNotFoundError}, also for an id that is not a UUID.
- */
+/** Throws {@link RunNotFoundError}, also for an id that is not a UUID. */
 @Injectable()
 export class ListRunEventsHandler {
   constructor(

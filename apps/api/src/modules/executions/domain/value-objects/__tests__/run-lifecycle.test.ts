@@ -4,7 +4,6 @@ import { IllegalRunTransitionError } from '../../errors/run-errors.js';
 import { RunLifecycle, type RunLifecycleStored } from '../run-lifecycle.js';
 import { RUN_STATES, FINAL_RUN_STATES, isFinalRunState, type RunState } from '../run-state.js';
 
-// Issue #96: the Run state machine, enforced in the domain. No database: the value object alone.
 const LEGAL: [RunState, RunState][] = [
   ['queued', 'preparing'],
   ['preparing', 'running'],
@@ -12,7 +11,6 @@ const LEGAL: [RunState, RunState][] = [
   ['running', 'waiting_for_operator'],
   ['running', 'succeeded'],
   ['running', 'failed'],
-  // Issue #103: the operator's answer queues the Run again; a worker claims it to resume.
   ['waiting_for_operator', 'queued'],
   ['queued', 'cancelled'],
   ['preparing', 'cancelled'],
@@ -137,7 +135,7 @@ describe('RunLifecycle', () => {
     expect(RunLifecycle.start().with({ cancelRequestedAt: AT }).cancelRequested).toBe(true);
   });
 
-  it('can retry the delivery only when failed with delivery_failed (Issue #102)', () => {
+  it('can retry the delivery only when failed with delivery_failed', () => {
     const of = (state: RunState, code?: 'delivery_failed' | 'usage_limit') =>
       RunLifecycle.restore(
         stored({ state, ...(code === undefined ? {} : { failure: failure(code) }) }),
@@ -147,7 +145,7 @@ describe('RunLifecycle', () => {
     expect(of('succeeded').canRetryDelivery).toBe(false);
   });
 
-  it('keeps the Environment file for a retry or a resume only (Issues #102, #105)', () => {
+  it('keeps the Environment file for a retry or a resume only', () => {
     const failed = (code: 'delivery_failed' | 'usage_limit' | 'agent_failed') =>
       RunLifecycle.restore(stored({ state: 'failed', failure: failure(code) }));
     expect(failed('delivery_failed').keepsEnvironmentFileForRetry).toBe(true);
@@ -160,7 +158,6 @@ describe('RunLifecycle', () => {
   });
 });
 
-// Review S1 of #150: a part's end is recorded in the conversation when a Follow-up reopens the Run.
 describe('RunLifecycle.partEnd and earlierResult', () => {
   it('records how a finished part ended: state, failure, delivery and the reason', () => {
     expect(
@@ -192,7 +189,7 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
     expect(RunLifecycle.restore(stored({ state: 'running' })).partEnd(null)).toBeNull();
   });
 
-  it('gives back the result a part_end recorded, telling the cancel author from its reason (Issue #147)', () => {
+  it('gives back the result a part_end recorded, telling the cancel author from its reason', () => {
     expect(
       RunLifecycle.earlierResult({
         state: 'failed',

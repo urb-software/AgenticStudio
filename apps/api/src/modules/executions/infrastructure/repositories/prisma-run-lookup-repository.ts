@@ -21,10 +21,8 @@ import { type Executor, inTransaction } from './executor.js';
 const OPEN = ['requested', 'claimed'];
 
 /**
- * PostgreSQL adapter of {@link RunLookupRepository} (Issue #142): one `run_lookups` row per
- * request, at most one open (requested or claimed) per Run and kind (a partial unique index backs
- * the check). It writes only that table; the claim joins the Run's row, read-only, for what the
- * worker needs to answer. Claims skip rows another claim holds.
+ * At most one open lookup per Run and kind (a partial unique index backs the check).
+ * Claims skip rows another claim holds.
  */
 @Injectable()
 export class PrismaRunLookupRepository implements RunLookupRepository {
@@ -159,7 +157,6 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
   }
 }
 
-/** A stored lookup as the aggregate; the CHECK constraints fix its kind, status and scope. */
 function toLookup(row: {
   id: string;
   runId: string;
@@ -198,7 +195,6 @@ function toLookup(row: {
   });
 }
 
-/** What a stored `review_comments` lookup asks for; the CHECK constraint fixes its scope. */
 function reviewCommentsOf(
   scope: string | null,
   since: Date | null,

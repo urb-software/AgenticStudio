@@ -1,6 +1,6 @@
 import type { NewRunDiff, RunDiffScope, RunDiffState } from '../value-objects/run-diff.js';
 
-/** What a Run's reported diffs hold, as read-only plain data (rule 10); {@link RunDiff.snapshot}. */
+/** What a Run's reported diffs hold; {@link RunDiff.snapshot}. */
 export interface RunDiffSnapshot {
   readonly runId: string;
   /** The latest diff of each scope, with each file's patch (redacted). */

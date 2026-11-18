@@ -4,10 +4,7 @@ import { ZodResponse } from 'nestjs-zod';
 import { GetRunsSummaryHandler } from '../../../../application/features/get-runs-summary/handler.js';
 import { RunsSummaryResponseDto } from './schema.js';
 
-/**
- * `GET /api/runs/summary` (Issue #115), behind the global session guard: the counts the top
- * bar's run indicator shows. Registered before `GET /api/runs/:runId`, which would take the path.
- */
+/** Registered before `GET /api/runs/:runId`, which would take the path. */
 @ApiTags('runs')
 @Controller('runs')
 export class GetRunsSummaryEndpoint {

@@ -3,9 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { RunLogSignal } from '../../application/ports/run-log-signal.js';
 
 /**
- * In-process {@link RunLogSignal} (Issue #99): one event per Run id. Studio runs a single API
- * instance; several instances would need a shared channel (e.g. Redis pub/sub) here, and
- * nothing else would change.
+ * Studio runs a single API instance; several would need a shared channel (e.g. Redis pub/sub) here.
  */
 @Injectable()
 export class InProcessRunLogSignal implements RunLogSignal {

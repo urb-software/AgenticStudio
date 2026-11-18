@@ -7,8 +7,6 @@ import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import type { RunLookupRequests } from '../../../run-lookup-requests.js';
 import { RequestDailyPullRequestRefreshesHandler } from '../handler.js';
 
-// Issue #142: the daily refresh asks only about Runs with an open pull request, or one of unknown
-// state, that was last read more than a day ago.
 const HOUR = 60 * 60 * 1000;
 
 describe('RequestDailyPullRequestRefreshesHandler', () => {
@@ -27,7 +25,6 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     });
   });
 
-  /** A delivered Run whose pull request was read as `state` `hoursAgo` hours before `now`. */
   async function readRun(state: PullRequestState | null, hoursAgo: number | null) {
     const run = await deliveredRun(runs);
     const stored = runs.runs.find((candidate) => candidate.id === run.id)!;
@@ -76,7 +73,7 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     expect(lookups.lookups).toHaveLength(before);
   });
 
-  it('asks a Run whose lookups keep failing once a day, not at every pass (review S2 of #152)', async () => {
+  it('asks a Run whose lookups keep failing once a day, not at every pass', async () => {
     const failing = await readRun(null, null);
     const stored = runs.runs.find((candidate) => candidate.id === failing)!;
     stored.pullRequestStatus = {
@@ -94,7 +91,7 @@ describe('RequestDailyPullRequestRefreshesHandler', () => {
     expect(await handler.execute()).toEqual({ requested: 1 });
   });
 
-  it('removes finished lookups older than a week and keeps the rest (review S10 of #152)', async () => {
+  it('removes finished lookups older than a week and keeps the rest', async () => {
     const run = await readRun('open', 1);
     const at = (days: number) => new Date(now.getTime() - days * 24 * HOUR);
     const entry = {

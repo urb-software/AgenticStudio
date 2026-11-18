@@ -4,16 +4,12 @@ import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories
 import { CLOCK, type Clock } from '../../ports/clock.js';
 
 export interface TimeOutOverdueStepsResult {
-  /** How many Runs timed out. */
   timedOut: number;
 }
 
 /**
- * Command (review of #121): Studio's backstop for the step time limit. A `running` Run whose
- * current step has run longer than its `stepMinutes` plus {@link OverdueStepRule.GRACE_MINUTES}
- * is `timed_out`. The agent worker stays the primary enforcer (it stops the step at
- * `stepMinutes`); this ends the Run when a live worker failed to. Run on the sweep interval
- * (`claim-run` repeats the same call before every claim). Returns how many Runs timed out.
+ * Backstop: the agent worker is the primary enforcer of the step limit; this ends the Run when a
+ * live worker failed to.
  */
 @Injectable()
 export class TimeOutOverdueStepsHandler {

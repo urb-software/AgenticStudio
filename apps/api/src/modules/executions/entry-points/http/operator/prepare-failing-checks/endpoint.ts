@@ -18,13 +18,6 @@ import {
   PullRequestNotRefreshableError,
 } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `POST /api/runs/:runId/pull-request/failing-checks/prepare` (Issue #145), behind the global
- * session and mutation Origin guards: 202 with the Run, marked as preparing while an agent worker
- * reads the logs of the failed checks (a second request while one is under way is that one); 404
- * for an unknown Run; 409 for a Run without a pull request, or none of whose checks is known to
- * have failed. No body. Nothing is sent to an agent.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class PrepareFailingChecksEndpoint {

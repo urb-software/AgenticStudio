@@ -6,7 +6,6 @@ import {
   toRunResponse,
 } from '../run-response.js';
 
-// contracts/http may not import the domain (backend.md §2): its own "nothing read yet".
 const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestStatus'] = {
   state: null,
   behindBy: null,
@@ -22,7 +21,6 @@ const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestSt
   preparedFollowUp: false,
 };
 
-// Issue #103: the conversation and the open question in the operator API.
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const T1 = new Date('2026-11-15T12:05:00.000Z');
 const T2 = new Date('2026-11-15T12:10:00.000Z');
@@ -63,7 +61,7 @@ const run = {
   >[0]['messages'],
 };
 
-describe('Run response: conversation (Issue #103)', () => {
+describe('Run response: conversation', () => {
   it('shows the open question of a waiting Run, with its options and recommendation', () => {
     const response = runResponseSchema.parse(toRunResponse(run));
 
@@ -74,7 +72,6 @@ describe('Run response: conversation (Issue #103)', () => {
         role: 'agent',
         kind: 'question',
         text: 'Which database?',
-        // Review M2 of #127: a past question keeps its options and recommendation.
         options: ['PostgreSQL', 'SQLite'],
         recommendation: 'PostgreSQL',
         at: T1.toISOString(),
@@ -113,7 +110,7 @@ describe('Run response: conversation (Issue #103)', () => {
   });
 });
 
-describe('Run response: resuming after the usage limit (Issue #105)', () => {
+describe('Run response: resuming after the usage limit', () => {
   const stopped = {
     ...run,
     state: 'failed' as const,
@@ -137,8 +134,7 @@ describe('Run response: resuming after the usage limit (Issue #105)', () => {
   });
 });
 
-// Issue #141: Follow-ups in the operator API.
-describe('Run response: Follow-ups (Issue #141)', () => {
+describe('Run response: Follow-ups', () => {
   const C1 = 'c'.repeat(40);
   const C2 = 'd'.repeat(40);
   const C3 = 'e'.repeat(40);
@@ -189,14 +185,14 @@ describe('Run response: Follow-ups (Issue #141)', () => {
     expect(toRunListItem(followedUp).followUps).toBe(1);
   });
 
-  it('leaves the pushed state unknown when the pushed commit is not listed (review S5)', () => {
+  it('leaves the pushed state unknown when the pushed commit is not listed', () => {
     const response = runResponseSchema.parse(
       toRunResponse({ ...followedUp, pushedCommit: 'f'.repeat(40) }),
     );
     expect(response.commits?.every((commit) => !('pushed' in commit))).toBe(true);
   });
 
-  it("shows a part's end as Studio's record (review S1)", () => {
+  it("shows a part's end as Studio's record", () => {
     const response = runResponseSchema.parse(
       toRunResponse({
         ...followedUp,
@@ -231,7 +227,7 @@ describe('Run response: Follow-ups (Issue #141)', () => {
     expect(refused.followUp).toEqual({ allowed: false, reason: 'step_total_reached' });
   });
 
-  it('says until when the Run is open to Follow-ups, when it is (Issue #143)', () => {
+  it('says until when the Run is open to Follow-ups, when it is', () => {
     const open = runResponseSchema.parse(
       toRunResponse(followedUp, { allowed: true, openUntil: T2 }),
     );
@@ -247,7 +243,7 @@ describe('Run response: Follow-ups (Issue #141)', () => {
   });
 });
 
-describe('Run response: pull request state (Issue #142)', () => {
+describe('Run response: pull request state', () => {
   const REFRESHED = new Date('2026-11-16T12:00:00.000Z');
   const withPullRequest = (status: Partial<typeof NO_PULL_REQUEST_STATUS>) => ({
     ...run,
@@ -314,13 +310,11 @@ describe('Run response: pull request state (Issue #142)', () => {
     const noWorker = toRunResponse(waiting, undefined, false).pullRequest;
     expect(noWorker?.refreshing).toBeUndefined();
     expect(noWorker?.refreshError).toBe(NO_WORKER_FOR_REFRESH);
-    // Nothing is waiting: no worker needed, nothing said.
     expect(
       toRunResponse(withPullRequest({ state: 'open' }), undefined, false).pullRequest?.refreshError,
     ).toBeUndefined();
   });
 
-  // Issue #145: Pull request checks and the preparation of failing ones.
   describe('Pull request checks', () => {
     const COMMIT = 'c'.repeat(40);
     const checks = [
@@ -354,7 +348,6 @@ describe('Run response: pull request state (Issue #142)', () => {
 
       expect(read(status, COMMIT.toUpperCase())).not.toHaveProperty('checksOtherCommit');
       expect(read(status, 'd'.repeat(40)).checksOtherCommit).toBe(true);
-      // No pushed commit known: nothing to compare with, nothing claimed.
       expect(read(status, null)).not.toHaveProperty('checksOtherCommit');
     });
 

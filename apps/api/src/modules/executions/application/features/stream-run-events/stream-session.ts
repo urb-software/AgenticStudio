@@ -3,10 +3,8 @@ import { OPERATOR_SESSIONS, type OperatorSessions } from '../../ports/operator-s
 import { RUN_LOG_SETTINGS, type RunLogSettings } from '../../ports/run-log-settings.js';
 
 /**
- * The operator session behind a live log stream (Issue #99 review, #104): a long-lived
- * response needs its id to bound streams per session, and checks every {@link checkIntervalMs}
- * that the session is still valid, so a logout or expiry ends the stream. Read-only: it can
- * neither create, extend nor delete a session.
+ * Checked every {@link checkIntervalMs}, so a logout or expiry ends a live stream.
+ * Read-only: it can neither create, extend nor delete a session.
  */
 @Injectable()
 export class StreamSession {
@@ -15,12 +13,10 @@ export class StreamSession {
     @Inject(RUN_LOG_SETTINGS) private readonly settings: RunLogSettings,
   ) {}
 
-  /** How often a live stream, idle or busy, checks its session (the keep-alive interval). */
   get checkIntervalMs(): number {
     return this.settings.keepAliveMs;
   }
 
-  /** The session id the request carries (the global guard has already checked it). */
   idOf(request: unknown): string | undefined {
     return this.sessions.idOf(request);
   }

@@ -6,10 +6,6 @@ import { InMemoryRunRepository } from '../../domain/repositories/__tests__/in-me
 import { RunLookupRequests } from '../run-lookup-requests.js';
 import { InMemoryRunTransactions } from '../ports/__tests__/in-memory-run-transactions.js';
 
-/**
- * The module's in-memory repositories over one Run store, with the transaction port and the
- * lookup requests built on them: what a handler test wires up, instead of each fake by hand.
- */
 export function inMemoryExecutions(runs: InMemoryRunRepository = new InMemoryRunRepository()) {
   const lookups = new InMemoryRunLookupRepository(runs);
   const preparedFollowUps = new InMemoryPreparedFollowUpRepository(runs);

@@ -14,14 +14,10 @@ export interface ListProjectRunsInput {
 
 export type ListProjectRunsResult = {
   run: RunSnapshot;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }[];
 
-/**
- * Query (Issue #96): a project's Runs, newest first. Throws {@link RunProjectNotFoundError}
- * for an unknown project (asked of `projects` through its public contract).
- */
+/** Throws {@link RunProjectNotFoundError} for an unknown project. */
 @Injectable()
 export class ListProjectRunsHandler {
   constructor(

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RunWorkerClaim } from '../run-worker-claim.js';
 
-// Issue #96, #102, #103, #141: who holds a Run and who held it last. No database.
 const NOW = new Date('2026-11-16T12:00:00.000Z');
 
 describe('RunWorkerClaim', () => {
@@ -23,7 +22,6 @@ describe('RunWorkerClaim', () => {
     expect(claim.wasLastClaimedBy('w2')).toBe(false);
     expect(claim.isReportedBy('w1')).toBe(true);
 
-    // Once released, a retried report of that same change is still recognised.
     const released = claim.with({ claimedBy: null, releasedBy: 'w1' });
     expect(released.isHeld).toBe(false);
     expect(released.isReportedBy('w1')).toBe(true);

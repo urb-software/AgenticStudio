@@ -14,23 +14,14 @@ export interface ResumeRunInput {
 }
 
 export interface ResumeRunResult {
-  /** The Run as it is now, queued again. */
   run: RunSnapshot;
-  /** Whether a prepared Follow-up waits for the operator (the Run page shows it). */
   preparedFollowUp: boolean;
 }
 
 /**
- * Command (Issue #105): the operator resumes a Run that stopped at the subscription's usage
- * limit, typically once the limit has reset. "Continue where you stopped." is stored as the
- * operator's answer and the Run goes back to `queued`; the agent worker that holds its Working
- * copy then claims it and resumes the same agent session, exactly like an answered Run (Issue
- * #103). Only a `failed` Run with `usage_limit`, a session and a Working copy can be resumed;
- * a second request is refused. Like an answered Run it holds its project's place and one of the
- * server's, so it is refused while those are taken (review R1 of #129). The Run's
- * `resumeAfterUsageLimit` method decides, with the places the repository reads under the lock
- * that serializes claims. Throws
- * `RunNotFoundError`, `RunNotResumableError` or `RunSlotTakenError`.
+ * Holds its project's place and one of the server's, like an answered Run; `resumeAfterUsageLimit`
+ * decides with the places read under the lock that serializes claims. Throws `RunNotFoundError`,
+ * `RunNotResumableError` or `RunSlotTakenError`.
  */
 @Injectable()
 export class ResumeRunHandler {

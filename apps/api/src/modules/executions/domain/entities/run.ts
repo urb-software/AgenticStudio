@@ -46,7 +46,6 @@ import { WorkerStatus } from '../value-objects/worker-status.js';
 import { RunStep } from './run-step.js';
 import type { RunStepSnapshot } from './run-step-snapshot.js';
 
-/** The stored fields an operation of the Run changes: the flat names, as storage holds them. */
 type RunPatch = Partial<
   Omit<
     RunData,
@@ -64,38 +63,16 @@ type RunPatch = Partial<
 const CHANGES = new WeakMap<Run, RunChanges>();
 
 /**
- * The Run (Issue #96): one Task carried out by a Provider on one Project, from a recorded commit
- * of the integration branch. It keeps its identity and one value object per concept that is part
- * of it: its lifecycle, delivery, pull request status, conversation, worker claim and progress
- * (the Working copy and the reported failing checks are plain values). The value objects own the
- * rules about their concept and are immutable: a change replaces the Run's field with a new
- * value. The Run owns what spans concepts.
- *
- * It owns the rules of what the operator can do with it: answer the agent's question, send a
- * Follow-up, cancel, retry a failed delivery and resume after the usage limit (Issue #167). Each
- * is a method that checks its preconditions against the Run's own state and the facts passed in,
- * refuses with a domain error otherwise, and records what changed. The store saves
- * {@link Run.pendingChanges} in one transaction under the Run's row lock, so two simultaneous
- * requests cannot both succeed. What the agent worker reports for the Run (a state, a Run step, a
- * heartbeat, the removal of its Working copy, its Environment file; Issue #169) is a method too,
- * which also checks that the reporting worker holds the Run; only the hand-out of the next Run
- * and the sweeps over many Runs stay in the store, each with a named rule.
- *
- * Change tracking is per stored field: every operation applies a patch of the flat fields it
- * changed, which the Run both applies to its value objects and records, so a save writes only
- * those columns.
- *
- * It cannot be built in an invalid state: only {@link Run.start} and {@link Run.restore} make
- * one. Its fields are readable and never assigned from outside.
+ * The store saves {@link Run.pendingChanges} in one transaction under the
+ * Run's row lock, so two simultaneous requests cannot both succeed.
  */
 export class Run {
   declare readonly id: RunData['id'];
   declare readonly projectId: RunData['projectId'];
   declare readonly provider: RunData['provider'];
   declare readonly task: RunData['task'];
-  /** The integration branch's commit when the Run was started. */
   declare readonly startCommit: RunData['startCommit'];
-  /** The Repository's remote URL when the Run was started (Issue #98); never a credential. */
+  /** Never a credential. */
   declare readonly remoteUrl: RunData['remoteUrl'];
   declare readonly createdAt: RunData['createdAt'];
   declare readonly lifecycle: RunLifecycle;
@@ -104,9 +81,7 @@ export class Run {
   declare readonly conversation: RunConversation;
   declare readonly claim: RunWorkerClaim;
   declare readonly progress: RunProgress;
-  /** The latest reported Working copy state; `null` until the first Run step is reported. */
   declare readonly workingCopy: RunWorkingCopy | null;
-  /** Names of the checks the agent reported failed in the latest Run step. */
   declare readonly failingChecks: readonly string[];
 
   private constructor(data: RunData) {
@@ -130,7 +105,6 @@ export class Run {
     CHANGES.set(this, { fields: {}, messages: [] });
   }
 
-  /** A new Run, `queued`, for a valid Task (Issue #96); stored by the Run repository. */
   static start(input: RunStartInput): Run {
     if (!(PROVIDERS as readonly string[]).includes(input.provider)) {
       throw new TypeError(`Unknown provider: ${input.provider}`);
@@ -154,12 +128,11 @@ export class Run {
     });
   }
 
-  /** A Run as storage holds it. Throws {@link TypeError} for state the store should never hold. */
+  /** Throws {@link TypeError} for state the store should never hold. */
   static restore(data: RunData): Run {
     return new Run(data);
   }
 
-  /** What changed since the Run was started or restored; the store saves exactly this. */
   pendingChanges(): RunChanges {
     const pending = CHANGES.get(this)!;
     return {
@@ -173,10 +146,6 @@ export class Run {
     };
   }
 
-  /**
-   * The Run's current values as read-only plain data, flat as storage holds them (rule 10): what a
-   * handler's result carries, so the class itself never leaves the application layer.
-   */
   snapshot(): RunSnapshot {
     return {
       id: this.id,
@@ -197,32 +166,19 @@ export class Run {
     };
   }
 
-  /**
-   * Whether the Run waits in the queue to be resumed (Issue #103): the operator answered (or sent
-   * a Follow-up, Issue #141), and the agent worker that holds its Working copy has not claimed it.
-   */
   get isResumable(): boolean {
     return this.lifecycle.state === 'queued' && this.resumeMessage() !== null;
   }
 
-  /** The message that resumes the Run's agent session, and why; `null` when none does. */
   resumeMessage(): RunResume | null {
     return this.conversation.resumeMessage(this.claim.hasSession);
   }
 
-  /**
-   * Whether the Run's pull request can be looked up: it has one, and its Run branch is known (the
-   * lookup is limited to that branch).
-   */
+  /** The lookup is limited to the Run branch, so it must be known. */
   canRefreshPullRequest(): boolean {
     return this.delivery.hasPullRequest && this.workingCopy !== null;
   }
 
-  /**
-   * Whether the operator may resume a Run stopped at the usage limit (Issue #105): `failed` with
-   * `usage_limit`, with the agent session and the Working copy the worker reported, and no cancel
-   * request. It goes back to `queued` and is resumed like an answered Run (same holder rules).
-   */
   private get canResumeAfterUsageLimit(): boolean {
     return (
       this.lifecycle.stoppedAtUsageLimit &&
@@ -232,12 +188,7 @@ export class Run {
     );
   }
 
-  /**
-   * The operator answers the agent's open question (Issue #103): the answer is stored after the
-   * question and the Run goes back to `queued`, to be resumed by the agent worker that holds its
-   * Working copy. Only a `waiting_for_operator` Run whose last message is a question takes an
-   * answer; a second answer, or one after a cancel, is refused with {@link RunNotWaitingError}.
-   */
+  /** Throws {@link RunNotWaitingError} unless the Run waits for an answer to an open question. */
   answer(text: string, now: Date): void {
     if (this.lifecycle.state !== 'waiting_for_operator' || !this.conversation.awaitsAnswer) {
       throw new RunNotWaitingError(this.lifecycle.state);
@@ -248,11 +199,8 @@ export class Run {
   }
 
   /**
-   * The operator cancels the Run (Issue #100). A `queued` or `waiting_for_operator` Run (no
-   * worker holds it) is `cancelled` at once. A `preparing` or `running` Run only gets a cancel
-   * request, its first request's time kept: its state stays until the agent worker, told with its
-   * next heartbeat, has stopped and reports `cancelled`. Repeating it changes nothing. Throws
-   * {@link RunAlreadyFinishedError} for a finished Run.
+   * A held Run only gets a cancel request (the first one's time is kept): the worker stops it and
+   * reports `cancelled`. Throws {@link RunAlreadyFinishedError} for a finished Run.
    */
   cancel(now: Date): void {
     const { state } = this.lifecycle;
@@ -271,31 +219,21 @@ export class Run {
     if (!this.lifecycle.cancelRequested) this.apply({ cancelRequestedAt: now });
   }
 
-  /**
-   * The operator asks to repeat only the delivery of a Run whose delivery failed (Issue #102):
-   * the Run stays `failed` and is marked for a retry, which the next claim hands to the worker
-   * that holds its Working copy. Repeating the request changes nothing. Throws
-   * {@link DeliveryNotRetryableError} unless the Run is `failed` with `delivery_failed`.
-   */
+  /** Throws {@link DeliveryNotRetryableError} unless the Run is `failed` with `delivery_failed`. */
   requestDeliveryRetry(): void {
     if (!this.lifecycle.canRetryDelivery) throw new DeliveryNotRetryableError();
     if (!this.delivery.requested) this.apply({ deliveryRequested: true });
   }
 
   /**
-   * The operator resumes a Run stopped at the usage limit (Issue #105): "Continue where you
-   * stopped." is stored as the operator's answer and the Run goes back to `queued`, to be resumed
-   * like an answered Run by the worker that holds its Working copy (failure and finish time
-   * cleared). A queued Run with a session reference holds its Project's place and one of the
-   * server's, so it is refused while those are taken (review R1 of #129). Throws
-   * {@link RunNotResumableError} (also when a supplied Environment file's snapshot is gone, unless
-   * the Run is in a Follow-up, which works without it, Issue #141) or {@link RunSlotTakenError}.
+   * A queued Run with a session reference holds a place, so it is refused while the places are
+   * taken. Throws {@link RunNotResumableError} or {@link RunSlotTakenError}.
    */
   resumeAfterUsageLimit(now: Date, facts: ResumeFacts): void {
     if (
       !this.canResumeAfterUsageLimit ||
-      // The resumed step's log is redacted with the snapshot (Issue #104); a Run in a Follow-up
-      // works without it already (Issue #141, coordinator decision 5).
+      // The resumed step's log is redacted with the snapshot; a Run in a
+      // Follow-up works without it.
       (this.claim.environmentFileSupplied &&
         !facts.environmentFileSnapshotKept &&
         !this.progress.inFollowUp)
@@ -309,12 +247,6 @@ export class Run {
     this.apply({ state: 'queued', failure: null, finishedAt: null, lastActivityAt: now });
   }
 
-  /**
-   * What the Run's Follow-up needs of the agent worker (Issue #141): whether the worker that
-   * holds its Working copy has reported within the lease, and whether its Provider is available
-   * on the connected worker (the same rule as starting a Run, Issue #101). The facts are values
-   * the handler fetched.
-   */
   followUpFacts(workers: WorkerFacts, now: Date, leaseSeconds: number): FollowUpFacts {
     const provider = WorkerStatus.providerAvailability(workers.latest, now, leaseSeconds).find(
       (candidate) => candidate.id === this.provider,
@@ -325,25 +257,17 @@ export class Run {
     };
   }
 
-  /** Whether the operator may send the Run a Follow-up now, with the reason when not (Issue #141). */
   followUpAvailability(workers: WorkerFacts, now: Date, leaseSeconds: number): FollowUpEligibility {
     return this.followUpEligibility(this.followUpFacts(workers, now, leaseSeconds));
   }
 
-  /**
-   * Whether the operator may send the Run a Follow-up (Issue #141): the one way from a final state
-   * back to `queued`, next to a delivery retry and a usage-limit resume. A finished Run
-   * (succeeded, failed, timed out or cancelled) that no worker holds, whose Working copy and agent
-   * session exist, below its Run step total, with its Provider available on the connected agent
-   * worker that holds the Working copy. `facts` is what Studio knows about the agent worker now.
-   */
   followUpEligibility(facts: FollowUpFacts): FollowUpEligibility {
     const refuse = (reason: FollowUpRefusal): FollowUpEligibility => ({ allowed: false, reason });
     if (this.progress.followUpQueued) return refuse('follow_up_queued');
     if (!this.lifecycle.isFinal || this.claim.isHeld || this.delivery.requested) {
       return refuse('not_finished');
     }
-    // Issue #142: nothing to update once the pull request is over; a reopened one is open again
+    // Nothing to update once the pull request is over; a reopened one is open again
     // at the next lookup.
     const ended = this.pullRequestStatus.followUpRefusal;
     if (ended !== null) return refuse(ended);
@@ -357,7 +281,6 @@ export class Run {
     return { allowed: true };
   }
 
-  /** What decides how long the Run's Working copy is kept (Issue #143). */
   retentionFacts(): RetentionFacts {
     return {
       state: this.lifecycle.state,
@@ -370,18 +293,8 @@ export class Run {
   }
 
   /**
-   * The operator sends a Follow-up to the finished Run (Issue #141): how the part before it ended
-   * is recorded first (a `part_end` message, review S1 of #150), then `text` as a `follow_up`
-   * message, and the Run goes back to `queued` with its earlier result cleared, its pull request
-   * kept and a new Run step allowance from the steps it has taken. Eligible as
-   * {@link Run.followUpEligibility} says, with `facts` about the agent worker; otherwise
-   * {@link FollowUpNotAllowedError}. With an `origin` (Issue #145, #147: the text was prepared
-   * from a source) the message says so. Issue #146: a Follow-up from `review_comments` carries what
-   * the selection came to in the loaded Review comments (`origin.comments`, as values the caller
-   * read under the Run's lock): they must be there and not none (otherwise
-   * {@link ReviewCommentsNotLoadedError}), and the message records how many and whose. Returns what
-   * the Follow-up used up beyond the Run (the prepared Follow-up of its source, or the loaded
-   * Review comments), for the caller to remove in the same transaction that saves the Run.
+   * Throws {@link FollowUpNotAllowedError}, or {@link ReviewCommentsNotLoadedError} when the
+   * selected comments are not all loaded. Returns what the caller removes in the same transaction.
    */
   followUp(
     text: string,
@@ -411,8 +324,7 @@ export class Run {
       ...(source === undefined ? {} : { source }),
       ...(comments === undefined ? {} : { sourceComments: comments }),
     });
-    // Back to the queue (the one way from a final state, next to a delivery retry and a usage
-    // limit resume): the Run's state reflects its latest result, so the earlier one is cleared.
+    // The Run's state reflects its latest result, so the earlier one is cleared.
     this.apply({
       state: 'queued',
       lastActivityAt: now,
@@ -431,17 +343,8 @@ export class Run {
   }
 
   /**
-   * The agent worker holding the Run reports a change of state, with how a succeeded Run was
-   * delivered (Issue #102, #96). For a `failed` Run it holds for a delivery retry it reports the
-   * retry's outcome: `succeeded` with the delivery, or `failed` with `delivery_failed` again. With
-   * a cancel request on the Run (Issue #100) the worker confirms the stop with `cancelled`; a Run
-   * step that ended with `waiting_for_operator` before the worker learned of the request also ends
-   * the Run as `cancelled`, so the operator's cancel holds. A `cancelled` report without a request
-   * is refused. A repeat of the change that already applied (the worker retried a report whose
-   * answer it never got) changes nothing and returns `false` (review of #121). A succeeded
-   * bring-up-to-date part has its merge in the pushed Run branch (Issue #147). Throws
-   * {@link RunNotHeldError} (another worker holds it, or nobody does) or
-   * {@link IllegalRunTransitionError}.
+   * `false` for a repeat of a report that already applied (the worker retried it). Throws
+   * {@link RunNotHeldError} or {@link IllegalRunTransitionError}.
    */
   reportState(workerId: string, report: RunStateReport, now: Date): boolean {
     if (report.unchanged) {
@@ -466,13 +369,12 @@ export class Run {
     if (!this.claim.isHeldBy(workerId)) throw new RunNotHeldError();
     if (to === 'cancelled' && !cancelRequested) throw new IllegalRunTransitionError(state, to);
     this.lifecycle.assertTransitionTo(to);
-    // Issue #147: where a bring-up-to-date merge started (only while this worker holds the Run).
     if (report.bringUpToDateStarted && to === 'running') {
       this.recordUpdateStart(workerId, report.bringUpToDateStarted);
     }
     const held = isClaimedRunState(to);
     const keepsWorkingCopy = to === 'failed' || to === 'cancelled' || to === 'timed_out';
-    // A cancel that arrived during the delivery keeps what was delivered (review of #121).
+    // A cancel that arrived during the delivery keeps what was delivered.
     const delivery = to === 'succeeded' || to === 'cancelled' ? (report.delivery ?? null) : null;
     const failure = to === 'failed' ? report.failure : null;
     const pushedCommit =
@@ -495,9 +397,8 @@ export class Run {
       ...(keepsWorkingCopy && report.workingCopy ? { workingCopy: report.workingCopy } : {}),
       ...(delivery ? RunDelivery.outcomePatch(delivery) : {}),
       ...(failure?.code === 'delivery_failed' ? { delivery: 'failed' as const } : {}),
-      // Review S2 of #150: a delivery that pushed before it failed still records the push.
+      // A delivery that pushed before it failed still records the push.
       ...(pushedCommit ? { pushedCommit } : {}),
-      // Issue #105: the session a Run stopped at the usage limit resumes later.
       ...(to === 'failed' && failure?.code === 'usage_limit' && report.sessionRef
         ? { sessionRef: report.sessionRef }
         : {}),
@@ -506,11 +407,6 @@ export class Run {
     return true;
   }
 
-  /**
-   * The outcome of a delivery retry: the one way out of `failed` (Issue #102). The worker holding
-   * the Run for it reports `succeeded` with the delivery, or `failed` with `delivery_failed`
-   * again; either way the Run is released and finished again at `now`, and the request is over.
-   */
   private reportDeliveryRetry(workerId: string, report: RunStateReport, now: Date): boolean {
     const delivery = report.state === 'succeeded' && report.delivery ? report.delivery : null;
     const failure =
@@ -523,7 +419,7 @@ export class Run {
     this.apply({
       claimedBy: null,
       heartbeatAt: null,
-      // A retried report of this outcome is then recognised (review of #121).
+      // A retried report of this outcome is then recognised.
       releasedBy: workerId,
       deliveryRequested: false,
       finishedAt: now,
@@ -540,13 +436,7 @@ export class Run {
     return true;
   }
 
-  /**
-   * A bring-up-to-date request whose branch was already up to date (Issue #147), reported by the
-   * worker holding the Run (preparing or running): the Run goes back to the result it had before
-   * the request (the state, failure and delivery the `part_end` before the Follow-up recorded) and
-   * a `part_end` with `detail` notes that nothing was changed. Nothing was pushed and no Run step
-   * was taken. A repeat of the report that already applied changes nothing (`false`).
-   */
+  /** `false` for a repeat of a report that already applied. */
   private reportUnchanged(workerId: string, detail: string, now: Date): boolean {
     if (!this.claim.isHeldBy(workerId)) {
       if (this.claim.releasedBy === workerId && this.lifecycle.isFinal) return false;
@@ -578,10 +468,8 @@ export class Run {
   }
 
   /**
-   * Records where a bring-up-to-date merge started (Issue #147) on the Run's latest Follow-up: the
-   * Run branch's commit before it and the integration branch commit being merged, kept for the
-   * later claims of the part. Only while `workerId` holds the Run, only when that Follow-up came
-   * from the request and has none yet. `false` when nothing was recorded.
+   * `false` when nothing was recorded: not held by `workerId`, or the Follow-up
+   * has a start already.
    */
   recordUpdateStart(
     workerId: string,
@@ -592,11 +480,7 @@ export class Run {
     return true;
   }
 
-  /**
-   * Once a bring-up-to-date part succeeded (Issue #147): its merge is in the pushed Run branch, so
-   * the Follow-up's `updateTip` becomes its `mergedCommit` (what the page shows and what the Run's
-   * own changes are counted from). Idempotent; `false` when there was nothing to record.
-   */
+  /** Idempotent; `false` when there was nothing to record. */
   recordMergedCommit(): boolean {
     const merged = this.conversation.mergeToRecord;
     if (merged === undefined) return false;
@@ -605,15 +489,8 @@ export class Run {
   }
 
   /**
-   * The agent worker holding a `running` Run reports the structured result of a Run step, numbered
-   * 1, 2, … in report order (Issue #96). The Working copy's state it reports becomes the Run's
-   * latest (Issue #98), with the checks the agent reported failed (Issue #102); a `needs_input`
-   * step's question becomes the Run's next message and the session reference the Run's (Issue
-   * #103); the step's clock stops (review of #121). A retried report of a step already stored
-   * (same number) is acknowledged without storing it again. A step beyond the allowance of the
-   * current part (the first, or a Follow-up, Issue #141) is not stored: the Run is `failed` with
-   * `step_limit`, released and finished at `now` (Issue #100), and the outcome says so. Throws
-   * {@link RunNotHeldError} (not running, or not held by this worker) or
+   * A retried step (same number) is acknowledged without storing it again; a step beyond the
+   * allowance fails the Run with `step_limit`. Throws {@link RunNotHeldError} or
    * {@link StepOutOfOrderError}, changing nothing.
    */
   reportStep(
@@ -649,14 +526,13 @@ export class Run {
       result: step.result,
     }).snapshot();
     pending.steps = [...(pending.steps ?? []), created];
-    // A question becomes the Run's next message (Issue #103).
     if (step.question) this.append({ kind: 'question', question: step.question, at: now });
     this.apply({
       stepCount: index,
       workingCopy,
       failingChecks: [...failingChecks],
-      // The step is over: Studio's time-limit backstop no longer runs for it (review of #121), so
-      // a slow delivery after it is never timed out.
+      // The step is over: the time-limit backstop no longer runs for it, so a slow delivery after
+      // it is never timed out.
       stepStartedAt: null,
       lastActivityAt: now,
       ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
@@ -664,11 +540,7 @@ export class Run {
     return { status: 'stored', index };
   }
 
-  /**
-   * The agent worker holding the Run says it is still alive, which renews its lease (Issue #96).
-   * Tells it whether the operator asked to cancel (Issue #100). Throws {@link RunNotHeldError}
-   * when this worker does not hold the Run.
-   */
+  /** Throws {@link RunNotHeldError} when this worker does not hold the Run. */
   recordHeartbeat(workerId: string, now: Date): { cancelRequested: boolean } {
     if (!this.claim.isHeldBy(workerId)) throw new RunNotHeldError();
     this.apply({ heartbeatAt: now });
@@ -676,9 +548,8 @@ export class Run {
   }
 
   /**
-   * The worker's retention removed the Run's Working copy (Issue #141): recorded only for a Run
-   * the worker last claimed and does not hold, also one queued for a Follow-up meanwhile (review S9
-   * of #150), and only once. `false` when nothing was recorded.
+   * Recorded only for a Run the worker last claimed and does not hold (also one queued for a
+   * Follow-up meanwhile), and only once. `false` when nothing was recorded.
    */
   reportWorkingCopyRemoved(workerId: string, now: Date): boolean {
     if (
@@ -693,11 +564,8 @@ export class Run {
   }
 
   /**
-   * Records the Project's Environment file the claim gave the `preparing` Run held by `workerId`
-   * (Issue #104; a Follow-up, or a usage-limit resume inside one, takes the Project's current file,
-   * review S3 of #150): its path in the Working copy and the secret store's reference to its
-   * snapshot; or `null` when the Project has none now. Throws {@link RunNotHeldError} when the Run
-   * is no longer `preparing` or held by this worker.
+   * `null` when the Project has no Environment file now. Throws {@link RunNotHeldError} when the
+   * Run is no longer `preparing` or held by this worker.
    */
   recordEnvironmentFile(workerId: string, file: { path: string; secretRef: string } | null): void {
     if (this.lifecycle.state !== 'preparing' || !this.claim.isHeldBy(workerId)) {
@@ -707,12 +575,7 @@ export class Run {
     CHANGES.get(this)!.environmentFileSecretRef = file?.secretRef ?? null;
   }
 
-  /**
-   * The claim could not prepare the Run (the Environment file or the repository remote is not
-   * there; Issue #104): the Run held by `workerId` in `preparing`, with no cancel request, is
-   * `failed` with `failure`, released and finished at `now`. `false` when it is not so held, with
-   * no cancel request.
-   */
+  /** `false` when the Run is not `preparing` and held by `workerId`, or has a cancel request. */
   failPreparation(workerId: string, failure: RunFailure, now: Date): boolean {
     if (
       this.lifecycle.state !== 'preparing' ||
@@ -733,64 +596,42 @@ export class Run {
     return true;
   }
 
-  /**
-   * A lookup of the pull request's state was requested (Issue #142): the Run is refreshing from
-   * `now` on, and the attempt counts for the page-open throttle.
-   */
   recordRefreshRequested(now: Date): void {
     this.updateStatus(this.pullRequestStatus.refreshRequested(now));
   }
 
-  /**
-   * The reading of the failing checks' logs was requested (Issue #145): the Run is preparing from
-   * `now` on, the last preparation's error cleared. The state refresh's throttle is left alone.
-   */
   recordPreparationRequested(now: Date): void {
     this.updateStatus(this.pullRequestStatus.preparationRequested(now));
   }
 
-  /**
-   * What a worker read of the pull request's state replaces what Studio knows (Issues #142, #143,
-   * #145), as {@link RunPullRequestStatus.read} says. A Run without a pull request is left alone.
-   */
+  /** A Run without a pull request is left alone. */
   recordPullRequestState(result: PullRequestStateResult, now: Date): void {
     if (!this.delivery.hasPullRequest) return;
     this.updateStatus(this.pullRequestStatus.read(result, now));
   }
 
-  /** A prepared Follow-up was stored for the Run (Issue #145): it is no longer preparing. */
   recordPreparationDone(): void {
     this.updateStatus(this.pullRequestStatus.preparationDone());
   }
 
-  /**
-   * A lookup of the pull request's state failed (Issue #142): the Run keeps its last known state
-   * and gets `error`. With a retry (`retryAt`, a rate limit) it stays refreshing, from
-   * `requestedAt`, until then.
-   */
+  /** With a retry (`retryAt`, a rate limit) the Run stays refreshing until then. */
   recordRefreshFailed(error: string, retryAt: Date | null, requestedAt: Date): void {
     this.updateStatus(this.pullRequestStatus.refreshFailed(error, retryAt, requestedAt));
   }
 
-  /** The reading of the failing checks' logs failed (Issue #145); as {@link recordRefreshFailed}. */
   recordPreparationFailed(error: string, retryAt: Date | null, requestedAt: Date): void {
     this.updateStatus(this.pullRequestStatus.preparationFailed(error, retryAt, requestedAt));
   }
 
-  /**
-   * The state of the pull request a worker read on its own, right before it refused a Follow-up
-   * (review S4 of #152), as {@link RunPullRequestStatus.observed} says. A Run without a pull
-   * request is left alone.
-   */
+  /** A Run without a pull request is left alone. */
   recordObservedPullRequestState(state: PullRequestState, now: Date): void {
     if (!this.delivery.hasPullRequest) return;
     this.updateStatus(this.pullRequestStatus.observed(state, now));
   }
 
   /**
-   * Whether the agent worker may report this Run's diffs (Issue #144): it holds the Run, in
-   * `preparing` or `running`, or `failed` and held for a delivery retry (Issue #102). Throws
-   * {@link RunNotHeldError} otherwise.
+   * Throws {@link RunNotHeldError} unless the worker holds the Run, also `failed`
+   * for a delivery retry.
    */
   assertDiffReportableBy(workerId: string): void {
     const held =
@@ -805,7 +646,6 @@ export class Run {
 
   private updateFollowUpEntry(details: BringUpDetails): void {
     const conversation = this.conversation.withFollowUpDetails(details);
-    // No Follow-up message to record on: nothing is recorded.
     if (conversation === this.conversation) return;
     Object.assign(this, { conversation });
     const pending = CHANGES.get(this)!;
@@ -813,8 +653,7 @@ export class Run {
   }
 
   /**
-   * Applies a patch of stored fields to the value objects they belong to, and records it as what
-   * the store saves: only the fields an operation changed are written.
+   * Records the patch as what the store saves: only the fields an operation changed are written.
    */
   private apply(patch: RunPatch): void {
     Object.assign(this, {

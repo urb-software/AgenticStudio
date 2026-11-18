@@ -15,15 +15,9 @@ import { PrismaRunLookupRepository } from '../repositories/prisma-run-lookup-rep
 import { PrismaRunRepository } from '../repositories/prisma-run-repository.js';
 import { RunNotFoundError } from '../../domain/errors/run-errors.js';
 
-/** Generous limits, as the Run repository's own transactions: they wait for the Run's row lock. */
+/** Generous limits: a transaction waits for the Run's row lock. */
 const TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;
 
-/**
- * PostgreSQL adapter of {@link RunTransactions}: one interactive transaction whose first statement
- * is the Run's `SELECT … FOR UPDATE`, with every repository of the module bound to that
- * transaction. It contains no rule: it opens the transaction, takes the lock and hands the bound
- * repositories to the caller's orchestration.
- */
 @Injectable()
 export class PrismaRunTransactions implements RunTransactions {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}

@@ -8,7 +8,6 @@ import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositor
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RetryDeliveryHandler } from '../handler.js';
 
-// Issue #102: the operator asks to repeat only the delivery of a Run whose delivery failed.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
@@ -19,7 +18,6 @@ describe('RetryDeliveryHandler', () => {
   let handler: RetryDeliveryHandler;
   let run: RunSnapshot;
 
-  /** Carries the Run to its end as `failed` with `failure`. */
   async function fail(code: 'delivery_failed' | 'agent_failed') {
     await runs.claimNext(WORKER, T0);
     for (const [from, to] of [

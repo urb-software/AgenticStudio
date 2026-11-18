@@ -12,8 +12,6 @@ const event = (seq: number, text: string): RunEvent => ({
   truncated: false,
 });
 
-// Issue #99: a size cap per Run. When it is reached, one "log truncated" notice is stored in
-// place of the event that did not fit, later events are dropped, and the Run continues.
 describe('the per-Run log cap', () => {
   it('stores events while their text fits, counting UTF-8 bytes', () => {
     const plan = LogCap.of({ bytes: 0, truncated: false }).plan(

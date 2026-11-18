@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RunStep } from '../run-step.js';
 
-// Issue #183: the Run step is a child entity: only the Run creates one (Run.reportStep), and it
-// has no identity outside its Run.
 describe('RunStep', () => {
   it('is created for a number from 1, not yet stored', () => {
     const step = RunStep.create({ index: 1, kind: 'start', result: { outcome: 'done' } });

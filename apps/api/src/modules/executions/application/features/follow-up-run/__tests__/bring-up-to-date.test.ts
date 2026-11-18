@@ -11,7 +11,6 @@ import { RetentionPolicy } from '../../../../domain/value-objects/retention-poli
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FollowUpRunHandler } from '../handler.js';
 
-/** The latest agent worker status and when each worker last reported (Issue #101). */
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
   private current: RecordedWorkerStatus | undefined;
   private readonly seen = new Map<string, Date>();
@@ -27,7 +26,6 @@ class InMemoryWorkerStatusStore implements WorkerStatusStore {
   }
 }
 
-// Issue #147: the operator brings a finished Run's branch up to date with the integration branch.
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const UNKNOWN_RUN = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
@@ -70,7 +68,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     workers.record({ workerId: WORKER, runner: 'fake', providers, reportedAt: T1 });
   }
 
-  /** A Run WORKER carried to `end` after `steps` done steps. */
   async function finished(end: RunState = 'succeeded', steps = 1, maxTotalSteps = 50) {
     const added = await runs.start(newRun(maxTotalSteps));
     await runs.claimNext(WORKER, T0);
@@ -112,7 +109,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     return (await runs.findById(added.id))!;
   }
 
-  /** The Run after its worker claimed the queued request. */
   async function claimed(run: Run): Promise<Run> {
     const next = await runs.claimNext(WORKER, T2);
     expect(next?.id).toBe(run.id);
@@ -256,7 +252,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
         updateBase: 'a'.repeat(40),
         updateTip: MERGED,
       });
-      // Not merged until the part succeeded.
       expect(stored.conversation.latestMergedCommit()).toBeUndefined();
       expect(await runs.recordMergedCommit(run.id)).toBe(true);
       expect(await runs.recordMergedCommit(run.id)).toBe(false);
@@ -277,10 +272,9 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
       expect((await runs.findById(run.id))!.conversation.currentUpdateStart()).toBeUndefined();
     });
 
-    describe('a merge an earlier part left behind (review R2-1 of #154)', () => {
+    describe('a merge an earlier part left behind', () => {
       const START = { baseCommit: 'a'.repeat(40), integrationCommit: MERGED };
 
-      /** A bring-up part whose merge started, then ended without succeeding. */
       async function failedPart() {
         const run = await finished();
         await bringUp(run.id, undefined);
@@ -312,7 +306,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
           baseCommit: START.baseCommit,
         });
 
-        // The Run's pushed commit goes with it, so the worker never undoes what was pushed.
         expect(queued.conversation.pendingUpdate('c'.repeat(40))).toEqual({
           baseCommit: START.baseCommit,
           pushedCommit: 'c'.repeat(40),
@@ -324,7 +317,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
         await runs.queueFollowUp(run.id, 'Plain.', T2);
         const first = (await runs.findById(run.id))!;
         expect(first.conversation.pendingUpdate(first.delivery.pushedCommit)).toBeDefined();
-        // A third part: the base is no longer the part right before it.
         const third = RunConversation.of([
           ...first.conversation.messages,
           {
@@ -339,7 +331,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
         ]);
         expect(third.pendingUpdate(first.delivery.pushedCommit)).toBeUndefined();
 
-        // And a merge that succeeded is not pending.
         const done = RunConversation.of(
           first.conversation.messages.map((message) =>
             message.kind === 'follow_up' && message.source
@@ -379,7 +370,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
           releasedBy: WORKER,
           finishedAt: T2,
           delivery,
-          // The pull request stays; nothing was pushed and no step was taken.
           pullRequest: end === 'succeeded' ? PULL_REQUEST : null,
           stepCount: 1,
         });
@@ -400,7 +390,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
           state: end,
           detail: 'Already up to date.',
         });
-        // Not a pending request any more: another can be made.
         const again = await bringUp(run.id, undefined);
         expect(again.run.followUpCount).toBe(2);
       },
@@ -414,7 +403,6 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
 
       const other = await finished();
       await runs.queueFollowUp(other.id, 'Plain.', T1);
-      // Held by nobody yet: not a request to bring up to date, nothing to return to.
       expect(await runs.finishBringUpToDate(other.id, WORKER, 'x', T2)).toBeNull();
     });
   });

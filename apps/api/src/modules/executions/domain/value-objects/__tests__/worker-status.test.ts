@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type RecordedWorkerStatus, WorkerStatus } from '../worker-status.js';
 
-// Issue #167: what the agent worker's reported status knows: whether it is connected within the
-// lease, and whether it offers a Provider.
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = 60;
 const at = (secondsAgo: number) => new Date(NOW.getTime() - secondsAgo * 1000);

@@ -23,22 +23,17 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 export interface StartRunInput {
   projectId: string;
   provider: Provider;
-  /** The operator's text; the Run's `Task` trims and bounds it (1–20 000 characters). */
   task: string;
 }
 
 export interface StartRunResult {
-  /** The Run, queued. */
   run: RunSnapshot;
 }
 
 /**
- * Command (Issue #96): queues a Run of a project from the current commit of its integration
- * branch, which `projects` provides through its public contract, with the limits in force
- * (Issue #100). It refuses a provider Studio
- * knows to be unavailable from the latest agent worker status (Issue #101); the worker's own
- * check stays authoritative. Throws {@link RunProjectNotFoundError},
- * {@link RepositoryNotReadyError}, {@link ProviderUnavailableError} or `InvalidTaskError`.
+ * Refuses a provider known to be unavailable from the latest worker status; the worker's own check
+ * stays authoritative. Throws {@link RunProjectNotFoundError}, {@link RepositoryNotReadyError},
+ * {@link ProviderUnavailableError} or `InvalidTaskError`.
  */
 @Injectable()
 export class StartRunHandler {

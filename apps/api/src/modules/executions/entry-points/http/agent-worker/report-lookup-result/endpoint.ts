@@ -15,12 +15,6 @@ import {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * `POST /api/worker/lookups/:id/result` (Issue #142), worker token only: 204 once the result
- * (or the failure) is recorded, 404 for an unknown lookup, 409 unless this worker holds it or
- * when the answer is of another kind, 422 for an invalid body. The body is a union of the
- * result and the failure, so the endpoint validates it with the shared contract itself.
- */
 @WorkerController('lookups')
 export class ReportLookupResultEndpoint {
   constructor(private readonly handler: ReportLookupResultHandler) {}

@@ -5,18 +5,12 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
-/** What Studio shows of the agent side (Issue #143). */
 export interface GetAgentWorkerResult {
   connected: boolean;
-  /** The worker's disk figures, with whether free space is below its threshold. */
   disk?: WorkerDisk & { low: boolean };
 }
 
-/**
- * Query (Issue #143): whether an agent worker is connected (it reported within the lease) and
- * the disk figures of its latest report. A report older than the lease shows no figures: they
- * would be stale.
- */
+/** A report older than the lease shows no figures: they would be stale. */
 @Injectable()
 export class GetAgentWorkerHandler {
   constructor(

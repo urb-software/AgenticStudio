@@ -6,19 +6,7 @@ import { type LookupKind, type LookupRequestOutcome } from '../domain/value-obje
 import { RUN_TRANSACTIONS, type RunTransactions } from './ports/run-transactions.js';
 import { RunNotFoundError } from '../domain/errors/run-errors.js';
 
-/**
- * Requesting a lookup (Issues #142, #145, #146), for the five entry points that need one (the
- * Run page's refresh, the preparation of failing checks, the load of Review comments, the
- * Follow-up's own refresh and the daily refresh). It is a collaborator because none of the
- * simpler homes fits (backend.md §3 rule 3): the steps are one transaction across two aggregates,
- * the Run and the lookup, so they cannot sit on either, the answer is needed at once (no job), and
- * the use cases that need it do not share their other steps.
- *
- * In one transaction the Run is locked first, so two requests at once record one: the Run must
- * have a pull request and a Run branch ({@link canRefreshPullRequest}), no lookup of the kind may
- * be open, and then the lookup is stored and the Run marked as refreshing or preparing as its own
- * method says. Orchestration only: every rule is the Run's or the lookup's.
- */
+/** The Run is locked first, so two requests at once record one lookup. */
 @Injectable()
 export class RunLookupRequests {
   constructor(@Inject(RUN_TRANSACTIONS) private readonly transactions: RunTransactions) {}
@@ -43,8 +31,7 @@ export class RunLookupRequests {
             ...(review === undefined ? {} : { review }),
           }),
         );
-        // Issue #145: the logs of failing checks are not a refresh of the state; Issue #146: a load
-        // of Review comments marks nothing on the Run (its state is read from the lookups).
+        // Failing-check logs and Review comments do not mark the Run as refreshing.
         if (kind === 'pull_request_state') run.recordRefreshRequested(now);
         else if (kind === 'failing_check_logs') run.recordPreparationRequested(now);
         await runs.save(run);

@@ -4,15 +4,6 @@ import { followUpSourceSchema } from '../../shared/run-response.js';
 import { REVIEW_COMMENTS_MAX } from '../../../../domain/value-objects/review-comments.js';
 import { FOLLOW_UP_MAX_LENGTH } from '../../../../domain/value-objects/follow-up.js';
 
-/**
- * `POST /api/runs/:runId/follow-up` body (Issue #141): the operator's further instruction,
- * trimmed, then 1–10 000 characters. Issue #145: `source` (optional) says the text was prepared
- * from the failing Pull request checks, which the operator reviewed and may have edited; the
- * text sent is the operator's. Issue #146: `source: "review_comments"` comes with
- * `reviewCommentIds`, the ids of the Review comments the operator selected (at most one hundred,
- * all from the loaded set), and with nothing else. Closed: an unknown field is an error. An invalid body is a
- * 422 (the agreed contract), so the endpoint validates it.
- */
 export const followUpRunRequestSchema = z
   .strictObject({
     text: z

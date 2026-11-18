@@ -22,9 +22,6 @@ import type { ReviewComment } from '../../value-objects/review-comments.js';
 import { ReviewCommentsNotLoadedError } from '../../errors/run-errors.js';
 import { Task } from '../../value-objects/task.js';
 
-// Issue #167: the operator's operations are methods of the Run. Each allowed and each refused
-// transition is checked here without a database: the Run decides from its own state and the facts
-// passed in, and records what changed for the store to save.
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const PROJECT_ID = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
@@ -90,7 +87,6 @@ function data(overrides: Partial<RunData> = {}): RunData {
   };
 }
 
-/** A state with the fields that go with it, as storage holds a Run in that state. */
 function inState(state: RunState, overrides: Partial<RunData> = {}): Run {
   const byState: Partial<Record<RunState, Partial<RunData>>> = {
     preparing: { claimedBy: WORKER, startedAt: T0 },
@@ -413,9 +409,7 @@ describe('Run.resumeAfterUsageLimit', () => {
 
     expect(() => first.resumeAfterUsageLimit(T1, gone)).toThrow(RunNotResumableError);
     noChanges(first);
-    // No file was supplied, so none is needed.
     limited().resumeAfterUsageLimit(T1, gone);
-    // A Run in a Follow-up works without it already (Issue #141).
     const inFollowUp = limited({ environmentFileSupplied: true, followUpCount: 1 });
     inFollowUp.resumeAfterUsageLimit(T1, gone);
     expect(inFollowUp.lifecycle.state).toBe('queued');
@@ -525,7 +519,6 @@ describe('Run.followUp', () => {
       truncated: false,
       loadedAt: T0,
     });
-  /** What the handler passes the Run: the selection's facts, read from the loaded set as values. */
   const selecting = (ids: string[], set: ReviewComments | null): FollowUpOrigin => ({
     source: 'review_comments',
     comments: set?.selection(ids) ?? null,
@@ -545,7 +538,6 @@ describe('Run.followUp', () => {
         lastActivityAt: T1,
         followUpQueued: true,
         followUpCount: 1,
-        // A new Run step allowance counts from the steps taken so far.
         stepsBeforePart: 2,
         failure: null,
         finishedAt: null,
@@ -554,7 +546,6 @@ describe('Run.followUp', () => {
         delivery: null,
         waitingSince: null,
         stepStartedAt: null,
-        // The same pull request is updated.
         pullRequest: PULL_REQUEST,
         sessionRef: 'session-7',
       });
@@ -750,7 +741,6 @@ describe('Run.followUp', () => {
         );
 
         expect(run.conversation.messages[1]).toMatchObject({ kind: 'follow_up', source });
-        // A request to bring the branch up to date has no prepared Follow-up to remove.
         expect(consumed).toBe(source === 'bring_up_to_date' ? undefined : source);
       },
     );

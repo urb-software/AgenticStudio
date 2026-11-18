@@ -62,7 +62,7 @@ describe('ReportRunStepHandler', () => {
     });
   }
 
-  it('redacts every string of the result before storing it (Issue #99)', async () => {
+  it('redacts every string of the result before storing it', async () => {
     await running();
     const result = {
       outcome: 'done',
@@ -87,7 +87,7 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
-  it('never redacts the enum fields, even when a known value equals one (#104, #119 review)', async () => {
+  it('never redacts the enum fields, even when a known value equals one', async () => {
     handler = new ReportRunStepHandler(
       runs,
       { now: () => T1 },
@@ -123,7 +123,6 @@ describe('ReportRunStepHandler', () => {
       },
       checks: [{ name: 'unit', result: 'passed' }],
     });
-    // The session reference is opaque: kept exactly, on the Run (Issue #103).
     expect((await runs.findById(run.id))?.claim.sessionRef).toBe('session-done');
   });
 
@@ -138,7 +137,7 @@ describe('ReportRunStepHandler', () => {
     ]);
   });
 
-  it('keeps the latest reported Working copy state on the Run (Issue #98)', async () => {
+  it('keeps the latest reported Working copy state on the Run', async () => {
     await running();
     expect((await runs.findById(run.id))?.workingCopy).toBeNull();
 
@@ -160,7 +159,7 @@ describe('ReportRunStepHandler', () => {
     expect((await runs.findById(run.id))?.workingCopy).toEqual(WORKING_COPY);
   });
 
-  it('records the checks the agent reported failed in the latest step (Issue #102)', async () => {
+  it('records the checks the agent reported failed in the latest step', async () => {
     await running();
     const checks = [
       { name: 'lint', result: 'passed' },
@@ -204,7 +203,6 @@ describe('ReportRunStepHandler', () => {
     ).rejects.toBeInstanceOf(RunNotFoundError);
   });
 
-  // Issue #100: the API enforces the step limit too.
   it('refuses a step beyond the maximum and fails the Run with step_limit', async () => {
     await running();
     await report();
@@ -224,7 +222,6 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
-  // Issue #103: a question becomes the Run's open question; the session stays internal.
   describe('questions and sessions', () => {
     const asking = {
       outcome: 'needs_input',
@@ -309,7 +306,6 @@ describe('ReportRunStepHandler', () => {
     });
   });
 
-  // Review of #121: the worker numbers its steps; a re-sent number is not stored twice.
   describe('step numbers', () => {
     const numbered = async (index: number) =>
       (

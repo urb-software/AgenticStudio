@@ -17,10 +17,8 @@ import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 export interface AppendRunEventsInput {
   runId: string;
   workerId: string;
-  /** In strictly increasing seq order (the shared contract checks it). */
   events: {
     seq: number;
-    /** ISO 8601. */
     at: string;
     stepIndex: number;
     kind: RunEventKind;
@@ -30,16 +28,10 @@ export interface AppendRunEventsInput {
 }
 
 export interface AppendRunEventsResult {
-  /** How many events were stored. */
   stored: number;
 }
 
-/**
- * Command (Issue #99): the agent worker holding a Run appends a batch of its events. Each text
- * is redacted, then cut to the per-event cap; the store ignores seqs it already has and
- * applies the per-Run cap. Live streams of the Run are woken. Returns how many events were
- * stored. Throws {@link RunNotFoundError} or {@link RunNotHeldError}.
- */
+/** Seqs already stored are ignored. Throws {@link RunNotFoundError} or {@link RunNotHeldError}. */
 @Injectable()
 export class AppendRunEventsHandler {
   constructor(

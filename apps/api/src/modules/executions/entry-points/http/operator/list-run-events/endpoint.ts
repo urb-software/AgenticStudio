@@ -9,10 +9,6 @@ import { ListRunEventsHandler } from '../../../../application/features/list-run-
 import { ListRunEventsQueryDto } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `GET /api/runs/:runId/events?after=&limit=` (Issue #99), behind the global session guard:
- * one page of the stored log (default 500 events, at most 1000).
- */
 @ApiTags('runs')
 @Controller('runs')
 export class ListRunEventsEndpoint {

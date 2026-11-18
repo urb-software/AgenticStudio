@@ -12,8 +12,7 @@ const WORKING_COPY = {
 };
 
 /**
- * A Run `WORKER` carried to `succeeded`, delivering its draft pull request #7 from the Run
- * branch `agent/x-r0b8e5c2d`; with `delivered: false` it ends without a pull request.
+ * A Run `WORKER` carried to `succeeded`; with `delivered: false` it ends without a pull request.
  */
 export async function deliveredRun(
   runs: InMemoryRunRepository,

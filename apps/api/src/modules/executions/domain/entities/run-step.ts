@@ -1,16 +1,7 @@
 import type { RunStepSnapshot } from './run-step-snapshot.js';
 import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
-/**
- * One reported Run step (Issue #96): a child entity of the Run. It has an identity only within its
- * Run (its number), and only the Run creates one ({@link Run.reportStep}), after checking the
- * number against the steps it has taken and the step limit against its allowance, both from the
- * Run's own `stepCount`: the other steps of the Run are never loaded for that. Steps are stored in
- * their own table, listed by number on request and counted with every Run that is loaded.
- *
- * It cannot be built in an invalid state: only {@link RunStep.create} and {@link RunStep.restore}
- * make one.
- */
+/** One reported Run step: only the Run creates one ({@link Run.reportStep}). */
 export class RunStep {
   private constructor(
     readonly index: number,

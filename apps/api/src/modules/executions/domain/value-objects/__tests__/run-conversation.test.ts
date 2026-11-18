@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RunConversation, type RunMessage } from '../run-conversation.js';
 
-// Issue #103: the agent's questions, the operator's answers and Follow-ups. No database.
 const at = new Date('2026-11-16T12:00:00.000Z');
 const question: RunMessage = { kind: 'question', question: { text: 'Which?' }, at };
 const answer: RunMessage = { kind: 'answer', text: 'This one.', at };
@@ -94,7 +93,7 @@ describe('RunConversation.resumeMessage', () => {
     });
   });
 
-  it('words a bring-up-to-date request without a note with the default text (Issue #147)', () => {
+  it('words a bring-up-to-date request without a note with the default text', () => {
     expect(of(bringUp()).resumeMessage(true)).toEqual({
       text: RunConversation.BRING_UP_TO_DATE_DEFAULT_TEXT,
       reason: 'bring_up_to_date',
@@ -106,7 +105,6 @@ describe('RunConversation.resumeMessage', () => {
   });
 });
 
-// Issue #147: what a bring-up-to-date request records on its Follow-up.
 describe('RunConversation and a bring-up-to-date request', () => {
   const base = 'a'.repeat(40);
   const tip = 'b'.repeat(40);
@@ -131,7 +129,6 @@ describe('RunConversation and a bring-up-to-date request', () => {
     const merged = started.withFollowUpDetails({ mergedCommit: tip });
     expect(merged.latestMergedCommit()).toBe(tip);
     expect(merged.mergeToRecord).toBeUndefined();
-    // The earlier conversation is as it was.
     expect(started.latestMergedCommit()).toBeUndefined();
   });
 
@@ -151,11 +148,9 @@ describe('RunConversation and a bring-up-to-date request', () => {
       baseCommit: base,
       pushedCommit: 'c'.repeat(40),
     });
-    // A third part: the base is no longer the part right before it.
     expect(
       of(...failedPart, followUp, partEnd, { ...followUp, text: 'Third.' }).pendingUpdate(null),
     ).toBeUndefined();
-    // A merge that succeeded is not pending.
     expect(
       of(
         bringUp({ updateBase: base, updateTip: tip, mergedCommit: tip }),

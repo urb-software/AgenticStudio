@@ -1,7 +1,7 @@
 import type { ReviewCommentScope } from '../value-objects/review-comments.js';
 import type { LookupKind, LookupStatus } from '../value-objects/run-lookup.js';
 
-/** A lookup's current values as read-only plain data (rule 10); {@link RunLookup.snapshot}. */
+/** A lookup's current values; {@link RunLookup.snapshot}. */
 export interface RunLookupSnapshot {
   readonly id: string;
   /** The Run it is about, by id. */
@@ -19,7 +19,6 @@ export interface RunLookupSnapshot {
   readonly error: string | null;
   /** What the worker's answer came to, for the record (the data itself is kept elsewhere). */
   readonly result: unknown;
-  /** Issue #146: what a `review_comments` lookup loads. */
   readonly scope: ReviewCommentScope | null;
   readonly since: Date | null;
 }
