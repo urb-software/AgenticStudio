@@ -108,7 +108,7 @@ export class VerifyRepositoryHandler {
     try {
       await this.jobs.start(projectId, 'clone');
     } catch (error) {
-      const failure = RepositoryConnection.failureWhenCloneNotScheduled(previous);
+      const failure = RepositoryFailure.whenCloneNotScheduled(previous);
       await this.repositories.change(projectId, (stored) => {
         stored.failClone(failure);
       });

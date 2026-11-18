@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DeployKey } from '../deploy-key.js';
 import { type KnownHost } from '../known-host.js';
+import { KnownHostName } from '../known-host-name.js';
 import { TrustedHostKeys } from '../trusted-host-keys.js';
 
 const hostKey = (): string => DeployKey.generate('host').publicKey.split(' ').slice(0, 2).join(' ');
@@ -77,19 +78,19 @@ describe('TrustedHostKeys', () => {
   });
 });
 
-describe('TrustedHostKeys.hostNameOf', () => {
+describe('KnownHostName.of', () => {
   it('is the lower-case host, with the port in brackets unless it is 22', () => {
-    expect(TrustedHostKeys.hostNameOf('git@GitHub.com:acme/shop.git')).toBe('github.com');
-    expect(TrustedHostKeys.hostNameOf('ssh://git@git.example.com:2222/acme/shop.git')).toBe(
+    expect(KnownHostName.of('git@GitHub.com:acme/shop.git')?.value).toBe('github.com');
+    expect(KnownHostName.of('ssh://git@git.example.com:2222/acme/shop.git')?.value).toBe(
       '[git.example.com]:2222',
     );
-    expect(TrustedHostKeys.hostNameOf('ssh://git@git.example.com:22/acme/shop.git')).toBe(
+    expect(KnownHostName.of('ssh://git@git.example.com:22/acme/shop.git')?.value).toBe(
       'git.example.com',
     );
   });
 
   it('is null for an HTTPS URL or text that is no URL', () => {
-    expect(TrustedHostKeys.hostNameOf('https://github.com/acme/shop.git')).toBeNull();
-    expect(TrustedHostKeys.hostNameOf('not a url')).toBeNull();
+    expect(KnownHostName.of('https://github.com/acme/shop.git')).toBeNull();
+    expect(KnownHostName.of('not a url')).toBeNull();
   });
 });

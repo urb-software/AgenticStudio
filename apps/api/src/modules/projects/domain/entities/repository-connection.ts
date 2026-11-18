@@ -1,5 +1,5 @@
 import { HostKey } from '../value-objects/host-key.js';
-import { TrustedHostKeys } from '../value-objects/trusted-host-keys.js';
+import { KnownHostName } from '../value-objects/known-host-name.js';
 import type { ConnectAttempt, RepositoryChanges } from './repository-connection-facts.js';
 import {
   HostKeyFingerprintMismatchError,
@@ -56,7 +56,7 @@ export class RepositoryConnection {
    * hold (the database's CHECK constraints say the same).
    */
   static restore(stored: StoredRepositoryConnection): RepositoryConnection {
-    RepositoryLifecycle.assertStorable(stored);
+    RepositoryLifecycle.restore(stored);
     return new RepositoryConnection({ ...stored }, { fields: {} });
   }
 
@@ -112,24 +112,8 @@ export class RepositoryConnection {
    * `url`: a host key the operator confirmed is kept across a Retry over the same host only.
    */
   pinnedHostKeyFor(url: string): string | null {
-    const host = TrustedHostKeys.hostNameOf(this.url);
-    return host !== null && host === TrustedHostKeys.hostNameOf(url) ? this.pinnedHostKey : null;
-  }
-
-  /**
-   * The failure for a clone that could not be scheduled: the failed Repository's own failure when
-   * this attempt repeats it (same `settings`, or none given), else "the clone could not be started".
-   */
-  static failureWhenCloneNotScheduled(
-    previous: RepositoryConnection | null,
-    settings?: { url: string; integrationBranch: string },
-  ): RepositoryFailure {
-    const sameSettings =
-      settings === undefined ||
-      (previous?.url === settings.url && previous.integrationBranch === settings.integrationBranch);
-    return previous?.lifecycle.isFailed && previous.failure && sameSettings
-      ? previous.failure
-      : RepositoryFailure.notStarted();
+    const host = KnownHostName.of(this.url);
+    return host !== null && host.value === KnownHostName.of(url)?.value ? this.pinnedHostKey : null;
   }
 
   /**
@@ -348,7 +332,7 @@ export class RepositoryConnection {
       projectId: attempt.projectId,
       url: attempt.url,
       integrationBranch: attempt.integrationBranch,
-      state: RepositoryLifecycle.initialState(Boolean(attempt.deployKey)),
+      state: RepositoryLifecycle.start(Boolean(attempt.deployKey)).state,
       headSha: null,
       lastFetchedAt: null,
       failure: null,

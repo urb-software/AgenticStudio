@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RemoteIdentity } from '../remote-identity.js';
 import { InvalidRepositoryUrlError, RepositoryUrl } from '../repository-url.js';
 
 function rejection(input: string, options?: Parameters<typeof RepositoryUrl.parse>[1]): string {
@@ -11,7 +12,7 @@ function rejection(input: string, options?: Parameters<typeof RepositoryUrl.pars
   throw new Error(`expected ${JSON.stringify(input)} to be rejected`);
 }
 
-describe('RepositoryUrl.identityOf', () => {
+describe('RemoteIdentity.of', () => {
   const SAME_REMOTE = [
     'https://github.com/acme/shop',
     'https://github.com/acme/shop.git',
@@ -26,41 +27,41 @@ describe('RepositoryUrl.identityOf', () => {
   ];
 
   it.each(SAME_REMOTE)('maps %s to host plus path', (input) => {
-    expect(RepositoryUrl.identityOf(input)).toBe('github.com/acme/shop');
+    expect(RemoteIdentity.of(input)?.value).toBe('github.com/acme/shop');
   });
 
   it('keeps a non-default port: two servers on one host are different remotes', () => {
-    expect(RepositoryUrl.identityOf('https://git.example.com:8443/acme/shop.git')).toBe(
+    expect(RemoteIdentity.of('https://git.example.com:8443/acme/shop.git')?.value).toBe(
       'git.example.com:8443/acme/shop',
     );
-    expect(RepositoryUrl.identityOf('ssh://git@git.example.com:2222/acme/shop.git')).toBe(
+    expect(RemoteIdentity.of('ssh://git@git.example.com:2222/acme/shop.git')?.value).toBe(
       'git.example.com:2222/acme/shop',
     );
-    expect(RepositoryUrl.identityOf('https://git.example.com/acme/shop.git')).toBe(
+    expect(RemoteIdentity.of('https://git.example.com/acme/shop.git')?.value).toBe(
       'git.example.com/acme/shop',
     );
   });
 
   it('keeps the case of the path', () => {
-    expect(RepositoryUrl.identityOf('https://github.com/Acme/Shop.git')).toBe(
+    expect(RemoteIdentity.of('https://github.com/Acme/Shop.git')?.value).toBe(
       'github.com/Acme/Shop',
     );
   });
 
   it('tells different repositories and hosts apart', () => {
-    expect(RepositoryUrl.identityOf('https://github.com/acme/shop-api')).toBe(
+    expect(RemoteIdentity.of('https://github.com/acme/shop-api')?.value).toBe(
       'github.com/acme/shop-api',
     );
-    expect(RepositoryUrl.identityOf('https://gitlab.com/acme/shop')).toBe('gitlab.com/acme/shop');
+    expect(RemoteIdentity.of('https://gitlab.com/acme/shop')?.value).toBe('gitlab.com/acme/shop');
   });
 
   it('stays linear on many slashes (no polynomial backtracking)', () => {
     const started = performance.now();
 
-    expect(RepositoryUrl.identityOf(`https://github.com/acme/shop${'/'.repeat(200_000)}`)).toBe(
+    expect(RemoteIdentity.of(`https://github.com/acme/shop${'/'.repeat(200_000)}`)?.value).toBe(
       'github.com/acme/shop',
     );
-    expect(RepositoryUrl.identityOf(`https://github.com/${'/'.repeat(200_000)}x`)).toBe(
+    expect(RemoteIdentity.of(`https://github.com/${'/'.repeat(200_000)}x`)?.value).toBe(
       'github.com/x',
     );
     expect(performance.now() - started).toBeLessThan(1_000);
@@ -85,26 +86,26 @@ describe('RepositoryUrl.identityOf', () => {
       'github.com:443/acme/shop',
     ],
   ])('%s', (_case, input, identity) => {
-    expect(RepositoryUrl.identityOf(input)).toBe(identity);
+    expect(RemoteIdentity.of(input)?.value).toBe(identity);
   });
 
   it('does not decode percent-encoding: a known limit', () => {
-    expect(RepositoryUrl.identityOf('https://github.com/acme/%73hop')).toBe(
+    expect(RemoteIdentity.of('https://github.com/acme/%73hop')?.value).toBe(
       'github.com/acme/%73hop',
     );
-    expect(RepositoryUrl.identityOf('https://github.com/acme/%73hop')).not.toBe(
-      RepositoryUrl.identityOf('https://github.com/acme/shop'),
+    expect(RemoteIdentity.of('https://github.com/acme/%73hop')?.value).not.toBe(
+      RemoteIdentity.of('https://github.com/acme/shop')?.value,
     );
   });
 
   it('gives a file URL its path as identity', () => {
-    expect(RepositoryUrl.identityOf('file:///tmp/fixtures/shop.git')).toBe('/tmp/fixtures/shop');
+    expect(RemoteIdentity.of('file:///tmp/fixtures/shop.git')?.value).toBe('/tmp/fixtures/shop');
   });
 
   it.each(['', 'not a url', 'https://github.com', 'https://github.com/', 'https://x/.git'])(
     'has no identity for %j',
     (input) => {
-      expect(RepositoryUrl.identityOf(input)).toBeNull();
+      expect(RemoteIdentity.of(input)).toBeNull();
     },
   );
 });

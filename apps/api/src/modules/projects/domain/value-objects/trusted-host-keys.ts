@@ -1,4 +1,4 @@
-import { RepositoryUrl } from './repository-url.js';
+import { KnownHostName } from './known-host-name.js';
 import type { KnownHost } from './known-host.js';
 import type { HostKeyFacts } from './host-key-facts.js';
 
@@ -9,23 +9,11 @@ import type { HostKeyFacts } from './host-key-facts.js';
 export class TrustedHostKeys {
   private constructor(readonly keys: readonly string[]) {}
 
-  /**
-   * The known_hosts name of an SSH URL's Git host (`host` or `[host]:port`), else `null` (an
-   * HTTPS or unparsable URL). The same naming as `platform/config/ssh-known-hosts.ts`, so the
-   * configured hosts and this rule name hosts alike.
-   */
-  static hostNameOf(url: string): string | null {
-    const remote = RepositoryUrl.sshRemoteOf(url);
-    if (!remote) return null;
-    const name = remote.host.toLowerCase();
-    return remote.port === 22 ? name : `[${name}]:${remote.port}`;
-  }
-
   static of(facts: HostKeyFacts, knownHosts: readonly KnownHost[]): TrustedHostKeys {
-    const hostName = TrustedHostKeys.hostNameOf(facts.url);
+    const hostName = KnownHostName.of(facts.url);
     if (hostName === null) return new TrustedHostKeys([]);
     const configured = knownHosts
-      .filter((entry) => entry.hosts.includes(hostName))
+      .filter((entry) => entry.hosts.includes(hostName.value))
       .map((entry) => entry.key);
     return new TrustedHostKeys(
       facts.pinnedHostKey ? [...configured, facts.pinnedHostKey] : configured,

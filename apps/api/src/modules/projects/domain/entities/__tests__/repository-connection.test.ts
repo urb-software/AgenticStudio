@@ -222,15 +222,15 @@ describe('RepositoryConnection', () => {
       const previous = failedWithoutClone();
       const same = { url: previous.url, integrationBranch: previous.integrationBranch };
 
-      expect(RepositoryConnection.failureWhenCloneNotScheduled(previous, same)).toBe(FAILURE);
-      expect(RepositoryConnection.failureWhenCloneNotScheduled(previous)).toBe(FAILURE);
+      expect(RepositoryFailure.whenCloneNotScheduled(previous, same)).toBe(FAILURE);
+      expect(RepositoryFailure.whenCloneNotScheduled(previous)).toBe(FAILURE);
       const others = [
-        RepositoryConnection.failureWhenCloneNotScheduled(previous, {
+        RepositoryFailure.whenCloneNotScheduled(previous, {
           ...same,
           integrationBranch: 'x',
         }),
-        RepositoryConnection.failureWhenCloneNotScheduled(ready()),
-        RepositoryConnection.failureWhenCloneNotScheduled(null, same),
+        RepositoryFailure.whenCloneNotScheduled(ready()),
+        RepositoryFailure.whenCloneNotScheduled(null, same),
       ];
       for (const other of others) expect(other).toEqual(RepositoryFailure.notStarted());
     });

@@ -15,8 +15,8 @@ const only = (state: RepositoryState, ...accepting: RepositoryState[]) => accept
 
 describe('RepositoryLifecycle', () => {
   it('starts in awaiting_key with a Deploy key and in connecting without one', () => {
-    expect(RepositoryLifecycle.initialState(true)).toBe('awaiting_key');
-    expect(RepositoryLifecycle.initialState(false)).toBe('connecting');
+    expect(RepositoryLifecycle.start(true).state).toBe('awaiting_key');
+    expect(RepositoryLifecycle.start(false).state).toBe('connecting');
   });
 
   it.each(REPOSITORY_STATES)('%s accepts exactly the operations of its state', (state) => {
@@ -76,7 +76,7 @@ describe('RepositoryLifecycle', () => {
     });
   });
 
-  describe('assertStorable', () => {
+  describe('restore', () => {
     const stored = (
       overrides: Partial<StoredRepositoryConnection>,
     ): StoredRepositoryConnection => ({
@@ -97,13 +97,9 @@ describe('RepositoryLifecycle', () => {
     const failure = RepositoryFailure.of('host_unreachable', 'fatal: x');
 
     it('accepts the combinations a store holds', () => {
-      expect(() => RepositoryLifecycle.assertStorable(stored({}))).not.toThrow();
-      expect(() =>
-        RepositoryLifecycle.assertStorable(stored({ state: 'ready', ...clone })),
-      ).not.toThrow();
-      expect(() =>
-        RepositoryLifecycle.assertStorable(stored({ state: 'failed', failure })),
-      ).not.toThrow();
+      expect(() => RepositoryLifecycle.restore(stored({}))).not.toThrow();
+      expect(() => RepositoryLifecycle.restore(stored({ state: 'ready', ...clone }))).not.toThrow();
+      expect(() => RepositoryLifecycle.restore(stored({ state: 'failed', failure }))).not.toThrow();
     });
 
     it.each([
@@ -118,7 +114,7 @@ describe('RepositoryLifecycle', () => {
       ['awaiting_key without a Deploy key', { state: 'awaiting_key' as const }],
       ['a pending host key outside awaiting_host_key', { pendingHostKey: 'ssh-ed25519 AAAA' }],
     ])('refuses %s', (_case, overrides) => {
-      expect(() => RepositoryLifecycle.assertStorable(stored(overrides))).toThrow(TypeError);
+      expect(() => RepositoryLifecycle.restore(stored(overrides))).toThrow(TypeError);
     });
   });
 });

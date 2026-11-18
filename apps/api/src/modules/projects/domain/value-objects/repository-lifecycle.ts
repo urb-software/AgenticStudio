@@ -15,15 +15,24 @@ export class RepositoryLifecycle {
     return new RepositoryLifecycle(facts);
   }
 
-  static initialState(hasDeployKey: boolean): RepositoryState {
-    return hasDeployKey ? 'awaiting_key' : 'connecting';
+  /** A new Repository: `awaiting_key` with a Deploy key, `connecting` without one. */
+  static start(hasDeployKey: boolean): RepositoryLifecycle {
+    return new RepositoryLifecycle({
+      state: hasDeployKey ? 'awaiting_key' : 'connecting',
+      hasClone: false,
+      hasDeployKey,
+    });
+  }
+
+  get state(): RepositoryState {
+    return this.facts.state;
   }
 
   /**
-   * Throws {@link TypeError} for a combination of state and fields that a store should never
+   * A Repository lifecycle as storage holds it. Throws {@link TypeError} for a combination of state and fields that a store should never
    * hold (the database's CHECK constraints say the same).
    */
-  static assertStorable(stored: StorableConnection): void {
+  static restore(stored: StorableConnection): RepositoryLifecycle {
     const { state } = stored;
     if (!isRepositoryState(state)) {
       throw new TypeError(`Unknown repository state: ${state}`);
@@ -58,6 +67,11 @@ export class RepositoryLifecycle {
     if ((state === 'awaiting_host_key') !== (stored.pendingHostKey !== null)) {
       throw new TypeError('A host key awaits confirmation exactly in awaiting_host_key.');
     }
+    return new RepositoryLifecycle({
+      state,
+      hasClone: hasCommit,
+      hasDeployKey: stored.deployKeySecret !== null,
+    });
   }
 
   /**
