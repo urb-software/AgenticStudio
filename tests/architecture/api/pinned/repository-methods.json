@@ -9,7 +9,6 @@
     },
     "executions/ReviewCommentRepository": {
       "find": { "kind": "load" },
-      "findSnapshot": { "kind": "load" },
       "replace": { "kind": "save" },
       "discard": { "kind": "save" }
     },
