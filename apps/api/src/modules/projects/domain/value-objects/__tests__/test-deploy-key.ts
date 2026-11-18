@@ -8,7 +8,7 @@ function sshString(bytes: Buffer): Buffer {
 
 /**
  * An ed25519 key pair made when the test runs: a public key line as Git hosts publish it, and a
- * private key in PKCS#8. Not the OpenSSH form the adapter writes; the tests that need that use the
+ * private key in the PKCS 8 PEM form. Not the OpenSSH form the adapter writes; the tests that need that use the
  * adapter itself.
  */
 export function testDeployKey(comment = 'test'): { privateKey: string; publicKey: string } {
