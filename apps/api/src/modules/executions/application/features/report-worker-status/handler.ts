@@ -1,9 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RecordedWorkerStatus } from '../../../domain/value-objects/recorded-worker-status.js';
+import type { Provider } from '../../../domain/value-objects/provider.js';
+import type { WorkerDiskFigures } from '../../../domain/value-objects/worker-disk-figures.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
-export type ReportWorkerStatusInput = Omit<RecordedWorkerStatus, 'reportedAt'>;
+export interface ReportWorkerStatusInput {
+  workerId: string;
+  runner: string;
+  providers: Record<Provider, boolean>;
+  providerReasons?: Partial<Record<Provider, string>>;
+  disk?: WorkerDiskFigures;
+}
 
 export type ReportWorkerStatusResult = void;
 

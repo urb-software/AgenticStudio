@@ -7,7 +7,7 @@ import {
   StepOutOfOrderError,
 } from '../../../../domain/repositories/run-repository.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
-import { ReportRunStepHandler } from '../handler.js';
+import { ReportRunStepHandler, type ReportRunStepInput } from '../handler.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -15,7 +15,8 @@ const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const T1 = new Date('2026-11-15T12:30:00.000Z');
-const RESULT = { outcome: 'done', summary: 'Done.' };
+type StepResult = ReportRunStepInput['result'];
+const RESULT: StepResult = { outcome: 'done', summary: 'Done.' };
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',
   commits: [{ id: 'c'.repeat(40), subject: 'Add x' }],
@@ -47,7 +48,7 @@ describe('ReportRunStepHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!;
+    run = (await runs.claimNext(WORKER, T0))!.snapshot();
   });
 
   async function running() {
@@ -64,7 +65,7 @@ describe('ReportRunStepHandler', () => {
 
   it('redacts every string of the result before storing it', async () => {
     await running();
-    const result = {
+    const result: StepResult = {
       outcome: 'done',
       summary: 'Logged in with known-secret-value.',
       pullRequest: { title: 'Fix', body: 'Token: Bearer abc.def' },
@@ -97,7 +98,7 @@ describe('ReportRunStepHandler', () => {
       },
     );
     await running();
-    const result = {
+    const result: StepResult = {
       outcome: 'needs_input',
       summary: 'The checks passed; is it done?',
       question: { text: 'Is it done?', options: ['done', 'not yet'], recommendation: 'done' },
@@ -161,7 +162,7 @@ describe('ReportRunStepHandler', () => {
 
   it('records the checks the agent reported failed in the latest step', async () => {
     await running();
-    const checks = [
+    const checks: NonNullable<StepResult['checks']> = [
       { name: 'lint', result: 'passed' },
       { name: 'unit tests', result: 'failed' },
       { name: 'e2e', result: 'not_run' },
@@ -223,7 +224,7 @@ describe('ReportRunStepHandler', () => {
   });
 
   describe('questions and sessions', () => {
-    const asking = {
+    const asking: StepResult = {
       outcome: 'needs_input',
       summary: 'Stuck on known-secret-value.',
       question: {

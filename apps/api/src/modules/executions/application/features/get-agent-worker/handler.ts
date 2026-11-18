@@ -1,4 +1,4 @@
-import type { WorkerDisk } from '@agentic-studio/contracts';
+import type { WorkerDiskFigures } from '../../../domain/value-objects/worker-disk-figures.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { Lease } from '../../../domain/value-objects/lease.js';
 import { WorkerPresence } from '../../../domain/value-objects/worker-presence.js';
@@ -8,7 +8,7 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 
 export interface GetAgentWorkerResult {
   connected: boolean;
-  disk?: WorkerDisk & { low: boolean };
+  disk?: WorkerDiskFigures & { low: boolean };
 }
 
 /** A report older than the lease shows no figures: they would be stale. */

@@ -1,9 +1,11 @@
-import { type LookupResultRequest } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { PreparedFollowUp } from '../../../domain/entities/prepared-follow-up.js';
 import { ReviewComments } from '../../../domain/entities/review-comments.js';
 import type { RunLookup } from '../../../domain/entities/run-lookup.js';
+import type { FailingCheckLogsResult } from '../../../domain/value-objects/failing-check-logs-result.js';
+import type { LookupFailureCode } from '../../../domain/value-objects/lookup-failure-code.js';
 import type { PullRequestStateResult } from '../../../domain/value-objects/pull-request-state-result.js';
+import type { ReviewCommentInput } from '../../../domain/value-objects/review-comment.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import {
   RUN_LOOKUP_REPOSITORY,
@@ -42,9 +44,27 @@ export class LookupKindMismatchError extends Error {
   }
 }
 
+/** What the worker answered; the entry point has checked it against the worker protocol. */
+export type LookupAnswer =
+  | { ok: true; workerId: string; kind: 'pull_request_state'; result: PullRequestStateResult }
+  | { ok: true; workerId: string; kind: 'failing_check_logs'; result: FailingCheckLogsResult }
+  | {
+      ok: true;
+      workerId: string;
+      kind: 'review_comments';
+      result: { comments: ReviewCommentInput[]; truncated: boolean };
+    }
+  | {
+      ok: false;
+      workerId: string;
+      code: LookupFailureCode;
+      error: string;
+      retryAfterSeconds?: number;
+    };
+
 export interface ReportLookupResultInput {
   lookupId: string;
-  answer: LookupResultRequest;
+  answer: LookupAnswer;
 }
 
 export type ReportLookupResultResult = void;
@@ -164,7 +184,7 @@ export class ReportLookupResultHandler {
   private async fail(
     runId: string,
     lookupId: string,
-    answer: Extract<LookupResultRequest, { ok: false }>,
+    answer: Extract<LookupAnswer, { ok: false }>,
     now: Date,
   ): Promise<void> {
     const failure = LookupFailure.of(

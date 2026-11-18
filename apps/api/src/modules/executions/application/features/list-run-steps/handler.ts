@@ -1,4 +1,3 @@
-import { runCheckSchema } from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
@@ -7,10 +6,16 @@ import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
+const checkSchema = z.strictObject({
+  name: z.string().min(1).max(200),
+  result: z.enum(['passed', 'failed', 'not_run']),
+  detail: z.string().max(4000).optional(),
+});
+
 const shownResultSchema = z.object({
   outcome: z.enum(['done', 'needs_input']),
   summary: z.string(),
-  checks: z.array(runCheckSchema).optional(),
+  checks: z.array(checkSchema).optional(),
 });
 
 export interface RunStepView {
