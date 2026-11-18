@@ -3,6 +3,8 @@ import { LogRedaction, REDACTED } from '../../value-objects/log-redaction.js';
 import { ReviewComment, type ReviewCommentInput } from '../../value-objects/review-comment.js';
 import { ReviewComments } from '../review-comments.js';
 
+const BOM = String.fromCharCode(0xfeff);
+
 const comment = (overrides: Partial<ReviewCommentInput> = {}): ReviewCommentInput => ({
   id: 'conversation-1',
   author: 'octocat',
@@ -80,6 +82,17 @@ describe('ReviewComments.load', () => {
     expect(Buffer.byteLength(comments[0]!.diffContext!, 'utf8')).toBeLessThanOrEqual(2 * 1024);
     expect(comments[0]?.textCut).toBeUndefined();
     expect(truncated).toBe(true);
+  });
+
+  it('keeps a leading U+FEFF when it cuts a text', () => {
+    const { comments } = sanitize(
+      [comment({ text: `${BOM}${'a'.repeat(8 * 1024 + 10)}` })],
+      false,
+      LogRedaction.of([]),
+    );
+
+    expect(comments[0]?.textCut).toBe(true);
+    expect(comments[0]?.text).toBe(`${BOM}${'a'.repeat(8 * 1024 - 3)}`);
   });
 
   it('holds a text to the limit after redaction, which can lengthen it', () => {

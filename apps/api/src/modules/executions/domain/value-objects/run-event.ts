@@ -34,7 +34,7 @@ export class RunEvent {
     reported: Omit<RunEventInput, 'truncated'> & { truncated?: boolean },
     redaction: LogRedaction,
   ): RunEvent {
-    const cut = CutText.of(redaction.text(reported.text), RunEvent.TEXT_MAX_BYTES);
+    const cut = CutText.likeWorkerProtocol(redaction.text(reported.text), RunEvent.TEXT_MAX_BYTES);
     return new RunEvent(
       reported.seq,
       reported.at,
