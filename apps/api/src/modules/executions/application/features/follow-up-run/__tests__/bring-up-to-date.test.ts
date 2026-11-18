@@ -7,7 +7,6 @@ import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
-import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FollowUpRunHandler } from '../handler.js';
 
@@ -33,12 +32,6 @@ const T0 = new Date('2026-11-16T12:00:00.000Z');
 const T1 = new Date('2026-11-16T12:30:00.000Z');
 const T2 = new Date('2026-11-16T12:45:00.000Z');
 const LEASE = { seconds: 60 };
-const RETENTION = RetentionPolicy.of({
-  days: 7,
-  maxPerProject: 10,
-  openPullRequestIdleDays: 30,
-  hoursAfterPullRequestEnd: 24,
-});
 const MERGED = 'b'.repeat(40);
 const WORKING_COPY = {
   runBranch: 'agent/x-r0b8e5c2d',
@@ -125,9 +118,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
       workers,
       LEASE,
       executions.requests,
-      RETENTION,
       executions.transactions,
-      executions.preparedFollowUps,
     );
     connect();
   });
@@ -135,7 +126,8 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
   it('queues the Run as a Follow-up marked bring_up_to_date with the operator note', async () => {
     const run = await finished();
 
-    const { run: queued } = await bringUp(run.id, 'Keep our version of the config.');
+    await bringUp(run.id, 'Keep our version of the config.');
+    const queued = (await runs.findById(run.id))!.snapshot();
 
     expect(queued).toMatchObject({
       state: 'queued',
@@ -160,7 +152,8 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
   it('stores no text without a note and hands the worker a default one', async () => {
     const run = await finished();
 
-    const { run: queued } = await bringUp(run.id, undefined);
+    await bringUp(run.id, undefined);
+    const queued = (await runs.findById(run.id))!.snapshot();
 
     expect(queued.messages.at(-1)).toMatchObject({ kind: 'follow_up', text: '' });
     expect(RunConversation.of(queued.messages).resumeMessage(queued.sessionRef !== null)).toEqual({
@@ -176,7 +169,8 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
   it('records how the part before it ended, like any Follow-up', async () => {
     const run = await finished('failed');
 
-    const { run: queued } = await bringUp(run.id, undefined);
+    await bringUp(run.id, undefined);
+    const queued = (await runs.findById(run.id))!.snapshot();
 
     expect(queued.messages.at(-2)).toMatchObject({
       kind: 'part_end',
@@ -390,8 +384,8 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
           state: end,
           detail: 'Already up to date.',
         });
-        const again = await bringUp(run.id, undefined);
-        expect(again.run.followUpCount).toBe(2);
+        await bringUp(run.id, undefined);
+        expect((await runs.findById(run.id))?.snapshot().followUpCount).toBe(2);
       },
     );
 

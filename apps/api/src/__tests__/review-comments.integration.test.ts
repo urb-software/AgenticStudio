@@ -464,8 +464,10 @@ describe('review comments API (PostgreSQL + Redis via Testcontainers)', () => {
       });
 
       expect(sent.status).toBe(202);
-      expect(sent.body).toMatchObject({ state: 'queued', followUps: 1 });
-      expect(sent.body.messages.at(-1)).toMatchObject({
+      expect(sent.body).toEqual({});
+      const run = (await getRun(runId)).body;
+      expect(run).toMatchObject({ state: 'queued', followUps: 1 });
+      expect(run.messages.at(-1)).toMatchObject({
         kind: 'follow_up',
         text: 'Fix the test as the reviewer asked.',
         source: 'review_comments',
@@ -528,7 +530,7 @@ describe('review comments API (PostgreSQL + Redis via Testcontainers)', () => {
       const sent = await followUp(runId, { text: 'Something else entirely.' });
 
       expect(sent.status).toBe(202);
-      expect(sent.body.messages.at(-1)).not.toHaveProperty('source');
+      expect((await getRun(runId)).body.messages.at(-1)).not.toHaveProperty('source');
       expect((await comments(runId)).body.comments).toHaveLength(3);
     });
   });

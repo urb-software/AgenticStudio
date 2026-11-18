@@ -4,7 +4,6 @@ import {
   RunNotFoundError,
 } from '../../../../domain/errors/run-errors.js';
 import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
-import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RetryDeliveryHandler } from '../handler.js';
 
@@ -38,7 +37,7 @@ describe('RetryDeliveryHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new RetryDeliveryHandler(runs, new InMemoryPreparedFollowUpRepository(runs));
+    handler = new RetryDeliveryHandler(runs);
     run = (
       await runs.start({
         projectId: PROJECT,
@@ -55,7 +54,9 @@ describe('RetryDeliveryHandler', () => {
   it('requests a retry of a failed delivery; the Run stays failed until a worker delivers', async () => {
     await fail('delivery_failed');
 
-    expect((await handler.execute({ runId: run.id })).run).toMatchObject({
+    expect(await handler.execute({ runId: run.id })).toBeUndefined();
+
+    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
       state: 'failed',
       failure: { code: 'delivery_failed' },
       deliveryRequested: true,
@@ -66,7 +67,9 @@ describe('RetryDeliveryHandler', () => {
     await fail('delivery_failed');
     await handler.execute({ runId: run.id });
 
-    expect((await handler.execute({ runId: run.id })).run.deliveryRequested).toBe(true);
+    await handler.execute({ runId: run.id });
+
+    expect((await runs.findById(run.id))?.snapshot().deliveryRequested).toBe(true);
   });
 
   it('refuses any Run whose delivery did not fail', async () => {

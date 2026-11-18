@@ -105,6 +105,50 @@ export type StartRunRequest = {
     provider: 'claude_code' | 'codex';
 };
 
+export type StartRunResponseOutput = {
+    id: string;
+};
+
+export type RunOutput = {
+    id: string;
+    projectId: string;
+    provider: 'claude_code' | 'codex';
+    task: string;
+    state: 'queued' | 'preparing' | 'running' | 'waiting_for_operator' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
+    startCommit: string;
+    createdAt: string;
+    startedAt?: string;
+    finishedAt?: string;
+    failure?: {
+        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'unknown';
+        detail: string;
+    };
+    runBranch?: string;
+    commits?: Array<{
+        id: string;
+        subject: string;
+        pushed?: boolean;
+    }>;
+    hasUncommittedChanges?: boolean;
+    environmentFileSupplied: boolean;
+    limits: RunLimitsOutput;
+    steps: RunStepTotalsOutput;
+    followUps: number;
+    followUp?: RunFollowUpEligibilityOutput;
+    cancelRequestedAt?: string;
+    cancellation?: {
+        by: 'operator' | 'system';
+        reason: string;
+    };
+    delivery?: 'none' | 'delivered' | 'failed';
+    pullRequest?: RunPullRequestOutput;
+    deliveryRetryRequested?: true;
+    resumable?: true;
+    failingChecks?: Array<string>;
+    question?: RunQuestionOutput;
+    messages?: Array<RunMessageOutput>;
+};
+
 export type RunLimitsOutput = {
     stepMinutes: number;
     maxSteps: number;
@@ -180,51 +224,15 @@ export type RunPartEndOutput = {
     delivery?: 'none' | 'delivered' | 'failed';
 };
 
-export type RunOutput = {
-    id: string;
-    projectId: string;
-    provider: 'claude_code' | 'codex';
-    task: string;
-    state: 'queued' | 'preparing' | 'running' | 'waiting_for_operator' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
-    startCommit: string;
-    createdAt: string;
-    startedAt?: string;
-    finishedAt?: string;
-    failure?: {
-        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'unknown';
-        detail: string;
-    };
-    runBranch?: string;
-    commits?: Array<{
-        id: string;
-        subject: string;
-        pushed?: boolean;
-    }>;
-    hasUncommittedChanges?: boolean;
-    environmentFileSupplied: boolean;
-    limits: RunLimitsOutput;
-    steps: RunStepTotalsOutput;
-    followUps: number;
-    followUp?: RunFollowUpEligibilityOutput;
-    cancelRequestedAt?: string;
-    cancellation?: {
-        by: 'operator' | 'system';
-        reason: string;
-    };
-    delivery?: 'none' | 'delivered' | 'failed';
-    pullRequest?: RunPullRequestOutput;
-    deliveryRetryRequested?: true;
-    resumable?: true;
-    failingChecks?: Array<string>;
-    question?: RunQuestionOutput;
-    messages?: Array<RunMessageOutput>;
-};
-
 export type RunListOutput = Array<RunOutput>;
 
 export type RunsSummaryOutput = {
     running: number;
     waiting: number;
+};
+
+export type CancelRunResponseOutput = {
+    outcome: 'cancelled' | 'cancel_requested';
 };
 
 export type AnswerRunRequest = {
@@ -894,7 +902,7 @@ export type StartRunErrors = {
 export type StartRunError = StartRunErrors[keyof StartRunErrors];
 
 export type StartRunResponses = {
-    201: RunOutput;
+    201: StartRunResponseOutput;
 };
 
 export type StartRunResponse = StartRunResponses[keyof StartRunResponses];
@@ -998,7 +1006,7 @@ export type CancelRunErrors = {
 export type CancelRunError = CancelRunErrors[keyof CancelRunErrors];
 
 export type CancelRunResponses = {
-    202: RunOutput;
+    202: CancelRunResponseOutput;
 };
 
 export type CancelRunResponse = CancelRunResponses[keyof CancelRunResponses];
@@ -1030,10 +1038,11 @@ export type RetryRunDeliveryErrors = {
 export type RetryRunDeliveryError = RetryRunDeliveryErrors[keyof RetryRunDeliveryErrors];
 
 export type RetryRunDeliveryResponses = {
-    202: RunOutput;
+    /**
+     * The retry is accepted.
+     */
+    202: unknown;
 };
-
-export type RetryRunDeliveryResponse = RetryRunDeliveryResponses[keyof RetryRunDeliveryResponses];
 
 export type AnswerRunData = {
     body: AnswerRunRequest;
@@ -1066,10 +1075,11 @@ export type AnswerRunErrors = {
 export type AnswerRunError = AnswerRunErrors[keyof AnswerRunErrors];
 
 export type AnswerRunResponses = {
-    202: RunOutput;
+    /**
+     * The answer is accepted.
+     */
+    202: unknown;
 };
-
-export type AnswerRunResponse = AnswerRunResponses[keyof AnswerRunResponses];
 
 export type ResumeRunData = {
     body?: never;
@@ -1098,10 +1108,11 @@ export type ResumeRunErrors = {
 export type ResumeRunError = ResumeRunErrors[keyof ResumeRunErrors];
 
 export type ResumeRunResponses = {
-    202: RunOutput;
+    /**
+     * The resume is accepted.
+     */
+    202: unknown;
 };
-
-export type ResumeRunResponse = ResumeRunResponses[keyof ResumeRunResponses];
 
 export type FollowUpRunData = {
     body: FollowUpRunRequest;
@@ -1134,10 +1145,11 @@ export type FollowUpRunErrors = {
 export type FollowUpRunError = FollowUpRunErrors[keyof FollowUpRunErrors];
 
 export type FollowUpRunResponses = {
-    202: RunOutput;
+    /**
+     * The Follow-up is accepted.
+     */
+    202: unknown;
 };
-
-export type FollowUpRunResponse = FollowUpRunResponses[keyof FollowUpRunResponses];
 
 export type BringUpToDateRunData = {
     body?: BringUpToDateRequest;
@@ -1170,10 +1182,11 @@ export type BringUpToDateRunErrors = {
 export type BringUpToDateRunError = BringUpToDateRunErrors[keyof BringUpToDateRunErrors];
 
 export type BringUpToDateRunResponses = {
-    202: RunOutput;
+    /**
+     * The Follow-up is accepted.
+     */
+    202: unknown;
 };
-
-export type BringUpToDateRunResponse = BringUpToDateRunResponses[keyof BringUpToDateRunResponses];
 
 export type RefreshRunPullRequestData = {
     body?: RefreshPullRequestRequest;

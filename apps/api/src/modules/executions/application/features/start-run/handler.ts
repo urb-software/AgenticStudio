@@ -8,7 +8,6 @@ import {
   ProviderUnavailableError,
 } from '../../../domain/errors/run-errors.js';
 import { Run } from '../../../domain/entities/run.js';
-import { type RunSnapshot } from '../../../domain/entities/run-snapshot.js';
 import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { PROVIDER_UNAVAILABLE_REASONS } from '../../../domain/value-objects/provider-unavailable-reason.js';
@@ -26,7 +25,7 @@ export interface StartRunInput {
 }
 
 export interface StartRunResult {
-  run: RunSnapshot;
+  id: string;
 }
 
 /**
@@ -57,7 +56,7 @@ export class StartRunHandler {
       case 'ready':
         this.assertAvailable(input.provider);
         return {
-          run: (
+          id: (
             await this.runs.add(
               Run.start({
                 id: randomUUID(),
@@ -71,7 +70,7 @@ export class StartRunHandler {
                 now: this.clock.now(),
               }),
             )
-          ).snapshot(),
+          ).id,
         };
     }
   }

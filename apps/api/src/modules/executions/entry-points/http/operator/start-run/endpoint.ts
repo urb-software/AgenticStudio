@@ -12,7 +12,6 @@ import {
   providerUnavailable,
   repositoryNotReady,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
@@ -20,7 +19,7 @@ import {
   InvalidTaskError,
 } from '../../../../domain/errors/run-errors.js';
 import { StartRunHandler } from '../../../../application/features/start-run/handler.js';
-import { startRunRequestSchema, StartRunRequestDto } from './schema.js';
+import { startRunRequestSchema, StartRunRequestDto, StartRunResponseDto } from './schema.js';
 
 @ApiTags('runs')
 @Controller('projects')
@@ -31,7 +30,7 @@ export class StartRunEndpoint {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ operationId: 'startRun' })
   @ApiBody({ type: StartRunRequestDto })
-  @ZodResponse({ status: 201, type: RunResponseDto })
+  @ZodResponse({ status: 201, type: StartRunResponseDto })
   @ApiProblemResponses({
     404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})`,
     409:
@@ -50,8 +49,7 @@ export class StartRunEndpoint {
       );
     }
     try {
-      const { run } = await this.handler.execute({ projectId, ...parsed.data });
-      return toRunResponse(withPreparedFollowUp(run, false));
+      return await this.handler.execute({ projectId, ...parsed.data });
     } catch (error) {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
       if (error instanceof RepositoryNotReadyError) throw repositoryNotReady(error.message);

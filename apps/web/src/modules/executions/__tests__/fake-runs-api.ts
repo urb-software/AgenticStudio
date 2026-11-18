@@ -143,8 +143,8 @@ export const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000b2';
  * `GET /api/runs`, `GET /api/runs/summary`, `GET /api/runs/:runId`, `GET /api/providers`, and
  * `GET /api/projects(/:id)` for project names), so the generated client, the wrapper and
  * TanStack Query run for real. `runs` is the server's state, newest first; tests change a Run's
- * state (as the agent worker would) and script error responses. It keeps the contract (201 with
- * a `queued` Run) without the API's rules.
+ * state (as the agent worker would) and script error responses. It keeps the contract (201 with the
+ * new Run's id, 202 without a body) without the API's rules.
  */
 export function fakeRunsApi(initial: RunOutput[] = []) {
   const runs = [...initial];
@@ -311,7 +311,9 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
               }
             : { ...run, cancelRequestedAt: run.cancelRequestedAt ?? new Date().toISOString() };
         runs[index] = cancelled;
-        return json(202, cancelled);
+        return json(202, {
+          outcome: cancelled.state === 'cancelled' ? 'cancelled' : 'cancel_requested',
+        });
       }
       case 'answer': {
         // Issue #103: the API's rules, in short.
@@ -336,7 +338,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           ],
         };
         runs[index] = answered;
-        return json(202, answered);
+        return new Response(null, { status: 202 });
       }
       case 'followUp': {
         // Issue #141: the API's rules, in short.
@@ -387,7 +389,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           ],
         };
         runs[index] = queued;
-        return json(202, queued);
+        return new Response(null, { status: 202 });
       }
       case 'bringUp': {
         // Issue #147: a Follow-up of its own source; the note is optional.
@@ -423,7 +425,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           ],
         };
         runs[index] = queued;
-        return json(202, queued);
+        return new Response(null, { status: 202 });
       }
       case 'refresh': {
         // Issue #142: the API only records a request; the Run comes back as it is. Tests move
@@ -479,7 +481,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         const index = runs.findIndex((candidate) => candidate.id === id);
         if (index === -1) return json(404, problem(404, 'Run not found'));
         runs[index] = { ...runs[index]!, deliveryRetryRequested: true };
-        return json(202, runs[index]);
+        return new Response(null, { status: 202 });
       }
       case 'resume': {
         // Issue #105: back to the queue, "Continue where you stopped." as the operator's answer.
@@ -496,7 +498,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           at: new Date().toISOString(),
         };
         runs[index] = { ...rest, state: 'queued', messages: [...(rest.messages ?? []), answer] };
-        return json(202, runs[index]);
+        return new Response(null, { status: 202 });
       }
       case 'events': {
         const after = Number(searchParams.get('after') ?? 0);
@@ -542,7 +544,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           createdAt: new Date().toISOString(),
         });
         runs.unshift(run);
-        return json(201, run);
+        return json(201, { id: run.id });
       }
     }
   });

@@ -19,3 +19,11 @@ export const startRunRequestSchema = z
   .meta({ id: 'StartRunRequest' });
 
 export class StartRunRequestDto extends createZodDto(startRunRequestSchema) {}
+
+export const startRunResponseSchema = z
+  .strictObject({
+    id: z.uuid(),
+  })
+  .meta({ id: 'StartRunResponse' });
+
+export class StartRunResponseDto extends createZodDto(startRunResponseSchema) {}

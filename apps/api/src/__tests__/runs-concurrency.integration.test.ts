@@ -325,12 +325,13 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
           const responses = await race(cancel(runId), cancel(runId));
 
           expect(statuses(...responses)).toEqual([202, 202]);
-          const first = responses[0].body.cancelRequestedAt;
-          expect(first).toEqual(expect.any(String));
-          expect(responses[1].body.cancelRequestedAt).toBe(first);
+          expect(responses.map((response) => response.body)).toEqual([
+            { outcome: 'cancel_requested' },
+            { outcome: 'cancel_requested' },
+          ]);
           const run = (await getRun(runId)).body;
           expect(run.state).toBe('running');
-          expect(run.cancelRequestedAt).toBe(first);
+          expect(run.cancelRequestedAt).toEqual(expect.any(String));
           const beat = await worker(`runs/${runId}/heartbeat`, { workerId: W1 });
           expect(beat.body).toEqual({ cancelRequested: true });
         }

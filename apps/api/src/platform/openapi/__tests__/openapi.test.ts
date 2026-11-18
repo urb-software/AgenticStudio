@@ -293,6 +293,15 @@ describe('OpenAPI document', () => {
     expect(Object.keys(start?.responses ?? {})).toEqual(
       expect.arrayContaining(['201', '404', '409', '422']),
     );
+    expect(start?.responses['201']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/StartRunResponse_Output' } },
+      },
+    });
+    expect(document.components?.schemas?.StartRunResponse_Output).toMatchObject({
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+    });
     expect(document.components?.schemas?.StartRunRequest).toMatchObject({
       properties: {
         task: { type: 'string', minLength: 1, maxLength: 20_000 },
@@ -323,7 +332,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('documents POST /api/runs/{runId}/follow-up: 202 with the Run, 404, 409, 422', () => {
+  it('documents POST /api/runs/{runId}/follow-up: 202 without a body, 404, 409, 422', () => {
     const document = createOpenApiDocument(app);
 
     const followUp = document.paths['/api/runs/{runId}/follow-up']?.post;
@@ -341,15 +350,10 @@ describe('OpenAPI document', () => {
       required: ['text'],
       additionalProperties: false,
     });
-    const run = document.components?.schemas?.Run_Output as {
-      properties: Record<string, unknown>;
-    };
-    expect(Object.keys(run.properties)).toEqual(
-      expect.arrayContaining(['followUp', 'followUps', 'steps']),
-    );
+    expect(followUp?.responses['202']).not.toHaveProperty('content');
   });
 
-  it('documents POST /api/runs/{runId}/answer: 202 with the Run, 404, 409, 422', () => {
+  it('documents POST /api/runs/{runId}/answer: 202 without a body, 404, 409, 422', () => {
     const document = createOpenApiDocument(app);
 
     const answer = document.paths['/api/runs/{runId}/answer']?.post;
@@ -367,10 +371,7 @@ describe('OpenAPI document', () => {
       required: ['text'],
       additionalProperties: false,
     });
-    const run = document.components?.schemas?.Run_Output as {
-      properties: Record<string, unknown>;
-    };
-    expect(Object.keys(run.properties)).toEqual(expect.arrayContaining(['question', 'messages']));
+    expect(answer?.responses['202']).not.toHaveProperty('content');
     // Internal: the session reference is never part of the operator API.
     expect(JSON.stringify(document)).not.toMatch(/sessionRef/);
   });
@@ -403,7 +404,7 @@ describe('OpenAPI document', () => {
     });
   });
 
-  it('documents POST /api/runs/{runId}/cancel: 202 with the Run, 404, 409', () => {
+  it('documents POST /api/runs/{runId}/cancel: 202 with the outcome, 404, 409', () => {
     const document = createOpenApiDocument(app);
 
     const cancel = document.paths['/api/runs/{runId}/cancel']?.post;
@@ -411,12 +412,15 @@ describe('OpenAPI document', () => {
     expect(Object.keys(cancel?.responses ?? {})).toEqual(
       expect.arrayContaining(['202', '404', '409']),
     );
-    const run = document.components?.schemas?.Run_Output as {
-      properties: Record<string, unknown>;
-    };
-    expect(Object.keys(run.properties)).toEqual(
-      expect.arrayContaining(['limits', 'cancelRequestedAt', 'cancellation']),
-    );
+    expect(cancel?.responses['202']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/CancelRunResponse_Output' } },
+      },
+    });
+    expect(document.components?.schemas?.CancelRunResponse_Output).toMatchObject({
+      properties: { outcome: { type: 'string', enum: ['cancelled', 'cancel_requested'] } },
+      required: ['outcome'],
+    });
   });
 
   it('documents GET /api/providers with each provider and its availability', () => {

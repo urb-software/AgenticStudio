@@ -1,6 +1,5 @@
 import { Body, Controller, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ZodResponse } from 'nestjs-zod';
+import { ApiAcceptedResponse, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiProblemResponses,
   FieldProblemException,
@@ -11,7 +10,6 @@ import {
   followUpNotAllowed,
   runNotFound,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { FollowUpNotAllowedError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { FollowUpRunHandler } from '../../../../application/features/follow-up-run/handler.js';
 import { bringUpToDateRequestSchema, BringUpToDateRequestDto } from './schema.js';
@@ -25,13 +23,13 @@ export class BringUpToDateEndpoint {
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ operationId: 'bringUpToDateRun' })
   @ApiBody({ type: BringUpToDateRequestDto, required: false })
-  @ZodResponse({ status: 202, type: RunResponseDto })
+  @ApiAcceptedResponse({ description: 'The Follow-up is accepted.' })
   @ApiProblemResponses({
     404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})`,
     409: `The run cannot take a Follow-up now (${EXECUTIONS_PROBLEM_TYPES.followUpNotAllowed})`,
     422: 'Invalid request body (field errors)',
   })
-  async bringUpToDate(@Param('runId') runId: string, @Body() body: unknown) {
+  async bringUpToDate(@Param('runId') runId: string, @Body() body: unknown): Promise<void> {
     const parsed = bringUpToDateRequestSchema.safeParse(body ?? {});
     if (!parsed.success) {
       throw new FieldProblemException(
@@ -41,12 +39,11 @@ export class BringUpToDateEndpoint {
       );
     }
     try {
-      const { run, followUp, workerConnected, preparedFollowUp } = await this.handler.execute({
+      await this.handler.execute({
         runId,
         text: parsed.data.note ?? '',
         source: 'bring_up_to_date',
       });
-      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof FollowUpNotAllowedError) throw followUpNotAllowed(error.reason);

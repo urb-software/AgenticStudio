@@ -145,9 +145,7 @@ describe('FollowUpRunHandler', () => {
       workers,
       LEASE,
       executions.requests,
-      RETENTION,
       executions.transactions,
-      executions.preparedFollowUps,
     );
     connect();
   });
@@ -163,11 +161,12 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       runs.prepared.set(run.id, draft);
 
-      const { run: queued } = await handler.execute({
+      await handler.execute({
         runId: run.id,
         text: 'Prepared text, edited by the operator.',
         source: 'pull_request_checks',
       });
+      const queued = (await runs.findById(run.id))!.snapshot();
 
       expect(queued.messages.at(-1)).toEqual({
         kind: 'follow_up',
@@ -194,10 +193,11 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       runs.prepared.set(run.id, draft);
 
-      const { run: queued } = await handler.execute({
+      await handler.execute({
         runId: run.id,
         text: 'Written from scratch.',
       });
+      const queued = (await runs.findById(run.id))!.snapshot();
 
       expect(queued.messages.at(-1)).not.toHaveProperty('source');
       expect(runs.prepared.has(run.id)).toBe(true);
@@ -231,12 +231,13 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       load(run.id);
 
-      const { run: queued } = await handler.execute({
+      await handler.execute({
         runId: run.id,
         text: 'Add the test the reviewer asked for.',
         source: 'review_comments',
         reviewCommentIds: ['conversation-1', 'conversation-3'],
       });
+      const queued = (await runs.findById(run.id))!.snapshot();
 
       expect(queued.messages.at(-1)).toEqual({
         kind: 'follow_up',
@@ -296,10 +297,11 @@ describe('FollowUpRunHandler', () => {
       const run = await finished();
       load(run.id);
 
-      const { run: queued } = await handler.execute({
+      await handler.execute({
         runId: run.id,
         text: 'Written from scratch.',
       });
+      const queued = (await runs.findById(run.id))!.snapshot();
 
       expect(queued.messages.at(-1)).not.toHaveProperty('source');
       expect(runs.reviewSets.has(run.id)).toBe(true);
@@ -311,10 +313,11 @@ describe('FollowUpRunHandler', () => {
     async (end) => {
       const run = await finished(end);
 
-      const { run: queued, followUp } = await handler.execute({
+      await handler.execute({
         runId: run.id,
         text: 'Also handle empty lists.',
       });
+      const queued = (await runs.findById(run.id))!.snapshot();
 
       expect(queued).toMatchObject({
         state: 'queued',
@@ -333,14 +336,14 @@ describe('FollowUpRunHandler', () => {
         text: 'Also handle empty lists.',
         at: T1,
       });
-      expect(followUp).toEqual({ allowed: false, reason: 'follow_up_queued' });
     },
   );
 
   it("keeps the Run's pull request: the same one is updated", async () => {
     const run = await finished('succeeded');
 
-    const { run: queued } = await handler.execute({ runId: run.id, text: 'Rename it.' });
+    await handler.execute({ runId: run.id, text: 'Rename it.' });
+    const queued = (await runs.findById(run.id))!.snapshot();
 
     expect(queued.pullRequest).toEqual(PULL_REQUEST);
   });
@@ -434,9 +437,7 @@ describe('FollowUpRunHandler', () => {
       workers,
       LEASE,
       executions.requests,
-      RETENTION,
       executions.transactions,
-      executions.preparedFollowUps,
     );
     connect(OTHER_WORKER);
     await expect(handler.execute({ runId: run.id, text: 'x' })).rejects.toEqual(
@@ -478,7 +479,8 @@ describe('FollowUpRunHandler', () => {
       const run = await finished('succeeded');
       readAs(run, state);
 
-      const { run: queued } = await handler.execute({ runId: run.id, text: 'Go on.' });
+      await handler.execute({ runId: run.id, text: 'Go on.' });
+      const queued = (await runs.findById(run.id))!.snapshot();
 
       expect(queued.state).toBe('queued');
     },
@@ -493,13 +495,16 @@ describe('FollowUpRunHandler', () => {
 
     readAs(run, 'open');
 
-    expect((await handler.execute({ runId: run.id, text: 'Go on.' })).run.state).toBe('queued');
+    await handler.execute({ runId: run.id, text: 'Go on.' });
+
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('queued');
   });
 
   it('asks for the pull request state to be read again when it accepts a Follow-up', async () => {
     const run = await finished('succeeded');
 
-    const { run: queued } = await handler.execute({ runId: run.id, text: 'Go on.' });
+    await handler.execute({ runId: run.id, text: 'Go on.' });
+    const queued = (await runs.findById(run.id))!.snapshot();
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'pull_request_state' });
@@ -510,7 +515,8 @@ describe('FollowUpRunHandler', () => {
     const run = await finished('succeeded');
     executions.requests.request = () => Promise.reject(new Error('The database is busy'));
 
-    const { run: queued } = await handler.execute({ runId: run.id, text: 'Go on.' });
+    await handler.execute({ runId: run.id, text: 'Go on.' });
+    const queued = (await runs.findById(run.id))!.snapshot();
 
     expect(queued.state).toBe('queued');
     expect(queued.followUpQueued).toBe(true);

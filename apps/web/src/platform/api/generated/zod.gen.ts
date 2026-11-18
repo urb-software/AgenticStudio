@@ -114,6 +114,10 @@ export const zStartRunRequest = z.object({
     provider: z.enum(['claude_code', 'codex'])
 });
 
+export const zStartRunResponseOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+});
+
 export const zRunLimitsOutput = z.object({
     stepMinutes: z.int().gte(1).lte(9007199254740991),
     maxSteps: z.int().gte(1).lte(9007199254740991),
@@ -316,6 +320,10 @@ export const zRunListOutput = z.array(zRunOutput);
 export const zRunsSummaryOutput = z.object({
     running: z.int().gte(0).lte(9007199254740991),
     waiting: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zCancelRunResponseOutput = z.object({
+    outcome: z.enum(['cancelled', 'cancel_requested'])
 });
 
 export const zAnswerRunRequest = z.object({
@@ -611,7 +619,7 @@ export const zStartRunPath = z.object({
     id: z.string()
 });
 
-export const zStartRunResponse = zRunOutput;
+export const zStartRunResponse = zStartRunResponseOutput;
 
 export const zListRunsResponse = zRunListOutput;
 
@@ -627,13 +635,11 @@ export const zCancelRunPath = z.object({
     runId: z.string()
 });
 
-export const zCancelRunResponse = zRunOutput;
+export const zCancelRunResponse = zCancelRunResponseOutput;
 
 export const zRetryRunDeliveryPath = z.object({
     runId: z.string()
 });
-
-export const zRetryRunDeliveryResponse = zRunOutput;
 
 export const zAnswerRunBody = zAnswerRunRequest;
 
@@ -641,13 +647,9 @@ export const zAnswerRunPath = z.object({
     runId: z.string()
 });
 
-export const zAnswerRunResponse = zRunOutput;
-
 export const zResumeRunPath = z.object({
     runId: z.string()
 });
-
-export const zResumeRunResponse = zRunOutput;
 
 export const zFollowUpRunBody = zFollowUpRunRequest;
 
@@ -655,15 +657,11 @@ export const zFollowUpRunPath = z.object({
     runId: z.string()
 });
 
-export const zFollowUpRunResponse = zRunOutput;
-
 export const zBringUpToDateRunBody = zBringUpToDateRequest;
 
 export const zBringUpToDateRunPath = z.object({
     runId: z.string()
 });
-
-export const zBringUpToDateRunResponse = zRunOutput;
 
 export const zRefreshRunPullRequestBody = zRefreshPullRequestRequest;
 

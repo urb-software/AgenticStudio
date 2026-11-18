@@ -117,6 +117,8 @@ Rules 10 to 13 apply to the API only, as rules 1 to 9 do.
 
 The entry point (endpoint, job processor, scheduler, start-up routine or consumer) maps from the result to its own shape; the handler never does.
 
+**The Run commands** answer with what the caller cannot know otherwise, and the caller reads the Run from `GET /api/runs/:runId`. Start a Run answers 201 with `{ id }`. Cancel answers 202 with `{ outcome }`: `cancelled` when the Run was cancelled at once, `cancel_requested` when the agent worker still has to confirm. Answer, resume, retry delivery, follow-up and bring up to date answer 202 with no body. Their errors (404, 409, 422, 429) are unchanged.
+
 ### Aggregate root, child entity or value object
 
 The deciding question: **is there a rule that must hold at every moment across both objects?** If yes, they are one aggregate, and one of them is its root. If no, they are separate roots, and each refers to the other by id (rule 12).

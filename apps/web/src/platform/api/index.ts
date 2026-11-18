@@ -9,6 +9,7 @@ import type {
   AgentWorkerOutput,
   AnswerRunRequest,
   BringUpToDateRequest,
+  CancelRunResponseOutput,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -34,6 +35,7 @@ import type {
   SessionResponseOutput,
   SetEnvironmentFileRequest,
   StartRunRequest,
+  StartRunResponseOutput,
   VerifyRepositoryRequest,
 } from './generated';
 import { client } from './generated/client.gen';
@@ -50,6 +52,7 @@ export type {
   AgentWorkerOutput,
   AnswerRunRequest,
   BringUpToDateRequest,
+  CancelRunResponseOutput,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -86,6 +89,7 @@ export type {
   SessionResponseOutput,
   SetEnvironmentFileRequest,
   StartRunRequest,
+  StartRunResponseOutput,
   VerifyRepositoryRequest,
 } from './generated';
 
@@ -235,8 +239,8 @@ export const api = {
   removeEnvironmentFile: async (projectId: string): Promise<void> => {
     await unwrap(sdk.removeEnvironmentFile({ path: { id: projectId } }));
   },
-  /** Starts a Run on the project (201: the Run, `queued`). */
-  startRun: (projectId: string, body: StartRunRequest): Promise<RunOutput> =>
+  /** Starts a Run on the project (201: the new Run's id; the Run is read from `getRun`). */
+  startRun: (projectId: string, body: StartRunRequest): Promise<StartRunResponseOutput> =>
     unwrap(sdk.startRun({ path: { id: projectId }, body })),
   /** The project's Runs, newest first. */
   listProjectRuns: (projectId: string): Promise<RunListOutput> =>
@@ -245,14 +249,17 @@ export const api = {
   listRuns: (): Promise<RunListOutput> => unwrap(sdk.listRuns()),
   getRunsSummary: (): Promise<RunsSummaryOutput> => unwrap(sdk.getRunsSummary()),
   getRun: (runId: string): Promise<RunOutput> => unwrap(sdk.getRun({ path: { runId } })),
-  /** Repeats only the delivery of a Run whose delivery failed (202: the Run, retry requested). */
-  retryRunDelivery: (runId: string): Promise<RunOutput> =>
-    unwrap(sdk.retryRunDelivery({ path: { runId } })),
+  /** Repeats only the delivery of a Run whose delivery failed (202, no body). */
+  retryRunDelivery: async (runId: string): Promise<void> => {
+    await unwrap(sdk.retryRunDelivery({ path: { runId } }));
+  },
   /**
-   * Resumes a Run stopped at the usage limit (Issue #105; 202: the Run, queued to resume its
-   * agent session with "Continue where you stopped.").
+   * Resumes a Run stopped at the usage limit (202, no body: the Run is queued to resume its agent
+   * session with "Continue where you stopped.").
    */
-  resumeRun: (runId: string): Promise<RunOutput> => unwrap(sdk.resumeRun({ path: { runId } })),
+  resumeRun: async (runId: string): Promise<void> => {
+    await unwrap(sdk.resumeRun({ path: { runId } }));
+  },
   /** Each provider and whether a Run can be started with it now, with the reason when not. */
   listProviders: (): Promise<ProviderListOutput> => unwrap(sdk.listProviders()),
   /**
@@ -261,29 +268,33 @@ export const api = {
    */
   getAgentWorker: (): Promise<AgentWorkerOutput> => unwrap(sdk.getAgentWorker()),
   /**
-   * Cancels a Run (Issue #100; 202: the Run). A queued or waiting Run comes back `cancelled`; a
-   * preparing or running one carries `cancelRequestedAt` until the agent worker confirms.
+   * Cancels a Run (202: `cancelled` when the Run was cancelled at once, `cancel_requested` when
+   * the agent worker still has to confirm).
    */
-  cancelRun: (runId: string): Promise<RunOutput> => unwrap(sdk.cancelRun({ path: { runId } })),
+  cancelRun: (runId: string): Promise<CancelRunResponseOutput> =>
+    unwrap(sdk.cancelRun({ path: { runId } })),
   /**
-   * Answers the agent's open question (Issue #103; 202: the Run, `queued` to resume). A Run that
-   * no longer waits answers 409; an empty or too long answer 422 with field errors.
+   * Answers the agent's open question (202, no body). A Run that no longer waits answers 409; an
+   * empty or too long answer 422 with field errors.
    */
-  answerRun: (runId: string, body: AnswerRunRequest): Promise<RunOutput> =>
-    unwrap(sdk.answerRun({ path: { runId }, body })),
+  answerRun: async (runId: string, body: AnswerRunRequest): Promise<void> => {
+    await unwrap(sdk.answerRun({ path: { runId }, body }));
+  },
   /**
-   * Sends a Follow-up to a finished Run (Issue #141; 202: the Run, `queued` to resume its agent
-   * session). A Run that cannot take one answers 409 saying why; an empty or too long text 422.
+   * Sends a Follow-up to a finished Run (202, no body). A Run that cannot take one answers 409
+   * saying why; an empty or too long text 422.
    */
-  followUpRun: (runId: string, body: FollowUpRunRequest): Promise<RunOutput> =>
-    unwrap(sdk.followUpRun({ path: { runId }, body })),
+  followUpRun: async (runId: string, body: FollowUpRunRequest): Promise<void> => {
+    await unwrap(sdk.followUpRun({ path: { runId }, body }));
+  },
   /**
-   * Asks for a finished Run's branch to be brought up to date with the integration branch (Issue
-   * #147; 202: the Run, `queued` as a Follow-up of that source). The note is optional. A Run that
-   * cannot take a Follow-up answers 409 saying why; a too long note 422.
+   * Asks for a finished Run's branch to be brought up to date with the integration branch (202,
+   * no body). The note is optional. A Run that cannot take a Follow-up answers 409 saying why; a
+   * too long note 422.
    */
-  bringUpToDateRun: (runId: string, body: BringUpToDateRequest): Promise<RunOutput> =>
-    unwrap(sdk.bringUpToDateRun({ path: { runId }, body })),
+  bringUpToDateRun: async (runId: string, body: BringUpToDateRequest): Promise<void> => {
+    await unwrap(sdk.bringUpToDateRun({ path: { runId }, body }));
+  },
   /**
    * Asks for the state of a Run's pull request to be read again (Issue #142; 202: the Run, with
    * `pullRequest.refreshing` while an agent worker reads it). `onOpen` is the Run page's own

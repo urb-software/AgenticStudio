@@ -8,7 +8,6 @@ import {
   RunSlotTakenError,
   RunNotFoundError,
 } from '../../../../domain/errors/run-errors.js';
-import { InMemoryPreparedFollowUpRepository } from '../../../../domain/repositories/__tests__/in-memory-prepared-follow-up-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { ResumeRunHandler } from '../handler.js';
 
@@ -66,9 +65,7 @@ describe('ResumeRunHandler', () => {
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
-    handler = new ResumeRunHandler(runs, new InMemoryPreparedFollowUpRepository(runs), {
-      now: () => T1,
-    });
+    handler = new ResumeRunHandler(runs, { now: () => T1 });
     await runs.start(NEW_RUN);
     run = (await runs.claimNext(WORKER, T0))!;
   });
@@ -76,8 +73,9 @@ describe('ResumeRunHandler', () => {
   it('queues the Run to resume its session with "Continue where you stopped."', async () => {
     await stop(USAGE_LIMIT);
 
-    const { run: resumed } = await handler.execute({ runId: run.id });
+    expect(await handler.execute({ runId: run.id })).toBeUndefined();
 
+    const resumed = (await runs.findById(run.id))!.snapshot();
     expect(resumed).toMatchObject({
       state: 'queued',
       failure: null,
@@ -128,7 +126,8 @@ describe('ResumeRunHandler', () => {
     await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot-1' });
     await stop(USAGE_LIMIT);
 
-    expect((await handler.execute({ runId: run.id })).run.state).toBe('queued');
+    await handler.execute({ runId: run.id });
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('queued');
   });
 
   it("refuses while another Run holds the project's place, and resumes once it has ended", async () => {
@@ -153,7 +152,8 @@ describe('ResumeRunHandler', () => {
       cancelRequested: false,
       now: T1,
     });
-    expect((await handler.execute({ runId: run.id })).run.state).toBe('queued');
+    await handler.execute({ runId: run.id });
+    expect((await runs.findById(run.id))?.lifecycle.state).toBe('queued');
   });
 
   it("refuses while the server's places are taken", async () => {
