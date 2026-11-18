@@ -7,16 +7,14 @@ import {
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 
 export interface CreateProjectInput {
-  /** The name as entered; normalized and validated here. */
   name: string;
 }
 
-/** The new project. */
 export type CreateProjectResult = ProjectSnapshot;
 
 /**
- * Command: creates a project. Throws `InvalidProjectNameError` for an empty or too long
- * name and `ProjectNameTakenError` when the name is taken (case-insensitively).
+ * Throws `InvalidProjectNameError` for an empty or too long name and `ProjectNameTakenError`
+ * when the name is taken (case-insensitively).
  */
 @Injectable()
 export class CreateProjectHandler {

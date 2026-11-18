@@ -8,7 +8,6 @@ import { CreateProjectHandler } from '../../../../application/features/create-pr
 import { CreateProjectRequestDto } from './schema.js';
 import { ProjectNameTakenError } from '../../../../domain/errors/project-errors.js';
 
-/** `POST /api/projects`, behind the global session and mutation Origin guards. */
 @ApiTags('projects')
 @Controller('projects')
 export class CreateProjectEndpoint {

@@ -1,26 +1,12 @@
 /**
- * The address policy for Git remotes (Issue #69, security.md §4): which IP addresses Studio
- * may connect to for a Repository. Pure code, shared by URL validation (an IP-literal URL is
- * a field error at Connect) and by the Git adapter (every address a host name resolves to is
- * checked before Git or ssh starts).
- *
- * - `blocked`, never connected to: unspecified, link-local (with the cloud metadata service
- *   at 169.254.169.254), other known metadata addresses, multicast, reserved and broadcast.
- * - `private`, only with `STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true` (a self-hosted Git server on
- *   the LAN): loopback, the private ranges and CGNAT.
- * - `public`: everything else.
- *
- * IPv4-mapped, IPv4-compatible, IPv4-translated, NAT64 (64:ff9b::/96) and 6to4 IPv6 addresses
- * count as the IPv4 address they carry; local-use NAT64 and Teredo, whose IPv4 address cannot
- * be read reliably, are `blocked`. Documentation, benchmarking (198.18.0.0/15) and the rest of
- * 192.0.0.0/24 are not routed to internal services and stay `public`.
+ * The address policy for Git remotes (security.md §4): `blocked` addresses are never connected to,
+ * `private` ones only under `STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true`, the rest are `public`. Pure; shared
+ * by URL validation and the Git adapter, which checks every address a host name resolves to.
  */
 export type RemoteAddressRange = 'public' | 'private' | 'blocked';
 
-/** The setting that opts in to loopback and private remotes; named in refusal messages. */
 export const PRIVATE_REMOTES_SETTING = 'STUDIO_GIT_ALLOW_PRIVATE_REMOTES';
 
-/** Why an address of a refused range is refused: one sentence, shared by every message. */
 export const REFUSED_RANGE_REASON: Record<Exclude<RemoteAddressRange, 'public'>, string> = {
   private: `Studio connects to loopback and private addresses only with ${PRIVATE_REMOTES_SETTING}=true.`,
   blocked: 'Studio never connects to link-local, cloud metadata, multicast or reserved addresses.',
@@ -61,7 +47,6 @@ function classifyIpv4(address: number): RemoteAddressRange {
   return 'public';
 }
 
-/** Canonical dotted-decimal IPv4 (what a resolver returns) as a number, else `null`. */
 function parseDottedIpv4(text: string): number | null {
   const parts = text.split('.');
   if (parts.length !== 4 || !parts.every((part) => /^(0|[1-9]\d{0,2})$/.test(part))) return null;
@@ -70,7 +55,6 @@ function parseDottedIpv4(text: string): number | null {
   return ipv4(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!);
 }
 
-/** An IPv6 address (optionally with a trailing dotted IPv4) as eight 16-bit groups, else `null`. */
 function parseIpv6(text: string): number[] | null {
   let rest = text.toLowerCase();
   const lastColon = rest.lastIndexOf(':');
@@ -110,16 +94,14 @@ function classifyIpv6(groups: number[]): RemoteAddressRange {
   const embedded = ((g6 << 16) | g7) >>> 0;
   const upperZero = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0;
   if (upperZero && g5 === 0) {
-    if (g6 === 0 && g7 === 0) return 'blocked'; // ::
-    if (g6 === 0 && g7 === 1) return 'private'; // ::1
-    return classifyIpv4(embedded); // IPv4-compatible ::a.b.c.d
+    if (g6 === 0 && g7 === 0) return 'blocked';
+    if (g6 === 0 && g7 === 1) return 'private';
+    return classifyIpv4(embedded);
   }
-  if (upperZero && g5 === 0xffff) return classifyIpv4(embedded); // IPv4-mapped
-  // IPv4-translated ::ffff:0:a.b.c.d (RFC 2765).
+  if (upperZero && g5 === 0xffff) return classifyIpv4(embedded);
   if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) {
     return classifyIpv4(embedded);
   }
-  // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052).
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
     return classifyIpv4(embedded);
   }
@@ -128,24 +110,20 @@ function classifyIpv6(groups: number[]): RemoteAddressRange {
   // reliably, so both fail closed.
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return 'blocked';
   if (g0 === 0x2001 && g1 === 0) return 'blocked';
-  // 6to4 2002:wwxx:yyzz::/48 (RFC 3056) carries its IPv4 address in groups 1 and 2.
   if (g0 === 0x2002) return classifyIpv4(((g1 << 16) | g2) >>> 0);
-  if ((g0 & 0xffc0) === 0xfe80) return 'blocked'; // link-local
-  if ((g0 & 0xff00) === 0xff00) return 'blocked'; // multicast
-  // IPv6 metadata services, inside the private range below:
-  // - AWS fd00:ec2::254 (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html)
-  // - Google Cloud fd20:ce::254 (https://cloud.google.com/compute/docs/metadata/querying-metadata)
-  // Both addresses end in groups 2 to 7 of `::254`.
+  if ((g0 & 0xffc0) === 0xfe80) return 'blocked';
+  if ((g0 & 0xff00) === 0xff00) return 'blocked';
+  // IPv6 metadata services inside the private range below: AWS `fd00:ec2::254` and Google Cloud
+  // `fd20:ce::254`; both end in groups 2 to 7 of `::254`.
   const interfaceIs254 = g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0 && g7 === 0x254;
   if (interfaceIs254 && ((g0 === 0xfd00 && g1 === 0xec2) || (g0 === 0xfd20 && g1 === 0xce))) {
     return 'blocked';
   }
-  if ((g0 & 0xfe00) === 0xfc00) return 'private'; // unique local
-  if ((g0 & 0xffc0) === 0xfec0) return 'private'; // deprecated site-local
+  if ((g0 & 0xfe00) === 0xfc00) return 'private';
+  if ((g0 & 0xffc0) === 0xfec0) return 'private';
   return 'public';
 }
 
-/** What the host part of a remote URL names. */
 export type HostLiteral =
   | { kind: 'name' }
   | { kind: 'address'; address: string }
@@ -154,7 +132,6 @@ export type HostLiteral =
 
 const NUMERIC_LABEL = /^(?:0x[\da-f]*|\d+)$/i;
 
-/** One `inet_aton` component: hex (`0x`), octal (leading `0`) or decimal; `null` if malformed. */
 function inetAtonPart(part: string): number | null {
   if (/^0x[\da-f]+$/i.test(part)) return parseInt(part.slice(2), 16);
   if (/^0[0-7]*$/.test(part)) return parseInt(part, 8);
@@ -162,11 +139,6 @@ function inetAtonPart(part: string): number | null {
   return null;
 }
 
-/**
- * An IP address of a Git remote, as the address policy sees it (Issue #69, security.md §4):
- * which range it is in and whether Studio may connect to it. Shared by URL validation and by
- * the Git adapter, which checks every address a host name resolves to.
- */
 export class RemoteAddress {
   private constructor() {}
 
@@ -194,16 +166,14 @@ export class RemoteAddress {
     return range;
   }
 
-  /** Whether Studio may connect to `address` under the opt-in setting's value. */
   static isAllowed(address: string, allowPrivate: boolean): boolean {
     return RemoteAddress.refusedRange(address, allowPrivate) === null;
   }
 
   /**
-   * Normalizes the host of a remote URL. A bracketed IPv6 literal, or a host whose labels are
-   * all numbers, is an address: the numeric forms the system resolver accepts (`inet_aton`:
-   * `127.1`, `0x7f.1`, `2130706433`, `0177.0.0.1`) become dotted decimal, so the policy sees
-   * the address the connection would really use. Anything else is a host name.
+   * Normalizes the host of a remote URL. A bracketed IPv6 literal or an all-numeric host is an address:
+   * `inet_aton` forms (`127.1`, `0x7f.1`, `2130706433`) become dotted decimal, so the policy sees the
+   * address the connection would use. Anything else is a host name.
    */
   static literalOf(host: string): HostLiteral {
     if (host.startsWith('[') && host.endsWith(']')) {

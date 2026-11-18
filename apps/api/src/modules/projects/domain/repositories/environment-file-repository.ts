@@ -1,15 +1,8 @@
 import type { EnvironmentFile } from '../entities/environment-file.js';
 
-/** DI token for the {@link EnvironmentFileRepository} adapter. */
 export const ENVIRONMENT_FILE_REPOSITORY = Symbol('ENVIRONMENT_FILE_REPOSITORY');
 
-/**
- * The store of Projects' Environment files (Issue #104): at most one per Project, kept apart
- * from the Repository, so disconnecting the Repository leaves it in place. It holds the secret
- * store's reference to the content, never the content.
- */
 export interface EnvironmentFileRepository {
-  /** The project's Environment file, or `null`. */
   find(projectId: string): Promise<EnvironmentFile | null>;
 
   /**

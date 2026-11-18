@@ -14,11 +14,9 @@ const SERVER_CONTEXT = join(import.meta.dirname, 'fixtures', 'ssh-server');
 
 interface KeyPair {
   privateKey: string;
-  /** `<type> <base64>`, without the comment. */
   publicKey: string;
 }
 
-/** A throwaway ed25519 key pair, generated for this test run only. */
 async function generateKeyPair(dir: string, name: string): Promise<KeyPair> {
   const path = join(dir, name);
   const result = spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', name, '-f', path]);
@@ -82,7 +80,6 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter over SSH (contain
   });
 
   afterEach(async () => {
-    // The private key never outlives the operation.
     expect(await readdir(tempRoot)).toEqual([]);
     await rm(root, { recursive: true, force: true });
   });

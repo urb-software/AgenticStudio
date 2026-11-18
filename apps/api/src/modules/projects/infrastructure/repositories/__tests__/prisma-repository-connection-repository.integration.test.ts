@@ -27,19 +27,7 @@ import { ProjectName } from '../../../domain/value-objects/project-name.js';
 import { PrismaProjectRepository } from '../prisma-project-repository.js';
 import { PrismaRepositoryConnectionRepository } from '../prisma-repository-connection-repository.js';
 
-// Against real PostgreSQL.
-//
-// Issue #76, PR #77 review S-1: a Retry that keeps the failed Repository's Deploy key
-// (`keepsDeployKey`) is saved only while that Repository still references the key. Against
-// real PostgreSQL: when the key changed or the Repository is gone, it is refused with 409
-// (RepositoryAlreadyConnectedError) and nothing is written. Key references are throwaway ids;
-// no secret is stored.
-
-// PR #71 review S-SP6 (b), #72: two projects racing to connect one remote, decided by the
-// unique index on the remote's identity.
-//
-// Issue #72: the migration that adds the `interrupted` failure code moves the failures the
-// earlier code stored as `unknown` / 'Interrupted' to it.
+// Against real PostgreSQL. Key references are throwaway ids; no secret is stored.
 
 const SSH_URL = 'git@github.com:acme/shop.git';
 
@@ -71,7 +59,6 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
   let connections: PrismaRepositoryConnectionRepository;
   let projectId: string;
 
-  /** Runs `write` on the stored Repository, in the store's locked change; what it returned. */
   async function applied(write: (repository: RepositoryConnection) => boolean): Promise<boolean> {
     let result = false;
     await connections.change(projectId, (repository) => {
@@ -80,7 +67,6 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
     return result;
   }
 
-  /** A failed SSH Repository holding `secretRef` (its host was unreachable). */
   async function failedSsh(secretRef: string) {
     await connections.connect({
       projectId,
@@ -96,7 +82,6 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
     ).toBe(true);
   }
 
-  /** The Retry over SSH that keeps `secretRef`, as Connect sends it. */
   const retryKeeping = (secretRef: string) =>
     connections.connect({
       projectId,

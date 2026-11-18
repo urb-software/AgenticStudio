@@ -30,13 +30,11 @@ import {
 } from '../../ports/deploy-keys.js';
 import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
-/** DI token for {@link ConnectRepositorySettings}. */
 export const CONNECT_REPOSITORY_SETTINGS = Symbol('CONNECT_REPOSITORY_SETTINGS');
 
 export interface ConnectRepositorySettings {
   /** The test-only fixture-remote setting (`STUDIO_GIT_ALLOW_FILE_REMOTES`, NODE_ENV=test only). */
   allowFileRemotes: boolean;
-  /** `STUDIO_GIT_ALLOW_PRIVATE_REMOTES` (Issue #69): an IP-literal URL may name a loopback or private address. */
   allowPrivateRemotes: boolean;
 }
 
@@ -46,25 +44,11 @@ export interface ConnectRepositoryInput {
   integrationBranch: string;
 }
 
-/** The Repository as the connect stored it. */
 export type ConnectRepositoryResult = RepositoryConnectionSnapshot;
 
 /**
- * Command: Connect (glossary). Over HTTPS, stores the Repository as `connecting` and
- * schedules the background clone; returns at once. Over SSH (Issue #62), stores it as
- * `awaiting_key` with the project's Deploy key and schedules nothing: the operator adds the
- * public key on the Git host, then verifies (`verify-repository`). A Retry of a failed SSH
- * Repository keeps its Deploy key (and its pinned host key while the host stays the same); a
- * new key is generated otherwise, and a key no longer used is deleted. Order: input (field errors on every platform), platform,
- * the store's transition (the real duplicate guard), then the job. If the job cannot be
- * scheduled after the transition, the attempt is marked `failed` again (keeping the reason and
- * detail of the failure a Retry with the same URL and branch replaced, else "could not be
- * started") and the error is
- * rethrown, so nothing stays `connecting`.
- *
- * Throws `GitUnsupportedPlatformError`, `InvalidRepositoryUrlError`,
- * `InvalidIntegrationBranchError`, {@link ProjectNotFoundError}, the store's conflict
- * errors, and the queue's `JobAlreadyActiveError` / `QueueUnavailableError`.
+ * If the clone job cannot be scheduled, the attempt is failed again and the error rethrown, so
+ * nothing stays `connecting`.
  */
 @Injectable()
 export class ConnectRepositoryHandler {
@@ -161,9 +145,7 @@ export class ConnectRepositoryHandler {
 
   /**
    * Deletes a Deploy key no Repository references; a failure is logged (redacted), not thrown,
-   * and followed by an orphan sweep (Issue #76), which deletes the key once it is past the
-   * sweep's grace period, if not now then at a later sweep. The sweep's selection is repeated
-   * here instead of calling its handler (backend.md §3 rule 3, step 5).
+   * and the orphan sweep deletes the key once it is past its grace period.
    */
   private async deleteKey(projectId: string, secretRef: string): Promise<void> {
     try {
@@ -176,7 +158,6 @@ export class ConnectRepositoryHandler {
     }
   }
 
-  /** The orphaned-key sweep's steps (`sweep-orphaned-deploy-keys`); never throws. */
   private async sweepOrphanedKeys(): Promise<void> {
     let orphans: string[];
     try {

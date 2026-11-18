@@ -19,8 +19,7 @@ import { RemoveEnvironmentFileHandler } from '../../remove-environment-file/hand
 import { SetEnvironmentFileHandler } from '../handler.js';
 import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
-// Issue #104: the operator sets, replaces and removes a Project's Environment file; its content
-// goes to the secret store and is never returned to the operator. Test values only.
+// Test values only: the content goes to the secret store and is never returned.
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const UNKNOWN = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';

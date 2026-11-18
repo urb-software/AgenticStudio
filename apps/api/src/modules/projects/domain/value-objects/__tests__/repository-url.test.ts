@@ -66,7 +66,6 @@ describe('RepositoryUrl.identityOf (Issue #60 clarification 6)', () => {
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 
-  // PR #71 review S-SP6 (c), pinned by #72: more edge cases of the identity.
   it.each([
     ['resolves "." segments', 'https://github.com/acme/./shop.git', 'github.com/acme/shop'],
     ['resolves ".." segments', 'https://github.com/acme/x/../shop.git', 'github.com/acme/shop'],

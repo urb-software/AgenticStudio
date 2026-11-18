@@ -16,16 +16,10 @@ import {
 } from '../../ports/repository-git.js';
 import { DEPLOY_KEYS, type DeployKeys } from '../../ports/deploy-keys.js';
 
-/** Whether `error` is the abort of the job's signal; a processor rethrows it to the queue. */
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
-/**
- * The failure of a Git step of the job, or `undefined` when `error` is not a Git failure (it
- * is then unexpected, and the queue reports it). No trusted host key is a `host_key_mismatch`
- * before Git runs (Issue #62); a Git failure keeps its reason and redacted output.
- */
 function gitStepFailure(error: unknown): RepositoryFailure | undefined {
   if (error instanceof NoTrustedHostKeyError) {
     return RepositoryFailure.noTrustedHostKey();
@@ -37,23 +31,9 @@ function gitStepFailure(error: unknown): RepositoryFailure | undefined {
 
 export interface CloneRepositoryInput {
   projectId: string;
-  /** The job's abort signal. */
   signal: AbortSignal;
 }
 
-/**
- * Feature: the background clone of a connecting Repository, run by the Repository's job
- * (the job processor under `entry-points/jobs/` calls this for a `connecting` Repository).
- *
- * - `reconcile` (start-up, before the worker) fails every Repository still `connecting`:
- *   those whose job was interrupted and those whose job never ran (#60 clarification 4).
- * - A job removes any leftover Clone, inspects the remote (so `branch_not_found` can name the
- *   remote's default branch), clones, then marks the Repository `ready` or `failed`. Every
- *   write is conditional on the Repository still being `connecting`.
- * - An SSH Repository (Issue #62) uses its Deploy key, read from the secret store for this
- *   job only, and only its trusted host keys (configured or pinned); with none trusted it
- *   fails with `host_key_mismatch` before Git runs.
- */
 @Injectable()
 export class CloneRepositoryHandler {
   private readonly logger = new Logger('CloneRepository');
@@ -79,7 +59,6 @@ export class CloneRepositoryHandler {
       await this.git.removeClone(projectId, { signal });
       const remote = await this.git.inspectRemote(url, integrationBranch, { signal, ssh });
       if (!remote.branchExists) {
-        // No Git output to show: the code and the default branch say it all (#72).
         await this.fail(
           projectId,
           RepositoryFailure.of('branch_not_found', '', remote.defaultBranch),

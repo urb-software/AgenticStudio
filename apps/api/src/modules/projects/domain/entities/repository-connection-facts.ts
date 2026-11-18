@@ -1,25 +1,22 @@
 import type { StoredRepositoryConnection } from './repository-connection-data.js';
 
-/** What a Connect (or a Retry) stores before the Clone is made. */
 export interface ConnectAttempt {
   projectId: string;
-  /** The URL as entered (trimmed). */
   url: string;
   /** The remote's identity (`RepositoryUrl.identityOf`); unique across Projects. */
   identity: string;
   integrationBranch: string;
   /**
-   * SSH only (Issue #62): the project's Deploy key. With it the Repository is stored
-   * `awaiting_key` (the operator adds the key on the Git host, then verifies); without it,
+   * SSH only: the project's Deploy key. With it the Repository is stored `awaiting_key`, without it
    * `connecting`.
    */
   deployKey?: { publicKey: string; secretRef: string } | null;
   /** SSH only: a host key already confirmed for this host, kept across a Retry. */
   pinnedHostKey?: string | null;
   /**
-   * True when `deployKey` is the failed Repository's own key, kept by a Retry (Issue #76): the
-   * Retry then applies only while the Repository still exists and references that key. A key a
-   * concurrent Connect or Disconnect released may already be deleted, so it is never saved again.
+   * True when `deployKey` is the failed Repository's own key, kept by a Retry. The Retry then applies
+   * only while the Repository still references it: a key released by a concurrent Connect or
+   * Disconnect may already be deleted.
    */
   keepsDeployKey?: boolean;
 }

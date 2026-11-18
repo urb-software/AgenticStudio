@@ -1,10 +1,8 @@
 import type { RepositoryFailure } from '../value-objects/repository-failure.js';
 import type { RepositoryState } from '../value-objects/repository-state.js';
 
-/** What a store keeps of a Repository: everything but the derived fields. */
 export interface StoredRepositoryConnection {
   projectId: string;
-  /** The URL as the operator entered it (trimmed). */
   url: string;
   integrationBranch: string;
   state: RepositoryState;
@@ -15,8 +13,8 @@ export interface StoredRepositoryConnection {
   /** Set exactly when `failed`. */
   failure: RepositoryFailure | null;
   /**
-   * SSH Repositories only (Issue #62): the public half of the project's Deploy key, one
-   * OpenSSH line (`ssh-ed25519 AAAA… studio-<project>`); set exactly when `deployKeySecret` is.
+   * SSH only: the public half of the project's Deploy key, one OpenSSH line; set exactly when
+   * `deployKeySecret` is.
    */
   publicKey: string | null;
   /**
@@ -24,16 +22,11 @@ export interface StoredRepositoryConnection {
    * Set exactly for an SSH Repository (until a Disconnect removes it).
    */
   deployKeySecret: string | null;
-  /** The host key the operator confirmed, pinned for this Repository: `<type> <base64>`. */
   pinnedHostKey: string | null;
   /** The retrieved host key awaiting the operator's confirmation; set exactly when `awaiting_host_key`. */
   pendingHostKey: string | null;
 }
 
-/**
- * A Repository's state as a plain record, with the fields derived from it: what the
- * `RepositoryConnection` class exposes and what crosses a boundary is mapped from.
- */
 export interface RepositoryConnectionData extends StoredRepositoryConnection {
   /**
    * Whether a usable Clone exists: always when `ready` or `fetching`; when `failed`, only if
@@ -41,8 +34,8 @@ export interface RepositoryConnectionData extends StoredRepositoryConnection {
    */
   hasClone: boolean;
   /**
-   * SHA256 fingerprint of `pendingHostKey` when awaiting confirmation, otherwise of
-   * `pinnedHostKey`; `null` when there is neither. Derived, never stored (#72).
+   * SHA256 fingerprint of `pendingHostKey` when awaiting confirmation, else of `pinnedHostKey`;
+   * `null` when neither. Derived, never stored.
    */
   hostKeyFingerprint: string | null;
 }

@@ -66,20 +66,11 @@ import {
 } from './infrastructure/adapters/secret-store-deploy-keys.js';
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from './domain/value-objects/deploy-key-sweep-policy.js';
 
-/** DI token of the wiring that connects the repository queue's adapter to its job processor. */
 const REPOSITORY_JOB_ROUTING = Symbol('REPOSITORY_JOB_ROUTING');
 
 /**
- * Test seam of the module (like the job queue's worker tuning): tests pass shorter Git limits
- * or another platform. Production passes nothing, so the adapter keeps the pinned production
- * settings (`systemGitSettings`).
- *
- * Why `platform` stays here (#72): the HTTP suites build the real app (`AppModule.register`)
- * and need a non-Linux API host on the Linux CI runner to prove the 501 path end to end. Only
- * code can set it (no configuration or environment variable reaches it), `main.ts` passes no
- * options, and it can only make the Linux-only guard refuse more: on a host that is not Linux
- * the adapter refuses whatever it says, since Git operations need Linux anyway (security.md
- * §4). A provider override would need a second way to build the app for those suites alone.
+ * Test seam: shorter Git limits or another platform; production passes nothing. `platform` can
+ * only make the Linux-only guard refuse more (security.md §4); see moved-ports-entry.md.
  */
 export interface ProjectsModuleOptions {
   gitSettings?: Partial<
@@ -88,21 +79,12 @@ export interface ProjectsModuleOptions {
       'cloneTimeoutMs' | 'fetchTimeoutMs' | 'maxCloneBytes' | 'sizePollIntervalMs' | 'platform'
     >
   >;
-  /** A shorter grace period for the orphaned Deploy-key sweep (Issue #76). */
   deployKeySweep?: Partial<DeployKeySweepSettings>;
 }
 
 /**
- * `projects` business module: create and list projects (Story #16); the project detail and
- * connecting a public repository over HTTPS with a background clone (Story #60), or a private
- * one over SSH with a generated Deploy key (Story #62), fetching it on demand (Story #61) and
- * disconnecting it (Story #63), through the hardened Git adapter (#59). On Linux, start-up checks
- * the Git version and sweeps crash leftovers (`onModuleInit`) before the repository worker
- * starts (after bootstrap). Deploy keys no Repository references are deleted at start-up and
- * after a failed delete (Issue #76). Other modules get a Run's start point through the public
- * {@link RUN_START_POINTS} contract (Issue #96). Each project may have one Environment file
- * (Issue #104), its content in the secret store; `executions` reads it when a Run is claimed
- * through the public {@link RUN_ENVIRONMENT_FILES} contract.
+ * `projects` business module: projects, their Repository (Git adapter, background jobs) and
+ * Environment file. Other modules reach it through {@link RUN_START_POINTS} and {@link RUN_ENVIRONMENT_FILES}.
  */
 @Module({})
 export class ProjectsModule {

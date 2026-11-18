@@ -43,7 +43,6 @@ describe('FetchCloneHandler', () => {
     handler.execute({ projectId: PROJECT, signal });
   const stored = () => connections.find(PROJECT);
 
-  /** A Repository connected with commit OLD, now `fetching`. */
   async function fetching(integrationBranch = 'dev') {
     await connections.connect({
       projectId: PROJECT,

@@ -4,10 +4,8 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { isSameOrInside } from '../../../../../platform/config/config.js';
 import { GitRequestRejectedError } from '../../../application/ports/repository-git.js';
 
-/** A canonical, lowercase UUID: the only accepted project id. */
 const PROJECT_ID = /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/;
 
-/** Folder under the data directory that holds every Clone. */
 export const CLONES_FOLDER = 'clones';
 
 function isInside(parent: string, child: string): boolean {
@@ -29,7 +27,6 @@ export class ClonePaths {
     this.clonesDir = join(resolve(dataDir), CLONES_FOLDER);
   }
 
-  /** The Clone's path; rejects anything but a canonical UUID and any path outside the data directory. */
   clone(projectId: string): string {
     if (!PROJECT_ID.test(projectId)) {
       throw new GitRequestRejectedError('The project id must be a canonical lowercase UUID.');
@@ -61,12 +58,10 @@ export class ClonePaths {
     return path;
   }
 
-  /** A fresh partial-Clone path for the project, next to the final Clone. */
   partial(projectId: string): string {
     return `${this.clone(projectId)}.partial-${randomBytes(6).toString('hex')}`;
   }
 
-  /** Whether `name` (an entry of the clones folder) is a partial Clone of the project. */
   isPartialOf(projectId: string, name: string): boolean {
     return name.startsWith(`${projectId}.git.partial-`);
   }
@@ -84,7 +79,6 @@ export class ClonePaths {
     await this.verifyClonesFolder();
   }
 
-  /** Checks the clones folder without creating it; a missing folder is fine. */
   async verifyClonesFolder(): Promise<boolean> {
     let stats;
     try {

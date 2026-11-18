@@ -1,7 +1,6 @@
 import { redactSecrets } from '../../../../../platform/http/redact.js';
 import type { GitFailureReason } from '../../../application/ports/repository-git.js';
 
-/** Longest redacted Git output kept for a caller or a log line. */
 export const MAX_DETAIL_LENGTH = 2_000;
 
 const PRIVATE_KEY_BLOCK =
@@ -11,7 +10,6 @@ const PRIVATE_KEY_BLOCK =
  * a bracket, `=` or `,`). URL paths are not matched: their `/` follows a host or `:`.
  */
 const ABSOLUTE_PATH = /(^|[\s'"`(<[=,])\/(?!\/)[^\s'"`)>\]]*/gm;
-/** The absolute path of a `file://` URL (test-only fixture remotes). */
 const FILE_URL_PATH = /\bfile:\/\/\/[^\s'"`)>\]]*/gi;
 
 /**
@@ -29,7 +27,6 @@ export function redactGitOutput(text: string): string {
     : trimmed;
 }
 
-/** Git's messages (`LC_ALL=C`) mapped to the fixed reasons; the first match wins. */
 const REASON_PATTERNS: [GitFailureReason, RegExp][] = [
   [
     'host_key_mismatch',
@@ -55,7 +52,6 @@ const REASON_PATTERNS: [GitFailureReason, RegExp][] = [
   ],
 ];
 
-/** Maps Git's (raw) stderr to a fixed failure reason. */
 export function classifyGitFailure(stderr: string): GitFailureReason {
   for (const [reason, pattern] of REASON_PATTERNS) {
     if (pattern.test(stderr)) return reason;

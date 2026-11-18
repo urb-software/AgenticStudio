@@ -19,7 +19,6 @@ import { DisconnectRepositoryHandler } from '../../../../application/features/di
 import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 import { NoRepositoryError } from '../../../../domain/errors/repository-connection-errors.js';
 
-/** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
   if (error instanceof NoRepositoryError) return noRepository();
@@ -28,9 +27,8 @@ function toHttpError(error: unknown): unknown {
 }
 
 /**
- * `DELETE /api/projects/:id/repository`, behind the global session and mutation Origin guards.
- * The confirm dialog in the web app is the operator's explicit authorization of this
- * destructive Git operation (security.md §4).
+ * `DELETE /api/projects/:id/repository`, behind the global session and mutation Origin guards;
+ * the web confirm dialog authorizes this destructive Git operation (security.md §4).
  */
 @ApiTags('projects')
 @Controller('projects')
@@ -38,11 +36,9 @@ export class DisconnectRepositoryEndpoint {
   constructor(private readonly handler: DisconnectRepositoryHandler) {}
 
   @Delete(':id/repository')
-  // The default answer; a completed disconnect switches to 204 below.
   @HttpCode(HttpStatus.ACCEPTED)
-  // Not @ZodResponse: its serializer parses every return value with the response schema,
-  // including the empty body of the 204, so this endpoint documents the 202 with @ApiResponse
-  // and serializes it below with the same closed schema by hand.
+  // Not @ZodResponse: it would parse the empty body of the 204 too, so the 202 is documented
+  // with @ApiResponse and serialized below by hand.
   @ApiOperation({
     operationId: 'disconnectRepository',
     description:

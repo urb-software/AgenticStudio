@@ -40,7 +40,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       maxCloneBytes: 50 * 1024 * 1024,
       tempRoot,
       log: (message) => logs.push(message),
-      // The network fixtures listen on 127.0.0.1: an explicit opt-in (Issue #69).
+      // The network fixtures listen on 127.0.0.1: an explicit opt-in.
       allowPrivateRemotes: true,
       ...overrides,
     });
@@ -75,7 +75,6 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
   });
 
   afterEach(async () => {
-    // Every operation deletes its private directory (and any SSH key in it).
     expect(await readdir(tempRoot)).toEqual([]);
     await rm(root, { recursive: true, force: true });
   });
@@ -261,7 +260,6 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       });
       const git = adapter();
       await git.clone(PROJECT_ID, fixture.url, 'main');
-      // Simulate a hook that reached the Clone: Git runs reference-transaction on fetch.
       await mkdir(join(clonePath(), 'hooks'), { recursive: true });
       for (const name of ['reference-transaction', 'post-fetch', 'pre-auto-gc']) {
         await writeFile(join(clonePath(), 'hooks', name), hook);
@@ -338,7 +336,6 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       sockets = new Set();
       server = createServer((socket) => {
         sockets.add(socket);
-        // Read (and drop) what Git sends, so its disconnect is noticed.
         socket.resume();
         socket.on('close', () => sockets.delete(socket));
       });
@@ -385,7 +382,6 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       const git = adapter({ fetchTimeoutMs: 1_000 });
       await git.clone(PROJECT_ID, fixture.url, 'main');
       await expectReason(git.fetch(PROJECT_ID, url, 'main'), 'timeout');
-      // The Clone is kept as it was.
       await expect(git.readBranchCommit(PROJECT_ID, 'main')).resolves.toEqual({
         commit: headOf(fixture),
       });
@@ -422,7 +418,6 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
   });
 
   describe('HTTPS remotes: pinned to the checked address, redirects refused (Issue #69)', () => {
-    /** A host name no DNS server knows: only the adapter's pin can lead Git to the fixture. */
     const HOST = 'git.studio-fixture.test';
     let certDir: string;
     let caFile: string;

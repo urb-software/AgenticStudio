@@ -85,7 +85,6 @@ describe('ConnectRepositoryHandler', () => {
     });
     expect(connections.repositories.get(PROJECT)?.identity).toBe('github.com/acme/shop');
     expect(jobs.started).toEqual([[PROJECT, 'clone']]);
-    // No Git runs in the request: the clone happens in the background job.
     expect(git.calls).toEqual([]);
   });
 

@@ -21,46 +21,17 @@ export interface DisconnectRepositoryInput {
   projectId: string;
 }
 
-/** What a disconnect achieved: everything removed, or cleanup still pending. */
 export type DisconnectRepositoryResult =
   { disconnected: true } | { disconnected: false; repository: RepositoryConnectionSnapshot };
 
 /** One thing a Disconnect removes; each step is idempotent, so a retry runs them all again. */
 interface CleanupStep {
-  /** What the step does, for the log ("remove the Clone"). */
   readonly name: string;
   run(repository: RepositoryConnection): Promise<void>;
 }
 
 /**
- * Command: Disconnect (glossary), Studio's first destructive action (Issue #63). One use case
- * with two entry points: the HTTP endpoint calls {@link execute}, and start-up calls
- * {@link resumeAll} for every Repository a crash or an earlier failure left `disconnecting`.
- * Order of {@link execute}:
- *
- * 1. project id and platform (nothing changes on a host that is not Linux);
- * 2. the Repository → `disconnecting`, in any state: the guard that keeps a running job from
- *    writing `ready` or `failed` afterwards (its transitions apply only from `connecting` or
- *    `fetching`);
- * 3. the Repository's job is cancelled and waited for, so its id is free for a later connect
- *    and no late write of it can touch a new Repository;
- * 4. the cleanup steps ({@link finish}): the Clone, the Deploy key (#62), and the record, last.
- *
- * The cleanup steps run in order and stop at the first failure, which is logged (redacted) and
- * leaves the Repository `disconnecting` for a retry; deleting the record also frees its remote
- * for another connect. Files are removed only through the Git adapter's
- * `removeClone(projectId)`, which derives the Clone's path from the project id and checks it
- * is inside the data directory; no path from a request or the database is used. The Deploy-key
- * steps remove the private key in the secret store, then the Repository's reference to it, its
- * public key and its pinned (or pending) host key; each is a no-op when the Repository has
- * none, so an HTTPS Repository skips them.
- *
- * A failure in 3 or 4 leaves the Repository `disconnecting`; the outcome then says cleanup is
- * pending. A repeated disconnect and start-up retry it. Disconnect wins over a running connect
- * or fetch: it is never refused as busy.
- *
- * Throws {@link ProjectNotFoundError}, `GitUnsupportedPlatformError` and the store's
- * `NoRepositoryError`.
+ * A failed step leaves the Repository `disconnecting` for a retry.
  */
 @Injectable()
 export class DisconnectRepositoryHandler {
@@ -120,10 +91,8 @@ export class DisconnectRepositoryHandler {
   }
 
   /**
-   * Runs every cleanup step of a `disconnecting` Repository, then deletes its record. True when
-   * nothing of the Repository is left (also when the record was already gone); false when a
-   * step or the store failed (logged, redacted) or the Repository is not `disconnecting`.
-   * Never throws: a failure leaves the Repository `disconnecting` for a retry.
+   * Runs every cleanup step, then deletes the record. True when nothing is left; false on a
+   * failure (logged, redacted), which leaves the Repository `disconnecting`. Never throws.
    */
   async finish(projectId: string): Promise<boolean> {
     let repository: RepositoryConnection | null;
@@ -170,7 +139,6 @@ export class DisconnectRepositoryHandler {
     }
   }
 
-  /** Logs (redacted) why a Disconnect of the project stays pending. */
   private logPending(projectId: string, what: string, error: unknown): void {
     this.logger.warn(
       `Disconnect of project ${projectId}: ${what}; it stays disconnecting and is retried at ` +

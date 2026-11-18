@@ -16,15 +16,13 @@ export interface GetProjectInput {
   projectId: string;
 }
 
-/** One project with its Repository (`null` when none is connected). */
 export interface GetProjectResult {
   project: ProjectSnapshot;
   repository: RepositoryConnectionSnapshot | null;
 }
 
 /**
- * Query: one project with its Repository. Throws {@link ProjectNotFoundError} for an unknown
- * project, like `get-repository`.
+ * Throws {@link ProjectNotFoundError} for an unknown project.
  */
 @Injectable()
 export class GetProjectHandler {

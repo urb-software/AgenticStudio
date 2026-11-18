@@ -7,7 +7,6 @@ import { RepositoryResponseDto, toRepositoryResponse } from '../../shared/reposi
 import { GetRepositoryHandler } from '../../../../application/features/get-repository/handler.js';
 import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
-/** `GET /api/projects/:id/repository`, behind the global session guard. */
 @ApiTags('projects')
 @Controller('projects')
 export class GetRepositoryEndpoint {

@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { projectResponseSchema } from '../../shared/project-response.js';
 import { repositorySummarySchema } from '../../shared/repository-response.js';
 
-/** `GET /api/projects/:id` response: the project and a summary of its Repository, if any. */
 export const projectDetailResponseSchema = z
   .object({
     ...projectResponseSchema.shape,

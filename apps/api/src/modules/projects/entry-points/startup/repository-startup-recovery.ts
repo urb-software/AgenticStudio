@@ -6,15 +6,8 @@ import { SweepOrphanedDeployKeysHandler } from '../../application/features/sweep
 import { SweepOrphanedEnvironmentFilesHandler } from '../../application/features/sweep-orphaned-environment-files/handler.js';
 
 /**
- * Entry point: what the API repairs at start-up. The platform runs it when the repository
- * queue is reconciled: after the Git adapter's start-up sweep (`onModuleInit`), which must
- * finish before any Git job (#60 clarification 11), and before the queue's worker starts.
- *
- * In this order: every Repository still `connecting` or `fetching` fails as interrupted
- * (`clone-repository`, `fetch-clone`); the Disconnect of every Repository still `disconnecting`
- * is resumed (`disconnect-repository`, #63); then the Deploy keys no Repository references
- * (`sweep-orphaned-deploy-keys`, #76) and the Environment file contents no project references
- * (`sweep-orphaned-environment-files`, #104) are deleted. Every rule lives in the handlers.
+ * Repairs the Repository state at start-up, after the Git adapter's sweep (it must finish
+ * before any Git job) and before the queue's worker starts; the handlers hold the rules.
  */
 @Injectable()
 export class RepositoryStartupRecovery {

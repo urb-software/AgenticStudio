@@ -32,7 +32,6 @@ import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.j
 
 const INVALID_REQUEST = 'The request is invalid.';
 
-/** Validates the body and answers 422 with field errors, like connect (Issue #60). */
 const UnprocessableBodyPipe = createZodValidationPipe({
   createValidationException: (error) =>
     new FieldProblemException(
@@ -42,7 +41,6 @@ const UnprocessableBodyPipe = createZodValidationPipe({
     ),
 });
 
-/** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
   if (error instanceof NoRepositoryError) return noRepository();
@@ -59,13 +57,11 @@ function toHttpError(error: unknown): unknown {
       detail: error.message,
     });
   }
-  // #61's generic busy problem, as for connect.
   if (error instanceof JobAlreadyActiveError) return repositoryBusy();
   if (error instanceof QueueUnavailableError) return queueUnavailable();
   return error;
 }
 
-/** `POST /api/projects/:id/repository/verify`, behind the global session and Origin guards. */
 @ApiTags('projects')
 @Controller('projects')
 export class VerifyRepositoryEndpoint {

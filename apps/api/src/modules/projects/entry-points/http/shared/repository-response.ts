@@ -2,14 +2,12 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 /**
- * The Repository in API responses (Issue #60 contract), shared by the connect, get-repository
- * and get-project features of this module (backend.md §2); Issue #62 adds the SSH fields. Self-contained: it takes plain
- * shapes, not domain types. The objects are closed (unknown keys are stripped by the response
- * serializer), so no field can carry key material or unredacted Git output.
+ * The Repository in API responses. The objects are closed (unknown keys are stripped), so no
+ * field can carry key material or unredacted Git output.
  */
 
 /**
- * Later stories add states; clients must treat a value they do not know as "unavailable".
+ * Clients must treat a value they do not know as "unavailable".
  */
 export const repositoryStateSchema = z
   .enum([
@@ -83,10 +81,8 @@ export const repositoryResponseSchema = z
     url: z.string(),
     integrationBranch: z.string(),
     /**
-     * Whether Studio holds a usable Clone: true when `ready` or `fetching`, and when `failed`
-     * after a fetch that kept the Clone; false while `connecting` or `disconnecting`, and after
-     * a failed connect or a fetch that had to remove the Clone (`size_limit`), which only
-     * Retry repairs.
+     * Whether Studio holds a usable Clone: true when `ready`, `fetching`, or `failed` after a
+     * fetch that kept it; false while `connecting` or `disconnecting`, or after the Clone was removed.
      */
     hasClone: z.boolean(),
     /** Commit id of the Integration branch in the Clone; present exactly when `hasClone`. */
@@ -96,16 +92,13 @@ export const repositoryResponseSchema = z
     /** Present exactly when `failed`. */
     failure: repositoryFailureSchema.optional(),
     /**
-     * SSH repositories only: the public half of the project's Deploy key, one OpenSSH line
-     * (`ssh-ed25519 AAAA… studio-<project>`), to add on the Git host as a read-only deploy key.
-     * The private half is never returned.
+     * SSH only: the public half of the Deploy key, one OpenSSH line, to add on the Git host as
+     * a read-only deploy key. The private half is never returned.
      */
     publicKey: z.string().optional(),
     /**
-     * SSH repositories only: the SHA256 fingerprint (`SHA256:…`, as `ssh-keygen -l` prints it)
-     * of the host key awaiting the operator's confirmation when `awaiting_host_key`, otherwise
-     * of the host key pinned for this Repository, if any. Absent for a host trusted through
-     * the server's configuration.
+     * SSH only: the SHA256 fingerprint of the host key awaiting confirmation (`awaiting_host_key`),
+     * otherwise of the pinned host key. Absent for a host trusted through configuration.
      */
     hostKeyFingerprint: z.string().optional(),
   })
@@ -116,7 +109,6 @@ export class RepositoryResponseDto extends createZodDto(repositoryResponseSchema
 export type RepositorySummaryResponse = z.infer<typeof repositorySummarySchema>;
 export type RepositoryResponse = z.infer<typeof repositoryResponseSchema>;
 
-/** The plain shape the mappers take (a domain Repository fits it). */
 export interface RepositoryView {
   state: RepositoryResponse['state'];
   url: string;

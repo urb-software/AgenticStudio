@@ -19,20 +19,10 @@ export interface FetchRepositoryInput {
   projectId: string;
 }
 
-/** The Repository, now `fetching`. */
 export type FetchRepositoryResult = RepositoryConnectionSnapshot;
 
 /**
- * Command: Fetch (glossary). Marks the Repository `fetching` and schedules the background
- * fetch; returns at once. Order: project id, platform, the store's transition (the real
- * duplicate guard: only from `ready`, or `failed` with a usable Clone), then the job. If the
- * job cannot be scheduled after the transition, the Repository gets its previous state back
- * (`ready`, or `failed` with its failure) and the error is rethrown, so nothing stays
- * `fetching` and nothing is lost.
- *
- * Throws {@link ProjectNotFoundError}, `GitUnsupportedPlatformError`, the store's
- * `NoRepositoryError` / `RepositoryBusyError` / `NoUsableCloneError`, and the queue's
- * `JobAlreadyActiveError` / `QueueUnavailableError`.
+ * If the fetch job cannot be scheduled, the previous state is restored and the error rethrown.
  */
 @Injectable()
 export class FetchRepositoryHandler {
@@ -69,9 +59,8 @@ export class FetchRepositoryHandler {
   }
 
   /**
-   * Leaves `fetching` again, with the Clone's commit and fetch time the transition kept. The
-   * failure comes from the read before it; if that read is stale (the Repository changed in
-   * between), the Repository goes back to `ready`, never stays `fetching`.
+   * Leaves `fetching` again, keeping the Clone's commit and fetch time; a stale failure read
+   * goes back to `ready`, never stays `fetching`.
    */
   private async leaveFetching(
     projectId: string,

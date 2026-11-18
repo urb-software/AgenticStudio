@@ -9,14 +9,10 @@ export interface GetRepositoryOperationInput {
   projectId: string;
 }
 
-/** The background operation the Repository's job runs, or `null` when there is none. */
 export type GetRepositoryOperationResult = RepositoryOperation | null;
 
 /**
- * Query: which background operation the Repository's job runs. The Repository's state says it:
- * `connecting` runs the clone, `fetching` runs the fetch. `null` when the project has no
- * Repository or it is in any other state (a job left over from before a restart, or one of a
- * Repository that is now disconnecting): there is then nothing for the job to do.
+ * `null` when the Repository is absent or in a state without a job.
  */
 @Injectable()
 export class GetRepositoryOperationHandler {

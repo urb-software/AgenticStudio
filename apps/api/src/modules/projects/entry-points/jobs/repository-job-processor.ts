@@ -6,12 +6,8 @@ import { GetRepositoryOperationHandler } from '../../application/features/get-re
 import { RepositoryStartupRecovery } from '../startup/repository-startup-recovery.js';
 
 /**
- * Entry point: the processor of the Repository's background jobs. The queue adapter delivers
- * each job's events here; this decides which handler a job belongs to and invokes it, and holds
- * no rule of its own. The Repository's state says which operation a job runs (it asks
- * `get-repository-operation`): `connecting` runs the clone (`clone-repository`), `fetching`
- * runs the fetch (`fetch-clone`); a job of a Repository in any other state does nothing.
- * Start-up reconciliation is {@link RepositoryStartupRecovery}.
+ * Routes the queue's job events to a handler by the Repository's state: `connecting` clones,
+ * `fetching` fetches, any other state does nothing.
  */
 @Injectable()
 export class RepositoryJobProcessor {

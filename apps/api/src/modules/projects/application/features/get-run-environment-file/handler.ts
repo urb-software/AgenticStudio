@@ -15,14 +15,10 @@ export interface GetRunEnvironmentFileInput {
   projectId: string;
 }
 
-/** The project's Environment file with its content (a secret value), or `null` when none is set. */
 export type GetRunEnvironmentFileResult = RunEnvironmentFile | null;
 
 /**
- * Query (Issue #104): the project's Environment file with its content, for `executions` when a
- * Run is claimed (the public {@link RunEnvironmentFiles} contract: `forProject` takes the id
- * and calls `execute`); `null` when none is set. Never used by an operator endpoint. A content
- * replaced between reading the row and the secret is read again from the new row.
+ * Returns the content (a secret): for `executions` only, never an operator endpoint.
  */
 @Injectable()
 export class GetRunEnvironmentFileHandler implements RunEnvironmentFiles {

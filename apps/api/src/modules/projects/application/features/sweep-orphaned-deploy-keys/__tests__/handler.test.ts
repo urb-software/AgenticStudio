@@ -9,8 +9,7 @@ import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-s
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from '../../../../domain/value-objects/deploy-key-sweep-policy.js';
 import { SweepOrphanedDeployKeysHandler } from '../handler.js';
 
-// Issue #76: deleting Deploy-key secrets no Repository references. The safety cases come first:
-// a referenced secret, a fresh one and another owner's are never deleted.
+// The safety cases come first: a referenced secret, a fresh one and another owner's are never deleted.
 
 const A = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const B = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
@@ -26,7 +25,6 @@ describe('SweepOrphanedDeployKeysHandler', () => {
   let logs: string[];
   let warnings: string[];
 
-  /** A Repository holding `key`, stored the way a Connect over SSH stores it. */
   async function sshRepository(projectId: string, key: StoredDeployKey) {
     projects.addProject(projectId, projectId.slice(0, 4));
     await connections.connect({

@@ -7,11 +7,8 @@ import {
 } from '../../../../domain/value-objects/project-name.js';
 
 /**
- * `POST /api/projects` body. The name is normalized (NFC, trim, whitespace collapse) before
- * the length checks, so the 400 field errors follow the domain rule (`ProjectName`). Zod
- * counts string lengths in code points, like `ProjectName` and PostgreSQL `char_length`
- * (Issue #30 decision 2); JSON Schema `minLength`/`maxLength` use the same unit. Closed
- * (#72): an unknown field is a 400, not silently dropped.
+ * `POST /api/projects` body; an unknown field is a 400. The name is normalized before the length
+ * checks, counted in code points like `ProjectName` and PostgreSQL `char_length`.
  */
 export const createProjectRequestSchema = z
   .strictObject({

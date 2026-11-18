@@ -17,7 +17,6 @@ import {
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 
-/** Captures the registered definition and the enqueued jobs. */
 class RecordingJobQueues extends JobQueues {
   definition: QueueDefinition<JobPayload> | undefined;
   readonly enqueued: { id: string; payload: JobPayload; timeoutMs?: number }[] = [];

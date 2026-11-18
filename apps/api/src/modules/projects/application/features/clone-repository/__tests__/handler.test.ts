@@ -94,7 +94,6 @@ describe('CloneRepositoryHandler', () => {
     await run();
 
     expect(git.clone).not.toHaveBeenCalled();
-    // No Git output to show: the code and the default branch say it all (#72).
     expect((await connections.find(PROJECT))?.failure).toEqual({
       code: 'branch_not_found',
       detail: '',
@@ -138,7 +137,6 @@ describe('CloneRepositoryHandler', () => {
 
       expect((await connections.find(PROJECT))?.failure).toEqual({
         code: reason,
-        // A host key mismatch leads with Studio's explanation (Issue #62).
         detail:
           reason === 'host_key_mismatch'
             ? `${HOST_KEY_CHANGED_DETAIL}\n\nfatal: <redacted>`

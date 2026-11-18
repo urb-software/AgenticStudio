@@ -14,15 +14,10 @@ export interface GetRunStartPointInput {
   projectId: string;
 }
 
-/** Where a Run of the project would start, or why there is no start point. */
 export type GetRunStartPointResult = RunStartPoint;
 
 /**
- * Query (Issue #96): the commit a Run of a project starts from, the remote it is fetched from
- * (Issue #98) and the integration branch its pull request targets (Issue #102), for
- * `executions` through the public {@link RunStartPoints} contract (`forProject` takes the id
- * and calls `execute`). Only a `ready` Repository qualifies: while it is being fetched, its
- * commit is about to change.
+ * Only a `ready` Repository qualifies.
  */
 @Injectable()
 export class GetRunStartPointHandler implements RunStartPoints {

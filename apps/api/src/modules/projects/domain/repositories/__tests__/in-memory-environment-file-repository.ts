@@ -2,10 +2,6 @@ import { EnvironmentFile } from '../../entities/environment-file.js';
 import { type StoredEnvironmentFile } from '../../entities/environment-file-snapshot.js';
 import type { EnvironmentFileRepository } from '../environment-file-repository.js';
 
-/**
- * In-memory adapter of {@link EnvironmentFileRepository} for handler tests. `now` stamps
- * `updatedAt`.
- */
 export class InMemoryEnvironmentFileRepository implements EnvironmentFileRepository {
   readonly files = new Map<string, StoredEnvironmentFile>();
   now = new Date('2026-11-15T10:00:00.000Z');

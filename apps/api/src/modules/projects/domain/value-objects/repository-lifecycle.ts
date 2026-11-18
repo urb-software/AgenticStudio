@@ -2,16 +2,12 @@ import { NoUsableCloneError, RepositoryBusyError } from '../errors/repository-co
 import type { RepositoryFailure } from './repository-failure.js';
 import { isRepositoryState, type RepositoryState } from './repository-state.js';
 
-/** What the lifecycle needs to know of a Repository besides its state. */
 export interface LifecycleFacts {
   readonly state: RepositoryState;
-  /** Whether a usable Clone exists. */
   readonly hasClone: boolean;
-  /** Whether the Repository holds a Deploy key (it is an SSH Repository). */
   readonly hasDeployKey: boolean;
 }
 
-/** What {@link RepositoryLifecycle.assertStorable} reads of a stored Repository. */
 export interface StorableConnection {
   state: RepositoryState;
   headSha: string | null;
@@ -24,19 +20,9 @@ export interface StorableConnection {
 }
 
 /**
- * The lifecycle of a Repository connection: which state it starts in, which operations each
- * state accepts (the guards), and which combinations of state and fields a store may hold.
- * The `RepositoryConnection` class asks it before every transition and sets the target state
- * in its own methods, so which state allows which transition lives here and nowhere else:
- *
- * - `awaiting_key` / `awaiting_host_key` / `failed` without a Clone of an SSH Repository
- *   → verified (`connecting`) or `awaiting_host_key`;
- * - `connecting` → `ready` or `failed` (a clone result);
- * - `ready`, or `failed` with a Clone → `fetching` → `ready` or `failed` (a fetch result);
- * - `failed` → a new attempt (a Retry);
- * - any state → `disconnecting` → forgets its key material → removed.
- *
- * It holds no data of its own: it is built from the state and the facts it is asked about.
+ * The lifecycle of a Repository connection: its starting state, which operations each state accepts
+ * (the guards) and which state and field combinations a store may hold. The transition table lives here
+ * only.
  */
 export class RepositoryLifecycle {
   private constructor(private readonly facts: LifecycleFacts) {}
@@ -45,7 +31,6 @@ export class RepositoryLifecycle {
     return new RepositoryLifecycle(facts);
   }
 
-  /** The state of a new attempt: `awaiting_key` with a Deploy key, otherwise `connecting`. */
   static initialState(hasDeployKey: boolean): RepositoryState {
     return hasDeployKey ? 'awaiting_key' : 'connecting';
   }
@@ -101,25 +86,21 @@ export class RepositoryLifecycle {
     return null;
   }
 
-  /** Whether the operator disconnected it and its data is still being removed. */
   get isDisconnecting(): boolean {
     return this.facts.state === 'disconnecting';
   }
 
-  /** Whether the last connect or fetch failed. */
   get isFailed(): boolean {
     return this.facts.state === 'failed';
   }
 
-  /** Whether the retrieved host key awaits the operator's confirmation. */
   get isAwaitingHostKey(): boolean {
     return this.facts.state === 'awaiting_host_key';
   }
 
   /**
-   * Whether "Verify and clone" applies (Issue #62): an SSH Repository (it has a Deploy key)
-   * without a Clone that is `awaiting_key`, `awaiting_host_key`, or `failed` (Retry keeps the
-   * Deploy key).
+   * Whether "Verify and clone" applies: an SSH Repository without a Clone that is `awaiting_key`,
+   * `awaiting_host_key` or `failed`.
    */
   get isVerifiable(): boolean {
     const { state, hasClone, hasDeployKey } = this.facts;
@@ -130,22 +111,18 @@ export class RepositoryLifecycle {
     );
   }
 
-  /** Whether a Retry (a new attempt) replaces it: only a `failed` Repository. */
   get acceptsRetry(): boolean {
     return this.facts.state === 'failed';
   }
 
-  /** Whether the result of a clone applies: only while `connecting`. */
   get acceptsCloneResult(): boolean {
     return this.facts.state === 'connecting';
   }
 
-  /** Whether the result of a fetch applies: only while `fetching`. */
   get acceptsFetchResult(): boolean {
     return this.facts.state === 'fetching';
   }
 
-  /** Whether its Deploy key material may be forgotten and its record removed: `disconnecting`. */
   get acceptsCleanup(): boolean {
     return this.facts.state === 'disconnecting';
   }

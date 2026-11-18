@@ -63,7 +63,6 @@ describe('DisconnectRepositoryHandler', () => {
     });
   }
 
-  /** A late write of an aborted job: whether the transition applied. */
   async function late(write: (repository: RepositoryConnection) => boolean): Promise<boolean> {
     let applied = false;
     await connections.change(PROJECT, (repository) => {

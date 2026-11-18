@@ -7,7 +7,6 @@ import {
 } from '../../../../platform/secrets/index.js';
 import type { EnvironmentFileContents } from '../../application/ports/environment-file-contents.js';
 
-/** The owner label of the content in the secret store. */
 const ENVIRONMENT_FILE_SECRET_OWNER = 'projects.environment-file';
 
 /**
@@ -16,7 +15,6 @@ const ENVIRONMENT_FILE_SECRET_OWNER = 'projects.environment-file';
  */
 export const ENVIRONMENT_FILE_ORPHAN_AGE_MS = 60 * 60 * 1000;
 
-/** {@link EnvironmentFileContents} over the platform's secret store (ADR 0001). */
 @Injectable()
 export class SecretStoreEnvironmentFileContents implements EnvironmentFileContents {
   private readonly logger = new Logger('EnvironmentFile');

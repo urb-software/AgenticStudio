@@ -1,24 +1,18 @@
 import { RepositoryUrl } from './repository-url.js';
 
-/** One configured trusted host key: the known_hosts names of its hosts and the key. */
 export interface KnownHost {
-  /** Lower-case known_hosts names: `host`, or `[host]:port` for a port other than 22. */
   readonly hosts: readonly string[];
-  /** `<type> <base64>`. */
   readonly key: string;
 }
 
-/** What the rule needs to know of a Repository: its URL and the host key pinned for it. */
 export interface HostKeyFacts {
   readonly url: string;
   readonly pinnedHostKey: string | null;
 }
 
 /**
- * The host keys Studio trusts for a Repository's Git host (Issue #62): those configured for
- * that host and the one pinned for the Repository, if any. Empty for a host Studio has to ask
- * about and for a URL that is not SSH. Pure: it gets the Repository's facts and the configured
- * known hosts as values and reads nothing.
+ * The host keys Studio trusts for a Repository's Git host: those configured for it and the one pinned
+ * for the Repository. Empty for a host Studio must ask about and for a non-SSH URL. Pure.
  */
 export class TrustedHostKeys {
   private constructor(readonly keys: readonly string[]) {}
@@ -46,7 +40,6 @@ export class TrustedHostKeys {
     );
   }
 
-  /** True when no host key is trusted: Studio does not connect. */
   get isEmpty(): boolean {
     return this.keys.length === 0;
   }

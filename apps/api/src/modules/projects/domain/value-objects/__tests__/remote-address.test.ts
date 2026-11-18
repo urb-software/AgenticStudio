@@ -3,7 +3,6 @@ import { RemoteAddress, type RemoteAddressRange } from '../remote-address.js';
 
 describe('RemoteAddress.classify', () => {
   it.each<[string, RemoteAddressRange]>([
-    // Always blocked: unspecified, link-local and metadata, multicast, reserved and broadcast.
     ['0.0.0.0', 'blocked'],
     ['0.1.2.3', 'blocked'],
     ['169.254.169.254', 'blocked'],
@@ -15,7 +14,6 @@ describe('RemoteAddress.classify', () => {
     ['239.255.255.250', 'blocked'],
     ['240.0.0.1', 'blocked'],
     ['255.255.255.255', 'blocked'],
-    // Opt-in: loopback, private and CGNAT.
     ['127.0.0.1', 'private'],
     ['127.255.0.9', 'private'],
     ['10.0.0.5', 'private'],
@@ -24,7 +22,6 @@ describe('RemoteAddress.classify', () => {
     ['192.168.1.10', 'private'],
     ['100.64.0.1', 'private'],
     ['100.127.255.254', 'private'],
-    // Public, including the neighbours of each range.
     ['8.8.8.8', 'public'],
     ['140.82.121.4', 'public'],
     ['1.0.0.0', 'public'],
@@ -56,7 +53,6 @@ describe('RemoteAddress.classify', () => {
     ['2001:db8::1', 'public'],
     ['FE80::1', 'blocked'],
     ['0:0:0:0:0:0:0:1', 'private'],
-    // IPv4-mapped, IPv4-compatible and NAT64 forms count as their IPv4 address.
     ['::ffff:127.0.0.1', 'private'],
     ['::ffff:7f00:1', 'private'],
     ['::ffff:169.254.169.254', 'blocked'],

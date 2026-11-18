@@ -27,7 +27,6 @@ import { GitUnsupportedPlatformError } from '../../../../application/ports/repos
 import { FetchRepositoryHandler } from '../../../../application/features/fetch-repository/handler.js';
 import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
-/** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
   if (error instanceof NoRepositoryError) return noRepository();
@@ -46,7 +45,6 @@ function toHttpError(error: unknown): unknown {
   return error;
 }
 
-/** `POST /api/projects/:id/repository/fetch`, behind the global session and Origin guards. */
 @ApiTags('projects')
 @Controller('projects')
 export class FetchRepositoryEndpoint {

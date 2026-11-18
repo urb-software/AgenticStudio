@@ -52,7 +52,6 @@ describe('FetchRepositoryHandler', () => {
     });
   }
 
-  /** `failed` after a fetch that kept the Clone. */
   async function failedFetch() {
     await ready();
     await connections.change(PROJECT, (r) => {

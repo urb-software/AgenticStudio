@@ -21,7 +21,6 @@ import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.j
 
 const INVALID_REQUEST = 'The request is invalid.';
 
-/** Validates the body and answers 422 with field errors (the contract of Issue #104). */
 const UnprocessableBodyPipe = createZodValidationPipe({
   createValidationException: (error) =>
     new FieldProblemException(
@@ -37,7 +36,6 @@ function fieldError(path: string, message: string): FieldProblemException {
   ]);
 }
 
-/** Maps the handler's typed errors to problem+json; anything else stays a generic 500. */
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
   if (error instanceof InvalidEnvironmentFilePathError) return fieldError('path', error.message);
@@ -48,8 +46,8 @@ function toHttpError(error: unknown): unknown {
 }
 
 /**
- * `PUT /api/projects/:id/environment-file` (Issue #104), behind the global session and
- * mutation Origin guards. The response never contains the content.
+ * `PUT /api/projects/:id/environment-file`, behind the global session and mutation Origin
+ * guards. The response never contains the content.
  */
 @ApiTags('projects')
 @Controller('projects')

@@ -29,7 +29,6 @@ export class InMemoryEnvironmentFileContents implements EnvironmentFileContents 
     return Promise.resolve();
   }
 
-  /** Marks every content stored so far as older than the grace period. */
   ageAll(): void {
     for (const reference of this.values.keys()) this.old.add(reference);
   }

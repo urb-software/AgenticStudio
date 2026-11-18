@@ -11,8 +11,8 @@ import { GetEnvironmentFileHandler } from '../../../../application/features/get-
 import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
 
 /**
- * `GET /api/projects/:id/environment-file` (Issue #104), behind the global session guard: the
- * Environment file's path, size and last change, or `null` when none is set. Never the content.
+ * `GET /api/projects/:id/environment-file`, behind the global session guard: path, size and
+ * last change, or `null` when none is set. Never the content.
  */
 @ApiTags('projects')
 @Controller('projects')

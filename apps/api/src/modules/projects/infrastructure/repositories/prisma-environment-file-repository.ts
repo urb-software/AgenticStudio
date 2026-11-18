@@ -7,8 +7,8 @@ import { EnvironmentFile } from '../../domain/entities/environment-file.js';
 import type { EnvironmentFileRepository } from '../../domain/repositories/environment-file-repository.js';
 
 /**
- * PostgreSQL adapter of {@link EnvironmentFileRepository} (Issue #104): one row per project in
- * `environment_files`, its own table, so disconnecting the Repository leaves it in place.
+ * PostgreSQL adapter of {@link EnvironmentFileRepository}: its own `environment_files` table,
+ * so disconnecting the Repository leaves the row in place.
  */
 @Injectable()
 export class PrismaEnvironmentFileRepository implements EnvironmentFileRepository {

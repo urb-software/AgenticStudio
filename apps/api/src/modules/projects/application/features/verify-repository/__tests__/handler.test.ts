@@ -48,7 +48,6 @@ describe('VerifyRepositoryHandler', () => {
     handler = new VerifyRepositoryHandler(projects, connections, git, jobs, deployKeys);
   });
 
-  /** An SSH Repository awaiting its key, as connect stores it. */
   async function awaitingKey(url: string) {
     const deployKey = await deployKeys.create('Shop');
     return connections.connect({

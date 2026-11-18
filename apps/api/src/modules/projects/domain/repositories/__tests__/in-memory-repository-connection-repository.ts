@@ -9,16 +9,12 @@ import { type StoredRepositoryConnection } from '../../entities/repository-conne
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
 import { type RepositoryConnectionRepository } from '../repository-connection-repository.js';
 
-/** What the in-memory store keeps of a Repository, and the remote's identity beside it. */
 export type StoredRepository = StoredRepositoryConnection & { identity: string };
 
 /**
- * In-memory adapter of {@link RepositoryConnectionRepository} for handler tests, with the same
- * rules as the database: one Repository per project, one project per remote identity, and a
- * change that throws saves nothing (the database rolls the transaction back). The rules of a
- * Repository are the {@link RepositoryConnection} class's, as in the database adapter. Like it,
- * it stores no derived field (`hasClone`, the host key fingerprint) and does not know the
- * Projects: the handler checks that the project exists.
+ * In-memory adapter of {@link RepositoryConnectionRepository} for handler tests, with the database's
+ * rules: one Repository per project, one project per remote identity, and a change that throws saves
+ * nothing.
  */
 export class InMemoryRepositoryConnectionRepository implements RepositoryConnectionRepository {
   readonly repositories = new Map<string, StoredRepository>();
@@ -93,7 +89,6 @@ export class InMemoryRepositoryConnectionRepository implements RepositoryConnect
     });
   }
 
-  /** Saves what the Repository changed: its fields, its identity, or its removal. */
   private save(repository: RepositoryConnection, identity?: string): void {
     const changes = repository.pendingChanges();
     const { projectId } = repository;

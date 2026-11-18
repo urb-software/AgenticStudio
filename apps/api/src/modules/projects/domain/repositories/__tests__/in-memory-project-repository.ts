@@ -2,10 +2,6 @@ import { Project } from '../../entities/project.js';
 import type { ProjectName } from '../../value-objects/project-name.js';
 import type { ProjectRepository } from '../project-repository.js';
 
-/**
- * In-memory adapter of {@link ProjectRepository} for handler tests: the Projects only. The
- * Repository connections of the same projects are in `InMemoryRepositoryConnectionRepository`.
- */
 export class InMemoryProjectRepository implements ProjectRepository {
   readonly projects = new Map<string, Project>();
 

@@ -77,7 +77,7 @@ describe('classifyGitFailure', () => {
       "fatal: unable to access 'https://nope.invalid/r/': Could not resolve host: nope.invalid",
       'host_unreachable',
     ],
-    // http.followRedirects=false (Issue #69): Git's message for a redirect it did not follow.
+    // http.followRedirects=false: Git's message for a redirect it did not follow.
     [
       "fatal: unable to access 'https://git.example.test/r.git/': The requested URL returned error: 301",
       'redirect_refused',
