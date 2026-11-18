@@ -1,3 +1,4 @@
+import { HostLiteral } from './host-literal.js';
 import { REFUSED_RANGE_REASON, RemoteAddress } from './remote-address.js';
 import type { AddressPolicy } from './address-policy.js';
 import type { SshRemote } from './ssh-remote.js';
@@ -46,10 +47,10 @@ export interface RepositoryUrlOptions {
  * adapter once resolved.
  */
 function checkAddress(host: string, policy: AddressPolicy | undefined, example: string): void {
-  const literal = RemoteAddress.literalOf(host);
+  const literal = HostLiteral.of(host);
   if (literal.kind === 'invalid') invalid(`Enter a valid host name, ${example}.`);
   if (!policy || literal.kind !== 'address') return;
-  const range = RemoteAddress.refusedRange(literal.address, policy.allowPrivate);
+  const range = RemoteAddress.of(literal.address!).refusedUnder(policy.allowPrivate);
   if (range) invalid(`This address is not allowed: ${REFUSED_RANGE_REASON[range]}`);
 }
 
