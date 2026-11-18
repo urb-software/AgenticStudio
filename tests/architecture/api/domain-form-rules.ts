@@ -1,7 +1,6 @@
 import ts from 'typescript';
 import { listFiles, type Violation } from '../harness';
 import {
-  exportedClasses,
   exportedLater,
   hasExportModifier,
   isErrorClass,
@@ -23,7 +22,7 @@ export const DOMAIN_FORM_RULES = [
 ];
 
 const DOMAIN_FILE = /^src\/modules\/([^/]+)\/domain\//;
-const OBJECT_FILE = /^src\/modules\/[^/]+\/domain\/(entities|value-objects)\/[^/]+\.ts$/;
+const OBJECT_FILE = /^src\/modules\/[^/]+\/domain\/(entities|value-objects)\/.+\.ts$/;
 const TEST_FILE = /(^|\/)__tests__\/|\.test\.tsx?$/;
 const HELPER_MAX_LINES = 10;
 
@@ -89,6 +88,13 @@ function isPrivateName(member: ts.ClassElement): boolean {
   return member.name !== undefined && ts.isPrivateIdentifier(member.name);
 }
 
+/** Every class a file declares, exported or not. */
+function allClasses(source: ts.SourceFile): { name: string; node: ts.ClassDeclaration }[] {
+  return source.statements
+    .filter(ts.isClassDeclaration)
+    .flatMap((node) => (node.name ? [{ name: node.name.text, node }] : []));
+}
+
 /** The class itself, or the class with `| undefined` or `| null`. */
 function returnsOwnClass(type: ts.TypeNode | undefined, own: string): boolean {
   if (!type) return false;
@@ -106,7 +112,7 @@ function returnsOwnClass(type: ts.TypeNode | undefined, own: string): boolean {
 /** A public static method of an entity or value object is a factory: its return type is its class. */
 function staticViolations(path: string, source: ts.SourceFile): Violation[] {
   const found: Violation[] = [];
-  for (const exported of exportedClasses(source)) {
+  for (const exported of allClasses(source)) {
     for (const member of exported.node.members) {
       if (!isStatic(member) || isPrivateOrProtected(member) || isPrivateName(member)) continue;
       const name = member.name?.getText() ?? 'a static block';

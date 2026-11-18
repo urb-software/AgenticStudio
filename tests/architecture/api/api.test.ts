@@ -566,6 +566,18 @@ describeGate('api', apiGate, 'apps/api', [
       'A public static method of an entity or value object returns something else, or declares no return type',
   },
   {
+    fixture: 'domain-static-accessor',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
+    fixture: 'domain-unexported-class-with-static-rule',
+    expected: ['api-domain-static-is-a-factory'],
+    qualityRow:
+      'A public static method of an entity or value object returns something else, or declares no return type',
+  },
+  {
     fixture: 'domain-static-function-property',
     expected: ['api-domain-static-is-a-factory'],
     qualityRow:

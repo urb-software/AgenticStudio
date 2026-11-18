@@ -59,7 +59,7 @@ export class LogRedaction {
 
   text(text: string): string {
     let redacted = this.replaceKnownValues(text).replace(PRIVATE_KEY_BLOCK, REDACTED);
-    redacted = LogRedaction.maskUrlUserinfo(redacted)
+    redacted = this.maskUrlUserinfo(redacted)
       .replace(AUTHORIZATION_VALUE, `$1${REDACTED}`)
       .replace(BEARER_VALUE, `$1${REDACTED}`);
     return TOKEN_SHAPES.reduce((current, shape) => current.replace(shape, REDACTED), redacted);
@@ -126,7 +126,7 @@ export class LogRedaction {
    * Everything up to the last `@` of the whitespace-free token, so a password holding `@`, `/` or `:`
    * is masked whole. A scan, not a regex: linear time.
    */
-  private static maskUrlUserinfo(text: string): string {
+  private maskUrlUserinfo(text: string): string {
     let output = '';
     let copied = 0;
     URL_SCHEME_SEPARATOR.lastIndex = 0;

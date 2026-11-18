@@ -12,6 +12,11 @@ export class HostLiteral {
     readonly address?: string,
   ) {}
 
+  /** True for an address, and then `address` is set: the compiler narrows on it. */
+  isAddress(): this is HostLiteral & { readonly address: string } {
+    return this.kind === 'address';
+  }
+
   private static inetAtonPart(part: string): number | null {
     if (/^0x[\da-f]+$/i.test(part)) return parseInt(part.slice(2), 16);
     if (/^0[0-7]*$/.test(part)) return parseInt(part, 8);

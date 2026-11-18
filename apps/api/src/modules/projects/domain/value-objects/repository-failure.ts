@@ -125,7 +125,7 @@ export class RepositoryFailure {
     previous: {
       url: string;
       integrationBranch: string;
-      state: string;
+      isFailed: boolean;
       failure: RepositoryFailure | null;
     } | null,
     settings?: { url: string; integrationBranch: string },
@@ -133,7 +133,7 @@ export class RepositoryFailure {
     const sameSettings =
       settings === undefined ||
       (previous?.url === settings.url && previous.integrationBranch === settings.integrationBranch);
-    return previous?.state === 'failed' && previous.failure && sameSettings
+    return previous?.isFailed && previous.failure && sameSettings
       ? previous.failure
       : RepositoryFailure.notStarted();
   }

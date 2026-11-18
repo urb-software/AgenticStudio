@@ -29,8 +29,9 @@ export class RepositoryLifecycle {
   }
 
   /**
-   * A Repository lifecycle as storage holds it. Throws {@link TypeError} for a combination of state and fields that a store should never
-   * hold (the database's CHECK constraints say the same).
+   * A Repository lifecycle as storage holds it. Throws {@link TypeError} for a combination of
+   * state and fields that a store should never hold (the database's CHECK constraints say the
+   * same).
    */
   static restore(stored: StorableConnection): RepositoryLifecycle {
     const { state } = stored;

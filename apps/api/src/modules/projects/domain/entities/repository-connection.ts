@@ -77,6 +77,10 @@ export class RepositoryConnection {
     return this.lifecycle.pendingOperation;
   }
 
+  get isFailed(): boolean {
+    return this.lifecycle.isFailed;
+  }
+
   get isDisconnecting(): boolean {
     return this.lifecycle.isDisconnecting;
   }

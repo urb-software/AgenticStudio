@@ -1,5 +1,5 @@
-import { HostLiteral } from '../../../domain/value-objects/host-literal.js';
 import { lookup } from 'node:dns/promises';
+import { HostLiteral } from '../../../domain/value-objects/host-literal.js';
 import {
   RemoteAddress,
   REFUSED_RANGE_REASON,
@@ -29,8 +29,8 @@ export async function checkedAddresses(
     throw new GitRequestRejectedError('Remote URL rejected: the host is not a valid host name.');
   }
   let addresses: string[];
-  if (literal.kind === 'address') {
-    addresses = [literal.address!];
+  if (literal.isAddress()) {
+    addresses = [literal.address];
   } else {
     try {
       addresses = await resolve(host);
@@ -50,7 +50,7 @@ export async function checkedAddresses(
   for (const address of addresses) {
     const range = RemoteAddress.of(address).refusedUnder(allowPrivate);
     if (!range) continue;
-    const what = literal.kind === 'address' ? `${address} is` : `${host} resolves to ${address},`;
+    const what = literal.isAddress() ? `${address} is` : `${host} resolves to ${address},`;
     const kind =
       range === 'private'
         ? 'a loopback or private address'

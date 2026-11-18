@@ -1,5 +1,6 @@
 import { HostLiteral } from './host-literal.js';
-import { RemoteIdentity, SCHEME, SCP_LIKE } from './remote-identity.js';
+import { RemoteIdentity, SCHEME } from './remote-identity.js';
+import { ScpLikeRemote } from './scp-like-remote.js';
 import { REFUSED_RANGE_REASON, RemoteAddress } from './remote-address.js';
 import type { AddressPolicy } from './address-policy.js';
 import type { SshRemote } from './ssh-remote.js';
@@ -67,7 +68,7 @@ export class RepositoryUrl {
 
     const scheme = SCHEME.exec(input)?.[1]?.toLowerCase();
     if (!scheme) {
-      const scp = SCP_LIKE.exec(input);
+      const scp = ScpLikeRemote.of(input);
       if (scp) {
         const ssh = RepositoryUrl.parseScpLike(input, scp, options.addressPolicy);
         return new RepositoryUrl(input, RemoteIdentity.of(input)!.value, ssh);
@@ -176,25 +177,25 @@ export class RepositoryUrl {
   ): void {
     const literal = HostLiteral.of(host);
     if (literal.kind === 'invalid') RepositoryUrl.invalid(`Enter a valid host name, ${example}.`);
-    if (!policy || literal.kind !== 'address') return;
-    const range = RemoteAddress.of(literal.address!).refusedUnder(policy.allowPrivate);
+    if (!policy || !literal.isAddress()) return;
+    const range = RemoteAddress.of(literal.address).refusedUnder(policy.allowPrivate);
     if (range) RepositoryUrl.invalid(`This address is not allowed: ${REFUSED_RANGE_REASON[range]}`);
   }
 
   private static parseScpLike(
     input: string,
-    match: RegExpExecArray,
+    remote: ScpLikeRemote,
     policy: AddressPolicy | undefined,
   ): SshRemote {
-    const [, user = '', host = '', path = ''] = match;
+    const { user, host } = remote;
     if (!SSH_USER.test(user)) RepositoryUrl.invalid(`Enter a valid SSH user name, ${SSH_EXAMPLE}.`);
     if (!HOSTNAME.test(host)) RepositoryUrl.invalid(`Enter a valid host name, ${SSH_EXAMPLE}.`);
     RepositoryUrl.checkAddress(host, policy, SSH_EXAMPLE);
-    if (path.split('/').some((segment) => segment.startsWith('-'))) {
+    if (remote.hasOptionLikeSegment) {
       RepositoryUrl.invalid('A path segment must not start with "-".');
     }
     if (!RemoteIdentity.of(input))
       RepositoryUrl.invalid(`Enter the full repository URL, ${SSH_EXAMPLE}.`);
-    return { host: host.toLowerCase(), port: 22 };
+    return remote.ssh;
   }
 }
