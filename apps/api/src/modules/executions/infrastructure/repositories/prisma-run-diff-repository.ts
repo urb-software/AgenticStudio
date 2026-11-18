@@ -12,7 +12,6 @@ import {
 import type { RunDiffRepository } from '../../domain/repositories/run-diff-repository.js';
 import { type Executor, inTransaction } from './executor.js';
 
-/** The stored file list (`run_diffs.files`), checked when it is read back. */
 const storedFilesSchema = z.array(
   z.object({
     path: z.string(),
@@ -27,12 +26,8 @@ const storedFilesSchema = z.array(
 );
 
 /**
- * PostgreSQL adapter of {@link RunDiffRepository} (Issue #144): one `run_diffs` row per Run and
- * scope (the file list as JSON) and one `run_diff_files` row per file with a patch, keyed by
- * the file's position in that list; one `run_diff_states` row per Run (review S-1 of #149). A
- * report replaces both scopes (and the state, unless it is unavailable) in one transaction. That
- * the reporting worker holds the Run is the Run's rule, checked under the Run's lock by the
- * transaction that calls this.
+ * That the reporting worker holds the Run is checked under the Run's lock by the calling
+ * transaction; a report replaces both scopes (and the state, unless unavailable) in that transaction.
  */
 @Injectable()
 export class PrismaRunDiffRepository implements RunDiffRepository {
@@ -80,9 +75,8 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
           resultCommit: state.resultCommit,
           previousTree: state.previousTree,
           previousCommit: state.previousCommit,
-          // Issue #143 (review N2 of #141): the pushed commit is stored once, on the Run, from
-          // the delivery reports; a pushed commit the worker sends with its diff state is only
-          // its echo of that value.
+          // The pushed commit is stored once, on the Run, from the delivery reports; the one a worker
+          // sends with its diff state is only its echo of that value.
         };
         await tx.runDiffState.upsert({
           where: { runId },

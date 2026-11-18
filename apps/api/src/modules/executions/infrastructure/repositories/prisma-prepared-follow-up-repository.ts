@@ -8,7 +8,6 @@ import type { PreparedFollowUpRepository } from '../../domain/repositories/prepa
 import type { FollowUpSource } from '../../domain/value-objects/follow-up.js';
 import type { Executor } from './executor.js';
 
-/** What `items` holds, checked on read: the column is JSON, written by the preparation. */
 const itemsSchema = z.array(
   z.object({
     name: z.string(),
@@ -18,7 +17,6 @@ const itemsSchema = z.array(
   }),
 );
 
-/** PostgreSQL adapter of {@link PreparedFollowUpRepository} (Issue #145): `run_prepared_follow_ups`. */
 @Injectable()
 export class PrismaPreparedFollowUpRepository implements PreparedFollowUpRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
@@ -45,7 +43,6 @@ export class PrismaPreparedFollowUpRepository implements PreparedFollowUpReposit
 
   async replace(runId: string, draft: PreparedFollowUp, now: Date): Promise<void> {
     const items = draft.items as unknown as Prisma.InputJsonValue;
-    // The latest preparation replaces the earlier one.
     await this.db.runPreparedFollowUp.upsert({
       where: { runId },
       create: { runId, source: draft.source, text: draft.text, items, createdAt: now },

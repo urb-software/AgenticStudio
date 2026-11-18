@@ -11,12 +11,6 @@ import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../share
 import { RunAlreadyFinishedError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { CancelRunHandler } from '../../../../application/features/cancel-run/handler.js';
 
-/**
- * `POST /api/runs/:runId/cancel` (Issue #100), behind the global session and mutation Origin
- * guards: 202 with the Run. A queued or waiting Run is `cancelled` at once; a preparing or
- * running Run carries `cancelRequestedAt` until the agent worker confirms. Repeating it is
- * harmless (202); a finished Run is a 409.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class CancelRunEndpoint {

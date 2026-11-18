@@ -21,9 +21,8 @@ const EVENT_FIELDS = {
 } as const;
 
 /**
- * PostgreSQL adapter of {@link RunLog} (Issue #99). An append locks the Run row, so
- * the holder check, the duplicate filter and the cap accounting (`runs.log_bytes`,
- * `runs.log_truncated`) see one consistent state, also against concurrent appends.
+ * An append locks the Run row, so the holder check, the duplicate filter and the cap accounting
+ * see one consistent state, also against concurrent appends.
  */
 @Injectable()
 export class PrismaRunLog implements RunLog {

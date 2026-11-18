@@ -14,13 +14,8 @@ import {
 } from '../../application/ports/environment-file-snapshots.js';
 
 /**
- * {@link EnvironmentFileSnapshots} over the secret store (Issue #104): deletes the Environment file snapshots of Runs that are final. A final
- * Run stores no more events (a worker appends only while it holds the Run), so its redaction
- * no longer needs the values. Called when a worker reports a final state, and from the
- * lost-worker schedule for every other way a Run ends (lost worker, and later stories'
- * cancel and time limits). The schedule also deletes snapshots no Run references that are
- * older than an hour (a claim that stopped between storing one and recording it). Never
- * throws: a failure is logged by secret id (redacted) and retried at the next call.
+ * A final Run stores no more events, so its redaction no longer needs the values.
+ * Never throws: a failure is logged by secret id (redacted) and retried at the next call.
  */
 @Injectable()
 export class SecretStoreEnvironmentFileSnapshots implements EnvironmentFileSnapshots {
@@ -33,10 +28,6 @@ export class SecretStoreEnvironmentFileSnapshots implements EnvironmentFileSnaps
     @Inject(RUN_SNAPSHOT_SETTINGS) private readonly settings: RunSnapshotSettings,
   ) {}
 
-  /**
-   * Deletes the snapshot of every final Run that no longer needs it (a retryable failed
-   * delivery keeps it for the retention period), and old orphans.
-   */
   async releaseFinal(): Promise<void> {
     const retryableFinishedBefore = new Date(
       this.clock.now().getTime() - this.settings.retentionDays * 24 * 60 * 60 * 1000,
@@ -62,7 +53,6 @@ export class SecretStoreEnvironmentFileSnapshots implements EnvironmentFileSnaps
     }
   }
 
-  /** Deletes the snapshot of one Run that no longer needs it (the caller decides when). */
   async releaseFor(runId: string): Promise<void> {
     try {
       const secretRef = await this.runs.findEnvironmentFileSecret(runId);

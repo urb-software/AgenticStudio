@@ -1,12 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
-/**
- * A Run in operator API responses (Issue #96), shared by the features of this module only
- * (backend.md §2). Self-contained: the enums are a second list next to the domain's, pinned
- * to it by a test, and the mapper takes a plain shape. Optional fields are left out when
- * they have no value.
- */
 export const runStateSchema = z.enum([
   'queued',
   'preparing',
@@ -31,19 +25,11 @@ export const runFailureCodeSchema = z.enum([
   'unknown',
 ]);
 
-/** Who cancelled a Run (Issue #100). */
 export const runCancelledBySchema = z.enum(['operator', 'system']);
-/** How a Run was delivered (Issue #102): `none` is "No changes". */
 export const runDeliverySchema = z.enum(['none', 'delivered', 'failed']);
 
-/**
- * Where a Run's pull request stands on the Git host (Issue #142): a second list next to the
- * domain's, pinned to it by a test. `draft` and `open` are open; `missing` is a pull request or
- * Run branch that was not found (gone, or not visible to the Agent account).
- */
 export const pullRequestStateSchema = z.enum(['draft', 'open', 'merged', 'closed', 'missing']);
 
-/** How a Pull request check stands (Issue #145). Pinned to the domain's list by a test. */
 export const pullRequestCheckStateSchema = z.enum([
   'queued',
   'running',
@@ -53,34 +39,23 @@ export const pullRequestCheckStateSchema = z.enum([
   'cancelled',
 ]);
 
-/** Where the preparation of a Follow-up from failing checks stands (Issue #145). */
 export const failingChecksPreparationSchema = z.enum(['preparing', 'ready', 'failed']);
 
-/**
- * What a Follow-up was prepared from (Issue #145; #146: the pull request's Review comments;
- * #147: the request to bring the Run branch up to date). Pinned to the domain's list by a test.
- */
 export const followUpSourceSchema = z.enum([
   'pull_request_checks',
   'bring_up_to_date',
   'review_comments',
 ]);
 
-/** The agent's open question (Issue #103): plain text, never markup. */
+/** The agent's open question: plain text, never markup. */
 export const runQuestionResponseSchema = z
   .object({
     text: z.string(),
-    /** The options the agent offers, when it offers any (at most six). */
     options: z.array(z.string()).optional(),
-    /** The option the agent recommends, when it recommends one. */
     recommendation: z.string().optional(),
   })
   .meta({ id: 'RunQuestion' });
 
-/**
- * Why a Run cannot take a Follow-up now (Issue #141): a second list next to the domain's,
- * pinned to it by a test.
- */
 export const followUpRefusalSchema = z.enum([
   'not_finished',
   'follow_up_queued',
@@ -94,21 +69,11 @@ export const followUpRefusalSchema = z.enum([
   'worker_unavailable',
 ]);
 
-/**
- * One turn of the Run's conversation (Issue #103): the Task, a question, an answer, or a
- * Follow-up the operator sent to the finished Run (Issue #141).
- */
 export const runMessageResponseSchema = z
   .object({
-    /** `studio` (review S1 of #150): Studio's record of how a part of the Run ended. */
     role: z.enum(['operator', 'agent', 'studio']),
     kind: z.enum(['task', 'question', 'answer', 'follow_up', 'part_end']),
-    /** A part's end: the failure detail or the cancellation reason (may be empty). */
     text: z.string(),
-    /**
-     * With `part_end` only (review S1 of #150): how the part before a Follow-up ended: its
-     * state, failure code and delivery.
-     */
     end: z
       .object({
         state: z.enum(['succeeded', 'failed', 'cancelled', 'timed_out']),
@@ -117,27 +82,10 @@ export const runMessageResponseSchema = z
       })
       .meta({ id: 'RunPartEnd' })
       .optional(),
-    /**
-     * With the source `bring_up_to_date` (Issue #147; `text` is then the operator's optional note,
-     * empty when there is none): the integration branch commit the Run branch has merged, once the
-     * agent worker reported it (absent when nothing was merged, or not yet).
-     */
     mergedCommit: z.string().optional(),
-    /** A question's offered options, when it offered any (review M2 of #127). */
     options: z.array(z.string()).optional(),
-    /** The option a question recommended, when it recommended one. */
     recommendation: z.string().optional(),
-    /**
-     * With `follow_up` only (Issue #145): what the text was prepared from, when it was prepared
-     * (the operator reviewed and may have edited it); absent for one written from scratch.
-     * Issue #147: `bring_up_to_date` is the request to merge the integration branch into the Run
-     * branch.
-     */
     source: followUpSourceSchema.optional(),
-    /**
-     * With a `review_comments` source only (Issue #146): how many Review comments the Follow-up
-     * was prepared from, and the logins of their authors (distinct).
-     */
     sourceCount: z.int().optional(),
     sourceAuthors: z.array(z.string()).optional(),
     at: z.iso.datetime(),
@@ -151,126 +99,58 @@ export const runResponseSchema = z
     provider: runProviderSchema,
     task: z.string(),
     state: runStateSchema,
-    /** The integration branch's commit the Run starts from. */
     startCommit: z.string(),
     createdAt: z.iso.datetime(),
     startedAt: z.iso.datetime().optional(),
     finishedAt: z.iso.datetime().optional(),
     failure: z.object({ code: runFailureCodeSchema, detail: z.string() }).optional(),
-    /**
-     * The Run branch in the Working copy (Issue #98); with `commits` and
-     * `hasUncommittedChanges`, present once the agent worker has reported a Run step.
-     */
     runBranch: z.string().optional(),
     /**
-     * The commits on the Run branch since the start commit, oldest first (at most 200). `pushed`
-     * (Issue #141): the commit is on the remote Run branch; otherwise it exists only in the
-     * Working copy. Absent on every commit when the pushed commit is not among the listed ones
-     * (review S5 of #150): which are pushed is then unknown.
+     * `pushed`: the commit is on the remote Run branch; otherwise it exists only in the Working copy.
+     * Absent on every commit when the pushed commit is not among the listed ones: which are pushed is unknown.
      */
     commits: z
       .array(z.object({ id: z.string(), subject: z.string(), pushed: z.boolean().optional() }))
       .optional(),
-    /** Whether the Working copy held uncommitted changes after the latest Run step. */
     hasUncommittedChanges: z.boolean().optional(),
-    /** Whether the Run was given its Project's Environment file when it was claimed (Issue #104). */
     environmentFileSupplied: z.boolean(),
-    /**
-     * The limits in force for this Run (Issue #100): the longest a Run step may work, the most
-     * Run steps it may take, and the days it may wait for the operator before it is cancelled.
-     */
     limits: z
       .object({
         stepMinutes: z.int().min(1),
-        /** The most Run steps of the first part, and of each Follow-up (Issue #141). */
         maxSteps: z.int().min(1),
         waitingDays: z.int().min(1),
-        /** The most Run steps in total; past it the Run takes no Follow-up (Issue #141). */
         maxTotalSteps: z.int().min(1),
       })
       .meta({ id: 'RunLimits' }),
-    /**
-     * The Run step totals (Issue #141): how many Run steps the Run has taken, and how many of
-     * them in its current part (the first part, or the latest Follow-up).
-     */
     steps: z
       .object({ used: z.int().min(0), usedInPart: z.int().min(0) })
       .meta({ id: 'RunStepTotals' }),
-    /** How many Follow-ups the operator sent to the Run (Issue #141); 0 when none. */
     followUps: z.int().min(0),
-    /**
-     * Whether the Run can take a Follow-up now, and if not, why (Issue #141). In single-Run
-     * answers only (`GET /api/runs/:runId` and the Follow-up command).
-     */
+    /** Single-Run answers only (`GET /api/runs/:runId` and the Follow-up command). */
     followUp: z
       .object({
         allowed: z.boolean(),
         reason: followUpRefusalSchema.optional(),
-        /**
-         * Issue #143: until when the Run stays open to Follow-ups (its Working copy and agent
-         * session are kept until then), moved by the Run's activity. Present when the Run is
-         * open to one, now or once its worker or Provider is available; absent otherwise.
-         */
         openUntil: z.iso.datetime().optional(),
-        /**
-         * Issue #143: the Run is still open to Follow-ups, but its date has passed or the limit
-         * per Project removes it: the agent worker removes the Working copy at its next sweep
-         * (at most an hour). Instead of `openUntil`.
-         */
         removalPending: z.literal(true).optional(),
       })
       .meta({ id: 'RunFollowUpEligibility' })
       .optional(),
-    /**
-     * When the operator asked to cancel a preparing or running Run (Issue #100): the agent
-     * worker is stopping it, and the Run ends as `cancelled` once it confirms.
-     */
     cancelRequestedAt: z.iso.datetime().optional(),
-    /** Present exactly when `cancelled`: who cancelled it and why. */
     cancellation: z.object({ by: runCancelledBySchema, reason: z.string() }).optional(),
-    /**
-     * How the Run was delivered (Issue #102): `none` (succeeded with no changes: nothing pushed),
-     * `delivered` (succeeded with a draft pull request) or `failed` (failed with
-     * `delivery_failed`; the delivery can be retried). Absent until then.
-     */
     delivery: runDeliverySchema.optional(),
-    /**
-     * The Run's draft pull request on GitHub: present when `delivery` is `delivered`, and kept
-     * while a Follow-up works on the Run or after it ended otherwise (Issue #141: one Run, at
-     * most one pull request).
-     */
     pullRequest: z
       .object({
         url: z.url(),
         number: z.int().positive(),
-        /**
-         * Issue #142: where the pull request stood when the agent worker last read it through the
-         * Agent account; absent until the first lookup succeeded. The last known state is kept
-         * when a later lookup fails.
-         */
         state: pullRequestStateSchema.optional(),
-        /** Commits the Run branch is behind / ahead of the integration branch at that lookup. */
         behindBy: z.int().min(0).optional(),
         aheadBy: z.int().min(0).optional(),
-        /** Whether GitHub says it can be merged without conflicts; absent when it did not say. */
         mergeable: z.boolean().optional(),
-        /** When the state was last read; absent until then. */
         refreshedAt: z.iso.datetime().optional(),
-        /**
-         * Why the latest refresh failed, or that no agent worker is connected to carry it out;
-         * text for the operator.
-         */
         refreshError: z.string().optional(),
-        /** A rate-limited refresh is tried again at this time. */
         retryAt: z.iso.datetime().optional(),
-        /** Present (true) while a refresh waits for an agent worker or is being carried out. */
         refreshing: z.literal(true).optional(),
-        /**
-         * Issue #145: the Pull request checks of the pull request's latest commit
-         * (`checksCommit`) as GitHub reported them at `refreshedAt`: name, state, duration and a
-         * link to the check. An empty list means none are configured or reported for that commit.
-         * Absent until a lookup read them, and for a pull request that is not open.
-         */
         checks: z
           .array(
             z
@@ -283,23 +163,10 @@ export const runResponseSchema = z
               .meta({ id: 'RunPullRequestCheck' }),
           )
           .optional(),
-        /** Issue #145: the pull request's latest commit the checks belong to. */
         checksCommit: z.string().optional(),
-        /**
-         * Issue #145: present (true) when GitHub refused to tell the checks (the Agent account
-         * lacks the permission); the state is shown without them.
-         */
         checksUnavailable: z.literal(true).optional(),
-        /**
-         * Issue #145: present (true) when the checks belong to another commit than the Run's
-         * latest pushed one: someone else pushed to the Run branch.
-         */
+        /** True when the checks belong to another commit than the Run's latest pushed one: someone else pushed. */
         checksOtherCommit: z.literal(true).optional(),
-        /**
-         * Issue #145: the preparation of a Follow-up from the failing checks: `preparing` while
-         * the agent worker reads their logs, `ready` when the draft waits for review (read it with
-         * `GET …/failing-checks/prepared`), `failed` with `error` when it could not be read.
-         */
         failingChecksPreparation: z
           .object({
             state: failingChecksPreparationSchema,
@@ -310,30 +177,17 @@ export const runResponseSchema = z
       })
       .meta({ id: 'RunPullRequest' })
       .optional(),
-    /** Present (true) while a requested delivery retry is pending or in progress. */
     deliveryRetryRequested: z.literal(true).optional(),
-    /**
-     * Present (true) when the Run stopped at the subscription's usage limit and the operator can
-     * resume it (`POST /api/runs/:runId/resume`, Issue #105).
-     */
     resumable: z.literal(true).optional(),
-    /** The checks the agent reported failed in the latest Run step, when there are any. */
     failingChecks: z.array(z.string()).optional(),
-    /** Present exactly while the Run waits for the operator's answer to it (Issue #103). */
     question: runQuestionResponseSchema.optional(),
-    /**
-     * The conversation, in order (Issue #103): the Task, then each question of the agent, each
-     * answer and each Follow-up of the operator (Issue #141). Everything the agent wrote is plain
-     * text. In single-Run answers only (`GET /api/runs/:runId` and the commands); lists leave it
-     * and `question` out.
-     */
+    /** Everything the agent wrote is plain text. Single-Run answers only; lists leave it and `question` out. */
     messages: z.array(runMessageResponseSchema).optional(),
   })
   .meta({ id: 'Run' });
 
 export class RunResponseDto extends createZodDto(runResponseSchema) {}
 
-/** A list of Runs, newest first (by creation time, then id). */
 export const runListResponseSchema = z.array(runResponseSchema).meta({ id: 'RunList' });
 
 export class RunListResponseDto extends createZodDto(runListResponseSchema) {}
@@ -426,16 +280,11 @@ export function toRunResponse(
   followUp?: (
     { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> }
   ) & { openUntil?: Date; removalPending?: true },
-  /**
-   * Issue #142: whether an agent worker is connected, when the caller knows. A refresh that
-   * waits while none is says so instead of loading for ever.
-   */
   workerConnected?: boolean,
 ): RunResponse {
   const last = run.messages.at(-1);
-  // Issue #141: the commits up to and including the pushed one are on the remote Run branch.
-  // A pushed commit that is not in the list (rewritten history, or older than the listed
-  // commits) leaves each commit's pushed state unknown (review S5 of #150): no `pushed` field.
+  // The commits up to and including the pushed one are on the remote Run branch. A pushed commit not in
+  // the list leaves each commit's pushed state unknown: no `pushed` field.
   const pushedUpTo = run.workingCopy
     ? run.workingCopy.commits.findIndex((commit) => commit.id === run.pushedCommit)
     : -1;
@@ -500,7 +349,6 @@ export function toRunResponse(
         }
       : {}),
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
-    // The Run's `canResumeAfterUsageLimit` rule (private), on the plain shape (Issue #105).
     ...(run.state === 'failed' &&
     run.failure?.code === 'usage_limit' &&
     run.sessionRef !== null &&
@@ -571,11 +419,9 @@ export function toRunResponse(
   };
 }
 
-/** What a refresh that waits for an agent worker says while none is connected (Issue #142). */
 export const NO_WORKER_FOR_REFRESH =
   'The agent worker is not connected, so the pull request state could not be refreshed.';
 
-/** What a preparation that waits for an agent worker says while none is connected (Issue #145). */
 const NO_WORKER_FOR_PREPARATION =
   'The agent worker is not connected, so the logs of the failing checks could not be read.';
 
@@ -604,7 +450,6 @@ function toPullRequestResponse(
   };
 }
 
-/** The checks of the pull request card (Issue #145), and whether another commit than the Run's. */
 function checksResponse(
   checks: Parameters<typeof toRunResponse>[0]['pullRequestStatus']['checks'],
   pushedCommit: string | null,
@@ -625,7 +470,6 @@ function checksResponse(
   };
 }
 
-/** Where the preparation of a Follow-up from failing checks stands (Issue #145). */
 function preparationResponse(
   status: Parameters<typeof toRunResponse>[0]['pullRequestStatus'],
   workerConnected: boolean | undefined,
@@ -647,10 +491,6 @@ function preparationResponse(
   return status.preparedFollowUp ? { failingChecksPreparation: { state: 'ready' as const } } : {};
 }
 
-/**
- * A Run in a list (Issue #103, coordinator decision): the Run without its conversation
- * (`messages`) and open question, which only the single-Run answers carry.
- */
 export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResponse {
   const { messages: _messages, question: _question, ...item } = toRunResponse(run);
   void _messages;
@@ -658,11 +498,6 @@ export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResp
   return item;
 }
 
-/**
- * A Run snapshot with whether a prepared Follow-up waits for the operator, in the shape
- * {@link toRunResponse} takes: the handler's result carries the flag beside the Run, because the
- * Prepared Follow-up is an aggregate of its own that the Run does not hold.
- */
 export function withPreparedFollowUp<T extends { pullRequestStatus: object }>(
   run: T,
   preparedFollowUp: boolean,

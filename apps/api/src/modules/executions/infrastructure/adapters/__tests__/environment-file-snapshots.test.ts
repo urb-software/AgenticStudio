@@ -9,8 +9,7 @@ import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { SecretStoreEnvironmentFileSnapshots } from '../environment-file-snapshots.js';
 
-// Issue #104: a Run's Environment file snapshot serves its log redaction while the Run goes
-// on, and is deleted once the Run is final, however it ended. Test values only.
+// Test values only.
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER = '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f';
@@ -104,7 +103,6 @@ describe('Environment file snapshots', () => {
     await release.releaseFinal();
     expect(secrets.values.has(run.snapshot)).toBe(true);
 
-    // A retry in progress keeps it even past the period.
     await runs.requestDeliveryRetry(run.runId);
     now = new Date(T0.getTime() + 8 * DAY);
     await release.releaseFinal();

@@ -20,10 +20,6 @@ import {
   type StudioServices,
 } from '../../../../../__tests__/studio-test-app.js';
 
-// Issue #169 (Epic #160): the Run repository keeps the hand-out and the sweeps over many Runs, each
-// paired with a named rule in the domain. Here the store's statements are run over fixture rows of
-// every kind and must select and change exactly what the rule says on the same rows.
-
 const T = new Date('2026-11-17T09:00:00.000Z');
 const NOW = new Date('2026-11-17T12:00:00.000Z');
 const LEASE_SECONDS = 60;
@@ -57,7 +53,6 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
     return row!.id;
   }
 
-  /** The kinds of Run the hand-out and the sweeps tell apart, as rows the CHECK constraints allow. */
   const KINDS = {
     fresh: () => ({ state: 'queued' }),
     answered: (w: string) => ({
@@ -140,13 +135,11 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
   type Kind = keyof typeof KINDS;
   interface Spec {
     kind: Kind;
-    /** The project's number: Runs of one number share a project. */
     project: number;
     worker?: string;
     overrides?: Partial<RunData>;
   }
 
-  /** Replaces all Runs by the specs, oldest first; returns the ids in that order. */
   async function fixtures(specs: readonly Spec[]): Promise<string[]> {
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
     const projects = new Map<number, string>();
@@ -240,8 +233,6 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
         it(`hands out what the rule says: ${name} (worker ${[W1, W2, W3].indexOf(worker) + 1})`, async () => {
           await fixtures(specs);
 
-          // Claim until nothing is handed out: every step is the rule's choice on the rows as
-          // they stand, and changes that Run only.
           for (let step = 0; step < 6; step++) {
             const stored = await runs().listNewestFirst();
             const expected = HandOutRule.for(worker).next(stored)?.id ?? null;
@@ -419,7 +410,6 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
           expect(run.state).toBe(before.find((candidate) => candidate.id === run.id)!.state);
         }
       }
-      // A Run that no longer waits is not cancelled again.
       const [cancelled] = [...selected];
       expect(
         await runs().cancelUnheld(

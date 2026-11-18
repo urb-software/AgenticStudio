@@ -11,7 +11,6 @@ import {
 import { RunProjectNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { ListProjectRunsHandler } from '../../../../application/features/list-project-runs/handler.js';
 
-/** `GET /api/projects/:id/runs` (Issue #96): a project's Runs, newest first; session guard. */
 @ApiTags('runs')
 @Controller('projects')
 export class ListProjectRunsEndpoint {

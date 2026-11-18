@@ -12,24 +12,12 @@ import { RenewHeldRunLeasesHandler } from '../../application/features/renew-held
 import { SweepLostWorkersHandler } from '../../application/features/sweep-lost-workers/handler.js';
 import { TimeOutOverdueStepsHandler } from '../../application/features/time-out-overdue-steps/handler.js';
 
-/** DI token of the {@link RunSweepsSettings}. */
 export const RUN_SWEEPS_SETTINGS = Symbol('RUN_SWEEPS_SETTINGS');
 
-/** How long between two sweeps (the module derives it from the worker lease). */
 export interface RunSweepsSettings {
   intervalMs: number;
 }
 
-/**
- * Runs the sweeps on an interval once the app has started (Issue #96, #100): the lost-worker
- * sweep, so a lost worker is noticed even when no other worker claims, the step time-limit
- * backstop, and the long-wait sweep, and it releases the Environment file snapshots Runs no
- * longer need (Issue #104). When the API starts it first renews the lease of every held Run
- * (Issue #100): the agent workers kept their Run steps going while Studio was down, so a short
- * outage does not fail them as `worker_lost`; a worker that is really gone is noticed one lease
- * later. The timer is `unref`'d (it never keeps the process alive) and cleared on shutdown; a
- * failed sweep is logged and retried at the next tick. Every rule lives in the handlers.
- */
 @Injectable()
 export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger('RunSweeps');
@@ -74,7 +62,6 @@ export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplication
     this.timer = undefined;
   }
 
-  /** One pass of the sweeps, in this order (also called by tests). */
   async tick(): Promise<void> {
     if (this.sweeping) return;
     this.sweeping = true;
@@ -89,7 +76,6 @@ export class RunSweepsScheduler implements OnApplicationBootstrap, OnApplication
       if (cancelled > 0) {
         this.logger.warn(`${cancelled} run(s) cancelled: they waited too long for the operator.`);
       }
-      // Environment file snapshots of Runs that ended any way (Issue #104); never throws.
       await this.snapshots.execute();
     } catch (error) {
       this.logger.error(

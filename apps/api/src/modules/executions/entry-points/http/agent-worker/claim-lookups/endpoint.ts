@@ -4,11 +4,6 @@ import { WorkerController } from '../../../../../../platform/auth/worker-route.j
 import { ClaimLookupsHandler } from '../../../../application/features/claim-lookups/handler.js';
 import { ClaimLookupsRequestDto } from './schema.js';
 
-/**
- * `POST /api/worker/lookups/claim` (Issue #142), worker token only: 200 with up to five
- * lookups, or 204 when none is waiting. Each carries what the worker needs to read the Run's
- * pull request through the Agent account, and nothing else.
- */
 @WorkerController('lookups')
 export class ClaimLookupsEndpoint {
   constructor(private readonly handler: ClaimLookupsHandler) {}

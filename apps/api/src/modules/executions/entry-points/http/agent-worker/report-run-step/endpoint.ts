@@ -15,11 +15,6 @@ import { ReportRunStepHandler } from '../../../../application/features/report-ru
 import { ReportRunStepRequestDto } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `POST /api/worker/runs/:runId/steps` (Issue #96), worker token only: 204 once the step's
- * structured result is stored, 404 for an unknown Run, 409 unless this worker holds it running,
- * and 409 (`step-limit-reached`) for a step beyond the Run's maximum, which fails it (#100).
- */
 @WorkerController('runs')
 export class ReportRunStepEndpoint {
   constructor(private readonly handler: ReportRunStepHandler) {}

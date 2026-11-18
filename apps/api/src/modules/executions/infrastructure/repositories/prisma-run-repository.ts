@@ -43,7 +43,6 @@ import type {
   RunStateView,
 } from '../../domain/repositories/run-repository.js';
 
-/** A Run's fields as lists read them: everything but its conversation (Issue #103). */
 const LIST_FIELDS = {
   id: true,
   projectId: true,
@@ -101,11 +100,9 @@ const LIST_FIELDS = {
   prPrepareError: true,
   prEndedAt: true,
   lastActivityAt: true,
-  // Issue #141: the Run step total, counted with the Run.
   _count: { select: { steps: true } },
 } as const;
 
-/** A single Run's fields with its conversation (Issue #103); lists read {@link LIST_FIELDS}. */
 const RUN_FIELDS = {
   ...LIST_FIELDS,
   messages: {
@@ -187,7 +184,6 @@ interface RunRow {
   prEndedAt: Date | null;
   lastActivityAt: Date;
   _count: { steps: number };
-  /** Absent when a list read the Run (Issue #103). */
   messages?: {
     kind: string;
     text: string;
@@ -208,11 +204,9 @@ interface RunRow {
 
 const PLACE_STATES = Prisma.join([...HandOutRule.PLACE_STATES]);
 
-/** A message row as a Run's message (Issue #103); the CHECK constraint fixes the kinds. */
 function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   if (row.kind === 'answer') return { kind: 'answer', text: row.text, at: row.at };
   if (row.kind === 'follow_up') {
-    // The CHECK constraint fixes the source (Issues #145, #147).
     return {
       kind: 'follow_up',
       text: row.text,
@@ -221,14 +215,12 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
       ...(row.sourceCount === null
         ? {}
         : { sourceComments: { count: row.sourceCount, authors: row.sourceAuthors } }),
-      // Issue #147: what a bring-up-to-date request records besides its note.
       ...(row.mergedCommit === null ? {} : { mergedCommit: row.mergedCommit }),
       ...(row.updateBase === null ? {} : { updateBase: row.updateBase }),
       ...(row.updateTip === null ? {} : { updateTip: row.updateTip }),
     };
   }
   if (row.kind === 'part_end') {
-    // The CHECK constraints fix the state, the code and the delivery (review S1 of #150).
     return {
       kind: 'part_end',
       state: row.endState as RunPartEnd['state'],
@@ -255,12 +247,6 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
   };
 }
 
-/**
- * Places held, as for a claim (SQL over `runs a`): {@link HandOutRule.holdsPlace} in SQL. An
- * active state, a failed Run held for a delivery retry (Issue #102), or an answered Run queued
- * for its worker to resume (Issue #103). A Run queued for a Follow-up holds none until it is
- * claimed (Issue #141).
- */
 const HOLDS_PLACE = Prisma.sql`(a.state IN (${PLACE_STATES})
   OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
   OR (a.state = 'queued' AND a.session_ref IS NOT NULL AND NOT a.follow_up_queued))`;
@@ -283,7 +269,6 @@ const NEWEST_FIRST = [{ createdAt: 'desc' }, { id: 'desc' }] as const;
 const includes = <T extends string>(list: readonly T[], value: string): value is T =>
   (list as readonly string[]).includes(value);
 
-/** Maps a row; the CHECK constraints guarantee the state and the failure fields agree. */
 function toRun(row: RunRow): Run {
   if (!includes(RUN_STATES, row.state)) {
     throw new Error(`Unexpected run state in the database: ${row.state}`);
@@ -370,7 +355,7 @@ function toRun(row: RunRow): Run {
       retryAt: row.prRetryAt,
       refreshRequestedAt: row.prRefreshRequestedAt,
       lastAttemptAt: row.prLastAttemptAt,
-      // Written by the lookups from a validated worker result (Issue #145).
+      // Written by the lookups from a validated worker result.
       checks: row.prChecks as RunPullRequestChecks | null,
       prepareRequestedAt: row.prPrepareRequestedAt,
       prepareError: row.prPrepareError,
@@ -380,7 +365,6 @@ function toRun(row: RunRow): Run {
   });
 }
 
-/** A message as its row: the CHECK constraints fix the kinds (Issues #103, #141, #145, #146). */
 function messageRow(message: RunMessage) {
   switch (message.kind) {
     case 'answer':
@@ -422,7 +406,6 @@ function messageRow(message: RunMessage) {
 
 type ChangedField = keyof RunChanges['fields'];
 
-/** The columns of the Run fields its methods change; any other field is a bug. */
 const CHANGED_COLUMNS: {
   [K in ChangedField]?: (
     value: NonNullable<RunChanges['fields'][K]> | null,
@@ -447,7 +430,6 @@ const CHANGED_COLUMNS: {
   delivery: (delivery) => ({ delivery }),
   stepStartedAt: (stepStartedAt) => ({ stepStartedAt }),
   deliveryRequested: (deliveryRequested) => ({ deliveryRequested: deliveryRequested! }),
-  // What the agent worker reports for the Run (Issue #169).
   claimedBy: (claimedBy) => ({ claimedBy }),
   heartbeatAt: (heartbeatAt) => ({ heartbeatAt }),
   releasedBy: (releasedBy) => ({ releasedBy }),
@@ -462,7 +444,6 @@ const CHANGED_COLUMNS: {
   workingCopyRemovedAt: (workingCopyRemovedAt) => ({ workingCopyRemovedAt }),
   environmentFileSupplied: (supplied) => ({ environmentFileSupplied: supplied! }),
   environmentFilePath: (environmentFilePath) => ({ environmentFilePath }),
-  // What the lookups changed of the Run's pull request status (Issues #142, #143, #145).
   pullRequestStatus: (status) => ({
     prState: status!.state,
     prBehindBy: status!.behindBy,
@@ -497,12 +478,9 @@ function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdate
 }
 
 /**
- * PostgreSQL adapter of {@link RunRepository} (Issue #96). Claims run in one transaction
- * under a transaction-scoped advisory lock, so concurrent claims are serialized and each sees
- * the others' committed result: together they cannot exceed one active Run per project or
- * `HandOutRule.MAX_PLACES` across the server; a `failed` Run a worker holds for a delivery retry
- * (Issue #102) and an answered Run queued for its worker to resume (Issue #103) count as active. The partial unique index on active Runs per project backs the
- * first limit in the schema itself.
+ * Claims run in one transaction under a transaction-scoped advisory lock, so concurrent claims are
+ * serialized and see each other's result: together they cannot exceed `HandOutRule.MAX_PLACES`
+ * or one active Run per project (the partial unique index backs the latter).
  */
 @Injectable()
 export class PrismaRunRepository implements RunRepository {
@@ -546,7 +524,6 @@ export class PrismaRunRepository implements RunRepository {
   }
 
   async summarize(): Promise<RunsSummary> {
-    // One bounded aggregate over the non-final states: two counts, never the Runs.
     const groups = await this.db.run.groupBy({
       by: ['state'],
       where: { state: { in: [...UNDER_WAY_RUN_STATES, 'waiting_for_operator'] } },
@@ -575,18 +552,9 @@ export class PrismaRunRepository implements RunRepository {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-        // One statement selects the Run and hands it out (Issue #169), so a change that lands
-        // between the two, a cancel of the Run for one, cannot make the claim fail: the selection
-        // locks the Run's row and, if another transaction holds it, waits for that transaction;
-        // PostgreSQL then re-checks the row as it is after it, so a Run that stopped being
-        // eligible is left out and the claim takes the next eligible Run in queue order, or none.
-        // A Run is never skipped for being briefly locked, so the queue order is strict. The
-        // conditions are HandOutRule's: queue order; the places held and their limits
-        // (`HOLDS_PLACE`, `HandOutRule.MAX_PLACES`; a candidate's own place does not count against
-        // it); a resumable or delivery-retry Run only to the worker that last claimed it. A queued
-        // Run goes to `preparing` (a resumed one keeps its first start, a claimed Follow-up holds
-        // its places like any held Run: Issues #103, #141); a failed Run held for a delivery retry
-        // stays `failed` (Issue #102).
+        // One statement selects the Run and hands it out, so a concurrent cancel cannot make the claim fail:
+        // the selection waits for the Run's row lock, PostgreSQL re-checks the row, and an ineligible Run is
+        // left out. A Run is never skipped for being briefly locked, so the queue order is strict.
         const [claimed] = await tx.$queryRaw<{ id: string }[]>`
           UPDATE runs SET
             state = CASE WHEN state = 'queued' THEN 'preparing' ELSE state END,
@@ -711,8 +679,6 @@ export class PrismaRunRepository implements RunRepository {
   ): Promise<Run | null> {
     try {
       return await this.changeLocked(runId, { serializedWithClaims: true }, async (run, tx) => {
-        // Places held as for a claim: an active state, a failed Run held for a delivery retry, or
-        // a Run queued to resume.
         const [places] = await tx.$queryRaw<{ project: number; server: number }[]>`
           SELECT count(*) FILTER (WHERE a.project_id = ${run.projectId}::uuid)::int AS project,
                  count(*)::int AS server
@@ -729,16 +695,16 @@ export class PrismaRunRepository implements RunRepository {
         });
       });
     } catch (error) {
-      // Backstop: the partial unique index on a project's active Run (Issue #103).
+      // Backstop: the partial unique index on a project's active Run.
       if (isUniqueConstraintViolation(error)) throw new RunSlotTakenError('project');
       throw error;
     }
   }
 
   /**
-   * Loads the Run FOR UPDATE, lets `work` change it, and saves its pending changes, all in one
-   * transaction. `serializedWithClaims`: takes the claim lock first, as a claim does (the lock
-   * order is the same everywhere, so claims and this change cannot deadlock).
+   * Loads the Run FOR UPDATE, lets `work` change it and saves its pending changes in one
+   * transaction. `serializedWithClaims` takes the claim lock first, as a claim does: the lock order
+   * is the same everywhere, so claims and this change cannot deadlock.
    */
   private async changeLocked(
     runId: string,
@@ -772,7 +738,6 @@ export class PrismaRunRepository implements RunRepository {
     await inTransaction(this.db, (tx) => this.persist(tx, run));
   }
 
-  /** Saves what a Run operation changed on the Run: its columns, messages and steps. */
   private async persist(tx: Prisma.TransactionClient, run: Run): Promise<void> {
     const changes = run.pendingChanges();
     const data = changedColumns(changes.fields);
@@ -933,7 +898,7 @@ export class PrismaRunRepository implements RunRepository {
           finishedAt: now,
         },
       });
-      // A delivery retry whose worker was lost (Issue #102): still a failed delivery.
+      // A delivery retry whose worker was lost: still a failed delivery.
       const retries = await tx.run.updateMany({
         where: { state: 'failed', claimedBy: { not: null }, heartbeatAt: { lt: staleBefore } },
         data: {
@@ -991,8 +956,8 @@ export class PrismaRunRepository implements RunRepository {
       where: {
         state: { in: [...FINAL_RUN_STATES] },
         environmentFileSecretId: { not: null },
-        // A failed delivery that can still be retried keeps its snapshot (Issue #104), and so
-        // does a Run stopped at the usage limit, which can be resumed (Issue #105).
+        // A failed delivery that can still be retried keeps its snapshot, and so does a Run stopped
+        // at the usage limit, which can be resumed.
         NOT: {
           state: 'failed',
           failureCode: { in: ['delivery_failed', 'usage_limit'] },

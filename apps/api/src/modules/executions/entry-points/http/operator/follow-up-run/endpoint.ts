@@ -17,15 +17,6 @@ import { ReviewCommentsNotLoadedError } from '../../../../domain/errors/run-erro
 import { FollowUpRunHandler } from '../../../../application/features/follow-up-run/handler.js';
 import { followUpRunRequestSchema, FollowUpRunRequestDto } from './schema.js';
 
-/**
- * `POST /api/runs/:runId/follow-up` (Issue #141), behind the global session and mutation Origin
- * guards: 202 with the Run, queued for the Follow-up, once it is stored; 404 for an unknown Run;
- * 409 when the Run cannot take a Follow-up now (still working or waiting, one already queued,
- * Working copy removed, no agent session, Run step total reached, Provider or agent worker
- * unavailable), the detail saying why; 422 for an empty or too long text. The body is typed
- * `unknown`, so the global pipe leaves it alone and an invalid body becomes a 422 here. Issue #146:
- * a 422 also answers selected Review comments that are not (all) in the Run's loaded set.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class FollowUpRunEndpoint {

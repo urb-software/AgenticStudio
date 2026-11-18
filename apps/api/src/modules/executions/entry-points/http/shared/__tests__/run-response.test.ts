@@ -6,7 +6,6 @@ import {
   toRunResponse,
 } from '../run-response.js';
 
-// contracts/http may not import the domain (backend.md §2): its own "nothing read yet".
 const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestStatus'] = {
   state: null,
   behindBy: null,
@@ -22,7 +21,6 @@ const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestSt
   preparedFollowUp: false,
 };
 
-// Issue #103: the conversation and the open question in the operator API.
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const T1 = new Date('2026-11-15T12:05:00.000Z');
 const T2 = new Date('2026-11-15T12:10:00.000Z');
@@ -74,7 +72,6 @@ describe('Run response: conversation (Issue #103)', () => {
         role: 'agent',
         kind: 'question',
         text: 'Which database?',
-        // Review M2 of #127: a past question keeps its options and recommendation.
         options: ['PostgreSQL', 'SQLite'],
         recommendation: 'PostgreSQL',
         at: T1.toISOString(),
@@ -137,7 +134,6 @@ describe('Run response: resuming after the usage limit (Issue #105)', () => {
   });
 });
 
-// Issue #141: Follow-ups in the operator API.
 describe('Run response: Follow-ups (Issue #141)', () => {
   const C1 = 'c'.repeat(40);
   const C2 = 'd'.repeat(40);
@@ -314,13 +310,11 @@ describe('Run response: pull request state (Issue #142)', () => {
     const noWorker = toRunResponse(waiting, undefined, false).pullRequest;
     expect(noWorker?.refreshing).toBeUndefined();
     expect(noWorker?.refreshError).toBe(NO_WORKER_FOR_REFRESH);
-    // Nothing is waiting: no worker needed, nothing said.
     expect(
       toRunResponse(withPullRequest({ state: 'open' }), undefined, false).pullRequest?.refreshError,
     ).toBeUndefined();
   });
 
-  // Issue #145: Pull request checks and the preparation of failing ones.
   describe('Pull request checks', () => {
     const COMMIT = 'c'.repeat(40);
     const checks = [
@@ -354,7 +348,6 @@ describe('Run response: pull request state (Issue #142)', () => {
 
       expect(read(status, COMMIT.toUpperCase())).not.toHaveProperty('checksOtherCommit');
       expect(read(status, 'd'.repeat(40)).checksOtherCommit).toBe(true);
-      // No pushed commit known: nothing to compare with, nothing claimed.
       expect(read(status, null)).not.toHaveProperty('checksOtherCommit');
     });
 

@@ -13,10 +13,6 @@ import {
   type StudioServices,
 } from '../../../../../__tests__/studio-test-app.js';
 
-// Issue #183 (Epic #160): the Run log's append keeps its holder check in one atomic statement,
-// paired with the named rule LogAppendRule. Here the statement runs over Runs of every state and
-// holder and must accept exactly the appends the rule allows.
-
 const T = new Date('2026-11-17T09:00:00.000Z');
 const W1 = randomUUID();
 const W2 = randomUUID();

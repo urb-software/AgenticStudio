@@ -19,14 +19,6 @@ import {
   PullRequestNotRefreshableError,
 } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `POST /api/runs/:runId/pull-request/refresh` (Issue #142), behind the global session and
- * mutation Origin guards: 202 with the Run, marked as refreshing while an agent worker reads
- * the pull request (a request is recorded at most once a minute per Run when the Run page asks
- * on opening, and never twice at once); 404 for an unknown Run; 409 for a Run without a pull
- * request; 422 for an invalid body. The body is optional and typed `unknown`, so the global pipe
- * leaves it alone.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class RefreshPullRequestEndpoint {

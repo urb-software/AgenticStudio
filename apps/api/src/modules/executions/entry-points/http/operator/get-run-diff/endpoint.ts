@@ -24,11 +24,6 @@ import {
 } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `GET /api/runs/:runId/diff?scope=run|last` and `GET /api/runs/:runId/diff/file?scope=&path=`
- * (Issue #144), behind the global session guard: a Run's diff (the file list) and one file's
- * patch. 404 for an unknown Run, a Run without a diff yet, or a path the diff does not list.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class GetRunDiffEndpoint {
@@ -48,7 +43,7 @@ export class GetRunDiffEndpoint {
     try {
       const diff = await this.diffHandler.execute({ runId, scope: query.scope });
       if (diff.kind === 'unavailable') {
-        // No pushed state for a diff that was not computed (review S-3 of #149).
+        // No pushed state for a diff that was not computed.
         return {
           scope: query.scope,
           truncated: false,

@@ -7,10 +7,6 @@ import { ListRunStepsHandler } from '../../../../application/features/list-run-s
 import { RunStepListDto } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `GET /api/runs/:runId/steps` (Issue #99), behind the global session guard: the structured
- * result of each reported Run step (summary and checks), shown at the step's end in the log.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class ListRunStepsEndpoint {

@@ -6,11 +6,6 @@ import { AppendRunEventsHandler } from '../../../../application/features/append-
 import { AppendRunEventsRequestDto } from './schema.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `POST /api/worker/runs/:runId/events` (Issue #99), worker token only: 204 once the batch is
- * stored (events with a stored seq are ignored, so a re-send is safe), 404 for an unknown Run,
- * 409 unless this worker holds it (`preparing` or `running`).
- */
 @WorkerController('runs')
 export class AppendRunEventsEndpoint {
   constructor(private readonly handler: AppendRunEventsHandler) {}

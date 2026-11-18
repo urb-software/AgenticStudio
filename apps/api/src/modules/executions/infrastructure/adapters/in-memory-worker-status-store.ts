@@ -1,7 +1,7 @@
 import type { RecordedWorkerStatus } from '../../domain/value-objects/worker-status.js';
 import type { WorkerStatusStore } from '../../application/ports/worker-status-store.js';
 
-/** The single API process keeps the latest worker status in memory (Issue #101). */
+/** Single API process: the latest worker status lives in memory. */
 export class InMemoryWorkerStatusStore implements WorkerStatusStore {
   private current: RecordedWorkerStatus | undefined;
   private readonly seen = new Map<string, Date>();

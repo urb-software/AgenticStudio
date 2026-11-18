@@ -5,11 +5,6 @@ import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js'
 import { DiscardPreparedFollowUpHandler } from '../../../../application/features/discard-prepared-follow-up/handler.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
-/**
- * `DELETE /api/runs/:runId/pull-request/failing-checks/prepared` (Issue #145), behind the global
- * session and mutation Origin guards: 204 once the prepared Follow-up is gone (also when there was
- * none); 404 for an id that is not a Run's. Nothing is sent to an agent.
- */
 @ApiTags('runs')
 @Controller('runs')
 export class DiscardPreparedFollowUpEndpoint {

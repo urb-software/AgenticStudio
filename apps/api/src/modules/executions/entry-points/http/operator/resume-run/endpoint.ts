@@ -16,12 +16,6 @@ import {
 } from '../../../../domain/errors/run-errors.js';
 import { ResumeRunHandler } from '../../../../application/features/resume-run/handler.js';
 
-/**
- * `POST /api/runs/:runId/resume` (Issue #105), behind the global session and mutation Origin
- * guards: 202 with the Run, queued to resume its agent session, once the request is stored; 404
- * for an unknown Run; 409 unless the Run stopped at the usage limit with a session to resume,
- * or while its project or the server has no free place (review R1 of #129).
- */
 @ApiTags('runs')
 @Controller('runs')
 export class ResumeRunEndpoint {

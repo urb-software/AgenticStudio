@@ -22,11 +22,6 @@ import {
 import { StartRunHandler } from '../../../../application/features/start-run/handler.js';
 import { startRunRequestSchema, StartRunRequestDto } from './schema.js';
 
-/**
- * `POST /api/projects/:id/runs` (Issue #96), behind the global session and mutation Origin
- * guards. The body is typed `unknown`, so the global pipe leaves it alone and an invalid body
- * becomes a 422 here; the DTO documents it.
- */
 @ApiTags('runs')
 @Controller('projects')
 export class StartRunEndpoint {
@@ -56,7 +51,6 @@ export class StartRunEndpoint {
     }
     try {
       const { run } = await this.handler.execute({ projectId, ...parsed.data });
-      // A Run that was just started has no prepared Follow-up.
       return toRunResponse(withPreparedFollowUp(run, false));
     } catch (error) {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
