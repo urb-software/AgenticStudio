@@ -603,9 +603,19 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: '`domain/` imports no runtime module (tests are not checked)',
   },
   {
-    fixture: 'domain-host-key-fingerprint-uses-sha256',
+    fixture: 'domain-hashes-with-create-hash',
     expected: [],
     qualityRow: '`domain/` imports no runtime module (tests are not checked)',
+  },
+  {
+    fixture: 'domain-imports-random-bytes-from-crypto',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
+  },
+  {
+    fixture: 'domain-imports-crypto-namespace',
+    expected: ['api-domain-no-runtime-modules'],
+    qualityRow: '`domain/` imports `node:crypto`, `fs`, `dns`, `timers` or another runtime module',
   },
   {
     fixture: 'domain-imports-node-crypto',

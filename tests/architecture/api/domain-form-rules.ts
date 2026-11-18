@@ -46,12 +46,11 @@ const RUNTIME_MODULES = new Set([
 ]);
 
 /**
- * The only runtime module a domain file may use: a SHA-256 fingerprint of a public host key, which
- * is deterministic and reads no random source, key or file.
+ * What the domain may import from `crypto`: hashing is deterministic and does no I/O. Random
+ * sources, key generation and everything else of the module stay out, as does a default or
+ * namespace import, which could reach them.
  */
-const RUNTIME_MODULE_EXEMPTIONS: Readonly<Record<string, readonly string[]>> = {
-  'src/modules/projects/domain/value-objects/host-key.ts': ['crypto'],
-};
+const ALLOWED_CRYPTO_NAMES = new Set(['createHash']);
 
 export function domainFormViolations(baseDir: string): Violation[] {
   return listFiles(baseDir, 'src/modules')
@@ -302,16 +301,14 @@ function instanceMemberViolations(path: string, source: ts.SourceFile): Violatio
 
 /** Nothing in `domain/` reaches a platform runtime module: time, randomness and I/O come in as values. */
 function runtimeModuleViolations(baseDir: string, path: string): Violation[] {
-  const allowed = RUNTIME_MODULE_EXEMPTIONS[path] ?? [];
-  return moduleImports(baseDir, path).flatMap(({ specifier }) => {
+  return moduleImports(baseDir, path).flatMap(({ specifier, names }) => {
     const bare = specifier.startsWith('node:') ? specifier.slice('node:'.length) : specifier;
-    if (!RUNTIME_MODULES.has(bare) || allowed.includes(bare)) return [];
-    return [
-      {
-        rule: 'api-domain-no-runtime-modules',
-        from: path,
-        to: `imports ${specifier}`,
-      },
-    ];
+    if (!RUNTIME_MODULES.has(bare)) return [];
+    if (bare === 'crypto' && names.length > 0 && names.every((n) => ALLOWED_CRYPTO_NAMES.has(n))) {
+      return [];
+    }
+    const what =
+      bare === 'crypto' ? `imports ${names.join(', ')} from ${specifier}` : `imports ${specifier}`;
+    return [{ rule: 'api-domain-no-runtime-modules', from: path, to: what }];
   });
 }
