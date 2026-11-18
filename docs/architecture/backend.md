@@ -101,6 +101,10 @@ Rules 1 to 9 and rules 10 to 13 were approved by the operator on 2026-11-17 (Epi
 
 Rules 10 to 13 apply to the API only, as rules 1 to 9 do.
 
+### Rule 14: comments
+
+**Comments explain why, briefly, and only when the code cannot.** Unlike rules 1 to 13, this rule is repository-wide: it covers every package and tests, not the API only. The full text, the planned enforcement and an example are in [Quality](../engineering/quality.md) §5 (rule 14) and in [AGENTS.md](../../AGENTS.md) §2a.
+
 ### What a handler returns (rule 10)
 
 | Handler | Returns |

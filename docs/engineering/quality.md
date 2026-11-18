@@ -193,6 +193,71 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 
 Rules that are review only are covered by the specific backend items of the review report ([template](../templates/review-report.md) §2) and by the review skill's third brief, which checks only the thirteen rules against the diff. The architecture review skill (`studio-improve-codebase-architecture`) runs at the end of each Epic ([Agent roles](agent-roles.md) §6).
 
+### Rule 14: comments
+
+Rule 14 is not a structure rule: it is about readability and applies to the whole repository (API, agent worker, shared packages and tests). It is recorded beside rules 1 to 13 so there is one list ([Backend](../architecture/backend.md) §3). Existing code is brought in line by the clean-up tickets of Epic #160; the web app follows later.
+
+**Comments explain why, briefly, and only when the code cannot.**
+
+A comment is for:
+
+- a constraint or invariant the code does not show;
+- a security reason;
+- a concurrency or atomicity guarantee;
+- a workaround, with its cause;
+- the contract of a port or repository method: what it guarantees, what an empty result means, what it throws.
+
+A comment is never for:
+
+- what the name and types already say;
+- history: what changed, moved or was removed;
+- an Issue or pull request number, written as `#<digits>` or as a link to either (`#` followed by digits only is a reference, so rewrite any other such use, such as "step #1");
+- the definition of a glossary term;
+- restating an architecture rule.
+
+Form:
+
+- At most three lines. Anything longer belongs in a document, with a one-line pointer.
+- A class or file header is one sentence or absent.
+- Tests rely on the test name and follow the same rule.
+- Exception: a longer comment is allowed when it contains the tag `@long-comment <reason>`. The reason is required and must not be empty.
+
+What counts as a comment block: one block comment (`/* */`, `/** */`), or a run of consecutive `//` line comments. Its length is its lines of text; lines that are only `/**`, `/*` or `*/`, and lines with no text (only `*` or empty), do not count. A trailing comment on a code line is not part of a run of `//` comments. These are not comments for this rule: tool directives (`eslint-disable...`, `@ts-expect-error` and `@ts-ignore` with their reason, `prettier-ignore`, triple-slash references), shebangs, and decorator or OpenAPI description text.
+
+Before:
+
+```ts
+/**
+ * Added in #123 to fix duplicate charges. Previously the balance was
+ * read outside the transaction. Moved here from PaymentService.
+ * A Wallet is the holder of a customer's balance (see glossary).
+ * Debits the wallet by the given amount.
+ */
+async debit(walletId: WalletId, amount: Money): Promise<void> {
+  // lock the row, then debit
+  await this.repository.withLock(walletId, (wallet) => wallet.debit(amount));
+}
+```
+
+After:
+
+```ts
+// The row lock makes read-check-write atomic: two concurrent debits must not both pass the balance check.
+async debit(walletId: WalletId, amount: Money): Promise<void> {
+  await this.repository.withLock(walletId, (wallet) => wallet.debit(amount));
+}
+```
+
+Enforcement (planned, not yet in place; each is introduced by [#207](https://github.com/urb-software/AgenticStudio/issues/207)):
+
+| Check | What it does | Introduced by |
+| --- | --- | --- |
+| Lint check: comment length | Fails a comment block longer than three lines without a `@long-comment <reason>` tag, and a tag with an empty reason | #207 |
+| Lint check: Issue or pull request reference | Fails a comment that contains `#<digits>` or a link to an Issue or pull request | #207 |
+| Structure report figure | Reports the comment-to-code ratio per file and flags files above 0.25; reported, not blocking | #207 |
+
+Until those exist, rule 14 is review only: the Standards brief of the review skill covers it, and the checks above are the planned enforcement. Never claim a check for rule 14 passed while it is not implemented (§8).
+
 ## 6. Test stack and placement
 
 | Area | Target tools | What to verify |
