@@ -28,8 +28,7 @@ import { UnsafeIdentifierError } from '../run-layout.js';
 import { PreparationFailedError, STUDIO_EXCLUDE_SECTION, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
 
-// Issue #98: a Run's Working copy on the agent side, against fixture repositories reached
-// through file:// remotes (no network). Linux only, like the worker; runs in CI on Linux.
+// A Run's Working copy on the agent side, against fixture repositories.
 
 const AGENT = { agentGitName: 'Studio Agent', agentGitEmail: 'agent@example.test' };
 
@@ -147,7 +146,6 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       runBranch: prepared.runBranch,
       startCommit: first,
       composeProjectName: `studio-run-${run.runId.replaceAll('-', '').slice(0, 12)}`,
-      // Issue #104: no file placed by Studio in this Run.
       studioPaths: [],
     });
     expect(readdirSync(prepared.runDir).sort()).toEqual(['repo', 'run.json', 'task.md']);
@@ -270,7 +268,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     }
   });
 
-  it('refuses a local remote in a production worker, fetching nothing (coordinator decision 3)', async () => {
+  it('refuses a local remote in a production worker, fetching nothing', async () => {
     for (const remoteUrl of [remote.url, remote.url.slice('file://'.length), '../shop.git']) {
       const failure = await workingCopies(false)
         .prepare(payload({ repository: { remoteUrl } }), signal())
@@ -300,7 +298,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     ).rejects.toThrow(/fetching the Project's repository/);
   });
 
-  it('refuses a runs directory that is a symlink (review of #117)', async () => {
+  it('refuses a runs directory that is a symlink', async () => {
     const elsewhere = join(root, 'elsewhere');
     mkdirSync(elsewhere);
     mkdirSync(dataDir);
@@ -369,14 +367,11 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     expect(readdirSync(root).sort()).toEqual(before);
     expect(readdirSync(outside)).toEqual(['secret.txt']);
     expect(readFileSync(join(outside, 'secret.txt'), 'utf8')).toBe('untouched\n');
-    // The symlinks are checked out as symlinks inside the Working copy, nothing more.
     expect(lstatSync(join(prepared.repoDir, 'escape-dir')).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(prepared.repoDir, 'escape-file'))).toBe(join(outside, 'secret.txt'));
     expect(existsSync(join(prepared.repoDir, 'evil', '.git'))).toBe(false);
   });
 
-  // Issue #103: a resume continues in the kept Working copy, on the Run branch Studio recorded.
-  // Issue #143: no new Run is prepared while the disk is short of free space.
   describe('free-space guard', () => {
     const SHORT = "The agent worker's disk has 2.0 GiB free, below the 10.0 GiB it keeps free.";
     const short = {
@@ -463,7 +458,6 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     });
   });
 
-  // Review S3 of #150: a Follow-up works with the Project's current Environment file.
   describe('replacing the Environment file for a Follow-up', () => {
     const OLD = 'DB_PASSWORD=test-only-old';
     const NEW = 'DB_PASSWORD=test-only-new';
@@ -543,7 +537,6 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       expect(readFileSync(outside, 'utf8')).toBe('keep me');
     });
 
-    // Issue #143 (review N1 of #141): the agent may have committed a file at the new path since.
     it("refuses a path the Run branch's current commit tracks, overwriting nothing", async () => {
       const copies = workingCopies();
       const run = payload({
@@ -631,7 +624,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       );
     });
 
-    it('commits a change and reports a failing check with [fake:checks-failed] (Issue #102)', async () => {
+    it('commits a change and reports a failing check with [fake:checks-failed]', async () => {
       const { result, report } = await runFake('[fake:checks-failed] Add a feature');
 
       expect(report).toMatchObject({ commits: [{ subject: 'Fake change' }] });
@@ -649,7 +642,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       expect(report).toMatchObject({ commits: [], hasUncommittedChanges: true });
     });
 
-    it('never writes through a symlink the repository puts at the fake change (review of #117)', async () => {
+    it('never writes through a symlink the repository puts at the fake change', async () => {
       const outside = join(root, 'outside.txt');
       writeFileSync(outside, 'untouched');
       const hostile = remote.commit('Link', {}, { [FAKE_CHANGE_FILE]: outside });
@@ -705,7 +698,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
     });
   });
 
-  describe('Environment file (Issue #104)', () => {
+  describe('Environment file', () => {
     // A test value only.
     const CONTENT = 'DB_PASSWORD=test-only-pw\nAPI_URL=http://localhost:3000\n';
     const withFile = (path: string, overrides: Partial<RunPayload> = {}) =>
@@ -718,7 +711,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       expect(readFileSync(file, 'utf8')).toBe(CONTENT);
       expect(statSync(file).mode & 0o777).toBe(0o600);
       expect(lstatSync(join(prepared.repoDir, 'config')).isDirectory()).toBe(true);
-      // Listed in the Run file, for delivery to leave it out (Issue #102).
+      // Listed in the Run file, for delivery to leave it out.
       expect(JSON.parse(readFileSync(join(prepared.runDir, 'run.json'), 'utf8'))).toMatchObject({
         studioPaths: ['config/test.env'],
       });

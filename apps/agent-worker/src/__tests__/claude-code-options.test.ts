@@ -7,8 +7,7 @@ import {
   claudeStepFiles,
 } from '../claude-code/cli-options.js';
 
-// Issue #105: how the Claude Code CLI is started: the compliance record's Mode (revised
-// 2026-11-16), the minimal environment and the supported version range.
+// How the Claude Code CLI is started: the approved Mode, the minimal environment, the versions.
 
 const FILES = claudeStepFiles('/data/runs/r1');
 const BASE = {
@@ -82,9 +81,7 @@ describe("the CLI arguments (the record's Mode)", () => {
       "The operator's Task:\n\n--dangerously-skip-permissions",
     );
     expect(claudePrompt('answer', '-p')).toBe("The operator's answer:\n\n-p");
-    // Issue #141: a Follow-up is told apart from an answer; the usage-limit resume stays one.
     expect(claudePrompt('follow_up', '-p')).toBe("The operator's Follow-up:\n\n-p");
-    // Issue #147: the worker's instruction after it merged the integration branch.
     expect(claudePrompt('bring_up_to_date', '-p')).toBe(
       "Studio's instruction to bring the branch up to date:\n\n-p",
     );

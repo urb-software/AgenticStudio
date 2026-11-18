@@ -2,9 +2,9 @@ import { createSecretKey, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { seal, unseal } from '../aes-256-gcm.js';
 
-// Issue #57 review F1: the sealed parts read back from the database are untrusted. A tag or
-// nonce of the wrong length must fail closed. Without the length checks Node accepts a
-// truncated GCM tag (as short as 4 bytes), which would cut forgery resistance to 2^32.
+// The sealed parts read back from the database are untrusted: a tag or nonce of the wrong
+// length must fail closed. Without the length checks Node accepts a truncated GCM tag (as
+// short as 4 bytes), which would cut forgery resistance to 2^32.
 
 const KEY = createSecretKey(randomBytes(32));
 const AAD = Buffer.from('9b2f6c1e-4d0a-4f7b-8e3c-2a1d5f6b7c8d', 'utf8');

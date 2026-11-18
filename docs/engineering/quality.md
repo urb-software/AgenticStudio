@@ -78,7 +78,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Do **not** require empty folders, mandatory `command.ts`/`query.ts`, or `domain/events/`.
 - Static checks cannot prove where all business logic lives; thin consumer/endpoint rules need behavior tests and review.
 
-**Structure report** (not a check): `pnpm run structure:report` (`scripts/structure-report.mjs`) prints, for the API, the largest source files, every file under a module's `domain/` over 400 lines (rule 13: size is reported, not enforced), the number of methods per repository interface, the number of public methods per handler, the number of collaborators per module and the number of files per feature. With `--base-ref <git ref>` it also shows the change against that ref. CI runs it as a step of the `architecture:api` job and writes it to the pull request's job summary with the change against the base branch; the step never fails the build and adds no required check (§7, §8).
+**Structure report** (not a check): `pnpm run structure:report` (`scripts/structure-report.mjs`) prints, for the API, the largest source files, every file under a module's `domain/` over 400 lines (rule 13: size is reported, not enforced), the number of methods per repository interface, the number of public methods per handler, the number of collaborators per module, the number of files per feature, and the comment-to-code ratio per production file of the API, the agent worker and the shared packages (tests excluded) (files above 0.25 are flagged: the count and the top 30; rule 14). With `--base-ref <git ref>` it also shows the change against that ref (for the ratio, the change in the number of flagged files). CI runs it as a step of the `architecture:api` job and writes it to the pull request's job summary with the change against the base branch; the step never fails the build and adds no required check (§7, §8).
 
 ### `architecture:web` — Next.js
 
@@ -102,6 +102,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - No web imports of server or privileged implementations.
 - Shared public contracts have a single canonical source; no duplicate event definitions.
 - No prohibited package cycles, hidden app-to-app implementation imports, or shortcuts bypassing published interfaces.
+- Rule 14 comment checks (§5): no Issue or pull request number in a comment, and no comment block longer than three lines without `@long-comment <reason>`.
 
 **All three checks inspect the entire relevant dependency graph on code/config PRs**, even when affected unit tests run on a subset.
 
@@ -257,15 +258,15 @@ async debit(walletId: WalletId, amount: Money): Promise<void> {
 }
 ```
 
-Enforcement (planned, not yet in place; each is introduced by [#207](https://github.com/urb-software/AgenticStudio/issues/207)):
+Enforcement:
 
-| Check | What it does | Introduced by |
+| Check | What it does | Where it runs |
 | --- | --- | --- |
-| Lint check: comment length | Fails a comment block longer than three lines without a `@long-comment <reason>` tag, and a tag with an empty reason | #207 |
-| Lint check: Issue or pull request reference | Fails a comment that contains `#<digits>` or a link to an Issue or pull request | #207 |
-| Structure report figure | Reports the comment-to-code ratio per file and flags files above 0.25; reported, not blocking | #207 |
+| Comment length | Fails a comment block longer than three lines without a `@long-comment <reason>` tag, and a tag with an empty reason | `pnpm architecture:monorepo` (CI `architecture:monorepo`, inside `ci:required`) |
+| Issue or pull request reference | Fails a comment that contains `#<digits>` or a link to an Issue or pull request | the same run |
+| Structure report figure | Reports the comment-to-code ratio per production file and flags files above 0.25; reported, not blocking | `pnpm structure:report` (§4) |
 
-Until those exist, rule 14 is review only: the Standards brief of the review skill covers it, and the checks above are the planned enforcement. Never claim a check for rule 14 passed while it is not implemented (§8).
+Both checks read comments with the TypeScript scanner (never a pattern over code), so a string or template literal that contains `//` or `#123` is not a comment. They are `tests/architecture/monorepo/comment-rules.test.ts` over `scripts/comment-rules.mjs`, with passing and failing fixtures in `tests/architecture/fixtures/comments/`, and they run locally with `pnpm architecture:monorepo`. They cover `apps/api/src`, `apps/agent-worker`, `packages/*` and `tests/architecture` (JavaScript and TypeScript files, hand-written declaration files included). Excluded: `apps/web`, until its own clean-up; generated code (any `generated/` directory, or a file with a generated-file header such as `@generated`); build output and `node_modules`; and the gate fixtures in `tests/architecture/fixtures/`, which violate on purpose. The `@long-comment` tag is a budgeted exception: a pull request that adds one lists it with its reason.
 
 ## 6. Test stack and placement
 
@@ -331,7 +332,7 @@ pnpm structure:report    # the API structure report (a step of CI architecture:a
 pnpm check:affected
 ```
 
-Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm structure:report` prints the API structure report (§4; in CI a step of `architecture:api` that writes it to the job summary, with the change against the base branch, and always exits 0; locally add `--base-ref <git ref>` for the change against a ref). `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `check:agent-worker` and `test:agent-worker` run as the CI jobs `quality:agent-worker` and `test:agent-worker` (Issue #96). The CI job `deploy:server` (Issue #107) runs ShellCheck and the `deploy/tests/` suites; they need Linux, Docker and a throwaway VM, so there is no local script ([Deployment](deployment.md) §8). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
+Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm structure:report` prints the structure report (§4; in CI a step of `architecture:api` that writes it to the job summary, with the change against the base branch, and always exits 0; locally add `--base-ref <git ref>` for the change against a ref). `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `check:agent-worker` and `test:agent-worker` run as the CI jobs `quality:agent-worker` and `test:agent-worker` (Issue #96). The CI job `deploy:server` (Issue #107) runs ShellCheck and the `deploy/tests/` suites; they need Linux, Docker and a throwaway VM, so there is no local script ([Deployment](deployment.md) §8). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
 
 For every substantive task, the implementer runs all relevant existing checks and reports exact commands, exit status, commit SHA, skips, and blockers.
 

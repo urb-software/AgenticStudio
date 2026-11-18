@@ -9,8 +9,8 @@ import {
 
 /**
  * Installs Studio's managed guardrail files under `root` the way the server setup does (files
- * 0644, directories 0755), plus stand-ins for the hooks' launcher and interpreter (0755), all owned by the
- * test's own user (Issue #134). Returns `root`.
+ * 0644, directories 0755), plus stand-ins for the hooks' launcher and interpreter (0755), all
+ * owned by the test's own user. Returns `root`.
  */
 export async function installManagedGuardrails(root: string): Promise<string> {
   // Every directory from `root` down, 0755 whatever the umask (the worker checks them all).

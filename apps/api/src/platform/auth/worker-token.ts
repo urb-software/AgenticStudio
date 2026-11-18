@@ -3,10 +3,8 @@ import { createHash, type KeyObject, timingSafeEqual } from 'node:crypto';
 const BEARER = /^Bearer +(\S+)$/i;
 
 /**
- * Whether an `Authorization` header carries the agent worker token (Issue #96). `expected` is
- * the SHA-256 digest of the configured token (`AppConfig.workerToken`); `null` (no token
- * configured) rejects everything. The digests have equal length whatever was sent, so the
- * comparison is constant-time. Neither the header nor the token is ever logged.
+ * Whether `Authorization` carries the worker token; `expected` is its SHA-256 digest, `null`
+ * rejects everything. Digests have equal length, so the comparison is constant-time; never log.
  */
 export function verifyWorkerToken(expected: KeyObject | null, authorization?: string): boolean {
   if (expected === null || authorization === undefined) return false;

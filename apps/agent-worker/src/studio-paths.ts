@@ -5,13 +5,9 @@ import { runDirectories } from './run-layout.js';
 import { type PreparedRun, readRunFile, STUDIO_EXCLUDE_SECTION } from './working-copy.js';
 
 /**
- * Pathspecs of a Run's Studio-placed files. Studio's own list (the claim payload, review R3 of
- * #122) always applies; what lies beside the Working copy, which the agent can write, can only
- * add to it: the paths recorded in the Run file (exactly), and the patterns listed under
- * Studio's section of the Working copy's `.git/info/exclude` (to the end of the file),
- * matched as Git matches them there: a leading `/` anchors a pattern at the top, one without
- * a `/` matches at any depth, and globs work. Delivery never commits or pushes them (#102), and
- * a Run's diffs never show them (Issue #144).
+ * Pathspecs of a Run's Studio-placed files: the claim payload's list always applies; what the agent
+ * can write beside the Working copy (the Run file's paths, the patterns in Studio's section of
+ * `.git/info/exclude`, as Git matches them) can only add to it. Never committed, never in diffs.
  */
 export async function studioPathspecs(
   dataDir: string,

@@ -2,9 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'prisma/config';
 
-// Prisma 7 no longer loads .env files. For local development, load the repo-root
-// .env (copied from .env.example) if present; variables already set in the
-// environment take precedence.
+// Prisma 7 loads no .env file: load the repo-root one if present; set variables take precedence.
 const rootEnvFile = path.resolve(import.meta.dirname, '../../.env');
 if (existsSync(rootEnvFile)) {
   process.loadEnvFile(rootEnvFile);

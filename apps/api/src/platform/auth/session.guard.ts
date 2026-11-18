@@ -18,9 +18,8 @@ import { verifyWorkerToken } from './worker-token.js';
 export const NOT_AUTHENTICATED = 'Not authenticated.';
 
 /**
- * Global guard: denies every route by default unless it is marked {@link Public}. A worker
- * route (`WorkerController`, Issue #96) is authenticated by the worker token alone, and only
- * there: the session cookie grants nothing on it, and the token grants nothing elsewhere.
+ * Denies every route unless marked {@link Public}. A worker route is authenticated by the
+ * worker token alone: the cookie grants nothing there and the token grants nothing elsewhere.
  */
 @Injectable()
 export class SessionGuard implements CanActivate {

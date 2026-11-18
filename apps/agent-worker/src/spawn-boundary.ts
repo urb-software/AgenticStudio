@@ -20,7 +20,7 @@ export interface ProviderCliRequest {
 }
 
 /**
- * Where a Run step's process groups are recorded (Issue #100), so the worker can stop the
+ * Where a Run step's process groups are recorded, so the worker can stop the
  * whole tree of the step: `StepProcesses` in production.
  */
 export interface ProcessGroupRegistry {
@@ -28,15 +28,9 @@ export interface ProcessGroupRegistry {
 }
 
 /**
- * The spawn boundary (Issue #101): the only place in the agent worker's production code that
- * creates a provider CLI process (an architecture gate forbids `node:child_process` anywhere
- * else). It checks the provider's switch itself, so no code path, however it reached here,
- * starts a CLI for a disabled provider, and it starts only that provider's own configured
- * binary: callers pass arguments, never the command. Real runners (#105, #106) start their CLI
- * through it. Throws {@link ProviderDisabledError} before anything is spawned.
- *
- * Issue #100: the CLI gets its own process group (`detached`), registered with the Run step's
- * `processes`, so stopping the step reaches every process the CLI started.
+ * The spawn boundary: the only place in production code that creates a provider CLI process (the
+ * architecture gate forbids `node:child_process` elsewhere). Throws {@link ProviderDisabledError}
+ * for a disabled provider; starts only its configured binary, in its own process group.
  */
 export function spawnProviderCli(
   cli: ProviderCli,
@@ -100,10 +94,8 @@ export interface TerminateOptions {
 }
 
 /**
- * The termination helper (Issue #100): SIGINT to each process group (a CLI's own way to stop
- * cleanly), up to `graceMs` for every group to exit, then SIGKILL to whatever is left. Resolves
- * once the groups are gone (or after a short wait for the kill to land); never throws.
- * Returns the groups that had to be killed.
+ * The termination helper: SIGINT to each process group, up to `graceMs` for every group to exit,
+ * then SIGKILL to what is left. Never throws; returns the groups that had to be killed.
  */
 export async function terminateProcessGroups(
   groups: readonly number[],

@@ -16,14 +16,8 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #165 (Epic #160), concurrency evidence for the Repository connection: the operations
-// two requests, or a request and a Git job, can run on one Repository at the same time. Each
-// case loops ITERATIONS times with real concurrency (requests started together, on separate
-// database connections) and checks the outcome that may never differ: who wins where only one
-// may, and that nothing a loser or a late job could write is left behind. These tests were
-// written against the code before the Repository connection became a class and pass on both;
-// they run in the pull request's CI (the race is the evidence, so a reviewer re-runs them).
-// Real Git, so Linux only; the guard at the end fails CI if they were skipped.
+// Concurrency evidence for the Repository connection: each case loops ITERATIONS times with real
+// concurrency and checks only the outcome that may never differ (real Git, so Linux only).
 
 const linux = process.platform === 'linux';
 const ITERATIONS = 25;

@@ -3,12 +3,7 @@ import { join, posix } from 'node:path';
 import ts from 'typescript';
 import { listFiles, type Violation } from '../harness';
 
-/**
- * Source-level rules of `architecture:api` that Dependency Cruiser cannot express, because
- * they depend on declaration names and kinds rather than on import edges
- * (docs/architecture/backend.md §4 and §6). Syntax only: each file is parsed on its own,
- * without type checking, so the rules work on fixtures whose npm imports do not resolve.
- */
+/** Syntax-only rules Dependency Cruiser cannot express: they depend on declaration names. */
 export const SOURCE_RULES = [
   'api-event-versioned',
   'api-event-publisher-owned',
@@ -38,7 +33,7 @@ const EVENT_FILE =
   /^src\/modules\/([^/]+)\/contracts\/events\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-v([1-9][0-9]*)\.ts$/;
 /** An event definition name: `<EventName>V<n>` or `<EventName>V<n>Schema`. */
 const EVENT_NAME = /^([A-Z][A-Za-z0-9]*?)V[1-9][0-9]*(Schema)?$/;
-/** A module's contracts/ outside events/ (its HTTP and SSE shapes live in entry-points/http/shared/). */
+/** A module's contracts/ outside events/ (HTTP and SSE shapes are in entry-points/http/shared/). */
 const CONTRACTS_OUTSIDE_EVENTS = /^src\/modules\/[^/]+\/contracts\/(?!events\/)/;
 /** The public entry point of a module's contracts: `src/modules/<module>/contracts/index.ts`. */
 const CONTRACTS_INDEX = /^src\/modules\/([^/]+)\/contracts\/index\.ts$/;
@@ -47,13 +42,9 @@ const MODULE_CONTRACTS = /^src\/modules\/([^/]+)\/contracts\//;
 const EVENT_LIKE_NAME = /Event(Schema)?$/;
 
 /**
- * Integration events (backend.md §6): each version of an event is defined once, by its
- * publisher, in `contracts/events/<event-name>-v<n>.ts`, which exports only
- * `<EventName>V<n>` and/or `<EventName>V<n>Schema`, declared in that file. An event-like
- * declaration elsewhere in `contracts/`, a competing definition of
- * a published event anywhere else, a published event exposed under another name or by
- * any file but its publisher's `contracts/index.ts`, and the same event in two modules are
- * rejected.
+ * Integration events (backend.md §6): each version is defined once, by its publisher, in
+ * `contracts/events/<event-name>-v<n>.ts`. Event-like declarations, competing definitions and
+ * duplicates across modules are rejected.
  */
 function eventViolations(baseDir: string, files: SourceFile[]): Violation[] {
   const violations: Violation[] = [];
@@ -112,12 +103,9 @@ function eventViolations(baseDir: string, files: SourceFile[]): Violation[] {
 }
 
 /**
- * A published event leaves its publisher only under its own name and only through the
- * publisher's `contracts/index.ts`: no renaming re-export (`export { XV1 as Y }`), no alias
- * declaration (`type Y = XV1`, `type Y = ns.XV1`, `const Y = XV1Schema`,
- * `interface Y extends XV1 {}`), no `export default XV1Schema`, and no re-export (named,
- * `export *`, `export * as ns` or `import * as ns` + `export { ns }`) by any other file, e.g.
- * another module's `contracts/index.ts` or a consumer.
+ * A published event leaves its publisher only under its own name through `contracts/index.ts`:
+ * no renaming re-export, alias declaration (`type Y = XV1`) or default export, and no re-export
+ * by any other file.
  */
 function eventExposureViolations(
   baseDir: string,
@@ -151,7 +139,7 @@ function eventExposureViolations(
       (targetModule !== ownIndexOf || renames)
     );
   };
-  /** The published name `X` behind `X`, an imported `X as Y`, or `ns.X` with `ns` a namespace import. */
+  /** The published name `X` behind `X`, an imported `X as Y`, or `ns.X` via a namespace import. */
   const referenced = (node: ts.Node): string | undefined => {
     if (ts.isIdentifier(node)) return original(node.text);
     const [left, right] = ts.isQualifiedName(node)
@@ -219,10 +207,8 @@ const PORTS = /^src\/modules\/[^/]+\/application\/ports\//;
 const BUSINESS_MODULES = /^src\/modules\//;
 
 /**
- * Contract names (backend.md §4), inside business modules: an interface, type alias or abstract class named
- * `…ReadRepository` or `…Reader` is a read port and lives in `application/ports/`; any other
- * `…Repository` contract is an aggregate repository and lives in `domain/repositories/`.
- * Concrete classes (`PrismaProjectRepository`) are implementations, not contracts.
+ * `…ReadRepository` and `…Reader` contracts live in `application/ports/`, any other
+ * `…Repository` contract in `domain/repositories/`; concrete classes are not contracts.
  */
 function repositoryContractViolations(files: SourceFile[]): Violation[] {
   const moduleFiles = files.filter((file) => BUSINESS_MODULES.test(file.path));
@@ -241,11 +227,8 @@ function repositoryContractViolations(files: SourceFile[]): Violation[] {
 const INFRASTRUCTURE = /^src\/modules\/[^/]+\/infrastructure\//;
 
 /**
- * Every contract an infrastructure adapter implements (`implements X`, or `extends X` for an
- * abstract class X) that is declared in a business module is declared in
- * `domain/repositories/` or `application/ports/`, so no service interface hides in `application/features/`,
- * `domain/entities/` or the adapter itself. Contracts from npm packages
- * (`OnModuleInit`) or from `platform/` are not business-module contracts.
+ * A contract an adapter implements and a business module declares lives in `domain/repositories/`
+ * or `application/ports/`; contracts from npm packages or `platform/` do not count.
  */
 function adapterContractViolations(baseDir: string, files: SourceFile[]): Violation[] {
   const violations: Violation[] = [];
@@ -331,10 +314,8 @@ function locate(
 }
 
 /**
- * Follows re-exports (`export { X } from`, `export *`, `import { X }` + `export { X }`) and
- * re-badging declarations (`type Y = X`, `interface Y extends X {}`) from `path` to the file
- * that declares the contract, so a barrel or alias in `ports/` cannot pass off a contract
- * declared in `features/` or in the domain. If none is found, `path` itself is reported.
+ * Follows re-exports and re-badging declarations from `path` to the declaring file, so a barrel in
+ * `ports/` cannot pass off a contract declared elsewhere. If none is found, `path` itself.
  */
 function declarationOf(
   baseDir: string,

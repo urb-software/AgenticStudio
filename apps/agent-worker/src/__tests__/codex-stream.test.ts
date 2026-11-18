@@ -4,8 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CodexStream, type ResultSource } from '../codex/stream.js';
 import { AgentFailedError, UsageLimitError } from '../runner.js';
 
-// Issue #106: the Codex `exec --json` stream of one Run step → Run events and the step's end,
-// on the recorded streams the stub executable replays.
+// The Codex `exec --json` stream of one step mapped to Run events and the step's end.
 
 const THREAD = '0199a8f2-6c1e-7d43-9b2a-5e8f1c3d7a90';
 const recording = (name: string) =>
@@ -172,7 +171,7 @@ describe('the Codex stream', () => {
     });
   });
 
-  it('keeps the resumed session when a resumed stream reports none (review of #133)', () => {
+  it('keeps the resumed session when a resumed stream reports none', () => {
     const limited = new CodexStream('session-77');
     limited.accept(
       JSON.stringify({ type: 'turn.failed', error: { message: "You've hit your usage limit." } }),

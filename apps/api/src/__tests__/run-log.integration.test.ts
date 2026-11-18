@@ -13,16 +13,15 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #99, main seam: a Run's log over HTTP on the real app with PostgreSQL and Redis from
-// Testcontainers. The worker appends over its route exactly as the agent worker does; the
-// operator reads the stored log in pages and live as server-sent events.
+// A Run's log over HTTP on the real app (PostgreSQL and Redis via Testcontainers); the worker
+// appends over its route and the operator reads the stored log in pages and live as SSE.
 
 // Throwaway values generated per run; none is committed.
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
 /** A small per-Run cap (above one full 16 KiB event), so the cap test needs few events. */
 const LOG_MAX_BYTES = 40_000;
-/** A known secret value of every Run in this suite (the #104 hook, through the test seam). */
+/** A known secret value of every Run in this suite (through the test seam). */
 const KNOWN_SECRET = `env-value-${randomBytes(6).toString('hex')}`;
 const REDACTED = '••••••[redacted]';
 const RUN_NOT_HELD = 'urn:agentic-studio:problem:run-not-held';
@@ -153,7 +152,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
   beforeEach(async () => {
     // Test isolation only; CASCADE also empties runs, run_steps and run_events.
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
-    // A connected agent worker with both providers switched on (Issue #101).
+    // A connected agent worker with both providers switched on.
     const status = await http()
       .post('/api/worker/status')
       .set('Authorization', `Bearer ${WORKER_TOKEN}`)
@@ -386,7 +385,7 @@ describe('Run log API (PostgreSQL + Redis via Testcontainers)', () => {
       );
     });
 
-    it('closes a busy live stream once its session is logged out, though it never idles (#104)', async () => {
+    it('closes a busy live stream once its session is logged out, though it never idles', async () => {
       const runId = await runningRun();
       const session = await signIn(app);
       const { response } = await openStream(runId, session);

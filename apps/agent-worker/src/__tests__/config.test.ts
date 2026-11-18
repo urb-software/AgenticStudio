@@ -51,7 +51,7 @@ describe('loadWorkerConfig', () => {
     });
   });
 
-  it("reads the diff limits (Issue #144), never above the worker protocol's own", () => {
+  it("reads the diff limits, never above the worker protocol's own", () => {
     expect(
       loadWorkerConfig({
         ...env,
@@ -70,7 +70,7 @@ describe('loadWorkerConfig', () => {
     }
   });
 
-  it("reads the Agent account's GitHub token and API URL from the worker's own env (Issue #102)", () => {
+  it("reads the Agent account's GitHub token and API URL from the worker's own env", () => {
     const agentToken = `ghp_${randomBytes(18).toString('hex')}`;
 
     const config = loadWorkerConfig({
@@ -117,7 +117,7 @@ X-Evil: 1`,
     ).toBe('http://127.0.0.1:4010');
   });
 
-  it('reads the provider switches, each on its own (Issue #101)', () => {
+  it('reads the provider switches, each on its own', () => {
     expect(
       loadWorkerConfig({ ...env, CLAUDE_CODE_ENABLED: 'true', CODEX_CLI_ENABLED: 'false' })
         .providers,
@@ -157,20 +157,20 @@ X-Evil: 1`,
     );
   });
 
-  it('reads the free disk space the worker keeps, in GiB (Issue #143)', () => {
+  it('reads the free disk space the worker keeps, in GiB', () => {
     expect(loadWorkerConfig({ ...env, STUDIO_WORKER_MIN_FREE_GB: '2.5' }).minFreeBytes).toBe(
       2.5 * 1024 ** 3,
     );
     expect(loadWorkerConfig({ ...env, STUDIO_WORKER_MIN_FREE_GB: '0' }).minFreeBytes).toBe(0);
   });
 
-  it('reads the kill grace of a stopped Run step in seconds (Issue #100)', () => {
+  it('reads the kill grace of a stopped Run step in seconds', () => {
     expect(loadWorkerConfig({ ...env, STUDIO_WORKER_KILL_GRACE_SECONDS: '3' }).killGraceMs).toBe(
       3000,
     );
   });
 
-  it('reads the bound on Claude Code agent turns, 200 by default (Issue #105)', () => {
+  it('reads the bound on Claude Code agent turns, 200 by default', () => {
     expect(loadWorkerConfig({ ...env, STUDIO_CLAUDE_MAX_TURNS: '30' }).claudeMaxTurns).toBe(30);
     for (const invalid of ['0', '1001', '2.5', 'many']) {
       expect(() => loadWorkerConfig({ ...env, STUDIO_CLAUDE_MAX_TURNS: invalid })).toThrowError(
@@ -179,7 +179,7 @@ X-Evil: 1`,
     }
   });
 
-  it('runs Codex in the workspace-write sandbox and refuses any other mode (Issue #106)', () => {
+  it('runs Codex in the workspace-write sandbox and refuses any other mode', () => {
     expect(loadWorkerConfig(env).codexSandbox).toBe('workspace-write');
     expect(loadWorkerConfig({ ...env, STUDIO_CODEX_SANDBOX: 'workspace-write' }).codexSandbox).toBe(
       'workspace-write',
@@ -282,7 +282,7 @@ X-Evil: 1`,
   });
 });
 
-describe('Studio-side variables (review of #112)', () => {
+describe('Studio-side variables', () => {
   it.each(STUDIO_SIDE_VARIABLES.map((name) => [name]))(
     'refuses to start when %s is present, naming it but not its value',
     (name) => {

@@ -47,7 +47,7 @@ export function fakeScenarioOf(task: string): FakeScenario {
 export interface FakeRunnerOptions {
   /** How long the `slow` scenario works before it succeeds (it stops early when aborted). */
   slowMs?: number;
-  /** How long the `long` scenario works (Issue #100: a Run to cancel); it stops when aborted. */
+  /** How long the `long` scenario works; it stops when aborted. */
   longMs?: number;
   /** How often the `slow` scenario prints a line while it works. */
   slowLineMs?: number;
@@ -55,12 +55,12 @@ export interface FakeRunnerOptions {
   git?: GitRunner;
 }
 
-/** The fake agent's session reference for a Run (Issue #103): deterministic, per Run. */
+/** The fake agent's session reference for a Run: deterministic, per Run. */
 export function fakeSessionRef(runId: string): string {
   return `fake-session-${runId}`;
 }
 
-/** The fake agent's question (Issue #103), with options and a recommendation. */
+/** The fake agent's question, with options and a recommendation. */
 function asking(runId: string, text: string): RunStepResult {
   return {
     outcome: 'needs_input',
@@ -73,9 +73,9 @@ function asking(runId: string, text: string): RunStepResult {
 /** The file the `commit` and `dirty` scenarios write in the Working copy. */
 export const FAKE_CHANGE_FILE = 'FAKE_CHANGE.md';
 
-/** The file a Follow-up's `commit` and `dirty` scenarios write (Issue #141). */
+/** The file a Follow-up's `commit` and `dirty` scenarios write. */
 export const FAKE_FOLLOW_UP_FILE = 'FAKE_FOLLOW_UP.md';
-/** The second file of the `two-files` scenario, left uncommitted (Issue #144). */
+/** The second file of the `two-files` scenario, left uncommitted. */
 export const FAKE_NOTES_FILE = 'FAKE_NOTES.md';
 
 /**
@@ -85,40 +85,9 @@ export const FAKE_NOTES_FILE = 'FAKE_NOTES.md';
 const FAKE_TOKEN = `ghp_${'fake0TOKEN0for0redaction0'.repeat(2).slice(0, 36)}`;
 
 /**
- * Runner with scripted outcomes (Issue #96): deterministic, no provider, no network.
- * - `success`: a done result with a pull request title and description and one check; it
- *   changes nothing in the Working copy.
- * - `commit` (Issue #98): like `success`, after committing one new file on the Run branch.
- * - `dirty` (Issue #98): like `success`, leaving one new file uncommitted.
- * - `checks-failed` (Issue #102): like `commit`, but the agent reports a failing check.
- * - `two-files` (Issue #144): like `commit`, and a second new file left uncommitted: a Run
- *   that changes two files, for the Changes tab.
- * - `fail`: the agent fails ({@link AgentFailedError}).
- * - `question` (Issue #103): a `needs_input` result with a question, two options and a
- *   recommendation, in the session {@link fakeSessionRef}; resumed, it succeeds.
- * - `question-twice`: like `question`, and the first resume asks a second question.
- * - `lost-session`: like `question`, but the session is gone when it is resumed (agent_failed).
- * - `slow`: prints a numbered line every `slowLineMs` for `slowMs` and one wide line,
- *   then succeeds; stops when aborted (the live-log smoke follows it, Issue #99).
- * - `secret` (Issue #99): prints a token-shaped string (redaction is proven end to end), then
- *   succeeds.
- * - `print-env` (Issue #104): prints every file Studio placed in the Working copy (the
- *   Environment file; its paths from the claim), as an agent could, then succeeds; the leak
- *   test proves Studio redacts it.
- * - `stubborn` (Issue #100): works for `slowMs` but ignores the abort, so the worker must give
- *   up on it after the grace period (the hard path).
- * - `long` (Issue #100): like `slow`, but for `longMs` (ten minutes): a Run to cancel.
- * - `crash`: the runner itself breaks (a plain error).
- * - `resolve-conflicts` and `resolve-in-tree` (Issue #147, in the note of a bring-up-to-date
- *   request): resolve every conflicted file of the open merge, the first also staging it, the
- *   second leaving it for the worker to stage (an agent whose sandbox cannot write `.git`). A
- *   bring-up-to-date request with any other note leaves the merge as it is, then plays that
- *   scenario (`success` by default).
- * `resume` checks that it continues the Run's own session and got an answer (else it fails as
- * the agent, like a provider without that session), then succeeds. A Follow-up (Issue #141)
- * plays the scenario its own text names (`[fake:<scenario>]`, default `success`) like a first
- * step; its `commit` writes {@link FAKE_FOLLOW_UP_FILE} with new content each time. It ignores the agent
- * definition. Each step streams an agent message, a command and its output, like a real agent.
+ * Runner with scripted outcomes ({@link FakeScenario}): deterministic, no provider, no network.
+ * `resume` continues only the Run's own session; a Follow-up or bring-up note plays the scenario
+ * its text names; `print-env` prints Studio-placed files. See docs/architecture/agent-worker.md.
  */
 export class FakeRunner implements Runner {
   private readonly slowMs: number;
@@ -134,7 +103,7 @@ export class FakeRunner implements Runner {
   }
 
   /**
-   * Like a real runner (Issue #141), every result names the agent session the step ran in, so a
+   * Like a real runner, every result names the agent session the step ran in, so a
    * finished Run can take a Follow-up.
    */
   async *start(input: StartRunStepInput): RunStep {
@@ -152,7 +121,7 @@ export class FakeRunner implements Runner {
   }
 
   /**
-   * Plays a scenario: a first step's, or (Issue #141) a Follow-up's, whose `commit` writes
+   * Plays a scenario: a first step's, or a Follow-up's, whose `commit` writes
    * {@link FAKE_FOLLOW_UP_FILE} with new content, so every Follow-up makes a new commit.
    */
   private async *play(
@@ -245,7 +214,7 @@ export class FakeRunner implements Runner {
   }
 
   /**
-   * Resolves every conflicted file of the merge left open in the Working copy (Issue #147), and
+   * Resolves every conflicted file of the merge left open in the Working copy, and
    * stages each when `stage`. Returns the paths. Never writes through a symlink.
    */
   private async resolveConflicts(workspace: RunWorkspace, signal: AbortSignal, stage: boolean) {
@@ -274,7 +243,7 @@ export class FakeRunner implements Runner {
   /**
    * Writes a new file at the top of the Working copy. Repository content is untrusted: whatever
    * is at that path (e.g. a symlink to a file outside the Working copy) is removed, never
-   * written through, and the file is created exclusively (review of #117, S2).
+   * written through, and the file is created exclusively.
    */
   private async write(workspace: RunWorkspace, name: string, content: string) {
     const file = join(workspace.repoDir, name);
@@ -326,7 +295,7 @@ export class FakeRunner implements Runner {
     }
     if (answer.trim() === '') throw new AgentFailedError('The fake agent got no answer.');
     if (reason === 'bring_up_to_date') {
-      // Issue #147: the instruction carries the operator's note; the note names the scenario.
+      // The instruction carries the operator's note; the note names the scenario.
       const updateScenario = fakeScenarioOf(answer);
       yield { type: 'output', text: `bring-up received: ${updateScenario}` };
       if (updateScenario === 'resolve-conflicts' || updateScenario === 'resolve-in-tree') {
@@ -342,7 +311,7 @@ export class FakeRunner implements Runner {
       return yield* this.play(updateScenario, run, workspace, signal, true);
     }
     if (reason === 'follow_up') {
-      // Issue #141: a Follow-up names its own scenario (`[fake:<scenario>]` in its text).
+      // A Follow-up names its own scenario (`[fake:<scenario>]` in its text).
       const followUpScenario = fakeScenarioOf(answer);
       yield { type: 'output', text: `follow-up received: ${followUpScenario}` };
       return yield* this.play(followUpScenario, run, workspace, signal, true);
@@ -356,7 +325,7 @@ export class FakeRunner implements Runner {
   }
 }
 
-/** The result with the fake agent's session reference (Issue #141). */
+/** The result with the fake agent's session reference. */
 function withSession(runId: string, result: RunStepResult): RunStepResult {
   return { ...result, sessionRef: fakeSessionRef(runId) };
 }

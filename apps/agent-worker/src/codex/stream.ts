@@ -9,18 +9,9 @@ import { AgentFailedError, UsageLimitError } from '../runner.js';
 import { withoutNulls } from './result-schema.js';
 
 /**
- * Reads the CLI's `codex exec --json` output of one Run step (Issue #106): one JSON event per
- * line. The record's documented event types and the recorded streams of the tested version (the
- * stub's recordings) define the shapes relied on here; unknown events, item types and fields are
- * ignored, never a failure.
- *
- * - `thread.started` → the session id (`thread_id`, which `resume` accepts: record, headless test);
- * - `item.*` `agent_message` → `message`; `command_execution` → `command`, then its `output`;
- *   `file_change` → `notice`; an `error` item alone → `notice` (e.g. an ignored setting), not a
- *   failure; reasoning and other items are not logged;
- * - `turn.completed` → the turn ended; `turn.failed`, or an `error` event without a completed
- *   turn → the step failed (a usage limit when the CLI's own failure says so). An `error` event
- *   the turn recovered from (it completed, exit 0) stays a notice.
+ * Reads the CLI's `codex exec --json` output of one Run step (one JSON event per line). The
+ * recorded streams of the tested version define the shapes; unknown events, items and fields are
+ * ignored. A failed turn, or an `error` without a completed turn, fails the step.
  */
 
 /** Longest CLI reason taken into a failure detail. */
@@ -74,10 +65,7 @@ export class CodexStream {
   private lastMessage: string | undefined;
   private readonly commands = new Set<string>();
 
-  /**
-   * @param resumed A resumed step's session: kept when the stream reports none of its own, so a
-   *   usage limit on resume can still be resumed later (review of #133).
-   */
+  /** @param resumed A resumed step's session, kept when the stream reports none of its own. */
   constructor(private readonly resumed?: string) {}
 
   /** The session id the CLI reported, else the resumed one. */
@@ -253,7 +241,7 @@ function parseResult(raw: string | undefined, session: string | undefined) {
   } catch {
     return undefined;
   }
-  // The strict output schema makes absent fields null (coordinator smoke of #133).
+  // The strict output schema makes absent fields null.
   const agent = agentResultSchema.safeParse(withoutNulls(value));
   if (!agent.success) return undefined;
   const result = runStepResultSchema.safeParse({

@@ -58,8 +58,8 @@ export interface ClaudeCodeRunnerOptions {
   /** Test seam: where the worker's copies of Studio's guardrails are. */
   guardrails?: { dir?: string };
   /**
-   * The check of Studio's root-owned managed guardrails before every step (Issue #134; default:
-   * the installed files, see managed-guardrails.ts). Test seam only.
+   * The check of the root-owned managed guardrails before every step (default: the installed
+   * files). Test seam only.
    */
   managed?: ManagedGuardrailsCheck;
   /** Test seam: the per-step code that delimits the repository's instruction blocks. */
@@ -67,17 +67,9 @@ export interface ClaudeCodeRunnerOptions {
 }
 
 /**
- * The Claude Code runner (Issue #105): runs a Run step with the Claude Code CLI, signed in with
- * the operator's subscription, behind the runner interface. Per step it checks Studio's
- * root-owned managed guardrails (Issue #134: managed settings and the guard script, installed by
- * the server setup), writes, in the Run's directory and outside the Working copy, the
- * instructions file (the agent definition and the repository's instruction text) and an empty
- * per-Run settings file, then starts the CLI through the spawn boundary with exactly the compliance record's options, a
- * minimal environment and standard input closed, in the Working copy. It maps the streamed
- * events to the Run's log and ends with the structured result (with the session id), or fails:
- * `agent_failed` (non-zero exit, an error result, no valid structured result) or `usage_limit`
- * (the subscription's limit; the session is kept for a later resume). A stop (cancel, time
- * limit) reaches the CLI through its process group (Issue #100); the session stays on disk.
+ * The Claude Code runner: runs a Run step with the CLI signed in with the operator's subscription,
+ * after checking the managed guardrails and writing the instructions and an empty settings file
+ * outside the Working copy. Ends `agent_failed` or `usage_limit` (the session is kept to resume).
  */
 export class ClaudeCodeRunner implements Runner {
   constructor(private readonly options: ClaudeCodeRunnerOptions) {}
@@ -95,10 +87,10 @@ export class ClaudeCodeRunner implements Runner {
     // The dispatcher checked already; nothing is written for a provider that is off.
     this.options.cli.gate.assertEnabled(PROVIDER);
     signal.throwIfAborted();
-    // Review R4 of #129: the agent user's own settings still load; refuse what they must not hold.
+    // The agent user's own settings still load; refuse what they must not hold.
     const userSettings = await userSettingsProblem(this.options.env.HOME);
     if (userSettings !== null) throw new AgentFailedError(userSettings);
-    // Issue #134: Studio's guardrails are the root-owned managed files; never run without them.
+    // Never run without the root-owned managed guardrails.
     const managed = await (this.options.managed ?? new ManagedGuardrails()).problem(PROVIDER);
     if (managed !== null)
       throw new AgentFailedError(managedGuardrailsFailure('Claude Code', managed));
@@ -169,8 +161,8 @@ export class ClaudeCodeRunner implements Runner {
     const errorOutput = stderr.trim();
     if (errorOutput === '') throw outcome.error;
     yield { type: 'notice', text: `Claude Code's error output: ${errorOutput}` };
-    // The CLI's own reason (e.g. a refused option) goes into the failure detail as well, so the
-    // operator sees it on the Run without opening the log; Studio redacts the detail (#104).
+    // The CLI's own reason goes into the failure detail too, so the operator sees it on the Run
+    // without opening the log; Studio redacts the detail.
     if (outcome.error instanceof AgentFailedError) {
       throw new AgentFailedError(`${outcome.error.message} ${errorReason(errorOutput)}`);
     }
@@ -205,17 +197,15 @@ export class ClaudeCodeRunner implements Runner {
 const PROBE_TIMEOUT_MS = 15_000;
 
 /**
- * The version check at worker start (Issue #105): `claude --version` through the spawn
- * boundary (no session is started), with the same minimal environment and standard input
- * closed, checked against the supported range. A missing binary, no version within the time
- * limit or an unsupported version → the reason the provider is unavailable.
+ * The version check at worker start: `claude --version` through the spawn boundary with the same
+ * minimal environment. A missing binary, no version in time or an unsupported one → the reason.
  */
 export async function probeClaudeCode(
   cli: ProviderCli,
   env: Record<string, string | undefined>,
   timeoutMs = PROBE_TIMEOUT_MS,
 ): Promise<VersionCheck> {
-  // A neutral working directory: an empty temporary one (review R3 of #129).
+  // A neutral working directory: an empty temporary one.
   cli.gate.assertEnabled(PROVIDER);
   const cwd = await mkdtemp(join(tmpdir(), 'studio-claude-version-'));
   try {

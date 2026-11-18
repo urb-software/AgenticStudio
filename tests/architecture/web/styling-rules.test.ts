@@ -5,8 +5,7 @@ import {
   paletteViolationsInFile,
 } from './styling-rules';
 
-// Per-case checks of the styling source rules; the gate fixtures in web.test.ts prove the
-// rules are wired into architecture:web.
+// Per-case checks; the gate fixtures in web.test.ts prove the rules are wired into the gate.
 const rulesIn = (violations: { rule: string }[]) => [...new Set(violations.map((v) => v.rule))];
 
 describe('web-no-colour-literals', () => {

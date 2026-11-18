@@ -10,13 +10,7 @@ export interface Violation {
   to?: string;
 }
 
-/**
- * An architecture gate: Dependency Cruiser rules over the import graph, an optional
- * check for cycles between coarse units (business modules, workspace packages) and
- * optional structural assertions over the file tree. All paths are POSIX paths
- * relative to the directory the gate runs against, so the same gate checks the real
- * tree and the fixtures.
- */
+/** An architecture gate; its paths are relative to the cruised directory, so fixtures reuse it. */
 export interface Gate {
   /** Directories to cruise; ones that do not exist are skipped. */
   entries: string[];
@@ -124,9 +118,8 @@ async function dependencyViolations(
 }
 
 /**
- * File-level cycle rules miss cycles between business modules or packages that go
- * through different files (A/x → B/y and B/z → A/w), so the import graph is also
- * collapsed to units (the first capture group of `unit`) and checked for cycles.
+ * File-level cycle rules miss cycles through different files (A/x → B/y, B/z → A/w), so the
+ * graph is also collapsed to units (the first capture group of `unit`) and checked for cycles.
  */
 function unitCycleViolations(result: ICruiseResult, rule: string, unit: RegExp): Violation[] {
   const unitOf = (path: string) => unit.exec(path)?.[1];
@@ -216,22 +209,15 @@ export const CONCRETE_CLIENT_PACKAGES = [
   'microservices',
 ];
 
-/**
- * Gate options of the api and web gates: `@agentic-studio/*` imports resolve to
- * `packages/<name>/src`, so the graph is complete without a build, and the generated
- * Prisma client stays a graph leaf.
- */
+/** Options of the api and web gates: workspace imports resolve to source. */
 export const WORKSPACE_PACKAGES_FROM_SOURCE = {
   resolveWorkspacePackagesToSource: true,
   doNotFollow: '(^|/)packages/database/src/generated/',
 } satisfies Partial<Gate>;
 
 /**
- * The two import-resolution rules of a gate: an unresolved import matching `specifiers`
- * (e.g. relative or `@agentic-studio/*`) would silently drop an edge from the graph. The
- * check is graph-wide, also inside the workspace packages the gate follows. Only
- * packages/database's own import of its generated Prisma client, absent before
- * `prisma generate`, is exempt, by a separate rule scoped to that package.
+ * An unresolved import matching `specifiers` would silently drop an edge from the graph. Only
+ * packages/database's import of the Prisma client, absent before `prisma generate`, is exempt.
  */
 export function importsResolveRules(gate: string, specifiers: string): IForbiddenRuleType[] {
   const databasePackage = '(^|/)packages/database/src/';
@@ -260,11 +246,8 @@ export function importsResolveRules(gate: string, specifiers: string): IForbidde
 export const CONCRETE_CLIENT_SCOPES = ['@mikro-orm', '@redis'];
 
 /**
- * Regex for concrete clients and their framework integrations: a listed client
- * (`ioredis`), the same name in any scope and/or with any `<prefix>-` or `-<suffix>`
- * (`@nestjs/bullmq`, `@nestjs/typeorm`, `nestjs-redis`, `pg-boss`, `cache-manager-redis-store`,
- * `@types/pg`) and every package of a listed scope
- * (`@mikro-orm/core`). Matches resolved paths and unresolved module names alike.
+ * Regex for a listed client in any scope or with any prefix or suffix (`@nestjs/bullmq`,
+ * `pg-boss`) and for every package of a listed scope. Matches resolved and unresolved names.
  */
 export const CONCRETE_CLIENTS = concreteClients();
 
@@ -299,7 +282,7 @@ export const SERVER_PACKAGES = [
   ...INFRASTRUCTURE_PACKAGES,
   '@agentic-studio/api',
   '@agentic-studio/testing',
-  // The worker protocol (Issue #96): only the API and the agent worker use it.
+  // The worker protocol: only the API and the agent worker use it.
   '@agentic-studio/contracts',
 ];
 

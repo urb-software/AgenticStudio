@@ -7,10 +7,9 @@ import {
 } from '../provider-environment.js';
 
 /**
- * How the agent worker starts the Codex CLI (Issue #106): exactly the command of the approved
- * compliance record ("CLI version and command", docs/engineering/provider-compliance/
- * 2026-11-14-codex-cli.md), a minimal environment and a supported version range. Changing any
- * of them is a revalidation trigger of the record and needs the operator.
+ * How the worker starts the Codex CLI: exactly the command of the approved compliance record
+ * (docs/engineering/provider-compliance/), a minimal environment, a supported version range;
+ * changing any of them needs revalidation by the operator.
  */
 
 /** The supported CLI versions: tested with 0.169.0 (record, headless test of 2026-11-15). */
@@ -66,9 +65,8 @@ export const CODEX_MISSING =
   'official standalone installer and restart the worker.';
 
 /**
- * The Codex sandbox modes the worker accepts (`STUDIO_CODEX_SANDBOX`). Only `workspace-write`
- * today: ADR 0002 keeps the Codex sandbox, with network access on, after the rootless Docker
- * trial. Any other value is refused at start. Nothing in a Run can change it.
+ * The accepted Codex sandbox modes (`STUDIO_CODEX_SANDBOX`): only `workspace-write` (ADR 0002 keeps
+ * the sandbox, network on); any other value is refused at start.
  */
 export const CODEX_SANDBOX_MODES = ['workspace-write'] as const;
 export type CodexSandboxMode = (typeof CODEX_SANDBOX_MODES)[number];
@@ -79,10 +77,8 @@ export function sandboxNotice(mode: CodexSandboxMode): string {
 }
 
 /**
- * The variables of the worker's environment a Codex process gets: the same allowlist as Claude
- * Code ({@link PROVIDER_PASSED_VARIABLES}). Dropped in particular: `OPENAI_API_KEY`,
- * `CODEX_API_KEY`, every other `OPENAI_*` / `CODEX_*` override (also `CODEX_HOME`: the agent
- * user's default Codex home is used) and Studio's and the worker's own tokens.
+ * The worker variables a Codex process gets ({@link PROVIDER_PASSED_VARIABLES}); the rest is
+ * dropped: `OPENAI_*`/`CODEX_*` overrides (also `CODEX_HOME`) and the worker's and Studio's tokens.
  */
 export const CODEX_PASSED_VARIABLES = PROVIDER_PASSED_VARIABLES;
 
@@ -129,10 +125,9 @@ export interface CodexArgumentsInput {
 }
 
 /**
- * A first step, exactly the record's command: `codex exec --json --cd <working copy> --sandbox
- * workspace-write -c approval_policy="never" --output-schema <schema> --output-last-message
- * <result> -`, the prompt on standard input. Never `--ephemeral` (resume needs the session
- * files), `--skip-git-repo-check`, `--dangerously-*` or `--approve-for-me`.
+ * A first step, exactly the record's command, the prompt on standard input. Never `--ephemeral`
+ * (resume needs the session files), `--skip-git-repo-check`, `--dangerously-*` or
+ * `--approve-for-me`.
  */
 export function codexStartArguments(input: CodexArgumentsInput): string[] {
   return [
@@ -146,10 +141,8 @@ export function codexStartArguments(input: CodexArgumentsInput): string[] {
 }
 
 /**
- * A resumed step, exactly the record's command: `codex exec --json --cd <working copy>
- * --sandbox workspace-write -c approval_policy="never" resume <session> -`, the answer on
- * standard input. No schema option: the record shows none for `resume`; the result is the last
- * agent message.
+ * A resumed step, exactly the record's command, the answer on standard input. No schema option
+ * (the record shows none for `resume`): the result is the last agent message.
  */
 export function codexResumeArguments(
   input: CodexArgumentsInput & { sessionRef: string },
@@ -158,8 +151,8 @@ export function codexResumeArguments(
 }
 
 /**
- * What the Codex agent is told on top of the built-in agent definition (Issue #106): its
- * sandbox keeps `.git` read-only, so it cannot commit; Studio commits and delivers its work.
+ * What the Codex agent is told on top of the agent definition: its sandbox keeps `.git` read-only,
+ * so it cannot commit; Studio commits and delivers its work.
  */
 export const CODEX_DELIVERY_NOTE = `## Commits and delivery (Codex)
 
@@ -176,13 +169,9 @@ export function codexPrompt(instructions: string, task: string): string {
   return `${instructions.trimEnd()}\n\n${CODEX_DELIVERY_NOTE}\n# The operator's Task\n\n${task}\n`;
 }
 
-/**
- * Standard input of a resumed step: the operator's answer, or (Issue #141) a Follow-up, a
- * further instruction to the finished Task.
- */
+/** Standard input of a resumed step: the operator's answer or a further instruction. */
 export function codexAnswer(answer: string, reason: ResumeReason = 'answer'): string {
   if (reason === 'follow_up') return `The operator's Follow-up:\n\n${answer}\n`;
-  // Issue #147: the worker's own instruction after it merged the integration branch.
   if (reason === 'bring_up_to_date') {
     return `Studio's instruction to bring the branch up to date:\n\n${answer}\n`;
   }

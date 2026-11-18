@@ -1,10 +1,9 @@
 import { runProcess } from './process-runner.js';
 
 /**
- * The containers, networks and volumes that belong to a Run (Issue #98): everything its Run
- * steps started under its own Compose project name. Removed together with its Working copy.
- * Tests use a fake; the production adapter talks to the agent user's own (rootless) Docker,
- * never the system daemon (ADR 0002).
+ * The containers, networks and volumes of a Run (everything its steps started under its Compose
+ * project name), removed with its Working copy. Production talks to the agent user's own rootless
+ * Docker, never the system daemon (ADR 0002).
  */
 export interface RunResources {
   /** Stops and removes everything of this Compose project; throws if that failed. */
@@ -53,10 +52,9 @@ const lines = (output: string) =>
     .filter((line) => line !== '');
 
 /**
- * Removes a Run's Compose project: `docker compose -p <name> down --volumes --remove-orphans`,
- * then whatever is still labelled with the project (containers, networks, volumes), so
- * resources started outside Compose's own bookkeeping go too. Without Docker there is
- * nothing to remove.
+ * Removes a Run's Compose project (`docker compose -p <name> down --volumes --remove-orphans`),
+ * then whatever is still labelled with it, so resources started outside Compose's bookkeeping go
+ * too. Without Docker there is nothing to remove.
  */
 export class DockerRunResources implements RunResources {
   constructor(

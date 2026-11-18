@@ -16,10 +16,7 @@ import { Retention, type RetentionOptions } from '../retention.js';
 import { composeProjectName } from '../run-layout.js';
 import type { RunResources } from '../run-resources.js';
 
-// Issues #98 and #143: what the worker removes, on a real directory tree, with Studio's answers
-// (which Runs are removable, which are kept until when) and the Run's containers faked (no
-// Docker in unit tests). The rules themselves are Studio's and tested there. Linux only, like
-// the worker.
+// What the worker removes from a real directory tree, given Studio's answers and faked containers.
 
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const DAY = 24 * 60 * 60_000;
@@ -73,10 +70,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     });
   }
 
-  /**
-   * A Run directory as the worker makes it, and Studio's answer for that Run: a final state is
-   * `removable` or kept until a week from NOW; any other state has neither.
-   */
+  /** A Run directory as the worker makes it, with Studio's answer: removable or kept. */
   function run(state: State, retained?: 'removable' | 'kept'): string {
     const runId = randomUUID();
     mkdirSync(join(runsDir, runId, 'repo'), { recursive: true });
@@ -187,7 +181,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
       run('preparing'),
       run('running'),
       run('waiting_for_operator'),
-      // Also an answered Run queued to resume its session in this Working copy (Issue #103).
+      // Also an answered Run queued to resume its session in this Working copy.
       run('queued'),
     ];
     for (const runId of kept) {
@@ -232,7 +226,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     expect(existsSync(join(runsDir, expired, 'repo', 'file.txt'))).toBe(true);
   });
 
-  it('refuses to sweep a runs directory that is a symlink, deleting nothing (review of #117)', async () => {
+  it('refuses to sweep a runs directory that is a symlink, deleting nothing', async () => {
     const elsewhere = join(dataDir, 'elsewhere');
     mkdirSync(join(elsewhere, 'precious'), { recursive: true });
     writeFileSync(join(elsewhere, 'notes.txt'), 'keep');
@@ -264,7 +258,7 @@ describe.skipIf(process.platform !== 'linux')('Retention', () => {
     expect((await retention().sweep()).removed).toEqual([]);
   });
 
-  describe('reporting removed Working copies (Issue #141)', () => {
+  describe('reporting removed Working copies', () => {
     type Call = { runIds: readonly string[]; removed: readonly string[] | undefined };
 
     function recording(calls: Call[], failReports: { count: number }) {

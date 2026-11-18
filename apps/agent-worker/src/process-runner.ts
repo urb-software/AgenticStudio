@@ -1,11 +1,9 @@
 import { spawn } from 'node:child_process';
 
 /**
- * The one place the worker's own helper processes are started (Issue #98): `git` for Working
- * copies and `docker` for removing a Run's containers. Never a provider CLI: those are
- * started only at the provider spawn boundary. Every process gets an argument array, no
- * shell, no standard input, its own process group (and session: no terminal to prompt on)
- * and a time limit; a timeout or an abort kills the whole group.
+ * The one place the worker's own helper processes (`git`, `docker` for a Run's containers) are
+ * started, never a provider CLI. Every process gets an argument array, no shell, no standard
+ * input, its own process group and a time limit; a timeout or an abort kills the whole group.
  */
 
 export interface ProcessOptions {

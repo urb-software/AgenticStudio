@@ -1,8 +1,4 @@
-/**
- * What the agent is told after Studio's worker merged the integration branch into its Run branch
- * (Issue #147): the wording that goes with the built-in agent definition, kept apart from the Git
- * code that does the merge (review St7 of #154).
- */
+/** What the agent is told after the worker merged the integration branch into its Run branch. */
 
 /** How the merge started, as far as the wording needs it (the Git module's start result fits). */
 export type UpdateOutcome =

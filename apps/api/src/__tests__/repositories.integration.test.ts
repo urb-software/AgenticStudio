@@ -26,11 +26,9 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Stories #60 (connect), #61 (fetch) and #63 (disconnect), main seam (SSH, #62, in
-// ssh-repositories.integration.test.ts): the real app over HTTP with PostgreSQL and Redis (Testcontainers) and
-// the real job queue. Cases that clone need the real `git` and run on Linux only (CI runs
-// them; a guard at the end fails CI if they were skipped). Fixture remotes are `file://`
-// URLs, accepted only under the test-only setting this suite turns on.
+// Repository connect, fetch and disconnect over HTTP on the real app (PostgreSQL, Redis, real job
+// queue); cloning cases need the real `git`, so Linux only, with `file://` fixture remotes
+// accepted under a test-only setting.
 
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -123,7 +121,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
   beforeAll(async () => {
     services = await startStudioServices();
     dataDir = await mkdtemp(join(tmpdir(), 'studio-repo-http-'));
-    // The fixtures (silent servers, closed ports) are on 127.0.0.1: an explicit opt-in (Issue #69).
+    // The fixtures (silent servers, closed ports) are on 127.0.0.1: an explicit opt-in.
     services.config = {
       ...services.config,
       dataDir,
@@ -183,7 +181,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
     );
   });
 
-  describe('the remote address policy at its production default (Issue #69)', () => {
+  describe('the remote address policy at its production default', () => {
     beforeAll(async () => {
       await app.close();
       app = await startStudioApp({ ...services.config, gitAllowPrivateRemotes: false });
@@ -257,7 +255,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       expectProblem(await getRepository(id), 404, 'no-repository');
     });
 
-    it('rejects an unknown field with 422: the request schema is closed (#72)', async () => {
+    it('rejects an unknown field with 422: the request schema is closed', async () => {
       const id = await createProject('Extra field');
 
       const response = await connect(id, {
@@ -430,7 +428,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       expectProblem(await verify('not-a-uuid'), 404, 'project-not-found');
     });
 
-    it('rejects an unknown field with 422: the request schema is closed (#72)', async () => {
+    it('rejects an unknown field with 422: the request schema is closed', async () => {
       const response = await verify(UNKNOWN_PROJECT, { acceptHostKey: 'ssh-ed25519 AAAA' });
 
       expectProblem(response, 422);
@@ -954,7 +952,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
           failure: { code: 'branch_not_found', detail: expect.any(String) },
         });
 
-        // Git's output only, no Studio sentence (#72).
+        // Git's output only, no Studio sentence.
         expect((await getRepository(id)).body.failure.detail).not.toContain('Branch "dev"');
         restoreRemoteBranch(remote, 'dev');
         const commit = pushCommit(remote, 'dev');

@@ -13,11 +13,7 @@ import {
   type ModuleImport,
 } from './syntax';
 
-/**
- * Layout rules of `architecture:api` that follow from the approved module layout
- * (docs/architecture/backend.md §2 and §3, ADR 0003, Issue #162). Syntax and file tree only:
- * each file is parsed on its own, without type checking, so the rules work on fixtures.
- */
+/** Syntax-only layout rules of `architecture:api` (backend.md §2 and §3, ADR 0003). */
 export const LAYOUT_RULES = [
   'api-application-no-http-decorators',
   'api-entry-points-no-ports-or-infrastructure',
@@ -87,7 +83,7 @@ const APPLICATION_FILE = /^src\/modules\/[^/]+\/application\//;
 
 /** `src/modules/<module>/application/features/<feature>/…` (not the tests of a feature). */
 const FEATURE_FILE = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\/(?!__tests__\/)/;
-/** A file directly in a module's `application/` folder: a collaborator (rule 3, the last resort). */
+/** A file directly in a module's `application/` folder: a collaborator. */
 const COLLABORATOR_FILE = /^src\/modules\/[^/]+\/application\/[^/]+\.tsx?$/;
 const FEATURE_PATH = /^src\/modules\/([^/]+)\/application\/features\/([^/]+)\//;
 const ENTRY_POINT_FILE = /^src\/modules\/[^/]+\/entry-points\//;
@@ -127,9 +123,9 @@ export function layoutViolations(baseDir: string): Violation[] {
 }
 
 /**
- * `application/` imports no controller, route or parameter decorator of `@nestjs/common`
- * (rule 2: it knows nothing about HTTP); a namespace import of it is refused too, since members could not be checked. Its other HTTP, schema, OpenAPI, queue and
- * scheduler imports are the dependency rule `api-application-no-http-queue-scheduler-libraries`.
+ * `application/` imports no HTTP decorator of `@nestjs/common`; a namespace import is refused too,
+ * since its members cannot be checked. Other libraries are covered by the dependency rule
+ * `api-application-no-http-queue-scheduler-libraries`.
  */
 function applicationDecoratorViolations(baseDir: string, path: string): Violation[] {
   return moduleImports(baseDir, path)
@@ -143,11 +139,9 @@ function applicationDecoratorViolations(baseDir: string, path: string): Violatio
 }
 
 /**
- * An entry point imports handlers, its own schemas and shared shapes, and domain errors and
- * types for mapping. It never imports anything from `infrastructure/`, and from a repository
- * interface or port file (at any depth under `domain/repositories/` and `application/ports/`)
- * only error classes (names ending in `Error`). A port token or repository interface re-exported
- * by another file, a handler for example, is the same import in disguise and is refused too.
+ * An entry point imports nothing from `infrastructure/`, and from a repository or port file only
+ * error classes. A port re-exported by another file (a handler, say) is the same import in
+ * disguise.
  */
 function entryPointViolations(baseDir: string, path: string): Violation[] {
   return moduleImports(baseDir, path).flatMap((entry) => {
@@ -250,10 +244,8 @@ function portReexports(
 }
 
 /**
- * A file of a feature folder imports nothing from another feature folder of its module (rule 1:
- * features are independent, and handlers never call each other). Shared shapes live in the
- * domain or in a port. The tests of a feature (`__tests__/`) are not checked: a round-trip test
- * may build the handler that produces what the handler under test reads.
+ * A feature file imports nothing from another feature folder. Tests are not checked: a round-trip
+ * test may build the handler that produces what the handler under test reads.
  */
 function featureImportViolations(baseDir: string, path: string): Violation[] {
   const own = FEATURE_FILE.exec(path);
@@ -352,11 +344,8 @@ function domainServicesViolations(baseDir: string): Violation[] {
 }
 
 /**
- * An entity file exports a class that nobody outside can construct (rule 4): a `private` or
- * `protected` constructor, so only its factories make one and it cannot be built in an invalid
- * state. The class may be a declaration or `export const X = class {}`. A file may also export
- * error classes (a class named `…Error` or extending `Error`), which are not entities. A file that exports no entity class (a plain record, a function), or one whose
- * constructor is public or implicit, breaks the rule: such records belong in `domain/value-objects/`.
+ * An entity file exports a class with a `private` or `protected` constructor, so only its factories
+ * build it. Error classes are not entities; a plain record belongs in `domain/value-objects/`.
  */
 function entityClassViolations(baseDir: string, path: string): Violation[] {
   const match = ENTITY_FILE.exec(path);

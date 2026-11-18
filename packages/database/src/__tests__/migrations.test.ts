@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { committedMigrations } from '../migrations.js';
 
-// Issue #115 (review of #124): Prisma applies migrations in folder-name order, so two folders
-// with the same timestamp prefix have an order that depends on the rest of the name. A new
-// migration must take a timestamp of its own. Applied migrations are never renamed, so the one
-// pair that already shares a prefix (harmless: independent tables) is allowed by name.
+// Prisma applies migrations in folder-name order, so a shared timestamp prefix makes the order
+// depend on the rest of the name. Applied migrations are never renamed: the one pair sharing a
+// prefix (independent tables) is allowed by name.
 const ALLOWED_SHARED_PREFIXES: Record<string, readonly string[]> = {
   '20261115500000': ['20261115500000_environment_files', '20261115500000_run_cancellation_limits'],
 };

@@ -3,10 +3,9 @@ import type { ProviderGate } from './provider-gate.js';
 import type { ResumeRunStepInput, Runner, RunStep, StartRunStepInput } from './runner.js';
 
 /**
- * The runner dispatcher (Issue #101): picks the Run's provider runner and checks the provider
- * gate immediately before every Run step, first or resumed, in every runner mode (so
- * `provider_disabled` also happens with the fake runner). The spawn boundary checks again
- * before any CLI process is created. Throws {@link ProviderDisabledError} from the step.
+ * The runner dispatcher: picks the Run's provider runner and checks the provider gate before every
+ * Run step, in every runner mode (`provider_disabled` also happens with the fake runner); the spawn
+ * boundary checks again. Throws {@link ProviderDisabledError} from the step.
  */
 export class RunnerDispatcher implements Runner {
   constructor(

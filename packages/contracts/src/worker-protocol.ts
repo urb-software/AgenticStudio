@@ -1,13 +1,8 @@
 import { z } from 'zod';
 
 /**
- * The worker protocol (Issue #96): the one definition of what crosses the process boundary
- * between the API's `executions` module and `apps/agent-worker`. The API validates every
- * worker request with these schemas; the worker validates every response. Operator HTTP
- * schemas are not here: they stay in the API module (backend.md §2).
- *
- * The API's domain owns the full lists of Run states and failure codes; a test in the API
- * pins the lists below to the domain's, so the two cannot drift apart.
+ * The Studio/agent-worker wire protocol: the API validates every worker request, the worker every
+ * response, and a test in the API pins the Run states and failure codes to the domain's.
  */
 
 /** The agent CLI product that carries out a Run. */
@@ -15,13 +10,13 @@ export const PROVIDERS = ['claude_code', 'codex'] as const;
 export const providerSchema = z.enum(PROVIDERS);
 export type Provider = z.infer<typeof providerSchema>;
 
-/** Display names of the providers, the one list for the API and the agent worker (#101). */
+/** Display names of the providers, the one list for the API and the agent worker. */
 export const PROVIDER_NAMES = {
   claude_code: 'Claude Code',
   codex: 'Codex',
 } as const satisfies Record<Provider, string>;
 
-/** One on/off value per provider: the worker's switches as it reports them (#101). */
+/** One on/off value per provider, as the worker reports its switches. */
 export const providerSwitchesSchema = z.strictObject({
   claude_code: z.boolean(),
   codex: z.boolean(),
@@ -34,7 +29,7 @@ export const TASK_MAX_LENGTH = 20_000;
 /** Longest failure detail, in characters. */
 export const FAILURE_DETAIL_MAX_LENGTH = 2000;
 
-/** Every state of a Run; the API's domain owns the list (pinned by a test in the API). */
+/** Every state of a Run; the API's domain owns the list. */
 export const RUN_STATES = [
   'queued',
   'preparing',
@@ -74,7 +69,7 @@ const workerIdSchema = z.uuid();
 /** Longest Repository remote URL, in characters (the Repository's own limit). */
 export const REMOTE_URL_MAX_LENGTH = 2048;
 
-/** Largest Environment file content, in UTF-8 bytes (64 KiB, Issue #104). */
+/** Largest Environment file content, in UTF-8 bytes (64 KiB). */
 export const ENVIRONMENT_FILE_MAX_BYTES = 64 * 1024;
 
 /** Longest Environment file path, in characters. */
@@ -85,12 +80,9 @@ export const ENVIRONMENT_FILE_PATH_MAX_LENGTH = 255;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 
 /**
- * Why `path` cannot be an Environment file path (Issue #104), or `null` when it can: a
- * relative POSIX path inside the repository, at most {@link ENVIRONMENT_FILE_PATH_MAX_LENGTH}
- * characters, with no empty, `.` or `..` segment, no leading `/`, no `\`, no control
- * character, and no `.git` segment (in any letter case). The API checks it when the operator
- * saves the path, and the agent worker again before it writes the file. Whether the path is
- * tracked in the repository is a separate check (it needs the repository).
+ * Why `path` cannot be an Environment file path (relative, inside the repository, no `.git`
+ * segment), or `null` when it can. The API checks it on save and the worker again before it
+ * writes the file; whether the path is tracked in the repository is a separate check.
  */
 export function environmentFilePathProblem(path: string): string | null {
   if (path.length === 0) return 'Enter a path.';
@@ -114,9 +106,8 @@ export function environmentFilePathProblem(path: string): string | null {
 }
 
 /**
- * The Run's Environment file (Issue #104): its path in the Working copy and its content, a
- * snapshot taken when the Run was claimed. Test values only (security.md §3); the worker
- * writes it owner-only and never commits it.
+ * The Run's Environment file, a snapshot taken at claim. Test values only (security.md §3); the
+ * worker writes it owner-only and never commits it.
  */
 export const environmentFileSchema = z.strictObject({
   path: z
@@ -134,14 +125,13 @@ export const environmentFileSchema = z.strictObject({
 });
 export type EnvironmentFile = z.infer<typeof environmentFileSchema>;
 
-/** Bounds of the Run limits (Issue #100), for the API's configuration and the claim payload. */
+/** Bounds of the Run limits, for the API's configuration and the claim payload. */
 export const RUN_STEP_MINUTES_MAX = 1440;
 export const RUN_MAX_STEPS_MAX = 100;
 
 /**
- * The limits a worker enforces on a Run (Issue #100), copied onto the Run when it is started:
- * the longest a Run step may work, in minutes, and the most Run steps a Run may take. Time
- * spent waiting for the operator is not a Run step and does not count.
+ * The limits a worker enforces on a Run: the longest a Run step may work, in minutes, and the
+ * most Run steps. Time waiting for the operator is not a Run step and does not count.
  */
 export const runLimitsSchema = z.strictObject({
   stepMinutes: z.int().min(1).max(RUN_STEP_MINUTES_MAX),
@@ -151,38 +141,31 @@ export type RunLimits = z.infer<typeof runLimitsSchema>;
 /** Longest branch name, in characters (the Repository's integration branch, a Run branch). */
 export const BRANCH_NAME_MAX_LENGTH = 255;
 
-/** Longest Studio-placed path and most of them in one payload (#102). */
+/** Longest Studio-placed path and most of them in one payload. */
 export const STUDIO_PATH_MAX_LENGTH = 1024;
 export const STUDIO_PATHS_MAX = 50;
 
 /**
- * What a claim hands out (Issue #102): a Run to `start` (prepare, run its first step, deliver),
- * or a `failed` Run with `delivery_failed` whose delivery the operator asked to retry: the
- * worker then only `deliver`s it from the Working copy it still has. Issue #103: a Run the
- * operator answered is handed out to `resume`: the worker continues the same agent session in
- * the Working copy it kept, with the answer as the next Run step.
+ * What a claim hands out: a Run to `start`, a `delivery_failed` Run to `deliver` again from the
+ * Working copy it kept, or an answered Run to `resume` in the same agent session.
  */
 export const RUN_PAYLOAD_KINDS = ['start', 'deliver', 'resume'] as const;
 export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
 
 /**
- * Why a `resume` claim continues the agent session (Issue #141): the operator's answer to a
- * question (`answer`), the resume after the subscription's usage limit (`usage_limit`), a
- * Follow-up to a finished Run (`follow_up`), or (Issue #147) the operator's request to bring the
- * Run branch up to date with the integration branch (`bring_up_to_date`): a Follow-up whose text
- * is the operator's optional note. The worker and the built-in agent definition word the step
- * after it; the text travels the same way for all four (`answer`).
+ * Why a `resume` claim continues the agent session: an operator `answer`, the `usage_limit`
+ * resume, a `follow_up` or a `bring_up_to_date` request. The text travels as `answer` for all.
  */
 export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up', 'bring_up_to_date'] as const;
 export type ResumeReason = (typeof RESUME_REASONS)[number];
 
 /**
- * The text a bring-up-to-date claim carries when the operator gave no note (Issue #147); the worker
- * words the instruction to the agent itself and leaves this text out of it.
+ * The text of a bring-up-to-date claim without an operator note; the worker words the agent's
+ * instruction itself and leaves this text out.
  */
 export const BRING_UP_TO_DATE_DEFAULT_TEXT = 'Bring the Run branch up to date.';
 
-/** Longest Follow-up text, in characters (Issue #141). */
+/** Longest Follow-up text, in characters. */
 export const FOLLOW_UP_MAX_LENGTH = 10_000;
 
 /** Largest PostgreSQL INTEGER: the bound of step numbers and counters in the payload. */
@@ -191,13 +174,13 @@ const PG_INT_MAX = 2_147_483_647;
 /** A commit id: SHA-1 or SHA-256, lower-case hex. */
 const commitIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 
-/** Longest session reference a runner reports (Issue #103), e.g. the CLI's session id. */
+/** Longest session reference a runner reports, e.g. the CLI's session id. */
 export const SESSION_REF_MAX_LENGTH = 256;
 
-/** Longest operator answer to an agent's question, in characters (Issue #103). */
+/** Longest operator answer to an agent's question, in characters. */
 export const ANSWER_MAX_LENGTH = 10_000;
 
-/** Longest question text, most options, longest option and recommendation (Issue #103). */
+/** Longest question text, most options, longest option and recommendation. */
 export const QUESTION_TEXT_MAX_LENGTH = 4000;
 export const QUESTION_OPTIONS_MAX = 6;
 export const QUESTION_OPTION_MAX_LENGTH = 200;
@@ -206,11 +189,9 @@ export const QUESTION_OPTION_MAX_LENGTH = 200;
 const objectIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 
 /**
- * Where a Run's diffs stand (Issue #144, review S-1 of #149): the Working copy snapshot (tree)
- * and commit of the latest result, those of the result before it (where "since the previous
- * result" starts) and, once a delivery pushed, the Run branch tip it pushed. The worker reports
- * it with the diffs; Studio keeps it and hands it back with a resume or delivery claim, so it
- * never lives where the agent can write it.
+ * Where a Run's diffs stand: tree and commit of the latest result and of the one before it, and
+ * the pushed Run branch tip. Studio keeps it and hands it back with a resume or delivery claim,
+ * so it never lives where the agent can write it.
  */
 export const runDiffStateSchema = z.strictObject({
   resultTree: objectIdSchema,
@@ -221,13 +202,12 @@ export const runDiffStateSchema = z.strictObject({
 });
 export type RunDiffState = z.infer<typeof runDiffStateSchema>;
 
-/** An opaque reference to the agent's session, as the runner reported it (Issue #103). */
+/** An opaque reference to the agent's session, as the runner reported it. */
 const sessionRefSchema = z.string().min(1).max(SESSION_REF_MAX_LENGTH);
 
 /**
- * The Run payload: the claim response, exactly what a Run needs and nothing else (no Studio
- * Clone path, secret references or keys; the Environment file's content is the one secret
- * value, Issue #104). Closed, so an extra field is an error on both sides.
+ * The Run payload (the claim response): exactly what a Run needs, no Studio Clone path, secret
+ * references or keys; the Environment file's content is the one secret value. Closed.
  */
 export const runPayloadSchema = z
   .strictObject({
@@ -238,112 +218,98 @@ export const runPayloadSchema = z
     /** The commit of the integration branch the Run starts from. */
     startCommit: z.string().min(1).max(64),
     /**
-     * The Project's Repository (Issue #98): its remote URL as the operator connected it, never
-     * a credential. The agent worker fetches it with the agent user's own Git credentials.
+     * The Repository's remote URL as the operator connected it, never a credential; the worker
+     * fetches it with the agent user's own Git credentials.
      */
     repository: z.strictObject({ remoteUrl: z.string().min(1).max(REMOTE_URL_MAX_LENGTH) }),
-    /** The Repository's integration branch when the Run started: the pull request's base (#102). */
+    /** The Repository's integration branch when the Run started: the pull request's base. */
     integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
     kind: z.enum(RUN_PAYLOAD_KINDS),
     /**
-     * Paths (relative to the Working copy) of files Studio places in it, e.g. the Environment file
-     * (#104): never committed or pushed (#102). Studio's list is authoritative; what the
-     * agent can write beside the Working copy can only add to it (review R3 of #122).
+     * Paths (relative to the Working copy) of files Studio places in it, never committed or
+     * pushed. Studio's list is authoritative: what the agent writes beside the Working copy can
+     * only add to it.
      */
     studioPaths: z.array(z.string().min(1).max(STUDIO_PATH_MAX_LENGTH)).max(STUDIO_PATHS_MAX),
     /**
-     * With `deliver` and `resume` only: the Run branch Studio recorded from the worker's step
-     * report. A delivery retry pushes exactly this branch, never one named beside the Working
-     * copy (review R1 of #122); a resumed Run delivers it the same way (Issue #103).
+     * With `deliver` and `resume`: the Run branch Studio recorded from the step report. A delivery
+     * pushes exactly this branch, never one named beside the Working copy.
      */
     runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH).optional(),
-    /** With `resume` only (Issue #103): the agent session to continue, as the runner reported it. */
+    /** With `resume`: the agent session to continue, as the runner reported it. */
     sessionRef: sessionRefSchema.optional(),
     /**
-     * With `resume` only: the operator's message the session continues with: the answer to the
-     * agent's question, "Continue where you stopped." after the usage limit, or the Follow-up
-     * text (Issue #141), as `resumeReason` says.
+     * With `resume`: the operator's message the session continues with, as `resumeReason` says:
+     * the answer, "Continue where you stopped." or the Follow-up text.
      */
     answer: z.string().min(1).max(Math.max(ANSWER_MAX_LENGTH, FOLLOW_UP_MAX_LENGTH)).optional(),
-    /** With `resume` only (Issue #141): why the session continues. */
+    /** With `resume`: why the session continues. */
     resumeReason: z.enum(RESUME_REASONS).optional(),
     /**
-     * Issue #141: the number of the Follow-up the Run is working on (1, 2, …), present while the
-     * Run's current part is a Follow-up (also when it resumes after a question inside it). The
-     * worker marks the Follow-up's start and end in the log.
+     * The number of the Follow-up the Run's current part is (also on a resume after a question
+     * inside it); the worker marks its start and end in the log.
      */
     followUpNumber: z.int().min(1).max(PG_INT_MAX).optional(),
     /**
-     * With `resume` only (Issue #147): the Run's current part is a request to bring the Run branch
-     * up to date (also when it resumes after a question or the usage limit inside it). A merge
-     * left open in the Working copy at the end of the step is then completed by the worker, or
-     * aborted when the part does not end well.
+     * With `resume`: the current part is a request to bring the Run branch up to date (also after
+     * a question or the usage limit inside it). The worker completes a merge left open at the
+     * end of the step, or aborts it when the part does not end well.
      */
     bringUpToDate: z.literal(true).optional(),
     /**
-     * With `bringUpToDate` (Issue #147, review S3/S6 of #154), once the worker reported the merge's
-     * start: the Run branch's commit just before it (after the leftovers were committed) and the
-     * integration branch commit being merged. Studio holds them, so a later claim of the same part
-     * still knows what to reset the branch to when the part fails, and which merge to expect.
+     * With `bringUpToDate`, once the merge started: the Run branch commit just before it and the
+     * integration commit being merged, so a later claim knows what to reset to when the part
+     * fails and which merge to expect.
      */
     updateBase: commitIdSchema.optional(),
     updateTip: commitIdSchema.optional(),
     /**
-     * With `resume` and `deliver` (Issue #147, review S1 of #154): the integration branch commit the
-     * Run branch last merged. The Run's own changes, in its diffs and its commit list, are counted
-     * from it, as the pull request counts them from the merge base; absent: from the start commit.
+     * With `resume` and `deliver`: the integration commit the Run branch last merged. The Run's
+     * own changes are counted from it, as the pull request counts from the merge base; absent:
+     * from the start commit.
      */
     mergedIntegrationCommit: commitIdSchema.optional(),
     /**
-     * With a `resume` claim that starts a new part (review R2-1 of #154): an earlier bring-up-to-date
-     * part began a merge and never succeeded, so its merge commit may still be in the Working copy
-     * (the Run was cancelled while it waited, or the worker was lost). The worker resets the Run
-     * branch to `baseCommit` first, unless something past it was pushed (`pushedCommit`).
+     * With a `resume` claim that starts a new part: an earlier bring-up-to-date part began a merge
+     * and never succeeded, so its merge commit may remain. The worker resets the Run branch to
+     * `baseCommit` first, unless something past it was pushed (`pushedCommit`).
      */
     pendingUpdate: z
       .strictObject({ baseCommit: commitIdSchema, pushedCommit: commitIdSchema.optional() })
       .optional(),
     /**
-     * Issue #141: how many Run steps the Run had taken when its current part began (the first
-     * part: 0; a Follow-up: the steps before it). Each part gets `limits.maxSteps` Run steps, so
-     * the worker refuses a step beyond `stepsBeforePart + limits.maxSteps`. Absent: 0.
+     * How many Run steps the Run had taken when its current part began; each part gets
+     * `limits.maxSteps`, so the worker refuses a step beyond `stepsBeforePart + limits.maxSteps`.
+     * Absent: 0.
      */
     stepsBeforePart: z.int().min(0).max(PG_INT_MAX).optional(),
     /**
-     * With `resume` and `deliver` (Issue #141): the number of the draft pull request Studio
-     * recorded for the Run. A delivery updates exactly this pull request (never a second one) and
-     * fails when it is no longer open.
+     * With `resume` and `deliver`: the draft pull request Studio recorded. A delivery updates
+     * exactly this one (never a second) and fails when it is no longer open.
      */
     pullRequestNumber: z.int().positive().max(PG_INT_MAX).optional(),
     /**
-     * With `resume` and `deliver`: the seq of the Run's next event, one past the last Studio
-     * stored, so the worker's events are not dropped as duplicates (Issue #99 note on #103). A
-     * start claim has none: its log starts at 1.
+     * With `resume` and `deliver`: the seq of the Run's next event, so the worker's events are
+     * not dropped as duplicates. A start claim has none: its log starts at 1.
      */
     nextSeq: z.int().min(1).max(2_147_483_647).optional(),
     /**
-     * With `start`, or with a `resume` that replaces it (Issue #141): the Project's Environment
-     * file as it was when the Run was claimed (Issue #104), only for the worker that claimed the
-     * Run; its path is in `studioPaths`. Never logged.
+     * With `start`, or a `resume` that replaces it: the Environment file as of the claim, only for
+     * the worker that claimed the Run; its path is in `studioPaths`. Never logged.
      */
     environmentFile: environmentFileSchema.optional(),
     /**
-     * With `resume` only (Issue #141): Studio took a new snapshot of the Project's Environment
-     * file for this part of the Run (a Follow-up, or a usage-limit resume inside one). The worker
-     * removes every Studio-placed file (`studioPaths`) from the Working copy, then writes
-     * `environmentFile` when there is one; without it the Run goes on without the file.
+     * With `resume`: Studio took a new Environment file snapshot for this part. The worker removes
+     * every Studio-placed file from the Working copy, then writes `environmentFile` if present.
      */
     replaceEnvironmentFile: z.literal(true).optional(),
-    /** The limits in force for this Run (Issue #100). */
+    /** The limits in force for this Run. */
     limits: runLimitsSchema,
-    /**
-     * With `resume` and `deliver`, once the Run reported diffs (Issue #144): where they stand,
-     * as the worker last reported it.
-     */
+    /** With `resume` and `deliver`, once diffs were reported: where they stand. */
     diffState: runDiffStateSchema.optional(),
     /**
-     * How many Run steps the Run has already taken (Issue #100): the next one is
-     * `completedSteps + 1`, and the worker refuses to start it beyond `limits.maxSteps`.
+     * How many Run steps the Run has taken; the worker refuses to start the next one beyond
+     * `limits.maxSteps`.
      */
     completedSteps: z.int().min(0),
   })
@@ -429,10 +395,9 @@ export const runPayloadSchema = z
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 
 /**
- * Problem `type`s of the worker routes the agent worker acts on (review of #121). Only these
- * (and 404) mean the worker no longer holds the Run and must abandon it; any other refusal,
- * e.g. `illegal-run-transition`, is logged and the Run goes on. Pinned to the API's list by a
- * test in the API.
+ * Problem `type`s (and 404) that mean the worker no longer holds the Run and must abandon it;
+ * any other refusal, e.g. `illegal-run-transition`, is logged and the Run goes on. Pinned to the
+ * API's list by a test.
  */
 export const WORKER_PROBLEM_TYPES = {
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
@@ -449,16 +414,15 @@ export const heartbeatRequestSchema = z.strictObject({ workerId: workerIdSchema 
 export type HeartbeatRequest = z.infer<typeof heartbeatRequestSchema>;
 
 /**
- * `POST /api/worker/runs/:runId/heartbeat` answer (Issue #100): whether the operator asked to
- * cancel the Run. The worker then stops the Run step and reports `cancelled`.
+ * `POST /api/worker/runs/:runId/heartbeat` answer: whether the operator asked to cancel; the
+ * worker then stops the Run step and reports `cancelled`.
  */
 export const heartbeatResponseSchema = z.strictObject({ cancelRequested: z.boolean() });
 export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
 
 /**
  * The states a worker reports; every other transition belongs to the API or the operator.
- * `cancelled` confirms an operator's cancel after the Run step was stopped, `timed_out` a Run
- * step stopped at its time limit (Issue #100).
+ * `cancelled` confirms an operator's cancel, `timed_out` a Run step stopped at its time limit.
  */
 export const WORKER_REPORTED_STATES = [
   'running',
@@ -481,9 +445,8 @@ export const runCheckSchema = z.strictObject({
 export type RunCheck = z.infer<typeof runCheckSchema>;
 
 /**
- * Largest structured result, in bytes of its UTF-8 JSON (96 KiB). The API accepts JSON
- * bodies up to Express's default 100 KiB; the step report adds under 100 bytes around the
- * result, so every valid result can be reported (review finding 4 on #111).
+ * Largest structured result, in bytes of UTF-8 JSON (96 KiB). The step report adds under 100
+ * bytes around it, so every valid result fits Express's default 100 KiB body limit.
  */
 export const RUN_STEP_RESULT_MAX_BYTES = 96 * 1024;
 
@@ -493,8 +456,8 @@ export function jsonByteLength(value: unknown): number {
 }
 
 /**
- * The agent's question to the operator (Issue #103): its text, the options it offers (at most
- * six) and the one it recommends. All of it is the agent's text: shown as plain text only.
+ * The agent's question to the operator: its text, the options it offers and the one it
+ * recommends. All of it is the agent's text, shown as plain text only.
  */
 export const runQuestionSchema = z.strictObject({
   text: z.string().min(1).max(QUESTION_TEXT_MAX_LENGTH),
@@ -508,17 +471,16 @@ export const runQuestionSchema = z.strictObject({
 export type RunQuestion = z.infer<typeof runQuestionSchema>;
 
 /**
- * The structured result a Run step ends with: `done`, or `needs_input` with the agent's
- * question (it pauses the Run until the operator answers) and the reference of the agent's
- * session, which the answer resumes (Issue #103). Each field has its own limit, and the whole
- * result at most {@link RUN_STEP_RESULT_MAX_BYTES}.
+ * The structured result a Run step ends with: `done`, or `needs_input` with the question (it
+ * pauses the Run) and the session reference the answer resumes. The whole result stays within
+ * {@link RUN_STEP_RESULT_MAX_BYTES}.
  */
 export const runStepResultSchema = z
   .strictObject({
     outcome: z.enum(['done', 'needs_input']),
     summary: z.string().max(20_000),
     question: runQuestionSchema.optional(),
-    /** The agent session the step ran in (Issue #103); required with `needs_input`. */
+    /** The agent session the step ran in; required with `needs_input`. */
     sessionRef: sessionRefSchema.optional(),
     pullRequest: z
       .strictObject({ title: z.string().min(1).max(256), body: z.string().max(65_536) })
@@ -544,7 +506,7 @@ export const RUN_STEP_KINDS = ['start', 'resume'] as const;
 /** Most commits a Working copy report lists. */
 export const WORKING_COPY_COMMITS_MAX = 200;
 
-/** Longest commit subject in a Working copy report, in characters (the worker shortens longer ones). */
+/** Longest commit subject in a Working copy report, in characters (the worker shortens it). */
 export const COMMIT_SUBJECT_MAX_LENGTH = 200;
 
 /** Largest Working copy report, in bytes of its UTF-8 JSON (64 KiB). */
@@ -558,9 +520,9 @@ export const WORKING_COPY_REPORT_MAX_BYTES = 64 * 1024;
 export const WORKER_REQUEST_MAX_BYTES = 192 * 1024;
 
 /**
- * What a Run's Working copy holds after a Run step (Issue #98): the Run branch, the commits on
- * it since the start commit (oldest first, at most {@link WORKING_COPY_COMMITS_MAX}; when
- * there are more, the newest), and whether uncommitted changes remain.
+ * What a Run's Working copy holds after a Run step: the Run branch, its commits since the start
+ * commit (oldest first; when over {@link WORKING_COPY_COMMITS_MAX}, the newest), and whether
+ * uncommitted changes remain.
  */
 export const workingCopyReportSchema = z
   .strictObject({
@@ -584,15 +546,12 @@ export type WorkingCopyReport = z.infer<typeof workingCopyReportSchema>;
 export const PULL_REQUEST_URL_MAX_LENGTH = 2048;
 
 /**
- * A pull request's page on github.com (Issue #115): `https://github.com/<owner>/<repo>/pull/<n>`,
- * without credentials, port, query or fragment. Delivery targets GitHub only.
+ * A pull request's page on github.com, `https://github.com/<owner>/<repo>/pull/<n>`, without
+ * credentials, port, query or fragment. Delivery targets GitHub only.
  */
 const GITHUB_PULL_REQUEST_URL = /^https:\/\/github\.com\/[^/?#@:]+\/[^/?#@:]+\/pull\/[1-9]\d*$/;
 
-/**
- * The draft pull request a delivery opened or reused (Issue #102): its URL on github.com
- * (Issue #115) and number.
- */
+/** The draft pull request a delivery opened or reused: its URL on github.com and number. */
 export const pullRequestRefSchema = z.strictObject({
   url: z
     .url({ protocol: /^https$/, hostname: /^github\.com$/ })
@@ -603,20 +562,20 @@ export const pullRequestRefSchema = z.strictObject({
 export type PullRequestRef = z.infer<typeof pullRequestRefSchema>;
 
 /**
- * How a successful Run was delivered (Issue #102): `none` when the Run branch has no commits
- * beyond the start commit (nothing pushed, "No changes"), or `delivered` with the draft pull
- * request. A failed delivery is the failure `delivery_failed`.
+ * How a successful Run was delivered: `none` when the Run branch has no commits beyond the start
+ * commit (nothing pushed), or `delivered` with the draft pull request. A failed delivery is the
+ * failure `delivery_failed`.
  */
 export const runDeliverySchema = z.discriminatedUnion('outcome', [
   z
     .strictObject({
       outcome: z.literal('none'),
       /**
-       * Only with `cancelled` (review of #124): the cancel arrived during the delivery, the Run
-       * branch was pushed, but no pull request was opened.
+       * Only with `cancelled`: the cancel arrived during the delivery; the Run branch was pushed
+       * but no pull request was opened.
        */
       branchPushed: z.literal(true).optional(),
-      /** With `branchPushed` (Issue #141): the commit the push left the remote Run branch at. */
+      /** With `branchPushed`: the commit the push left the remote Run branch at. */
       pushedCommit: commitIdSchema.optional(),
     })
     .refine((delivery) => delivery.pushedCommit === undefined || delivery.branchPushed === true, {
@@ -627,8 +586,8 @@ export const runDeliverySchema = z.discriminatedUnion('outcome', [
     outcome: z.literal('delivered'),
     pullRequest: pullRequestRefSchema,
     /**
-     * Issue #141: the commit the push left the remote Run branch at; the commits up to and
-     * including it are pushed, later ones exist only in the Working copy.
+     * The commit the push left the remote Run branch at; commits up to it are pushed, later ones
+     * exist only in the Working copy.
      */
     pushedCommit: commitIdSchema.optional(),
   }),
@@ -645,12 +604,9 @@ export const pullRequestStateSchema = z.enum(PULL_REQUEST_STATES);
 export type PullRequestStateName = z.infer<typeof pullRequestStateSchema>;
 
 /**
- * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`. A
- * failed Run may carry its Working copy's state (Issue #98, coordinator decision), so the
- * commits of a step that failed or crashed are recorded too. A delivery outcome comes exactly
- * with `succeeded` (Issue #102), and with it the Working copy's state after the delivery
- * (a delivery retry has no step report). A cancelled or timed-out Run may carry its Working
- * copy's state too (Issue #100).
+ * `POST /api/worker/runs/:runId/state` body: a failure exactly when the state is `failed`, a
+ * delivery outcome exactly with `succeeded`. The Working copy's state may come with a stop or a
+ * delivery (a delivery retry has no step report), so commits of a failed step are recorded.
  */
 export const reportRunStateRequestSchema = z
   .strictObject({
@@ -660,39 +616,35 @@ export const reportRunStateRequestSchema = z
     delivery: runDeliverySchema.optional(),
     workingCopy: workingCopyReportSchema.optional(),
     /**
-     * With `failed` / `usage_limit` only (Issue #105): the agent session the step ran in, so the
-     * operator can resume the Run once the limit resets.
+     * With `failed` / `usage_limit` only: the agent session, so the operator can resume the Run
+     * once the limit resets.
      */
     sessionRef: sessionRefSchema.optional(),
     /**
-     * With `failed` / `delivery_failed` only (Issue #141): the delivery pushed the Run branch to
-     * this commit before it failed (e.g. updating the pull request was refused), so Studio still
-     * knows which commits are pushed.
+     * With `failed` / `delivery_failed` only: the commit the Run branch was pushed to before the
+     * delivery failed, so Studio still knows which commits are pushed.
      */
     pushedCommit: commitIdSchema.optional(),
     /**
-     * With `failed` / `preparation_failed` only (Issue #142): the state of the Run's pull request
-     * the worker read right before it refused to start a Follow-up (merged, closed or gone), so
-     * Studio shows it without waiting for a lookup.
+     * With `failed` / `preparation_failed` only: the pull request state the worker read before it
+     * refused to start a Follow-up (merged, closed or gone), shown without waiting for a lookup.
      */
     pullRequestState: pullRequestStateSchema.optional(),
     /**
-     * Issue #147, with `running` of a bring-up-to-date claim only: the merge started. `baseCommit`
-     * is the Run branch's commit just before it, `integrationCommit` the integration branch commit
-     * being merged; Studio keeps both on the conversation entry and hands them back with every later
-     * claim of the part. The merged commit the page shows is recorded when the part succeeds.
+     * With `running` of a bring-up-to-date claim only: the merge started. `baseCommit` is the Run
+     * branch before it, `integrationCommit` the integration commit merged; Studio hands both back
+     * with every later claim of the part.
      */
     bringUpToDateStarted: z
       .strictObject({ baseCommit: commitIdSchema, integrationCommit: commitIdSchema })
       .optional(),
     /**
-     * Issue #147, with `succeeded` only: the bring-up-to-date request changed nothing (the Run
-     * branch already had everything the integration branch has, or the integration branch could
-     * not be fetched): no agent was started and nothing was pushed. The Run goes back to the result
-     * it had before the request; no delivery comes with it.
+     * With `succeeded` only: the bring-up-to-date request changed nothing (already up to date, or
+     * the integration branch could not be fetched): no agent was started, nothing pushed, no
+     * delivery. The Run goes back to the result it had before.
      */
     unchanged: z.literal(true).optional(),
-    /** With `unchanged`: why nothing changed, in the conversation (default: already up to date). */
+    /** With `unchanged`: why nothing changed (default: already up to date). */
     unchangedDetail: z.string().min(1).max(FAILURE_DETAIL_MAX_LENGTH).optional(),
   })
   .refine((report) => (report.state === 'failed') === (report.failure !== undefined), {
@@ -773,8 +725,8 @@ export type ReportRunStateRequest = z.infer<typeof reportRunStateRequestSchema>;
 export const reportRunStepRequestSchema = z.strictObject({
   workerId: workerIdSchema,
   /**
-   * The Run step's number, 1, 2, … (review of #121): a retried report of a step Studio already
-   * stored is recognised by it and changes nothing.
+   * The Run step's number, 1, 2, …: a retried report of a step Studio already stored is
+   * recognised by it and changes nothing.
    */
   index: z.int().min(1).max(2_147_483_647),
   kind: z.enum(RUN_STEP_KINDS),
@@ -784,11 +736,9 @@ export const reportRunStepRequestSchema = z.strictObject({
 export type ReportRunStepRequest = z.infer<typeof reportRunStepRequestSchema>;
 
 /**
- * A Run's diffs (Issue #144): after every Run step that reports a result, the agent worker
- * compares the Working copy (uncommitted and untracked changes included, Studio-placed files
- * never) with the start commit (`run`, the whole Run) and with the previous result (`last`;
- * the same as `run` for the first result). Studio redacts every patch like the log and keeps
- * the latest of each per Run.
+ * A Run's diffs: after every Run step with a result, the worker compares the Working copy
+ * (uncommitted and untracked changes included, Studio-placed files never) with the start commit
+ * (`run`) and the previous result (`last`; `run` for the first). Studio redacts every patch.
  */
 export const RUN_DIFF_SCOPES = ['run', 'last'] as const;
 export type RunDiffScope = (typeof RUN_DIFF_SCOPES)[number];
@@ -823,10 +773,9 @@ export const RUN_DIFF_UNAVAILABLE_MAX_LENGTH = 500;
 const diffPathSchema = z.string().min(1).max(RUN_DIFF_PATH_MAX_LENGTH);
 
 /**
- * One changed file: its path (and the previous one of a rename), status, added and removed
- * line counts, and its unified diff (`patch`, Git's text for this file, headers included).
- * A binary file, or one whose patch is over the per-file limit (`tooLarge`), has no patch; so
- * has a file listed after the diff reached its total limit (the diff is then `truncated`).
+ * One changed file: path (and previous path of a rename), status, line counts and `patch`, Git's
+ * unified diff with headers. A binary or `tooLarge` file has no patch, nor has a file listed after
+ * the diff reached its total limit (the diff is then `truncated`).
  */
 export const runDiffFileSchema = z
   .strictObject({
@@ -885,10 +834,9 @@ export const runDiffSchema = z
 export type RunDiff = z.infer<typeof runDiffSchema>;
 
 /**
- * `POST /api/worker/runs/:runId/diff` body (Issue #144): both diffs with where they stand
- * (`state`), or the reason they could not be computed (text for the operator, never a path or
- * Git's own output). Studio replaces the Run's stored diffs with it, and keeps the state (an
- * unavailable report leaves the stored state as it was).
+ * `POST /api/worker/runs/:runId/diff` body: both diffs with their `state`, or the reason they
+ * could not be computed (operator text, never a path or Git's output). Studio replaces the stored
+ * diffs, but an unavailable report leaves the stored state as it was.
  */
 export const reportRunDiffRequestSchema = z
   .strictObject({
@@ -911,10 +859,9 @@ export const reportRunDiffRequestSchema = z
 export type ReportRunDiffRequest = z.infer<typeof reportRunDiffRequestSchema>;
 
 /**
- * One event a runner streams while a Run step executes (Issue #99): an agent message, a tool
- * call with its command, or a tool result (output). Issue #105: or a `notice`, what the runner
- * says about the step itself (a denied tool call, a skipped instruction import). The worker
- * forwards each as a Run event.
+ * One event a runner streams while a Run step executes: an agent message, a tool call with its
+ * command, a tool result, or a `notice` about the step itself (a denied tool call, a skipped
+ * instruction import). The worker forwards each as a Run event.
  */
 export const runnerEventSchema = z.strictObject({
   type: z.enum(['message', 'command', 'output', 'notice']),
@@ -926,15 +873,15 @@ export type RunnerEvent = z.infer<typeof runnerEventSchema>;
 export const RUN_STATES_REQUEST_MAX = 500;
 
 /**
- * `POST /api/worker/runs/states` body (Issue #98): the agent worker asks for the states of the
- * Runs it has Working copies for, to apply the retention rules.
+ * `POST /api/worker/runs/states` body: the Runs the worker has Working copies for, so it can
+ * apply the retention rules.
  */
 export const runStatesRequestSchema = z.strictObject({
   workerId: workerIdSchema,
   runIds: z.array(z.uuid()).min(1).max(RUN_STATES_REQUEST_MAX),
   /**
-   * Issue #141: Runs whose Working copies this worker's retention removed and has not reported
-   * yet. Studio records the removal, so the Run page says a Follow-up is no longer possible.
+   * Runs whose Working copies this worker's retention removed and has not reported yet; Studio
+   * records the removal, so the Run page says a Follow-up is no longer possible.
    */
   removedRunIds: z.array(z.uuid()).max(RUN_STATES_REQUEST_MAX).optional(),
 });
@@ -951,10 +898,8 @@ export const runStatesResponseSchema = z.array(
       state: runStateSchema,
       finishedAt: z.iso.datetime().nullable(),
       /**
-       * Issue #143: Studio decides how long a final Run's Working copy is kept, from the state it
-       * holds (the Run's pull request, its last activity, the per-Project limit). `keepUntil`:
-       * keep it at least until then. `removable`: remove it now. A Run that is not final has
-       * neither; a final one that has neither (an older Studio) is kept.
+       * Studio decides how long a final Run's Working copy is kept: `keepUntil` at least until
+       * then, `removable` remove it now. Neither (not final, or an older Studio): keep it.
        */
       keepUntil: z.iso.datetime().optional(),
       removable: z.literal(true).optional(),
@@ -977,9 +922,8 @@ export const runStatesResponseSchema = z.array(
 );
 export type RunStatesResponse = z.infer<typeof runStatesResponseSchema>;
 /**
- * The kinds of Run event (Issue #99): the runner's three, the markers the worker adds at the
- * start and end of each Run step, and `notice` for what Studio or the worker says about the
- * log itself (e.g. "log truncated").
+ * The kinds of Run event: the runner's three, the worker's step markers, and `notice` for what
+ * Studio or the worker says about the log itself (e.g. "log truncated").
  */
 export const RUN_EVENT_KINDS = [
   'message',
@@ -1031,9 +975,8 @@ export const runEventInputSchema = z.strictObject({
 export type RunEventInput = z.infer<typeof runEventInputSchema>;
 
 /**
- * `POST /api/worker/runs/:runId/events` body (Issue #99): a batch in strictly increasing
- * `seq` order. Studio ignores events it already stored (an idempotent re-send) and accepts a
- * gap.
+ * `POST /api/worker/runs/:runId/events` body: a batch in strictly increasing `seq` order. Studio
+ * ignores events it already stored (an idempotent re-send) and accepts a gap.
  */
 export const appendRunEventsRequestSchema = z.strictObject({
   workerId: workerIdSchema,
@@ -1048,23 +991,21 @@ export const appendRunEventsRequestSchema = z.strictObject({
 export type AppendRunEventsRequest = z.infer<typeof appendRunEventsRequestSchema>;
 
 /**
- * How the agent worker carries out Runs (Issue #101): `cli` starts the provider's official CLI
- * (production); `fake` uses the scripted fake runner and is allowed only in development and
- * test configurations of the worker.
+ * How the agent worker carries out Runs: `cli` starts the provider's official CLI (production);
+ * `fake` is the scripted fake runner, allowed only in development and test configurations.
  */
 export const WORKER_RUNNER_MODES = ['fake', 'cli'] as const;
 export type WorkerRunnerMode = (typeof WORKER_RUNNER_MODES)[number];
 
-/** Longest reason a worker gives for an unavailable provider (Issue #105). */
+/** Longest reason a worker gives for an unavailable provider. */
 export const PROVIDER_REASON_MAX_LENGTH = 500;
 
 const providerReasonSchema = z.string().min(1).max(PROVIDER_REASON_MAX_LENGTH);
 
 /**
- * Issue #143: the disk the agent worker keeps Working copies and caches on, measured at most every
- * ten minutes. Sizes are bytes of data (a file linked from two places counts once); `keptRuns` is
- * how many Run directories the worker holds; `minFreeBytes` is the free space below which it
- * prepares no new Run (`STUDIO_WORKER_MIN_FREE_GB`).
+ * The disk the worker keeps Working copies and caches on, measured at most every ten minutes.
+ * Sizes are bytes of data (a file linked twice counts once); `keptRuns` counts held Run dirs;
+ * `minFreeBytes` (`STUDIO_WORKER_MIN_FREE_GB`) is the free space below which no Run is prepared.
  */
 const DISK_BYTES_MAX = Number.MAX_SAFE_INTEGER;
 export const workerDiskSchema = z.strictObject({
@@ -1080,18 +1021,18 @@ export const workerDiskSchema = z.strictObject({
 export type WorkerDisk = z.infer<typeof workerDiskSchema>;
 
 /**
- * `POST /api/worker/status` body (Issue #101): the worker's runner mode and which providers its
- * own configuration enables, sent when it starts and with every poll. It is a report for
- * display and for refusing hopeless starts; the worker's own check stays authoritative.
+ * `POST /api/worker/status` body: the worker's runner mode and the providers its own
+ * configuration enables, sent at start and with every poll. A report for display and for refusing
+ * hopeless starts; the worker's own check stays authoritative.
  */
 export const workerStatusRequestSchema = z.strictObject({
   workerId: workerIdSchema,
   runner: z.enum(WORKER_RUNNER_MODES),
   providers: providerSwitchesSchema,
   /**
-   * Issue #105: why a provider whose switch is on cannot run on this worker (e.g. its CLI is
-   * missing or of an unsupported version). The switches keep their meaning; a reason makes the
-   * provider unavailable on top of them. Text for the operator, never a path or a credential.
+   * Why a provider whose switch is on cannot run here (e.g. its CLI is missing or unsupported).
+   * A reason makes the provider unavailable on top of the switches. Operator text, never a path
+   * or a credential.
    */
   providerReasons: z
     .strictObject({
@@ -1099,7 +1040,7 @@ export const workerStatusRequestSchema = z.strictObject({
       codex: providerReasonSchema.optional(),
     } satisfies Record<Provider, z.ZodOptional<z.ZodString>>)
     .optional(),
-  /** Issue #143: left out until the worker has measured its disk. */
+  /** Left out until the worker has measured its disk. */
   disk: workerDiskSchema.optional(),
 });
 export type WorkerStatusRequest = z.infer<typeof workerStatusRequestSchema>;
@@ -1108,12 +1049,9 @@ export type WorkerStatusRequest = z.infer<typeof workerStatusRequestSchema>;
 export type WorkerStatusReport = Omit<WorkerStatusRequest, 'workerId'>;
 
 /**
- * Lookups (Issue #142): questions Studio has for the Git host that only the agent worker can
- * answer, through the Agent account. Studio records a request; any connected worker claims it
- * (it needs no Working copy), reads what the kind asks for and reports the result. The kinds
- * start with the pull request's state; later stories add theirs next to it (Issue #145: the
- * logs of failing checks; Issue #146: the pull request's Review comments). Reads only: no lookup changes anything on the Git host or starts an
- * agent CLI.
+ * Lookups: Studio's questions for the Git host that only the agent worker can answer, through
+ * the Agent account; any connected worker claims one (no Working copy needed) and reports the
+ * result. Reads only: a lookup never changes the Git host or starts an agent CLI.
  */
 export const LOOKUP_KINDS = [
   'pull_request_state',
@@ -1127,9 +1065,8 @@ export type LookupKind = z.infer<typeof lookupKindSchema>;
 export const LOOKUP_CLAIM_MAX = 5;
 
 /**
- * How a Pull request check stands (Issue #145): `queued` and `running` have not finished,
- * `passed`, `failed`, `skipped` and `cancelled` have. The API's list is pinned to this one by a
- * test.
+ * How a Pull request check stands: `queued` and `running` have not finished, the rest have. The
+ * API's list is pinned to this one by a test.
  */
 export const PULL_REQUEST_CHECK_STATES = [
   'queued',
@@ -1167,7 +1104,7 @@ function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-/** A Pull request check as the Git host reports it (Issue #145): name, state, duration, link. */
+/** A Pull request check as the Git host reports it: name, state, duration, link. */
 export const pullRequestCheckSchema = z.strictObject({
   name: z.string().min(1).max(PULL_REQUEST_CHECK_NAME_MAX_LENGTH),
   state: pullRequestCheckStateSchema,
@@ -1177,13 +1114,9 @@ export const pullRequestCheckSchema = z.strictObject({
 export type PullRequestCheck = z.infer<typeof pullRequestCheckSchema>;
 
 /**
- * The result of a `pull_request_state` lookup: the state, how many commits the Run branch is
- * behind and ahead of the integration branch (not for `missing`), and whether the Git host says
- * the pull request can be merged without conflicts (left out while the host has not worked it
- * out yet, and for a merged or closed one). Issue #145: for a draft or open pull request also
- * its Pull request checks (`checks`, for the pull request's latest commit `checksCommit`; an
- * empty list means none are configured or reported), or `checksUnavailable` when the Git host
- * refused to tell (the Agent account lacks the permission).
+ * The result of a `pull_request_state` lookup: the state, how far the Run branch is behind and
+ * ahead of the integration branch, and whether it merges cleanly (`mergeable`; left out until the
+ * host knows). Draft or open: `checks` of the latest commit, or `checksUnavailable` if refused.
  */
 export const pullRequestStateResultSchema = z
   .strictObject({
@@ -1192,7 +1125,9 @@ export const pullRequestStateResultSchema = z
     aheadBy: z.int().min(0).max(PG_INT_MAX).optional(),
     mergeable: z.boolean().optional(),
     checksCommit: commitIdSchema.optional(),
+    /** Empty means none are configured or reported. */
     checks: z.array(pullRequestCheckSchema).max(PULL_REQUEST_CHECKS_MAX).optional(),
+    /** The Git host refused to report checks (the Agent account lacks the permission). */
     checksUnavailable: z.literal(true).optional(),
   })
   .refine(
@@ -1228,14 +1163,14 @@ export const pullRequestStateResultSchema = z
 export type PullRequestStateResult = z.infer<typeof pullRequestStateResultSchema>;
 
 /**
- * What a `review_comments` lookup loads (Issue #146): the comments created since the Run's latest
- * result, or all that are unresolved.
+ * What a `review_comments` lookup loads: the comments created since the Run's latest result, or
+ * all that are unresolved.
  */
 export const REVIEW_COMMENT_SCOPES = ['since_last_result', 'unresolved'] as const;
 export const reviewCommentScopeSchema = z.enum(REVIEW_COMMENT_SCOPES);
 export type ReviewCommentScope = z.infer<typeof reviewCommentScopeSchema>;
 
-/** The kinds of Review comment: a review's summary, an inline comment on the diff, a conversation comment. */
+/** The kinds of Review comment: a review's summary, an inline diff comment, a conversation one. */
 export const REVIEW_COMMENT_KINDS = ['review', 'inline', 'conversation'] as const;
 export const reviewCommentKindSchema = z.enum(REVIEW_COMMENT_KINDS);
 export type ReviewCommentKind = z.infer<typeof reviewCommentKindSchema>;
@@ -1264,11 +1199,9 @@ export const REVIEW_COMMENT_AUTHOR_MAX_LENGTH = 100;
 export const REVIEW_COMMENT_PATH_MAX_LENGTH = 500;
 
 /**
- * One Review comment as the agent worker read it (Issue #146). `id` is unique within the pull
- * request across the three kinds (`review-<n>`, `inline-<n>`, `conversation-<n>`). The text is
- * untrusted: anyone can comment on a public pull request, and it may say anything. Studio redacts
- * it, shows it as plain text and sends only what the operator selects. `textCut` marks a text that
- * was cut to its size limit.
+ * One Review comment as the worker read it; `id` is unique across the three kinds (`review-<n>`,
+ * `inline-<n>`, `conversation-<n>`). The text is untrusted, anyone can comment on a public pull
+ * request: Studio redacts it, shows plain text and sends only what the operator selects.
  */
 export const reviewCommentSchema = z.strictObject({
   id: z.string().regex(/^(?:review|inline|conversation)-[0-9]{1,20}$/),
@@ -1292,9 +1225,9 @@ export const reviewCommentSchema = z.strictObject({
 export type ReviewComment = z.infer<typeof reviewCommentSchema>;
 
 /**
- * The result of a `review_comments` lookup (Issue #146): the pull request's unresolved comments
- * in the order they were written, without the Agent account's own and without those of resolved
- * threads; at most {@link REVIEW_COMMENTS_MAX} (`truncated`: more existed, or a text was cut).
+ * The unresolved comments of the pull request in the order written, without the Agent account's
+ * own and those of resolved threads; `truncated` when more than {@link REVIEW_COMMENTS_MAX}
+ * existed or a text was cut.
  */
 export const reviewCommentsResultSchema = z
   .strictObject({
@@ -1321,11 +1254,9 @@ export const reviewCommentsResultSchema = z
 export type ReviewCommentsResult = z.infer<typeof reviewCommentsResultSchema>;
 
 /**
- * One claimed lookup (`POST /api/worker/lookups/claim` answer, an array; empty when none is
- * waiting): what the worker needs to answer a `pull_request_state` lookup, nothing else. The
- * repository is the remote as the operator connected it (never a credential); the worker
- * checks it names a GitHub repository, and that the pull request is the Run's own, before it
- * reads anything.
+ * One claimed lookup (`POST /api/worker/lookups/claim` answers an array, empty when none waits):
+ * what the worker needs, nothing else. The repository is the remote as connected, never a
+ * credential; the worker checks it names a GitHub repository and the pull request is the Run's.
  */
 export const lookupPayloadSchema = z
   .strictObject({
@@ -1338,7 +1269,7 @@ export const lookupPayloadSchema = z
     runBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
     /** The integration branch the Run branch is compared with. */
     integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
-    /** Issue #146: what a `review_comments` lookup loads; present for that kind only. */
+    /** What a `review_comments` lookup loads; present for that kind only. */
     reviewComments: z
       .strictObject({
         scope: reviewCommentScopeSchema,
@@ -1370,26 +1301,24 @@ export const LOOKUP_ERROR_MAX_LENGTH = 500;
 export const LOOKUP_RETRY_AFTER_MAX_SECONDS = 24 * 60 * 60;
 
 /**
- * Why a lookup failed: `scope_mismatch` (the worker refused it: not a GitHub repository, or
- * not the Run's own pull request; never retried), `rate_limited` (the Git host asked to wait;
- * retried after `retryAfterSeconds`) or `failed` (anything else: not configured, not reachable,
- * the host refused it; not retried by itself).
+ * Why a lookup failed: `scope_mismatch` (refused by the worker: not a GitHub repository or not the
+ * Run's own pull request; never retried), `rate_limited` (retried after `retryAfterSeconds`) or
+ * `failed` (anything else; not retried by itself).
  */
 export const LOOKUP_ERROR_CODES = ['scope_mismatch', 'rate_limited', 'failed'] as const;
 export const lookupErrorCodeSchema = z.enum(LOOKUP_ERROR_CODES);
 export type LookupErrorCode = z.infer<typeof lookupErrorCodeSchema>;
 
-/** Longest log excerpt of one failed check, in UTF-8 bytes (Issue #145: 16 KiB). */
+/** Longest log excerpt of one failed check, in UTF-8 bytes (16 KiB). */
 export const FAILING_CHECK_EXCERPT_MAX_LENGTH = 16 * 1024;
 
 /** Longest total of the log excerpts of one `failing_check_logs` result, in UTF-8 bytes (64 KiB). */
 export const FAILING_CHECK_EXCERPTS_TOTAL_MAX_LENGTH = 64 * 1024;
 
 /**
- * The result of a `failing_check_logs` lookup (Issue #145): for the pull request's latest
- * commit, each failed check with its name and link and, when the worker could read it, the last
- * lines of its log (`excerpt`, `logAvailable` true). The text is untrusted: it comes from a CI
- * job and may say anything. Studio redacts and fits it before it shows it to the operator.
+ * The result of a `failing_check_logs` lookup: each failed check of the latest commit with name
+ * and link and, when readable, the last lines of its log (`excerpt`). The text is untrusted, it
+ * comes from a CI job: Studio redacts and fits it before showing it to the operator.
  */
 export const failingCheckLogsResultSchema = z
   .strictObject({

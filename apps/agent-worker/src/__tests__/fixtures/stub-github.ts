@@ -1,27 +1,25 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-// Issue #102: a local stub of the two GitHub REST routes the worker uses (list open pull
-// requests of a branch, create one). Tests and the e2e smoke point STUDIO_AGENT_GITHUB_API_URL
-// at it; nothing reaches real GitHub.
+// A local stub of the GitHub REST routes the worker uses; nothing reaches real GitHub.
 
 export interface StubPullRequest {
   owner: string;
   repo: string;
   head: string;
   number: number;
-  /** Issue #141: `closed` (and `merged`) leaves it out of the open pull requests of its branch. */
+  /** `closed` (and `merged`) leaves it out of the open pull requests of its branch. */
   state?: 'open' | 'closed';
   merged?: boolean;
-  /** Issue #142: a draft pull request (default: not a draft). */
+  /** A draft pull request (default: not a draft). */
   draft?: boolean;
-  /** Issue #142: GitHub's merge verdict (default `null`: not worked out yet). */
+  /** GitHub's merge verdict (default `null`: not worked out yet). */
   mergeable?: boolean | null;
-  /** Issue #142: who opened it (default: the stub's Agent account). */
+  /** Who opened it (default: the stub's Agent account). */
   author?: string;
-  /** Issue #142: `owner/repo` of the head branch (default: the pull request's own repository). */
+  /** `owner/repo` of the head branch (default: the pull request's own repository). */
   headRepository?: string | null;
-  /** Issue #145: the pull request's latest commit (default: forty `c`). */
+  /** The pull request's latest commit (default: forty `c`). */
   headSha?: string;
   title?: string;
   body?: string;
@@ -42,43 +40,43 @@ export interface StubGitHub {
   pullRequests: StubPullRequest[];
   /** The bodies of created pull requests. */
   created: { owner: string; repo: string; body: Record<string, unknown> }[];
-  /** The bodies of pull request updates (PATCH, Issue #141), with the number. */
+  /** The bodies of pull request updates (PATCH), with the number. */
   updated: { owner: string; repo: string; number: number; body: Record<string, unknown> }[];
   /** When set, creating a pull request answers this status (once per value set). */
   failCreate: number | undefined;
-  /** When set, updating a pull request answers this status (once per value set; Issue #141). */
+  /** When set, updating a pull request answers this status (once per value set). */
   failUpdate: number | undefined;
-  /** Issue #142: the login of the Agent account (`GET /user`). */
+  /** The login of the Agent account (`GET /user`). */
   viewer: string;
-  /** Issue #142: what `GET /compare/...` answers (default: 0 behind, 1 ahead). */
+  /** What `GET /compare/...` answers (default: 0 behind, 1 ahead). */
   position: { behindBy: number; aheadBy: number };
-  /** Issue #142: head branches that no longer exist (compare answers 404). */
+  /** Head branches that no longer exist (compare answers 404). */
   missingBranches: string[];
   /**
-   * Issue #142: when set, the next read (`GET`) is refused with this status and these headers,
+   * When set, the next read (`GET`) is refused with this status and these headers,
    * once (a rate limit, or any refusal).
    */
   refuseNextRead: { status: number; headers?: Record<string, string> } | undefined;
-  /** Issue #145: the check runs `GET /commits/:sha/check-runs` answers, as GitHub words them. */
+  /** The check runs `GET /commits/:sha/check-runs` answers, as GitHub words them. */
   checkRuns: Record<string, unknown>[];
-  /** Issue #145: the commit statuses `GET /commits/:sha/status` answers. */
+  /** The commit statuses `GET /commits/:sha/status` answers. */
   statuses: Record<string, unknown>[];
   /**
-   * Issue #145: what `GET /actions/jobs/:id/logs` does for a job: redirect to a download of
+   * What `GET /actions/jobs/:id/logs` does for a job: redirect to a download of
    * `text` (as GitHub does), or answer a refusal status.
    */
   jobLogs: Map<number, { text: string } | { status: number }>;
-  /** Issue #146: what `GET /pulls/:n/reviews` answers, as GitHub words it. */
+  /** What `GET /pulls/:n/reviews` answers, as GitHub words it. */
   reviews: Record<string, unknown>[];
-  /** Issue #146: what `GET /pulls/:n/comments` (inline comments) answers. */
+  /** What `GET /pulls/:n/comments` (inline comments) answers. */
   inlineComments: Record<string, unknown>[];
-  /** Issue #146: what `GET /issues/:n/comments` (conversation comments) answers. */
+  /** What `GET /issues/:n/comments` (conversation comments) answers. */
   issueComments: Record<string, unknown>[];
-  /** Issue #146: the review threads the GraphQL query answers: resolved or not, comment ids. */
+  /** The review threads the GraphQL query answers: resolved or not, comment ids. */
   reviewThreads: { isResolved: boolean; commentIds: number[]; moreComments?: boolean }[];
-  /** Issue #146: leave out the `Link` header of the comment listings (a proxy that drops it). */
+  /** Leave out the `Link` header of the comment listings (a proxy that drops it). */
   omitLinkHeader: boolean;
-  /** Issue #146: when set, the GraphQL query answers these errors (with status 200). */
+  /** When set, the GraphQL query answers these errors (with status 200). */
   graphqlErrors: unknown[] | undefined;
   /** The `html_url` of a pull request (default: its github.com URL). */
   htmlUrl: (pr: StubPullRequest) => string;
@@ -134,7 +132,6 @@ export async function startStubGitHub(): Promise<StubGitHub> {
         stub.refuseNextRead = undefined;
         return send(refusal.status, { message: 'Refused by the stub' }, refusal.headers);
       }
-      // Issue #146: the comments of a pull request, a hundred to a page, and its review threads.
       const comments =
         /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/(reviews|comments)$/.exec(url.pathname) ??
         /^\/repos\/[^/]+\/[^/]+\/(issues)\/\d+\/comments$/.exec(url.pathname);
@@ -187,7 +184,6 @@ export async function startStubGitHub(): Promise<StubGitHub> {
           },
         });
       }
-      // Issue #145: checks of a commit, and a job's log (a redirect to a download, as GitHub does).
       if (/^\/repos\/[^/]+\/[^/]+\/commits\/[^/]+\/check-runs$/.test(url.pathname)) {
         return send(200, { total_count: stub.checkRuns.length, check_runs: stub.checkRuns });
       }
@@ -208,7 +204,6 @@ export async function startStubGitHub(): Promise<StubGitHub> {
         response.writeHead(200, { 'Content-Type': 'text/plain' });
         return response.end(job && 'text' in job ? job.text : '');
       }
-      // Issue #142: the Agent account itself, and a branch's position against the base.
       if (url.pathname === '/user') return send(200, { login: stub.viewer });
       const branchRoute = /^\/repos\/([^/]+)\/([^/]+)\/branches\/(.+)$/.exec(url.pathname);
       if (branchRoute) {
@@ -223,7 +218,6 @@ export async function startStubGitHub(): Promise<StubGitHub> {
         if (stub.missingBranches.includes(head)) return send(404, { message: 'Not Found' });
         return send(200, { ahead_by: stub.position.aheadBy, behind_by: stub.position.behindBy });
       }
-      // Issue #141: one pull request by number: read it (GET) or change its title and body.
       const single = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(url.pathname);
       if (single) {
         const [, owner, repo, number] = single as unknown as [string, string, string, string];

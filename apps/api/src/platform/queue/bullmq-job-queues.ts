@@ -41,9 +41,8 @@ export interface QueueWorkerTuning {
   readonly lockDuration?: number;
   readonly stalledInterval?: number;
   /**
-   * How long `cancel()` waits for a job our worker has taken to reach its processor; default
-   * 1 s. A test that does several Redis round trips inside that wait raises it, so a slow
-   * runner cannot fail it falsely (#72).
+   * How long `cancel()` waits for a taken job to reach its processor; default 1 s. Tests with
+   * several Redis round trips inside that wait raise it so a slow runner cannot fail falsely.
    */
   readonly startWaitMs?: number;
   /**
@@ -119,10 +118,9 @@ interface Entry {
 }
 
 /**
- * {@link JobQueues} on BullMQ. Processors run inside the API process. Producers share one
- * fail-fast connection; each worker gets its own (BullMQ requires `maxRetriesPerRequest:
- * null` there). Nothing connects to Redis until a queue is used, so building the app
- * (tests, OpenAPI generation) needs no Redis.
+ * {@link JobQueues} on BullMQ, processors in the API process. Producers share one fail-fast
+ * connection; each worker has its own (BullMQ needs `maxRetriesPerRequest: null`). Nothing
+ * connects until a queue is used.
  */
 @Injectable()
 export class BullMqJobQueues
@@ -186,10 +184,9 @@ export class BullMqJobQueues
   }
 
   /**
-   * Pings the queue's Redis. A probe calls this every few seconds, so a ping that times out
-   * while connected (Redis slow, not down) is logged once per outage and the recovery once.
-   * While the producer is not connected, a ping waits in the offline queue and times out
-   * too; that is the connection outage logConnectionErrors already logs, so not logged here.
+   * Pings the queue's Redis. A timeout while connected (Redis slow) is logged once per outage,
+   * and the recovery once; while disconnected the outage is already logged by
+   * logConnectionErrors, so not here.
    */
   async isAvailable(): Promise<boolean> {
     const reply = await withTimeout(
@@ -229,11 +226,9 @@ export class BullMqJobQueues
   }
 
   /**
-   * Jobs still `active` at startup belonged to a process that died: processors run only in
-   * the API process, and there is one API instance (MVP). The owner hears about them first;
-   * then they are removed (their stale lock included) so BullMQ's stalled-job check cannot
-   * run them a second time. If the owner's hook throws, startup fails and the jobs stay
-   * for the next start.
+   * Jobs still `active` at startup belonged to a dead process (one API instance). The owner
+   * hears first; then they are removed, stale lock included, so BullMQ's stalled check cannot
+   * run them again. If the owner's hook throws, startup fails and the jobs stay.
    */
   private async reconcile(entry: Entry): Promise<void> {
     const { queue, definition } = entry;
@@ -379,11 +374,9 @@ export class BullMqJobQueues
     if (found?.state !== 'active' || !this.bootstrapped) {
       return false;
     }
-    // Active but not running here: either our worker has just taken it and is about to
-    // call its processor (wait for that, then abort with a live signal), or it is held by
-    // something we cannot abort or has just finished (then there is nothing to cancel).
-    // Only the run of this enqueue (its token) is ours: a newer run with the same id that
-    // starts meanwhile means this job is over, and is never aborted.
+    // Active but not running here: our worker is about to call its processor (wait, then abort),
+    // or it is unabortable or just finished (nothing to cancel). A newer run of the same id
+    // (different token) means this job is over and is never aborted.
     const deadline = Date.now() + (this.tuning.startWaitMs ?? START_WAIT_MS);
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
@@ -431,10 +424,9 @@ export class BullMqJobQueues
   }
 
   /**
-   * The processor wrapper: one AbortController per running job, fired by cancel(), the
-   * time limit, a lost lock or shutdown. The job (and so its id and worker slot) stays
-   * busy until the processor settles; an aborted job is a failure even if the processor
-   * resolves, and its owner hears about every failure exactly once, afterwards.
+   * The processor wrapper: one AbortController per job, fired by cancel(), the time limit, a
+   * lost lock or shutdown. The id stays busy until the processor settles; an abort is a
+   * failure even if it resolves, and the owner hears each failure exactly once, afterwards.
    */
   private async run(entry: Entry, job: Job<StoredJob>): Promise<void> {
     const { definition, running } = entry;

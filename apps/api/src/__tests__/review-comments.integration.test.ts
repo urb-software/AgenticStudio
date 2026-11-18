@@ -12,10 +12,9 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #146, main seam: a Run's pull request Review comments over HTTP on the real app with
-// PostgreSQL and Redis from Testcontainers. The operator loads them; the agent worker's side is
-// driven over the worker routes exactly as the worker calls them (claim the lookups, report what it
-// read). Loading never creates a Follow-up or starts an agent; only the operator's send does.
+// A Run's pull request Review comments over HTTP on the real app (PostgreSQL and Redis via
+// Testcontainers); loading never creates a Follow-up or starts an agent, only the operator's
+// send does.
 
 // A throwaway worker token generated per run; no token is committed.
 const WORKER_TOKEN = randomBytes(32).toString('base64');
@@ -509,7 +508,7 @@ describe('review comments API (PostgreSQL + Redis via Testcontainers)', () => {
       ).toBe(422);
       await loaded(runId, { comments: COMMENTS, truncated: false });
       expect((await followUp(runId, { text: 'one' })).status).toBe(202);
-      // The Run is queued now: a second Follow-up is refused, the set stays.
+      // The Run is queued: a second Follow-up is refused, the set stays.
       expect(
         (
           await followUp(runId, {

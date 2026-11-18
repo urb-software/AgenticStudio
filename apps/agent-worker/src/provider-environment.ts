@@ -1,13 +1,12 @@
 /**
- * The environment a provider CLI process gets (Issues #105, #106): only an allowlist of the
+ * The environment a provider CLI process gets: only an allowlist of the
  * worker's own variables, never its secrets. Shared by the Claude Code and Codex runners.
  */
 
 /**
- * The only variables of the worker's environment a provider CLI gets. Everything else is
- * dropped: every provider credential or override (`ANTHROPIC_*`, `CLAUDE_CODE_*`,
- * `OPENAI_*`, `CODEX_*`, including `CODEX_HOME`), and all of Studio's and the worker's own
- * settings (the worker token, the Agent account's token).
+ * The only worker variables a provider CLI gets; everything else is dropped: provider credentials
+ * and overrides (`ANTHROPIC_*`, `CLAUDE_CODE_*`, `OPENAI_*`, `CODEX_*`, `CODEX_HOME`) and the
+ * worker's and Studio's own tokens and settings.
  */
 export const PROVIDER_PASSED_VARIABLES = [
   'PATH',
@@ -27,7 +26,7 @@ const SYSTEM_DOCKER_HOSTS = ['unix:///var/run/docker.sock', 'unix:///run/docker.
 export interface ProviderEnvironmentInput {
   /** The worker's own environment, filtered here. */
   base: Record<string, string | undefined>;
-  /** The Run step's temporary directory, inside the Run's directory (none for the version check). */
+  /** The Run step's temporary directory in the Run's directory (none for the version check). */
   tmpDir?: string;
   /** The Run's Compose project name (`COMPOSE_PROJECT_NAME`), when it has one. */
   composeProjectName?: string;

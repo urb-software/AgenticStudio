@@ -40,11 +40,9 @@ export class OutboxFullError extends Error {
 }
 
 /**
- * One Run's state and step reports on their way to Studio (Issue #100), delivered in the order
- * they were sent. While Studio is unreachable or failing (a transient error) a report is
- * retried with backoff and the ones after it wait, so the Run step keeps going and nothing is
- * reported out of order; Studio renews held Runs' leases when it starts again. A report Studio
- * refuses for good is logged and dropped; a "not held" answer drops everything left.
+ * One Run's state and step reports on their way to Studio, delivered in order: while Studio is
+ * failing a report is retried with backoff and the ones after it wait. A report Studio refuses for
+ * good is dropped; a "not held" answer drops everything left.
  */
 export class ReportOutbox {
   private readonly queue: Report[] = [];

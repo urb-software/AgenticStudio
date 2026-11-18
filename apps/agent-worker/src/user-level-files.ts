@@ -2,12 +2,9 @@ import { lstat, readdir } from 'node:fs/promises';
 import { posix } from 'node:path';
 
 /**
- * User-level instruction and skill files of a provider CLI in the agent user's home (review of
- * #133, coordinator decision C2). The CLIs load them in every Run, whatever the repository, and
- * an agent could write them for later Runs; before every Run step the worker refuses to start
- * the CLI while any is present, and the operator reviews them. Entries the CLI itself creates at
- * sign-in are allowed by exact name, only as real directories (never a symbolic link). Only
- * names are ever reported, never content; nothing is followed or read.
+ * User-level instruction and skill files of a provider CLI in the agent user's home: loaded in
+ * every Run and writable by an agent, so the CLI is not started while any is present (CLI-created
+ * entries are allowed by exact name, as real directories). Only names are reported.
  */
 export interface UserLevelFiles {
   /** Paths relative to the home directory that must not exist at all. */

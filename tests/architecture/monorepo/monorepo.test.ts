@@ -7,7 +7,6 @@ describeGate('monorepo', monorepoGate, '.', [
   { fixture: 'apps-use-packages', expected: [] },
   { fixture: 'web-imports-api-implementation', expected: ['mono-no-cross-app-imports'] },
   { fixture: 'web-imports-database-package', expected: ['mono-web-no-server-implementations'] },
-  // The worker protocol (Issue #96) is for the API and the agent worker, not the browser.
   { fixture: 'web-imports-contracts-package', expected: ['mono-web-no-server-implementations'] },
   {
     fixture: 'web-manifest-depends-on-database',
@@ -26,7 +25,6 @@ describeGate('monorepo', monorepoGate, '.', [
     fixture: 'app-imports-package-by-relative-path',
     expected: ['mono-no-relative-imports-into-packages'],
   },
-  // The agent worker reaches Studio over the worker routes only (ADR 0002, Issue #96).
   { fixture: 'agent-worker-uses-contracts', expected: [] },
   {
     fixture: 'agent-worker-imports-database-package',
@@ -42,18 +40,15 @@ describeGate('monorepo', monorepoGate, '.', [
       'mono-agent-worker-allowed-imports-only',
     ],
   },
-  // Production code reaching the database through a test file (review of #112).
   {
     fixture: 'agent-worker-imports-test-code',
     expected: ['mono-agent-worker-production-no-test-code'],
   },
-  // Provider CLIs start only through the spawn boundary (Issue #101).
   { fixture: 'agent-worker-spawns-through-boundary', expected: [] },
   {
     fixture: 'agent-worker-imports-child-process',
     expected: ['mono-agent-worker-spawn-boundary-only'],
   },
-  // Deny by default: nothing past the boundary through other packages or loaders (review of #116).
   {
     fixture: 'agent-worker-imports-process-wrapper',
     expected: ['mono-agent-worker-allowed-imports-only'],

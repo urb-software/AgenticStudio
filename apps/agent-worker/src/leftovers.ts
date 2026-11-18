@@ -37,16 +37,9 @@ export interface LeftoversOptions {
 }
 
 /**
- * Recovery after a crash (Issue #100): when the worker starts, it looks for Run directories
- * that still list the process groups of a Run step (the previous worker died while carrying
- * it). It terminates each group that is provably the one the step started, removes the Run's
- * containers through its Compose project, and forgets the list. It does not resume the Run:
- * Studio has marked it `worker_lost`, or will once its lease runs out. The Working copy is kept
- * for retention to handle. Never throws for one Run; returns the Runs it cleaned up.
- *
- * Review of #121: pids are reused (above all after a reboot), so a recorded group is signalled
- * only if it is from this boot, its leader still exists with the recorded start time and still
- * leads that group, belongs to the agent user, and is not the worker's own group.
+ * Crash recovery at start: for each Run directory still listing process groups, terminates the
+ * groups provably started by that step and removes the Run's containers; the Run is not resumed
+ * (Studio fails it as `worker_lost`). Never throws for one Run; returns the Runs it cleaned up.
  */
 export async function terminateLeftovers(options: LeftoversOptions): Promise<string[]> {
   const runsDir = runsDirectory(options.dataDir);

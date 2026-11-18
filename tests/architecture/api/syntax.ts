@@ -126,7 +126,7 @@ export function exportedLater(source: ts.SourceFile): Set<string> {
   return names;
 }
 
-/** Strips parentheses, `as`, `satisfies`, `<T>x` and `x!`, which change the type and not the value. */
+/** Strips parentheses, `as`, `satisfies`, `<T>x` and `x!`: they change the type, not the value. */
 export function unwrapExpression(node: ts.Expression | undefined): ts.Expression | undefined {
   let current = node;
   while (
@@ -187,7 +187,7 @@ export function isErrorClass(exported: ExportedClass): boolean {
   );
 }
 
-/** The names a file exports: declarations, variables, `export { A, B as C }` and re-exports by name. */
+/** The names a file exports: declarations, variables, `export { A, B as C }`, re-exports. */
 export function exportedNames(source: ts.SourceFile): string[] {
   const names: string[] = [];
   for (const statement of source.statements) {

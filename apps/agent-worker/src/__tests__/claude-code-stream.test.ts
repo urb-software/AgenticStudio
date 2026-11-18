@@ -4,8 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ClaudeStream, type ProcessEnd, type StepOutcome } from '../claude-code/stream.js';
 import { AgentFailedError, UsageLimitError } from '../runner.js';
 
-// Issue #105: mapping the CLI's stream-json output to Run events and the structured result,
-// against the recorded streams the stub executable replays (shaped like CLI 2.1.325's).
+// Mapping the CLI's stream-json output to Run events and the result, from recorded streams.
 
 const SESSION = '8f14e45f-ceea-4c8b-9f2e-1f5a7b3c9d20';
 const recording = (name: string) =>
@@ -192,7 +191,7 @@ describe('the Claude Code event stream', () => {
     ).toBeInstanceOf(AgentFailedError);
   });
 
-  it("never takes a session reference from the agent's own output (review R2 of #129)", () => {
+  it("never takes a session reference from the agent's own output", () => {
     const stream = new ClaudeStream();
     stream.accept(
       JSON.stringify({

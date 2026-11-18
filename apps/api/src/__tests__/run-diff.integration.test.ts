@@ -12,14 +12,13 @@ import {
   type StudioServices,
 } from './studio-test-app.js';
 
-// Issue #144, main seam: a Run's diffs over HTTP on the real app with PostgreSQL and Redis from
-// Testcontainers. The worker reports them over its route exactly as the agent worker does; the
-// operator reads the file list and then each file's patch.
+// A Run's diffs over HTTP on the real app (PostgreSQL and Redis via Testcontainers); the worker
+// reports them over its route and the operator reads the file list, then each patch.
 
 // Throwaway values generated per run; none is committed.
 const WORKER_TOKEN = randomBytes(32).toString('base64');
 const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
-/** A known secret value of every Run in this suite (the #104 hook, through the test seam). */
+/** A known secret value of every Run in this suite (through the test seam). */
 const KNOWN_SECRET = `env-value-${randomBytes(6).toString('hex')}`;
 const REDACTED = '••••••[redacted]';
 const RUN_NOT_HELD = 'urn:agentic-studio:problem:run-not-held';
@@ -53,7 +52,7 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
   ) => {
     const call = http().post(`/api/worker/runs/${runId}/diff`);
     if (token !== null) call.set('Authorization', `Bearer ${token}`);
-    // Diffs go with where they stand (review S-1 of #149), unless a test sends its own.
+    // Diffs go with where they stand, unless a test sends its own.
     const state = 'run' in body && !('state' in body) ? { state: STATE } : {};
     return call.send({ workerId, ...body, ...state });
   };
@@ -227,7 +226,7 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
     const whole = await readDiff(runId, '?scope=run');
     expect(whole.body.files.map((file: { path: string }) => file.path)).toEqual(['b.ts']);
     expectProblem(await readDiff(runId, '/file?scope=run&path=a.ts'), 404, FILE_NOT_FOUND);
-    // Once final, the Run is no longer held: no report changes its diffs.
+    // Once final, the Run is not held: no report changes its diffs.
     expectProblem(
       await report(runId, { run: diffOf(first), last: diffOf(first) }),
       409,
@@ -250,7 +249,7 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
     expect(file.body).toMatchObject({ path, patch: '+deep\n' });
   });
 
-  it('keeps where the diffs stand, without a second copy of the pushed commit, and refuses a state that is not object ids (review S-1 of #149, N2 of #141)', async () => {
+  it('keeps where the diffs stand, without a second copy of the pushed commit, and refuses a state that is not object ids', async () => {
     const runId = await runningRun();
     const diff = diffOf([]);
 
@@ -268,8 +267,8 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
       400,
     );
 
-    // Issue #143 (review N2 of #141): the pushed commit is stored once, on the Run, from the
-    // delivery reports; the diff state keeps no copy and the echo of it changes nothing.
+    // The pushed commit is stored once, on the Run, from the delivery reports; the diff state keeps
+    // no copy and the echo of it changes nothing.
     const [stored] = await db().$queryRaw<{ result_tree: string; has_pushed_commit: boolean }[]>`
       SELECT result_tree,
              EXISTS (SELECT 1 FROM information_schema.columns
@@ -289,7 +288,7 @@ describe('Run diff API (PostgreSQL + Redis via Testcontainers)', () => {
       (await report(runId, { unavailable: 'The changes could not be computed.' })).status,
     ).toBe(204);
 
-    // No pushed state for a diff that was not computed (review S-3 of #149).
+    // No pushed state for a diff that was not computed.
     expect((await readDiff(runId, '?scope=last')).body).toEqual({
       scope: 'last',
       truncated: false,

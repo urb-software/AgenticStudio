@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bringUpToDateInstruction } from '../agent-definition/bring-up-to-date.js';
 
-// Issue #147: what the agent is told after Studio's worker merged the integration branch.
+// What the agent is told after Studio's worker merged the integration branch.
 describe('bringUpToDateInstruction', () => {
   const merged = {
     outcome: 'merged',

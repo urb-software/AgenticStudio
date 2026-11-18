@@ -4,9 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { userSettingsProblem } from '../claude-code/user-settings.js';
 
-// Reviews R4 and N1 of #129: before every Run step the worker checks the agent user's own
-// Claude Code settings (the approved Mode keeps the user setting source). Coordinator decision:
-// absent, or only `$schema`. Key names only, never values.
+// Before every step the worker checks the agent user's own Claude Code settings: absent, or only
+// `$schema`. Key names only, never values.
 
 describe("the agent user's Claude Code settings", () => {
   let home: string;
@@ -87,7 +86,7 @@ describe("the agent user's Claude Code settings", () => {
     );
   });
 
-  it('refuses user-level instructions, agents, commands and skills, naming them only (review C2 of #133)', async () => {
+  it('refuses user-level instructions, agents, commands and skills, naming them only', async () => {
     mkdirSync(join(home, '.claude', 'agents'));
     mkdirSync(join(home, '.claude', 'skills', 'synced'), { recursive: true });
     mkdirSync(join(home, '.claude', 'skills', '.trash'));

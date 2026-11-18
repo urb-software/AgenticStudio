@@ -2,13 +2,9 @@ import { z } from 'zod';
 import { agentResultSchema } from '../agent-definition/index.js';
 
 /**
- * The structured result's JSON Schema for Codex (`--output-schema`, coordinator smoke of #133).
- * Codex sends it to the provider as a strict structured output, which refuses the shared schema
- * ("'required' is required to include every key in properties"): every object must list all of
- * its properties as required and set `additionalProperties: false`, so an optional field becomes
- * nullable (`anyOf` with `null`). String length bounds are left out (strict mode may refuse
- * them); the worker still validates the result strictly against the agent result schema after
- * {@link withoutNulls}.
+ * The result's JSON Schema for Codex (`--output-schema`): strict structured output needs every
+ * property required and `additionalProperties: false`, so optional fields become nullable and
+ * length bounds are left out; the worker still validates strictly after {@link withoutNulls}.
  */
 
 type Schema = Record<string, unknown>;

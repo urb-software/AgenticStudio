@@ -68,8 +68,7 @@ describeGate('web', webGate, 'apps/web', [
   { fixture: 'palette-variable-in-css', expected: ['web-no-palette-utilities'] },
 ]);
 
-// The design-system import ban covers every app, not only apps/web (frontend.md, "Styling and
-// UI components"); the gate above proves the rule on fixtures, this applies it to apps/*.
+// The gate above proves the design-system import ban on fixtures; this applies it to every app.
 describe('architecture:web design-system imports in apps/*', () => {
   const apps = listDirectories(REPO_ROOT, 'apps');
 

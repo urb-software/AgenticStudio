@@ -117,8 +117,8 @@ export class LongWaitRule {
 
 /**
  * A pending delivery retry or resume can only be taken by the worker that last claimed the Run;
- * when that worker has not reported for longer than the lease, it fails. The store gives one up only
- * while it is pending.
+ * when that worker has not reported for longer than the lease, it fails. The store gives one up
+ * only while it is pending.
  */
 export class GoneWorkerRule {
   private constructor(

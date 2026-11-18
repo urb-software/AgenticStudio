@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { readConfigTemplate, tomlString, trustEntries } from '../codex/codex-home.js';
 import { readManagedFiles } from '../managed-guardrails.js';
 
-// Issues #106 and #134: Studio's guardrails for Codex, from Studio's own folder: the managed
-// configuration and requirements (installed root-owned by the server setup), the user-level
-// template the worker still writes (trust entries only) and the command rules. Guardrails, not
-// the boundary.
+// Studio's guardrails for Codex: the managed configuration and requirements, the user-level
+// template and the command rules.
 
 const guardrail = (name: string) =>
   readFileSync(new URL(`../../guardrails/${name}`, import.meta.url), 'utf8');
@@ -56,7 +54,7 @@ describe("Studio's managed Codex configuration (managed_config.toml)", () => {
   it('defines no feature flags, trust entries, hooks, MCP servers or sandbox override', () => {
     const body = settings(managed);
 
-    // Feature flags are enforced from requirements.toml (review L3 of #136).
+    // Feature flags are enforced from requirements.toml.
     expect(body).not.toMatch(/\[features\]/);
     expect(body).not.toMatch(
       /projects|mcp_servers|danger-full-access|sandbox_mode|approval_policy|trusted|\[hooks/,
@@ -88,7 +86,7 @@ describe("Studio's Codex requirements (requirements.toml)", () => {
     expect(guard?.path).toBe('/usr/local/lib/agentic-studio/guardrails/claude-guard.mjs');
     expect(body).toContain('managed_dir = "/usr/local/lib/agentic-studio/guardrails"\n');
     expect(body).toContain('[[hooks.PreToolUse]]\nmatcher = "^(Bash|apply_patch)$"\n');
-    // A cleared environment (review H1 of #136).
+    // A cleared environment.
     expect(body).toContain(
       `command = "/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin /usr/local/bin/node ${guard?.path}"\n`,
     );
@@ -118,7 +116,7 @@ describe("Studio's Codex requirements (requirements.toml)", () => {
 });
 
 describe("Studio's user-level Codex configuration template", () => {
-  it('holds no settings since #134: only the trust entries are appended', async () => {
+  it('holds no settings: only the trust entries are appended', async () => {
     expect(settings(await readConfigTemplate()).trim()).toBe('');
   });
 

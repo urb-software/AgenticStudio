@@ -306,7 +306,7 @@ describe('loadConfig', () => {
     });
   });
 
-  describe('STUDIO_GIT_ALLOW_PRIVATE_REMOTES (Issue #69)', () => {
+  describe('STUDIO_GIT_ALLOW_PRIVATE_REMOTES', () => {
     it.each([['production'], ['development'], ['test'], [undefined]])(
       'is closed by default (NODE_ENV=%s): no loopback or private remotes',
       (nodeEnv) => {
@@ -336,7 +336,7 @@ describe('loadConfig', () => {
     });
   });
 
-  describe('STUDIO_SSH_KNOWN_HOSTS (Issue #62)', () => {
+  describe('STUDIO_SSH_KNOWN_HOSTS', () => {
     /** A throwaway ed25519 public key as `ssh-ed25519 <base64>`, generated per run. */
     function hostKey(): string {
       const der = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' });
@@ -408,7 +408,7 @@ describe('loadConfig', () => {
     });
   });
 
-  describe('agent worker settings (Issue #96)', () => {
+  describe('agent worker settings', () => {
     // A throwaway token generated per run: no token is committed.
     const TOKEN = randomBytes(32).toString('base64');
 
@@ -457,7 +457,7 @@ describe('loadConfig', () => {
     );
   });
 
-  // Issue #100: the Run limits are configuration, with the Issue's defaults.
+  // The Run limits are configuration, with documented defaults.
   describe('Run limits', () => {
     it('defaults to 60-minute Run steps, 10 Run steps, 14 days of waiting and 50 Run steps in total', () => {
       expect(loadConfig(requiredEnv).runLimits).toEqual({
@@ -497,7 +497,7 @@ describe('loadConfig', () => {
     });
   });
 
-  describe('STUDIO_RUN_LOG_MAX_BYTES (Issue #99)', () => {
+  describe('STUDIO_RUN_LOG_MAX_BYTES', () => {
     it('caps a Run log at 8 MiB by default', () => {
       expect(loadConfig(requiredEnv).runLogMaxBytes).toBe(8 * 1024 * 1024);
       expect(
@@ -516,7 +516,7 @@ describe('loadConfig', () => {
     );
   });
 
-  describe('STUDIO_RUN_SNAPSHOT_RETENTION_DAYS (Issue #104)', () => {
+  describe('STUDIO_RUN_SNAPSHOT_RETENTION_DAYS', () => {
     it('keeps a retryable Run snapshot 7 days by default', () => {
       expect(loadConfig(requiredEnv).runSnapshotRetentionDays).toBe(7);
       expect(
@@ -533,7 +533,7 @@ describe('loadConfig', () => {
     });
   });
 
-  describe('the operator GitHub login (Issue #146)', () => {
+  describe('the operator GitHub login', () => {
     it('is unset by default, and empty counts as unset', () => {
       expect(loadConfig(requiredEnv).operatorGithubLogin).toBeNull();
       expect(
@@ -559,7 +559,7 @@ describe('loadConfig', () => {
     );
   });
 
-  describe('Working copy retention (Issue #143)', () => {
+  describe('Working copy retention', () => {
     it('defaults to 7 days, 10 per Project, 30 idle days and 24 hours after a pull request ends', () => {
       expect(loadConfig(requiredEnv).retention).toEqual({
         days: 7,

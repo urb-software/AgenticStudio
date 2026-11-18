@@ -2,7 +2,6 @@ import { isIP } from 'node:net';
 
 const IPV4_TAIL = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
-/** The eight 16-bit groups of a valid IPv6 address (zone ID already removed). */
 function hextetsOf(address: string): number[] {
   // A dotted IPv4 tail (`64:ff9b::203.0.113.7`) is the last two groups.
   const tail = IPV4_TAIL.exec(address);
@@ -23,11 +22,8 @@ function hextetsOf(address: string): number[] {
 }
 
 /**
- * The subject of the per-IP login limit (security.md §8, #24). IPv4 counts per address.
- * IPv6 counts per /64, the usual smallest allocation, so one client cannot rotate
- * through its own subnet to multiply its attempts. An IPv4-mapped IPv6 address
- * (`::ffff:a.b.c.d`) counts as its IPv4 address, and a zone ID (`%eth0`) is ignored.
- * A value that is not an IP address is returned unchanged.
+ * The subject of the per-IP login limit: the IPv4 address or the IPv6 /64, so one client cannot
+ * rotate through its own subnet. IPv4-mapped and zone IDs are normalised; non-IPs pass through.
  */
 export function clientIpLimitKey(clientIp: string): string {
   if (isIP(clientIp) === 4) {

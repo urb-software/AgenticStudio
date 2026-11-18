@@ -2,15 +2,9 @@ import { lstat, mkdir } from 'node:fs/promises';
 import { posix } from 'node:path';
 
 /**
- * Names and paths of a Run on the agent side (Issue #98). Paths are built only from
- * identifiers that are validated as UUIDs and are checked to stay inside the worker's data
- * directory, so a crafted identifier cannot point anywhere else. The worker runs on Linux
- * only, so paths are POSIX paths.
- *
- * Layout: `<dataDir>/cache/<projectId>.git` (one cache per Project) and
- * `<dataDir>/runs/<runId>/{repo/, task.md, run.json, result.json, step-processes}` (the Working
- * copy and, beside it and outside the repository, the Task, the Run file, the agent's result
- * and, while a Run step runs, its process groups: Issue #100).
+ * Names and paths of a Run on the agent side, built only from UUID-validated identifiers and kept
+ * inside the worker's data directory, so a crafted identifier cannot point anywhere else.
+ * Layout: `<dataDir>/cache/<projectId>.git` per Project, `<dataDir>/runs/<runId>/` per Run.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,7 +39,7 @@ function inside(base: string, ...names: string[]): string {
 /**
  * Makes sure `path` (the worker's `runs` or `cache` directory) is a real directory, creating
  * it if asked: never a symlink, so no path built under it can lead out of the data directory
- * and nothing removed under it lies elsewhere (review of #117, S1).
+ * and nothing removed under it lies elsewhere.
  */
 export async function assertRealDirectory(path: string, create: boolean): Promise<void> {
   if (create) await mkdir(path, { recursive: true, mode: 0o700 });
@@ -57,31 +51,26 @@ export async function assertRealDirectory(path: string, create: boolean): Promis
   }
 }
 
-/** The directory of the Runs' directories. */
 export function runsDirectory(dataDir: string): string {
   return inside(dataDir, 'runs');
 }
 
-/** The directory of the per-project caches. */
 export function cachesDirectory(dataDir: string): string {
   return inside(dataDir, 'cache');
 }
 
-/** The file in a Run's directory that lists the process groups of its Run step (Issue #100). */
+/** The file in a Run's directory that lists the process groups of its Run step. */
 export const STEP_PROCESSES_FILE = 'step-processes';
 
 export interface RunDirectories {
-  /** The Run's own directory. */
   runDir: string;
-  /** The Working copy. */
   repoDir: string;
-  /** The Task, beside the Working copy. */
   taskFile: string;
   /** What the worker records about the Run (its Project, Run branch, start commit). */
   runFile: string;
-  /** The process groups of the Run step in progress, one id per line (Issue #100). */
+  /** The process groups of the Run step in progress, one id per line. */
   processesFile: string;
-  /** The agent's structured result of a `done` step, kept for a delivery retry (Issue #102). */
+  /** The agent's structured result of a `done` step, kept for a delivery retry. */
   resultFile: string;
 }
 
@@ -106,10 +95,9 @@ export function cacheDirectory(dataDir: string, projectId: string): string {
 const SLUG_MAX_LENGTH = 40;
 
 /**
- * The Run branch: `agent/<slug>-r<first 8 hex digits of the Run id>`, the slug made from the
- * Task (lowercase ASCII letters, digits and dashes, at most 40 characters; `run` when nothing
- * is left). Unique by construction: no two Runs share an id prefix in practice, and the
- * worker checks the name with `git check-ref-format` before use.
+ * The Run branch: `agent/<slug>-r<first 8 hex digits of the Run id>`, the slug from the Task
+ * (lowercase ASCII letters, digits and dashes, at most 40 characters; `run` when nothing is left).
+ * The worker checks the name with `git check-ref-format` before use.
  */
 export function runBranchName(task: string, runId: string): string {
   const id = uuid(runId, 'Run id');

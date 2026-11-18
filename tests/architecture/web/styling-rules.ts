@@ -3,12 +3,7 @@ import { join, relative, sep } from 'node:path';
 import ts from 'typescript';
 import type { Violation } from '../harness';
 
-/**
- * Styling rules of `architecture:web` (docs/architecture/frontend.md, "Styling and UI
- * components") that Dependency Cruiser cannot express: it does not read CSS, and colour
- * literals and `style=` values are not import edges. Syntax only: each file is parsed on
- * its own, so the rules also work on fixtures whose npm imports do not resolve.
- */
+/** Styling rules Dependency Cruiser cannot express: it reads no CSS. */
 export const STYLING_RULES = [
   'web-no-design-system-imports',
   'web-no-colour-literals',
@@ -33,20 +28,10 @@ const MANIFEST_FILE = /(^|\/)(tsconfig[^/]*|jsconfig[^/]*|package|components)\.j
 /** Build configs that can alias a path (webpack/turbopack `resolveAlias`, PostCSS options). */
 const CONFIG_FILE = /(^|\/)(next|postcss)\.config\.[cm]?[jt]s$/;
 
-// ---------------------------------------------------------------------------------------------
-// web-no-design-system-imports
-// ---------------------------------------------------------------------------------------------
-
 /**
- * `design-system/` is a reference export, never a dependency, so the app never builds on files
- * that a re-export can change underneath it (`globals.css` is an owned copy instead). Every
- * file of an app is checked for a path with a `design-system` segment:
- * - scripts: import/re-export specifiers, `import()` / `require()` / `require.resolve()`
- *   arguments, including statically visible concatenations and template literals;
- * - `next.config.*` / `postcss.config.*`: every string, since aliases are plain strings there;
- * - stylesheets: `@import`, `@use`, `@forward`, Tailwind's `@source` / `@plugin` / `@config` /
- *   `@reference`, and `url()`;
- * - tsconfig / jsconfig / package.json / shadcn `components.json`: every string.
+ * `design-system/` is a reference export, never a dependency (`globals.css` is an owned copy).
+ * Every kind of file is checked for a `design-system` path segment, in the places that can load
+ * it: import-like calls, config strings (aliases are plain strings), stylesheet at-rules, JSON.
  */
 export function designSystemImportViolations(baseDir: string): Violation[] {
   return filesBelow(baseDir, '.').flatMap((path) =>
@@ -89,7 +74,7 @@ function staticText(node: ts.Expression): string | undefined {
   return undefined;
 }
 
-/** Module specifiers of a script: imports, re-exports, `import()`, `require()`, `import x = require()`. */
+/** Module specifiers of a script: imports, re-exports, `import()` and `require()` forms. */
 function scriptSpecifiers(path: string, text: string): string[] {
   const specifiers: string[] = [];
   const visit = (node: ts.Node) => {
@@ -159,23 +144,15 @@ function stylesheetPaths(path: string, text: string): string[] {
   );
 }
 
-/** Every string (keys and values) of a JSON file, without parsing it (tsconfig allows comments). */
+/** Every string of a JSON file, without parsing it (tsconfig allows comments). */
 function jsonStrings(text: string): string[] {
   return [...text.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => match[1] ?? '');
 }
 
-// ---------------------------------------------------------------------------------------------
-// web-no-colour-literals and web-no-style-colours
-// ---------------------------------------------------------------------------------------------
-
 /** The only file under src/ that may define raw colours: the owned design-system theme. */
 const THEME_FILE = 'src/app/globals.css';
 
-/**
- * Colours come from the tokens of `src/app/globals.css`: no hex or CSS colour function literal
- * anywhere else under src/, and no colour value in a `style=` prop, whether literal or not.
- * `className` token utilities (`bg-surface`, `text-brand`) are the way.
- */
+/** Colours come from the tokens of `src/app/globals.css`, never from literals or `style=`. */
 function colourViolations(baseDir: string): Violation[] {
   return filesBelow(baseDir, 'src')
     .filter((path) => path !== THEME_FILE)
@@ -196,7 +173,7 @@ export function colourViolationsInFile(path: string, text: string): Violation[] 
   return [];
 }
 
-/** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, not part of a longer word, entity or URL (`_` is a Tailwind space). */
+/** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, not part of a longer word, entity or URL. */
 const HEX_COLOUR = /(?<![A-Za-z0-9&#/])#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})(?![\w-])/gi;
 /**
  * A CSS colour function followed by colour arguments (a number, `var(`, `#`, relative-colour
@@ -272,17 +249,9 @@ function scriptColourViolations(path: string, source: ts.SourceFile): Violation[
 }
 
 /**
- * Hex tokens in a script string are colours when the context says so, because `#` also starts
- * Issue/PR references, ids and URL fragments. A `#` followed by 3, 4, 6 or 8 hex digits (any
- * case, not part of a longer word) is a colour when:
- * - it is the whole string (`'#7c3aed'`), or
- * - it follows `[`, `(`, `,`, `:`, `_` or `=` (Tailwind arbitrary values `bg-[#fff]`,
- *   `shadow-[0_0_0_#fff]`, functions, `color: #fff`), or
- * - it follows a space and has a letter (`'1px solid #e4e4e7'`); digits only after a space
- *   (`'PR #1234'`, `'Refs #123'`) are read as references.
- * Never a colour: after a word character, `/`, `&` or `#` (`/docs/#abc`, `&#123;`), in an
- * `href`, or in a selector argument (`querySelector('#feed')`). Colour functions count only
- * with colour arguments (see COLOUR_FUNCTION).
+ * `#` also starts ticket references, ids and URL fragments, so a hex token is a colour only by
+ * context: the whole string, after `[ ( , : _ =`, or after a space with a letter among the digits.
+ * Never after a word character, `/`, `&` or `#`, in an `href`, or in a selector argument.
  */
 function scriptColourLiterals(text: string): string[] {
   const hexes = [...text.matchAll(HEX_COLOUR)]
@@ -336,11 +305,9 @@ function isSelectorOrHref(node: ts.Node): boolean {
 }
 
 /**
- * A `style=` prop may set layout values only. It must be an inline object literal whose keys
- * can be read statically (a variable, spread or computed key cannot be checked). A property
- * that can carry a colour is a violation whatever its value (`var(--brand)` belongs in a
- * `className` token utility), and any other property is a violation when its literal value
- * holds a colour (hex, colour function or named colour).
+ * A `style=` prop is an inline object literal with static keys (others cannot be checked) and sets
+ * layout only: a colour-capable property is refused whatever its value, any other when it
+ * holds one.
  */
 function styleColourProblems(attribute: ts.JsxAttribute, source: ts.SourceFile): string[] {
   const initializer = attribute.initializer;
@@ -461,29 +428,10 @@ const NAMED_COLOURS = new Set(
   ).split(' '),
 );
 
-// ---------------------------------------------------------------------------------------------
-// web-no-palette-utilities
-// ---------------------------------------------------------------------------------------------
-
 /**
- * Tailwind's default palette (`bg-zinc-900`, `text-red-500`, `border-white`) is an ad hoc palette
- * next to the tokens, so colour utilities must name a token (`bg-surface`, `text-run-failed/80`).
- * Named colours in arbitrary values or properties (`bg-[red]`, `[color:red]`), Tailwind's palette
- * variables (`bg-(--color-zinc-900)`, `var(--color-red-500)`) and `theme(colors.red.500)` are
- * the same thing spelt differently.
- *
- * The one exception: a **background** in `black` / `white` **with an opacity modifier**
- * (`bg-black/55`, any variant) in `src/shared/ui/**`, for the overlay scrims the shadcn
- * primitives draw, because the design system has no overlay token and `globals.css` stays a
- * copy of it. Text, border and other colour utilities get no exception.
- *
- * Class names are found in every string of a script (class names reach `className` through
- * `cn()`, `cva()` variant maps and constants, so attributes alone are not enough; import
- * specifiers are skipped) and in stylesheet `@apply` lists; stylesheet declaration values are
- * checked for palette variables and theme() paths. A string is split on whitespace and
- * each token's variants (`hover:`, `dark:md:`, `[&_svg]:`, `data-[state=open]:`) and important
- * marks (`!`) are removed before the utility is matched. Prose does not look like
- * `<prefix>-<palette>-<shade>`, so it is not matched.
+ * Colour utilities must name a token, not Tailwind's palette. Exception: `bg-black/<n>` and
+ * `bg-white/<n>` in `src/shared/ui/**` (no overlay token). All strings are scanned: class names
+ * reach `className` through `cn()` and `cva()`.
  */
 function paletteViolations(baseDir: string): Violation[] {
   return filesBelow(baseDir, 'src').flatMap((path) =>
@@ -586,11 +534,7 @@ const PALETTE_UTILITY = new RegExp(`^${PREFIX}-(?:${PALETTE})-(?:${SHADE})${OPAC
 const BLACK_WHITE = new RegExp(`^(${PREFIX})-(?:black|white)(${OPACITY})?$`);
 const ARBITRARY_NAMED = new RegExp(String.raw`^${PREFIX}-\[(?:color:)?([a-z]+)\]${OPACITY}?$`, 'i');
 
-/**
- * Tailwind's palette variables (`--color-zinc-900`, `--color-black`) exist because globals.css
- * imports `tailwindcss`; reaching them through `bg-(--color-…)` or `var(--color-…)` is the
- * same palette under another spelling, so it is never allowed (not even for scrims).
- */
+/** Palette variables exist because globals.css imports `tailwindcss`; never allowed, even for scrims. */
 const PALETTE_VARIABLE = new RegExp(
   `--color-(?:(?:${PALETTE})-(?:${SHADE})|black|white)(?![\\w-])`,
 );
@@ -637,10 +581,6 @@ function withoutVariants(token: string): string {
   }
   return token.slice(start);
 }
-
-// ---------------------------------------------------------------------------------------------
-// Files
-// ---------------------------------------------------------------------------------------------
 
 function parse(path: string, text: string): ts.SourceFile {
   const kind = path.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;

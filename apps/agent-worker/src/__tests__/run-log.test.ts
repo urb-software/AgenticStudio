@@ -3,8 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunLog, WORKER_BUFFER_NOTICE } from '../run-log.js';
 import { StudioApiError } from '../studio-api.js';
 
-// Issue #99: the worker forwards a Run's events to Studio in small batches, in order, and
-// survives short interruptions without loss or duplication.
+// Forwarding a Run's events in order and in batches, through interruptions, without duplicates.
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a11';
 const silent = { info: () => undefined, error: () => undefined };
 
@@ -155,7 +154,7 @@ describe('RunLog', () => {
     expect(WORKER_BUFFER_NOTICE).toBe('log truncated (worker buffer)');
   });
 
-  it('also bounds the buffer by bytes, with the same single notice (review of #118)', async () => {
+  it('also bounds the buffer by bytes, with the same single notice', async () => {
     create({ bufferMaxBytes: 10 });
     api.failures = Array.from({ length: 3 }, () => new Error('down'));
     log.push(1, 'output', '12345');

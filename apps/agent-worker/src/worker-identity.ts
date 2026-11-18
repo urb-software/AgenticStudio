@@ -7,14 +7,13 @@ import { isUuid } from './run-layout.js';
 export const WORKER_ID_FILE = 'worker-id';
 
 /**
- * The agent worker's id (Issue #102, review R4 of #122): kept in its data directory, so it
- * stays the same across restarts. The Working copies live there too, and Studio hands a
- * delivery retry only to the worker that started the Run: after a restart it is still the
- * same worker. A missing, unreadable or non-regular file (e.g. a symlink) gets a new random id.
+ * The agent worker's id, kept in its data directory: the Working copies live there too and Studio
+ * hands a delivery retry only to the worker that started the Run. A missing, unreadable or
+ * non-regular file (e.g. a symlink) gets a new random id.
  */
 export async function loadWorkerId(dataDir: string): Promise<string> {
   const path = join(dataDir, WORKER_ID_FILE);
-  // Never read or write through a link (review N1 of #122): only a regular file counts.
+  // Never read or write through a link: only a regular file counts.
   const regular = await lstat(path).then(
     (stats) => stats.isFile(),
     () => false,

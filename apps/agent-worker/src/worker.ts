@@ -58,42 +58,35 @@ export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
   /**
-   * The provider gate (Issue #101), checked before a Run's Working copy is prepared (note on
-   * #117), so a Run for a switched-off provider fetches nothing. The runner dispatcher checks it
-   * again before every Run step, and the spawn boundary before any CLI process.
+   * The provider gate, checked before a Run's Working copy is prepared so a Run for a switched-off
+   * provider fetches nothing; the runner dispatcher and the spawn boundary check it again.
    */
   gate: { assertEnabled(provider: Provider): void };
-  /** Prepares and inspects each Run's Working copy (Issue #98). */
   workingCopies: WorkingCopyPort;
-  /** Commits, pushes and opens the draft pull request of a `done` Run (Issue #102). */
   deliveries: DeliveryPort;
-  /** Merges the integration branch into a Run branch when the operator asks (Issue #147). */
   branchUpdates: BranchUpdatePort;
-  /** Computes the Run's diffs after every Run step that reports a result (Issue #144). */
   diffs: RunDiffPort;
-  /** Removes a stopped Run's containers through its Compose project (Issue #100). */
   resources: RunResources;
   /**
-   * Answers Studio's pull request lookups (Issue #142) in a loop of its own, whatever the worker
-   * is carrying, and reads the pull request before a Follow-up starts. Without it the worker
-   * serves no lookups and starts every Follow-up.
+   * Answers Studio's pull request lookups in a loop of its own, whatever the worker is carrying,
+   * and reads the pull request before a Follow-up starts. Without it neither happens.
    */
   lookups?: LookupService;
   /**
-   * Reported to Studio before every claim and with every heartbeat (Issue #101), so Studio
-   * knows which providers this worker enables. Fixed for the life of the process.
+   * Reported to Studio before every claim and with every heartbeat, so Studio knows which
+   * providers this worker enables. Fixed for the life of the process.
    */
   status: WorkerStatusReport;
   /**
-   * Issue #143: the latest disk figures, added to each status report (none until measured). The
-   * monitor measures at most every ten minutes, so this is cheap to ask.
+   * The latest disk figures, added to each status report (none until measured); cheap to ask,
+   * the monitor measures at most every ten minutes.
    */
   disk?: { snapshot(): WorkerDisk | undefined };
   /** Pause between two claims when there is no work, or after the API was unreachable. */
   pollMs: number;
   /** Interval of heartbeats while carrying a Run. */
   heartbeatMs: number;
-  /** Grace between the interrupt and the kill of a stopped Run step's processes (Issue #100). */
+  /** Grace between the interrupt and the kill of a stopped Run step's processes. */
   killGraceMs: number;
   logger: WorkerLogger;
   /** Test seam: the length of one minute of a Run step's time limit (default 60 000 ms). */
@@ -107,7 +100,7 @@ export interface AgentWorkerOptions {
 /** Longest wait for the Working copy's state that goes with a failure report. */
 const FAILURE_REPORT_TIMEOUT_MS = 30_000;
 
-/** The failure reported for the Run being carried when the worker shuts down (Issue #96). */
+/** The failure reported for the Run being carried when the worker shuts down. */
 export const SHUTDOWN_FAILURE: RunFailure = { code: 'worker_lost', detail: 'worker shut down' };
 
 const UNEXPECTED_FAILURE: RunFailure = {
@@ -115,13 +108,12 @@ const UNEXPECTED_FAILURE: RunFailure = {
   detail: 'The runner stopped unexpectedly. The agent worker log has the details.',
 };
 
-/** How long a stopping worker still tries to deliver the Run's buffered log (Issue #99). */
+/** How long a stopping worker still tries to deliver the Run's buffered log. */
 const SHUTDOWN_LOG_DEADLINE_MS = 2000;
 
 /**
  * How long the worker keeps trying to deliver a Run's log before its end report while Studio is
- * unreachable (Issue #100): the step's events are part of the buffered reports, so a Studio
- * outage drops none of them (only the worker's own buffer bound does, as in #99).
+ * unreachable, so an outage drops no step events (only the worker's own buffer bound does).
  */
 const LOG_OUTAGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
 
@@ -140,7 +132,7 @@ const DELIVERY_UNEXPECTED_FAILURE: RunFailure = {
   detail: 'The delivery stopped unexpectedly. The agent worker log has the details.',
 };
 
-/** Why a Run step was stopped before its end (Issue #100). */
+/** Why a Run step was stopped before its end. */
 export type StopReason = 'cancel' | 'timeout' | 'lost' | 'shutdown';
 
 /** The abort reason of a stopped Run step. */
@@ -151,7 +143,7 @@ export class StepStoppedError extends Error {
   }
 }
 
-/** The next Run step would exceed the Run's maximum (Issue #100). */
+/** The next Run step would exceed the Run's maximum. */
 export class StepLimitError extends Error {
   constructor(readonly maxSteps: number) {
     super(
@@ -163,33 +155,8 @@ export class StepLimitError extends Error {
 }
 
 /**
- * The agent worker's loop (Issue #96): claim a Run, prepare its Working copy while the Run is
- * `preparing` (Issue #98), carry it out through the runner while sending heartbeats, commit
- * what a `done` step left, report its Run step result with the Working copy's state, deliver
- * it (Issue #102: push the Run branch, open the draft pull request) and report its final state,
- * repeat. The Run's events are forwarded to Studio as they happen (Issue #99). A claim of kind
- * `deliver` (a delivery retry) only delivers from the kept Working copy. It carries one Run at
- * a time.
- *
- * Issue #100: a Run step is stopped when the heartbeat answer carries the operator's cancel,
- * when it reaches its time limit, when Studio says the worker lost the Run, or when the worker
- * stops: the runner is aborted, the step's process groups get SIGINT, then SIGKILL after the
- * grace, and the Run's containers are removed (its Working copy is kept). The Run is then
- * reported `cancelled`, `timed_out`, nothing (lost), or `failed` with `worker_lost` ("worker
- * shut down"). A step that would exceed the Run's maximum is not started (`step_limit`). While
- * Studio is unreachable the step keeps going and its reports wait, in order, in an outbox. A
- * delivery starts only while no stop is pending; a stop or a crash during it leaves a delivery
- * to retry (`delivery_failed`), except an operator's cancel, which ends the Run `cancelled`.
- *
- * Issue #103: a claim of kind `resume` (the operator answered the agent's question) is carried
- * like a start, except that the kept Working copy is located instead of prepared and the runner
- * resumes the agent session Studio names with the answer, as the Run's next step: numbered after
- * the steps it took, its events after the seqs Studio stored. The provider gate and the step
- * limit are checked first, as for every step.
- *
- * Issue #144: after every step result the Run's diffs are computed from the Working copy and
- * reported right after the step report (or why they could not be computed); once a delivery
- * pushed the Run branch, they are reported again, saying their changes are pushed.
+ * Claims Runs and carries them out one at a time: prepare, run, deliver, report.
+ * Stop, resume and outbox rules: docs/architecture/agent-worker.md.
  */
 export class AgentWorker {
   private stopping = false;
@@ -208,7 +175,7 @@ export class AgentWorker {
     return this.currentRunId;
   }
 
-  /** Starts the loop (and the lookup loop, Issue #142); resolves when both have stopped. */
+  /** Starts the loop (and the lookup loop); resolves when both have stopped. */
   run(): Promise<void> {
     this.loop ??= Promise.all([this.poll(), this.pollLookups()]).then(() => undefined);
     return this.loop;
@@ -241,9 +208,8 @@ export class AgentWorker {
   }
 
   /**
-   * Issue #142: Studio's lookups (the state of a Run's pull request) are answered independently
-   * of any Run this worker carries, so a long Run step does not hold them up. It starts no agent
-   * and changes nothing on the Git host. A failed claim is logged and tried again after the pause.
+   * Answers Studio's lookups independently of any Run this worker carries, so a long step does
+   * not hold them up. A failed claim is logged and tried again after the pause.
    */
   private async pollLookups(): Promise<void> {
     const { lookups, logger, pollMs } = this.options;
@@ -262,9 +228,8 @@ export class AgentWorker {
   private async carry(run: RunPayload): Promise<void> {
     const { api, logger, heartbeatMs } = this.options;
     const abort = new AbortController();
-    // A delivery is not interrupted by the operator's cancel (review of #121): it finishes, and
-    // the cancelled Run records what it pushed. Losing the Run or stopping the worker still
-    // interrupts it.
+    // A delivery is not interrupted by the operator's cancel: it finishes, and the cancelled Run
+    // records what it pushed. Losing the Run or stopping the worker still interrupts it.
     const deliveryAbort = new AbortController();
     const stop = (reason: StopReason) => {
       if (reason !== 'cancel' && !deliveryAbort.signal.aborted) {
@@ -282,18 +247,18 @@ export class AgentWorker {
     });
     let prepared: PreparedRun | undefined;
     let processes: StepProcessGroups | undefined;
-    /** Whether the end of the Follow-up the Run works on was logged already (Issue #141). */
+    /** Whether the end of the Follow-up the Run works on was logged already. */
     let followUpMarked = false;
-    /** Issue #147: the integration branch commit this part merges, and the Run branch's commit before. */
+    /** The integration branch commit this part merges, and the Run branch's commit before. */
     let expectedCommit: string | undefined = run.updateTip;
     let baseCommit: string | undefined = run.updateBase;
-    /** Issue #147: where the merge started, reported with `running`. */
+    /** Where the merge started, reported with `running`. */
     let mergeStarted: { baseCommit: string; integrationCommit: string } | undefined;
-    /** Issue #147: what the agent is told after the merge started, in place of the note. */
+    /** What the agent is told after the merge started, in place of the note. */
     let instruction: string | undefined;
     logger.info(`Carrying run ${run.runId} (${run.provider}).`);
-    // The Run's events go to Studio as they happen (Issue #99); a resumed Run's and a delivery
-    // retry's continue after the seqs Studio stored (Issue #103).
+    // The Run's events go to Studio as they happen; a resumed Run's and a delivery retry's
+    // continue after the seqs Studio stored.
     const log = new RunLog({
       api,
       runId: run.runId,
@@ -316,7 +281,7 @@ export class AgentWorker {
           }
         },
         (error: unknown) => {
-          // A Studio outage is not a reason to stop: the step goes on (Issue #100).
+          // A Studio outage is not a reason to stop: the step goes on.
           if (isRunLost(error)) stop('lost');
           logger.error(`Heartbeat for run ${run.runId} failed: ${describe(error)}`);
         },
@@ -331,14 +296,14 @@ export class AgentWorker {
         await this.retryDelivery(run, abort.signal, outbox, (located) => (prepared = located));
         return;
       }
-      // Before anything is fetched (note on #117); the dispatcher checks again before the step.
+      // Before anything is fetched; the dispatcher checks again before the step.
       this.options.gate.assertEnabled(run.provider);
-      // Issue #141: each part of the Run (the first, or one Follow-up) gets its own allowance.
+      // Each part of the Run (the first, or one Follow-up) gets its own allowance.
       if (run.completedSteps + 1 > (run.stepsBeforePart ?? 0) + run.limits.maxSteps) {
         throw new StepLimitError(run.limits.maxSteps);
       }
-      // Issue #142: a Follow-up to a pull request that was merged, closed or deleted meanwhile
-      // does not start the agent; the state is read right now, before anything else is done.
+      // A Follow-up to a pull request that was merged, closed or deleted meanwhile does not start
+      // the agent; the state is read right now, before anything else is done.
       if (
         (run.resumeReason === 'follow_up' || run.resumeReason === 'bring_up_to_date') &&
         this.options.lookups
@@ -354,19 +319,16 @@ export class AgentWorker {
           throw new PullRequestEndedError(state, run.pullRequestNumber);
         }
       }
-      // A resumed Run continues in the Working copy it kept (Issue #103).
+      // A resumed Run continues in the Working copy it kept.
       prepared =
         run.kind === 'resume'
           ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
-      // Review S4 of #154: a new part starts from a clean state. A merge an earlier part left open
-      // (cancelled while it waited, a crash, the usage limit and then another request) is aborted
-      // first, so nothing of it is built on or committed. A later claim of the same part goes on.
+      // A new part starts clean: a merge an earlier part left open is aborted, so nothing of it is
+      // built on or committed; a bring-up part that never succeeded returns the branch to where it
+      // began, unless it was pushed past.
       if (run.resumeReason === 'follow_up' || run.resumeReason === 'bring_up_to_date') {
-        // And a bring-up part that never succeeded (cancelled while waiting, a lost worker) leaves its
-        // merge commit: the branch goes back to where that part began, unless it was pushed past
-        // (review R2-1).
         const pending = run.pendingUpdate;
         if (
           await this.options.branchUpdates.abort(
@@ -389,14 +351,14 @@ export class AgentWorker {
           'notice',
           `Follow-up ${run.followUpNumber} started: bring the branch up to date with ${run.integrationBranch}`,
         );
-        // The Run's own changes count from the integration commit it last merged (review S1).
+        // The Run's own changes count from the integration commit it last merged.
         let update: BranchUpdateStart | undefined;
         let notUpdated: string | undefined;
         try {
           update = await this.options.branchUpdates.start(prepared, run, abort.signal);
         } catch (error) {
-          // Nothing was merged (review S2): the Run goes back to its earlier result, and the
-          // conversation says why.
+          // Nothing was merged: the Run goes back to its earlier result, and the conversation says
+          // why.
           if (!(error instanceof PreparationFailedError)) throw error;
           notUpdated = `${error.detail} Nothing was changed: the Run is as it was before the request.`;
         }
@@ -455,7 +417,7 @@ export class AgentWorker {
       } else if (run.resumeReason === 'follow_up') {
         log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} started`);
       } else if (run.resumeReason === 'usage_limit' && run.followUpNumber !== undefined) {
-        // Review S7 of #150: the Follow-up the usage limit paused goes on.
+        // The Follow-up the usage limit paused goes on.
         log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} resumed`);
       }
       outbox.send('running', (signal) =>
@@ -492,8 +454,8 @@ export class AgentWorker {
         clearTimeout(limit);
       }
       abort.signal.throwIfAborted();
-      // Issue #147: a merge the agent left open (it resolved the conflicts but could not, or did
-      // not, commit) is completed here; one it did not resolve is aborted by the error below.
+      // A merge the agent left open (conflicts resolved but not committed) is completed here; one
+      // it did not resolve is aborted by the error below.
       if (result.outcome === 'done' && run.bringUpToDate === true) {
         const completed = await this.options.branchUpdates.complete(
           prepared,
@@ -510,8 +472,8 @@ export class AgentWorker {
       // The log goes first: Studio accepts events only while the worker holds the Run.
       await this.closeLog(log);
       abort.signal.throwIfAborted();
-      // What a done step left is committed before its report, so the report lists that commit;
-      // a refused commit still lets the step's result be reported first (Issue #102).
+      // What a done step left is committed before its report, so the report lists that commit; a
+      // refused commit still lets the step's result be reported first.
       let commitFailure: DeliveryFailedError | undefined;
       if (result.outcome === 'done') {
         await this.options.deliveries
@@ -535,8 +497,8 @@ export class AgentWorker {
           signal,
         ),
       );
-      // Issue #144: the Run's diffs after every result, before the Run moves on (Studio takes
-      // them only while this worker holds the Run).
+      // The Run's diffs after every result, before the Run moves on (Studio takes them only while
+      // this worker holds the Run).
       const diff = await this.computeDiff(run, prepared, abort.signal);
       outbox.send('diff', (signal) => api.reportDiff(run.runId, diff.report, signal));
       if (result.outcome === 'needs_input') {
@@ -545,9 +507,9 @@ export class AgentWorker {
         );
       } else {
         if (commitFailure) throw commitFailure;
-        // Nothing is pushed once a stop is pending (Issue #100).
+        // Nothing is pushed once a stop is pending.
         abort.signal.throwIfAborted();
-        // From here a stop or a crash leaves a delivery to retry, not a lost Run (review of #122).
+        // From here a stop or a crash leaves a delivery to retry, not a lost Run.
         this.delivering = true;
         const delivery = await this.options.deliveries.deliver(
           prepared,
@@ -589,10 +551,10 @@ export class AgentWorker {
           `Run step stopped: its time limit of ${run.limits.stepMinutes} minutes was reached`,
         );
       }
-      // A Follow-up ends with the step that did not finish (Issue #141); a failed delivery after
-      // a done step already marked its end.
+      // A Follow-up ends with the step that did not finish; a failed delivery after a done step
+      // already marked its end.
       if (run.kind !== 'deliver' && !followUpMarked && reason !== 'lost') {
-        // Review S7 of #150: the usage limit pauses the Follow-up; a resume continues it.
+        // The usage limit pauses the Follow-up; a resume continues it.
         if (error instanceof UsageLimitError && reason === undefined) {
           if (run.followUpNumber !== undefined) {
             log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} paused: usage limit`);
@@ -607,10 +569,9 @@ export class AgentWorker {
         }
       }
       if (reason !== 'lost') await this.closeLog(log);
-      // Issue #147: a part that does not end well leaves nothing of the update behind: an open merge
-      // is aborted and the Run branch goes back to its commit before the part (review S3 of #154).
-      // Only the usage limit, which resumes the session, keeps it; a delivery that failed after a
-      // done step keeps the merge for its retry.
+      // A part that does not end well leaves nothing of the update behind (an open merge is
+      // aborted, the Run branch returns to its commit before the part); only the usage limit keeps
+      // it, and a delivery that failed after a done step keeps the merge for its retry.
       if (
         run.bringUpToDate === true &&
         prepared &&
@@ -640,9 +601,8 @@ export class AgentWorker {
   }
 
   /**
-   * A delivery retry (Issue #102): finds the Run's Working copy and the agent's kept result,
-   * commits anything left and delivers; reports `succeeded` with the delivery and the Working
-   * copy's state. Failures are reported by the caller, always as `delivery_failed`.
+   * A delivery retry: finds the Run's Working copy and kept result, commits anything left and
+   * delivers; reports `succeeded`. Failures are reported by the caller as `delivery_failed`.
    */
   private async retryDelivery(
     run: RunPayload,
@@ -654,8 +614,8 @@ export class AgentWorker {
     const { prepared, result } = await deliveries.locate(run);
     located(prepared);
     await deliveries.commit(prepared, run, result, signal);
-    // Issue #144 (review S-2 of #149): the diffs again, whatever the delivery's outcome, so a
-    // result whose diff report was lost still gets one; once pushed, again as pushed.
+    // The diffs again, whatever the delivery's outcome, so a result whose diff report was lost
+    // still gets one; once pushed, again as pushed.
     const diff = await this.computeDiff(run, prepared, signal, true);
     outbox.send('diff', (reportSignal) => api.reportDiff(run.runId, diff.report, reportSignal));
     const delivery = await deliveries.deliver(prepared, run, result, signal);
@@ -673,8 +633,8 @@ export class AgentWorker {
   }
 
   /**
-   * The Run's diffs (Issue #144), or, when they cannot be computed, a report that says why. An
-   * abort is not a failure of the diff: it goes on to stop the Run.
+   * The Run's diffs, or a report that says why they cannot be computed. An abort is not a
+   * failure of the diff: it goes on to stop the Run.
    */
   private async computeDiff(
     run: RunPayload,
@@ -700,7 +660,7 @@ export class AgentWorker {
     }
   }
 
-  /** After a push: the same diffs, now saying their changes are pushed (Issue #144). */
+  /** After a push: the same diffs, now saying their changes are pushed. */
   private async reportPushedDiff(
     run: RunPayload,
     prepared: PreparedRun,
@@ -723,8 +683,8 @@ export class AgentWorker {
   }
 
   /**
-   * Delivers the Run's buffered log before its end report: through a Studio outage (Issue #100),
-   * but only {@link SHUTDOWN_LOG_DEADLINE_MS} more once the worker stops.
+   * Delivers the Run's buffered log before its end report: through a Studio outage, but only
+   * {@link SHUTDOWN_LOG_DEADLINE_MS} more once the worker stops.
    */
   private async closeLog(log: RunLog): Promise<void> {
     const shutdown = this.shutdown.signal;
@@ -748,11 +708,9 @@ export class AgentWorker {
   }
 
   /**
-   * Runs one Run step, the first or a resumed one (Issue #103), its events forwarded between a
-   * start and an end marker (Issue #99). However it ends, the step's process groups are
-   * terminated afterwards (SIGINT, the grace, SIGKILL): when the step is stopped this is what
-   * stops it, and otherwise nothing it started outlives it. A stopped step that does not end
-   * within the grace (a runner that ignores the abort) is abandoned.
+   * Runs one Run step, the first or a resumed one. However it ends, its process groups are
+   * terminated afterwards (SIGINT, the grace, SIGKILL): that is what stops a stopped step, and
+   * nothing it started outlives it. A step that ignores the abort within the grace is abandoned.
    */
   private async executeStep(
     run: RunPayload,
@@ -764,8 +722,8 @@ export class AgentWorker {
     instruction?: string,
   ): Promise<RunStepResult> {
     const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
-    // The Environment file is in the Working copy (Issue #104); its content goes to the runner
-    // no other way (never in a prompt, an argument or the process environment).
+    // The Environment file is in the Working copy; its content reaches the runner no other way
+    // (never a prompt, an argument or the process environment).
     const { environmentFile, ...forRunner } = run;
     void environmentFile;
     const input = {
@@ -781,7 +739,7 @@ export class AgentWorker {
         ? this.options.runner.resume({
             ...input,
             sessionRef: run.sessionRef,
-            // Issue #147: after a bring-up-to-date merge the agent gets the worker's instruction.
+            // After a bring-up-to-date merge the agent gets the worker's instruction.
             answer: instruction ?? run.answer,
             reason: run.resumeReason ?? 'answer',
           })
@@ -824,18 +782,18 @@ export class AgentWorker {
   ): Promise<void> {
     const { api, logger } = this.options;
     const { prepared, outbox } = context;
-    // The Run's containers go with any stop once its step has started (Issue #100).
+    // The Run's containers go with any stop once its step has started.
     if (reason !== undefined && context.stepStarted) await this.removeContainers(run);
     if (reason === 'lost' || outbox.lost || isRunLost(error)) {
       logger.error(`Run ${run.runId} is no longer held by this worker; dropping it.`);
       return;
     }
-    // What the stopped, failed or crashed step left in the Working copy (coordinator decision
-    // on #98), when it can be read; the end is reported either way.
+    // What the stopped, failed or crashed step left in the Working copy, when it can be read; the
+    // end is reported either way.
     const workingCopy = prepared ? await this.readWorkingCopy(run, prepared) : undefined;
     const withWorkingCopy = workingCopy ? { workingCopy } : {};
-    // A delivery (retry or first) that did not finish leaves a delivery to retry (Issue #102);
-    // only an operator's cancel ends a first delivery as cancelled.
+    // A delivery (retry or first) that did not finish leaves a delivery to retry; only an
+    // operator's cancel ends a first delivery as cancelled.
     const inDelivery = run.kind === 'deliver' || (this.delivering && reason !== 'cancel');
     if (inDelivery) {
       const deliveryFailure = this.deliveryFailure(error);
@@ -849,7 +807,7 @@ export class AgentWorker {
             state: 'failed',
             failure: deliveryFailure,
             ...withWorkingCopy,
-            // Review S2 of #150: what the delivery pushed before it failed.
+            // What the delivery pushed before it failed.
             ...(error instanceof DeliveryFailedError && error.pushedCommit !== undefined
               ? { pushedCommit: error.pushedCommit }
               : {}),
@@ -885,8 +843,8 @@ export class AgentWorker {
     }
     if (reason === 'cancel' || reason === 'timeout') {
       const state = reason === 'cancel' ? 'cancelled' : 'timed_out';
-      // Cancelled while delivering, after the push but before a pull request (review of #124):
-      // the pushed Run branch is recorded.
+      // Cancelled while delivering, after the push but before a pull request: the pushed Run
+      // branch is recorded.
       const pushed =
         reason === 'cancel' && error instanceof DeliveryFailedError && error.branchPushed
           ? {
@@ -908,8 +866,8 @@ export class AgentWorker {
     if (failure === UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
-    // Issue #105: the session a Run stopped at the usage limit resumes later. Issue #142: the
-    // pull request state a refused Follow-up read, so Studio shows it at once.
+    // The session a Run stopped at the usage limit resumes later; the pull request state a
+    // refused Follow-up read is kept, so Studio shows it at once.
     const session =
       error instanceof UsageLimitError && error.sessionRef !== undefined
         ? { sessionRef: error.sessionRef }
@@ -985,10 +943,7 @@ export class AgentWorker {
   }
 }
 
-/**
- * Marks the end of the Follow-up the Run is working on (Issue #141), when there is one: its
- * step ended `done`, or did not finish.
- */
+/** Marks the end of the Follow-up the Run is working on, if any: its step ended `done` or not. */
 function followUpEnded(run: RunPayload, stepIndex: number, log: RunLog, outcome: string): void {
   if (run.followUpNumber === undefined) return;
   log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} ended: ${outcome}`);
@@ -1001,11 +956,11 @@ function failureOf(error: unknown): RunFailure {
   if (error instanceof ProviderDisabledError) return failure('provider_disabled', error.message);
   if (error instanceof StepLimitError) return failure('step_limit', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
-  // Issue #147: the agent ended without resolving the conflicts; the merge was aborted.
+  // The agent ended without resolving the conflicts; the merge was aborted.
   if (error instanceof MergeIncompleteError) return failure('agent_failed', error.message);
   if (error instanceof UsageLimitError) return failure('usage_limit', error.message);
   if (error instanceof InvalidResultError) return INVALID_RESULT_FAILURE;
-  // A refused commit of a done step (Issue #102).
+  // A refused commit of a done step.
   if (error instanceof DeliveryFailedError) return failure('delivery_failed', error.detail);
   return UNEXPECTED_FAILURE;
 }
@@ -1023,7 +978,7 @@ function rejectOnAbort(signal: AbortSignal): Promise<never> {
   });
 }
 
-/** The pull request states in which a Follow-up has nothing left to update (Issue #142). */
+/** The pull request states in which a Follow-up has nothing left to update. */
 const ENDED_PULL_REQUEST_STATES = ['merged', 'closed', 'missing'] as const;
 type EndedPullRequestState = (typeof ENDED_PULL_REQUEST_STATES)[number];
 
@@ -1032,8 +987,8 @@ function isEndedPullRequest(state: string): state is EndedPullRequestState {
 }
 
 /**
- * The pull request a Follow-up would update is over (Issue #142): the Run ends as failed with
- * this detail before any agent CLI starts.
+ * The pull request a Follow-up would update is over: the Run ends as failed with this detail
+ * before any agent CLI starts.
  */
 class PullRequestEndedError extends Error {
   constructor(

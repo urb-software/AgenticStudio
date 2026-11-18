@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadWorkerId, WORKER_ID_FILE } from '../worker-identity.js';
 
-// Review R4 of #122: a delivery retry goes to the worker that started the Run, so the worker
-// keeps its id across restarts, in its data directory.
+// A delivery retry goes to the worker that started the Run, so its id survives restarts.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe('loadWorkerId', () => {

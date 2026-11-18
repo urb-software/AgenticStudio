@@ -12,10 +12,7 @@ export const GENERIC_SERVER_DETAIL = 'An unexpected error occurred.';
 
 const fieldErrorSchema = z.object({ path: z.string(), message: z.string() });
 
-/**
- * The one error payload of the API (Epic #8, decision 1). `errors[].path` uses
- * dot notation (`tags.1`) so the web app can pass it to React Hook Form `setError`.
- */
+/** The one error payload of the API; `errors[].path` is dot notation (`tags.1`) for `setError`. */
 export const problemDetailsSchema = z
   .object({
     type: z.string(),
@@ -35,10 +32,8 @@ export type FieldError = z.infer<typeof fieldErrorSchema>;
 export class ProblemDetailsDto extends createZodDto(problemDetailsSchema) {}
 
 /**
- * A deliberate error whose `type`, `title`, `detail` and optional field errors are written for
- * the client, at any status. Unlike other 5xx responses, a 5xx `ProblemException` (e.g. 501
- * "Unsupported platform") keeps its text and is not logged as an unhandled error, so it must
- * never carry internals: only fixed, operator-facing text.
+ * A deliberate error written for the client at any status. A 5xx one (e.g. 501) keeps its text
+ * and is not logged as unhandled, so it must carry only fixed, operator-facing text.
  */
 export class ProblemException extends HttpException {
   constructor(
@@ -50,11 +45,9 @@ export class ProblemException extends HttpException {
 }
 
 /**
- * The plain form of a {@link ProblemException} (#72): a deliberate 4xx error about specific
- * request fields (e.g. 409 for a name that is already taken), with no problem type of its own
- * (`about:blank`, the status text as title). The problem details carry its `errors[]` like a
- * 400 validation error, so the web app shows them next to the fields. 4xx only: a 5xx would
- * keep its text, so it is refused as a programming error (and then answered as a generic 500).
+ * A {@link ProblemException} about specific request fields (e.g. 409 for a taken name), shown
+ * next to the fields like a 400. 4xx only: a 5xx would keep its text, so it is refused as a
+ * programming error and answered as a generic 500.
  */
 export class FieldProblemException extends ProblemException {
   constructor(status: number, detail: string, errors: FieldError[]) {

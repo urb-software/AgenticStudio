@@ -16,9 +16,7 @@ import { prepareCodexHome, readConfigTemplate } from '../codex/codex-home.js';
 import { CODEX_USER_LEVEL_FILES } from '../codex/runner.js';
 import { presentUserLevelFiles } from '../user-level-files.js';
 
-// Issue #106: Studio owns the agent user's Codex configuration. Before every step the worker
-// rewrites config.toml (template + an untrusted entry per Working copy), hooks.json with
-// Studio's hook, and the rules folder. Linux only, like the worker: runs in CI, skips elsewhere.
+// Before every step the worker rewrites the agent user's Codex config.toml, hooks.json and rules.
 
 const RUN_A = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const RUN_B = '7c1d3e5f-2a4b-4c6d-8e0f-1a3b5c7d9e2f';
@@ -100,7 +98,7 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
     expect(existsSync(join(codex(), 'studio'))).toBe(false);
   });
 
-  it('replaces a symbolic link or a file at the folders it manages, never following it (review C1 of #133)', async () => {
+  it('replaces a symbolic link or a file at the folders it manages, never following it', async () => {
     const outside = join(root, 'outside');
     mkdirSync(outside);
     writeFileSync(join(outside, 'keep.txt'), 'not Studio');
@@ -126,7 +124,7 @@ describe.skipIf(process.platform !== 'linux')("Studio's Codex home", () => {
     expect(readdirSync(outside)).toEqual(['keep.txt']);
   });
 
-  it("refuses a symbolic link in place of the CLI's bundled skills (review C2 of #133)", async () => {
+  it("refuses a symbolic link in place of the CLI's bundled skills", async () => {
     mkdirSync(join(codex(), 'skills'), { recursive: true });
     mkdirSync(join(root, 'elsewhere'));
     symlinkSync(join(root, 'elsewhere'), join(codex(), 'skills', '.system'));

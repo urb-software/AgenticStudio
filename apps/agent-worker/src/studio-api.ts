@@ -32,7 +32,7 @@ export class StudioApiError extends Error {
 }
 
 /**
- * Whether the API says this worker no longer holds the Run (review of #121): a 404, or a 409
+ * Whether the API says this worker no longer holds the Run: a 404, or a 409
  * whose problem type says so (`run-not-held`, or `step-limit-reached`, which failed the Run).
  * Any other 409, e.g. `illegal-run-transition`, is a refusal of that one report, not a loss.
  */
@@ -47,7 +47,7 @@ export function isRunLost(error: unknown): boolean {
 }
 
 /**
- * Whether a failed call may succeed later (Issue #100): Studio did not answer (network error,
+ * Whether a failed call may succeed later: Studio did not answer (network error,
  * timeout) or answered with a server error. The worker keeps a Run step going through such an
  * outage and retries its reports; any other answer is definitive.
  */
@@ -61,7 +61,7 @@ export function isTransient(error: unknown): boolean {
 type WithoutWorker<T> = T extends unknown ? Omit<T, 'workerId'> : never;
 
 /**
- * The worker's side of the worker protocol (Issue #96): the routes under `/api/worker/`,
+ * The worker's side of the worker protocol: the routes under `/api/worker/`,
  * authenticated by the worker token, with the shared contract's shapes. The worker always
  * calls Studio; nothing calls the worker.
  */
@@ -101,7 +101,7 @@ export class StudioApi {
   }
 
   /**
-   * Reports the Run's diffs after a Run step's result (Issue #144), or why they could not be
+   * Reports the Run's diffs after a Run step's result, or why they could not be
    * computed; Studio replaces the ones it stored.
    */
   async reportDiff(
@@ -113,7 +113,7 @@ export class StudioApi {
   }
 
   /**
-   * The lookups waiting for a worker, up to five, claimed for this one (Issue #142); empty when
+   * The lookups waiting for a worker, up to five, claimed for this one; empty when
    * none is waiting (204). A claim not answered within two minutes goes to another worker.
    */
   async claimLookups(signal?: AbortSignal): Promise<ClaimLookupsResponse> {
@@ -122,7 +122,7 @@ export class StudioApi {
     return claimLookupsResponseSchema.parse(await response.json());
   }
 
-  /** Reports what a claimed lookup found out, or why it could not (Issue #142). */
+  /** Reports what a claimed lookup found out, or why it could not. */
   async reportLookup(
     lookupId: string,
     answer: WithoutWorker<LookupResultRequest>,
@@ -131,14 +131,14 @@ export class StudioApi {
     await this.post(`lookups/${encodeURIComponent(lookupId)}/result`, answer, signal);
   }
 
-  /** Appends a batch of the Run's log events (Issue #99); a re-sent seq is ignored by Studio. */
+  /** Appends a batch of the Run's log events; a re-sent seq is ignored by Studio. */
   async appendEvents(runId: string, events: RunEventInput[], signal?: AbortSignal): Promise<void> {
     await this.post(`runs/${encodeURIComponent(runId)}/events`, { events }, signal);
   }
 
   /**
-   * The states of these Runs (1-500 ids); unknown ids are left out (Issue #98). Issue #141:
-   * `removedRunIds` reports the Runs whose Working copies retention removed.
+   * The states of these Runs (1-500 ids); unknown ids are left out. `removedRunIds` reports the
+   * Runs whose Working copies retention removed.
    */
   async runStates(
     runIds: readonly string[],
@@ -153,12 +153,12 @@ export class StudioApi {
     return runStatesResponseSchema.parse(await response.json());
   }
 
-  /** Tells Studio this worker's runner mode and which providers it enables (Issue #101). */
+  /** Tells Studio this worker's runner mode and which providers it enables. */
   async reportStatus(status: WorkerStatusReport, signal?: AbortSignal): Promise<void> {
     await this.post('status', status, signal);
   }
 
-  /** Renews the lease; the answer says whether the operator asked to cancel (Issue #100). */
+  /** Renews the lease; the answer says whether the operator asked to cancel. */
   async heartbeat(runId: string, signal?: AbortSignal): Promise<HeartbeatResponse> {
     const response = await this.post(`runs/${encodeURIComponent(runId)}/heartbeat`, {}, signal);
     return heartbeatResponseSchema.parse(await response.json());

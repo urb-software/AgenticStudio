@@ -17,16 +17,9 @@ import { studioPathspecs } from './studio-paths.js';
 import { diffBaseOf, type PreparedRun } from './working-copy.js';
 
 /**
- * A Run's diffs (Issue #144, ADR 0002: the Working copy is `executions`' own). After every Run
- * step that reports a result the worker takes a snapshot of the Working copy as a Git tree:
- * a copy of its index in the Run's directory (`GIT_INDEX_FILE`), `git add --all`, the
- * Studio-placed paths taken out again, `git write-tree`. Uncommitted and untracked changes are
- * in it, the real index is never touched, and nothing is written to a ref the agent can see.
- * It then diffs the start commit against that tree (the whole Run) and the previous result's
- * tree against it (since the previous result), with rename detection and the configured limits.
- * Where the diffs stand (the trees and commits of the latest and the previous result, the
- * pushed tip) goes to Studio with the diffs and comes back with a resume or delivery claim
- * (`diffState`, review S-1 of #149): nothing the agent could write decides it.
+ * Snapshots a Run's Working copy as a Git tree through a temporary index (the real index and the
+ * refs stay untouched) and diffs it within the configured limits. The diff state comes back from
+ * Studio with the claim, so nothing the agent writes decides it.
  */
 
 /** What the worker sends about a Run's diffs: the report without the worker id. */
@@ -46,10 +39,9 @@ export interface ComputedRunDiff {
 /** The diff port of the worker loop: {@link RunDiffs} in production. */
 export interface RunDiffPort {
   /**
-   * Both diffs of the Working copy as it is now, from the diff state Studio handed back with
-   * the claim. `refresh` (a delivery retry, which reports no result) diffs "since the previous
-   * result" from the same base as the last report did. Throws {@link RunDiffUnavailableError}
-   * (its detail is safe to show) or an abort.
+   * Both diffs of the Working copy from the diff state Studio handed back with the claim; `refresh`
+   * (a delivery retry) diffs "since the previous result" from the last report's base. Throws
+   * {@link RunDiffUnavailableError} (detail safe to show) or an abort.
    */
   compute(
     prepared: PreparedRun,
@@ -103,12 +95,11 @@ export class RunDiffs implements RunDiffPort {
       const studioPaths = await studioPathspecs(this.options.dataDir, prepared, run);
       const tree = await this.snapshot(prepared, studioPaths, local, 'worktree');
       const head = (await this.git(['rev-parse', '--verify', 'HEAD^{commit}'], local)).trim();
-      // HEAD's tree without the Studio-placed paths too, so a committed one does not count as
-      // an uncommitted change for good (review S-4 of #149).
+      // HEAD's tree without Studio-placed paths too, so a committed one never counts as uncommitted.
       const headTree = await this.snapshot(prepared, studioPaths, local, 'head');
       const state = await this.usableState(run.diffState, local);
-      // A result moves the base on to the latest result; a refresh keeps the one it had.
-      // Issue #147: the Run's own changes count from the integration commit it last merged.
+      // A result moves the base on to the latest result; a refresh keeps the one it had. The Run's
+      // own changes count from the integration commit it last merged.
       const startCommit = diffBaseOf(prepared);
       const base = state
         ? options.refresh
@@ -160,10 +151,7 @@ export class RunDiffs implements RunDiffPort {
     };
   }
 
-  /**
-   * The Working copy (`worktree`) or `HEAD` (`head`) as a tree, the Studio-placed paths taken
-   * out, through a temporary index (never the real one).
-   */
+  /** The Working copy or `HEAD` as a tree without Studio-placed paths, via a temporary index. */
   private async snapshot(
     prepared: PreparedRun,
     studioPaths: readonly string[],
@@ -177,7 +165,7 @@ export class RunDiffs implements RunDiffPort {
       if (source === 'head') {
         await this.git(['read-tree', 'HEAD'], withIndex);
       } else {
-        // Starting from the real index keeps `git add` fast (unchanged files are not hashed again).
+        // Starting from the real index keeps `git add` fast.
         await copyFile(posix.join(prepared.repoDir, '.git', 'index'), indexFile).catch(
           (error: NodeJS.ErrnoException) => {
             if (error.code !== 'ENOENT') throw error;
@@ -199,9 +187,8 @@ export class RunDiffs implements RunDiffPort {
   }
 
   /**
-   * The state Studio handed back, when its objects are in this Working copy as the right types
-   * (a tree and a commit for each result); otherwise none, and the diffs start at the start
-   * commit.
+   * The state Studio handed back, when its objects are in this Working copy as the right types;
+   * otherwise none, and the diffs start at the start commit.
    */
   private async usableState(
     state: RunDiffState | undefined,
@@ -343,10 +330,7 @@ export class RunDiffs implements RunDiffPort {
   }
 }
 
-/**
- * Whether the snapshot holds changes that are not pushed: uncommitted ones (the tree differs
- * from `HEAD`'s), or commits after the start commit other than the pushed tip.
- */
+/** Whether the snapshot holds unpushed changes: uncommitted, or commits besides the pushed tip. */
 function unpushed(
   snapshot: { tree: string; head: string; headTree: string; startCommit: string },
   pushedCommit: string | undefined,

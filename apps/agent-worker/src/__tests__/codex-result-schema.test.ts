@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CODEX_RESULT_JSON_SCHEMA, strictSchema, withoutNulls } from '../codex/result-schema.js';
 import { CodexStream } from '../codex/stream.js';
 
-// Coordinator smoke of #133: Codex sends --output-schema to the provider as a strict structured
-// output, which refuses a schema whose `required` does not list every property. The Codex
-// variant of the agent result schema is strict at every object level; nulls are normalised away
-// before the worker's own strict validation.
+// Strict at every object level: Codex's provider refuses a schema whose `required` omits a key.
 
 type Node = Record<string, unknown>;
 

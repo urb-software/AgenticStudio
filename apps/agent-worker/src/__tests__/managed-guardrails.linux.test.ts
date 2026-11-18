@@ -15,11 +15,7 @@ import type { Provider } from '@agentic-studio/contracts';
 import { ManagedGuardrails, readManagedFiles } from '../managed-guardrails.js';
 import { installManagedGuardrails } from './fixtures/managed-guardrails.js';
 
-// Issue #134: before every Run step (and at start) the worker checks Studio's root-owned managed
-// guardrail files: present, real files, owned by root, not writable by others, in a directory
-// only root can change, and byte-equal (SHA-256) to the copy the worker ships. Linux only, like
-// the worker: runs in CI, skips elsewhere. Here the files live under a temporary root and the
-// expected owner is the test's own uid (a test cannot create root-owned files).
+// The managed guardrail check, with files under a temporary root owned by the test's own uid.
 
 const uid = () => process.getuid?.() ?? 0;
 
@@ -159,7 +155,6 @@ describe.skipIf(process.platform !== 'linux')("Studio's managed guardrails", () 
     },
   );
 
-  // Review L1 of #136: managed inputs the CLI would merge into Studio's policy.
   it.each<[Provider, string, 'file' | 'directory']>([
     ['claude_code', '/etc/claude-code/managed-settings.d', 'directory'],
     ['claude_code', '/etc/claude-code/managed-mcp.json', 'file'],
@@ -171,7 +166,6 @@ describe.skipIf(process.platform !== 'linux')("Studio's managed guardrails", () 
     expect(await check().problem(provider)).toBe(
       `managed guardrails missing or changed: ${path} must not exist`,
     );
-    // Only for its own provider.
     expect(await check().problem(provider === 'codex' ? 'claude_code' : 'codex')).toBeNull();
   });
 

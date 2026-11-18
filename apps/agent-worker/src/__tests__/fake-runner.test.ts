@@ -9,7 +9,6 @@ import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import { FakeRunner, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
 import { AgentFailedError, drainRunStep } from '../runner.js';
 
-// Issue #96: the fake runner's scripted outcomes, through the runner interface.
 const run = (task: string): RunPayload => ({
   runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
@@ -75,7 +74,7 @@ describe('FakeRunner', () => {
     });
   });
 
-  it('asks a question with options and a recommendation, in a session of its own (Issue #103)', async () => {
+  it('asks a question with options and a recommendation, in a session of its own', async () => {
     const { result } = await start('[fake:question]');
 
     expect(runStepResultSchema.parse(result)).toMatchObject({
@@ -99,7 +98,7 @@ describe('FakeRunner', () => {
     expect(failure).not.toBeInstanceOf(AgentFailedError);
   });
 
-  it('works slowly, printing numbered lines over time, then succeeds (Issue #99)', async () => {
+  it('works slowly, printing numbered lines over time, then succeeds', async () => {
     const { events, result } = await start('[fake:slow]', undefined, 200);
 
     const lines = events.filter((event) => event.type === 'output').map((event) => event.text);
@@ -108,7 +107,7 @@ describe('FakeRunner', () => {
     expect(result.outcome).toBe('done');
   });
 
-  it('prints a token-shaped string, to prove redaction end to end (Issue #99)', async () => {
+  it('prints a token-shaped string, to prove redaction end to end', async () => {
     const { events, result } = await start('[fake:secret]');
 
     expect(events.some((event) => /\bghp_[A-Za-z0-9]{36}\b/.test(event.text))).toBe(true);
@@ -122,22 +121,21 @@ describe('FakeRunner', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('works on a long step until it is aborted (Issue #100: a Run to cancel)', async () => {
+  it('works on a long step until it is aborted', async () => {
     const abort = new AbortController();
     const pending = start('[fake:long]', abort.signal, 10);
     setTimeout(() => abort.abort(), 30);
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('keeps a stubborn step going when aborted (Issue #100: the hard path)', async () => {
+  it('keeps a stubborn step going when aborted', async () => {
     const abort = new AbortController();
     const pending = start('[fake:stubborn]', abort.signal, 50);
     abort.abort();
     expect((await pending).result.outcome).toBe('done');
   });
 
-  // Issue #103: what a runner must do on resume, proven with the fake runner.
-  describe('resume (Issue #103)', () => {
+  describe('resume', () => {
     const resume = (
       task: string,
       sessionRef: string,
@@ -184,7 +182,7 @@ describe('FakeRunner', () => {
       expect((await resume('[fake:question-twice]', SESSION, 2)).result.outcome).toBe('done');
     });
 
-    describe('a Follow-up (Issue #141)', () => {
+    describe('a Follow-up', () => {
       it('plays the scenario its own text names, in the same session', async () => {
         const { result, events } = await resume(
           'Add a feature',
@@ -215,7 +213,7 @@ describe('FakeRunner', () => {
       });
     });
 
-    describe('a bring-up-to-date request (Issue #147)', () => {
+    describe('a bring-up-to-date request', () => {
       it('plays the scenario the instruction names, success by default, in the same session', async () => {
         const { result, events } = await resume(
           'Add a feature',

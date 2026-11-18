@@ -53,13 +53,12 @@ import { CodexStream, type ResultSource } from './stream.js';
 
 const PROVIDER: Provider = 'codex';
 
-/** The repository's instruction files the Codex runner injects into the prompt (Codex: AGENTS.md). */
+/** The repository instruction files the Codex runner injects into the prompt (AGENTS.md only). */
 export const CODEX_PROJECT_INSTRUCTION_FILES = ['AGENTS.md'] as const;
 
 /**
- * Codex's user-level instruction and skill files (review C2 of #133), relative to the home
- * directory. `~/.codex/skills/.system` holds the skills bundled with the CLI, which the CLI
- * itself installs there at sign-in; it is allowed as a real directory.
+ * Codex's user-level instruction and skill files, relative to the home directory; the CLI-installed
+ * `~/.codex/skills/.system` (bundled skills) is allowed as a real directory.
  */
 export const CODEX_USER_LEVEL_FILES: UserLevelFiles = {
   absent: ['.codex/AGENTS.md', '.codex/AGENTS.override.md'],
@@ -85,25 +84,16 @@ export interface CodexRunnerOptions {
   /** Test seam: where Studio's templates are. */
   guardrails?: { dir?: string };
   /**
-   * The check of Studio's root-owned managed guardrails before every step (Issue #134; default:
-   * the installed files, see managed-guardrails.ts). Test seam only.
+   * The check of the root-owned managed guardrails before every step (default: the installed
+   * files). Test seam only.
    */
   managed?: ManagedGuardrailsCheck;
 }
 
 /**
- * The Codex runner (Issue #106): runs a Run step with the Codex CLI, signed in with the
- * operator's ChatGPT plan, behind the runner interface. Per step it checks Studio's root-owned
- * managed configuration and requirements (Issue #134: settings, the guard hook, the enforced
- * rules), states the sandbox mode in the Run's log, rewrites Studio's user-level Codex
- * configuration in the agent user's Codex home (the Working copies marked untrusted, Studio's
- * rules, no user-level hooks), writes the step's files in the
- * Run's directory (outside the Working copy), then starts the CLI through the spawn boundary
- * with exactly the compliance record's command, a minimal environment and standard input read
- * from a file, in the Working copy. It maps the streamed events to the Run's log and ends with
- * the structured result (with the session id from the stream), or fails: `agent_failed` or
- * `usage_limit` (the session is kept for a later resume). A stop reaches the CLI through its
- * process group (Issue #100); the session files stay in the Codex home.
+ * The Codex runner: runs a Run step with the Codex CLI signed in with the operator's ChatGPT plan,
+ * after checking the managed configuration and rewriting the user-level Codex configuration. Ends
+ * `agent_failed` or `usage_limit` (the session files stay in the Codex home to resume).
  */
 export class CodexRunner implements Runner {
   constructor(private readonly options: CodexRunnerOptions) {}
@@ -130,13 +120,13 @@ export class CodexRunner implements Runner {
         "Codex needs the agent user's home directory (HOME) on the agent worker.",
       );
     }
-    // Review C2 of #133: user-level instructions and skills load in every Run; refuse them.
+    // User-level instructions and skills load in every Run; refuse them.
     const userFiles = userLevelFilesProblem(
       'Codex',
       await presentUserLevelFiles(home, CODEX_USER_LEVEL_FILES),
     );
     if (userFiles !== null) throw new AgentFailedError(userFiles);
-    // Issue #134: Studio's settings, hook and rules are the root-owned managed files.
+    // Studio's settings, hook and rules are the root-owned managed files.
     const managed = await (this.options.managed ?? new ManagedGuardrails()).problem(PROVIDER);
     if (managed !== null) throw new AgentFailedError(managedGuardrailsFailure('Codex', managed));
     yield { type: 'notice', text: sandboxNotice(this.options.sandbox) };
@@ -158,8 +148,8 @@ export class CodexRunner implements Runner {
     if (resumed === undefined) {
       await writeFile(files.schemaFile, CODEX_RESULT_JSON_SCHEMA, { mode: 0o600 });
       await rm(files.resultFile, { force: true });
-      // Smoke of #133: in 0.169.0 an untrusted project's AGENTS.md is not loaded by the CLI, so
-      // the worker injects its text (read at the start commit) as Claude Code's runner does.
+      // The CLI does not load an untrusted project's AGENTS.md (0.169.0), so the worker injects
+      // its text (read at the start commit).
       const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
       const instructions = await buildInstructions(
         agentDefinition,
@@ -240,7 +230,7 @@ export class CodexRunner implements Runner {
     signal: AbortSignal,
     { stream, source }: { stream: CodexStream; source: () => Promise<ResultSource> },
   ): RunStep {
-    // Record, finding 8: standard input is a file, so it ends; it is never left open.
+    // Standard input is a file, so it ends; it is never left open.
     const stdin = openSync(stdinFile, 'r');
     let child: ReturnType<typeof spawnProviderCli>;
     try {
@@ -274,7 +264,7 @@ export class CodexRunner implements Runner {
     const exitCode = await exited;
     if (signal.aborted) throw signal.reason;
     // Expected CLI warnings (e.g. the untrusted project's configuration being skipped) are
-    // notices, never the failure's reason (coordinator smoke of #133).
+    // notices, never the failure's reason.
     const { expected, rest: errorOutput } = splitStderr(stderr);
     for (const warning of expected) yield { type: 'notice', text: `Codex: ${warning}` };
     const outcome = stream.finish({ exitCode, spawnFailed }, await source());
@@ -308,10 +298,8 @@ export function splitStderr(stderr: string): { expected: string[]; rest: string 
 const PROBE_TIMEOUT_MS = 15_000;
 
 /**
- * The checks at worker start (Issue #106): a complete standalone install (record, finding 7),
- * then `codex --version` through the spawn boundary (no session is started), with the minimal
- * environment, standard input closed and an empty temporary working directory, checked against
- * the supported range. Otherwise the reason the provider is unavailable.
+ * The checks at worker start: a complete standalone install, then `codex --version` through the
+ * spawn boundary (no session is started) with the minimal environment. Otherwise the reason.
  */
 export async function probeCodex(
   cli: ProviderCli,

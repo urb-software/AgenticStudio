@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
- * Bare fixture Repositories for the HTTP tests, built with the system `git` (Linux only, like
- * every repository feature). The fixture Git runs isolated from the host's configuration.
+ * Bare fixture Repositories for the HTTP tests, built with the system `git` (Linux only) and
+ * isolated from the host's Git configuration.
  */
 export interface GitFixture {
   /** The `file://` URL, accepted only with the test-only fixture-remote setting. */

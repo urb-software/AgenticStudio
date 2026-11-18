@@ -2,20 +2,14 @@
 // drivers and HTTP clients often echo connection URLs or headers. Over-masking is
 // acceptable; leaking any part of a credential is not.
 
-/**
- * The `://` after a URL scheme. The scheme itself is not matched: a boundary or length
- * rule on it let `1postgres://`, `.postgres://` or a 40-character scheme through
- * unmasked (#33 review), and over-masking is acceptable.
- */
+/** The `://` after a URL scheme; matching the scheme too let `1postgres://` etc. through. */
 const URL_SCHEME_SEPARATOR = /:\/\//g;
 const WHITESPACE = /\s/g;
 
 /**
- * `scheme://<userinfo>@` → `scheme://***@`: everything up to the last `@` of the
- * whitespace-free token, so passwords containing `@`, `/` or `:` are masked whole, at
- * any length. A regex cannot do this without either a length cap (which leaks longer
- * secrets, #24) or quadratic backtracking, so this scans instead: each token is read
- * once and scanning resumes after it, so the whole pass is linear in the input.
+ * `scheme://<userinfo>@` becomes `scheme://***@`, up to the token's last `@`, so passwords with
+ * `@`, `/` or `:` are masked whole. A regex would need a length cap (leaks long secrets) or
+ * backtrack quadratically, so this scans each token once.
  */
 function maskUrlUserinfo(text: string): string {
   let output = '';

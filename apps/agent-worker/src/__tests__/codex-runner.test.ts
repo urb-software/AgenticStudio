@@ -13,10 +13,7 @@ import { GitCommandError } from '../git.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 
-// Issue #106: the Codex runner at the process-spawn boundary. `node:child_process` is mocked:
-// each test asserts what the boundary was asked to start (binary, exact arguments, environment,
-// working directory, standard input) and replays a recorded event stream as the CLI's output.
-// The real process, the stub executable and a hostile repository are in
+// The Codex runner at the mocked process-spawn boundary; the real process is in
 // codex-runner.linux.test.ts.
 
 const spawn = vi.hoisted(() => vi.fn());
@@ -99,7 +96,7 @@ describe('CodexRunner at the spawn boundary', () => {
     STUDIO_AGENT_GITHUB_TOKEN: 'test-only-agent-token',
     CODEX_CLI_ENABLED: 'true',
   });
-  // Issue #134: the managed guardrails check, as a fake here (the real files are root-owned).
+  // The managed guardrails check, as a fake here (the real files are root-owned).
   let managedProblem: string | null;
   const runner = (
     gate = new ProviderGate({ claude_code: false, codex: true }),
@@ -214,7 +211,7 @@ describe('CodexRunner at the spawn boundary', () => {
       text: "Codex sandbox: workspace-write, network on (set by the agent worker's configuration).",
     });
     // Studio's user configuration was in place, with this Working copy untrusted, before the CLI
-    // started (its settings are managed since #134).
+    // started.
     expect(configAtSpawn).toContain('Since #134');
     expect(configAtSpawn).toMatch(/\[projects\.".*repo"\]\ntrust_level = "untrusted"/);
     expect(result).toEqual({
@@ -242,7 +239,7 @@ describe('CodexRunner at the spawn boundary', () => {
     expect(existsSync(join(runDir, 'repo', 'prompt.md'))).toBe(false);
   });
 
-  it("injects the repository's AGENTS.md, read at the start commit, in a delimited untrusted block before the Task (smoke of #133)", async () => {
+  it("injects the repository's AGENTS.md, read at the start commit, in a delimited untrusted block before the Task", async () => {
     repoFiles['AGENTS.md'] = 'Use pnpm. @docs/style.md @../outside.md';
     repoFiles['docs/style.md'] = 'Two-space indentation.';
     repoFiles['CLAUDE.md'] = 'Claude only.';
@@ -280,7 +277,7 @@ describe('CodexRunner at the spawn boundary', () => {
     expect(readFileSync(join(runDir, 'codex', 'answer.md'), 'utf8')).not.toContain('Use pnpm.');
   });
 
-  it('resumes a Follow-up with exactly the command of an answer, its text on standard input (Issue #141)', async () => {
+  it('resumes a Follow-up with exactly the command of an answer, its text on standard input', async () => {
     replaying('resume');
     await drain(
       runner().resume({
@@ -385,7 +382,7 @@ describe('CodexRunner at the spawn boundary', () => {
     });
   });
 
-  it("logs the CLI's expected untrusted-project warning as a notice, never as the failure reason (smoke of #133)", async () => {
+  it("logs the CLI's expected untrusted-project warning as a notice, never as the failure reason", async () => {
     const WARNING = 'warning: Untrusted project-local configuration is disabled for this project.';
     spawn.mockImplementation((_binary: string, args: string[]) => {
       writeFileSync(args[args.indexOf('--output-last-message') + 1]!, lastMessage('success')!);
@@ -414,7 +411,7 @@ describe('CodexRunner at the spawn boundary', () => {
     );
   });
 
-  it('refuses a step while user-level instructions or skills are present, starting nothing (review C2 of #133)', async () => {
+  it('refuses a step while user-level instructions or skills are present, starting nothing', async () => {
     mkdirSync(join(home, '.codex', 'skills', '.system'), { recursive: true });
     replaying('success');
     // The CLI's own bundled skills are allowed.
@@ -434,7 +431,7 @@ describe('CodexRunner at the spawn boundary', () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it('refuses a step, starting and writing nothing, while the managed guardrails are missing or changed (Issue #134)', async () => {
+  it('refuses a step, starting and writing nothing, while the managed guardrails are missing or changed', async () => {
     managedProblem = 'managed guardrails missing or changed: /etc/codex/requirements.toml';
 
     const step = drain(runner().start(input('x')));

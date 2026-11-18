@@ -7,11 +7,8 @@ import { studioPathspecs } from './studio-paths.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopies } from './working-copy.js';
 
 /**
- * Bringing a Run branch up to date (Issue #147, security.md section 4): the integration branch
- * is merged into the Run branch, never the other way round, never as a rebase, and the push that
- * follows is the ordinary fast-forward of the Run branch (a merge commit with the pushed tip as
- * its first parent). Everything here is local to the Working copy except the cache's fetch, which
- * goes through the same hardened Git runner as the Run's start; hooks never run.
+ * Merges the integration branch into a Run branch (never a rebase, never the reverse), locally
+ * with hooks off except the cache's fetch.
  */
 
 /** How a bring-up-to-date request started (see {@link BranchUpdatePort.start}). */
@@ -32,22 +29,15 @@ export type BranchUpdateStart =
 /** The branch update port of the worker loop: {@link BranchUpdates} in production. */
 export interface BranchUpdatePort {
   /**
-   * Fetches the Project's integration branch; when the Run branch already has it, nothing more
-   * happens. Otherwise commits what the Working copy has uncommitted (as the Agent account,
-   * Studio-placed files left out) and merges it into the Run branch with `--no-ff` and hooks off.
-   * Throws {@link PreparationFailedError} when the fetch or the merge could not be done at all;
-   * nothing was merged then.
+   * Fetches the integration branch; when the Run branch has it, nothing more happens. Otherwise
+   * commits the uncommitted work (as the Agent account, Studio-placed files left out) and merges
+   * with `--no-ff`, hooks off. Throws {@link PreparationFailedError} when nothing could be merged.
    */
   start(prepared: PreparedRun, run: RunPayload, signal: AbortSignal): Promise<BranchUpdateStart>;
   /**
-   * After the agent ended `done`: completes a merge still open in the Working copy. A conflicted
-   * text file the agent resolved in the tree but could not stage (a sandbox that cannot write
-   * `.git`) is staged when it holds no conflict marker; a file that still does, any conflict that
-   * is not a text conflict of two changes, and any unmerged path left throw
-   * {@link MergeIncompleteError}. `expected` is the integration branch commit this part merges:
-   * when no merge is open any more, it must be in the history (the merge was completed), else the
-   * agent aborted or undid it, which throws as well. Returns `completed` when the worker made the
-   * merge commit, `null` when no merge was open and nothing is expected.
+   * After the agent ended `done`: completes an open merge, staging resolved marker-free text
+   * conflicts. Throws {@link MergeIncompleteError} on markers, other conflicts, unmerged paths, or
+   * when no merge is open and `expected` (the integration commit) is not in history.
    */
   complete(
     prepared: PreparedRun,
@@ -56,12 +46,9 @@ export interface BranchUpdatePort {
     expected?: string,
   ): Promise<{ mergedCommit: string; completed: boolean } | null>;
   /**
-   * Aborts a merge still open, so the Working copy returns to where it was. With `baseCommit`
-   * (the Run branch's commit before the part's merge) a Run branch that moved on from it is also
-   * reset to it: a part that did not end well leaves nothing of the update behind (review S3 of
-   * #154). The reset moves only the Run branch (checked out first if the agent left it), only back
-   * along its history, and never undoes anything already pushed: with `pushedCommit` past the base
-   * it does nothing (review R2-1, R2-2). True when anything was undone.
+   * Aborts an open merge; with `baseCommit` a Run branch that moved on is also reset to it, so a
+   * failed part leaves nothing behind. Moves only the Run branch, only back along its history, and
+   * does nothing when `pushedCommit` is past the base. True when anything was undone.
    */
   abort(
     prepared: PreparedRun,
@@ -139,7 +126,7 @@ export class BranchUpdates implements BranchUpdatePort {
     const cacheDir = await this.options.workingCopies.refreshProjectCache(run, signal);
     const tip = await this.fetchIntegration(prepared, cacheDir, branch, signal);
     try {
-      // Nothing to merge: nothing is changed, not even a commit of the leftovers (review S9).
+      // Nothing to merge: nothing is changed, not even a commit of the leftovers.
       if (await this.contains(prepared, tip, signal)) {
         return { outcome: 'already_up_to_date', commit: tip };
       }
@@ -206,9 +193,8 @@ export class BranchUpdates implements BranchUpdatePort {
       throw new MergeIncompleteError([]);
     }
     // A text conflict the agent resolved but could not stage (its sandbox cannot write `.git`) is
-    // staged here, once no conflict marker is left in it. Every other kind of conflict (binary,
-    // modified on one side and deleted on the other, a link, a mode) leaves "ours" in the tree
-    // without a marker, so only the agent staging its own choice can resolve it (review S5).
+    // staged once no marker is left. Other kinds (binary, delete/modify, link, mode) leave "ours"
+    // without a marker, so only the agent staging its own choice can resolve them.
     for (const path of await this.unmerged(prepared, signal)) {
       if (
         (await resolvedInTree(prepared.repoDir, path)) &&
@@ -253,7 +239,7 @@ export class BranchUpdates implements BranchUpdatePort {
           return undone;
         }
         // The reset moves the Run branch only: the agent may have left another branch (or none)
-        // checked out (review R2-2).
+        // checked out.
         const onBranch =
           (await git.run(['symbolic-ref', '--quiet', 'HEAD'], local).catch(() => '')).trim() ===
           branchRef;
@@ -409,10 +395,9 @@ export class BranchUpdates implements BranchUpdatePort {
   }
 
   /**
-   * Whether the conflict at `path` is two changes to a text file (both sides regular files, neither
-   * a binary) that the agent changed: a repository's attributes (`binary`, `-merge`) can make Git
-   * leave "ours" in the tree without a marker, so a file still equal to its "ours" version is not
-   * resolved (review R2-3). A deleted file counts as changed.
+   * Whether the conflict at `path` is a text conflict the agent changed: attributes (`binary`,
+   * `-merge`) can make Git leave "ours" without a marker, so a file still equal to "ours" is not
+   * resolved. A deleted file counts as changed.
    */
   private async isResolvedTextConflict(
     prepared: PreparedRun,

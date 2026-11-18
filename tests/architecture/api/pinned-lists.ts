@@ -14,15 +14,8 @@ import {
 } from './syntax';
 
 /**
- * The three pinned lists of `architecture:api` (docs/engineering/quality.md §4, Issue #170).
- *
- * Some rules of docs/architecture/backend.md §3 cannot be judged by a gate check: "no business
- * rule is written in the database adapter" (rule 6), "shared application logic is the last
- * resort" (rule 3) and "anything with its own repository is an aggregate root" (rule 11). Each
- * has a plain record in `tests/architecture/api/pinned/` that the test compares with the source:
- * a change to the source fails until the record is changed in the same pull request, so the
- * reviewer cannot miss it. The records state decisions. They are never an allowlist that makes a
- * gate violation pass, and a gate check is not relaxed because something is recorded here.
+ * The records in `tests/architecture/api/pinned/` state decisions the gate cannot judge (rules 3,
+ * 6 and 11 of backend.md §3); they are never an allowlist that makes a gate violation pass.
  */
 
 /** Where the records live, relative to the repository root (the paths the messages name). */
@@ -44,7 +37,7 @@ export interface RepositoryMethodsFile {
   repositories: Record<string, Record<string, RepositoryMethodRecord>>;
 }
 export interface CollaboratorsFile {
-  /** `<module>/application/<file>.ts` → the step of rule 3 that was tried and why it did not apply. */
+  /** `<module>/application/<file>.ts` → the step of rule 3 tried and why it did not apply. */
   collaborators: Record<string, { reason: string }>;
 }
 export interface AggregateRootsFile {
@@ -62,10 +55,8 @@ function isProductionTypeScript(path: string): boolean {
 }
 
 /**
- * The method names of every exported `…Repository` interface (or type literal alias, exported where
- * declared or by a later `export { X }`) in `domain/repositories/`, keyed
- * `<module>/<InterfaceName>`. A method is a method signature or a property typed as a function;
- * an overloaded method counts once.
+ * The method names of every exported `…Repository` interface or type literal alias in
+ * `domain/repositories/`, keyed `<module>/<InterfaceName>`. An overloaded method counts once.
  */
 export function repositoryInterfaces(baseDir: string): Record<string, string[]> {
   const found: Record<string, string[]> = {};

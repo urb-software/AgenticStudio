@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { clientIpLimitKey } from '../client-ip-limit-key.js';
 
-// #24 operator decision: per-IP login limits aggregate IPv6 by /64; IPv4 stays per
-// address, and IPv4-mapped IPv6 counts as the IPv4 address.
+// Per-IP login limits aggregate IPv6 by /64; IPv4 stays per address, and IPv4-mapped IPv6
+// counts as the IPv4 address.
 
 describe('clientIpLimitKey', () => {
   it.each(['203.0.113.7', '10.0.0.1', '127.0.0.1'])('keeps IPv4 %s per address', (ip) => {

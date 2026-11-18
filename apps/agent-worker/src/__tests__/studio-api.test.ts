@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { isRunLost, isTransient, StudioApi, StudioApiError } from '../studio-api.js';
 
-// Issue #96: the worker's client of the worker routes, against a stubbed fetch.
+// The worker's client of the worker routes, against a stubbed fetch.
 const TOKEN = randomBytes(32).toString('base64');
 const WORKER_ID = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 
@@ -31,7 +31,7 @@ const hanging = ({ init }: Call) =>
   });
 
 describe('StudioApi', () => {
-  it('asks for the states of Runs and validates the answer (Issue #98)', async () => {
+  it('asks for the states of Runs and validates the answer', async () => {
     const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
     const answer = [{ runId, state: 'succeeded', finishedAt: '2026-11-15T10:00:00.000Z' }];
     const { api, calls } = client(async () => Response.json(answer));
@@ -47,7 +47,7 @@ describe('StudioApi', () => {
     await expect(invalid.runStates([runId])).rejects.toThrow();
   });
 
-  it('reports removed Working copies with a states request (Issue #141)', async () => {
+  it('reports removed Working copies with a states request', async () => {
     const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
     const { api, calls } = client(async () => Response.json([]));
 
@@ -62,7 +62,6 @@ describe('StudioApi', () => {
     expect(JSON.parse(String(calls[1]?.init.body))).not.toHaveProperty('removedRunIds');
   });
 
-  // Issue #142: lookups.
   it('claims lookups (204: none) and validates what it is handed', async () => {
     const lookup = {
       id: 'c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f',
@@ -127,7 +126,7 @@ describe('StudioApi', () => {
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ workerId: WORKER_ID });
   });
 
-  it('reports the status to /api/worker/status with the worker id (Issue #101)', async () => {
+  it('reports the status to /api/worker/status with the worker id', async () => {
     const { api, calls } = client(async () => new Response(null, { status: 204 }));
 
     await api.reportStatus({ runner: 'cli', providers: { claude_code: true, codex: false } });
@@ -158,7 +157,7 @@ describe('StudioApi', () => {
     expect(String((error as Error).message)).not.toContain(TOKEN);
   });
 
-  it('abandons a call that gets no answer within the timeout (review of #112)', async () => {
+  it('abandons a call that gets no answer within the timeout', async () => {
     const { api } = client(hanging, 50);
     const started = Date.now();
 
@@ -176,7 +175,6 @@ describe('StudioApi', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  // Issue #100: the heartbeat answer carries the operator's cancel request.
   it('reads whether the operator asked to cancel from the heartbeat answer', async () => {
     const { api, calls } = client(async () => Response.json({ cancelRequested: true }));
 
@@ -209,7 +207,7 @@ describe('StudioApi', () => {
     expect(isTransient(new StudioApiError(401, '/api/worker/runs/x/state'))).toBe(false);
   });
 
-  // Review of #121: only "not held" (and a failed Run) means the Run is lost, by problem type.
+  // Only "not held" (and a failed Run) means the Run is lost, by problem type.
   it('tells a lost Run from a refused report by the problem type, not the status', () => {
     const path = '/api/worker/runs/x/state';
     expect(

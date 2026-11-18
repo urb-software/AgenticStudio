@@ -18,9 +18,7 @@ import { type PreparedRun, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
 import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
 
-// Issue #102: delivering a Run's result from its real Working copy to a fixture remote
-// (file://, no network) and a local stub of GitHub's pull request API. Linux only, like the
-// worker; runs in CI on Linux.
+// Delivering a Run's result from a real Working copy to a fixture remote and a stub of GitHub.
 
 const AGENT = { agentGitName: 'Studio Agent', agentGitEmail: 'agent@example.test' };
 const DONE: RunStepResult = {
@@ -146,7 +144,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     return subject.deliver(prepared, run, result, signal());
   }
 
-  // Review S4 of #154: `add --all` would mark a merge's conflicted files resolved, markers included.
+  // `add --all` would mark a merge's conflicted files resolved, markers included.
   it('refuses to commit while a merge is open, leaving its conflicts as they are', async () => {
     const run = payload();
     const prepared = await prepare(run);
@@ -165,7 +163,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(readFileSync(join(prepared.repoDir, 'README.md'), 'utf8')).toContain('<<<<<<<');
   });
 
-  // Review R2-5 of #154: a conflict without an open merge (a cherry-pick, a revert) is refused too.
+  // A conflict without an open merge (a cherry-pick, a revert) is refused too.
   it('refuses to commit while any path is unmerged', async () => {
     const run = payload();
     const prepared = await prepare(run);
@@ -191,7 +189,6 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(delivery).toEqual({
       outcome: 'delivered',
       pullRequest: { url: 'https://github.com/acme/shop/pull/1', number: 1 },
-      // Issue #141: the commit the push left the remote Run branch at.
       pushedCommit: inRepo(prepared, ['rev-parse', 'HEAD']),
     });
     expect(git(bare(), ['rev-parse', `refs/heads/${prepared.runBranch}`], env)).toBe(
@@ -294,8 +291,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
   it('never commits or pushes a file Studio placed, even one the agent forced into the index', async () => {
     const run = payload();
     const prepared = await prepare(run);
-    // As #104 will: the Environment file in the Working copy, listed in Studio's exclude section
-    // and in the Run file.
+    // The Environment file, listed in Studio's exclude section and the Run file.
     appendFileSync(join(prepared.repoDir, '.git', 'info', 'exclude'), '/.env.studio\n');
     const runFile = join(prepared.runDir, 'run.json');
     const recorded = JSON.parse(readFileSync(runFile, 'utf8')) as Record<string, unknown>;
@@ -344,7 +340,6 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     const run = payload();
     const prepared = await prepare(run);
     agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
-    // Someone else pushed a different commit to the Run branch's name on the remote.
     const other = join(root, 'other');
     git(root, ['clone', '--quiet', remote.url, other], env);
     writeFileSync(join(other, 'elsewhere.md'), 'z\n');
@@ -378,7 +373,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(stub.created).toHaveLength(1);
   });
 
-  it('refuses a retry from a Working copy that is not on its Run branch (coordinator decision on #103)', async () => {
+  it('refuses a retry from a Working copy that is not on its Run branch', async () => {
     const run = payload();
     const prepared = await prepare(run);
     agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
@@ -394,9 +389,8 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(stub.created).toHaveLength(0);
   });
 
-  // Issue #141: a Follow-up delivers again, to the same pull request.
-  describe('repeated delivery after a Follow-up (Issue #141)', () => {
-    /** The first part of the Run, delivered: its pull request is #1. */
+  describe('repeated delivery after a Follow-up', () => {
+    /** The first part of the Run, delivered: its pull request is number 1. */
     async function deliveredOnce() {
       const run = payload();
       const prepared = await prepare(run);
@@ -455,7 +449,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       ).toBe(false);
     });
 
-    // Review S7 of #150: only what the agent gave replaces the old text.
+    // Only what the agent gave replaces the old text.
     it('replaces only the title when the agent gave a title without a description', async () => {
       const { run, prepared } = await deliveredOnce();
       agentWrites(prepared, { 'empty.ts': 'y\n' }, 'Handle the empty list');
@@ -525,7 +519,6 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     it('opens a draft pull request when the Run had none yet and now has commits', async () => {
       const run = payload();
       const prepared = await prepare(run);
-      // The first part changed nothing: "No changes", no pull request.
       expect(await finish(run, prepared)).toEqual({ outcome: 'none' });
       const followUp: RunPayload = {
         ...run,
@@ -677,7 +670,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect((error as DeliveryFailedError).detail).toMatch(/not on the Run branch/);
   });
 
-  it("never lets the Working copy's own Git config redirect the push (review of #122)", async () => {
+  it("never lets the Working copy's own Git config redirect the push", async () => {
     const run = payload();
     const prepared = await prepare(run);
     agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
@@ -762,8 +755,8 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect((error as DeliveryFailedError).detail).toMatch(/result for this Run is no longer/);
   });
 
-  describe('review round 1 of #122', () => {
-    it('retries the Run branch Studio recorded, never one named in a rewritten run.json (R1)', async () => {
+  describe('a retry under a hostile Working copy', () => {
+    it('retries the Run branch Studio recorded, never one named in a rewritten run.json', async () => {
       const run = payload();
       const prepared = await prepare(run);
       agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
@@ -816,7 +809,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       expect(git(bare(), ['rev-parse', 'refs/heads/main'], env)).toBe(main);
     });
 
-    it('makes push.git without templates or user config, so a hostile init.templateDir never reaches it (R2)', async () => {
+    it('makes push.git without templates or user config, so a hostile init.templateDir never reaches it', async () => {
       const run = payload();
       const prepared = await prepare(run);
       agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
@@ -847,7 +840,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       expect(init?.options.userConfig).toBe(false);
     });
 
-    it("keeps Studio's own list out even when the agent emptied run.json and the exclude section (R3)", async () => {
+    it("keeps Studio's own list out even when the agent emptied run.json and the exclude section", async () => {
       const run = payload({ studioPaths: ['.env.studio'] });
       const prepared = await prepare(run);
       writeFileSync(join(prepared.repoDir, '.git', 'info', 'exclude'), '');

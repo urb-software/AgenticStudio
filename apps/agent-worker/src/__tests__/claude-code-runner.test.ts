@@ -22,10 +22,7 @@ import { GitCommandError } from '../git.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 
-// Issue #105: the Claude Code runner at the process-spawn boundary. `node:child_process` is
-// mocked: each test asserts what the boundary was asked to start (binary, exact arguments,
-// environment, working directory, standard input) and replays a recorded event stream as the
-// CLI's output. The real process, the stub executable and a hostile repository are in
+// The Claude Code runner at the mocked process-spawn boundary; the real process is in
 // claude-code-runner.linux.test.ts.
 
 const spawn = vi.hoisted(() => vi.fn());
@@ -94,7 +91,7 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
   let gitCalls: string[][];
   const repoFiles: Record<string, string> = {};
 
-  // Issue #134: the managed guardrails check, as a fake here (the real files are root-owned).
+  // The managed guardrails check, as a fake here (the real files are root-owned).
   let managedProblem: string | null;
   const runner = (gate = new ProviderGate({ claude_code: true, codex: false })) =>
     new ClaudeCodeRunner({
@@ -198,12 +195,12 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
         name,
       );
     }
-    // Issue #100: the CLI's process group belongs to the Run step.
+    // The CLI's process group belongs to the Run step.
     expect(groups).toEqual([4242]);
     expect(result).toMatchObject({ outcome: 'done', sessionRef: SESSION });
   });
 
-  it('resumes a Follow-up with exactly the options of an answer, only the prompt worded for it (Issue #141)', async () => {
+  it('resumes a Follow-up with exactly the options of an answer, only the prompt worded for it', async () => {
     spawn.mockImplementation(() => fakeChild(recording('resume')));
     await drain(
       runner().resume({
@@ -284,8 +281,8 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     });
     // Read at the start commit from Git, never from the Working copy's files.
     expect(gitCalls[0]).toEqual(['cat-file', 'blob', `${'a'.repeat(40)}:CLAUDE.md`]);
-    // Issue #134: the guardrails are the root-owned managed settings; the per-Run file is empty
-    // and no guard script is copied anywhere the agent can write.
+    // The guardrails are the root-owned managed settings; the per-Run file is empty and no guard
+    // script is copied anywhere the agent can write.
     expect(readFileSync(join(runDir, 'claude-settings.json'), 'utf8')).toBe('{}\n');
     expect(existsSync(join(runDir, 'claude-guard.mjs'))).toBe(false);
     expect(existsSync(join(runDir, 'tmp'))).toBe(true);
@@ -329,7 +326,7 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     });
   });
 
-  it("puts the CLI's reason for refusing an option into the failure detail (smoke of #129)", async () => {
+  it("puts the CLI's reason for refusing an option into the failure detail", async () => {
     spawn.mockImplementation(() => {
       const child = fakeChild('', 1);
       child.stderr.write('Warning: something harmless\n');
@@ -345,7 +342,7 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     );
   });
 
-  it("refuses a step, starting nothing, while the agent user's settings hold hooks or env (review R4 of #129)", async () => {
+  it("refuses a step, starting nothing, while the agent user's settings hold hooks or env", async () => {
     const home = join(runDir, 'home');
     mkdirSync(join(home, '.claude'), { recursive: true });
     writeFileSync(
@@ -372,7 +369,7 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     expect(existsSync(join(runDir, 'instructions.md'))).toBe(false);
   });
 
-  it('refuses a step, starting and writing nothing, while the managed guardrails are missing or changed (Issue #134)', async () => {
+  it('refuses a step, starting and writing nothing, while the managed guardrails are missing or changed', async () => {
     managedProblem =
       'managed guardrails missing or changed: /etc/claude-code/managed-settings.json';
 
@@ -428,7 +425,7 @@ describe('the version check at worker start', () => {
 
     expect(await probeClaudeCode(cli(), WORKER_ENV)).toEqual({ ok: true, version: '2.1.325' });
     expect(spawn).toHaveBeenCalledWith('claude', ['--version'], {
-      // A neutral, empty temporary directory (review R3 of #129), removed afterwards.
+      // A neutral, empty temporary directory, removed afterwards.
       cwd: expect.stringContaining('studio-claude-version-'),
       env: {
         PATH: '/usr/bin:/bin',

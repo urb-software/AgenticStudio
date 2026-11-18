@@ -6,9 +6,8 @@ import {
 } from '@agentic-studio/contracts';
 
 /**
- * The operator's per-provider switches (docs/engineering/security.md §2, Issue #101). They
- * live only in the worker's own deployment configuration: never in the database, never set
- * through the API, never taken from a Run.
+ * The operator's per-provider switches: they live only in the worker's own deployment
+ * configuration, never in the database, never set through the API, never taken from a Run.
  */
 export const PROVIDER_SWITCH_VARIABLES = {
   claude_code: 'CLAUDE_CODE_ENABLED',
@@ -29,10 +28,9 @@ export function readProviderSwitches(env: Record<string, string | undefined>): P
 }
 
 /**
- * A Run asked for a provider whose switch is off, or (Issue #105) whose switch is on but which
- * this worker found unavailable at start (`reason`, e.g. an unsupported CLI version). Its
- * message is safe to show: it names the provider and the switch or the reason, never a value,
- * a path or a credential.
+ * A Run asked for a provider whose switch is off or which this worker found unavailable at start
+ * (`reason`). Its message is safe to show: no value, path or credential, only the provider and the
+ * switch or reason.
  */
 export class ProviderDisabledError extends Error {
   constructor(
@@ -50,22 +48,20 @@ export class ProviderDisabledError extends Error {
   }
 }
 
-/** Why a switched-on provider cannot run on this worker (Issue #105), per provider. */
+/** Why a switched-on provider cannot run on this worker, per provider. */
 export type ProviderReasons = Readonly<Partial<Record<Provider, string>>>;
 
 /**
- * The provider gate (Issue #101): holds a frozen copy of the switches read at start. It is
- * checked by the runner dispatcher before every Run step and again by the spawn boundary
- * before any provider CLI process is created. Nothing a Run carries reaches it.
+ * The provider gate: a frozen copy of the switches read at start, checked by the runner dispatcher
+ * before every Run step and again by the spawn boundary. Nothing a Run carries reaches it.
  */
 export class ProviderGate {
   private readonly switches: ProviderSwitches;
   private readonly unavailable: ProviderReasons;
 
   /**
-   * @param unavailable Issue #105: switched-on providers this worker cannot run, with the
-   *   reason (found at start, e.g. by the CLI version check). They stay off for the life of the
-   *   process; the switches themselves keep their meaning.
+   * @param unavailable Switched-on providers this worker cannot run, with the reason (found at
+   *   start); they stay off for the life of the process.
    */
   constructor(switches: ProviderSwitches, unavailable: ProviderReasons = {}) {
     const copy = {} as Record<Provider, boolean>;
@@ -88,7 +84,7 @@ export class ProviderGate {
     );
   }
 
-  /** Throws {@link ProviderDisabledError} unless the provider's switch is on and it is available. */
+  /** Throws {@link ProviderDisabledError} unless the provider is switched on and available. */
   assertEnabled(provider: Provider): void {
     if (this.isEnabled(provider)) return;
     const reason = Object.hasOwn(this.unavailable, provider)

@@ -2,9 +2,8 @@ import { ESLint } from 'eslint';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// Review of #116: the agent worker's ESLint config bans the ways of loading code that the
-// architecture gate cannot see, so nothing reaches node:child_process past the spawn boundary.
-// This proves the guard catches each form in production code (and only there).
+// The ESLint config bans the ways of loading node:child_process that the architecture gate cannot
+// see, in production code only.
 
 const eslint = new ESLint({ cwd: join(import.meta.dirname, '..', '..') });
 

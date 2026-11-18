@@ -11,12 +11,7 @@ import {
   unwrapExpression,
 } from './syntax';
 
-/**
- * The checks that follow from rule 13 of backend.md §3, "one concept per file" (Issue #185), and
- * the type-only companions of an entity: an entity file exports exactly one class and no function,
- * `domain/` exports no function other than a type guard, and a companion exports no runtime value.
- * Syntax only, as in `layout-rules.ts`; all apply to every module, by path pattern (Issue #170).
- */
+/** Syntax-only checks for rule 13 of backend.md §3 and for entity companions. */
 export const FILE_RULES = [
   'api-entity-file-exports-one-class-and-no-function',
   'api-domain-exports-no-function-but-type-guards',
@@ -93,10 +88,9 @@ function functionLike(node: ts.Expression | undefined): ts.SignatureDeclaration 
 }
 
 /**
- * Functions a file exports: function declarations (an overloaded one counts once, and is a type
- * guard when its visible overload signatures all are), variables initialised with an arrow or
- * function expression (also behind `as` or `satisfies`) and `export default <function>`, whether
- * exported where declared or by a later `export { name }`.
+ * Functions a file exports, where declared or by a later `export { name }`: declarations, arrow
+ * or function expressions (also behind `as`/`satisfies`) and `export default`; an overload counts
+ * once, as a type guard when all its overloads are.
  */
 function exportedFunctions(source: ts.SourceFile): ExportedFunction[] {
   const later = exportedLater(source);

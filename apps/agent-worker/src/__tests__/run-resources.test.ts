@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DockerMissingError, DockerRunResources, type DockerExec } from '../run-resources.js';
 
-// Issue #98: removing a Run's containers, networks and volumes, against a recording fake of
-// the docker command (no Docker in unit tests).
+// Removing a Run's containers, networks and volumes, against a recording fake of docker.
 const PROJECT = 'studio-run-0b8e5c2d1f3a';
 const LABEL = `label=com.docker.compose.project=${PROJECT}`;
 

@@ -1,30 +1,7 @@
 #!/usr/bin/env node
-// Studio's PreToolUse hook for Claude Code (Issue #105) and Codex (Issue #134). GUARDRAIL, NOT
-// THE SECURITY BOUNDARY: the boundary is the operating-system user with its rootless Docker
-// daemon (ADR 0002, docs/engineering/security.md §2). A misled agent can get around these checks
-// (an interpreter, an encoded command, a script it writes); they only stop the obvious mistakes
-// early and say why.
-//
-// The server setup installs this file root-owned as
-// /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs (managed-files.txt); the CLIs'
-// managed configuration runs it as `/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin
-// [CLAUDE_PROJECT_DIR=<project>] /usr/local/bin/node <this file>` (claude-managed-settings.json,
-// codex-requirements.toml): a cleared environment, so nothing the agent puts into the session's
-// environment (NODE_OPTIONS, TMPDIR, HOME, ...) reaches this process (Issue #134, review H1). It
-// never reads HOME or TMPDIR: the home directory comes from the passwd entry, and the step's
-// temporary directory is the `tmp` folder beside the Working copy (the Run's layout,
-// `<run>/repo` and `<run>/tmp`). The CLI passes the tool call as JSON on standard input; exit
-// code 2 blocks the call and shows the reason to the agent, exit code 0 leaves it to the
-// permission rules. Codex sends shell commands as `Bash` and file edits as `apply_patch` (the
-// patch in `command`), and the session's working directory as `cwd`.
-//
-// It blocks:
-// - privilege escalation (sudo, su, doas, pkexec) and `git push` (the worker delivers, #102);
-// - recursive deletes of the filesystem root or the home directory;
-// - the system Docker daemon (its socket, `docker -H/--host`, `docker context`, `DOCKER_HOST=`);
-// - file writes (Edit, MultiEdit, Write, NotebookEdit, Codex's apply_patch) outside the Working
-//   copy and the Run step's temporary directory;
-// - reading the CLIs' logins and other credentials in the agent user's home directory.
+// PreToolUse guardrail for Claude Code and Codex: it stops obvious mistakes early and is NOT the
+// security boundary (the OS user with rootless Docker, ADR 0002). It runs with a cleared
+// environment; exit code 2 blocks the call, exit code 0 leaves it to the permission rules.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { posix } from 'node:path';
 import { userInfo } from 'node:os';
@@ -164,10 +141,8 @@ function commandText(words) {
 }
 
 /**
- * Whether Studio's guardrails block a tool call: the reason, or `null` to leave it to the
- * permission rules. `context.projectDir` is the Working copy (Claude Code's project directory;
- * Codex: the input's `cwd`), `context.home` the agent user's home directory (from its passwd
- * entry). The step's temporary directory is the `tmp` folder beside the Working copy.
+ * The reason a tool call is blocked, or `null` to leave it to the permission rules. `projectDir` is
+ * the Working copy (Codex: `cwd`), `home` the passwd home; the step's `tmp` is beside the copy.
  */
 export function decide(input, context) {
   const tool = input?.tool_name;
@@ -208,7 +183,7 @@ function main() {
     process.stderr.write("Blocked by Studio's guardrails: the tool call could not be read.\n");
     process.exit(2);
   }
-  // Never HOME or TMPDIR from the environment (review H1 of #136).
+  // Never HOME or TMPDIR from the environment: the agent controls it.
   const reason = decide(input, {
     projectDir: process.env.CLAUDE_PROJECT_DIR,
     home: userInfo().homedir,

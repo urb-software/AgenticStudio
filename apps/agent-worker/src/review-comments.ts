@@ -14,10 +14,9 @@ import { tailBytes } from './check-logs.js';
 import type { ConversationCommentReport, InlineCommentReport, ReviewReport } from './github.js';
 
 /**
- * Review comments (Issue #146): the worker turns what the Git host lists into the worker
- * protocol's comments. Everything here is plain text handling: a comment is untrusted (anyone
- * can write one on a public pull request), so it is only cleaned of control characters and held
- * to its size limits; it is never interpreted, and Studio redacts it again before it is stored.
+ * Review comments: the worker turns what the Git host lists into the protocol's comments. A comment
+ * is untrusted (anyone can write one on a public pull request): only cleaned of control characters
+ * and held to its size limits, never interpreted; Studio redacts it again before it is stored.
  */
 
 /** What the Git host listed of the pull request, and what to leave out. */
@@ -92,13 +91,9 @@ function isoOf(value: string | undefined): string | undefined {
 }
 
 /**
- * The unresolved Review comments of a pull request (Issue #146), oldest first: review summaries
- * (with their verdict; the summary of a review that only wraps inline comments is left out),
- * inline comments (with file, line and the diff lines around them) and conversation comments.
- * Left out: the Agent account's own comments, inline comments of resolved threads, and, for
- * `since_last_result`, comments created before `since`. At most
- * {@link REVIEW_COMMENTS_MAX} are kept (the latest); `truncated` says that anything was left
- * out for the limits or that a text was cut.
+ * The unresolved Review comments of a pull request, oldest first: review summaries, inline comments
+ * (with the diff lines around them) and conversation comments, without the Agent account's own and
+ * resolved threads. At most {@link REVIEW_COMMENTS_MAX} (the latest); `truncated` says any was cut.
  */
 export function buildReviewComments(
   sources: ReviewCommentSources,

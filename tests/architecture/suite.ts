@@ -251,10 +251,7 @@ export interface FixtureCase {
   qualityRow?: (typeof QUALITY_TABLE)[number]['row'];
 }
 
-/**
- * The gate itself: the real tree must have no violations, and every fixture must give
- * exactly its expected result, so a config edit cannot silently disable a rule.
- */
+/** The real tree has no violations and each fixture gives exactly its expected result. */
 export function describeGate(
   name: string,
   gate: Gate,

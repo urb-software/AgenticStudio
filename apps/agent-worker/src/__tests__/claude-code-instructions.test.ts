@@ -7,8 +7,8 @@ import {
   type RepositoryFiles,
 } from '../claude-code/instructions.js';
 
-// Issue #105: the instructions file of a Claude Code Run step: the agent definition, then the
-// repository's CLAUDE.md and AGENTS.md at the start commit, delimited as untrusted conventions.
+// The instructions file of a Claude Code step: the agent definition, then the repository's
+// CLAUDE.md and AGENTS.md at the start commit, delimited as untrusted conventions.
 
 const MARKER = 'c0ffee12';
 const repository = (files: Record<string, string>): RepositoryFiles & { reads: string[] } => {

@@ -4,9 +4,7 @@ import { decide } from '../../guardrails/claude-guard.mjs';
 import { readGuardrailSettings } from '../claude-code/guardrails.js';
 import { readManagedFiles } from '../managed-guardrails.js';
 
-// Issues #105 and #134: Studio's guardrails for Claude Code, from Studio's own folder: the
-// managed settings (allowed tools, deny rules, managed-only hooks and rules, the hook) and the
-// PreToolUse hook, which Codex runs too. Guardrails, not the boundary.
+// Studio's guardrails for Claude Code: the managed settings and the PreToolUse hook Codex runs too.
 
 describe("Studio's managed Claude Code settings", () => {
   it('allows the working tools and common build tools, and never git push', async () => {
@@ -42,7 +40,7 @@ describe("Studio's managed Claude Code settings", () => {
     expect(settings.allowManagedPermissionRulesOnly).toBe(true);
     expect(settings.permissions.disableBypassPermissionsMode).toBe('disable');
     expect(settings.enableAllProjectMcpServers).toBe(false);
-    // Native lock on the file tools, whatever the hook's environment (review H1 of #136).
+    // Native lock on the file tools, whatever the hook's environment.
     expect(settings.permissions.blockWritesOutsideWorkingDirectories).toBe(true);
   });
 
@@ -59,7 +57,7 @@ describe("Studio's managed Claude Code settings", () => {
         hooks: [
           {
             type: 'command',
-            // Exec form, no shell; a cleared environment (review H1 of #136).
+            // Exec form, no shell; a cleared environment.
             command: '/usr/bin/env',
             args: [
               '-i',
@@ -188,7 +186,7 @@ describe("Studio's PreToolUse hook", () => {
   });
 });
 
-describe("Studio's PreToolUse hook run by Codex (Issue #134)", () => {
+describe("Studio's PreToolUse hook run by Codex", () => {
   // Codex gives no CLAUDE_PROJECT_DIR: the session's working directory (the Working copy) is
   // `cwd` in the hook input. File edits are `apply_patch` with the patch as `command`.
   const env = { home: '/home/agent' };

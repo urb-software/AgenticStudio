@@ -398,7 +398,7 @@ function featuresWithoutHandler(baseDir: string): Violation[] {
   });
 }
 
-/** Concrete repositories live in infrastructure/repositories/, adapters in infrastructure/adapters/. */
+/** Repositories live in infrastructure/repositories/, adapters in infrastructure/adapters/. */
 function misplacedInfrastructure(baseDir: string): Violation[] {
   return listDirectories(baseDir, 'src/modules').flatMap((module) => {
     const infrastructure = `src/modules/${module}/infrastructure/`;

@@ -61,9 +61,6 @@ import {
   workerStatusRequestSchema,
 } from '../index.js';
 
-// Issue #96: the worker protocol is defined once here and shared by the API and the agent
-// worker. These tests pin the shapes both sides rely on.
-
 const WORKER_ID = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const PROJECT_ID = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';
@@ -87,7 +84,7 @@ describe('run payload (claim response)', () => {
     expect(runPayloadSchema.parse(payload)).toEqual(payload);
   });
 
-  it('hands out a Run to start or, after a retry request, only to deliver (Issue #102)', () => {
+  it('hands out a Run to start or, after a retry request, only to deliver', () => {
     const withKind = (kind: unknown) => runPayloadSchema.safeParse({ ...payload, kind }).success;
 
     expect(withKind('start')).toBe(true);
@@ -104,7 +101,7 @@ describe('run payload (claim response)', () => {
     expect(withKind(undefined)).toBe(false);
   });
 
-  it('hands back the diff state with a resume or delivery claim, never with a start (Issue #144)', () => {
+  it('hands back the diff state with a resume or delivery claim, never with a start', () => {
     const diffState = {
       resultTree: 'b'.repeat(40),
       resultCommit: 'c'.repeat(40),
@@ -120,7 +117,7 @@ describe('run payload (claim response)', () => {
     ).toBe(false);
   });
 
-  describe('a resume claim (Issue #103)', () => {
+  describe('a resume claim', () => {
     const resume = {
       ...payload,
       kind: 'resume',
@@ -177,7 +174,7 @@ describe('run payload (claim response)', () => {
     });
   });
 
-  describe('a Follow-up claim (Issue #141)', () => {
+  describe('a Follow-up claim', () => {
     const followUp = {
       ...payload,
       kind: 'resume',
@@ -247,7 +244,7 @@ describe('run payload (claim response)', () => {
     });
   });
 
-  it("carries a delivery's recorded Run branch, and only with deliver (review R1 of #122)", () => {
+  it("carries a delivery's recorded Run branch, and only with deliver", () => {
     expect(runPayloadSchema.safeParse({ ...payload, runBranch: 'agent/x-r0b8e5c2d' }).success).toBe(
       false,
     );
@@ -256,7 +253,7 @@ describe('run payload (claim response)', () => {
     );
   });
 
-  it("carries Studio's list of the files it places in the Working copy (review R3 of #122)", () => {
+  it("carries Studio's list of the files it places in the Working copy", () => {
     const withPaths = (studioPaths: unknown) =>
       runPayloadSchema.safeParse({ ...payload, studioPaths }).success;
 
@@ -266,7 +263,7 @@ describe('run payload (claim response)', () => {
     expect(withPaths(undefined)).toBe(false);
   });
 
-  it('names the integration branch the pull request targets (Issue #102)', () => {
+  it('names the integration branch the pull request targets', () => {
     const withBranch = (integrationBranch: unknown) =>
       runPayloadSchema.safeParse({ ...payload, integrationBranch }).success;
 
@@ -276,7 +273,7 @@ describe('run payload (claim response)', () => {
     expect(withBranch(undefined)).toBe(false);
   });
 
-  it("carries the Repository's remote URL and nothing else about it (Issue #98)", () => {
+  it("carries the Repository's remote URL and nothing else about it", () => {
     const withRepository = (repository: object) =>
       runPayloadSchema.safeParse({ ...payload, repository }).success;
 
@@ -307,7 +304,7 @@ describe('run payload (claim response)', () => {
   });
 });
 
-describe('Environment file (Issue #104)', () => {
+describe('Environment file', () => {
   const payload = {
     runId: RUN_ID,
     projectId: PROJECT_ID,
@@ -321,7 +318,6 @@ describe('Environment file (Issue #104)', () => {
     limits: { stepMinutes: 60, maxSteps: 10 },
     completedSteps: 0,
   };
-  // A test value only.
   const environmentFile = { path: '.env', content: 'DB_PASSWORD=test-only-1234\n' };
 
   it('travels with the claim of a Run that has one, path and content only', () => {
@@ -421,7 +417,6 @@ describe('worker requests', () => {
 
     expect(report({ state: 'failed' })).toBe(false);
     expect(report({ state: 'succeeded', failure: { code: 'unknown', detail: '' } })).toBe(false);
-    // Issue #102 (review of #122): a succeeded Run always says how it was delivered.
     expect(report({ state: 'succeeded' })).toBe(false);
     expect(report({ state: 'queued' })).toBe(false);
     expect(report({ state: 'preparing' })).toBe(false);
@@ -429,7 +424,7 @@ describe('worker requests', () => {
     expect(report({ state: 'failed', failure: { code: 'oops', detail: '' } })).toBe(false);
   });
 
-  it("carries a failed Run's Working copy state, and only with the state failed (Issue #98)", () => {
+  it("carries a failed Run's Working copy state, and only with the state failed", () => {
     const workingCopy = {
       runBranch: 'agent/x-r0b8e5c2d',
       commits: [{ id: 'c'.repeat(40), subject: 'Half done' }],
@@ -442,10 +437,8 @@ describe('worker requests', () => {
     expect(report({ state: 'failed', failure, workingCopy })).toBe(true);
     expect(report({ state: 'failed', failure })).toBe(true);
     expect(report({ state: 'succeeded', workingCopy })).toBe(false);
-    // Issue #100: a cancelled or timed-out Run keeps its Working copy, and its state is recorded.
     expect(report({ state: 'cancelled', workingCopy })).toBe(true);
     expect(report({ state: 'timed_out', workingCopy })).toBe(true);
-    // A delivery retry reports the Working copy with its outcome (Issue #102).
     expect(report({ state: 'succeeded', delivery: { outcome: 'none' }, workingCopy })).toBe(true);
     expect(report({ state: 'running', workingCopy })).toBe(false);
     expect(
@@ -453,7 +446,7 @@ describe('worker requests', () => {
     ).toBe(false);
   });
 
-  it('reports a delivery outcome with succeeded only (Issue #102)', () => {
+  it('reports a delivery outcome with succeeded only', () => {
     const report = (body: object) =>
       reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
     const pullRequest = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
@@ -477,7 +470,6 @@ describe('worker requests', () => {
       report({ state: 'succeeded', delivery: { outcome: 'delivered', pullRequest: pr } });
     expect(delivered({ ...pullRequest, url: 'http://github.com/acme/shop/pull/7' })).toBe(false);
     expect(delivered({ ...pullRequest, url: 'javascript:alert(1)' })).toBe(false);
-    // Issue #115 (review Spec-1 of #123): a pull request on github.com, nowhere else.
     for (const url of [
       'https://github.example.com/acme/shop/pull/7',
       'https://github.com.evil.test/acme/shop/pull/7',
@@ -512,20 +504,19 @@ describe('worker requests', () => {
     const body = { workerId: WORKER_ID, index: 1, kind: 'start', result, workingCopy };
     expect(reportRunStepRequestSchema.parse(body)).toEqual(body);
     expect(reportRunStepRequestSchema.safeParse({ ...body, kind: 'retry' }).success).toBe(false);
-    // Review of #121: every step report carries its number, 1, 2, …
     expect(reportRunStepRequestSchema.safeParse({ ...body, index: undefined }).success).toBe(false);
     expect(reportRunStepRequestSchema.safeParse({ ...body, index: 0 }).success).toBe(false);
     expect(reportRunStepRequestSchema.safeParse({ ...body, index: 1.5 }).success).toBe(false);
   });
 
-  it("carries the Working copy's state with every Run step report (Issue #98)", () => {
+  it("carries the Working copy's state with every Run step report", () => {
     const result = { outcome: 'done', summary: 'Done.' };
     expect(
       reportRunStepRequestSchema.safeParse({ workerId: WORKER_ID, kind: 'start', result }).success,
     ).toBe(false);
   });
 
-  it('asks for the states of 1-500 Run ids (Issue #98)', () => {
+  it('asks for the states of 1-500 Run ids', () => {
     const ask = (runIds: unknown) =>
       runStatesRequestSchema.safeParse({ workerId: WORKER_ID, runIds }).success;
 
@@ -536,7 +527,7 @@ describe('worker requests', () => {
     expect(ask(['../../etc'])).toBe(false);
   });
 
-  it('may report the Runs whose Working copies retention removed (Issue #141)', () => {
+  it('may report the Runs whose Working copies retention removed', () => {
     const ask = (removedRunIds: unknown) =>
       runStatesRequestSchema.safeParse({ workerId: WORKER_ID, runIds: [RUN_ID], removedRunIds })
         .success;
@@ -560,7 +551,7 @@ describe('worker requests', () => {
     expect(RUN_STATES).toContain('waiting_for_operator');
   });
 
-  it('says how long a final Run is kept, or that it is removable (Issue #143)', () => {
+  it('says how long a final Run is kept, or that it is removable', () => {
     const finishedAt = '2026-11-15T10:00:00.000Z';
     const keep = {
       runId: RUN_ID,
@@ -584,7 +575,7 @@ describe('worker requests', () => {
   });
 });
 
-describe('cancellation and limits (Issue #100)', () => {
+describe('cancellation and limits', () => {
   const payload = {
     runId: RUN_ID,
     projectId: PROJECT_ID,
@@ -649,7 +640,7 @@ describe('cancellation and limits (Issue #100)', () => {
   });
 });
 
-describe('Working copy report (Issue #98)', () => {
+describe('Working copy report', () => {
   const commit = (n: number) => ({ id: n.toString(16).padStart(40, '0'), subject: `Commit ${n}` });
   const reportOf = (commits: unknown[]) => ({
     runBranch: 'agent/x-r0b8e5c2d',
@@ -709,7 +700,7 @@ describe('structured result of a Run step', () => {
     expect(runStepResultSchema.parse(result)).toEqual(result);
   });
 
-  it('needs a question and a session reference when the agent needs input (Issue #103)', () => {
+  it('needs a question and a session reference when the agent needs input', () => {
     const question = { text: 'Which database?' };
     const valid = (result: object) => runStepResultSchema.safeParse(result).success;
     expect(valid({ outcome: 'needs_input', summary: 'Stuck.', sessionRef: 's-1' })).toBe(false);
@@ -717,11 +708,10 @@ describe('structured result of a Run step', () => {
     expect(valid({ outcome: 'needs_input', summary: 'Stuck.', question, sessionRef: 's-1' })).toBe(
       true,
     );
-    // A done result may carry its session too (a later follow-up); it never needs one.
     expect(valid({ outcome: 'done', summary: 'Done.', sessionRef: 's-1' })).toBe(true);
   });
 
-  it('a question has its text, at most six options and a recommendation (Issue #103)', () => {
+  it('a question has its text, at most six options and a recommendation', () => {
     const valid = (question: unknown) =>
       runStepResultSchema.safeParse({
         outcome: 'needs_input',
@@ -749,7 +739,7 @@ describe('structured result of a Run step', () => {
     expect(valid({ ...full, extra: true })).toBe(false);
   });
 
-  it('bounds the session reference at 256 characters (Issue #103)', () => {
+  it('bounds the session reference at 256 characters', () => {
     const valid = (sessionRef: string) =>
       runStepResultSchema.safeParse({ outcome: 'done', summary: '', sessionRef }).success;
     expect(valid('s'.repeat(SESSION_REF_MAX_LENGTH))).toBe(true);
@@ -770,7 +760,7 @@ describe('structured result of a Run step', () => {
 });
 
 describe('runner event', () => {
-  it('is an agent message, a command, output or a notice (Issues #99, #105)', () => {
+  it('is an agent message, a command, output or a notice', () => {
     expect(runnerEventSchema.parse({ type: 'output', text: 'compiling' })).toEqual({
       type: 'output',
       text: 'compiling',
@@ -779,12 +769,11 @@ describe('runner event', () => {
       expect(runnerEventSchema.safeParse({ type, text: 'x' }).success).toBe(true);
     }
     expect(runnerEventSchema.safeParse({ type: 'status', text: '' }).success).toBe(false);
-    // The step markers are the worker's own, never a runner's.
     expect(runnerEventSchema.safeParse({ type: 'step_started', text: '' }).success).toBe(false);
   });
 });
 
-describe('appending Run events (Issue #99)', () => {
+describe('appending Run events', () => {
   const event = (seq: number, overrides: object = {}) => ({
     seq,
     at: '2026-11-15T12:00:00.000Z',
@@ -865,7 +854,7 @@ describe('cutting text to a number of UTF-8 bytes', () => {
   });
 });
 
-describe('size of a structured result (review finding 4 on #111)', () => {
+describe('size of a structured result', () => {
   /** A valid result of exactly `bytes` bytes of JSON, every field near its own limit. */
   function resultOf(bytes: number) {
     const result = {
@@ -900,8 +889,7 @@ describe('size of a structured result (review finding 4 on #111)', () => {
     expect(jsonByteLength(result)).toBeGreaterThan(40_000);
   });
 
-  it('leaves room for a maximal step report under the request body limit (Issue #98)', () => {
-    // Every field at its limit: 200 commits with SHA-256 ids and 200-character subjects.
+  it('leaves room for a maximal step report under the request body limit', () => {
     const workingCopy = {
       runBranch: `agent/${'b'.repeat(40)}-r0b8e5c2d`,
       commits: Array.from({ length: 200 }, () => ({
@@ -923,7 +911,7 @@ describe('size of a structured result (review finding 4 on #111)', () => {
   });
 });
 
-describe('worker status report (Issue #101)', () => {
+describe('worker status report', () => {
   const report = {
     workerId: WORKER_ID,
     runner: 'cli',
@@ -957,7 +945,7 @@ describe('worker status report (Issue #101)', () => {
     expect(workerStatusRequestSchema.safeParse(body).success).toBe(false);
   });
 
-  it('may carry the disk figures of the agent side (Issue #143)', () => {
+  it('may carry the disk figures of the agent side', () => {
     const disk = {
       workingCopiesBytes: 5_000_000,
       cachesBytes: 1_000_000,
@@ -978,7 +966,7 @@ describe('worker status report (Issue #101)', () => {
     }
   });
 
-  it('carries why a switched-on provider is unavailable on the worker (Issue #105)', () => {
+  it('carries why a switched-on provider is unavailable on the worker', () => {
     const withReason = {
       ...report,
       providerReasons: { claude_code: 'Claude Code 2.2.0 is not supported (>=2.1.325 <2.2.0).' },
@@ -990,7 +978,7 @@ describe('worker status report (Issue #101)', () => {
   });
 });
 
-describe('a Run that reached the usage limit (Issue #105)', () => {
+describe('a Run that reached the usage limit', () => {
   const report = (body: object) =>
     reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
   const usageLimit = { code: 'usage_limit', detail: 'The usage limit was reached.' };
@@ -1017,7 +1005,7 @@ describe('a Run that reached the usage limit (Issue #105)', () => {
   });
 });
 
-describe('a cancel during the delivery (review round 2 of #121)', () => {
+describe('a cancel during the delivery', () => {
   it('a cancelled report may carry what the delivery did; succeeded must, others must not', () => {
     const report = (body: object) =>
       reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
@@ -1031,7 +1019,7 @@ describe('a cancel during the delivery (review round 2 of #121)', () => {
   });
 });
 
-describe('a pushed branch without a pull request (review of #124)', () => {
+describe('a pushed branch without a pull request', () => {
   it('is reported only with cancelled', () => {
     const report = (state: string) =>
       reportRunStateRequestSchema.safeParse({
@@ -1045,7 +1033,7 @@ describe('a pushed branch without a pull request (review of #124)', () => {
   });
 });
 
-describe('the pushed commit of a delivery (Issue #141)', () => {
+describe('the pushed commit of a delivery', () => {
   const pullRequest = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
 
   it('comes with a delivered pull request or a pushed branch, as a commit id', () => {
@@ -1059,7 +1047,7 @@ describe('the pushed commit of a delivery (Issue #141)', () => {
   });
 });
 
-describe('a Follow-up with a new Environment file snapshot (Issue #141, review S3)', () => {
+describe('a Follow-up with a new Environment file snapshot', () => {
   const resume = {
     runId: RUN_ID,
     projectId: PROJECT_ID,
@@ -1103,7 +1091,7 @@ describe('a Follow-up with a new Environment file snapshot (Issue #141, review S
   });
 });
 
-describe('the pushed commit of a failed delivery (Issue #141, review S2)', () => {
+describe('the pushed commit of a failed delivery', () => {
   const report = (body: object) =>
     reportRunStateRequestSchema.safeParse({ workerId: WORKER_ID, ...body }).success;
   it('comes only with delivery_failed', () => {
@@ -1122,7 +1110,7 @@ describe('the pushed commit of a failed delivery (Issue #141, review S2)', () =>
   });
 });
 
-describe('a Run diff report (Issue #144)', () => {
+describe('a Run diff report', () => {
   const file = {
     path: 'src/app.ts',
     status: 'modified',
@@ -1155,7 +1143,7 @@ describe('a Run diff report (Issue #144)', () => {
     expect(parse({ last: diff })).toBe(false);
   });
 
-  it('carries where the diffs stand: full object ids only (review S-1 of #149)', () => {
+  it('carries where the diffs stand: full object ids only', () => {
     expect(
       parse({ run: diff, last: diff, state: { ...state, pushedCommit: 'e'.repeat(64) } }),
     ).toBe(true);
@@ -1222,7 +1210,6 @@ describe('a Run diff report (Issue #144)', () => {
   });
 });
 
-// Issue #142: lookups, the questions for the Git host an agent worker answers.
 describe('lookups', () => {
   const LOOKUP_ID = 'c4d5e6f7-a8b9-4c0d-8e1f-2a3b4c5d6e7f';
   const lookup = {
@@ -1316,7 +1303,6 @@ describe('lookups', () => {
         retryAfterSeconds: 60,
       }).success,
     ).toBe(true);
-    // No result without a kind, no failure without a code or message, no extra field.
     expect(
       lookupResultRequestSchema.safeParse({
         workerId: WORKER_ID,
@@ -1345,7 +1331,6 @@ describe('lookups', () => {
       }).success,
     ).toBe(false);
   });
-  // Issue #145: Pull request checks with the state, and the logs of the failed ones.
   describe('Pull request checks', () => {
     const COMMIT = 'c'.repeat(40);
     const check = { name: 'build', state: 'failed', durationSeconds: 61, url: 'https://ci.test/1' };
@@ -1446,7 +1431,6 @@ describe('lookups', () => {
       });
 
       it('counts the caps in UTF-8 bytes, not characters', () => {
-        // 9 000 two-byte characters are 18 000 bytes: over the 16 KiB cap.
         expect(parse([{ ...entry, excerpt: 'é'.repeat(9_000) }])).toBe(false);
         expect(parse([{ ...entry, excerpt: 'é'.repeat(8_192) }])).toBe(true);
       });
@@ -1483,7 +1467,7 @@ describe('lookups', () => {
       });
     });
   });
-  describe('Review comments (Issue #146)', () => {
+  describe('Review comments', () => {
     const comment = {
       id: 'inline-12',
       author: 'octocat',
@@ -1587,7 +1571,7 @@ describe('lookups', () => {
   });
 });
 
-describe('bringing a Run branch up to date (Issue #147)', () => {
+describe('bringing a Run branch up to date', () => {
   const claim = {
     runId: '0b8e5c2d-3f4a-4b6c-8d9e-1a2b3c4d5e6f',
     projectId: '7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f',
@@ -1617,13 +1601,12 @@ describe('bringing a Run branch up to date (Issue #147)', () => {
     const { followUpNumber: _number, ...withoutNumber } = claim;
     void _number;
     expect(runPayloadSchema.safeParse(withoutNumber).success).toBe(false);
-    // The flag also marks a later resume inside the part (an answer to a question).
     expect(runPayloadSchema.safeParse({ ...claim, resumeReason: 'answer' }).success).toBe(true);
     expect(runPayloadSchema.safeParse({ ...claim, bringUpToDate: false }).success).toBe(false);
     expect(runPayloadSchema.safeParse({ ...claim, kind: 'start' }).success).toBe(false);
   });
 
-  it('carries a pending update only with a resume claim (review R2-1 of #154)', () => {
+  it('carries a pending update only with a resume claim', () => {
     const pending = { baseCommit: 'a'.repeat(40), pushedCommit: 'b'.repeat(40) };
     expect(runPayloadSchema.safeParse({ ...claim, pendingUpdate: pending }).success).toBe(true);
     expect(
@@ -1656,7 +1639,6 @@ describe('bringing a Run branch up to date (Issue #147)', () => {
     const followUp = { ...plain, resumeReason: 'follow_up' };
     expect(runPayloadSchema.safeParse({ ...followUp, ...start }).success).toBe(false);
     expect(runPayloadSchema.safeParse({ ...claim, updateTip: 'abc' }).success).toBe(false);
-    // Review S1 of #154: resume and delivery claims name the commit the Run branch last merged.
     const merged = { mergedIntegrationCommit: 'c'.repeat(40) };
     expect(runPayloadSchema.safeParse({ ...followUp, ...merged }).success).toBe(true);
     expect(
@@ -1715,7 +1697,6 @@ describe('bringing a Run branch up to date (Issue #147)', () => {
       expect(valid({ state: 'succeeded', unchanged: false })).toBe(false);
       expect(valid({ state: 'succeeded', delivery, unchangedDetail: 'x' })).toBe(false);
       expect(valid({ state: 'succeeded', unchanged: true, unchangedDetail: '' })).toBe(false);
-      // Without the flag a succeeded report still needs its delivery.
       expect(valid({ state: 'succeeded' })).toBe(false);
     });
   });
