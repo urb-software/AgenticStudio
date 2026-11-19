@@ -32,6 +32,11 @@ function createDataDir(): string {
   return dir;
 }
 
+/** The data directories this module instance has created and not yet removed. */
+export function createdTestDataDirs(): readonly string[] {
+  return [...createdDataDirs];
+}
+
 /** Removes the data directories this module instance created; a failure is logged and ignored. */
 export async function removeCreatedDataDirs(): Promise<void> {
   const dirs = createdDataDirs.splice(0);
@@ -59,8 +64,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     studioOrigin: 'http://localhost:3000',
     operatorPasswordHash: PLACEHOLDER_PASSWORD_HASH,
     secretsKey: TEST_SECRETS_KEY,
-    // Private per call, so concurrent test files never sweep each other's clones. Suites that
-    // need a known directory pass their own `dataDir`, and none is created then.
+    // A private directory per call unless the suite passes its own.
     dataDir: overrides.dataDir ?? createDataDir(),
     gitAllowFileRemotes: false,
     // The production default: loopback and private remotes are refused. Suites whose fixtures
