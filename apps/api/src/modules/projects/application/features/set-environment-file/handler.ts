@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { environmentFileView, type EnvironmentFileView } from '../../environment-file-view.js';
 import { EnvironmentFilePathTrackedError } from '../../../domain/errors/environment-file-errors.js';
+import { EnvironmentFile } from '../../../domain/entities/environment-file.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
 import { EnvironmentFileContent } from '../../../domain/value-objects/environment-file-content.js';
 import { EnvironmentFilePath } from '../../../domain/value-objects/environment-file-path.js';
@@ -56,14 +57,21 @@ export class SetEnvironmentFileHandler {
     if (!isProjectId(input.projectId) || !(await this.projects.findById(input.projectId))) {
       throw new ProjectNotFoundError();
     }
-    const { value: path } = EnvironmentFilePath.of(input.path);
-    const { sizeBytes } = EnvironmentFileContent.of(input.content);
-    await this.refuseTrackedPath(input.projectId, path);
+    const path = EnvironmentFilePath.of(input.path);
+    const content = EnvironmentFileContent.of(input.content);
+    await this.refuseTrackedPath(input.projectId, path.value);
 
-    const secretRef = await this.contents.store(input.content);
+    const secretRef = await this.contents.store(content.value);
     let result: Awaited<ReturnType<EnvironmentFileRepository['save']>>;
     try {
-      result = await this.files.save(input.projectId, { path, sizeBytes, secretRef });
+      const file = EnvironmentFile.create({
+        projectId: input.projectId,
+        path,
+        content,
+        secretRef,
+        now: new Date(),
+      });
+      result = await this.files.save(file);
     } catch (error) {
       await this.contents.discard(secretRef);
       throw error;
