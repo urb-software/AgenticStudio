@@ -30,17 +30,18 @@ const CASES: [string, boolean][] = [
   ['a?b', false],
   ['a*b', false],
   ['a[b', false],
-  ['a\b', false],
+  ['a\\b', false],
+  ['a\bb', false],
   ['a\u007fb', false],
   ['a\u0001b', false],
   ['.hidden', false],
   ['a/.hidden', false],
   ['x.lock', false],
   ['x.lock/y', false],
-  ['a ..b', false],
-  ['a //b', false],
-  ['a @{u}', false],
-  ['a x.lock', false],
+  ['a\u2028..b', false],
+  ['a\u2029//b', false],
+  ['a\u2028@{u}', false],
+  ['a\u2028x.lock', false],
   ['a'.repeat(256), false],
 ];
 
