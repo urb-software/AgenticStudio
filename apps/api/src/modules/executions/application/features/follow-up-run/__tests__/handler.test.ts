@@ -50,16 +50,14 @@ const runView = (
       run.claim.lastClaimedBy === null ? undefined : workers.lastSeen(run.claim.lastClaimedBy),
     latest: workers.latest(),
   };
-  return {
-    ...retention.runView(
-      run.followUpAvailability(facts, now, leaseSeconds),
-      run.retentionFacts(),
-      facts.latest,
-      now,
-      leaseSeconds,
-      overLimit,
-    ),
-  };
+  return retention.runView(
+    run.followUpAvailability(facts, now, leaseSeconds),
+    run.retentionFacts(),
+    facts.latest,
+    now,
+    leaseSeconds,
+    overLimit,
+  );
 };
 const RETENTION = RetentionPolicy.of({
   days: 7,

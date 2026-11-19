@@ -163,6 +163,25 @@ describe('restoring a Run from its flat record and giving it back', () => {
   it('gives back every field, as it was stored', () => {
     const run = Run.restore(full);
 
+    expect(Object.keys(run).sort()).toEqual(
+      [
+        'claim',
+        'conversation',
+        'createdAt',
+        'delivery',
+        'failingChecks',
+        'id',
+        'lifecycle',
+        'progress',
+        'projectId',
+        'provider',
+        'pullRequestStatus',
+        'remoteUrl',
+        'startCommit',
+        'task',
+        'workingCopy',
+      ].sort(),
+    );
     expect(run).toMatchObject({
       id: full.id,
       projectId: full.projectId,
