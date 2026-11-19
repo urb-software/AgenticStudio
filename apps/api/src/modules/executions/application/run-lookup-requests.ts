@@ -32,9 +32,7 @@ export class RunLookupRequests {
             ...(review === undefined ? {} : { review }),
           }),
         );
-        // Failing-check logs and Review comments do not mark the Run as refreshing.
-        if (kind === 'pull_request_state') run.recordRefreshRequested(now);
-        else if (kind === 'failing_check_logs') run.recordPreparationRequested(now);
+        run.recordLookupRequested(kind, now);
         await runs.save(run);
         return 'requested';
       });

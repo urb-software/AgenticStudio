@@ -336,7 +336,7 @@ describe('the Run step', () => {
 describe('what the lookups change of the pull request status', () => {
   it('marks a state refresh and a preparation as asked for, the preparation not as an attempt', () => {
     const refreshing = delivered();
-    refreshing.recordRefreshRequested(T1);
+    refreshing.recordLookupRequested('pull_request_state', T1);
     expect(refreshing.pullRequestStatus).toMatchObject({
       refreshRequestedAt: T1,
       lastAttemptAt: T1,
@@ -346,7 +346,7 @@ describe('what the lookups change of the pull request status', () => {
     const preparing = delivered({
       pullRequestStatus: { ...started.pullRequestStatus, prepareError: 'Earlier failure.' },
     });
-    preparing.recordPreparationRequested(T1);
+    preparing.recordLookupRequested('failing_check_logs', T1);
     expect(preparing.pullRequestStatus).toMatchObject({
       prepareRequestedAt: T1,
       prepareError: null,
@@ -394,15 +394,15 @@ describe('what the lookups change of the pull request status', () => {
   it('records a failure, staying refreshing or preparing only while a retry is waiting', () => {
     const run = delivered();
 
-    run.recordRefreshFailed('Rate limited.', T2, T0);
+    run.recordLookupFailed('pull_request_state', 'Rate limited.', T2, T0);
     expect(run.pullRequestStatus).toMatchObject({
       refreshError: 'Rate limited.',
       retryAt: T2,
       refreshRequestedAt: T0,
     });
-    run.recordRefreshFailed('Gave up.', null, T0);
+    run.recordLookupFailed('pull_request_state', 'Gave up.', null, T0);
     expect(run.pullRequestStatus).toMatchObject({ retryAt: null, refreshRequestedAt: null });
-    run.recordPreparationFailed('No logs.', null, T0);
+    run.recordLookupFailed('failing_check_logs', 'No logs.', null, T0);
     expect(run.pullRequestStatus).toMatchObject({
       prepareError: 'No logs.',
       prepareRequestedAt: null,

@@ -13,6 +13,7 @@ import {
   NoFailingChecksError,
   PrepareFailingChecksHandler,
 } from '../../../../application/features/prepare-failing-checks/handler.js';
+import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
 import {
   RunNotFoundError,
   PullRequestNotRefreshableError,
@@ -21,7 +22,10 @@ import {
 @ApiTags('runs')
 @Controller('runs')
 export class PrepareFailingChecksEndpoint {
-  constructor(private readonly handler: PrepareFailingChecksHandler) {}
+  constructor(
+    private readonly handler: PrepareFailingChecksHandler,
+    private readonly getRun: GetRunHandler,
+  ) {}
 
   @Post(':runId/pull-request/failing-checks/prepare')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -33,7 +37,10 @@ export class PrepareFailingChecksEndpoint {
   })
   async prepare(@Param('runId') runId: string) {
     try {
-      const { run, followUp, workerConnected, preparedFollowUp } = await this.handler.execute({
+      await this.handler.execute({
+        runId,
+      });
+      const { run, followUp, workerConnected, preparedFollowUp } = await this.getRun.execute({
         runId,
       });
       return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);

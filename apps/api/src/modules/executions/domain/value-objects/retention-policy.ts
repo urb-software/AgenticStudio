@@ -1,9 +1,6 @@
 import type { FollowUpEligibility } from './follow-up-eligibility.js';
 import { isEndedPullRequestState } from './pull-request-state.js';
 import { isFinalRunState } from './run-state.js';
-import { Lease } from './lease.js';
-import { WorkerPresence } from './worker-presence.js';
-import { type WorkerStatusData } from './worker-status-data.js';
 import type { RetentionFacts } from './retention-facts.js';
 import type { RetentionSettings } from './retention-settings.js';
 import type { LimitedRunFacts } from './limited-run-facts.js';
@@ -80,23 +77,6 @@ export class RetentionPolicy {
       for (const run of projectRuns.slice(this.maxPerProject)) over.add(run.runId);
     }
     return over;
-  }
-
-  runView(
-    eligibility: FollowUpEligibility,
-    facts: RetentionFacts,
-    latestWorker: WorkerStatusData | undefined,
-    now: Date,
-    leaseSeconds: number,
-    overLimit: boolean,
-  ): { followUp: FollowUpView; workerConnected: boolean } {
-    return {
-      followUp: this.followUpView(eligibility, facts, overLimit, now),
-      workerConnected: WorkerPresence.of(
-        latestWorker,
-        Lease.ofSeconds(leaseSeconds),
-      ).isAnyConnected(now),
-    };
   }
 
   followUpView(
