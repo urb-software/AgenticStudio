@@ -239,6 +239,7 @@ function withSafeFlags(args: readonly string[], scope: GitScope): readonly strin
  * it to see whether it is dirty, under that repository's own configuration, which nothing lists.
  */
 function withoutGitlinks(args: readonly string[], gitlinks: readonly string[]): readonly string[] {
+  if (args[0] !== 'add') return args;
   if (!args.includes('--') && args.slice(1).some((arg) => !arg.startsWith('-'))) {
     throw new TypeError('A Git add names its paths after `--`.');
   }
