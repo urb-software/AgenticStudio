@@ -2,8 +2,8 @@ import { runProcess } from './process-runner.js';
 
 /**
  * Git for the agent worker: the system `git` from an argument array (no shell, own process group,
- * time limit). Repository content is untrusted: hooks never run, no submodules, no LFS smudge,
- * only `file`/`https`/`ssh` transports. It keeps the agent user's own Git config (its credentials).
+ * time limit). Repository content is untrusted: no hooks, no submodules, no driver it names runs.
+ * Git gets an allowlisted environment, and a Working copy command no global configuration.
  */
 
 /** Transports a worker's Git command may use (`protocol.allow`, `GIT_ALLOW_PROTOCOL`). */
@@ -42,6 +42,118 @@ export const GIT_HARDENING: readonly string[] = [
   'fetch.uriProtocols=',
 ].flatMap((setting) => ['-c', setting]);
 
+/**
+ * Further settings for a command in the Working copy (its own `.git/config`, an included file or
+ * an attributes file may name programs). Given on the command line, which beats every
+ * configuration file.
+ */
+export const WORKING_COPY_HARDENING: readonly (readonly [key: string, value: string])[] = [
+  ['diff.external', ''],
+  ['core.pager', 'cat'],
+  ['core.editor', 'true'],
+  ['sequence.editor', 'true'],
+  ['gpg.program', 'false'],
+  ['gpg.openpgp.program', 'false'],
+  ['gpg.x509.program', 'false'],
+  ['gpg.ssh.program', 'false'],
+  ['core.sshCommand', 'false'],
+  ['credential.helper', ''],
+  ['core.askPass', ''],
+  ['core.attributesFile', '/dev/null'],
+  ['uploadpack.packObjectsHook', ''],
+  ['core.alternateRefsCommand', ''],
+  // A nested repository has its own configuration, which no listing covers: it is never looked at.
+  ['diff.ignoreSubmodules', 'all'],
+  ['status.submoduleSummary', 'false'],
+];
+
+/** Flags of every `git diff` the worker runs: no external diff program, no textconv filter. */
+export const SAFE_DIFF_FLAGS: readonly string[] = ['--no-ext-diff', '--no-textconv'];
+
+/** Flags the runner adds to a Working copy command, by subcommand (see {@link withSafeFlags}). */
+const SUBCOMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  diff: [...SAFE_DIFF_FLAGS, '--ignore-submodules=all'],
+  log: SAFE_DIFF_FLAGS,
+  show: SAFE_DIFF_FLAGS,
+  status: ['--ignore-submodules=all'],
+  // The upload-pack program is the plain one, never `remote.<path>.uploadpack` from the config.
+  fetch: ['--upload-pack=git-upload-pack'],
+};
+
+/** The variables of the worker's own environment that every Git command keeps. */
+const BASE_ENVIRONMENT = ['PATH', 'HOME', 'TMPDIR'] as const;
+
+/** What a command that reaches a remote also keeps: the agent user's SSH agent and proxies. */
+const REMOTE_ENVIRONMENT = [
+  'SSH_AUTH_SOCK',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+] as const;
+
+/**
+ * The environment a Git command starts from: the allowlisted names of `source`, plus the network
+ * profile for a remote command. Git needs none of Studio's tokens (the push gets its header
+ * through `GIT_CONFIG_*`).
+ */
+export function gitBaseEnvironment(
+  source: Readonly<Record<string, string | undefined>>,
+  scope: GitScope,
+): Record<string, string> {
+  const names: readonly string[] =
+    scope === 'remote' ? [...BASE_ENVIRONMENT, ...REMOTE_ENVIRONMENT] : BASE_ENVIRONMENT;
+  const environment: Record<string, string> = {};
+  for (const name of names) {
+    const value = source[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  return environment;
+}
+
+/**
+ * Overrides for the drivers the effective configuration names (`keys`: its key names, from
+ * `git config --list --name-only`): no clean, smudge or process filter, no external diff or
+ * textconv program, and `mergeDriver` in place of every merge driver's command.
+ */
+export function driverOverrides(
+  keys: readonly string[],
+  mergeDriver: string,
+): [key: string, value: string][] {
+  const overrides = new Map<string, string>();
+  for (const key of keys) {
+    const first = key.indexOf('.');
+    const last = key.lastIndexOf('.');
+    if (first < 0 || last <= first) continue;
+    const section = key.slice(0, first).toLowerCase();
+    const name = key.slice(first + 1, last);
+    const variable = key.slice(last + 1).toLowerCase();
+    if (section === 'filter') {
+      for (const setting of ['clean', 'smudge', 'process']) {
+        overrides.set(`filter.${name}.${setting}`, '');
+      }
+      overrides.set(`filter.${name}.required`, 'false');
+    } else if (section === 'diff' && (variable === 'command' || variable === 'textconv')) {
+      overrides.set(`diff.${name}.command`, '');
+      overrides.set(`diff.${name}.textconv`, '');
+    } else if (section === 'merge' && variable === 'driver') {
+      overrides.set(`merge.${name}.driver`, mergeDriver);
+    }
+  }
+  return [...overrides];
+}
+
+/**
+ * The command that stands in for a repository-named merge driver: Git's own text merge
+ * (`git merge-file`), so the merge goes on without the program the repository named.
+ */
+export function builtInMergeDriver(binary: string): string {
+  const quoted = `'${binary.replaceAll("'", `'\\''`)}'`;
+  return `${quoted} merge-file --marker-size=%L -L %X -L %S -L %Y %A %O %B`;
+}
+
 /** A Git command failed: it exited non-zero, timed out, was aborted, or could not start. */
 export class GitCommandError extends Error {
   constructor(
@@ -61,8 +173,17 @@ export class GitCommandError extends Error {
   }
 }
 
+/**
+ * What a command works on. `working-copy` (default): untrusted content, no global configuration,
+ * no driver runs. `cache`: a local command in the bare cache. `remote`: reaches a remote (cache
+ * `clone`/`fetch`, the push); also keeps `SSH_AUTH_SOCK` and the proxy variables.
+ */
+export type GitScope = 'working-copy' | 'cache' | 'remote';
+
 export interface GitOptions {
   cwd: string;
+  /** See {@link GitScope}. */
+  scope?: GitScope;
   timeoutMs: number;
   signal?: AbortSignal;
   /** `GIT_CEILING_DIRECTORIES`: Git never looks for a repository above these. */
@@ -71,14 +192,18 @@ export interface GitOptions {
   transports?: readonly GitTransport[];
   /**
    * Settings for this one command, through the environment (`GIT_CONFIG_COUNT`, ...): never on the
-   * command line, where other users of the host could read them, nor in a config file.
+   * command line, where other users of the host could read them, nor in a config file. They come
+   * from the caller, so no driver override applies to them.
    */
   config?: readonly (readonly [key: string, value: string])[];
   /**
    * `false`: the agent user's global Git configuration is not read either (`GIT_CONFIG_GLOBAL`), so
    * nothing the agent wrote there (URL rewrite, proxy, credential helper) applies to the push.
+   * Always the case for a `working-copy` command.
    */
   userConfig?: false;
+  /** `GIT_OPTIONAL_LOCKS=0`: a read-only command (`status`) takes no optional lock. */
+  noOptionalLocks?: true;
   /** `GIT_INDEX_FILE`: a temporary index for this one command, never the real one. */
   indexFile?: string;
   /** Most standard output kept (default: the process runner's 4 MiB); the rest is dropped. */
@@ -86,9 +211,48 @@ export interface GitOptions {
 }
 
 export interface GitRunnerOptions {
-  /** The environment Git starts from (default: the worker's). `GIT_*` variables are dropped. */
+  /** The environment Git starts from (default: the worker's); only allowlisted names are kept. */
   env?: Record<string, string | undefined>;
   binary?: string;
+}
+
+/** The Git subcommand: the first argument. An option before it would hide it, so it is refused. */
+function subcommandOf(args: readonly string[]): string {
+  const first = args[0] ?? '';
+  if (first === '' || first.startsWith('-')) {
+    throw new TypeError('A Git command starts with its subcommand, never an option.');
+  }
+  return first;
+}
+
+/**
+ * A Working copy command gets the flags of its subcommand whatever its caller passed: no external
+ * diff program, no textconv, no submodule inspection, the plain upload-pack.
+ */
+function withSafeFlags(args: readonly string[], scope: GitScope): readonly string[] {
+  const flags = scope === 'working-copy' ? SUBCOMMAND_FLAGS[subcommandOf(args)] : undefined;
+  return flags ? [args[0]!, ...flags, ...args.slice(1)] : args;
+}
+
+/**
+ * `add` leaves out every gitlink of the index (an embedded repository). Git would run a `status` in
+ * it to see whether it is dirty, under that repository's own configuration, which nothing lists.
+ */
+function withoutGitlinks(args: readonly string[], gitlinks: readonly string[]): readonly string[] {
+  if (args[0] !== 'add') return args;
+  if (!args.includes('--') && args.slice(1).some((arg) => !arg.startsWith('-'))) {
+    throw new TypeError('A Git add names its paths after `--`.');
+  }
+  if (gitlinks.length === 0) return args;
+  const dashes = args.indexOf('--');
+  const head = dashes < 0 ? args : args.slice(0, dashes);
+  const paths = dashes < 0 ? [] : args.slice(dashes + 1);
+  return [
+    ...head,
+    '--',
+    ...(paths.length === 0 ? ['.'] : paths),
+    ...gitlinks.map((path) => `:(exclude,literal)${path}`),
+  ];
 }
 
 /** One command's settings as `GIT_CONFIG_*` environment variables (none: no variable at all). */
@@ -114,47 +278,108 @@ export function maskCredentials(text: string): string {
  * environment (e.g. a `HOME` with a hostile Git configuration).
  */
 export class GitRunner {
-  private readonly baseEnv: Record<string, string>;
+  private readonly source: Record<string, string | undefined>;
   private readonly binary: string;
 
   constructor(options: GitRunnerOptions = {}) {
-    const source = options.env ?? process.env;
-    // Inherited GIT_* variables (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_PARAMETERS, ...) could point
-    // a command at another repository or change its configuration: none is passed on.
-    this.baseEnv = Object.fromEntries(
-      Object.entries(source).filter(
-        (entry): entry is [string, string] =>
-          entry[1] !== undefined && !entry[0].toUpperCase().startsWith('GIT_'),
-      ),
-    );
+    // Cut down per command ({@link gitBaseEnvironment}): neither the worker's tokens nor an
+    // inherited GIT_DIR, GIT_WORK_TREE or GIT_CONFIG_PARAMETERS reaches Git.
+    this.source = options.env ?? process.env;
     this.binary = options.binary ?? 'git';
   }
 
   /** Runs `git <hardening> <args>`: standard output, or rejects with {@link GitCommandError}. */
   async run(args: readonly string[], options: GitOptions): Promise<string> {
+    const scope = options.scope ?? 'working-copy';
+    subcommandOf(args);
+    // The Working copy's configuration is read once per command, and the drivers it names are
+    // neutralised for that command. A failure to list stops the command.
+    const drivers = scope === 'working-copy' ? await this.driverSettings(options) : [];
+    const adding = scope === 'working-copy' && args[0] === 'add';
+    // Refused before any process starts.
+    if (adding) withoutGitlinks(args, []);
+    const gitlinks = adding ? await this.gitlinks(options) : [];
+    return this.execute(withoutGitlinks(withSafeFlags(args, scope), gitlinks), options, scope, [
+      ...drivers,
+      ...(options.config ?? []),
+    ]);
+  }
+
+  /** The paths of the index's gitlinks (the index of `options.indexFile`, if it names one). */
+  private async gitlinks(options: GitOptions): Promise<string[]> {
+    const listing = await this.execute(
+      ['ls-files', '--stage', '-z'],
+      { ...options, config: undefined, maxStdout: undefined },
+      'working-copy',
+      [],
+    );
+    const paths = new Set<string>();
+    for (const entry of listing.split('\0')) {
+      const tab = entry.indexOf('\t');
+      if (tab > 0 && entry.startsWith('160000 ')) paths.add(entry.slice(tab + 1));
+    }
+    return [...paths];
+  }
+
+  /** Overrides for the drivers the Working copy's effective configuration names (runs none). */
+  private async driverSettings(options: GitOptions) {
+    const listing = await this.execute(
+      ['config', '--list', '--name-only', '-z'],
+      {
+        cwd: options.cwd,
+        timeoutMs: options.timeoutMs,
+        signal: options.signal,
+        ceiling: options.ceiling,
+      },
+      'working-copy',
+      [],
+    );
+    return driverOverrides(
+      listing.split('\0').filter((key) => key !== ''),
+      builtInMergeDriver(this.binary),
+    );
+  }
+
+  private async execute(
+    args: readonly string[],
+    options: GitOptions,
+    scope: GitScope,
+    config: readonly (readonly [string, string])[],
+  ): Promise<string> {
     const command = args[0] ?? '';
     const transports = options.transports ?? WORKER_GIT_TRANSPORTS;
     const protocols = [
       'protocol.allow=never',
       ...transports.map((transport) => `protocol.${transport}.allow=always`),
     ].flatMap((setting) => ['-c', setting]);
+    const workingCopy =
+      scope === 'working-copy'
+        ? WORKING_COPY_HARDENING.flatMap(([key, value]) => ['-c', `${key}=${value}`])
+        : [];
     const result = await runProcess({
       binary: this.binary,
-      args: [...GIT_HARDENING, ...protocols, ...args],
+      args: [...GIT_HARDENING, ...workingCopy, ...protocols, ...args],
       cwd: options.cwd,
       env: {
-        ...this.baseEnv,
+        ...gitBaseEnvironment(this.source, scope),
         LC_ALL: 'C.UTF-8',
         GIT_TERMINAL_PROMPT: '0',
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_ALLOW_PROTOCOL: transports.join(':'),
         GIT_LFS_SKIP_SMUDGE: '1',
         GIT_NO_REPLACE_OBJECTS: '1',
+        GIT_PAGER: 'cat',
+        GIT_EDITOR: 'true',
+        GIT_SEQUENCE_EDITOR: 'true',
+        GIT_ASKPASS: '',
+        ...(options.noOptionalLocks ? { GIT_OPTIONAL_LOCKS: '0' } : {}),
         SSH_ASKPASS_REQUIRE: 'never',
         ...(options.ceiling ? { GIT_CEILING_DIRECTORIES: options.ceiling } : {}),
-        ...(options.userConfig === false ? { GIT_CONFIG_GLOBAL: '/dev/null' } : {}),
+        ...(options.userConfig === false || scope === 'working-copy'
+          ? { GIT_CONFIG_GLOBAL: '/dev/null' }
+          : {}),
         ...(options.indexFile ? { GIT_INDEX_FILE: options.indexFile } : {}),
-        ...configEnvironment(options.config ?? []),
+        ...configEnvironment(config),
       },
       timeoutMs: options.timeoutMs,
       signal: options.signal,

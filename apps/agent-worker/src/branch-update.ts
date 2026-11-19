@@ -2,7 +2,13 @@ import type { RunPayload } from '@agentic-studio/contracts';
 import { lstat, readFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { printable } from './agent-definition/bring-up-to-date.js';
-import { GIT_TIMEOUTS, GitCommandError, type GitOptions, type GitRunner } from './git.js';
+import {
+  GIT_TIMEOUTS,
+  GitCommandError,
+  type GitOptions,
+  type GitRunner,
+  SAFE_DIFF_FLAGS,
+} from './git.js';
 import { studioPathspecs } from './studio-paths.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopies } from './working-copy.js';
 
@@ -268,15 +274,15 @@ export class BranchUpdates implements BranchUpdatePort {
   ): Promise<void> {
     const { git } = this.options;
     const local = this.local(prepared, signal);
-    const status = await git.run(
-      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      local,
-    );
+    const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      ...local,
+      noOptionalLocks: true,
+    });
     if (status.length === 0) return;
     await git.run(['add', '--all'], local);
     await this.unstageStudioPaths(prepared, run, local);
     const staged = await git
-      .run(['diff', '--cached', '--quiet'], local)
+      .run(['diff', ...SAFE_DIFF_FLAGS, '--cached', '--quiet'], local)
       .then(() => false)
       .catch((error: unknown) => {
         if (error instanceof GitCommandError && error.exitCode === 1) return true;
@@ -388,7 +394,7 @@ export class BranchUpdates implements BranchUpdatePort {
   /** The paths the index still lists as unmerged. */
   private async unmerged(prepared: PreparedRun, signal: AbortSignal): Promise<string[]> {
     const output = await this.options.git.run(
-      ['diff', '--name-only', '--diff-filter=U', '-z'],
+      ['diff', ...SAFE_DIFF_FLAGS, '--name-only', '--diff-filter=U', '-z'],
       this.local(prepared, signal),
     );
     return output.split('\0').filter((path) => path !== '');

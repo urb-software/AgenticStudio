@@ -14,6 +14,7 @@ import {
   type GitOptions,
   type GitRunner,
   REMOTE_GIT_TRANSPORTS,
+  SAFE_DIFF_FLAGS,
   WORKER_GIT_TRANSPORTS,
 } from './git.js';
 import {
@@ -143,17 +144,20 @@ export class Deliveries implements DeliveryPort {
       );
     }
     // Any unmerged path (cherry-pick, revert or stash that conflicted) is refused likewise.
-    const unmerged = await git.run(['diff', '--name-only', '--diff-filter=U', '-z'], local);
+    const unmerged = await git.run(
+      ['diff', ...SAFE_DIFF_FLAGS, '--name-only', '--diff-filter=U', '-z'],
+      local,
+    );
     if (unmerged.length > 0) {
       throw new DeliveryFailedError(
         'The Working copy has files with unresolved conflicts, so nothing was committed or pushed. ' +
           'Look at the Working copy on the agent side.',
       );
     }
-    const status = await git.run(
-      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      local,
-    );
+    const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      ...local,
+      noOptionalLocks: true,
+    });
     if (status.length === 0) return;
     const head = await git
       .run(['symbolic-ref', '--quiet', 'HEAD'], local)
@@ -173,7 +177,7 @@ export class Deliveries implements DeliveryPort {
         await git.run(['reset', '--quiet', 'HEAD', '--', ...studioPaths], local);
       }
       const staged = await git
-        .run(['diff', '--cached', '--quiet'], local)
+        .run(['diff', ...SAFE_DIFF_FLAGS, '--cached', '--quiet'], local)
         .then(() => false)
         .catch((error: unknown) => {
           if (error instanceof GitCommandError && error.exitCode === 1) return true;
@@ -444,6 +448,7 @@ export class Deliveries implements DeliveryPort {
       await git.run(['push', '--', remoteUrl, `${ref}:${ref}`], {
         ...local,
         cwd: pushDir,
+        scope: 'remote',
         timeoutMs: GIT_TIMEOUTS.network,
         transports: this.options.allowFileRemotes ? WORKER_GIT_TRANSPORTS : REMOTE_GIT_TRANSPORTS,
         ...(transport === 'https' ? { userConfig: false as const } : {}),

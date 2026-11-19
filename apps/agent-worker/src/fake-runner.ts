@@ -2,7 +2,7 @@ import type { RunStepResult } from '@agentic-studio/contracts';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { GIT_TIMEOUTS, GitRunner } from './git.js';
+import { GIT_TIMEOUTS, type GitOptions, GitRunner, SAFE_DIFF_FLAGS } from './git.js';
 import {
   AgentFailedError,
   type ResumeRunStepInput,
@@ -53,6 +53,8 @@ export interface FakeRunnerOptions {
   slowLineMs?: number;
   /** Git for the `commit` scenario (default: the worker's hardened runner). */
   git?: GitRunner;
+  /** The Agent account its commits are made as (default: the Working copy's own). */
+  identity?: { name: string; email: string };
 }
 
 /** The fake agent's session reference for a Run: deterministic, per Run. */
@@ -94,12 +96,22 @@ export class FakeRunner implements Runner {
   private readonly slowLineMs: number;
   private readonly longMs: number;
   private readonly git: GitRunner;
+  private readonly commitConfig: NonNullable<GitOptions['config']>;
 
   constructor(options: FakeRunnerOptions = {}) {
     this.slowMs = options.slowMs ?? 5000;
     this.slowLineMs = options.slowLineMs ?? 500;
     this.longMs = options.longMs ?? 10 * 60_000;
     this.git = options.git ?? new GitRunner();
+    this.commitConfig = [
+      ...(options.identity
+        ? ([
+            ['user.name', options.identity.name],
+            ['user.email', options.identity.email],
+          ] as const)
+        : []),
+      ['commit.gpgSign', 'false'],
+    ];
   }
 
   /**
@@ -219,7 +231,10 @@ export class FakeRunner implements Runner {
    */
   private async resolveConflicts(workspace: RunWorkspace, signal: AbortSignal, stage: boolean) {
     const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
-    const listed = await this.git.run(['diff', '--name-only', '--diff-filter=U', '-z'], options);
+    const listed = await this.git.run(
+      ['diff', ...SAFE_DIFF_FLAGS, '--name-only', '--diff-filter=U', '-z'],
+      options,
+    );
     const paths = listed.split('\0').filter((path) => path !== '');
     for (const path of paths) {
       if (path.split('/').some((part) => part === '..' || part === '.')) continue;
@@ -237,7 +252,10 @@ export class FakeRunner implements Runner {
     if (!commit) return;
     const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
     await this.git.run(['add', '--', FAKE_CHANGE_FILE], options);
-    await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake change'], options);
+    await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake change'], {
+      ...options,
+      config: this.commitConfig,
+    });
   }
 
   /**
@@ -268,10 +286,10 @@ export class FakeRunner implements Runner {
     if (!commit) return;
     const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
     await this.git.run(['add', '--', FAKE_FOLLOW_UP_FILE], options);
-    await this.git.run(
-      ['commit', '--quiet', '--no-verify', '-m', 'Fake follow-up change'],
-      options,
-    );
+    await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake follow-up change'], {
+      ...options,
+      config: this.commitConfig,
+    });
   }
 
   private async *resumeStep({

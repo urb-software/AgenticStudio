@@ -308,10 +308,10 @@ export class WorkingCopies implements WorkingCopyPort {
       }
       commits = newestFirst.reverse();
     }
-    const status = await git.run(
-      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      options,
-    );
+    const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      ...options,
+      noOptionalLocks: true,
+    });
     const report: WorkingCopyReport = {
       runBranch: prepared.runBranch,
       commits,
@@ -470,6 +470,7 @@ export class WorkingCopies implements WorkingCopyPort {
     const { git, dataDir } = this.options;
     const network = {
       cwd: posix.dirname(cacheDir),
+      scope: 'remote' as const,
       timeoutMs: GIT_TIMEOUTS.network,
       signal,
       ceiling: dataDir,
@@ -485,6 +486,7 @@ export class WorkingCopies implements WorkingCopyPort {
       : await git
           .run(['config', '--get', 'remote.origin.url'], {
             ...network,
+            scope: 'cache',
             cwd: cacheDir,
             timeoutMs: GIT_TIMEOUTS.local,
           })
@@ -502,6 +504,7 @@ export class WorkingCopies implements WorkingCopyPort {
       // Every branch of the remote, kept as is, also on later fetches.
       await git.run(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], {
         ...network,
+        scope: 'cache',
         cwd: cacheDir,
       });
     });
@@ -510,7 +513,13 @@ export class WorkingCopies implements WorkingCopyPort {
   /** The start commit must be in the cache; one direct fetch is tried for one no branch holds. */
   private async ensureCommit(cacheDir: string, commit: string, signal: AbortSignal) {
     const { git, dataDir } = this.options;
-    const options = { cwd: cacheDir, timeoutMs: GIT_TIMEOUTS.local, signal, ceiling: dataDir };
+    const options = {
+      cwd: cacheDir,
+      scope: 'cache' as const,
+      timeoutMs: GIT_TIMEOUTS.local,
+      signal,
+      ceiling: dataDir,
+    };
     const present = () =>
       git
         .run(['cat-file', '-e', `${commit}^{commit}`], options)
@@ -520,6 +529,7 @@ export class WorkingCopies implements WorkingCopyPort {
     await git
       .run(['fetch', '--quiet', 'origin', commit], {
         ...options,
+        scope: 'remote',
         timeoutMs: GIT_TIMEOUTS.network,
         transports: this.remoteTransports,
       })
