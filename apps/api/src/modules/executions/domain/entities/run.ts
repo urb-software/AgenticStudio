@@ -5,6 +5,7 @@ import { PROVIDERS } from '../value-objects/provider.js';
 import { RunConversation } from '../value-objects/run-conversation.js';
 import { type BringUpDetails } from '../value-objects/bring-up-details.js';
 import type { RunMessage } from '../value-objects/run-message.js';
+import type { RunQuestion } from '../value-objects/run-question.js';
 import type { RunData } from './run-data.js';
 import { EarlierResult } from '../value-objects/earlier-result.js';
 import { RunDelivery } from '../value-objects/run-delivery.js';
@@ -276,7 +277,7 @@ export class Run {
     return this.delivery.hasPullRequest && this.workingCopy !== null;
   }
 
-  private get canResumeAfterUsageLimit(): boolean {
+  get resumable(): boolean {
     return (
       this.lifecycle.stoppedAtUsageLimit &&
       this.claim.hasSession &&
@@ -285,9 +286,28 @@ export class Run {
     );
   }
 
+  get openQuestion(): RunQuestion | null {
+    const last = this.conversation.messages.at(-1);
+    return this.lifecycle.state === 'waiting_for_operator' && last?.kind === 'question'
+      ? last.question
+      : null;
+  }
+
+  /**
+   * Whether each commit of the Working copy is on the remote Run branch, in order; `null` without
+   * a Working copy, or when the pushed commit is not among the listed ones.
+   */
+  commitsPushed(): readonly boolean[] | null {
+    if (this.workingCopy === null) return null;
+    const { pushedCommit } = this.delivery;
+    const pushedUpTo = this.workingCopy.commits.findIndex((commit) => commit.id === pushedCommit);
+    if (pushedCommit !== null && pushedUpTo === -1) return null;
+    return this.workingCopy.commits.map((_commit, index) => index <= pushedUpTo);
+  }
+
   /** Throws {@link RunNotWaitingError} unless the Run waits for an answer to an open question. */
   answer(text: string, now: Date): void {
-    if (this.lifecycle.state !== 'waiting_for_operator' || !this.conversation.awaitsAnswer) {
+    if (this.openQuestion === null) {
       throw new RunNotWaitingError(this.lifecycle.state);
     }
     this.lifecycle.assertTransitionTo('queued');
@@ -328,7 +348,7 @@ export class Run {
    */
   resumeAfterUsageLimit(now: Date, facts: ResumeFacts): void {
     if (
-      !this.canResumeAfterUsageLimit ||
+      !this.resumable ||
       // The resumed step's log is redacted with the Environment file snapshot; a Run in a
       // Follow-up works without it.
       (this.claim.environmentFileSupplied &&

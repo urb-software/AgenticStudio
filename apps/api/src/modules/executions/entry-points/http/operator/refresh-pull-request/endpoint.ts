@@ -11,7 +11,7 @@ import {
   pullRequestNotRefreshable,
   runNotFound,
 } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
 import { RefreshPullRequestHandler } from '../../../../application/features/refresh-pull-request/handler.js';
 import { refreshPullRequestRequestSchema, RefreshPullRequestRequestDto } from './schema.js';
 import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
@@ -52,10 +52,10 @@ export class RefreshPullRequestEndpoint {
         runId,
         onOpen: parsed.data.onOpen === true,
       });
-      const { run, followUp, workerConnected, preparedFollowUp } = await this.getRun.execute({
+      const { run, followUp } = await this.getRun.execute({
         runId,
       });
-      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);
+      return toRunResponse(run, followUp);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof PullRequestNotRefreshableError) throw pullRequestNotRefreshable();

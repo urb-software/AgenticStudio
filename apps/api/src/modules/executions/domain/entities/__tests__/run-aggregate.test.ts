@@ -435,6 +435,105 @@ describe('what the lookups change of the pull request status', () => {
     run.recordObservedPullRequestState('missing', T2);
     expect(run.pullRequestStatus).toMatchObject({ behindBy: null, aheadBy: null, endedAt: T1 });
   });
+
+  it('leaves the pull request status alone for the review comments lookup', () => {
+    const run = delivered({
+      pullRequestStatus: { ...started.pullRequestStatus, state: 'open', prepareError: 'Earlier.' },
+    });
+    const before = run.pullRequestStatus.toData();
+
+    run.recordLookupRequested('review_comments', T1);
+    run.recordLookupFailed('review_comments', 'No comments.', T2, T1);
+
+    expect(run.pullRequestStatus.toData()).toEqual(before);
+  });
+});
+
+describe('Run.resumable', () => {
+  const stopped = (patch: Partial<RestoreData<typeof Run>> = {}) =>
+    restored({
+      state: 'failed',
+      failure: { code: 'usage_limit', detail: 'The usage limit was reached.' },
+      finishedAt: T1,
+      sessionRef: 'session-1',
+      workingCopy: WORKING_COPY,
+      ...patch,
+    });
+
+  it('is true for a Run stopped at the usage limit with a session and a Working copy', () => {
+    expect(stopped().resumable).toBe(true);
+  });
+
+  it.each([
+    ['another failure', { failure: { code: 'agent_failed' as const, detail: 'x' } }],
+    ['no session', { sessionRef: null }],
+    ['no Working copy', { workingCopy: null }],
+    ['a cancel request', { cancelRequestedAt: T2 }],
+  ])('is false with %s', (_case, change) => {
+    expect(stopped(change).resumable).toBe(false);
+  });
+});
+
+describe('Run.openQuestion', () => {
+  const QUESTION = {
+    text: 'Which database?',
+    options: ['PostgreSQL'],
+    recommendation: 'PostgreSQL',
+  };
+  const asked = (patch: Partial<RestoreData<typeof Run>> = {}) =>
+    restored({
+      state: 'waiting_for_operator',
+      messages: [{ kind: 'question', question: QUESTION, at: T1 }],
+      ...patch,
+    });
+
+  it('is the last question of a Run waiting for the operator', () => {
+    expect(asked().openQuestion).toEqual(QUESTION);
+  });
+
+  it('is none once answered, outside waiting, or before any question', () => {
+    expect(
+      asked({
+        state: 'queued',
+        messages: [
+          { kind: 'question', question: QUESTION, at: T1 },
+          { kind: 'answer', text: 'PostgreSQL', at: T2 },
+        ],
+      }).openQuestion,
+    ).toBeNull();
+    expect(
+      asked({ state: 'running', claimedBy: WORKER, lastClaimedBy: WORKER }).openQuestion,
+    ).toBeNull();
+    expect(asked({ messages: [] }).openQuestion).toBeNull();
+  });
+});
+
+describe('Run.commitsPushed', () => {
+  const C1 = 'c'.repeat(40);
+  const C2 = 'd'.repeat(40);
+  const C3 = 'e'.repeat(40);
+  const withCommits = (pushedCommit: string | null) =>
+    delivered({
+      pushedCommit,
+      workingCopy: {
+        ...WORKING_COPY,
+        commits: [
+          { id: C1, subject: 'First' },
+          { id: C2, subject: 'Second' },
+          { id: C3, subject: 'Third' },
+        ],
+      },
+    });
+
+  it('marks the commits up to the pushed one, later ones only in the Working copy', () => {
+    expect(withCommits(C2).commitsPushed()).toEqual([true, true, false]);
+    expect(withCommits(null).commitsPushed()).toEqual([false, false, false]);
+  });
+
+  it('is unknown when the pushed commit is not listed, or without a Working copy', () => {
+    expect(withCommits('f'.repeat(40)).commitsPushed()).toBeNull();
+    expect(delivered({ workingCopy: null }).commitsPushed()).toBeNull();
+  });
 });
 
 describe('Run.assertDiffReportableBy', () => {

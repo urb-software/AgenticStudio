@@ -174,3 +174,63 @@ describe('RunPullRequestStatus changes return a new status', () => {
     });
   });
 });
+
+describe('RunPullRequestStatus.refreshOutcome', () => {
+  it('is idle without a refresh asked for, whatever the worker', () => {
+    expect(status().refreshOutcome()).toBe('idle');
+    expect(status().refreshOutcome(false)).toBe('idle');
+  });
+
+  it('is refreshing while asked for, also when the worker connection is unknown', () => {
+    const waiting = status({ refreshRequestedAt: ago(5) });
+    expect(waiting.refreshOutcome()).toBe('refreshing');
+    expect(waiting.refreshOutcome(true)).toBe('refreshing');
+  });
+
+  it('is no_worker when a refresh is asked for and no worker is connected', () => {
+    expect(status({ refreshRequestedAt: ago(5) }).refreshOutcome(false)).toBe('no_worker');
+  });
+});
+
+describe('RunPullRequestStatus.preparationOutcome', () => {
+  it('is none when nothing was asked for, failed, or prepared', () => {
+    expect(status().preparationOutcome(true, false)).toBeNull();
+  });
+
+  it('is preparing while asked for, or no_worker when no worker is connected', () => {
+    const waiting = status({ prepareRequestedAt: ago(5) });
+    expect(waiting.preparationOutcome(true, false)).toBe('preparing');
+    expect(waiting.preparationOutcome(undefined, false)).toBe('preparing');
+    expect(waiting.preparationOutcome(false, false)).toBe('no_worker');
+  });
+
+  it('is failed with an error, and ready with a prepared Follow-up', () => {
+    expect(status({ prepareError: 'The log is gone.' }).preparationOutcome(true, false)).toBe(
+      'failed',
+    );
+    expect(status().preparationOutcome(true, true)).toBe('ready');
+  });
+
+  it('is failed rather than ready when both an error and a prepared Follow-up exist', () => {
+    expect(status({ prepareError: 'x' }).preparationOutcome(true, true)).toBe('failed');
+  });
+});
+
+describe('RunPullRequestStatus.checksOnOtherCommit', () => {
+  const COMMIT = 'c'.repeat(40);
+  const read = status({ state: 'open', checks: { commit: COMMIT, checks: [] } });
+
+  it('is true when the checks belong to another commit than the pushed one', () => {
+    expect(read.checksOnOtherCommit('d'.repeat(40))).toBe(true);
+  });
+
+  it('ignores letter case, and is false for the same commit', () => {
+    expect(read.checksOnOtherCommit(COMMIT.toUpperCase())).toBe(false);
+  });
+
+  it('is false without a pushed commit, without checks, or when GitHub would not tell them', () => {
+    expect(read.checksOnOtherCommit(null)).toBe(false);
+    expect(status().checksOnOtherCommit(COMMIT)).toBe(false);
+    expect(status({ checks: { unavailable: true } }).checksOnOtherCommit(COMMIT)).toBe(false);
+  });
+});

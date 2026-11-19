@@ -23,7 +23,6 @@ export interface GetRunResult {
   run: RunView;
   followUp: FollowUpView;
   workerConnected: boolean;
-  preparedFollowUp: boolean;
 }
 
 /** Throws {@link RunNotFoundError}, also for a non-UUID id. */
@@ -54,22 +53,20 @@ export class GetRunHandler {
           : this.workers.lastSeen(run.claim.lastClaimedBy),
       latest: this.workers.latest(),
     };
-    const view = {
-      run: runView(run),
+    const workerConnected = WorkerPresence.of(
+      workers.latest,
+      Lease.ofSeconds(this.lease.seconds),
+    ).isAnyConnected(now);
+    const preparedFollowUp = (await this.preparedFollowUps.findRunIdsAmong([run.id])).has(run.id);
+    return {
+      run: runView(run, { workerConnected, preparedFollowUp }),
       followUp: this.retention.followUpView(
         run.followUpAvailability(workers, now, this.lease.seconds),
         run.retentionFacts(),
         over,
         now,
       ),
-      workerConnected: WorkerPresence.of(
-        workers.latest,
-        Lease.ofSeconds(this.lease.seconds),
-      ).isAnyConnected(now),
-    };
-    return {
-      ...view,
-      preparedFollowUp: (await this.preparedFollowUps.findRunIdsAmong([run.id])).has(run.id),
+      workerConnected,
     };
   }
 }

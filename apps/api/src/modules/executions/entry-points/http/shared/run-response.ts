@@ -221,9 +221,9 @@ export function toRunResponse(
     environmentFileSupplied: boolean;
     limits: { stepMinutes: number; maxSteps: number; waitingDays: number; maxTotalSteps: number };
     stepCount: number;
-    stepsBeforePart: number;
+    stepsInPart: number;
     followUpCount: number;
-    pushedCommit: string | null;
+    commitsPushed: readonly boolean[] | null;
     cancelRequestedAt: Date | null;
     cancellation: { by: z.infer<typeof runCancelledBySchema>; reason: string } | null;
     delivery: z.infer<typeof runDeliverySchema> | null;
@@ -237,7 +237,7 @@ export function toRunResponse(
       refreshedAt: Date | null;
       refreshError: string | null;
       retryAt: Date | null;
-      refreshRequestedAt: Date | null;
+      refresh: 'refreshing' | 'no_worker' | 'idle';
       checks:
         | (
             | { unavailable: true }
@@ -253,12 +253,13 @@ export function toRunResponse(
               }
           )
         | null;
-      prepareRequestedAt: Date | null;
+      checksOnOtherCommit: boolean;
+      preparation: 'preparing' | 'no_worker' | 'failed' | 'ready' | null;
       prepareError: string | null;
-      preparedFollowUp: boolean;
     };
     failingChecks: readonly string[];
-    sessionRef: string | null;
+    resumable: boolean;
+    question: { text: string; options?: string[]; recommendation?: string } | null;
     messages: (
       | {
           kind: 'question';
@@ -287,16 +288,7 @@ export function toRunResponse(
   followUp?: (
     { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> }
   ) & { openUntil?: Date; removalPending?: true },
-  workerConnected?: boolean,
 ): RunResponse {
-  const last = run.messages.at(-1);
-  // The commits up to and including the pushed one are on the remote Run branch. A pushed commit
-  // not in the list leaves each commit's pushed state unknown: no `pushed` field.
-  const pushedUpTo = run.workingCopy
-    ? run.workingCopy.commits.findIndex((commit) => commit.id === run.pushedCommit)
-    : -1;
-  const pushedKnown = run.pushedCommit === null || pushedUpTo !== -1;
-  const open = run.state === 'waiting_for_operator' && last?.kind === 'question' ? last : null;
   return {
     id: run.id,
     projectId: run.projectId,
@@ -315,7 +307,7 @@ export function toRunResponse(
           commits: run.workingCopy.commits.map(({ id, subject }, index) => ({
             id,
             subject,
-            ...(pushedKnown ? { pushed: index <= pushedUpTo } : {}),
+            ...(run.commitsPushed ? { pushed: run.commitsPushed[index] } : {}),
           })),
           hasUncommittedChanges: run.workingCopy.hasUncommittedChanges,
         }
@@ -328,7 +320,7 @@ export function toRunResponse(
     },
     steps: {
       used: run.stepCount,
-      usedInPart: Math.max(0, run.stepCount - run.stepsBeforePart),
+      usedInPart: run.stepsInPart,
     },
     followUps: run.followUpCount,
     ...(followUp
@@ -347,31 +339,20 @@ export function toRunResponse(
     ...(run.delivery ? { delivery: run.delivery } : {}),
     ...(run.pullRequest
       ? {
-          pullRequest: toPullRequestResponse(
-            run.pullRequest,
-            run.pullRequestStatus,
-            workerConnected,
-            run.pushedCommit,
-          ),
+          pullRequest: toPullRequestResponse(run.pullRequest, run.pullRequestStatus),
         }
       : {}),
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
-    ...(run.state === 'failed' &&
-    run.failure?.code === 'usage_limit' &&
-    run.sessionRef !== null &&
-    run.workingCopy !== null &&
-    run.cancelRequestedAt === null
-      ? { resumable: true as const }
-      : {}),
+    ...(run.resumable ? { resumable: true as const } : {}),
     ...(run.failingChecks.length > 0 ? { failingChecks: [...run.failingChecks] } : {}),
-    ...(open
+    ...(run.question
       ? {
           question: {
-            text: open.question.text,
-            ...(open.question.options ? { options: [...open.question.options] } : {}),
-            ...(open.question.recommendation === undefined
+            text: run.question.text,
+            ...(run.question.options ? { options: [...run.question.options] } : {}),
+            ...(run.question.recommendation === undefined
               ? {}
-              : { recommendation: open.question.recommendation }),
+              : { recommendation: run.question.recommendation }),
           },
         }
       : {}),
@@ -435,12 +416,9 @@ const NO_WORKER_FOR_PREPARATION =
 function toPullRequestResponse(
   pullRequest: { url: string; number: number },
   status: Parameters<typeof toRunResponse>[0]['pullRequestStatus'],
-  workerConnected: boolean | undefined,
-  pushedCommit: string | null,
 ): NonNullable<RunResponse['pullRequest']> {
-  const waiting = status.refreshRequestedAt !== null;
-  const noWorker = waiting && workerConnected === false;
-  const error = status.refreshError ?? (noWorker ? NO_WORKER_FOR_REFRESH : null);
+  const error =
+    status.refreshError ?? (status.refresh === 'no_worker' ? NO_WORKER_FOR_REFRESH : null);
   return {
     url: pullRequest.url,
     number: pullRequest.number,
@@ -451,16 +429,14 @@ function toPullRequestResponse(
     ...(status.refreshedAt ? { refreshedAt: status.refreshedAt.toISOString() } : {}),
     ...(error ? { refreshError: error } : {}),
     ...(status.retryAt ? { retryAt: status.retryAt.toISOString() } : {}),
-    ...(waiting && !noWorker ? { refreshing: true as const } : {}),
-    ...checksResponse(status.checks, pushedCommit),
-    ...preparationResponse(status, workerConnected),
+    ...(status.refresh === 'refreshing' ? { refreshing: true as const } : {}),
+    ...checksResponse(status),
+    ...preparationResponse(status),
   };
 }
 
-function checksResponse(
-  checks: Parameters<typeof toRunResponse>[0]['pullRequestStatus']['checks'],
-  pushedCommit: string | null,
-) {
+function checksResponse(status: Parameters<typeof toRunResponse>[0]['pullRequestStatus']) {
+  const { checks } = status;
   if (checks === null) return {};
   if (checks.unavailable) return { checksUnavailable: true as const };
   return {
@@ -471,31 +447,29 @@ function checksResponse(
       ...(durationSeconds === undefined ? {} : { durationSeconds }),
       url,
     })),
-    ...(pushedCommit !== null && pushedCommit.toLowerCase() !== checks.commit.toLowerCase()
-      ? { checksOtherCommit: true as const }
-      : {}),
+    ...(status.checksOnOtherCommit ? { checksOtherCommit: true as const } : {}),
   };
 }
 
-function preparationResponse(
-  status: Parameters<typeof toRunResponse>[0]['pullRequestStatus'],
-  workerConnected: boolean | undefined,
-) {
-  if (status.prepareRequestedAt !== null) {
-    // Without a connected agent worker nobody reads the logs: say so instead of waiting for ever.
-    return workerConnected === false
-      ? {
-          failingChecksPreparation: {
-            state: 'failed' as const,
-            error: NO_WORKER_FOR_PREPARATION,
-          },
-        }
-      : { failingChecksPreparation: { state: 'preparing' as const } };
+function preparationResponse(status: Parameters<typeof toRunResponse>[0]['pullRequestStatus']) {
+  switch (status.preparation) {
+    case null:
+      return {};
+    case 'preparing':
+    case 'ready':
+      return { failingChecksPreparation: { state: status.preparation } };
+    case 'no_worker':
+      return {
+        failingChecksPreparation: { state: 'failed' as const, error: NO_WORKER_FOR_PREPARATION },
+      };
+    case 'failed':
+      return {
+        failingChecksPreparation: {
+          state: 'failed' as const,
+          ...(status.prepareError === null ? {} : { error: status.prepareError }),
+        },
+      };
   }
-  if (status.prepareError !== null) {
-    return { failingChecksPreparation: { state: 'failed' as const, error: status.prepareError } };
-  }
-  return status.preparedFollowUp ? { failingChecksPreparation: { state: 'ready' as const } } : {};
 }
 
 export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResponse {
@@ -503,11 +477,4 @@ export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResp
   void _messages;
   void _question;
   return item;
-}
-
-export function withPreparedFollowUp<T extends { pullRequestStatus: object }>(
-  run: T,
-  preparedFollowUp: boolean,
-): T & { pullRequestStatus: { preparedFollowUp: boolean } } {
-  return { ...run, pullRequestStatus: { ...run.pullRequestStatus, preparedFollowUp } };
 }

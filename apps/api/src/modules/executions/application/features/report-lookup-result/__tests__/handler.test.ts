@@ -3,8 +3,8 @@ import {
   runResponseSchema,
   toRunListItem,
   toRunResponse,
-  withPreparedFollowUp,
 } from '../../../../entry-points/http/shared/run-response.js';
+import { runView } from '../../../run-view.js';
 import { preparedFollowUpResponseSchema } from '../../../../entry-points/http/operator/get-prepared-follow-up/schema.js';
 import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
 import type { PullRequestStateResult } from '../../../../domain/value-objects/pull-request-state-result.js';
@@ -234,10 +234,7 @@ describe('lookups: claim and result', () => {
       const url = stored && !stored.unavailable ? stored.checks[0]!.url : '';
       expect(url).toBe(`${PULL_REQUEST.url}/checks`);
       // The Run page and the lists can carry it: both responses still parse.
-      const withStatus = withPreparedFollowUp(
-        { ...runs.runs.find((candidate) => candidate.id === run.id)! },
-        false,
-      );
+      const withStatus = runView((await runs.findById(run.id))!, { preparedFollowUp: false });
       expect(() => runResponseSchema.parse(toRunResponse(withStatus))).not.toThrow();
       expect(() => runResponseSchema.parse(toRunListItem(withStatus))).not.toThrow();
     });
