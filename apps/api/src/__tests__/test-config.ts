@@ -1,5 +1,8 @@
 import { createSecretKey, randomBytes } from 'node:crypto';
+import { mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AppConfig } from '../platform/config/config.js';
 
 /**
@@ -16,6 +19,36 @@ export function throwawaySecretsKey() {
 
 const TEST_SECRETS_KEY = throwawaySecretsKey();
 
+const createdDataDirs: string[] = [];
+
+/**
+ * A fresh data directory per call: every app start sweeps `studio-git-*` under its data
+ * directory, so apps (even two in one file) must never share one. Removed by the Vitest
+ * setup file via {@link removeCreatedDataDirs}.
+ */
+function createDataDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'studio-test-'));
+  createdDataDirs.push(dir);
+  return dir;
+}
+
+/** The data directories this module instance has created and not yet removed. */
+export function createdTestDataDirs(): readonly string[] {
+  return [...createdDataDirs];
+}
+
+/** Removes the data directories this module instance created; a failure is logged and ignored. */
+export async function removeCreatedDataDirs(): Promise<void> {
+  const dirs = createdDataDirs.splice(0);
+  await Promise.all(
+    dirs.map((dir) =>
+      rm(dir, { recursive: true, force: true }).catch((error: unknown) => {
+        console.warn(`Could not remove test data directory ${dir}:`, error);
+      }),
+    ),
+  );
+}
+
 /**
  * Configuration for tests that build the app. The database and Redis clients connect
  * lazily, so the unreachable defaults are never contacted unless a test uses them.
@@ -31,8 +64,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     studioOrigin: 'http://localhost:3000',
     operatorPasswordHash: PLACEHOLDER_PASSWORD_HASH,
     secretsKey: TEST_SECRETS_KEY,
-    // Nothing is written there unless a test clones; such tests pass their own directory.
-    dataDir: tmpdir(),
+    // A private directory per call unless the suite passes its own.
+    dataDir: overrides.dataDir ?? createDataDir(),
     gitAllowFileRemotes: false,
     // The production default: loopback and private remotes are refused. Suites whose fixtures
     // listen on 127.0.0.1 opt in explicitly.

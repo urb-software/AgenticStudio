@@ -5,6 +5,7 @@ export default defineConfig({
   // NestJS DI relies on decorator metadata, which esbuild does not emit; SWC does.
   plugins: [swc.vite({ module: { type: 'es6' } })],
   test: {
+    setupFiles: ['src/__tests__/test-config-cleanup.setup.ts'],
     include: ['src/**/*.test.ts'],
     // Integration tests start PostgreSQL via Testcontainers (a first run pulls the image).
     hookTimeout: 180_000,
