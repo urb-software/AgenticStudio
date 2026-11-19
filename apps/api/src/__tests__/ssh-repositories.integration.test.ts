@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rename, rm, symlink } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { format } from 'node:util';
@@ -16,6 +15,7 @@ import type { AppConfig } from '../platform/config/config.js';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
 import { SECRET_STORE, SecretNotFoundError, type SecretStore } from '../platform/secrets/index.js';
+import { refusedPorts } from './refused-port.js';
 import {
   signIn,
   startStudioServices,
@@ -38,14 +38,7 @@ const FINGERPRINT = /^SHA256:[A-Za-z0-9+/]{43}$/;
 const HOST_KEY_CHANGED =
   /^The Git host's key changed\. .*disconnect the repository and connect it again\.\n\n\S/s;
 
-/** A local port with nothing listening on it. */
-async function closedPort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as { port: number };
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  return port;
-}
+const refused = refusedPorts();
 
 interface KeyPair {
   privateKey: string;
@@ -259,7 +252,13 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
 
   afterAll(async () => {
     await app?.close();
-    await Promise.all([services?.stop(), listed?.stop(), unlisted?.stop(), impostor?.stop()]);
+    await Promise.all([
+      services?.stop(),
+      listed?.stop(),
+      unlisted?.stop(),
+      impostor?.stop(),
+      refused.release(),
+    ]);
     for (const dir of [dataDir, keysDir]) if (dir) await rm(dir, { recursive: true, force: true });
   });
 
@@ -464,7 +463,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     }, 180_000);
 
     it('two verifications of a host that cannot be reached both leave it failed', async () => {
-      const url = `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`;
+      const url = `ssh://git@127.0.0.1:${await refused.reserve()}/srv/git/repo.git`;
       for (let i = 0; i < ITERATIONS; i++) {
         const id = await fresh(`Unreachable race ${i}`);
         await connect(id, url);
@@ -487,7 +486,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
     ])(
       'a verification %s racing a disconnect: the disconnect wins and nothing is left',
       async (_case, urlFor) => {
-        closed = await closedPort();
+        closed = await refused.reserve();
         for (let i = 0; i < ITERATIONS; i++) {
           const id = await fresh(`Verify and disconnect ${i}`);
           await connect(id, urlFor());
@@ -550,7 +549,7 @@ describe.runIf(linux)('SSH repositories with a Deploy key (HTTP + SSH servers)',
 
     // host_unreachable while retrieving the host key (nothing listens).
     const d = await createProject('Leak unreachable');
-    await connect(d, `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`);
+    await connect(d, `ssh://git@127.0.0.1:${await refused.reserve()}/srv/git/repo.git`);
     expect((await verify(d)).body).toMatchObject({
       state: 'failed',
       failure: { code: 'host_unreachable' },
