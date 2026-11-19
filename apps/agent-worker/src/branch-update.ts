@@ -274,10 +274,10 @@ export class BranchUpdates implements BranchUpdatePort {
   ): Promise<void> {
     const { git } = this.options;
     const local = this.local(prepared, signal);
-    const status = await git.run(
-      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      local,
-    );
+    const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      ...local,
+      noOptionalLocks: true,
+    });
     if (status.length === 0) return;
     await git.run(['add', '--all'], local);
     await this.unstageStudioPaths(prepared, run, local);

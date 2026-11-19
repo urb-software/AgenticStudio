@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   builtInMergeDriver,
+  GitRunner,
   driverOverrides,
   GIT_HARDENING,
   gitBaseEnvironment,
@@ -104,6 +105,9 @@ describe('Working copy hardening', () => {
       'core.askPass': '',
       'core.attributesFile': '/dev/null',
       'uploadpack.packObjectsHook': '',
+      'core.alternateRefsCommand': '',
+      'diff.ignoreSubmodules': 'all',
+      'status.submoduleSummary': 'false',
     });
   });
 
@@ -162,4 +166,17 @@ describe('builtInMergeDriver', () => {
       `'/opt/it'${String.fromCharCode(92)}''s/git'`,
     );
   });
+});
+
+describe('GitRunner.run', () => {
+  it.each([[['-c', 'core.pager=x', 'add']], [['--no-optional-locks', 'status']], [[]]])(
+    'refuses %j: the subcommand must come first',
+    async (args) => {
+      const failure = await new GitRunner()
+        .run(args, { cwd: '.', timeoutMs: 1000 })
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(TypeError);
+    },
+  );
 });

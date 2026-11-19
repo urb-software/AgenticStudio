@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
+  utimesSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -59,7 +60,7 @@ describe.skipIf(process.platform !== 'linux')('the worker Git isolation', () => 
     }
   }
 
-  /** An executable script that touches the marker (and, when `passThrough`, copies its input). */
+  /** An executable script that touches the marker. */
   function script(name: string, body: string): string {
     const path = join(root, name);
     writeFileSync(path, `#!/bin/sh\ntouch '${marker}'\n${body}\n`);
@@ -219,6 +220,90 @@ describe.skipIf(process.platform !== 'linux')('the worker Git isolation', () => 
       await run(['add', '--all']);
 
       await run(['commit', '--quiet', '-m', 'signed?']).catch(() => undefined);
+
+      neverRan();
+    });
+
+    it('runs no clean filter on rm --cached of a stat-dirty file', async () => {
+      configure(place, 'filter.evil.clean', `touch '${marker}'; cat`);
+      const later = new Date(Date.now() + 3_600_000);
+      utimesSync(join(repo, 'a.txt'), later, later);
+
+      await run(['rm', '--cached', '-r', '--ignore-unmatch', '--', 'a.txt']);
+
+      neverRan();
+      expect(plain(['ls-files'])).not.toContain('a.txt');
+    });
+
+    describe('a fetch from a local path', () => {
+      let cache: string;
+      const fetchFromCache = () =>
+        run([
+          'fetch',
+          '--quiet',
+          '--no-tags',
+          '--',
+          cache,
+          '+refs/heads/main:refs/remotes/cache/main',
+        ]);
+
+      beforeEach(() => {
+        cache = join(root, 'cache.git');
+        plainGit(root, ['clone', '--quiet', '--bare', repo, cache], env);
+      });
+
+      it('runs no upload-pack program named for that path', async () => {
+        configure(place, `remote.${cache}.uploadpack`, `touch '${marker}'; git-upload-pack`);
+
+        await fetchFromCache();
+
+        neverRan();
+        expect(plain(['rev-parse', '--verify', 'refs/remotes/cache/main'])).toMatch(
+          /^[0-9a-f]{40}$/,
+        );
+      });
+
+      it('runs no alternate refs command', async () => {
+        mkdirSync(join(repo, '.git', 'objects', 'info'), { recursive: true });
+        writeFileSync(join(repo, '.git', 'objects', 'info', 'alternates'), `${cache}/objects\n`);
+        configure(place, 'core.alternateRefsCommand', `touch '${marker}'`);
+
+        await fetchFromCache();
+
+        neverRan();
+      });
+    });
+  });
+
+  describe('a nested repository with its own filter', () => {
+    /** An embedded repository committed as a gitlink; its own config then names a clean filter. */
+    function embedded() {
+      const sub = join(repo, 'sub');
+      mkdirSync(sub);
+      plainGit(sub, ['init', '--quiet', '--initial-branch=main'], env);
+      plainGit(sub, ['config', '--local', 'user.name', 'Fixture'], env);
+      plainGit(sub, ['config', '--local', 'user.email', 'fixture@example.test'], env);
+      writeFileSync(join(sub, 's.txt'), 'inner\n');
+      plainGit(sub, ['add', '--all'], env);
+      plainGit(sub, ['commit', '--quiet', '-m', 'inner'], env);
+      writeFileSync(join(repo, 'b.txt'), 'new\n');
+      plain(['add', 'b.txt', 'sub']);
+      writeFileSync(join(sub, '.gitattributes'), '* filter=sm\n');
+      plainGit(sub, ['config', '--local', 'filter.sm.clean', `touch '${marker}'; cat`], env);
+      const later = new Date(Date.now() + 3_600_000);
+      writeFileSync(join(sub, 's.txt'), 'INNER\n');
+      utimesSync(join(sub, 's.txt'), later, later);
+    }
+
+    it.each([
+      ['status', ['status', '--porcelain=v1', '-z', '--untracked-files=all']],
+      ['diff', ['diff', '--name-only']],
+      ['add --all', ['add', '--all']],
+      ['commit', ['commit', '--quiet', '-m', 'with a nested repository']],
+    ])('runs no filter of it through %s', async (_name, args) => {
+      embedded();
+
+      await run(args as string[]);
 
       neverRan();
     });

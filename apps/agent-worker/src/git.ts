@@ -61,29 +61,24 @@ export const WORKING_COPY_HARDENING: readonly (readonly [key: string, value: str
   ['core.askPass', ''],
   ['core.attributesFile', '/dev/null'],
   ['uploadpack.packObjectsHook', ''],
+  ['core.alternateRefsCommand', ''],
+  // A nested repository has its own configuration, which no listing covers: it is never looked at.
+  ['diff.ignoreSubmodules', 'all'],
+  ['status.submoduleSummary', 'false'],
 ];
 
 /** Flags of every `git diff` the worker runs: no external diff program, no textconv filter. */
 export const SAFE_DIFF_FLAGS: readonly string[] = ['--no-ext-diff', '--no-textconv'];
 
-/** Subcommands that can run a filter, merge, diff or textconv driver of the Working copy. */
-const DRIVER_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  'add',
-  'checkout',
-  'merge',
-  'commit',
-  'diff',
-  'status',
-  'reset',
-  'read-tree',
-  'write-tree',
-  'stash',
-  'cherry-pick',
-  'rebase',
-]);
-
-/** Subcommands that can call an external diff program or a textconv filter. */
-const DIFF_SUBCOMMANDS: ReadonlySet<string> = new Set(['diff', 'log', 'show']);
+/** Flags the runner adds to a Working copy command, by subcommand (see {@link withSafeFlags}). */
+const SUBCOMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  diff: [...SAFE_DIFF_FLAGS, '--ignore-submodules=all'],
+  log: SAFE_DIFF_FLAGS,
+  show: SAFE_DIFF_FLAGS,
+  status: ['--ignore-submodules=all'],
+  // The upload-pack program is the plain one, never `remote.<path>.uploadpack` from the config.
+  fetch: ['--upload-pack=git-upload-pack'],
+};
 
 /** The variables of the worker's own environment that every Git command keeps. */
 const BASE_ENVIRONMENT = ['PATH', 'HOME', 'TMPDIR'] as const;
@@ -207,6 +202,8 @@ export interface GitOptions {
    * Always the case for a `working-copy` command.
    */
   userConfig?: false;
+  /** `GIT_OPTIONAL_LOCKS=0`: a read-only command (`status`) takes no optional lock. */
+  noOptionalLocks?: true;
   /** `GIT_INDEX_FILE`: a temporary index for this one command, never the real one. */
   indexFile?: string;
   /** Most standard output kept (default: the process runner's 4 MiB); the rest is dropped. */
@@ -219,20 +216,39 @@ export interface GitRunnerOptions {
   binary?: string;
 }
 
-/** The Git subcommand of an argument array: its first argument that is not an option. */
+/** The Git subcommand: the first argument. An option before it would hide it, so it is refused. */
 function subcommandOf(args: readonly string[]): string {
-  return args.find((arg) => !arg.startsWith('-')) ?? '';
+  const first = args[0] ?? '';
+  if (first === '' || first.startsWith('-')) {
+    throw new TypeError('A Git command starts with its subcommand, never an option.');
+  }
+  return first;
 }
 
 /**
- * A Working copy command that shows a diff (`diff`, `log`, `show`) never calls an external diff
- * program nor a textconv filter, whatever its caller passed.
+ * A Working copy command gets the flags of its subcommand whatever its caller passed: no external
+ * diff program, no textconv, no submodule inspection, the plain upload-pack.
  */
-function withSafeDiff(args: readonly string[], scope: GitScope): readonly string[] {
-  if (scope !== 'working-copy') return args;
-  const index = args.findIndex((arg) => !arg.startsWith('-'));
-  if (index < 0 || !DIFF_SUBCOMMANDS.has(args[index]!)) return args;
-  return [...args.slice(0, index + 1), ...SAFE_DIFF_FLAGS, ...args.slice(index + 1)];
+function withSafeFlags(args: readonly string[], scope: GitScope): readonly string[] {
+  const flags = scope === 'working-copy' ? SUBCOMMAND_FLAGS[subcommandOf(args)] : undefined;
+  return flags ? [args[0]!, ...flags, ...args.slice(1)] : args;
+}
+
+/**
+ * `add` leaves out every gitlink of the index (an embedded repository). Git would run a `status` in
+ * it to see whether it is dirty, under that repository's own configuration, which nothing lists.
+ */
+function withoutGitlinks(args: readonly string[], gitlinks: readonly string[]): readonly string[] {
+  if (gitlinks.length === 0) return args;
+  const dashes = args.indexOf('--');
+  const head = dashes < 0 ? args : args.slice(0, dashes);
+  const paths = dashes < 0 ? [] : args.slice(dashes + 1);
+  return [
+    ...head,
+    '--',
+    ...(paths.length === 0 ? ['.'] : paths),
+    ...gitlinks.map((path) => `:(exclude,literal)${path}`),
+  ];
 }
 
 /** One command's settings as `GIT_CONFIG_*` environment variables (none: no variable at all). */
@@ -271,16 +287,32 @@ export class GitRunner {
   /** Runs `git <hardening> <args>`: standard output, or rejects with {@link GitCommandError}. */
   async run(args: readonly string[], options: GitOptions): Promise<string> {
     const scope = options.scope ?? 'working-copy';
-    // The Working copy's configuration is read once per command that can run a driver, and the
-    // drivers it names are neutralised for that command. A failure to list stops the command.
-    const drivers =
-      scope === 'working-copy' && DRIVER_SUBCOMMANDS.has(subcommandOf(args))
-        ? await this.driverSettings(options)
-        : [];
-    return this.execute(withSafeDiff(args, scope), options, scope, [
+    subcommandOf(args);
+    // The Working copy's configuration is read once per command, and the drivers it names are
+    // neutralised for that command. A failure to list stops the command.
+    const drivers = scope === 'working-copy' ? await this.driverSettings(options) : [];
+    const gitlinks =
+      scope === 'working-copy' && args[0] === 'add' ? await this.gitlinks(options) : [];
+    return this.execute(withoutGitlinks(withSafeFlags(args, scope), gitlinks), options, scope, [
       ...drivers,
       ...(options.config ?? []),
     ]);
+  }
+
+  /** The paths of the index's gitlinks (the index of `options.indexFile`, if it names one). */
+  private async gitlinks(options: GitOptions): Promise<string[]> {
+    const listing = await this.execute(
+      ['ls-files', '--stage', '-z'],
+      { ...options, config: undefined, maxStdout: undefined },
+      'working-copy',
+      [],
+    );
+    const paths = new Set<string>();
+    for (const entry of listing.split('\0')) {
+      const tab = entry.indexOf('\t');
+      if (tab > 0 && entry.startsWith('160000 ')) paths.add(entry.slice(tab + 1));
+    }
+    return [...paths];
   }
 
   /** Overrides for the drivers the Working copy's effective configuration names (runs none). */
@@ -334,6 +366,7 @@ export class GitRunner {
         GIT_EDITOR: 'true',
         GIT_SEQUENCE_EDITOR: 'true',
         GIT_ASKPASS: '',
+        ...(options.noOptionalLocks ? { GIT_OPTIONAL_LOCKS: '0' } : {}),
         SSH_ASKPASS_REQUIRE: 'never',
         ...(options.ceiling ? { GIT_CEILING_DIRECTORIES: options.ceiling } : {}),
         ...(options.userConfig === false || scope === 'working-copy'

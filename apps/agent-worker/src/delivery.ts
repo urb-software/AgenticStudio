@@ -154,10 +154,10 @@ export class Deliveries implements DeliveryPort {
           'Look at the Working copy on the agent side.',
       );
     }
-    const status = await git.run(
-      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      local,
-    );
+    const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      ...local,
+      noOptionalLocks: true,
+    });
     if (status.length === 0) return;
     const head = await git
       .run(['symbolic-ref', '--quiet', 'HEAD'], local)

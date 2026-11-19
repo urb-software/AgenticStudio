@@ -308,10 +308,10 @@ export class WorkingCopies implements WorkingCopyPort {
       }
       commits = newestFirst.reverse();
     }
-    const status = await git.run(
-      ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      options,
-    );
+    const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      ...options,
+      noOptionalLocks: true,
+    });
     const report: WorkingCopyReport = {
       runBranch: prepared.runBranch,
       commits,
