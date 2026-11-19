@@ -7,7 +7,7 @@ export const INTEGRATION_BRANCH_MAX_LENGTH = 255;
  */
 export const INTEGRATION_BRANCH_PATTERN =
   // eslint-disable-next-line no-control-regex -- control characters are not allowed in refs
-  /^(?!@$)(?![-/.])(?!.*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/;
+  /^(?!@$)(?![-/.])(?![\s\S]*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/;
 
 export const INVALID_INTEGRATION_BRANCH_MESSAGE = 'Enter a valid branch name, e.g. dev.';
 

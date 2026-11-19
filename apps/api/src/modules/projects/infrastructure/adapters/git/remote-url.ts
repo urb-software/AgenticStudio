@@ -19,16 +19,25 @@ function reject(reason: string): never {
   throw new GitRequestRejectedError(`Remote URL rejected: ${reason}.`);
 }
 
-const SSH_IPV6_HOST = /^(ssh:\/\/[^/@]*@?)\[([\da-f:.]+)\]/i;
+const SSH_IPV6_HOST = /^(ssh:\/\/(?:[^/@[\]]+@)?)\[([\da-f:.]+)\](?=[:/]|$)/i;
 
 /**
- * The domain refuses an IPv6 literal in an ssh:// URL, which this adapter has always accepted
- * (the address is checked when resolved); the rest of the URL still goes through the domain.
+ * The domain refuses an IPv6 literal in an ssh:// URL, which the address policy covers when
+ * the host is resolved. The literal is checked here and replaced by a placeholder host, so the
+ * rest of the URL still goes through the domain; Git must read the same host back.
  */
 function withoutIpv6Literal(input: string): string {
   const match = SSH_IPV6_HOST.exec(input);
   if (!match) return input;
-  if (HostLiteral.of(`[${match[2]}]`).kind === 'invalid')
+  const literal = `[${match[2]}]`;
+  if (HostLiteral.of(literal).kind === 'invalid') reject('the host is not a valid host name');
+  let hostname: string;
+  try {
+    hostname = new URL(input).hostname;
+  } catch {
+    return reject('it is not a valid URL');
+  }
+  if (hostname !== new URL(`ssh://${literal}/`).hostname)
     reject('the host is not a valid host name');
   return input.replace(SSH_IPV6_HOST, '$1ipv6-literal.invalid');
 }

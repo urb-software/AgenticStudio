@@ -319,4 +319,10 @@ describe('RepositoryUrl.parse', () => {
       });
     });
   });
+
+  it('refuses an SSH user name that is not valid percent-encoding', () => {
+    expect(() => RepositoryUrl.parse('ssh://%E0@github.com/acme/shop')).toThrow(
+      InvalidRepositoryUrlError,
+    );
+  });
 });

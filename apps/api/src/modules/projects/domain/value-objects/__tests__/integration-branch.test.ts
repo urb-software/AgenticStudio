@@ -44,6 +44,11 @@ describe('IntegrationBranch.parse', () => {
     'st*ar',
     'br[acket',
     'back\\slash',
+    'a ..b',
+    'a //b',
+    'a @{u}',
+    'a x.lock',
+    'a /.b',
     'x'.repeat(256),
   ])('rejects %j', (name) => {
     expect(() => IntegrationBranch.parse(name)).toThrow(InvalidIntegrationBranchError);
