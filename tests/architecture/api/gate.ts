@@ -272,10 +272,10 @@ export const apiGate: Gate = {
         pathNot: [
           '^src/modules/[^/]+/(domain/entities|infrastructure/repositories)/',
           TESTS,
-          '\.test\.tsx?$',
+          '\\.test\\.tsx?$',
         ],
       },
-      to: { path: '^src/modules/[^/]+/domain/entities/[^/]*-data\.ts$' },
+      to: { path: '^src/modules/[^/]+/domain/entities/[^/]*-data\\.ts$' },
     },
     {
       name: 'api-data-only-for-its-own-entity',
@@ -286,12 +286,12 @@ export const apiGate: Gate = {
         'checked.',
       severity: 'error',
       from: {
-        path: '^src/modules/([^/]+)/domain/entities/([^/]+)\.ts$',
-        pathNot: [TESTS, '\.test\.tsx?$'],
+        path: '^src/modules/([^/]+)/domain/entities/([^/]+)\\.ts$',
+        pathNot: [TESTS, '\\.test\\.tsx?$'],
       },
       to: {
-        path: '^src/modules/[^/]+/domain/entities/[^/]*-data\.ts$',
-        pathNot: '^src/modules/$1/domain/entities/$2-data\.ts$',
+        path: '^src/modules/[^/]+/domain/entities/[^/]*-data\\.ts$',
+        pathNot: '^src/modules/$1/domain/entities/$2-data\\.ts$',
       },
     },
     {
@@ -302,10 +302,10 @@ export const apiGate: Gate = {
       severity: 'error',
       from: {
         path: '^src/modules/([^/]+)/infrastructure/repositories/',
-        pathNot: [TESTS, '\.test\.tsx?$'],
+        pathNot: [TESTS, '\\.test\\.tsx?$'],
       },
       to: {
-        path: '^src/modules/[^/]+/domain/entities/[^/]*-data\.ts$',
+        path: '^src/modules/[^/]+/domain/entities/[^/]*-data\\.ts$',
         pathNot: '^src/modules/$1/',
       },
     },

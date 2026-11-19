@@ -215,7 +215,7 @@ export function toRunResponse(
     failure: { code: z.infer<typeof runFailureCodeSchema>; detail: string } | null;
     workingCopy: {
       runBranch: string;
-      commits: { id: string; subject: string }[];
+      commits: readonly { id: string; subject: string }[];
       hasUncommittedChanges: boolean;
     } | null;
     environmentFileSupplied: boolean;

@@ -21,7 +21,7 @@ const ROW_DATA_OWN_ENTITY_FAIL =
 const ROW_DATA_OTHER_MODULE_FAIL =
   'A repository adapter imports the `*-data.ts` file of another module' as const;
 const ROW_REPOSITORY_RETURNS_FAIL =
-  'A repository interface returns an `…Data` type, a facts type, or a value object its entity does not import' as const;
+  'A repository interface returns an `…Data` type, a facts type, or a value object its entity does not hold as a readonly field' as const;
 const ROW_SNAPSHOT_METHOD_FAIL =
   'A class under `domain/` declares `snapshot` or `toSnapshot`' as const;
 const ROW_PROTOCOL_FAIL =
@@ -776,10 +776,15 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: ROW_REPOSITORY_RETURNS_FAIL,
   },
   {
+    fixture: 'repository-returns-value-object-its-entity-only-imports',
+    expected: ['api-repository-refers-to-one-entity'],
+    qualityRow: ROW_REPOSITORY_RETURNS_FAIL,
+  },
+  {
     fixture: 'repository-returns-own-aggregate-value-object',
     expected: [],
     qualityRow:
-      'A repository interface returns its entity, its pinned child entity, or a value object its entity imports',
+      'A repository interface returns its entity, its pinned child entity, or a value object its entity holds as a readonly field',
   },
   {
     fixture: 'entity-imports-entity-id-type',
@@ -1161,6 +1166,21 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'shipping-repository-imports-billing-data',
+    expected: ['api-data-only-for-repositories-of-its-module', 'api-no-cross-module-private'],
+    qualityRow: ROW_DATA_OTHER_MODULE_FAIL,
+  },
+  {
+    fixture: 'billing-handler-named-like-a-test-file-imports-data',
+    expected: ['api-data-between-entity-and-repository'],
+    qualityRow: ROW_DATA_FAIL,
+  },
+  {
+    fixture: 'billing-entity-named-like-a-test-file-imports-other-data',
+    expected: ['api-data-only-for-its-own-entity'],
+    qualityRow: ROW_DATA_OWN_ENTITY_FAIL,
+  },
+  {
+    fixture: 'shipping-repository-named-like-a-test-file-imports-billing-data',
     expected: ['api-data-only-for-repositories-of-its-module', 'api-no-cross-module-private'],
     qualityRow: ROW_DATA_OTHER_MODULE_FAIL,
   },

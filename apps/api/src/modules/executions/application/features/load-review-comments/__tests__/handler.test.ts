@@ -353,6 +353,19 @@ describe('review comments', () => {
       expect(reviewCommentsResponseSchema.safeParse(response).success).toBe(true);
     });
 
+    it('leaves out an optional field a comment does not have, instead of setting it to undefined', async () => {
+      const result = await view([comment()]);
+
+      expect(Object.keys(result.comments[0]!).sort()).toEqual([
+        'author',
+        'byOperator',
+        'createdAt',
+        'id',
+        'kind',
+        'text',
+      ]);
+    });
+
     it('marks nobody, and names no login, when none is configured', async () => {
       const response = toReviewCommentsResponse(await view([comment()], null));
 

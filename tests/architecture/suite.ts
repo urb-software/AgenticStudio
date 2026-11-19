@@ -111,12 +111,12 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: 'A repository interface returns its entity, its pinned child entity, or a value object its entity imports',
+    row: 'A repository interface returns its entity, its pinned child entity, or a value object its entity holds as a readonly field',
     expected: 'PASS',
     gate: 'api',
   },
   {
-    row: 'A repository interface returns an `…Data` type, a facts type, or a value object its entity does not import',
+    row: 'A repository interface returns an `…Data` type, a facts type, or a value object its entity does not hold as a readonly field',
     expected: 'FAIL',
     gate: 'api',
   },

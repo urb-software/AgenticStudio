@@ -430,7 +430,8 @@ function isEntityClass(
 
 /**
  * A repository interface serves one aggregate root (rule 11): it refers to one entity file and
- * returns no companion type (`-data`, `-facts`) and no value object its entity does not import.
+ * returns no companion type (`-data`, `-facts`) and no value object its entity does not hold as a
+ * readonly field.
  */
 function repositoryViolations(baseDir: string, path: string): Violation[] {
   const source = parse(baseDir, path);
@@ -449,16 +450,11 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
   if (entityFiles.size !== 1) {
     found.push(violation(`refers to ${entityFiles.size} entity files, not exactly one`));
   }
-  // The value objects a repository may return: those the entity it serves (or that root's child
-  // entity) imports, so they are part of the aggregate.
+  // A repository may return a value object the entity it serves holds as a readonly field.
   const ownValueObjects = new Set(
     [...referenced, ...children]
       .filter((entity) => existsSync(join(baseDir, entity)))
-      .flatMap((entity) =>
-        moduleImports(baseDir, entity)
-          .map((entry) => target(entity, entry.specifier))
-          .filter((to): to is string => to !== undefined && VALUE_OBJECT_FILE.test(to)),
-      ),
+      .flatMap((entity) => heldValueObjects(baseDir, entity)),
   );
   const imported = importedNames(source);
   for (const statement of source.statements) {
@@ -486,6 +482,30 @@ function repositoryViolations(baseDir: string, path: string): Violation[] {
     }
   }
   return found;
+}
+
+/** The value object files an entity class declares as the type of a readonly field. */
+function heldValueObjects(baseDir: string, entityPath: string): string[] {
+  const source = parse(baseDir, entityPath);
+  const imported = importedNames(source);
+  const isReadonly = (node: ts.Node): boolean =>
+    ts.canHaveModifiers(node) &&
+    (ts.getModifiers(node) ?? []).some(
+      (modifier) => modifier.kind === ts.SyntaxKind.ReadonlyKeyword,
+    );
+  const fieldTypes = source.statements.filter(ts.isClassDeclaration).flatMap((declaration) =>
+    declaration.members.flatMap((member) => {
+      const declared = ts.isPropertyDeclaration(member) && isReadonly(member) ? [member.type] : [];
+      const parameters = ts.isConstructorDeclaration(member)
+        ? member.parameters.filter(isReadonly).map((parameter) => parameter.type)
+        : [];
+      return [...declared, ...parameters].filter((type): type is ts.TypeNode => type !== undefined);
+    }),
+  );
+  return fieldTypes
+    .flatMap((type) => typeReferences(type))
+    .map((reference) => referenceTarget(reference, entityPath, imported))
+    .filter((to): to is string => to !== undefined && VALUE_OBJECT_FILE.test(to));
 }
 
 /** An entity file imports another entity file only for an id type (rule 12). */

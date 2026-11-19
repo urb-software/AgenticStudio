@@ -1,4 +1,5 @@
 import type { RunDiffData } from './run-diff-data.js';
+import type { RunDiffReport } from './run-diff-facts.js';
 import type { NewRunDiff } from '../value-objects/new-run-diff.js';
 import type { RunDiffScope } from '../value-objects/run-diff-scope.js';
 import { RunDiffState } from '../value-objects/run-diff-state.js';
@@ -11,7 +12,7 @@ export class RunDiff {
     readonly state: RunDiffState | null,
   ) {}
 
-  static report(input: RunDiffData): RunDiff {
+  static report(input: RunDiffReport): RunDiff {
     // The contract checked the format; checked again before it is kept.
     return new RunDiff(
       input.runId,

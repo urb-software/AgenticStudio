@@ -55,7 +55,6 @@ const WORKING_COPY_REMOVED = RunFailure.of(
   "Working copy no longer exists — run again: the agent worker's retention removed it.",
 );
 
-/** What the agent worker needs to prepare and run a claimed Run. */
 /** The object ids a claimed Run's agent worker resumes its diffs from. */
 export interface ClaimedDiffState {
   resultTree: string;
@@ -65,6 +64,7 @@ export interface ClaimedDiffState {
   pushedCommit?: string;
 }
 
+/** What the agent worker needs to prepare and run a claimed Run. */
 export interface ClaimedRun {
   id: string;
   projectId: string;

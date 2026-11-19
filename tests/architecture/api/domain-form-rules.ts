@@ -321,7 +321,6 @@ function instanceMemberViolations(path: string, source: ts.SourceFile): Violatio
 
 const SNAPSHOT_MEMBERS = new Set(['snapshot', 'toSnapshot']);
 
-/** No class of `domain/` hands out a snapshot: an entity is read through its fields (rule 10). */
 function snapshotViolations(path: string, source: ts.SourceFile): Violation[] {
   return allClasses(source).flatMap(({ name, node }) =>
     node.members.flatMap((member) => {

@@ -112,7 +112,9 @@ export class LogRedaction {
     return { ...failure, detail: this.text(failure.detail) };
   }
 
-  workingCopy<T extends { commits: { id: string; subject: string }[] }>(workingCopy: T): T {
+  workingCopy<T extends { commits: readonly { id: string; subject: string }[] }>(
+    workingCopy: T,
+  ): T {
     return {
       ...workingCopy,
       commits: workingCopy.commits.map((commit) => ({
