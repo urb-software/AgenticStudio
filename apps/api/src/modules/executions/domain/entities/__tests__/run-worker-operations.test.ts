@@ -64,7 +64,7 @@ function data(overrides: Partial<RestoreData<typeof Run>> = {}): RestoreData<typ
     stepsBeforePart: 0,
     pushedCommit: null,
     workingCopyRemovedAt: null,
-    pullRequestStatus: RunPullRequestStatus.none().toStored(),
+    pullRequestStatus: RunPullRequestStatus.none().toData(),
     lastActivityAt: T0,
     ...overrides,
   };

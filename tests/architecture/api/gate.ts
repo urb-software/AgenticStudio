@@ -260,22 +260,54 @@ export const apiGate: Gate = {
       to: { path: '^src/platform/queue/' },
     },
     {
-      name: 'api-snapshots-between-entity-and-repository',
+      name: 'api-data-between-entity-and-repository',
       comment:
-        'A snapshot is the shape between an entity and its repository (backend.md §3 rule 10): ' +
-        'only domain/entities/, domain/repositories/ and infrastructure/repositories/ import a ' +
-        '*-snapshot.ts file. Handlers, ports, collaborators, entry points and contracts/ use ' +
+        'An <Entity>Data type is the shape an entity is restored from (backend.md §3 rule 10): ' +
+        'only domain/entities/ and infrastructure/repositories/ import a *-data.ts file. ' +
+        'Handlers, ports, collaborators, entry points, domain/repositories/ and contracts/ use ' +
         'their own types. Tests are not checked.',
       severity: 'error',
       from: {
         path: '^src/modules/',
         pathNot: [
-          '^src/modules/[^/]+/(domain/(entities|repositories)|infrastructure/repositories)/',
+          '^src/modules/[^/]+/(domain/entities|infrastructure/repositories)/',
           TESTS,
           '\\.test\\.tsx?$',
         ],
       },
-      to: { path: '^src/modules/[^/]+/domain/entities/[^/]*-snapshot\\.ts$' },
+      to: { path: '^src/modules/[^/]+/domain/entities/[^/]*-data\\.ts$' },
+    },
+    {
+      name: 'api-data-only-for-its-own-entity',
+      comment:
+        'domain/entities/<x>-data.ts is imported by domain/entities/<x>.ts and by no other file of ' +
+        'domain/entities/: a facts file or another entity declares its field types from the ' +
+        'value objects instead of indexing the entity data (backend.md §3 rule 10). Tests are not ' +
+        'checked.',
+      severity: 'error',
+      from: {
+        path: '^src/modules/([^/]+)/domain/entities/([^/]+)\\.ts$',
+        pathNot: [TESTS, '\\.test\\.tsx?$'],
+      },
+      to: {
+        path: '^src/modules/[^/]+/domain/entities/[^/]*-data\\.ts$',
+        pathNot: '^src/modules/$1/domain/entities/$2-data\\.ts$',
+      },
+    },
+    {
+      name: 'api-data-only-for-repositories-of-its-module',
+      comment:
+        "A repository adapter restores its own module's entities: it imports no *-data.ts file " +
+        'of another module (backend.md §3 rule 10). Tests are not checked.',
+      severity: 'error',
+      from: {
+        path: '^src/modules/([^/]+)/infrastructure/repositories/',
+        pathNot: [TESTS, '\\.test\\.tsx?$'],
+      },
+      to: {
+        path: '^src/modules/[^/]+/domain/entities/[^/]*-data\\.ts$',
+        pathNot: '^src/modules/$1/',
+      },
     },
     {
       name: 'api-application-no-worker-protocol-or-entry-points',

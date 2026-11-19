@@ -18,7 +18,7 @@ const shownResultSchema = z.object({
   checks: z.array(storedCheckSchema).optional(),
 });
 
-export interface RunStepView {
+export interface ListedRunStep {
   index: number;
   kind: 'start' | 'resume';
   outcome: 'done' | 'needs_input';
@@ -31,7 +31,7 @@ export interface ListRunStepsInput {
   runId: string;
 }
 
-export type ListRunStepsResult = RunStepView[];
+export type ListRunStepsResult = ListedRunStep[];
 
 /**
  * Redacted again on read, for rows stored before the redaction on store.

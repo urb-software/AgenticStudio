@@ -8,7 +8,7 @@ export type RunDeliveryOutcome =
   | { outcome: 'none'; branchPushed?: true; pushedCommit?: string }
   | { outcome: 'delivered'; pullRequest: RunPullRequest; pushedCommit?: string };
 
-export interface RunDeliveryStored {
+export interface RunDeliveryData {
   integrationBranch: string;
   delivery: RunDeliveryState | null;
   pullRequest: RunPullRequest | null;
@@ -27,7 +27,7 @@ export class RunDelivery {
   readonly pushedCommit: string | null;
   readonly requested: boolean;
 
-  private constructor(stored: RunDeliveryStored) {
+  private constructor(stored: RunDeliveryData) {
     this.integrationBranch = stored.integrationBranch;
     this.state = stored.delivery;
     this.pullRequest = stored.pullRequest;
@@ -45,15 +45,15 @@ export class RunDelivery {
     });
   }
 
-  static restore(stored: RunDeliveryStored): RunDelivery {
+  static restore(stored: RunDeliveryData): RunDelivery {
     return new RunDelivery(stored);
   }
 
-  with(patch: Partial<RunDeliveryStored>): RunDelivery {
-    return new RunDelivery({ ...this.toStored(), ...patch });
+  with(patch: Partial<RunDeliveryData>): RunDelivery {
+    return new RunDelivery({ ...this.toData(), ...patch });
   }
 
-  toStored(): RunDeliveryStored {
+  toData(): RunDeliveryData {
     return {
       integrationBranch: this.integrationBranch,
       delivery: this.state,
@@ -76,7 +76,7 @@ export class RunDelivery {
   }
 
   /** An outcome without a pull request keeps the Run's. */
-  outcomePatch(outcome: RunDeliveryOutcome): Partial<RunDeliveryStored> {
+  outcomePatch(outcome: RunDeliveryOutcome): Partial<RunDeliveryData> {
     return {
       delivery: outcome.outcome,
       ...(outcome.outcome === 'delivered' ? { pullRequest: { ...outcome.pullRequest } } : {}),

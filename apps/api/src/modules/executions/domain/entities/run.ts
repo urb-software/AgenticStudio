@@ -1,4 +1,3 @@
-import type { RunSnapshot } from './run-snapshot.js';
 import { HandOutRule } from '../value-objects/hand-out-rule.js';
 import type { FollowUpEligibility } from '../value-objects/follow-up-eligibility.js';
 import type { FollowUpRefusal } from '../value-objects/follow-up-refusal.js';
@@ -44,7 +43,6 @@ import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
 import { Lease } from '../value-objects/lease.js';
 import { WorkerPresence } from '../value-objects/worker-presence.js';
 import { RunStep } from './run-step.js';
-import type { RunStepSnapshot } from './run-step-snapshot.js';
 
 type RunPatch = Partial<
   Omit<
@@ -99,8 +97,11 @@ export class Run {
       conversation: RunConversation.restore(data),
       claim: RunWorkerClaim.restore(data),
       progress: RunProgress.restore(data),
-      workingCopy: data.workingCopy,
-      failingChecks: data.failingChecks,
+      workingCopy:
+        data.workingCopy === null
+          ? null
+          : { ...data.workingCopy, commits: data.workingCopy.commits.map((c) => ({ ...c })) },
+      failingChecks: [...data.failingChecks],
     });
     CHANGES.set(this, { fields: {}, messages: [] });
   }
@@ -117,14 +118,14 @@ export class Run {
       startCommit: input.startCommit,
       remoteUrl: input.remoteUrl,
       createdAt: input.now,
-      ...RunLifecycle.start().toStored(),
-      ...RunDelivery.start(input.integrationBranch).toStored(),
-      ...RunWorkerClaim.none().toStored(),
-      ...RunProgress.start(input.limits, input.now).toStored(),
+      ...RunLifecycle.start().toData(),
+      ...RunDelivery.start(input.integrationBranch).toData(),
+      ...RunWorkerClaim.none().toData(),
+      ...RunProgress.start(input.limits, input.now).toData(),
       messages: [],
       workingCopy: null,
       failingChecks: [],
-      pullRequestStatus: RunPullRequestStatus.none().toStored(),
+      pullRequestStatus: RunPullRequestStatus.none().toData(),
     });
   }
 
@@ -143,26 +144,6 @@ export class Run {
       ...(pending.followUpEntry === undefined
         ? {}
         : { followUpEntry: { ...pending.followUpEntry } }),
-    };
-  }
-
-  snapshot(): RunSnapshot {
-    return {
-      id: this.id,
-      projectId: this.projectId,
-      provider: this.provider,
-      task: this.task,
-      startCommit: this.startCommit,
-      remoteUrl: this.remoteUrl,
-      createdAt: this.createdAt,
-      ...this.lifecycle.toStored(),
-      ...this.delivery.toStored(),
-      ...this.claim.toStored(),
-      ...this.progress.toStored(),
-      ...this.conversation.toStored(),
-      workingCopy: this.workingCopy,
-      failingChecks: [...this.failingChecks],
-      pullRequestStatus: this.pullRequestStatus.toStored(),
     };
   }
 
@@ -232,7 +213,7 @@ export class Run {
   resumeAfterUsageLimit(now: Date, facts: ResumeFacts): void {
     if (
       !this.canResumeAfterUsageLimit ||
-      // The resumed step's log is redacted with the snapshot; a Run in a
+      // The resumed step's log is redacted with the Environment file snapshot; a Run in a
       // Follow-up works without it.
       (this.claim.environmentFileSupplied &&
         !facts.environmentFileSnapshotKept &&
@@ -468,7 +449,7 @@ export class Run {
       at: now,
     });
     this.apply({
-      ...EarlierResult.of(before).toStored(),
+      ...EarlierResult.of(before).toData(),
       delivery: before.delivery,
       claimedBy: null,
       heartbeatAt: null,
@@ -532,11 +513,7 @@ export class Run {
     // The Run creates its step: the step cannot exist without the Run, and the number and the
     // limit above are the Run's to check from `stepCount`, so no other step is loaded for them.
     const pending = CHANGES.get(this)!;
-    const created: RunStepSnapshot = RunStep.create({
-      index,
-      kind: step.kind,
-      result: step.result,
-    }).snapshot();
+    const created = RunStep.create({ index, kind: step.kind, result: step.result });
     pending.steps = [...(pending.steps ?? []), created];
     if (step.question) this.append({ kind: 'question', question: step.question, at: now });
     this.apply({
@@ -653,7 +630,7 @@ export class Run {
   }
 
   private updateStatus(next: RunPullRequestStatus): void {
-    this.apply({ pullRequestStatus: next.toStored() });
+    this.apply({ pullRequestStatus: next.toData() });
   }
 
   private updateFollowUpEntry(details: BringUpDetails): void {

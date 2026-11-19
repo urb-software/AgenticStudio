@@ -5,7 +5,7 @@ import { IllegalRunTransitionError } from '../errors/run-errors.js';
 import type { RunFailure } from './run-failure.js';
 import { isFinalRunState, isRunState, type RunState } from './run-state.js';
 
-export interface RunLifecycleStored {
+export interface RunLifecycleData {
   state: RunState;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -38,7 +38,7 @@ export class RunLifecycle {
   readonly cancellation: RunCancellation | null;
   readonly cancelRequestedAt: Date | null;
 
-  private constructor(stored: RunLifecycleStored) {
+  private constructor(stored: RunLifecycleData) {
     this.state = stored.state;
     this.startedAt = stored.startedAt;
     this.finishedAt = stored.finishedAt;
@@ -59,7 +59,7 @@ export class RunLifecycle {
   }
 
   /** Throws {@link TypeError} for state the store should never hold. */
-  static restore(stored: RunLifecycleStored): RunLifecycle {
+  static restore(stored: RunLifecycleData): RunLifecycle {
     if (!isRunState(stored.state)) throw new TypeError(`Unknown run state: ${stored.state}`);
     if ((stored.state === 'failed') !== (stored.failure !== null)) {
       throw new TypeError('A Run has a failure exactly when it is failed.');
@@ -70,11 +70,11 @@ export class RunLifecycle {
     return new RunLifecycle(stored);
   }
 
-  with(patch: Partial<RunLifecycleStored>): RunLifecycle {
-    return new RunLifecycle({ ...this.toStored(), ...patch });
+  with(patch: Partial<RunLifecycleData>): RunLifecycle {
+    return new RunLifecycle({ ...this.toData(), ...patch });
   }
 
-  toStored(): RunLifecycleStored {
+  toData(): RunLifecycleData {
     return {
       state: this.state,
       startedAt: this.startedAt,

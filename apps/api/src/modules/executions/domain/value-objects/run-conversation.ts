@@ -4,8 +4,8 @@ import type { RunFollowUpMessage } from './run-follow-up-message.js';
 import type { RunPartEndMessage } from './run-part-end-message.js';
 import type { RunMessage } from './run-message.js';
 
-export interface RunConversationStored {
-  messages: RunMessage[];
+export interface RunConversationData {
+  messages: readonly RunMessage[];
 }
 
 export class RunConversation {
@@ -30,11 +30,11 @@ export class RunConversation {
     return new RunConversation([...messages]);
   }
 
-  static restore(stored: RunConversationStored): RunConversation {
+  static restore(stored: RunConversationData): RunConversation {
     return RunConversation.of(stored.messages);
   }
 
-  toStored(): RunConversationStored {
+  toData(): RunConversationData {
     return { messages: [...this.messages] };
   }
 

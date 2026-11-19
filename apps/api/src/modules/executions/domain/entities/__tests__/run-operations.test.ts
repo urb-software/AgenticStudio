@@ -81,7 +81,7 @@ function data(overrides: Partial<RestoreData<typeof Run>> = {}): RestoreData<typ
     stepsBeforePart: 0,
     pushedCommit: null,
     workingCopyRemovedAt: null,
-    pullRequestStatus: RunPullRequestStatus.none().toStored(),
+    pullRequestStatus: RunPullRequestStatus.none().toData(),
     lastActivityAt: T0,
     ...overrides,
   };
@@ -632,7 +632,7 @@ describe('Run.followUp', () => {
     ['missing', 'pull_request_missing'],
   ] as const)('refuses a Run whose pull request is %s', (state, reason) => {
     const run = finished('succeeded', {
-      pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state },
+      pullRequestStatus: { ...RunPullRequestStatus.none().toData(), state },
     });
 
     expect(refusal(run)).toBe(reason);
@@ -640,7 +640,7 @@ describe('Run.followUp', () => {
 
   it.each(['draft', 'open'] as const)('accepts a Run whose pull request is %s', (state) => {
     const run = finished('succeeded', {
-      pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state },
+      pullRequestStatus: { ...RunPullRequestStatus.none().toData(), state },
     });
 
     run.followUp('More.', T1, AVAILABLE);
@@ -702,17 +702,17 @@ describe('Run.followUp', () => {
       refusal(inState('running')),
       refusal(
         finished('succeeded', {
-          pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state: 'merged' },
+          pullRequestStatus: { ...RunPullRequestStatus.none().toData(), state: 'merged' },
         }),
       ),
       refusal(
         finished('succeeded', {
-          pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state: 'closed' },
+          pullRequestStatus: { ...RunPullRequestStatus.none().toData(), state: 'closed' },
         }),
       ),
       refusal(
         finished('succeeded', {
-          pullRequestStatus: { ...RunPullRequestStatus.none().toStored(), state: 'missing' },
+          pullRequestStatus: { ...RunPullRequestStatus.none().toData(), state: 'missing' },
         }),
       ),
       refusal(finished('succeeded', { workingCopyRemovedAt: T0 })),

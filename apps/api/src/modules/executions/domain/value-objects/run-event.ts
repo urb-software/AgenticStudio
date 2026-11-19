@@ -2,7 +2,7 @@ import { CutText } from './cut-text.js';
 import type { LogRedaction } from './log-redaction.js';
 import type { RunEventKind } from './run-event-kind.js';
 
-export interface RunEventInput {
+export interface RunEventData {
   seq: number;
   at: Date;
   stepIndex: number;
@@ -31,7 +31,7 @@ export class RunEvent {
    * removed something.
    */
   static load(
-    reported: Omit<RunEventInput, 'truncated'> & { truncated?: boolean },
+    reported: Omit<RunEventData, 'truncated'> & { truncated?: boolean },
     redaction: LogRedaction,
   ): RunEvent {
     const cut = CutText.likeWorkerProtocol(redaction.text(reported.text), RunEvent.TEXT_MAX_BYTES);
@@ -46,7 +46,7 @@ export class RunEvent {
   }
 
   /** An event as storage holds it: the text is kept as it is. */
-  static restore(stored: RunEventInput): RunEvent {
+  static restore(stored: RunEventData): RunEvent {
     return new RunEvent(
       stored.seq,
       stored.at,

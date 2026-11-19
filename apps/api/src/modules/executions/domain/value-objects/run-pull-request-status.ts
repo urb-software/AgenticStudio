@@ -6,7 +6,7 @@ import {
 } from './pull-request-state.js';
 import type { RunPullRequestChecks } from './run-pull-request-checks.js';
 import type { PullRequestStateResult } from './pull-request-state-result.js';
-import type { StoredPullRequestStatus } from './stored-pull-request-status.js';
+import type { RunPullRequestStatusData } from './run-pull-request-status-data.js';
 
 export type FailingChecksPreparation = 'preparing' | 'ready' | 'failed';
 
@@ -33,7 +33,7 @@ export class RunPullRequestStatus {
   readonly prepareError: string | null;
   readonly endedAt: Date | null;
 
-  private constructor(stored: StoredPullRequestStatus) {
+  private constructor(stored: RunPullRequestStatusData) {
     this.state = stored.state;
     this.behindBy = stored.behindBy;
     this.aheadBy = stored.aheadBy;
@@ -67,11 +67,11 @@ export class RunPullRequestStatus {
     });
   }
 
-  static restore(stored: StoredPullRequestStatus): RunPullRequestStatus {
+  static restore(stored: RunPullRequestStatusData): RunPullRequestStatus {
     return new RunPullRequestStatus(stored);
   }
 
-  toStored(): StoredPullRequestStatus {
+  toData(): RunPullRequestStatusData {
     return {
       state: this.state,
       behindBy: this.behindBy,
@@ -89,8 +89,8 @@ export class RunPullRequestStatus {
     };
   }
 
-  private with(patch: Partial<StoredPullRequestStatus>): RunPullRequestStatus {
-    return new RunPullRequestStatus({ ...this.toStored(), ...patch });
+  private with(patch: Partial<RunPullRequestStatusData>): RunPullRequestStatus {
+    return new RunPullRequestStatus({ ...this.toData(), ...patch });
   }
 
   /**

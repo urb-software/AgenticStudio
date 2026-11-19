@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
+import type { RunDiffFileSummary } from '../../../domain/value-objects/run-diff-file-summary.js';
 import type { RunDiffScope } from '../../../domain/value-objects/run-diff-scope.js';
-import type { StoredRunDiff } from '../../../domain/repositories/run-diff-repository.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -21,7 +21,16 @@ export interface GetRunDiffInput {
   scope: RunDiffScope;
 }
 
-export type GetRunDiffResult = StoredRunDiff;
+export type GetRunDiffResult =
+  | {
+      kind: 'computed';
+      baseCommit: string;
+      includesUnpushed: boolean;
+      truncated: boolean;
+      files: RunDiffFileSummary[];
+      reportedAt: Date;
+    }
+  | { kind: 'unavailable'; reason: string; reportedAt: Date };
 
 /**
  * The patches were redacted when stored. Throws {@link RunNotFoundError} or
@@ -39,6 +48,15 @@ export class GetRunDiffHandler {
     if (!isRunId(runId) || !(await this.runs.exists(runId))) throw new RunNotFoundError();
     const diff = await this.diffs.find(runId, scope);
     if (!diff) throw new RunDiffNotFoundError();
-    return diff;
+    return diff.kind === 'unavailable'
+      ? { kind: 'unavailable', reason: diff.reason, reportedAt: diff.reportedAt }
+      : {
+          kind: 'computed',
+          baseCommit: diff.baseCommit,
+          includesUnpushed: diff.includesUnpushed,
+          truncated: diff.truncated,
+          files: diff.files,
+          reportedAt: diff.reportedAt,
+        };
   }
 }

@@ -1,8 +1,8 @@
 import type { RunDiff } from '../../entities/run-diff.js';
 import type { RunDiffScope } from '../../value-objects/run-diff-scope.js';
 import type { NewRunDiff } from '../../value-objects/new-run-diff.js';
-import type { RunDiffStateInput } from '../../value-objects/run-diff-state.js';
-import type { RunDiffFileView, StoredRunDiff } from '../run-diff-repository.js';
+import { RunDiffState, type RunDiffStateInput } from '../../value-objects/run-diff-state.js';
+import type { RunDiffFileView, RunDiffView } from '../run-diff-repository.js';
 import type { RunDiffRepository } from '../run-diff-repository.js';
 
 /**
@@ -19,11 +19,11 @@ export class InMemoryRunDiffRepository implements RunDiffRepository {
       run: { ...structuredClone(diffs.run), reportedAt: now },
       last: { ...structuredClone(diffs.last), reportedAt: now },
     });
-    if (state) this.states.set(runId, structuredClone(state));
+    if (state) this.states.set(runId, state.toData());
     return Promise.resolve();
   }
 
-  find(runId: string, scope: RunDiffScope): Promise<StoredRunDiff | null> {
+  find(runId: string, scope: RunDiffScope): Promise<RunDiffView | null> {
     const diff = this.diffs.get(runId)?.[scope];
     if (!diff) return Promise.resolve(null);
     if (diff.kind === 'unavailable') return Promise.resolve(structuredClone(diff));
@@ -43,8 +43,8 @@ export class InMemoryRunDiffRepository implements RunDiffRepository {
     return Promise.resolve(file ? structuredClone(file) : null);
   }
 
-  findState(runId: string): Promise<RunDiffStateInput | null> {
+  findState(runId: string): Promise<RunDiffState | null> {
     const state = this.states.get(runId);
-    return Promise.resolve(state ? structuredClone(state) : null);
+    return Promise.resolve(state ? RunDiffState.restore(state) : null);
   }
 }

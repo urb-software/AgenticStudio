@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { isEndedPullRequestState, PULL_REQUEST_STATES } from '../pull-request-state.js';
 import { RunPullRequestStatus } from '../run-pull-request-status.js';
-import { type StoredPullRequestStatus } from '../stored-pull-request-status.js';
+import { type RunPullRequestStatusData } from '../run-pull-request-status-data.js';
 
 const NOW = new Date('2026-11-16T12:00:00.000Z');
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
 const later = (seconds: number) => new Date(NOW.getTime() + seconds * 1000);
-const status = (patch: Partial<StoredPullRequestStatus> = {}) =>
-  RunPullRequestStatus.restore({ ...RunPullRequestStatus.none().toStored(), ...patch });
+const status = (patch: Partial<RunPullRequestStatusData> = {}) =>
+  RunPullRequestStatus.restore({ ...RunPullRequestStatus.none().toData(), ...patch });
 
 describe('RunPullRequestStatus.pageRefreshDue', () => {
   it('is due when the state was never read, or was read a minute ago or more', () => {
@@ -89,7 +89,7 @@ describe('RunPullRequestStatus changes return a new status', () => {
 
     expect(after).not.toBe(before);
     expect(before.state).toBeNull();
-    expect(after.toStored()).toMatchObject({
+    expect(after.toData()).toMatchObject({
       state: 'open',
       behindBy: 2,
       aheadBy: 1,
@@ -124,7 +124,7 @@ describe('RunPullRequestStatus changes return a new status', () => {
   it('clears the position, verdict and checks of a pull request seen as over', () => {
     const open = status().read({ ...read, checksCommit: 'c'.repeat(40), checks: [] }, ago(60));
     const merged = open.observed('merged', NOW);
-    expect(merged.toStored()).toMatchObject({
+    expect(merged.toData()).toMatchObject({
       state: 'merged',
       behindBy: null,
       aheadBy: null,
@@ -133,7 +133,7 @@ describe('RunPullRequestStatus changes return a new status', () => {
       refreshedAt: NOW,
       endedAt: NOW,
     });
-    expect(open.observed('closed', NOW).toStored()).toMatchObject({
+    expect(open.observed('closed', NOW).toData()).toMatchObject({
       state: 'closed',
       behindBy: 2,
       aheadBy: 1,
@@ -143,7 +143,7 @@ describe('RunPullRequestStatus changes return a new status', () => {
   });
 
   it('keeps a failed lookup refreshing only while it has a retry', () => {
-    expect(status().refreshFailed('x', later(30), NOW).toStored()).toMatchObject({
+    expect(status().refreshFailed('x', later(30), NOW).toData()).toMatchObject({
       refreshError: 'x',
       retryAt: later(30),
       refreshRequestedAt: NOW,
@@ -155,20 +155,20 @@ describe('RunPullRequestStatus changes return a new status', () => {
 
   it('tracks the preparation of failing checks apart from the refresh', () => {
     const requested = status({ lastAttemptAt: ago(30) }).preparationRequested(NOW);
-    expect(requested.toStored()).toMatchObject({
+    expect(requested.toData()).toMatchObject({
       prepareRequestedAt: NOW,
       prepareError: null,
       lastAttemptAt: ago(30),
     });
-    expect(requested.preparationFailed('boom', null, NOW).toStored()).toMatchObject({
+    expect(requested.preparationFailed('boom', null, NOW).toData()).toMatchObject({
       prepareRequestedAt: null,
       prepareError: 'boom',
     });
-    expect(requested.preparationDone().toStored()).toMatchObject({
+    expect(requested.preparationDone().toData()).toMatchObject({
       prepareRequestedAt: null,
       prepareError: null,
     });
-    expect(status().refreshRequested(NOW).toStored()).toMatchObject({
+    expect(status().refreshRequested(NOW).toData()).toMatchObject({
       refreshRequestedAt: NOW,
       lastAttemptAt: NOW,
     });

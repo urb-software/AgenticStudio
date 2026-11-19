@@ -6,6 +6,6 @@ export type NewRunDiff =
       baseCommit: string;
       includesUnpushed: boolean;
       truncated: boolean;
-      files: (RunDiffFileSummary & { patch?: string })[];
+      files: readonly (RunDiffFileSummary & { patch?: string })[];
     }
   | { kind: 'unavailable'; reason: string };

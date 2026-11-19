@@ -1,11 +1,11 @@
-import type { RecordedWorkerStatus } from '../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../domain/value-objects/worker-status-data.js';
 
 export const WORKER_STATUS_STORE = Symbol('WORKER_STATUS_STORE');
 
 /** In memory: a report is stale after the lease, so a restart loses nothing. */
 export interface WorkerStatusStore {
-  record(status: RecordedWorkerStatus): void;
-  latest(): RecordedWorkerStatus | undefined;
+  record(status: WorkerStatusData): void;
+  latest(): WorkerStatusData | undefined;
   /** Only if it reported since the API started. */
   lastSeen(workerId: string): Date | undefined;
 }

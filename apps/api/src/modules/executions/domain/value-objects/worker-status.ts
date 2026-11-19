@@ -1,12 +1,12 @@
 import type { Provider } from './provider.js';
 import { Lease } from './lease.js';
-import type { RecordedWorkerStatus } from './recorded-worker-status.js';
+import type { WorkerStatusData } from './worker-status-data.js';
 
 /** Studio takes the answer from the report alone; the worker's own check stays authoritative. */
 export class WorkerStatus {
-  private constructor(private readonly recorded: RecordedWorkerStatus) {}
+  private constructor(private readonly recorded: WorkerStatusData) {}
 
-  static restore(recorded: RecordedWorkerStatus): WorkerStatus {
+  static restore(recorded: WorkerStatusData): WorkerStatus {
     return new WorkerStatus(recorded);
   }
 

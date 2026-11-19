@@ -56,6 +56,6 @@ describe('RunWorkerClaim', () => {
       environmentFileSupplied: true,
       environmentFilePath: 'config/.env',
     };
-    expect(RunWorkerClaim.restore(stored).toStored()).toEqual(stored);
+    expect(RunWorkerClaim.restore(stored).toData()).toEqual(stored);
   });
 });

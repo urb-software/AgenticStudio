@@ -9,7 +9,7 @@ describe('EarlierResult', () => {
         failureCode: 'agent_failed',
         delivery: null,
         detail: 'It broke.',
-      }).toStored(),
+      }).toData(),
     ).toEqual({
       state: 'failed',
       failure: { code: 'agent_failed', detail: 'It broke.' },
@@ -19,7 +19,7 @@ describe('EarlierResult', () => {
 
   it('tells the author of a cancel from its reason', () => {
     const cancelled = (detail: string) =>
-      EarlierResult.of({ state: 'cancelled', failureCode: null, delivery: null, detail }).toStored()
+      EarlierResult.of({ state: 'cancelled', failureCode: null, delivery: null, detail }).toData()
         .cancellation;
     expect(cancelled('Cancelled by the operator.')?.by).toBe('operator');
     expect(cancelled('Cancelled automatically: the run waited too long.')?.by).toBe('system');
@@ -32,7 +32,7 @@ describe('EarlierResult', () => {
         failureCode: null,
         delivery: 'none',
         detail: '',
-      }).toStored(),
+      }).toData(),
     ).toEqual({ state: 'succeeded', failure: null, cancellation: null });
   });
 });

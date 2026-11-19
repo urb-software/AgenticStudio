@@ -17,7 +17,7 @@
 - [ ] Backend: entry points are thin and hold no business rule.
 - [ ] Backend: business rules are in the domain, and none in the database adapter.
 - [ ] Backend: validation is in its two homes (endpoint schema for shape, entity or value object for rules).
-- [ ] Backend: handler results are plain data (snapshots reused for whole aggregates, no entity class, no HTTP shape).
+- [ ] Backend: handler results are plain data (the aggregate's shared view type reused for whole aggregates, no entity class, no HTTP shape).
 - [ ] Backend: aggregates refer to each other by id, and anything with its own repository is a root.
 - [ ] Backend: one concept per file, with no loose functions in `domain/`.
 - [ ] Frontend: Feature-First / public APIs / state boundaries (if applicable).

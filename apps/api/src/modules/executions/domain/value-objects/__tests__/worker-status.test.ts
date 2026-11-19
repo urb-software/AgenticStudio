@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type RecordedWorkerStatus } from '../recorded-worker-status.js';
+import { type WorkerStatusData } from '../worker-status-data.js';
 import { Lease } from '../lease.js';
 import { WorkerStatus } from '../worker-status.js';
 
@@ -7,7 +7,7 @@ const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = 60;
 const at = (secondsAgo: number) => new Date(NOW.getTime() - secondsAgo * 1000);
 
-const recorded = (overrides: Partial<RecordedWorkerStatus> = {}): RecordedWorkerStatus => ({
+const recorded = (overrides: Partial<WorkerStatusData> = {}): WorkerStatusData => ({
   workerId: '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d',
   reportedAt: at(0),
   runner: 'cli',

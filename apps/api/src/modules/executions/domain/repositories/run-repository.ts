@@ -5,7 +5,7 @@ import type { Run } from '../entities/run.js';
 import type { RunCancellation } from '../value-objects/run-cancellation.js';
 import type { RunFailure } from '../value-objects/run-failure.js';
 import type { RunState } from '../value-objects/run-state.js';
-import type { RunStepSnapshot } from '../entities/run-step-snapshot.js';
+import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
 export {
   RunNotHeldError,
@@ -40,6 +40,14 @@ export interface LimitedRunView {
 export interface RunsSummary {
   running: number;
   waiting: number;
+}
+
+/** A step as the step list shows it; `reportedAt` is when the store recorded it. */
+export interface RunStepView {
+  index: number;
+  kind: RunStepKind;
+  result: unknown;
+  reportedAt: Date;
 }
 
 export interface RunRepository {
@@ -125,7 +133,8 @@ export interface RunRepository {
    */
   findLimitedRuns(projectIds: readonly string[]): Promise<LimitedRunView[]>;
 
-  listSteps(runId: string): Promise<(RunStepSnapshot & { reportedAt: Date })[]>;
+  /** The steps of a Run in report order. */
+  listSteps(runId: string): Promise<RunStepView[]>;
 
   /**
    * Runs whose pull request state is `draft`, `open` or unknown and whose last state lookup was

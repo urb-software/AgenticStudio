@@ -47,7 +47,7 @@ export class RunDiffState {
     return new RunDiffState(stored);
   }
 
-  snapshot(): RunDiffStateInput {
+  toData(): RunDiffStateInput {
     return {
       resultTree: this.resultTree,
       resultCommit: this.resultCommit,

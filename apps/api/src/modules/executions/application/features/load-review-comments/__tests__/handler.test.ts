@@ -19,7 +19,7 @@ import type { InMemoryRunLookupRepository } from '../../../../domain/repositorie
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { GetReviewCommentsHandler } from '../../get-review-comments/handler.js';
@@ -35,11 +35,11 @@ const T1 = new Date(T0.getTime() + 5_000);
 const LEASE = { seconds: 60 };
 
 class Workers implements WorkerStatusStore {
-  current: RecordedWorkerStatus | undefined;
-  record(status: RecordedWorkerStatus): void {
+  current: WorkerStatusData | undefined;
+  record(status: WorkerStatusData): void {
     this.current = status;
   }
-  latest(): RecordedWorkerStatus | undefined {
+  latest(): WorkerStatusData | undefined {
     return this.current;
   }
   lastSeen(): Date | undefined {
@@ -351,6 +351,19 @@ describe('review comments', () => {
         ['conversation-3', false],
       ]);
       expect(reviewCommentsResponseSchema.safeParse(response).success).toBe(true);
+    });
+
+    it('leaves out an optional field a comment does not have, instead of setting it to undefined', async () => {
+      const result = await view([comment()]);
+
+      expect(Object.keys(result.comments[0]!).sort()).toEqual([
+        'author',
+        'byOperator',
+        'createdAt',
+        'id',
+        'kind',
+        'text',
+      ]);
     });
 
     it('marks nobody, and names no login, when none is configured', async () => {

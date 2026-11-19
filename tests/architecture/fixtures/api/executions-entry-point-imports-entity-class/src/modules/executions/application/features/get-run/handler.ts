@@ -1,11 +1,11 @@
-import type { RunSnapshot } from '../../../domain/entities/run.js';
+import type { RunView } from '../../../domain/entities/run.js';
 
 export interface GetRunInput {
   runId: string;
 }
 
 export interface GetRunResult {
-  run: RunSnapshot;
+  run: RunView;
 }
 
 export class GetRunHandler {

@@ -1,7 +1,7 @@
 import { RunFailure } from './run-failure.js';
 import type { RunLimits } from './run-limits.js';
 
-export interface RunProgressStored {
+export interface RunProgressData {
   stepCount: number;
   stepsBeforePart: number;
   followUpCount: number;
@@ -24,7 +24,7 @@ export class RunProgress {
   readonly lastActivityAt: Date;
   readonly limits: RunLimits;
 
-  private constructor(stored: RunProgressStored) {
+  private constructor(stored: RunProgressData) {
     this.stepCount = stored.stepCount;
     this.stepsBeforePart = stored.stepsBeforePart;
     this.followUpCount = stored.followUpCount;
@@ -48,15 +48,15 @@ export class RunProgress {
     });
   }
 
-  static restore(stored: RunProgressStored): RunProgress {
+  static restore(stored: RunProgressData): RunProgress {
     return new RunProgress(stored);
   }
 
-  with(patch: Partial<RunProgressStored>): RunProgress {
-    return new RunProgress({ ...this.toStored(), ...patch });
+  with(patch: Partial<RunProgressData>): RunProgress {
+    return new RunProgress({ ...this.toData(), ...patch });
   }
 
-  toStored(): RunProgressStored {
+  toData(): RunProgressData {
     return {
       stepCount: this.stepCount,
       stepsBeforePart: this.stepsBeforePart,

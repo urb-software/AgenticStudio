@@ -1,11 +1,11 @@
-import type { RecordedWorkerStatus } from '../value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../value-objects/worker-status-data.js';
 
 /** What the Run's handler fetched about the agent workers, as values. */
 export interface WorkerFacts {
   /** The last report of the Run's last claimer; `undefined`: none, or the Run was never claimed. */
   holderLastSeen: Date | undefined;
   /** The latest report of any agent worker; `undefined`: none. */
-  latest: RecordedWorkerStatus | undefined;
+  latest: WorkerStatusData | undefined;
 }
 
 /** What the Run needs to know about the agent worker to take a Follow-up. */

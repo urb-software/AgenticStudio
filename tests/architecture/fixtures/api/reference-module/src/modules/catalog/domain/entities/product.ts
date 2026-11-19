@@ -1,10 +1,9 @@
 import { ProductName } from '../value-objects/product-name.js';
-import type { ProductSnapshot } from './product-snapshot.js';
+import type { ProductData } from './product-data.js';
 
 // An aggregate root is a class with its own id and a non-public constructor: only its factories
-// make one, so it cannot be built in an invalid state. It produces its snapshot, the plain data
-// that only its repository sees. The file holds the class and nothing else (one concept per
-// file).
+// make one, so it cannot be built in an invalid state. It is restored from its data and read
+// through its fields. The file holds the class and nothing else (one concept per file).
 export class Product {
   private constructor(
     readonly id: string,
@@ -16,11 +15,7 @@ export class Product {
     return new Product(id, ProductName.of(name), now);
   }
 
-  static restore(snapshot: ProductSnapshot): Product {
-    return new Product(snapshot.id, ProductName.of(snapshot.name), snapshot.addedAt);
-  }
-
-  snapshot(): ProductSnapshot {
-    return { id: this.id, name: this.name.value, addedAt: this.addedAt };
+  static restore(data: ProductData): Product {
+    return new Product(data.id, ProductName.of(data.name), data.addedAt);
   }
 }

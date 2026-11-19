@@ -20,6 +20,7 @@ import { Run } from '../../entities/run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { isFinalRunState } from '../../value-objects/run-state.js';
 import { type RunCancellation } from '../../value-objects/run-cancellation.js';
+import { type RunMessage } from '../../value-objects/run-message.js';
 import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { type RunLimits } from '../../value-objects/run-limits.js';
 import { type RunDeliveryOutcome } from '../../value-objects/run-delivery.js';
@@ -37,7 +38,8 @@ import type {
   RunStateView,
 } from '../run-repository.js';
 
-type StoredRun = RestoreData<typeof Run> & {
+type StoredRun = Omit<RestoreData<typeof Run>, 'messages'> & {
+  messages: RunMessage[];
   environmentFileSecret: string | null;
 };
 
@@ -121,7 +123,7 @@ export class InMemoryRunRepository implements RunRepository {
       stepsBeforePart: 0,
       pushedCommit: null,
       workingCopyRemovedAt: null,
-      pullRequestStatus: RunPullRequestStatus.none().toStored(),
+      pullRequestStatus: RunPullRequestStatus.none().toData(),
       lastActivityAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence - 1)),
     };
     this.runs.push(created);

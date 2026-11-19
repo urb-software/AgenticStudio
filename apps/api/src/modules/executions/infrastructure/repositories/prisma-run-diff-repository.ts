@@ -6,10 +6,10 @@ import type { RunDiff } from '../../domain/entities/run-diff.js';
 import { RUN_DIFF_FILE_STATUSES } from '../../domain/value-objects/run-diff-file-status.js';
 import { type RunDiffScope } from '../../domain/value-objects/run-diff-scope.js';
 import { type RunDiffFileSummary } from '../../domain/value-objects/run-diff-file-summary.js';
-import { type RunDiffStateInput } from '../../domain/value-objects/run-diff-state.js';
+import { RunDiffState } from '../../domain/value-objects/run-diff-state.js';
 import {
   type RunDiffFileView,
-  type StoredRunDiff,
+  type RunDiffView,
 } from '../../domain/repositories/run-diff-repository.js';
 import type { RunDiffRepository } from '../../domain/repositories/run-diff-repository.js';
 import { type Executor, inTransaction } from './executor.js';
@@ -90,7 +90,7 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
     });
   }
 
-  async find(runId: string, scope: RunDiffScope): Promise<StoredRunDiff | null> {
+  async find(runId: string, scope: RunDiffScope): Promise<RunDiffView | null> {
     const row = await this.db.runDiff.findUnique({ where: { runId_scope: { runId, scope } } });
     if (!row) return null;
     if (row.baseCommit === null) {
@@ -128,14 +128,14 @@ export class PrismaRunDiffRepository implements RunDiffRepository {
     return stored ? { ...file, patch: stored.patch } : file;
   }
 
-  async findState(runId: string): Promise<RunDiffStateInput | null> {
+  async findState(runId: string): Promise<RunDiffState | null> {
     const row = await this.db.runDiffState.findUnique({ where: { runId } });
     if (!row) return null;
-    return {
+    return RunDiffState.restore({
       resultTree: row.resultTree,
       resultCommit: row.resultCommit,
       previousTree: row.previousTree,
       previousCommit: row.previousCommit,
-    };
+    });
   }
 }

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { ReviewCommentInput } from '../../../domain/value-objects/review-comment.js';
+import type { ReviewCommentKind } from '../../../domain/value-objects/review-comment-kind.js';
+import type { ReviewVerdict } from '../../../domain/value-objects/review-verdict.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import type { ReviewCommentScope } from '../../../domain/value-objects/review-comment-scope.js';
 import {
@@ -18,7 +19,19 @@ export interface GetReviewCommentsInput {
   runId: string;
 }
 
-export type GetReviewCommentsComment = ReviewCommentInput & { byOperator: boolean };
+export interface GetReviewCommentsComment {
+  id: string;
+  author: string;
+  kind: ReviewCommentKind;
+  path?: string;
+  line?: number;
+  diffContext?: string;
+  verdict?: ReviewVerdict;
+  text: string;
+  textCut?: true;
+  createdAt: string;
+  byOperator: boolean;
+}
 
 export interface GetReviewCommentsResult {
   operatorLogin: string | null;
@@ -51,7 +64,16 @@ export class GetReviewCommentsHandler {
     return {
       operatorLogin,
       comments: (set?.comments ?? []).map((comment) => ({
-        ...comment.snapshot(),
+        id: comment.id,
+        author: comment.author,
+        kind: comment.kind,
+        ...(comment.path === undefined ? {} : { path: comment.path }),
+        ...(comment.line === undefined ? {} : { line: comment.line }),
+        ...(comment.diffContext === undefined ? {} : { diffContext: comment.diffContext }),
+        ...(comment.verdict === undefined ? {} : { verdict: comment.verdict }),
+        text: comment.text,
+        ...(comment.textCut === undefined ? {} : { textCut: comment.textCut }),
+        createdAt: comment.createdAt,
         byOperator: comment.isBy(operatorLogin),
       })),
       truncated: set?.truncated ?? false,

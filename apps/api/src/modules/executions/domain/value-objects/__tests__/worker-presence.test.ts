@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Lease } from '../lease.js';
-import type { RecordedWorkerStatus } from '../recorded-worker-status.js';
+import type { WorkerStatusData } from '../worker-status-data.js';
 import { WorkerPresence } from '../worker-presence.js';
 
 const NOW = new Date('2026-11-18T12:00:00.000Z');
 const LEASE = Lease.ofSeconds(60);
-const status = (ageSeconds: number): RecordedWorkerStatus => ({
+const status = (ageSeconds: number): WorkerStatusData => ({
   workerId: '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d',
   runner: 'cli',
   providers: { claude_code: true, codex: false },

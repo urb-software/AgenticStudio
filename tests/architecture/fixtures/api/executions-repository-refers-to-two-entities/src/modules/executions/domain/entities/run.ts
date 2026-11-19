@@ -1,6 +1,6 @@
 export type RunId = string;
 
-export type RunSnapshot = { readonly id: string; readonly state: string };
+export type RunView = { readonly id: string; readonly state: string };
 
 export class Run {
   private constructor(
@@ -12,7 +12,7 @@ export class Run {
     return new Run(id, state);
   }
 
-  snapshot(): RunSnapshot {
+  toView(): RunView {
     return { id: this.id, state: this.state };
   }
 }

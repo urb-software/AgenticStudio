@@ -92,7 +92,7 @@ describe('Follow-ups', () => {
   };
   const available = { workerAvailable: true, providerAvailable: true };
   const known = (state: NonNullable<RestoreData<typeof Run>['pullRequestStatus']['state']>) => ({
-    ...RunPullRequestStatus.none().toStored(),
+    ...RunPullRequestStatus.none().toData(),
     state,
     refreshedAt: AT,
   });

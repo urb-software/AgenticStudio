@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { type RecordedWorkerStatus } from '../recorded-worker-status.js';
+import { type WorkerStatusData } from '../worker-status-data.js';
 import { Lease } from '../lease.js';
 import { WorkerPresence } from '../worker-presence.js';
 
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = 60;
-const status = (
-  providers: RecordedWorkerStatus['providers'],
-  ageSeconds = 0,
-): RecordedWorkerStatus => ({
+const status = (providers: WorkerStatusData['providers'], ageSeconds = 0): WorkerStatusData => ({
   workerId: '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d',
   runner: 'cli',
   providers,

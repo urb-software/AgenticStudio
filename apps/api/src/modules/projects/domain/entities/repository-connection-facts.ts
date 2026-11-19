@@ -1,4 +1,4 @@
-import type { StoredRepositoryConnection } from './repository-connection-data.js';
+import type { RepositoryLifecycleData } from '../value-objects/repository-lifecycle-data.js';
 
 export interface ConnectAttempt {
   projectId: string;
@@ -27,7 +27,9 @@ export interface ConnectAttempt {
  * replaces the connection, and whether the record goes (the last step of a Disconnect).
  */
 export interface RepositoryChanges {
-  fields: Partial<StoredRepositoryConnection>;
+  fields: Partial<
+    RepositoryLifecycleData & { projectId: string; url: string; integrationBranch: string }
+  >;
   identity?: string;
   removed?: true;
 }

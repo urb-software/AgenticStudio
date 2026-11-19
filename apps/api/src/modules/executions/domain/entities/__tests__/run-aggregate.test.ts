@@ -60,7 +60,7 @@ const STARTED_DATA: RestoreData<typeof Run> = {
   limits: { stepMinutes: 60, maxSteps: 3, waitingDays: 14, maxTotalSteps: 10 },
   workingCopy: null,
   failingChecks: [],
-  pullRequestStatus: RunPullRequestStatus.none().toStored(),
+  pullRequestStatus: RunPullRequestStatus.none().toData(),
   messages: [],
 };
 const restored = (patch: Partial<RestoreData<typeof Run>>) =>
@@ -234,7 +234,7 @@ describe('restoring a Run from its flat record and giving it back', () => {
     expect(run.delivery.requested).toBe(true);
     expect(run.claim.sessionRef).toBe(sessionRef);
     expect(run.progress.limits).toEqual(full.limits);
-    expect(run.pullRequestStatus.toStored()).toEqual(full.pullRequestStatus);
+    expect(run.pullRequestStatus.toData()).toEqual(full.pullRequestStatus);
     expect(run.conversation.messages).toEqual(full.messages);
     expect(run.pendingChanges()).toEqual({ fields: {}, messages: [] });
   });
@@ -247,6 +247,33 @@ describe('restoring a Run from its flat record and giving it back', () => {
 
     expect(other.claim.heartbeatAt).toEqual(T2);
     expect(run.claim.heartbeatAt).toEqual(T0);
+  });
+
+  it('copies the arrays and the working copy it is restored from', () => {
+    const source = {
+      ...full,
+      failingChecks: ['lint'],
+      workingCopy: {
+        runBranch: 'studio/run',
+        commits: [{ id: 'b'.repeat(40), subject: 'Add it' }],
+        hasUncommittedChanges: false,
+      },
+    } as unknown as RestoreData<typeof Run> & {
+      failingChecks: string[];
+      workingCopy: { commits: unknown[]; runBranch: string };
+    };
+    const run = Run.restore(source);
+    const other = Run.restore(source);
+
+    source.failingChecks.push('tests');
+    source.workingCopy.commits.push({ id: 'c'.repeat(40), subject: 'Later' });
+    source.workingCopy.runBranch = 'changed';
+
+    for (const restoredRun of [run, other]) {
+      expect(restoredRun.failingChecks).toEqual(['lint']);
+      expect(restoredRun.workingCopy?.commits).toHaveLength(1);
+      expect(restoredRun.workingCopy?.runBranch).toBe('studio/run');
+    }
   });
 
   it('writes only the fields an operation changed', () => {
@@ -327,7 +354,7 @@ describe('what the lookups change of the pull request status', () => {
       lastAttemptAt: null,
     });
     expect(preparing.pendingChanges().fields.pullRequestStatus).toEqual(
-      preparing.pullRequestStatus.toStored(),
+      preparing.pullRequestStatus.toData(),
     );
   });
 

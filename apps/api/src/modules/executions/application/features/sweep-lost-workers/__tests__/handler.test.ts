@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { SweepLostWorkersHandler } from '../handler.js';
 
@@ -13,8 +13,8 @@ const T0 = new Date('2026-11-15T12:00:00.000Z');
 const later = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
-  private readonly seen = new Map<string, RecordedWorkerStatus>();
-  record(status: RecordedWorkerStatus) {
+  private readonly seen = new Map<string, WorkerStatusData>();
+  record(status: WorkerStatusData) {
     this.seen.set(status.workerId, status);
   }
   latest() {
