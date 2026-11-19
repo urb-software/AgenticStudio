@@ -11,7 +11,7 @@ import {
   RepositoryNotVerifiableError,
 } from '../../errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../repository-connection.js';
-import { type StoredRepositoryConnection } from '../repository-connection-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const SHA = 'a'.repeat(40);
@@ -29,7 +29,9 @@ const attempt = (overrides: Partial<ConnectAttempt> = {}): ConnectAttempt => ({
   ...overrides,
 });
 
-const stored = (overrides: Partial<StoredRepositoryConnection>): StoredRepositoryConnection => ({
+const stored = (
+  overrides: Partial<RestoreData<typeof RepositoryConnection>>,
+): RestoreData<typeof RepositoryConnection> => ({
   projectId: PROJECT,
   url: 'https://github.com/acme/shop.git',
   integrationBranch: 'dev',
@@ -44,7 +46,7 @@ const stored = (overrides: Partial<StoredRepositoryConnection>): StoredRepositor
   ...overrides,
 });
 
-const sshStored = (overrides: Partial<StoredRepositoryConnection>) =>
+const sshStored = (overrides: Partial<RestoreData<typeof RepositoryConnection>>) =>
   stored({
     url: 'git@github.com:acme/shop.git',
     publicKey: DEPLOY_KEY.publicKey,
@@ -53,7 +55,8 @@ const sshStored = (overrides: Partial<StoredRepositoryConnection>) =>
   });
 const clone = { headSha: SHA, lastFetchedAt: AT };
 
-const restore = (data: StoredRepositoryConnection) => RepositoryConnection.restore(data);
+const restore = (data: RestoreData<typeof RepositoryConnection>) =>
+  RepositoryConnection.restore(data);
 const ready = () => restore(stored({ state: 'ready', ...clone }));
 const failedWithClone = () => restore(stored({ state: 'failed', ...clone, failure: FAILURE }));
 const failedWithoutClone = () => restore(stored({ state: 'failed', failure: FAILURE }));

@@ -3,7 +3,8 @@ import {
   NoUsableCloneError,
   RepositoryBusyError,
 } from '../../errors/repository-connection-errors.js';
-import type { StoredRepositoryConnection } from '../../entities/repository-connection-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
+import type { RepositoryConnection } from '../../entities/repository-connection.js';
 import { RepositoryFailure } from '../repository-failure.js';
 import { RepositoryLifecycle } from '../repository-lifecycle.js';
 import { REPOSITORY_STATES, type RepositoryState } from '../repository-state.js';
@@ -78,8 +79,8 @@ describe('RepositoryLifecycle', () => {
 
   describe('restore', () => {
     const stored = (
-      overrides: Partial<StoredRepositoryConnection>,
-    ): StoredRepositoryConnection => ({
+      overrides: Partial<RestoreData<typeof RepositoryConnection>>,
+    ): RestoreData<typeof RepositoryConnection> => ({
       projectId: '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
       url: 'https://github.com/acme/shop.git',
       integrationBranch: 'dev',
