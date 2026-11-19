@@ -1,12 +1,10 @@
 import type { RunStepKind } from '../value-objects/run-step-kind.js';
 
-/** A Run step's current values; {@link RunStep.snapshot}. */
-export interface RunStepSnapshot {
+/** What a Run step is restored from. */
+export interface RunStepData {
   /** The step's number within its Run, from 1, in report order. */
   readonly index: number;
   readonly kind: RunStepKind;
   /** The structured result, as validated JSON (redacted before it is stored). */
   readonly result: unknown;
-  /** When the store recorded it; absent for a step the Run has just created. */
-  readonly reportedAt?: Date;
 }

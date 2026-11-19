@@ -7,7 +7,7 @@ import {
   T0,
   WORKER,
 } from '../../../../domain/repositories/__tests__/delivered-run.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
@@ -19,11 +19,11 @@ import {
 } from '../../../../domain/errors/run-errors.js';
 
 class Workers implements WorkerStatusStore {
-  current: RecordedWorkerStatus | undefined;
-  record(status: RecordedWorkerStatus): void {
+  current: WorkerStatusData | undefined;
+  record(status: WorkerStatusData): void {
     this.current = status;
   }
-  latest(): RecordedWorkerStatus | undefined {
+  latest(): WorkerStatusData | undefined {
     return this.current;
   }
   lastSeen(): Date | undefined {

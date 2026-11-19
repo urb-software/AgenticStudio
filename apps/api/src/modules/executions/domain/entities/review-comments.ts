@@ -1,5 +1,5 @@
 import type { ReviewCommentsAnswerFacts } from './review-comments-answer-facts.js';
-import type { ReviewCommentsSnapshot } from './review-comments-snapshot.js';
+import type { ReviewCommentsData } from './review-comments-data.js';
 import type { FollowUpComments } from '../value-objects/follow-up-comments.js';
 import { ReviewComment } from '../value-objects/review-comment.js';
 import type { ReviewCommentScope } from '../value-objects/review-comment-scope.js';
@@ -20,7 +20,7 @@ export class ReviewComments {
     loadedAt: Date,
   ) {
     this.scope = scope;
-    this.comments = comments;
+    this.comments = [...comments];
     this.truncated = truncated;
     this.loadedAt = loadedAt;
   }
@@ -41,22 +41,13 @@ export class ReviewComments {
     return new ReviewComments(input.scope, comments, truncated, input.loadedAt);
   }
 
-  static restore(data: ReviewCommentsSnapshot): ReviewComments {
+  static restore(data: ReviewCommentsData): ReviewComments {
     return new ReviewComments(
       data.scope,
       data.comments.map((comment) => ReviewComment.restore(comment)),
       data.truncated,
       data.loadedAt,
     );
-  }
-
-  snapshot(): ReviewCommentsSnapshot {
-    return {
-      scope: this.scope,
-      comments: this.comments.map((comment) => comment.snapshot()),
-      truncated: this.truncated,
-      loadedAt: this.loadedAt,
-    };
   }
 
   /** `null` if any id is unknown. */

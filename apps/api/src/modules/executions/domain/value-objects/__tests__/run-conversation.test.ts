@@ -34,7 +34,7 @@ describe('RunConversation', () => {
     expect(asked).not.toBe(empty);
     expect(empty.messages).toEqual([]);
     expect(asked.messages).toEqual([question]);
-    expect(asked.toStored()).toEqual({ messages: [question] });
+    expect(asked.toData()).toEqual({ messages: [question] });
   });
 
   it('does not change when the list it was built from does', () => {

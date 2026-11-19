@@ -1,5 +1,5 @@
 import { RunCancellation } from './run-cancellation.js';
-import type { RunLifecycleStored } from './run-lifecycle.js';
+import type { RunLifecycleData } from './run-lifecycle.js';
 import type { RunPartEnd } from './run-part-end.js';
 
 /** The result a `part_end` recorded, given back when a Follow-up reopens the Run. */
@@ -11,7 +11,7 @@ export class EarlierResult {
   }
 
   /** The cancel's author is told from its reason, which only the cancellation's wording fixes. */
-  toStored(): Pick<RunLifecycleStored, 'state' | 'failure' | 'cancellation'> {
+  toData(): Pick<RunLifecycleData, 'state' | 'failure' | 'cancellation'> {
     const end = this.end;
     return {
       state: end.state,

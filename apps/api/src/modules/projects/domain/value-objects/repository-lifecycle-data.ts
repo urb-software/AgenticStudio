@@ -1,7 +1,7 @@
 import type { RepositoryState } from './repository-state.js';
 import type { RepositoryFailure } from './repository-failure.js';
 
-export interface StorableConnection {
+export interface RepositoryLifecycleData {
   state: RepositoryState;
   headSha: string | null;
   lastFetchedAt: Date | null;

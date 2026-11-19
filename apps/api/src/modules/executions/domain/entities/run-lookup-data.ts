@@ -2,8 +2,8 @@ import type { ReviewCommentScope } from '../value-objects/review-comment-scope.j
 import type { LookupKind } from '../value-objects/lookup-kind.js';
 import type { LookupStatus } from '../value-objects/lookup-status.js';
 
-/** A lookup's current values; {@link RunLookup.snapshot}. */
-export interface RunLookupSnapshot {
+/** A lookup's current values. */
+export interface RunLookupData {
   readonly id: string;
   /** The Run it is about, by id. */
   readonly runId: string;

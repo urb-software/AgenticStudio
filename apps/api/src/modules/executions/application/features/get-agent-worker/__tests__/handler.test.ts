@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import { GetAgentWorkerHandler } from '../handler.js';
 
 const T0 = new Date('2026-11-16T12:00:00.000Z');
@@ -13,8 +13,8 @@ const DISK = {
   minFreeBytes: 10 * GIB,
 };
 
-function handler(status: Partial<RecordedWorkerStatus> | undefined, now = T0) {
-  const full: RecordedWorkerStatus | undefined = status && {
+function handler(status: Partial<WorkerStatusData> | undefined, now = T0) {
+  const full: WorkerStatusData | undefined = status && {
     workerId: 'w',
     runner: 'cli',
     providers: { claude_code: true, codex: true },

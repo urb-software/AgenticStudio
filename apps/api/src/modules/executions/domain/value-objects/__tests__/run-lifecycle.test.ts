@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RunCancellation } from '../run-cancellation.js';
 import { IllegalRunTransitionError } from '../../errors/run-errors.js';
 import { EarlierResult } from '../earlier-result.js';
-import { RunLifecycle, type RunLifecycleStored } from '../run-lifecycle.js';
+import { RunLifecycle, type RunLifecycleData } from '../run-lifecycle.js';
 import { RUN_STATES, FINAL_RUN_STATES, isFinalRunState, type RunState } from '../run-state.js';
 
 const LEGAL: [RunState, RunState][] = [
@@ -24,8 +24,8 @@ const LEGAL: [RunState, RunState][] = [
 ];
 
 const AT = new Date('2026-11-16T12:00:00.000Z');
-const stored = (patch: Partial<RunLifecycleStored> = {}): RunLifecycleStored => ({
-  ...RunLifecycle.start().toStored(),
+const stored = (patch: Partial<RunLifecycleData> = {}): RunLifecycleData => ({
+  ...RunLifecycle.start().toData(),
   ...patch,
 });
 const inState = (state: RunState): RunLifecycle =>
@@ -95,7 +95,7 @@ describe('RunLifecycle transitions', () => {
 
 describe('RunLifecycle', () => {
   it('starts queued, with nothing started, finished, failed or cancelled', () => {
-    expect(RunLifecycle.start().toStored()).toEqual({
+    expect(RunLifecycle.start().toData()).toEqual({
       state: 'queued',
       startedAt: null,
       finishedAt: null,
@@ -136,7 +136,7 @@ describe('RunLifecycle', () => {
 
   it('ignores keys that belong to another concept', () => {
     const changed = RunLifecycle.start().with({ state: 'preparing', claimedBy: 'w' } as never);
-    expect(changed.toStored()).toEqual({ ...RunLifecycle.start().toStored(), state: 'preparing' });
+    expect(changed.toData()).toEqual({ ...RunLifecycle.start().toData(), state: 'preparing' });
   });
 
   it('knows whether it is final and whether a stop was asked for', () => {
@@ -207,7 +207,7 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
         failureCode: 'agent_failed',
         delivery: null,
         detail: 'It broke.',
-      }).toStored(),
+      }).toData(),
     ).toEqual({ state: 'failed', failure: failure('agent_failed'), cancellation: null });
     expect(
       EarlierResult.of({
@@ -215,7 +215,7 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
         failureCode: null,
         delivery: null,
         detail: 'Cancelled by the operator.',
-      }).toStored().cancellation,
+      }).toData().cancellation,
     ).toEqual({ by: 'operator', reason: 'Cancelled by the operator.' });
     expect(
       EarlierResult.of({
@@ -223,7 +223,7 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
         failureCode: null,
         delivery: null,
         detail: 'Cancelled automatically: the run waited too long.',
-      }).toStored().cancellation?.by,
+      }).toData().cancellation?.by,
     ).toBe('system');
     expect(
       EarlierResult.of({
@@ -231,7 +231,7 @@ describe('RunLifecycle.partEnd and earlierResult', () => {
         failureCode: null,
         delivery: 'none',
         detail: '',
-      }).toStored(),
+      }).toData(),
     ).toEqual({ state: 'succeeded', failure: null, cancellation: null });
   });
 });

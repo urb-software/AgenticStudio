@@ -1,7 +1,4 @@
-import type {
-  EnvironmentFileSnapshot,
-  StoredEnvironmentFile,
-} from './environment-file-snapshot.js';
+import type { EnvironmentFileData } from './environment-file-data.js';
 
 /**
  * The Environment file aggregate: it holds the secret store's reference to the content, never the
@@ -14,23 +11,15 @@ export class EnvironmentFile {
   readonly updatedAt: Date;
   readonly secretRef: string;
 
-  private constructor(stored: StoredEnvironmentFile) {
-    this.projectId = stored.projectId;
-    this.path = stored.path;
-    this.sizeBytes = stored.sizeBytes;
-    this.updatedAt = stored.updatedAt;
-    this.secretRef = stored.secretRef;
+  private constructor(data: EnvironmentFileData) {
+    this.projectId = data.projectId;
+    this.path = data.path;
+    this.sizeBytes = data.sizeBytes;
+    this.updatedAt = new Date(data.updatedAt);
+    this.secretRef = data.secretRef;
   }
 
-  static restore(stored: StoredEnvironmentFile): EnvironmentFile {
-    return new EnvironmentFile(stored);
-  }
-
-  snapshot(): EnvironmentFileSnapshot {
-    return {
-      path: this.path,
-      sizeBytes: this.sizeBytes,
-      updatedAt: new Date(this.updatedAt),
-    };
+  static restore(data: EnvironmentFileData): EnvironmentFile {
+    return new EnvironmentFile(data);
   }
 }

@@ -109,22 +109,21 @@ function changedColumns(changes: RepositoryChanges) {
 }
 
 function createColumns(repository: RepositoryConnection, identity: string) {
-  const stored = repository.snapshot();
   return {
-    projectId: stored.projectId,
-    url: stored.url,
+    projectId: repository.projectId,
+    url: repository.url,
     urlNormalized: identity,
-    integrationBranch: stored.integrationBranch,
-    state: stored.state,
-    headSha: stored.headSha,
-    lastFetchedAt: stored.lastFetchedAt,
-    failureCode: stored.failure?.code ?? null,
-    failureDetail: stored.failure?.detail ?? null,
-    failureRemoteDefaultBranch: stored.failure?.remoteDefaultBranch ?? null,
-    publicKey: stored.publicKey,
-    deployKeySecretId: stored.deployKeySecret,
-    pinnedHostKey: stored.pinnedHostKey,
-    pendingHostKey: stored.pendingHostKey,
+    integrationBranch: repository.integrationBranch,
+    state: repository.state,
+    headSha: repository.headSha,
+    lastFetchedAt: repository.lastFetchedAt,
+    failureCode: repository.failure?.code ?? null,
+    failureDetail: repository.failure?.detail ?? null,
+    failureRemoteDefaultBranch: repository.failure?.remoteDefaultBranch ?? null,
+    publicKey: repository.publicKey,
+    deployKeySecretId: repository.deployKeySecret,
+    pinnedHostKey: repository.pinnedHostKey,
+    pendingHostKey: repository.pendingHostKey,
     updatedAt: new Date(),
   };
 }

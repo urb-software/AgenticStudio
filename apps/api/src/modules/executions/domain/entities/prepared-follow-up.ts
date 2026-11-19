@@ -1,4 +1,4 @@
-import type { PreparedFollowUpSnapshot } from './prepared-follow-up-snapshot.js';
+import type { PreparedFollowUpData } from './prepared-follow-up-data.js';
 import { RunConversation } from '../value-objects/run-conversation.js';
 import { type FollowUpSource } from '../value-objects/follow-up-source.js';
 import { CheckLink } from '../value-objects/check-link.js';
@@ -52,21 +52,17 @@ interface Entry {
 
 /** The Follow-up Studio prepared for the operator to review; never sent by itself. */
 export class PreparedFollowUp {
+  readonly items: readonly PreparedFollowUpItem[];
+
   private constructor(
     readonly source: FollowUpSource,
     readonly text: string,
-    readonly items: PreparedFollowUpItem[],
-  ) {}
-
-  snapshot(): PreparedFollowUpSnapshot {
-    return { source: this.source, text: this.text, items: this.items.map((item) => ({ ...item })) };
+    items: readonly PreparedFollowUpItem[],
+  ) {
+    this.items = items.map((item) => ({ ...item }));
   }
 
-  static restore(data: {
-    source: FollowUpSource;
-    text: string;
-    items: PreparedFollowUpItem[];
-  }): PreparedFollowUp {
+  static restore(data: PreparedFollowUpData): PreparedFollowUp {
     return new PreparedFollowUp(data.source, data.text, data.items);
   }
 

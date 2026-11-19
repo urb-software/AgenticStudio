@@ -33,10 +33,10 @@ import { type PullRequestState } from '../../domain/value-objects/pull-request-s
 import { type RunWorkingCopy } from '../../domain/value-objects/run-working-copy.js';
 import type { FollowUpSource } from '../../domain/value-objects/follow-up-source.js';
 import { HandOutRule } from '../../domain/value-objects/hand-out-rule.js';
-import type { RunStepSnapshot } from '../../domain/entities/run-step-snapshot.js';
 import type {
   LimitedRunView,
   RunRepository,
+  RunStepView,
   RunsSummary,
   RunStateView,
 } from '../../domain/repositories/run-repository.js';
@@ -682,14 +682,14 @@ export class PrismaRunRepository implements RunRepository {
                  count(*)::int AS server
           FROM runs a
           WHERE a.id <> ${runId}::uuid AND ${HOLDS_PLACE}`;
-        const snapshot = await tx.run.findUnique({
+        const row = await tx.run.findUnique({
           where: { id: runId },
           select: { environmentFileSecretId: true },
         });
         mutate(run, {
           projectPlaceTaken: (places?.project ?? 0) > 0,
           serverPlacesTaken: places?.server ?? 0,
-          environmentFileSnapshotKept: snapshot?.environmentFileSecretId != null,
+          environmentFileSnapshotKept: row?.environmentFileSecretId != null,
         });
       });
     } catch (error) {
@@ -864,7 +864,7 @@ export class PrismaRunRepository implements RunRepository {
     );
   }
 
-  async listSteps(runId: string): Promise<(RunStepSnapshot & { reportedAt: Date })[]> {
+  async listSteps(runId: string): Promise<RunStepView[]> {
     const rows = await this.db.runStep.findMany({
       where: { runId },
       orderBy: { index: 'asc' },

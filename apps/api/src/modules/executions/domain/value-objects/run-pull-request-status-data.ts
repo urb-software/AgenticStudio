@@ -5,7 +5,7 @@ import type { RunPullRequestChecks } from './run-pull-request-checks.js';
  * `state` is `null` until the first lookup succeeded, and is kept when a later one fails
  * (`refreshError` then says why). Every field is `null` for a Run without a pull request.
  */
-export interface StoredPullRequestStatus {
+export interface RunPullRequestStatusData {
   state: PullRequestState | null;
   behindBy: number | null;
   aheadBy: number | null;

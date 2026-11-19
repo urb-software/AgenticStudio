@@ -27,7 +27,7 @@ describe('RunDelivery', () => {
     expect(delivery.state).toBe('delivered');
     expect(delivery.requested).toBe(true);
     expect(delivery.hasPullRequest).toBe(true);
-    expect(delivery.toStored()).toEqual(stored);
+    expect(delivery.toData()).toEqual(stored);
   });
 
   it('returns a new delivery for a change and leaves the old one as it was', () => {

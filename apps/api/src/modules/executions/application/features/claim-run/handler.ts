@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { RunDiffStateInput } from '../../../domain/value-objects/run-diff-state.js';
 import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
@@ -57,6 +56,15 @@ const WORKING_COPY_REMOVED = RunFailure.of(
 );
 
 /** What the agent worker needs to prepare and run a claimed Run. */
+/** The object ids a claimed Run's agent worker resumes its diffs from. */
+export interface ClaimedDiffState {
+  resultTree: string;
+  resultCommit: string;
+  previousTree: string;
+  previousCommit: string;
+  pushedCommit?: string;
+}
+
 export interface ClaimedRun {
   id: string;
   projectId: string;
@@ -81,7 +89,7 @@ export interface ClaimedRun {
   studioPaths: string[];
   completedSteps: number;
   nextSeq: number;
-  diffState?: RunDiffStateInput | null;
+  diffState?: ClaimedDiffState | null;
 }
 
 type ClaimExtras = Pick<
@@ -275,12 +283,16 @@ export class ClaimRunHandler {
 
   private async progress(
     run: Run,
-  ): Promise<{ completedSteps: number; nextSeq: number; diffState: RunDiffStateInput | null }> {
+  ): Promise<{ completedSteps: number; nextSeq: number; diffState: ClaimedDiffState | null }> {
     const [lastSeq, diffState] = await Promise.all([
       this.logs.lastSeq(run.id),
       this.diffs.findState(run.id),
     ]);
-    return { completedSteps: run.progress.stepCount, nextSeq: lastSeq + 1, diffState };
+    return {
+      completedSteps: run.progress.stepCount,
+      nextSeq: lastSeq + 1,
+      diffState: diffState === null ? null : diffState.toData(),
+    };
   }
 
   /** The Run holds the Environment file only while this worker still holds it preparing. */

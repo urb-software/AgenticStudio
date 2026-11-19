@@ -6,7 +6,7 @@ import {
   ProviderUnavailableError,
 } from '../../../../domain/errors/run-errors.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { StartRunHandler } from '../handler.js';
 
@@ -18,8 +18,8 @@ const LEASE = { seconds: 60 };
 const LIMITS = { stepMinutes: 45, maxSteps: 5, waitingDays: 3, maxTotalSteps: 20 };
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
-  private current: RecordedWorkerStatus | undefined;
-  record(status: RecordedWorkerStatus) {
+  private current: WorkerStatusData | undefined;
+  record(status: WorkerStatusData) {
     this.current = status;
   }
   latest() {

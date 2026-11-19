@@ -6,11 +6,7 @@ import {
   RepositoryAlreadyConnectedError,
   RepositoryNotVerifiableError,
 } from '../errors/repository-connection-errors.js';
-import type { RepositoryConnectionSnapshot } from './repository-connection-snapshot.js';
-import type {
-  RepositoryConnectionData,
-  StoredRepositoryConnection,
-} from './repository-connection-data.js';
+import type { RepositoryConnectionData } from './repository-connection-data.js';
 import { RepositoryFailure } from '../value-objects/repository-failure.js';
 import { RepositoryLifecycle } from '../value-objects/repository-lifecycle.js';
 
@@ -23,7 +19,6 @@ export class RepositoryConnection {
   declare readonly url: RepositoryConnectionData['url'];
   declare readonly integrationBranch: RepositoryConnectionData['integrationBranch'];
   declare readonly state: RepositoryConnectionData['state'];
-  declare readonly hasClone: RepositoryConnectionData['hasClone'];
   declare readonly headSha: RepositoryConnectionData['headSha'];
   declare readonly lastFetchedAt: RepositoryConnectionData['lastFetchedAt'];
   declare readonly failure: RepositoryConnectionData['failure'];
@@ -31,12 +26,22 @@ export class RepositoryConnection {
   declare readonly deployKeySecret: RepositoryConnectionData['deployKeySecret'];
   declare readonly pinnedHostKey: RepositoryConnectionData['pinnedHostKey'];
   declare readonly pendingHostKey: RepositoryConnectionData['pendingHostKey'];
-  declare readonly hostKeyFingerprint: RepositoryConnectionData['hostKeyFingerprint'];
+  /**
+   * Whether a usable Clone exists: always when `ready` or `fetching`; when `failed`, only if
+   * the failure was a fetch that kept the Clone. Never while `connecting` or `disconnecting`.
+   * Derived, never stored.
+   */
+  declare readonly hasClone: boolean;
+  /**
+   * SHA256 fingerprint of `pendingHostKey` when awaiting confirmation, else of `pinnedHostKey`;
+   * `null` when neither. Derived, never stored.
+   */
+  declare readonly hostKeyFingerprint: string | null;
 
   readonly #changes: RepositoryChanges;
 
-  private constructor(stored: StoredRepositoryConnection, changes: RepositoryChanges) {
-    Object.assign(this, RepositoryConnection.withDerived(stored));
+  private constructor(data: RepositoryConnectionData, changes: RepositoryChanges) {
+    Object.assign(this, data, RepositoryConnection.derived(data));
     this.#changes = changes;
   }
 
@@ -47,21 +52,17 @@ export class RepositoryConnection {
    */
   static start(attempt: ConnectAttempt): RepositoryConnection {
     if (attempt.keepsDeployKey) throw new RepositoryAlreadyConnectedError();
-    const stored = RepositoryConnection.newAttempt(attempt);
-    return new RepositoryConnection(stored, { fields: { ...stored }, identity: attempt.identity });
+    const data = RepositoryConnection.newAttempt(attempt);
+    return new RepositoryConnection(data, { fields: { ...data }, identity: attempt.identity });
   }
 
   /**
    * A Repository as storage holds it. Throws {@link TypeError} for state the store should never
    * hold (the database's CHECK constraints say the same).
    */
-  static restore(stored: StoredRepositoryConnection): RepositoryConnection {
-    RepositoryLifecycle.restore(stored);
-    return new RepositoryConnection({ ...stored }, { fields: {} });
-  }
-
-  snapshot(): RepositoryConnectionSnapshot {
-    return RepositoryConnection.withDerived(this.stored());
+  static restore(data: RepositoryConnectionData): RepositoryConnection {
+    RepositoryLifecycle.restore(data);
+    return new RepositoryConnection({ ...data }, { fields: {} });
   }
 
   pendingChanges(): RepositoryChanges {
@@ -301,37 +302,22 @@ export class RepositoryConnection {
     });
   }
 
-  private stored(): StoredRepositoryConnection {
-    return {
-      projectId: this.projectId,
-      url: this.url,
-      integrationBranch: this.integrationBranch,
-      state: this.state,
-      headSha: this.headSha,
-      lastFetchedAt: this.lastFetchedAt,
-      failure: this.failure,
-      publicKey: this.publicKey,
-      deployKeySecret: this.deployKeySecret,
-      pinnedHostKey: this.pinnedHostKey,
-      pendingHostKey: this.pendingHostKey,
-    };
-  }
-
-  private apply(patch: Partial<StoredRepositoryConnection>): void {
+  private apply(patch: RepositoryChanges['fields']): void {
     Object.assign(this.#changes.fields, patch);
-    Object.assign(this, RepositoryConnection.withDerived({ ...this.stored(), ...patch }));
+    Object.assign(this, patch, RepositoryConnection.derived({ ...this, ...patch }));
   }
 
-  private static withDerived(stored: StoredRepositoryConnection): RepositoryConnectionData {
-    const shown = stored.pendingHostKey ?? stored.pinnedHostKey;
+  private static derived(
+    data: Pick<RepositoryConnectionData, 'headSha' | 'pendingHostKey' | 'pinnedHostKey'>,
+  ): { hasClone: boolean; hostKeyFingerprint: string | null } {
+    const shown = data.pendingHostKey ?? data.pinnedHostKey;
     return {
-      ...stored,
-      hasClone: stored.headSha !== null,
+      hasClone: data.headSha !== null,
       hostKeyFingerprint: shown === null ? null : HostKey.of(shown).fingerprint,
     };
   }
 
-  private static newAttempt(attempt: ConnectAttempt): StoredRepositoryConnection {
+  private static newAttempt(attempt: ConnectAttempt): RepositoryConnectionData {
     return {
       projectId: attempt.projectId,
       url: attempt.url,

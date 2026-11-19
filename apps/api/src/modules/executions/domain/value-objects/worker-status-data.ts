@@ -3,7 +3,7 @@ import type { WorkerDiskFigures } from './worker-disk-figures.js';
 import type { WorkerRunnerMode } from './worker-runner-mode.js';
 
 /** Studio keeps it in memory only. */
-export interface RecordedWorkerStatus {
+export interface WorkerStatusData {
   workerId: string;
   runner: WorkerRunnerMode;
   providers: Record<Provider, boolean>;

@@ -1,7 +1,7 @@
 import { PROVIDER_NAMES } from '@agentic-studio/contracts';
 import { PROVIDERS } from './provider.js';
 import type { Lease } from './lease.js';
-import type { RecordedWorkerStatus } from './recorded-worker-status.js';
+import type { WorkerStatusData } from './worker-status-data.js';
 import type { ProviderAvailability } from './provider-availability.js';
 import { PROVIDER_UNAVAILABLE_REASONS } from './provider-unavailable-reason.js';
 import { WorkerStatus } from './worker-status.js';
@@ -13,7 +13,7 @@ export class WorkerPresence {
     private readonly lease: Lease,
   ) {}
 
-  static of(latest: RecordedWorkerStatus | undefined, lease: Lease): WorkerPresence {
+  static of(latest: WorkerStatusData | undefined, lease: Lease): WorkerPresence {
     return new WorkerPresence(
       latest === undefined ? undefined : WorkerStatus.restore(latest),
       lease,

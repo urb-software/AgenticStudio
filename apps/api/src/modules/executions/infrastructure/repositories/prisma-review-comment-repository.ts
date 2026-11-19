@@ -2,7 +2,7 @@ import { Prisma } from '@agentic-studio/database';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import { ReviewComments } from '../../domain/entities/review-comments.js';
-import { type ReviewCommentsSnapshot } from '../../domain/entities/review-comments-snapshot.js';
+import { type ReviewCommentsData } from '../../domain/entities/review-comments-data.js';
 import type { ReviewCommentRepository } from '../../domain/repositories/review-comment-repository.js';
 import type { ReviewCommentScope } from '../../domain/value-objects/review-comment-scope.js';
 import type { Executor } from './executor.js';
@@ -15,11 +15,11 @@ export class PrismaReviewCommentRepository implements ReviewCommentRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
   async find(runId: string): Promise<ReviewComments | null> {
-    const snapshot = await this.read(runId);
-    return snapshot === null ? null : ReviewComments.restore(snapshot);
+    const data = await this.read(runId);
+    return data === null ? null : ReviewComments.restore(data);
   }
 
-  private async read(runId: string): Promise<ReviewCommentsSnapshot | null> {
+  private async read(runId: string): Promise<ReviewCommentsData | null> {
     const row = await this.db.runReviewCommentSet.findUnique({ where: { runId } });
     if (!row) return null;
     const comments = commentsSchema.safeParse(row.comments);
@@ -38,7 +38,9 @@ export class PrismaReviewCommentRepository implements ReviewCommentRepository {
   }
 
   async replace(runId: string, set: ReviewComments): Promise<void> {
-    const comments = set.snapshot().comments as unknown as Prisma.InputJsonValue;
+    const comments = set.comments.map((comment) =>
+      comment.toData(),
+    ) as unknown as Prisma.InputJsonValue;
     await this.db.runReviewCommentSet.upsert({
       where: { runId },
       create: {

@@ -1,4 +1,4 @@
-export interface RunWorkerClaimStored {
+export interface RunWorkerClaimData {
   /**
    * Set exactly when `preparing` or `running`, or while it retries the delivery of a `failed` Run.
    */
@@ -38,7 +38,7 @@ export class RunWorkerClaim {
   readonly environmentFileSupplied: boolean;
   readonly environmentFilePath: string | null;
 
-  private constructor(stored: RunWorkerClaimStored) {
+  private constructor(stored: RunWorkerClaimData) {
     this.claimedBy = stored.claimedBy;
     this.lastClaimedBy = stored.lastClaimedBy;
     this.releasedBy = stored.releasedBy;
@@ -62,15 +62,15 @@ export class RunWorkerClaim {
     });
   }
 
-  static restore(stored: RunWorkerClaimStored): RunWorkerClaim {
+  static restore(stored: RunWorkerClaimData): RunWorkerClaim {
     return new RunWorkerClaim(stored);
   }
 
-  with(patch: Partial<RunWorkerClaimStored>): RunWorkerClaim {
-    return new RunWorkerClaim({ ...this.toStored(), ...patch });
+  with(patch: Partial<RunWorkerClaimData>): RunWorkerClaim {
+    return new RunWorkerClaim({ ...this.toData(), ...patch });
   }
 
-  toStored(): RunWorkerClaimStored {
+  toData(): RunWorkerClaimData {
     return {
       claimedBy: this.claimedBy,
       lastClaimedBy: this.lastClaimedBy,

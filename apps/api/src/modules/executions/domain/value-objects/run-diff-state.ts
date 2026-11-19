@@ -1,6 +1,6 @@
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
-export interface RunDiffStateInput {
+export interface RunDiffStateData {
   resultTree: string;
   resultCommit: string;
   previousTree: string;
@@ -19,7 +19,7 @@ export class RunDiffState {
   readonly previousCommit: string;
   readonly pushedCommit?: string;
 
-  private constructor(data: RunDiffStateInput) {
+  private constructor(data: RunDiffStateData) {
     this.resultTree = data.resultTree;
     this.resultCommit = data.resultCommit;
     this.previousTree = data.previousTree;
@@ -28,7 +28,7 @@ export class RunDiffState {
   }
 
   /** Throws when a field is not an object id. The contract checked the format; this checks again. */
-  static of(input: RunDiffStateInput): RunDiffState {
+  static of(input: RunDiffStateData): RunDiffState {
     const ids = [
       input.resultTree,
       input.resultCommit,
@@ -43,11 +43,11 @@ export class RunDiffState {
   }
 
   /** A state as storage holds it. */
-  static restore(stored: RunDiffStateInput): RunDiffState {
+  static restore(stored: RunDiffStateData): RunDiffState {
     return new RunDiffState(stored);
   }
 
-  snapshot(): RunDiffStateInput {
+  toData(): RunDiffStateData {
     return {
       resultTree: this.resultTree,
       resultCommit: this.resultCommit,

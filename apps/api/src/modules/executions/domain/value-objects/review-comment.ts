@@ -93,8 +93,8 @@ export class ReviewComment {
   }
 
   /** A comment as storage holds it. */
-  static restore(stored: ReviewCommentInput): ReviewComment {
-    return new ReviewComment(stored);
+  static restore(data: ReviewCommentInput): ReviewComment {
+    return new ReviewComment(data);
   }
 
   /** Whether loading cut its diff context. */
@@ -106,7 +106,7 @@ export class ReviewComment {
     return operatorLogin !== null && this.author.toLowerCase() === operatorLogin.toLowerCase();
   }
 
-  snapshot(): ReviewCommentInput {
+  toData(): ReviewCommentInput {
     return {
       id: this.id,
       author: this.author,

@@ -3,7 +3,7 @@ import { isEndedPullRequestState } from './pull-request-state.js';
 import { isFinalRunState } from './run-state.js';
 import { Lease } from './lease.js';
 import { WorkerPresence } from './worker-presence.js';
-import { type RecordedWorkerStatus } from './recorded-worker-status.js';
+import { type WorkerStatusData } from './worker-status-data.js';
 import type { RetentionFacts } from './retention-facts.js';
 import type { RetentionSettings } from './retention-settings.js';
 import type { LimitedRun } from './limited-run.js';
@@ -74,7 +74,7 @@ export class RetentionPolicy {
   runView(
     eligibility: FollowUpEligibility,
     facts: RetentionFacts,
-    latestWorker: RecordedWorkerStatus | undefined,
+    latestWorker: WorkerStatusData | undefined,
     now: Date,
     leaseSeconds: number,
     overLimit: boolean,

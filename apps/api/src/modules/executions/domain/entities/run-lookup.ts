@@ -1,4 +1,4 @@
-import type { RunLookupSnapshot } from './run-lookup-snapshot.js';
+import type { RunLookupData } from './run-lookup-data.js';
 import type { ReviewCommentScope } from '../value-objects/review-comment-scope.js';
 import type { LookupAnswerOutcome } from '../value-objects/lookup-answer-outcome.js';
 import type { LookupKind } from '../value-objects/lookup-kind.js';
@@ -24,7 +24,7 @@ export class RunLookup {
   declare readonly scope: ReviewCommentScope | null;
   declare readonly since: Date | null;
 
-  private constructor(data: RunLookupSnapshot) {
+  private constructor(data: RunLookupData) {
     Object.assign(this, data);
   }
 
@@ -48,13 +48,8 @@ export class RunLookup {
   }
 
   /** A lookup as storage holds it. */
-  static restore(data: RunLookupSnapshot): RunLookup {
+  static restore(data: RunLookupData): RunLookup {
     return new RunLookup(data);
-  }
-
-  snapshot(): RunLookupSnapshot {
-    const { ...data } = this as unknown as RunLookupSnapshot;
-    return data;
   }
 
   get isOpen(): boolean {
@@ -109,7 +104,7 @@ export class RunLookup {
     return 'stored';
   }
 
-  private change(patch: Partial<RunLookupSnapshot>): void {
+  private change(patch: Partial<RunLookupData>): void {
     Object.assign(this, patch);
   }
 }

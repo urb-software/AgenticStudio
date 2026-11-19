@@ -1,7 +1,7 @@
 import { NoUsableCloneError, RepositoryBusyError } from '../errors/repository-connection-errors.js';
 import { isRepositoryState, type RepositoryState } from './repository-state.js';
 import type { LifecycleFacts } from './lifecycle-facts.js';
-import type { StorableConnection } from './storable-connection.js';
+import type { RepositoryLifecycleData } from './repository-lifecycle-data.js';
 
 /**
  * The lifecycle of a Repository connection: its starting state, which operations each state accepts
@@ -33,7 +33,7 @@ export class RepositoryLifecycle {
    * state and fields that a store should never hold (the database's CHECK constraints say the
    * same).
    */
-  static restore(stored: StorableConnection): RepositoryLifecycle {
+  static restore(stored: RepositoryLifecycleData): RepositoryLifecycle {
     const { state } = stored;
     if (!isRepositoryState(state)) {
       throw new TypeError(`Unknown repository state: ${state}`);

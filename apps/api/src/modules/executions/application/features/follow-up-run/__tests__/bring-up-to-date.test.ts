@@ -6,18 +6,18 @@ import { FollowUpNotAllowedError, RunNotFoundError } from '../../../../domain/er
 import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FollowUpRunHandler } from '../handler.js';
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
-  private current: RecordedWorkerStatus | undefined;
+  private current: WorkerStatusData | undefined;
   private readonly seen = new Map<string, Date>();
-  record(status: RecordedWorkerStatus): void {
+  record(status: WorkerStatusData): void {
     this.current = status;
     this.seen.set(status.workerId, status.reportedAt);
   }
-  latest(): RecordedWorkerStatus | undefined {
+  latest(): WorkerStatusData | undefined {
     return this.current;
   }
   lastSeen(workerId: string): Date | undefined {

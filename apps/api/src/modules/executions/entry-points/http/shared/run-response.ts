@@ -257,7 +257,7 @@ export function toRunResponse(
       prepareError: string | null;
       preparedFollowUp: boolean;
     };
-    failingChecks: string[];
+    failingChecks: readonly string[];
     sessionRef: string | null;
     messages: (
       | {

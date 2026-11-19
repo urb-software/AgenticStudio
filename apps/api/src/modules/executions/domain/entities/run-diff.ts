@@ -1,4 +1,4 @@
-import type { RunDiffSnapshot } from './run-diff-snapshot.js';
+import type { RunDiffData } from './run-diff-data.js';
 import type { NewRunDiff } from '../value-objects/new-run-diff.js';
 import type { RunDiffScope } from '../value-objects/run-diff-scope.js';
 import { RunDiffState } from '../value-objects/run-diff-state.js';
@@ -11,7 +11,7 @@ export class RunDiff {
     readonly state: RunDiffState | null,
   ) {}
 
-  static report(input: RunDiffSnapshot): RunDiff {
+  static report(input: RunDiffData): RunDiff {
     // The contract checked the format; checked again before it is kept.
     return new RunDiff(
       input.runId,
@@ -20,15 +20,11 @@ export class RunDiff {
     );
   }
 
-  static restore(data: RunDiffSnapshot): RunDiff {
+  static restore(data: RunDiffData): RunDiff {
     return new RunDiff(
       data.runId,
       data.diffs,
       data.state === null ? null : RunDiffState.restore(data.state),
     );
-  }
-
-  snapshot(): RunDiffSnapshot {
-    return { runId: this.runId, diffs: this.diffs, state: this.state?.snapshot() ?? null };
   }
 }

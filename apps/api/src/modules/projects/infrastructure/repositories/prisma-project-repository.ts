@@ -11,6 +11,10 @@ import { ProjectNameTakenError } from '../../domain/errors/project-errors.js';
 
 const PROJECT_FIELDS = { id: true, name: true, createdAt: true } as const;
 
+function toProject(row: { id: string; name: string; createdAt: Date }): Project {
+  return Project.restore({ id: row.id, name: row.name, createdAt: row.createdAt });
+}
+
 /**
  * PostgreSQL adapter of {@link ProjectRepository}: the `projects` table only. The unique index
  * `projects.name_normalized`, not a prior read, decides duplicate names.
@@ -21,7 +25,7 @@ export class PrismaProjectRepository implements ProjectRepository {
 
   async add(name: ProjectName): Promise<Project> {
     try {
-      return Project.restore(
+      return toProject(
         await this.db.project.create({
           data: { name: name.value, nameNormalized: name.uniquenessKey },
           select: PROJECT_FIELDS,
@@ -41,11 +45,11 @@ export class PrismaProjectRepository implements ProjectRepository {
       select: PROJECT_FIELDS,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
-    return rows.map((row) => Project.restore(row));
+    return rows.map(toProject);
   }
 
   async findById(id: string): Promise<Project | null> {
     const row = await this.db.project.findUnique({ where: { id }, select: PROJECT_FIELDS });
-    return row ? Project.restore(row) : null;
+    return row ? toProject(row) : null;
   }
 }

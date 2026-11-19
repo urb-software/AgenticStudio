@@ -47,7 +47,7 @@ export interface RunView {
     prepareRequestedAt: Date | null;
     prepareError: string | null;
   };
-  failingChecks: string[];
+  failingChecks: readonly string[];
   /** Internal: the operator API shows only whether a Run can resume. */
   sessionRef: string | null;
   /** Empty in a list of Runs. */

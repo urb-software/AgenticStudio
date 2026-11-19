@@ -44,7 +44,7 @@ export function runData(overrides: Partial<RestoreData<typeof Run>> = {}): Resto
     stepsBeforePart: 0,
     pushedCommit: null,
     workingCopyRemovedAt: null,
-    pullRequestStatus: RunPullRequestStatus.none().toStored(),
+    pullRequestStatus: RunPullRequestStatus.none().toData(),
     lastActivityAt: AT,
     ...overrides,
   };

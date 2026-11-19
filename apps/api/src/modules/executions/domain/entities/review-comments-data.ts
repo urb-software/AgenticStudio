@@ -2,7 +2,7 @@ import type { ReviewCommentInput } from '../value-objects/review-comment.js';
 import type { ReviewCommentScope } from '../value-objects/review-comment-scope.js';
 
 /** What a Run's loaded Review comments hold, to restore them from. */
-export interface ReviewCommentsSnapshot {
+export interface ReviewCommentsData {
   readonly scope: ReviewCommentScope;
   readonly comments: readonly ReviewCommentInput[];
   /** More comments existed than are kept, or a text was cut. */

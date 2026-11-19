@@ -8,7 +8,7 @@ import { PreparedFollowUp } from '../../../../domain/entities/prepared-follow-up
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
-import type { RecordedWorkerStatus } from '../../../../domain/value-objects/recorded-worker-status.js';
+import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { DiscardPreparedFollowUpHandler } from '../../discard-prepared-follow-up/handler.js';
 import {
@@ -23,11 +23,11 @@ import {
 } from '../../../../domain/errors/run-errors.js';
 
 class Workers implements WorkerStatusStore {
-  current: RecordedWorkerStatus | undefined;
-  record(status: RecordedWorkerStatus): void {
+  current: WorkerStatusData | undefined;
+  record(status: WorkerStatusData): void {
     this.current = status;
   }
-  latest(): RecordedWorkerStatus | undefined {
+  latest(): WorkerStatusData | undefined {
     return this.current;
   }
   lastSeen(): Date | undefined {

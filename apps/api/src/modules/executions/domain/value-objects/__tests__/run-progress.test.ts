@@ -8,7 +8,7 @@ const started = () => RunProgress.start(LIMITS, NOW);
 describe('RunProgress', () => {
   it('starts with no step taken, no Follow-up and the limits it was given (copied)', () => {
     const progress = started();
-    expect(progress.toStored()).toEqual({
+    expect(progress.toData()).toEqual({
       stepCount: 0,
       stepsBeforePart: 0,
       followUpCount: 0,

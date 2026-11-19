@@ -1,7 +1,8 @@
 import type { RepositoryFailure } from '../value-objects/repository-failure.js';
 import type { RepositoryState } from '../value-objects/repository-state.js';
 
-export interface StoredRepositoryConnection {
+/** What a Repository connection is restored from: the fields that storage holds. */
+export interface RepositoryConnectionData {
   projectId: string;
   url: string;
   integrationBranch: string;
@@ -25,17 +26,4 @@ export interface StoredRepositoryConnection {
   pinnedHostKey: string | null;
   /** The retrieved host key awaiting the operator's confirmation; set exactly when `awaiting_host_key`. */
   pendingHostKey: string | null;
-}
-
-export interface RepositoryConnectionData extends StoredRepositoryConnection {
-  /**
-   * Whether a usable Clone exists: always when `ready` or `fetching`; when `failed`, only if
-   * the failure was a fetch that kept the Clone. Never while `connecting` or `disconnecting`.
-   */
-  hasClone: boolean;
-  /**
-   * SHA256 fingerprint of `pendingHostKey` when awaiting confirmation, else of `pinnedHostKey`;
-   * `null` when neither. Derived, never stored.
-   */
-  hostKeyFingerprint: string | null;
 }
