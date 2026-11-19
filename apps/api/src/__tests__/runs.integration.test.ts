@@ -16,7 +16,7 @@ import {
   STUDIO_ORIGIN,
   type StudioServices,
 } from './studio-test-app.js';
-import { WITHOUT_QUEUE_WORKERS } from './test-config.js';
+import { WITHOUT_QUEUE_WORKERS, createTestDataDir } from './test-config.js';
 
 // The Run API over HTTP on the real app (PostgreSQL and Redis via Testcontainers), outside
 // src/modules/ because building the app reaches the database client; the worker's side is driven
@@ -428,7 +428,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
     it('offers no provider before any worker has reported', async () => {
       const fresh = await startStudioApp(
-        { ...services.config, workerToken: WORKER_TOKEN_DIGEST },
+        { ...services.config, dataDir: createTestDataDir(), workerToken: WORKER_TOKEN_DIGEST },
         WITHOUT_QUEUE_WORKERS,
       );
       try {
@@ -1412,6 +1412,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const restarted = await startStudioApp(
           {
             ...services.config,
+            dataDir: createTestDataDir(),
             workerToken: WORKER_TOKEN_DIGEST,
             workerLeaseSeconds: LEASE_SECONDS,
             runLimits: LIMITS,
@@ -1561,6 +1562,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         await report(run.id, { state: 'running' });
         const config = {
           ...services.config,
+          dataDir: createTestDataDir(),
           workerToken: WORKER_TOKEN_DIGEST,
           workerLeaseSeconds: LEASE_SECONDS,
           runLimits: LIMITS,
@@ -1801,6 +1803,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const restarted = await startStudioApp(
           {
             ...services.config,
+            dataDir: createTestDataDir(),
             workerToken: WORKER_TOKEN_DIGEST,
             workerLeaseSeconds: LEASE_SECONDS,
             runLimits: LIMITS,
@@ -1829,6 +1832,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         const shortLease = await startStudioApp(
           {
             ...services.config,
+            dataDir: createTestDataDir(),
             workerToken: WORKER_TOKEN_DIGEST,
             workerLeaseSeconds: 2,
             runLimits: LIMITS,
@@ -2054,7 +2058,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
       it('rejects every worker request when no worker token is configured (fail closed)', async () => {
         const closed = await startStudioApp(
-          { ...services.config, workerToken: null },
+          { ...services.config, dataDir: createTestDataDir(), workerToken: null },
           WITHOUT_QUEUE_WORKERS,
         );
         try {
@@ -2882,6 +2886,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       const shortLease = await startStudioApp(
         {
           ...services.config,
+          dataDir: createTestDataDir(),
           workerToken: WORKER_TOKEN_DIGEST,
           workerLeaseSeconds: 2,
           runLimits: LIMITS,

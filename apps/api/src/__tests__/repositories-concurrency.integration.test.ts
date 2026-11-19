@@ -15,6 +15,7 @@ import {
   STUDIO_ORIGIN,
   type StudioServices,
 } from './studio-test-app.js';
+import { createTestDataDir } from './test-config.js';
 
 // Concurrency evidence for the Repository connection: each case loops ITERATIONS times with real
 // concurrency and checks only the outcome that may never differ (real Git, so Linux only).
@@ -371,8 +372,8 @@ describe.runIf(linux)(
 
           // Each instance fails the interrupted operations before its workers start.
           const started = await Promise.all([
-            startStudioApp(services.config),
-            startStudioApp(services.config),
+            startStudioApp({ ...services.config, dataDir: createTestDataDir() }),
+            startStudioApp({ ...services.config, dataDir: createTestDataDir() }),
           ]);
           try {
             expect((await getRepository(connecting)).body, `iteration ${i}`).toMatchObject({
@@ -403,7 +404,7 @@ describe.runIf(linux)(
           await insertRepository(fetching, 'fetching');
 
           const [instance, first, second] = await Promise.all([
-            startStudioApp(services.config),
+            startStudioApp({ ...services.config, dataDir: createTestDataDir() }),
             disconnect(connecting),
             disconnect(fetching),
           ]);
