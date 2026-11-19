@@ -26,7 +26,7 @@ const createdDataDirs: string[] = [];
  * directory, so apps (even two in one file) must never share one. Removed by the Vitest
  * setup file via {@link removeCreatedDataDirs}.
  */
-function createDataDir(): string {
+export function createTestDataDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'studio-test-'));
   createdDataDirs.push(dir);
   return dir;
@@ -65,7 +65,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     operatorPasswordHash: PLACEHOLDER_PASSWORD_HASH,
     secretsKey: TEST_SECRETS_KEY,
     // A private directory per call unless the suite passes its own.
-    dataDir: overrides.dataDir ?? createDataDir(),
+    dataDir: overrides.dataDir ?? createTestDataDir(),
     gitAllowFileRemotes: false,
     // The production default: loopback and private remotes are refused. Suites whose fixtures
     // listen on 127.0.0.1 opt in explicitly.

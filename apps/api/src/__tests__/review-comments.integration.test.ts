@@ -11,6 +11,7 @@ import {
   STUDIO_ORIGIN,
   type StudioServices,
 } from './studio-test-app.js';
+import { createTestDataDir } from './test-config.js';
 
 // A Run's pull request Review comments over HTTP on the real app (PostgreSQL and Redis via
 // Testcontainers); loading never creates a Follow-up or starts an agent, only the operator's
@@ -332,6 +333,7 @@ describe('review comments API (PostgreSQL + Redis via Testcontainers)', () => {
     it('preselects nobody when no login is configured', async () => {
       const second = await startStudioApp({
         ...services.config,
+        dataDir: createTestDataDir(),
         workerToken: WORKER_TOKEN_DIGEST,
         workerLeaseSeconds: LEASE_SECONDS,
         runLimits: LIMITS,
