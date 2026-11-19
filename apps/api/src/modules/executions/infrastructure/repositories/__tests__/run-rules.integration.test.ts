@@ -422,9 +422,11 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       for (const run of listed) {
         const cancellation = rule.cancellationFor(run.sweepFacts());
         if (!cancellation) continue;
-        expect(
-          await runs().cancelUnheld(run.id, 'waiting_for_operator', cancellation, NOW),
-        ).not.toBeNull();
+        let done = false;
+        await runs().change(run.id, (r) => {
+          done = r.cancelAfterWaiting(cancellation, NOW);
+        });
+        expect(done).toBe(true);
       }
 
       for (const run of await newestFirst()) {
@@ -439,14 +441,11 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
         }
       }
       const [cancelled] = [...selected];
-      expect(
-        await runs().cancelUnheld(
-          cancelled!,
-          'waiting_for_operator',
-          { by: 'system', reason: 'again' },
-          NOW,
-        ),
-      ).toBeNull();
+      let again = true;
+      await runs().change(cancelled!, (r) => {
+        again = r.cancelAfterWaiting({ by: 'system', reason: 'again' }, NOW);
+      });
+      expect(again).toBe(false);
     });
   });
 
@@ -484,10 +483,16 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       for (const run of before) {
         const pendingRetry = rule.pendingDeliveryRetry(run.sweepFacts());
         const pendingResume = rule.pendingResume(run.sweepFacts());
-        expect(await runs().abandonDeliveryRetry(run.id, failure, NOW)).toBe(pendingRetry);
-        expect(
-          await runs().abandonResume(run.id, { code: 'preparation_failed', detail: 'gone' }, NOW),
-        ).toBe(pendingResume);
+        let abandonedRetry = false;
+        await runs().change(run.id, (r) => {
+          abandonedRetry = r.abandonDeliveryRetry(failure, NOW);
+        });
+        expect(abandonedRetry).toBe(pendingRetry);
+        let abandonedResume = false;
+        await runs().change(run.id, (r) => {
+          abandonedResume = r.abandonResume({ code: 'preparation_failed', detail: 'gone' }, NOW);
+        });
+        expect(abandonedResume).toBe(pendingResume);
       }
     });
   });

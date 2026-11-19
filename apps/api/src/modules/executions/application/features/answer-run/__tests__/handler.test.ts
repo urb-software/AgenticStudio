@@ -100,12 +100,7 @@ describe('AnswerRunHandler', () => {
     );
 
     await ask();
-    await runs.cancelUnheld(
-      run.id,
-      'waiting_for_operator',
-      { by: 'operator', reason: 'Cancelled by the operator.' },
-      T1,
-    );
+    await runs.change(run.id, (r) => r.cancel(T1));
     const error = await handler
       .execute({ runId: run.id, text: 'x' })
       .catch((caught: unknown) => caught);

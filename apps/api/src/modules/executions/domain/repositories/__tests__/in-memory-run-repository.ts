@@ -19,7 +19,6 @@ import { type RunStepRecord } from '../../entities/run-step-facts.js';
 import { Run } from '../../entities/run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { isFinalRunState } from '../../value-objects/run-state.js';
-import { type RunCancellation } from '../../value-objects/run-cancellation.js';
 import { type RunMessage } from '../../value-objects/run-message.js';
 import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { type RunLimits } from '../../value-objects/run-limits.js';
@@ -192,38 +191,6 @@ export class InMemoryRunRepository implements RunRepository {
         .filter((run) => run.state === 'failed' && run.deliveryRequested && run.claimedBy === null)
         .map((run) => ({ runId: run.id, startedBy: run.lastClaimedBy ?? null })),
     );
-  }
-
-  abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.state !== 'failed' || !run.deliveryRequested || run.claimedBy !== null) {
-      return Promise.resolve(false);
-    }
-    Object.assign(run, {
-      failure: { ...failure },
-      delivery: 'failed',
-      deliveryRequested: false,
-      finishedAt: now,
-    });
-    return Promise.resolve(true);
-  }
-
-  cancelUnheld(
-    runId: string,
-    from: 'queued' | 'waiting_for_operator',
-    cancellation: RunCancellation,
-    now: Date,
-  ): Promise<Run | null> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || run.state !== from) return Promise.resolve(null);
-    Object.assign(run, {
-      state: 'cancelled',
-      cancellation: { ...cancellation },
-      finishedAt: now,
-      waitingSince: null,
-      followUpQueued: false,
-    });
-    return Promise.resolve(this.view(run));
   }
 
   listWaiting(): Promise<Run[]> {
@@ -580,18 +547,6 @@ export class InMemoryRunRepository implements RunRepository {
         .filter((run) => queuedToResume(run))
         .map((run) => ({ runId: run.id, startedBy: run.lastClaimedBy ?? null })),
     );
-  }
-
-  abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
-    const run = this.runs.find((candidate) => candidate.id === runId);
-    if (!run || !queuedToResume(run)) return Promise.resolve(false);
-    Object.assign(run, {
-      state: 'failed',
-      failure: { ...failure },
-      finishedAt: now,
-      followUpQueued: false,
-    });
-    return Promise.resolve(true);
   }
 
   listSteps(runId: string): ReturnType<RunRepository['listSteps']> {

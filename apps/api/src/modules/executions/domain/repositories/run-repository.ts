@@ -2,7 +2,6 @@ import type { Provider } from '../value-objects/provider.js';
 import type { PullRequestState } from '../value-objects/pull-request-state.js';
 import type { ResumeFacts } from '../entities/run-resume-facts.js';
 import type { Run } from '../entities/run.js';
-import type { RunCancellation } from '../value-objects/run-cancellation.js';
 import type { RunFailure } from '../value-objects/run-failure.js';
 import type { RunState } from '../value-objects/run-state.js';
 import type { RunStepKind } from '../value-objects/run-step-kind.js';
@@ -92,17 +91,6 @@ export interface RunRepository {
    */
   claimNext(workerId: string, now: Date): Promise<Run | null>;
 
-  /**
-   * Only if the Run is still in `from`; `null` if not. For Studio's own sweeps,
-   * not the operator's cancel.
-   */
-  cancelUnheld(
-    runId: string,
-    from: 'queued' | 'waiting_for_operator',
-    cancellation: RunCancellation,
-    now: Date,
-  ): Promise<Run | null>;
-
   listWaiting(): Promise<Run[]>;
 
   /**
@@ -116,13 +104,7 @@ export interface RunRepository {
 
   listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]>;
 
-  /** False if the Run no longer waits for that retry. */
-  abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean>;
-
   listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]>;
-
-  /** False if the Run is no longer resumable. */
-  abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean>;
 
   /** Ids must be valid UUIDs; ids that name no Run are left out. */
   findStates(ids: readonly string[]): Promise<RunStateView[]>;

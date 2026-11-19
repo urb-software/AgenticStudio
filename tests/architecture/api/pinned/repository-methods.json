@@ -54,10 +54,6 @@
         "kind": "atomic",
         "reason": "Hands out the next eligible Run in one statement under the claim lock that locks the row it selects, so concurrent claims cannot exceed the limits; the selection is the domain HandOutRule."
       },
-      "cancelUnheld": {
-        "kind": "atomic",
-        "reason": "A conditional update (only if the Run is still in the given state) for the long-wait sweep, so a worker or operator change that landed first is not overwritten."
-      },
       "listWaiting": { "kind": "query" },
       "renewClaimsOncePerLease": {
         "kind": "set-wide",
@@ -68,15 +64,7 @@
         "reason": "One statement over every running Run whose step is overdue; the limit is the domain step time limit plus a grace period the caller passes in."
       },
       "listPendingDeliveryRetries": { "kind": "query" },
-      "abandonDeliveryRetry": {
-        "kind": "atomic",
-        "reason": "A conditional update (only if the retry is still pending and no worker holds the Run) that gives it up, so a worker that claimed it meanwhile wins."
-      },
       "listPendingResumes": { "kind": "query" },
-      "abandonResume": {
-        "kind": "atomic",
-        "reason": "A conditional update (only if the Run is still resumable) that fails it, so a worker that claimed it meanwhile wins."
-      },
       "findStates": { "kind": "query" },
       "findLimitedRuns": { "kind": "query" },
       "listSteps": { "kind": "query" },

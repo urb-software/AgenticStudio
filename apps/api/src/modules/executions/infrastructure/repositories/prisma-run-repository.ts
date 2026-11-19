@@ -14,7 +14,6 @@ import {
   RUN_CANCELLED_BY,
   type RunCancelledBy,
 } from '../../domain/value-objects/run-cancelled-by.js';
-import { type RunCancellation } from '../../domain/value-objects/run-cancellation.js';
 import {
   RUN_FAILURE_CODES,
   type RunFailureCode,
@@ -595,40 +594,6 @@ export class PrismaRunRepository implements RunRepository {
     return rows.map((row) => ({ runId: row.id, startedBy: row.lastClaimedBy }));
   }
 
-  async abandonDeliveryRetry(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
-    const { count } = await this.db.run.updateMany({
-      where: { id: runId, state: 'failed', deliveryRequested: true, claimedBy: null },
-      data: {
-        failureCode: failure.code,
-        failureDetail: failure.detail,
-        delivery: 'failed',
-        deliveryRequested: false,
-        finishedAt: now,
-      },
-    });
-    return count === 1;
-  }
-
-  async cancelUnheld(
-    runId: string,
-    from: 'queued' | 'waiting_for_operator',
-    cancellation: RunCancellation,
-    now: Date,
-  ): Promise<Run | null> {
-    const { count } = await this.db.run.updateMany({
-      where: { id: runId, state: from },
-      data: {
-        state: 'cancelled',
-        cancelledBy: cancellation.by,
-        cancelReason: cancellation.reason,
-        waitingSince: null,
-        finishedAt: now,
-        followUpQueued: false,
-      },
-    });
-    return count === 1 ? await this.findById(runId) : null;
-  }
-
   async listWaiting(): Promise<Run[]> {
     const rows = await this.db.run.findMany({
       where: { state: 'waiting_for_operator' },
@@ -790,20 +755,6 @@ export class PrismaRunRepository implements RunRepository {
       select: { id: true, lastClaimedBy: true },
     });
     return rows.map((row) => ({ runId: row.id, startedBy: row.lastClaimedBy }));
-  }
-
-  async abandonResume(runId: string, failure: RunFailure, now: Date): Promise<boolean> {
-    const { count } = await this.db.run.updateMany({
-      where: { id: runId, state: 'queued', sessionRef: { not: null } },
-      data: {
-        state: 'failed',
-        failureCode: failure.code,
-        failureDetail: failure.detail,
-        finishedAt: now,
-        followUpQueued: false,
-      },
-    });
-    return count === 1;
   }
 
   async findStates(ids: readonly string[]): Promise<RunStateView[]> {
