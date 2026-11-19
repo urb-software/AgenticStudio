@@ -12,7 +12,13 @@ import {
 import { copyFile, rm } from 'node:fs/promises';
 import { posix } from 'node:path';
 import type { RunDiffLimits } from './config.js';
-import { GIT_TIMEOUTS, GitCommandError, type GitOptions, type GitRunner } from './git.js';
+import {
+  GIT_TIMEOUTS,
+  GitCommandError,
+  type GitOptions,
+  type GitRunner,
+  SAFE_DIFF_FLAGS,
+} from './git.js';
 import { studioPathspecs } from './studio-paths.js';
 import { diffBaseOf, type PreparedRun } from './working-copy.js';
 
@@ -79,7 +85,7 @@ export interface RunDiffsOptions {
 const DIFF_INDEX_FILE = 'diff.index';
 
 /** Options every diff command gets: no external diff driver, no textconv, no colour. */
-const DIFF_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color', '-M'] as const;
+const DIFF_FLAGS = [...SAFE_DIFF_FLAGS, '--no-color', '-M'] as const;
 
 export class RunDiffs implements RunDiffPort {
   constructor(private readonly options: RunDiffsOptions) {}

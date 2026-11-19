@@ -73,7 +73,10 @@ const gate = new ProviderGate(config.providers, unavailable);
 const cli = { gate, binaries: config.providerBinaries };
 // The agent user's own environment and Git configuration (its Git credentials live there).
 const git = new GitRunner();
-const fake = new FakeRunner({ git });
+const fake = new FakeRunner({
+  git,
+  identity: { name: config.agentGitName, email: config.agentGitEmail },
+});
 // Fake mode is refused in production by loadWorkerConfig. Every runner sits behind the
 // dispatcher, which checks the provider gate before every Run step.
 const runner = new RunnerDispatcher(
