@@ -111,12 +111,27 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
+    row: 'A repository interface returns its entity, its pinned child entity, or a value object its entity imports',
     expected: 'PASS',
     gate: 'api',
   },
   {
-    row: 'A repository interface returns another value object, or the snapshot of another root',
+    row: 'A repository interface returns an `…Data` type, a facts type, or a value object its entity does not import',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'An entity restores from its data and a value object offers `restore` and `toData`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A class under `domain/` declares `snapshot` or `toSnapshot`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `-snapshot.ts` file in `domain/entities/` (only `-data.ts` and `-facts.ts` are companions)',
     expected: 'FAIL',
     gate: 'api',
   },
@@ -151,7 +166,7 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: 'A type-only companion of an entity (`-snapshot`, `-data`, `-facts`) exports types only',
+    row: 'A type-only companion of an entity (`-data`, `-facts`) exports types only',
     expected: 'PASS',
     gate: 'api',
   },
@@ -321,12 +336,22 @@ export const QUALITY_TABLE = [
     gate: 'pinned',
   },
   {
-    row: 'A `*-snapshot.ts` file is imported only by `domain/entities/`, `domain/repositories/` and `infrastructure/repositories/`',
+    row: 'A `*-data.ts` file is imported only by its own entity and by `infrastructure/repositories/` of the same module',
     expected: 'PASS',
     gate: 'api',
   },
   {
-    row: 'A handler, port, collaborator, entry point or `contracts/` file imports a `*-snapshot.ts` file',
+    row: 'A handler, port, collaborator, entry point, repository interface or `contracts/` file imports a `*-data.ts` file',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `*-data.ts` file is imported by a file of `domain/entities/` other than its own entity (a facts file or another entity)',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A repository adapter imports the `*-data.ts` file of another module',
     expected: 'FAIL',
     gate: 'api',
   },

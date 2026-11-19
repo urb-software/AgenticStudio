@@ -1,6 +1,6 @@
 import { InvoiceAlreadyPaidError } from '../errors/invoice-errors.js';
 import { Money } from '../value-objects/money.js';
-import type { InvoiceSnapshot } from './invoice-snapshot.js';
+import type { InvoiceData } from './invoice-data.js';
 
 export class Invoice {
   private constructor(
@@ -18,7 +18,7 @@ export class Invoice {
     this.paid = true;
   }
 
-  snapshot(): InvoiceSnapshot {
+  toView(): InvoiceData {
     return { id: this.id, amount: this.total.amount, paid: this.paid };
   }
 }

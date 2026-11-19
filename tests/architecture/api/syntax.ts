@@ -228,7 +228,7 @@ export function repositoryContract(
   return undefined;
 }
 
-const COMPANION_SUFFIX = 'snapshot|data|facts';
+const COMPANION_SUFFIX = 'data|facts';
 
 /** A type-only companion of an entity, recognised by its file suffix alone. */
 export const COMPANION_FILE = new RegExp(

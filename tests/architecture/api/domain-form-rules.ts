@@ -19,6 +19,7 @@ export const DOMAIN_FORM_RULES = [
   'api-domain-top-level-function-is-a-guard-or-helper',
   'api-domain-class-has-instance-member',
   'api-domain-no-runtime-modules',
+  'api-domain-no-snapshot-method',
 ];
 
 const DOMAIN_FILE = /^src\/modules\/([^/]+)\/domain\//;
@@ -62,6 +63,7 @@ export function domainFormViolations(baseDir: string): Violation[] {
         ...(OBJECT_FILE.test(path) ? staticViolations(path, source) : []),
         ...functionViolations(path, source),
         ...instanceMemberViolations(path, source),
+        ...snapshotViolations(path, source),
         ...runtimeModuleViolations(baseDir, path),
       ];
     });
@@ -315,6 +317,26 @@ function instanceMemberViolations(path: string, source: ts.SourceFile): Violatio
     }
   }
   return found;
+}
+
+const SNAPSHOT_MEMBERS = new Set(['snapshot', 'toSnapshot']);
+
+/** No class of `domain/` hands out a snapshot: an entity is read through its fields (rule 10). */
+function snapshotViolations(path: string, source: ts.SourceFile): Violation[] {
+  return allClasses(source).flatMap(({ name, node }) =>
+    node.members.flatMap((member) => {
+      const declared = member.name?.getText();
+      return declared !== undefined && SNAPSHOT_MEMBERS.has(declared)
+        ? [
+            {
+              rule: 'api-domain-no-snapshot-method',
+              from: path,
+              to: `${name} declares ${declared}`,
+            },
+          ]
+        : [];
+    }),
+  );
 }
 
 /** Nothing in `domain/` reaches a platform runtime module: time, randomness and I/O come in as values. */

@@ -14,8 +14,16 @@ const ROW_ERROR_THROUGH_HANDLER =
 const ROW_HANDLER_FAIL =
   'A handler returns an entity class, does not export its result type, or has a public method with no declared return type' as const;
 
-const ROW_SNAPSHOT_FAIL =
-  'A handler, port, collaborator, entry point or `contracts/` file imports a `*-snapshot.ts` file' as const;
+const ROW_DATA_FAIL =
+  'A handler, port, collaborator, entry point, repository interface or `contracts/` file imports a `*-data.ts` file' as const;
+const ROW_DATA_OWN_ENTITY_FAIL =
+  'A `*-data.ts` file is imported by a file of `domain/entities/` other than its own entity (a facts file or another entity)' as const;
+const ROW_DATA_OTHER_MODULE_FAIL =
+  'A repository adapter imports the `*-data.ts` file of another module' as const;
+const ROW_REPOSITORY_RETURNS_FAIL =
+  'A repository interface returns an `…Data` type, a facts type, or a value object its entity does not import' as const;
+const ROW_SNAPSHOT_METHOD_FAIL =
+  'A class under `domain/` declares `snapshot` or `toSnapshot`' as const;
 const ROW_PROTOCOL_FAIL =
   'A file under `application/` imports the worker protocol package or an entry point' as const;
 const ROW_INPUT_FAIL =
@@ -753,22 +761,25 @@ describeGate('api', apiGate, 'apps/api', [
       'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
   },
   {
-    fixture: 'repository-returns-own-snapshot',
-    expected: [],
-    qualityRow:
-      "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
+    fixture: 'repository-returns-own-data',
+    expected: ['api-data-between-entity-and-repository', 'api-repository-refers-to-one-entity'],
+    qualityRow: ROW_REPOSITORY_RETURNS_FAIL,
   },
   {
-    fixture: 'executions-repository-returns-root-child-snapshot',
-    expected: [],
-    qualityRow:
-      "A repository interface returns the snapshot of its own entity, or of its root's pinned child entity",
+    fixture: 'executions-repository-returns-root-child-data',
+    expected: ['api-data-between-entity-and-repository', 'api-repository-refers-to-one-entity'],
+    qualityRow: ROW_REPOSITORY_RETURNS_FAIL,
   },
   {
-    fixture: 'repository-returns-other-roots-snapshot',
-    expected: ['api-repository-refers-to-one-entity'],
+    fixture: 'repository-returns-other-roots-data',
+    expected: ['api-data-between-entity-and-repository', 'api-repository-refers-to-one-entity'],
+    qualityRow: ROW_REPOSITORY_RETURNS_FAIL,
+  },
+  {
+    fixture: 'repository-returns-own-aggregate-value-object',
+    expected: [],
     qualityRow:
-      'A repository interface returns another value object, or the snapshot of another root',
+      'A repository interface returns its entity, its pinned child entity, or a value object its entity imports',
   },
   {
     fixture: 'entity-imports-entity-id-type',
@@ -1006,14 +1017,12 @@ describeGate('api', apiGate, 'apps/api', [
   {
     fixture: 'repository-property-returns-value-object',
     expected: ['api-repository-refers-to-one-entity'],
-    qualityRow:
-      'A repository interface returns another value object, or the snapshot of another root',
+    qualityRow: ROW_REPOSITORY_RETURNS_FAIL,
   },
   {
     fixture: 'repository-returns-value-object-through-namespace-import',
     expected: ['api-repository-refers-to-one-entity'],
-    qualityRow:
-      'A repository interface returns another value object, or the snapshot of another root',
+    qualityRow: ROW_REPOSITORY_RETURNS_FAIL,
   },
   {
     fixture: 'domain-exports-arrow-function-with-satisfies',
@@ -1088,8 +1097,7 @@ describeGate('api', apiGate, 'apps/api', [
   {
     fixture: 'entity-companions-export-types-only',
     expected: [],
-    qualityRow:
-      'A type-only companion of an entity (`-snapshot`, `-data`, `-facts`) exports types only',
+    qualityRow: 'A type-only companion of an entity (`-data`, `-facts`) exports types only',
   },
   {
     fixture: 'entity-companion-exports-class',
@@ -1116,30 +1124,66 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'repository-returns-companion-facts',
-    expected: ['api-repository-refers-to-one-entity'],
+    expected: ['api-data-between-entity-and-repository', 'api-repository-refers-to-one-entity'],
     qualityRow:
       'A repository interface refers to two entity files, or its main type is under `domain/value-objects/`',
   },
   {
-    fixture: 'billing-repository-imports-its-snapshot',
+    fixture: 'billing-repository-imports-its-data',
     expected: [],
     qualityRow:
-      'A `*-snapshot.ts` file is imported only by `domain/entities/`, `domain/repositories/` and `infrastructure/repositories/`',
+      'A `*-data.ts` file is imported only by its own entity and by `infrastructure/repositories/` of the same module',
   },
   {
-    fixture: 'billing-handler-imports-snapshot',
-    expected: ['api-snapshots-between-entity-and-repository'],
-    qualityRow: ROW_SNAPSHOT_FAIL,
+    fixture: 'billing-handler-imports-data',
+    expected: ['api-data-between-entity-and-repository'],
+    qualityRow: ROW_DATA_FAIL,
   },
   {
-    fixture: 'billing-entry-point-imports-snapshot',
-    expected: ['api-snapshots-between-entity-and-repository'],
-    qualityRow: ROW_SNAPSHOT_FAIL,
+    fixture: 'billing-entry-point-imports-data',
+    expected: ['api-data-between-entity-and-repository'],
+    qualityRow: ROW_DATA_FAIL,
   },
   {
-    fixture: 'billing-contracts-imports-snapshot',
-    expected: ['api-snapshots-between-entity-and-repository', 'api-contracts-self-contained'],
-    qualityRow: ROW_SNAPSHOT_FAIL,
+    fixture: 'billing-contracts-imports-data',
+    expected: ['api-data-between-entity-and-repository', 'api-contracts-self-contained'],
+    qualityRow: ROW_DATA_FAIL,
+  },
+  {
+    fixture: 'billing-facts-file-indexes-entity-data',
+    expected: ['api-data-only-for-its-own-entity'],
+    qualityRow: ROW_DATA_OWN_ENTITY_FAIL,
+  },
+  {
+    fixture: 'billing-entity-imports-another-entity-data',
+    expected: ['api-data-only-for-its-own-entity'],
+    qualityRow: ROW_DATA_OWN_ENTITY_FAIL,
+  },
+  {
+    fixture: 'shipping-repository-imports-billing-data',
+    expected: ['api-data-only-for-repositories-of-its-module', 'api-no-cross-module-private'],
+    qualityRow: ROW_DATA_OTHER_MODULE_FAIL,
+  },
+  {
+    fixture: 'entity-declares-snapshot',
+    expected: ['api-domain-no-snapshot-method'],
+    qualityRow: ROW_SNAPSHOT_METHOD_FAIL,
+  },
+  {
+    fixture: 'value-object-declares-to-snapshot',
+    expected: ['api-domain-no-snapshot-method'],
+    qualityRow: ROW_SNAPSHOT_METHOD_FAIL,
+  },
+  {
+    fixture: 'entity-and-value-object-use-restore-and-to-data',
+    expected: [],
+    qualityRow: 'An entity restores from its data and a value object offers `restore` and `toData`',
+  },
+  {
+    fixture: 'entity-companion-snapshot-suffix',
+    expected: ['api-entities-are-classes-with-non-public-constructors'],
+    qualityRow:
+      'A `-snapshot.ts` file in `domain/entities/` (only `-data.ts` and `-facts.ts` are companions)',
   },
   {
     fixture: 'billing-handler-imports-worker-protocol',

@@ -1,6 +1,6 @@
 export type ProjectId = string;
 
-export interface ProjectSnapshot {
+export interface ProjectView {
   readonly id: ProjectId;
   readonly name: string;
 }
@@ -15,7 +15,7 @@ export class Project {
     return new Project(id, name);
   }
 
-  snapshot(): ProjectSnapshot {
+  toView(): ProjectView {
     return { id: this.id, name: this.name };
   }
 }
