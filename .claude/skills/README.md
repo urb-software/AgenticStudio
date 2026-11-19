@@ -6,6 +6,7 @@ Optional Claude Code skills that help each role follow the SDLC in [`docs/engine
 | --- | --- |
 | Refinement (operator + coordinator) | `studio-grilling`, `studio-grill-with-docs`, `studio-domain-modeling`, `studio-to-spec` (Epic), `studio-to-tickets` (Stories / Technical Tasks) |
 | Design | `studio-codebase-design`, `studio-improve-codebase-architecture`, `studio-prototype` |
+| Periodic audit (coordinator) | `studio-refactor-finder <area>` (`api`, `web`, `agent-worker`, `packages` or `all`): gates, drift scan (`scan.mjs`) and review lenses; the operator decides what becomes work |
 | Coordinator → implementer | `studio-handoff implementer #<n>` |
 | Implementer | `studio-implement`, `studio-tdd`, `studio-diagnosing-bugs`, `studio-pr`, `studio-handoff return #<n>` |
 | Independent reviewer (fresh context) | `studio-code-review` |
