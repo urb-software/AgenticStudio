@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { format } from 'node:util';
@@ -16,6 +15,7 @@ import {
   type SecretStore,
   SecretStoreUnavailableError,
 } from '../platform/secrets/index.js';
+import { refusedPorts } from './refused-port.js';
 import { createGitFixture, type GitFixture } from './git-fixture.js';
 import {
   signIn,
@@ -36,14 +36,7 @@ const OTHER_OWNER = { owner: 'tests.other-module' } as const;
 const throwawayValue = (name: string) =>
   `-----BEGIN TEST VALUE-----\n${name}-test-only-${randomUUID()}\n-----END TEST VALUE-----\n`;
 
-/** A local port with nothing listening on it. */
-async function closedPort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as { port: number };
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  return port;
-}
+const refused = refusedPorts();
 
 describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', () => {
   let services: StudioServices;
@@ -120,6 +113,7 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
   afterAll(async () => {
     await app?.close();
     await services?.stop();
+    await refused.release();
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
   });
 
@@ -224,7 +218,7 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
 
       /** An SSH Repository that failed (unreachable host); returns its Deploy key reference. */
       async function failedSshRepository(projectId: string): Promise<string> {
-        const url = `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`;
+        const url = `ssh://git@127.0.0.1:${await refused.reserve()}/srv/git/repo.git`;
         expect((await connect(projectId, url)).status).toBe(201);
         const verified = await request(app!.getHttpServer())
           .post(`/api/projects/${projectId}/repository/verify`)
@@ -257,7 +251,7 @@ describe('orphaned Deploy-key sweep (PostgreSQL + Redis via Testcontainers)', ()
 
         const retried = await connect(
           projectId,
-          `ssh://git@127.0.0.1:${await closedPort()}/srv/git/repo.git`,
+          `ssh://git@127.0.0.1:${await refused.reserve()}/srv/git/repo.git`,
         );
         expect(retried.status).toBe(201);
         expect(retried.body.state).toBe('awaiting_key');
