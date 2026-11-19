@@ -14,6 +14,7 @@ import {
 import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
 import { RefreshPullRequestHandler } from '../../../../application/features/refresh-pull-request/handler.js';
 import { refreshPullRequestRequestSchema, RefreshPullRequestRequestDto } from './schema.js';
+import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
 import {
   RunNotFoundError,
   PullRequestNotRefreshableError,
@@ -22,7 +23,10 @@ import {
 @ApiTags('runs')
 @Controller('runs')
 export class RefreshPullRequestEndpoint {
-  constructor(private readonly handler: RefreshPullRequestHandler) {}
+  constructor(
+    private readonly handler: RefreshPullRequestHandler,
+    private readonly getRun: GetRunHandler,
+  ) {}
 
   @Post(':runId/pull-request/refresh')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -44,9 +48,12 @@ export class RefreshPullRequestEndpoint {
       );
     }
     try {
-      const { run, followUp, workerConnected, preparedFollowUp } = await this.handler.execute({
+      await this.handler.execute({
         runId,
         onOpen: parsed.data.onOpen === true,
+      });
+      const { run, followUp, workerConnected, preparedFollowUp } = await this.getRun.execute({
+        runId,
       });
       return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);
     } catch (error) {

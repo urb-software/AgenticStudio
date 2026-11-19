@@ -11,6 +11,8 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
+import { Lease } from '../../../domain/value-objects/lease.js';
+import { WorkerPresence } from '../../../domain/value-objects/worker-presence.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface GetRunInput {
@@ -54,14 +56,16 @@ export class GetRunHandler {
     };
     const view = {
       run: runView(run),
-      ...this.retention.runView(
+      followUp: this.retention.followUpView(
         run.followUpAvailability(workers, now, this.lease.seconds),
         run.retentionFacts(),
-        workers.latest,
-        now,
-        this.lease.seconds,
         over,
+        now,
       ),
+      workerConnected: WorkerPresence.of(
+        workers.latest,
+        Lease.ofSeconds(this.lease.seconds),
+      ).isAnyConnected(now),
     };
     return {
       ...view,

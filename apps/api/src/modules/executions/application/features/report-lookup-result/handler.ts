@@ -199,13 +199,7 @@ export class ReportLookupResultHandler {
       await repositories.lookups.save(lookup);
       const run = await repositories.runs.findById(runId);
       if (run) {
-        // A retry keeps the Run refreshing or preparing until it; reading Review comments marks
-        // no Run column.
-        if (lookup.kind === 'failing_check_logs') {
-          run.recordPreparationFailed(error, lookup.retryAt, lookup.requestedAt);
-        } else if (lookup.kind === 'pull_request_state') {
-          run.recordRefreshFailed(error, lookup.retryAt, lookup.requestedAt);
-        }
+        run.recordLookupFailed(lookup.kind, error, lookup.retryAt, lookup.requestedAt);
         await repositories.runs.save(run);
       }
       return outcome;

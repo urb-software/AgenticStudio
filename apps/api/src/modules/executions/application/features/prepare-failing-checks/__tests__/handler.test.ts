@@ -16,6 +16,7 @@ import {
   PreparedFollowUpNotFoundError,
 } from '../../get-prepared-follow-up/handler.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
+import { GetRunHandler } from '../../get-run/handler.js';
 import { NoFailingChecksError, PrepareFailingChecksHandler } from '../handler.js';
 import {
   RunNotFoundError,
@@ -43,18 +44,20 @@ describe('preparing a Follow-up from failing checks', () => {
   let executions: ReturnType<typeof inMemoryExecutions>;
   let workers: Workers;
   let prepare: PrepareFailingChecksHandler;
+  let getRun: GetRunHandler;
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     executions = inMemoryExecutions(runs);
     lookups = executions.lookups;
     workers = new Workers();
-    prepare = new PrepareFailingChecksHandler(
+    const clock = { now: () => T0 };
+    prepare = new PrepareFailingChecksHandler(runs, executions.requests, clock);
+    getRun = new GetRunHandler(
       runs,
-      executions.requests,
-      executions.preparedFollowUps,
-      { now: () => T0 },
+      clock,
       workers,
+      executions.preparedFollowUps,
       LEASE,
       RetentionPolicy.of({
         days: 7,
@@ -95,7 +98,8 @@ describe('preparing a Follow-up from failing checks', () => {
     connect();
     const run = await runWithChecks('passed', 'failed');
 
-    const answer = await prepare.execute({ runId: run.id });
+    await prepare.execute({ runId: run.id });
+    const answer = await getRun.execute({ runId: run.id });
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'failing_check_logs' });

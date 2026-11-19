@@ -12,6 +12,7 @@ import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
 import { ReportLookupResultHandler } from '../../report-lookup-result/handler.js';
+import { GetRunHandler } from '../../get-run/handler.js';
 import { RefreshPullRequestHandler } from '../handler.js';
 import {
   RunNotFoundError,
@@ -41,6 +42,7 @@ describe('RefreshPullRequestHandler', () => {
   let workers: Workers;
   let now: Date;
   let handler: RefreshPullRequestHandler;
+  let getRun: GetRunHandler;
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
@@ -48,12 +50,13 @@ describe('RefreshPullRequestHandler', () => {
     lookups = executions.lookups;
     workers = new Workers();
     now = T0;
-    handler = new RefreshPullRequestHandler(
+    const clock = { now: () => now };
+    handler = new RefreshPullRequestHandler(runs, executions.requests, clock);
+    getRun = new GetRunHandler(
       runs,
-      executions.requests,
-      executions.preparedFollowUps,
-      { now: () => now },
+      clock,
       workers,
+      executions.preparedFollowUps,
       LEASE,
       RetentionPolicy.of({
         days: 7,
@@ -81,7 +84,8 @@ describe('RefreshPullRequestHandler', () => {
     connect();
     const run = await deliveredRun(runs);
 
-    const answer = await handler.execute({ runId: run.id, onOpen: false });
+    await handler.execute({ runId: run.id, onOpen: false });
+    const answer = await getRun.execute({ runId: run.id });
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'pull_request_state' });
@@ -176,7 +180,8 @@ describe('RefreshPullRequestHandler', () => {
     const run = await deliveredRun(runs);
     connect(new Date(T0.getTime() - 61_000));
 
-    const answer = await handler.execute({ runId: run.id, onOpen: false });
+    await handler.execute({ runId: run.id, onOpen: false });
+    const answer = await getRun.execute({ runId: run.id });
 
     expect(answer.workerConnected).toBe(false);
   });

@@ -47,6 +47,7 @@ import { RunWorkerClaim } from '../value-objects/run-worker-claim.js';
 import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
 import { Lease } from '../value-objects/lease.js';
 import { WorkerPresence } from '../value-objects/worker-presence.js';
+import type { LookupKind } from '../value-objects/lookup-kind.js';
 import { RunStep } from './run-step.js';
 
 type RunPatch = Partial<
@@ -768,12 +769,13 @@ export class Run {
     return true;
   }
 
-  recordRefreshRequested(now: Date): void {
-    this.updateStatus(this.pullRequestStatus.refreshRequested(now));
-  }
-
-  recordPreparationRequested(now: Date): void {
-    this.updateStatus(this.pullRequestStatus.preparationRequested(now));
+  /** Reading Review comments marks nothing on the Run. */
+  recordLookupRequested(kind: LookupKind, now: Date): void {
+    if (kind === 'pull_request_state') {
+      this.updateStatus(this.pullRequestStatus.refreshRequested(now));
+    } else if (kind === 'failing_check_logs') {
+      this.updateStatus(this.pullRequestStatus.preparationRequested(now));
+    }
   }
 
   /** A Run without a pull request is left alone. */
@@ -786,13 +788,21 @@ export class Run {
     this.updateStatus(this.pullRequestStatus.preparationDone());
   }
 
-  /** With a retry (`retryAt`, a rate limit) the Run stays refreshing until then. */
-  recordRefreshFailed(error: string, retryAt: Date | null, requestedAt: Date): void {
-    this.updateStatus(this.pullRequestStatus.refreshFailed(error, retryAt, requestedAt));
-  }
-
-  recordPreparationFailed(error: string, retryAt: Date | null, requestedAt: Date): void {
-    this.updateStatus(this.pullRequestStatus.preparationFailed(error, retryAt, requestedAt));
+  /**
+   * With a retry (`retryAt`, a rate limit) the Run stays refreshing or preparing until then.
+   * Reading Review comments marks nothing.
+   */
+  recordLookupFailed(
+    kind: LookupKind,
+    error: string,
+    retryAt: Date | null,
+    requestedAt: Date,
+  ): void {
+    if (kind === 'pull_request_state') {
+      this.updateStatus(this.pullRequestStatus.refreshFailed(error, retryAt, requestedAt));
+    } else if (kind === 'failing_check_logs') {
+      this.updateStatus(this.pullRequestStatus.preparationFailed(error, retryAt, requestedAt));
+    }
   }
 
   /** A Run without a pull request is left alone. */
