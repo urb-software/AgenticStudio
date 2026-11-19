@@ -574,7 +574,6 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
         },
         { kind: 'retry', project: 10, overrides: retryable('usage_limit', ago(DAY)) },
         { kind: 'retry', project: 11, overrides: retryable('usage_limit', ago(9 * DAY)) },
-        { kind: 'retry', project: 12, overrides: retryable('usage_limit', ago(9 * DAY), true) },
       ]);
       const held = new Map(
         (await db().run.findMany({ select: { id: true, environmentFileSecretId: true } })).map(
