@@ -11,6 +11,11 @@ describe('PullRequestRefreshRule', () => {
     );
   });
 
+  it('takes the stale cutoff as given', () => {
+    const cutoff = new Date('2026-11-17T12:00:00.000Z');
+    expect(PullRequestRefreshRule.staleSince(cutoff).staleBefore).toEqual(cutoff);
+  });
+
   it('keeps finished lookups for a week', () => {
     expect(PullRequestRefreshRule.at(now).finishedLookupsBefore).toEqual(
       new Date('2026-11-11T12:00:00.000Z'),

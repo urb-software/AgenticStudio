@@ -617,15 +617,7 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       ]);
       const all = await newestFirst();
       const expected = all
-        .filter((run) =>
-          policy.countsAgainstLimit({
-            state: run.lifecycle.state,
-            finishedAt: run.lifecycle.finishedAt,
-            hasPullRequest: run.delivery.hasPullRequest,
-            hasWorkingCopy: run.workingCopy !== null,
-            workingCopyRemoved: run.claim.workingCopyRemoved,
-          }),
-        )
+        .filter((run) => policy.countsAgainstLimit(run.limitedRunFacts()))
         .map((run) => run.id);
 
       const listed = await runs().findLimitedRuns([...new Set(all.map((run) => run.projectId))]);

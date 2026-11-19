@@ -14,6 +14,13 @@ export class PullRequestRefreshRule {
     return new PullRequestRefreshRule(now);
   }
 
+  /** The rule whose `staleBefore` is `cutoff`. */
+  static staleSince(cutoff: Date): PullRequestRefreshRule {
+    return new PullRequestRefreshRule(
+      new Date(cutoff.getTime() + PullRequestRefreshRule.AGE_HOURS * 60 * 60 * 1000),
+    );
+  }
+
   get staleBefore(): Date {
     return new Date(this.now.getTime() - PullRequestRefreshRule.AGE_HOURS * 60 * 60 * 1000);
   }

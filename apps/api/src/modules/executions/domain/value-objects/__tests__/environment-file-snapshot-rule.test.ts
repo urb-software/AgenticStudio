@@ -18,6 +18,13 @@ describe('EnvironmentFileSnapshotRule', () => {
     expect(rule.retryableFinishedBefore).toEqual(new Date('2026-11-11T12:00:00.000Z'));
   });
 
+  it('takes the retention cutoff as given', () => {
+    const cutoff = new Date('2026-11-01T00:00:00.000Z');
+    expect(EnvironmentFileSnapshotRule.finishedBefore(cutoff).retryableFinishedBefore).toEqual(
+      cutoff,
+    );
+  });
+
   it('releases the snapshot of a final Run that cannot be retried', () => {
     expect(rule.releasable(facts({}))).toBe(true);
     expect(rule.releasable(facts({ isFinal: false }))).toBe(false);
@@ -46,9 +53,13 @@ describe('EnvironmentFileSnapshotRule', () => {
   });
 
   it('releases right after a report only a final Run with a snapshot that is not retryable', () => {
-    expect(rule.releasesAfterReport(facts({}))).toBe(true);
-    expect(rule.releasesAfterReport(facts({ keepsForRetry: true }))).toBe(false);
-    expect(rule.releasesAfterReport(facts({ isFinal: false }))).toBe(false);
-    expect(rule.releasesAfterReport(facts({ environmentFileSupplied: false }))).toBe(false);
+    expect(EnvironmentFileSnapshotRule.releasesAfterReport(facts({}))).toBe(true);
+    expect(EnvironmentFileSnapshotRule.releasesAfterReport(facts({ keepsForRetry: true }))).toBe(
+      false,
+    );
+    expect(EnvironmentFileSnapshotRule.releasesAfterReport(facts({ isFinal: false }))).toBe(false);
+    expect(
+      EnvironmentFileSnapshotRule.releasesAfterReport(facts({ environmentFileSupplied: false })),
+    ).toBe(false);
   });
 });

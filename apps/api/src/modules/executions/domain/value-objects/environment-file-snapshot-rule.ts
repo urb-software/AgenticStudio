@@ -13,6 +13,10 @@ export class EnvironmentFileSnapshotRule {
     );
   }
 
+  static finishedBefore(cutoff: Date): EnvironmentFileSnapshotRule {
+    return new EnvironmentFileSnapshotRule(cutoff);
+  }
+
   /** A retryable Run keeps its snapshot while a retry is requested or the retention period lasts. */
   releasable(facts: EnvironmentFileSnapshotFacts): boolean {
     if (!facts.isFinal) return false;
@@ -24,7 +28,7 @@ export class EnvironmentFileSnapshotRule {
   }
 
   /** Right after a state report the retention period has just begun, so a retryable Run keeps it. */
-  releasesAfterReport(facts: EnvironmentFileSnapshotFacts): boolean {
+  static releasesAfterReport(facts: EnvironmentFileSnapshotFacts): boolean {
     return facts.environmentFileSupplied && facts.isFinal && !facts.keepsForRetry;
   }
 }

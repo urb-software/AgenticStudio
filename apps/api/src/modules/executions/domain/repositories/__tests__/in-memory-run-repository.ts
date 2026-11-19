@@ -253,13 +253,7 @@ export class InMemoryRunRepository implements RunRepository {
       this.runs.flatMap((run) =>
         projectIds.includes(run.projectId) &&
         run.finishedAt !== null &&
-        COUNTING_POLICY.countsAgainstLimit({
-          state: run.state,
-          finishedAt: run.finishedAt,
-          hasPullRequest: run.pullRequest !== null,
-          hasWorkingCopy: run.workingCopy !== null,
-          workingCopyRemoved: run.workingCopyRemovedAt !== null,
-        })
+        COUNTING_POLICY.countsAgainstLimit(Run.restore(this.data(run)).limitedRunFacts())
           ? [{ runId: run.id, projectId: run.projectId, finishedAt: run.finishedAt }]
           : [],
       ),
@@ -592,7 +586,7 @@ export class InMemoryRunRepository implements RunRepository {
   listReleasableEnvironmentFileSecrets(
     retryableFinishedBefore: Date,
   ): Promise<{ runId: string; secretRef: string }[]> {
-    const rule = EnvironmentFileSnapshotRule.at(retryableFinishedBefore, 0);
+    const rule = EnvironmentFileSnapshotRule.finishedBefore(retryableFinishedBefore);
     return Promise.resolve(
       this.runs
         .filter(
@@ -617,9 +611,7 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]> {
-    const rule = PullRequestRefreshRule.at(
-      new Date(attemptedBefore.getTime() + PullRequestRefreshRule.AGE_HOURS * 60 * 60 * 1000),
-    );
+    const rule = PullRequestRefreshRule.staleSince(attemptedBefore);
     return Promise.resolve(
       this.runs
         .map((run) => Run.restore(this.data(run)).pullRequestRefreshFacts())

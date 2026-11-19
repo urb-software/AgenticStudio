@@ -86,9 +86,7 @@ export class ReportRunStateHandler {
     // it was, snapshot included.
     if (
       !report.unchanged &&
-      EnvironmentFileSnapshotRule.at(this.clock.now(), 0).releasesAfterReport(
-        changed.snapshotFacts(),
-      )
+      EnvironmentFileSnapshotRule.releasesAfterReport(changed.snapshotFacts())
     ) {
       await this.snapshots.releaseFor(changed.id);
     }

@@ -28,6 +28,7 @@ import type { FollowUpFacts, WorkerFacts } from './run-worker-facts.js';
 import type { ResumeFacts } from './run-resume-facts.js';
 import type { RetentionFacts } from '../value-objects/retention-facts.js';
 import type { EnvironmentFileSnapshotFacts } from '../value-objects/environment-file-snapshot-facts.js';
+import type { LimitedRunFacts } from '../value-objects/limited-run-facts.js';
 import type { PullRequestRefreshFacts } from '../value-objects/pull-request-refresh-facts.js';
 import type { RunSweepFacts } from '../value-objects/run-sweep-facts.js';
 import type { RunChanges } from './run-change-facts.js';
@@ -394,6 +395,16 @@ export class Run {
       deliveryRequested: this.delivery.requested,
       finishedAt: this.lifecycle.finishedAt,
       environmentFileSupplied: this.claim.environmentFileSupplied,
+    };
+  }
+
+  limitedRunFacts(): LimitedRunFacts {
+    return {
+      state: this.lifecycle.state,
+      finishedAt: this.lifecycle.finishedAt,
+      hasPullRequest: this.delivery.hasPullRequest,
+      hasWorkingCopy: this.workingCopy !== null,
+      workingCopyRemoved: this.claim.workingCopyRemoved,
     };
   }
 
