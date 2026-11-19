@@ -14,6 +14,10 @@ import {
   type RepositoryGit,
   type SshCredentials,
 } from '../../../application/ports/repository-git.js';
+import {
+  IntegrationBranch,
+  InvalidIntegrationBranchError,
+} from '../../../domain/value-objects/integration-branch.js';
 import { ClonePaths } from './clone-paths.js';
 import { classifyGitFailure, redactGitOutput } from './git-output.js';
 import { diskUsage, GitProcessInterrupted, runGitProcess, type SizeWatch } from './git-process.js';
@@ -160,22 +164,14 @@ const TOP_LEVEL_LOCK = /\.lock$/;
 
 const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
-function isValidBranchName(branch: string): boolean {
-  return (
-    branch.length > 0 &&
-    branch.length <= 255 &&
-    branch !== '@' &&
-    !branch.startsWith('-') &&
-    !branch.startsWith('/') &&
-    !branch.endsWith('/') &&
-    !branch.endsWith('.') &&
-    !branch.includes('..') &&
-    !branch.includes('//') &&
-    !branch.includes('@{') &&
-    // eslint-disable-next-line no-control-regex -- control characters are not allowed in refs
-    !/[\u0000- \u007f~^:?*[\\]/.test(branch) &&
-    branch.split('/').every((part) => !part.startsWith('.') && !part.endsWith('.lock'))
-  );
+/** The domain rule, applied to the branch exactly as given (the domain parse trims). */
+function isIntegrationBranch(branch: string): boolean {
+  try {
+    return IntegrationBranch.parse(branch).value === branch;
+  } catch (error) {
+    if (error instanceof InvalidIntegrationBranchError) return false;
+    throw error;
+  }
 }
 
 function compareVersions(a: number[], b: number[]): number {
@@ -627,7 +623,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   private assertBranch(branch: string): void {
-    if (!isValidBranchName(branch)) {
+    if (!isIntegrationBranch(branch)) {
       throw new GitRequestRejectedError('The branch name is not a valid Git branch name.');
     }
   }
