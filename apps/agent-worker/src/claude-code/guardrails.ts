@@ -21,6 +21,7 @@ const guardrailSettingsSchema = z
   .object({
     allowManagedHooksOnly: z.literal(true),
     allowManagedPermissionRulesOnly: z.literal(true),
+    disableSkillShellExecution: z.literal(true),
     permissions: z
       .object({
         allow: z.array(z.string().min(1)).min(1),

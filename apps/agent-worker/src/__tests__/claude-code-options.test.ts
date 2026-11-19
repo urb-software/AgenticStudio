@@ -47,6 +47,14 @@ describe("the CLI arguments (the record's Mode)", () => {
     ]);
   });
 
+  it('adds only --plugin-dir, last, when the repository plugin has content', () => {
+    const plain = claudeArguments(BASE);
+    const withPlugin = claudeArguments({ ...BASE, pluginDir: FILES.pluginDir });
+
+    expect(withPlugin).toEqual([...plain, '--plugin-dir', '/data/runs/r1/repo-plugin']);
+    expect(plain).not.toContain('--plugin-dir');
+  });
+
   it('resumes a step with the same options and the stored session', () => {
     const args = claudeArguments({
       ...BASE,

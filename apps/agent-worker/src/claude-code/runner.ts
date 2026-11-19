@@ -38,6 +38,7 @@ import {
 } from './cli-options.js';
 import { prepareRunSettings } from './guardrails.js';
 import { buildInstructions, type RepositoryFiles } from './instructions.js';
+import { parseTreeListing, prepareRepoPlugin, type RepositoryTree } from './repo-plugin.js';
 import { ClaudeStream } from './stream.js';
 import { userSettingsProblem } from './user-settings.js';
 
@@ -104,6 +105,11 @@ export class ClaudeCodeRunner implements Runner {
     );
     await writeFile(files.instructionsFile, instructions.text, { mode: 0o600 });
     for (const notice of instructions.notices) yield { type: 'notice', text: notice };
+    const plugin = await prepareRepoPlugin(
+      files.pluginDir,
+      this.repositoryTree(workspace, run.startCommit, signal),
+    );
+    for (const notice of plugin.notices) yield { type: 'notice', text: notice };
     const guardrails = await prepareRunSettings(files.settingsFile, this.options.guardrails?.dir);
     signal.throwIfAborted();
     const args = claudeArguments({
@@ -113,6 +119,7 @@ export class ClaudeCodeRunner implements Runner {
       instructionsFile: files.instructionsFile,
       maxTurns: this.options.maxTurns,
       jsonSchema: AGENT_RESULT_JSON_SCHEMA,
+      ...(plugin.dir === null ? {} : { pluginDir: plugin.dir }),
       ...(sessionRef === undefined ? {} : { sessionRef }),
     });
     const env = claudeEnvironment({
@@ -167,6 +174,25 @@ export class ClaudeCodeRunner implements Runner {
       throw new AgentFailedError(`${outcome.error.message} ${errorReason(errorOutput)}`);
     }
     throw outcome.error;
+  }
+
+  /** The repository's skill and agent folders at the start commit, read from the object store. */
+  private repositoryTree(
+    workspace: RunWorkspace,
+    startCommit: string,
+    signal: AbortSignal,
+  ): RepositoryTree {
+    const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
+    return {
+      list: async () =>
+        parseTreeListing(
+          await this.options.git.run(
+            ['ls-tree', '-r', '-l', '-z', startCommit, '--', '.claude/skills', '.claude/agents'],
+            options,
+          ),
+        ),
+      blob: (sha) => this.options.git.run(['cat-file', 'blob', sha], options),
+    };
   }
 
   /** The repository's files at the start commit, read from the Working copy's object store. */

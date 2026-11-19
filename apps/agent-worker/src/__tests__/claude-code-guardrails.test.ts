@@ -38,6 +38,8 @@ describe("Studio's managed Claude Code settings", () => {
 
     expect(settings.allowManagedHooksOnly).toBe(true);
     expect(settings.allowManagedPermissionRulesOnly).toBe(true);
+    // A repository skill's shell lines never run, even if one slipped past the plugin builder.
+    expect(settings.disableSkillShellExecution).toBe(true);
     expect(settings.permissions.disableBypassPermissionsMode).toBe('disable');
     expect(settings.enableAllProjectMcpServers).toBe(false);
     // Native lock on the file tools, whatever the hook's environment.
