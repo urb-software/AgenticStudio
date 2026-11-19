@@ -63,6 +63,9 @@ describe('shell forms the CLI runs', () => {
     ['a tilde fence', `~~~!\nid\n~~~\n`],
     ['an indented fence', `    ${FENCE}!\n    id\n`],
     ['an inline form', 'Now !`id`\n'],
+    ['a fence built from arguments', `${FENCE}$ARGUMENTS\nx\n`],
+    ['a tilde fence built from arguments', '~~~$ARGUMENTS\nx\n'],
+    ['a bang built from arguments', 'Run !$ARGUMENTS now\n'],
   ])('leaves out a skill with %s, and an agent too', async (_name, body) => {
     const { tree } = repository({
       '.claude/skills/bad/SKILL.md': skill('name: bad', body),

@@ -181,9 +181,10 @@ try {
       timeout: 10 * 60_000,
     });
     const exited = new Promise((resolve) => child.once('close', resolve));
-    const seen = { init: undefined, result: undefined, denied: false };
+    const seen = { init: undefined, result: undefined, denied: false, transcript: '' };
     for await (const raw of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
       try {
+        seen.transcript += raw + '\n';
         const event = JSON.parse(raw);
         if (event.type === 'system' && event.subtype === 'init') seen.init = event;
         if (event.type === 'result') seen.result = event;
@@ -251,6 +252,10 @@ try {
   const secondSkills = names(second.init?.skills);
   line(`control step: exit code ${second.code}`);
   check('the control skill repo:rawcmd was loaded', secondSkills.includes('repo:rawcmd'));
+  check(
+    'its body was expanded and the shell lines were refused by policy (transcript)',
+    second.transcript.includes('[shell command execution disabled by policy]'),
+  );
   check(
     'no shell line of the control skill ran (inline, fence, blockquote fence)',
     !ran('raw-inline') && !ran('raw-fence') && !ran('raw-quote'),

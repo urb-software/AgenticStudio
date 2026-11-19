@@ -85,8 +85,11 @@ export function parseTreeListing(output: string): TreeEntry[] {
   return entries;
 }
 
-/** The CLI runs shell for `` !` `` and for a fence opened with ```! anywhere in the text. */
-const SHELL_LINE = /!`|```!|~~~!/;
+/**
+ * The CLI runs shell for `` !` `` and for a fence opened with ```! anywhere in the text; the `$`
+ * forms are refused too, as the start of syntax built from arguments at run time.
+ */
+const SHELL_LINE = /!`|```!|~~~!|```\$|~~~\$|!\$/;
 
 /** Entries a skill may hold, and entries looked at in total, before the rest is left out. */
 const MAX_SKILL_ENTRIES = 200;
