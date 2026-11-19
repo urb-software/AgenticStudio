@@ -85,8 +85,24 @@ export function parseTreeListing(output: string): TreeEntry[] {
   return entries;
 }
 
-/** A shell line in a skill: inline `` !`cmd` `` or a fenced block that opens with ```!. */
-const SHELL_LINE = /!`|^[ \t]*(?:```|~~~)!/m;
+/** The CLI runs shell for `` !` `` and for a fence opened with ```! anywhere in the text. */
+const SHELL_LINE = /!`|```!|~~~!/;
+
+/** Entries a skill may hold, and entries looked at in total, before the rest is left out. */
+const MAX_SKILL_ENTRIES = 200;
+const MAX_EXAMINED = 2000;
+const MAX_NOTICES = 100;
+
+/** Largest `ls-tree` listing (bytes) the worker keeps; a longer one is cut and refused. */
+export const TREE_LISTING_MAX_BYTES = 1024 * 1024;
+
+/** Thrown by {@link RepositoryTree.list} when the listing did not fit. */
+export class TreeListingTooLargeError extends Error {}
+
+interface Budget {
+  examined: number;
+  readBytes: number;
+}
 
 interface Rendered {
   text: string;
@@ -127,11 +143,15 @@ async function planSkill(
   entries: readonly TreeEntry[],
   tree: RepositoryTree,
   notices: string[],
+  budget: Budget,
 ): Promise<Planned | string> {
   const files: Planned['files'] = [];
   let bytes = 0;
   let sawSkillFile = false;
+  if (entries.length > MAX_SKILL_ENTRIES) return `more than ${MAX_SKILL_ENTRIES} files`;
   for (const entry of entries) {
+    budget.examined += 1;
+    if (budget.examined > MAX_EXAMINED) return 'too many entries in the repository';
     const relative = entry.path.slice(`${SKILLS_DIR}/${name}/`.length);
     const segments = relative.split('/');
     if (segments.some((s) => s === '' || s === '.' || s === '..' || s.toLowerCase() === '.git')) {
@@ -147,6 +167,10 @@ async function planSkill(
       notices.push(`Left out ${entry.path} (over ${REPO_PLUGIN_LIMITS.fileBytes / 1024} KiB).`);
       continue;
     }
+    if (budget.readBytes + entry.size > REPO_PLUGIN_LIMITS.totalBytes) {
+      return `the plugin reached ${REPO_PLUGIN_LIMITS.totalBytes / 1024} KiB`;
+    }
+    budget.readBytes += entry.size;
     const text = await tree.blob(entry.sha);
     if (!isText(text)) {
       if (relative === 'SKILL.md') return 'SKILL.md is not text';
@@ -158,6 +182,7 @@ async function planSkill(
       sawSkillFile = true;
       const rendered = render(text, SKILL_KEYS, name);
       if ('error' in rendered) return rendered.error;
+      if (SHELL_LINE.test(rendered.text)) return `${entry.path} contains a shell line`;
       if (rendered.dropped.length > 0) {
         notices.push(`Dropped frontmatter keys of skill ${name}: ${rendered.dropped.join(', ')}.`);
       }
@@ -178,7 +203,29 @@ async function planSkill(
 export async function prepareRepoPlugin(dir: string, tree: RepositoryTree): Promise<RepoPlugin> {
   await rm(dir, { recursive: true, force: true });
   const notices: string[] = [];
-  const entries = await tree.list();
+  const result = await buildPlugin(dir, tree, notices);
+  if (notices.length > MAX_NOTICES) {
+    const more = notices.length - MAX_NOTICES;
+    notices.length = MAX_NOTICES;
+    notices.push(`${more} further notices left out.`);
+  }
+  return result;
+}
+
+async function buildPlugin(
+  dir: string,
+  tree: RepositoryTree,
+  notices: string[],
+): Promise<RepoPlugin> {
+  const budget: Budget = { examined: 0, readBytes: 0 };
+  let entries: TreeEntry[];
+  try {
+    entries = await tree.list();
+  } catch (error) {
+    if (!(error instanceof TreeListingTooLargeError)) throw error;
+    notices.push('Left out all repository skills and agents: the file listing is too large.');
+    return { dir: null, notices };
+  }
   const skills = new Map<string, TreeEntry[]>();
   const agents: TreeEntry[] = [];
   for (const entry of entries) {
@@ -214,7 +261,7 @@ export async function prepareRepoPlugin(dir: string, tree: RepositoryTree): Prom
       notices.push(`Left out skill ${name}: more than ${REPO_PLUGIN_LIMITS.skills} skills.`);
       continue;
     }
-    const planned = await planSkill(name, group, tree, notices);
+    const planned = await planSkill(name, group, tree, notices, budget);
     if (typeof planned === 'string') {
       notices.push(`Left out skill ${name}: ${planned}.`);
       continue;
@@ -247,6 +294,18 @@ export async function prepareRepoPlugin(dir: string, tree: RepositoryTree): Prom
       notices.push(`Left out agent ${name}: over ${REPO_PLUGIN_LIMITS.fileBytes / 1024} KiB.`);
       continue;
     }
+    budget.examined += 1;
+    if (budget.examined > MAX_EXAMINED) {
+      notices.push(`Left out agent ${name}: too many entries in the repository.`);
+      continue;
+    }
+    if (budget.readBytes + entry.size > REPO_PLUGIN_LIMITS.totalBytes) {
+      notices.push(
+        `Left out agent ${name}: the plugin reached ${REPO_PLUGIN_LIMITS.totalBytes / 1024} KiB.`,
+      );
+      continue;
+    }
+    budget.readBytes += entry.size;
     const text = await tree.blob(entry.sha);
     if (!isText(text)) {
       notices.push(`Left out agent ${name}: not text.`);
@@ -255,6 +314,10 @@ export async function prepareRepoPlugin(dir: string, tree: RepositoryTree): Prom
     const rendered = render(text, AGENT_KEYS, name);
     if ('error' in rendered) {
       notices.push(`Left out agent ${name}: ${rendered.error}.`);
+      continue;
+    }
+    if (SHELL_LINE.test(text) || SHELL_LINE.test(rendered.text)) {
+      notices.push(`Left out agent ${name}: contains a shell line.`);
       continue;
     }
     if (!room(Buffer.byteLength(rendered.text), `agent ${name}`)) continue;

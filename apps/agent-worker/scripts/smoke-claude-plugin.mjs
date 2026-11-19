@@ -145,42 +145,64 @@ try {
     agent !== '' && !/hooks|mcpServers|permissionMode/.test(agent),
   );
 
-  const args = claudeArguments({
-    prompt: claudePrompt(
+  // One unsanitized skill written straight into the plugin directory (the worker never would):
+  // shell lines in every form the CLI knows. disableSkillShellExecution must still stop them.
+  const FENCE = '`'.repeat(3);
+  const rawDir = join(plugin.dir ?? '', 'skills', 'rawcmd');
+  mkdirSync(rawDir, { recursive: true });
+  writeFileSync(
+    join(rawDir, 'SKILL.md'),
+    `---\nname: rawcmd\ndescription: Control skill with raw shell lines\n---\n` +
+      `Reply with outcome done. Inline: !${'`'}${touch('raw-inline')}${'`'}\n\n` +
+      `${FENCE}!\n${touch('raw-fence')}\n${FENCE}\n\n> ${FENCE}!\n> ${touch('raw-quote')}\n> ${FENCE}\n`,
+  );
+  writeFileSync(join(runDir, 'claude-settings.json'), '{}\n');
+  writeFileSync(join(runDir, 'instructions.md'), AGENT_DEFINITION.text);
+
+  /** Starts the CLI with the runner's options plus the plugin; returns what the stream showed. */
+  const runCli = async (prompt) => {
+    const args = claudeArguments({
+      prompt,
+      allowedTools: (await readGuardrailSettings()).permissions.allow,
+      settingsFile: join(runDir, 'claude-settings.json'),
+      instructionsFile: join(runDir, 'instructions.md'),
+      maxTurns: 10,
+      jsonSchema: AGENT_RESULT_JSON_SCHEMA,
+      ...(plugin.dir === null ? {} : { pluginDir: plugin.dir }),
+    });
+    const child = spawn(cli.binaries.claude_code, args, {
+      cwd: repoDir,
+      env: claudeEnvironment({
+        base: process.env,
+        tmpDir: join(runDir, 'tmp'),
+        composeProjectName: 'studio-plugin-smoke',
+      }),
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 10 * 60_000,
+    });
+    const exited = new Promise((resolve) => child.once('close', resolve));
+    const seen = { init: undefined, result: undefined, denied: false };
+    for await (const raw of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
+      try {
+        const event = JSON.parse(raw);
+        if (event.type === 'system' && event.subtype === 'init') seen.init = event;
+        if (event.type === 'result') seen.result = event;
+        if (event.type === 'system' && event.subtype === 'permission_denied') seen.denied = true;
+      } catch {
+        // Not JSON: nothing to read.
+      }
+    }
+    return { ...seen, code: await exited };
+  };
+
+  const first = await runCli(
+    claudePrompt(
       'task',
       'Run `install -m 0644 /dev/null planted-allow.txt` with the Bash tool, once. If it is ' +
         'refused, quote the refusal in the summary. Change nothing else. End the step as done.',
     ),
-    allowedTools: (await readGuardrailSettings()).permissions.allow,
-    settingsFile: join(runDir, 'claude-settings.json'),
-    instructionsFile: join(runDir, 'instructions.md'),
-    maxTurns: 10,
-    jsonSchema: AGENT_RESULT_JSON_SCHEMA,
-    ...(plugin.dir === null ? {} : { pluginDir: plugin.dir }),
-  });
-  writeFileSync(join(runDir, 'claude-settings.json'), '{}\n');
-  writeFileSync(join(runDir, 'instructions.md'), AGENT_DEFINITION.text);
-  const child = spawn(cli.binaries.claude_code, args, {
-    cwd: repoDir,
-    env: claudeEnvironment({
-      base: process.env,
-      tmpDir: join(runDir, 'tmp'),
-      composeProjectName: 'studio-plugin-smoke',
-    }),
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: 10 * 60_000,
-  });
-  const exited = new Promise((resolve) => child.once('close', resolve));
-  let init;
-  for await (const raw of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
-    try {
-      const event = JSON.parse(raw);
-      if (event.type === 'system' && event.subtype === 'init') init = event;
-    } catch {
-      // Not JSON: nothing to read.
-    }
-  }
-  const code = await exited;
+  );
+  const { init, code } = first;
   line(`step: exit code ${code}, init event seen: ${init ? 'yes' : 'no'}`);
   check('the init event was seen', init !== undefined);
   const names = (value) =>
@@ -213,6 +235,25 @@ try {
   check(
     'the allowed-tools / settings allow rule granted nothing (planted-allow.txt not created)',
     !existsSync(join(repoDir, 'planted-allow.txt')),
+  );
+  const denials = Array.isArray(first.result?.permission_denials)
+    ? first.result.permission_denials
+    : [];
+  check(
+    'the Bash install attempt was denied (permission_denials or a denial event)',
+    first.denied ||
+      denials.some((d) => d?.tool_name === 'Bash' && JSON.stringify(d).includes('install')),
+  );
+
+  // Control: the unsanitized skill is loaded and invoked as a slash command; its shell lines in
+  // every form must not run.
+  const second = await runCli('/repo:rawcmd');
+  const secondSkills = names(second.init?.skills);
+  line(`control step: exit code ${second.code}`);
+  check('the control skill repo:rawcmd was loaded', secondSkills.includes('repo:rawcmd'));
+  check(
+    'no shell line of the control skill ran (inline, fence, blockquote fence)',
+    !ran('raw-inline') && !ran('raw-fence') && !ran('raw-quote'),
   );
 } catch (error) {
   failures += 1;

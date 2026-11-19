@@ -351,6 +351,19 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
       });
     });
 
+    it('leaves the plugin out, with a notice, when the file listing hits its limit', async () => {
+      treeListing = 'x'.repeat(1024 * 1024);
+      spawn.mockImplementation(() => fakeChild(recording('success')));
+
+      const { events } = await drain(runner().start(input('x')));
+
+      expect(spawn.mock.calls[0]![1]).not.toContain('--plugin-dir');
+      expect(events).toContainEqual({
+        type: 'notice',
+        text: 'Left out all repository skills and agents: the file listing is too large.',
+      });
+    });
+
     it('rewrites the plugin before every step: a planted file is gone', async () => {
       plant({ '.claude/skills/review/SKILL.md': skill });
       spawn.mockImplementation(() => fakeChild(recording('success')));

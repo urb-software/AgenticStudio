@@ -38,7 +38,13 @@ import {
 } from './cli-options.js';
 import { prepareRunSettings } from './guardrails.js';
 import { buildInstructions, type RepositoryFiles } from './instructions.js';
-import { parseTreeListing, prepareRepoPlugin, type RepositoryTree } from './repo-plugin.js';
+import {
+  parseTreeListing,
+  prepareRepoPlugin,
+  type RepositoryTree,
+  TREE_LISTING_MAX_BYTES,
+  TreeListingTooLargeError,
+} from './repo-plugin.js';
 import { ClaudeStream } from './stream.js';
 import { userSettingsProblem } from './user-settings.js';
 
@@ -184,13 +190,15 @@ export class ClaudeCodeRunner implements Runner {
   ): RepositoryTree {
     const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
     return {
-      list: async () =>
-        parseTreeListing(
-          await this.options.git.run(
-            ['ls-tree', '-r', '-l', '-z', startCommit, '--', '.claude/skills', '.claude/agents'],
-            options,
-          ),
-        ),
+      list: async () => {
+        const output = await this.options.git.run(
+          ['ls-tree', '-r', '-l', '-z', startCommit, '--', '.claude/skills', '.claude/agents'],
+          { ...options, maxStdout: TREE_LISTING_MAX_BYTES },
+        );
+        // The process runner cuts a longer listing silently.
+        if (output.length >= TREE_LISTING_MAX_BYTES) throw new TreeListingTooLargeError();
+        return parseTreeListing(output);
+      },
       blob: (sha) => this.options.git.run(['cat-file', 'blob', sha], options),
     };
   }
