@@ -12,7 +12,7 @@ import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects
 import { IllegalRunTransitionError, RunNotHeldError } from '../../../domain/errors/run-errors.js';
 import type { Run } from '../../../domain/entities/run.js';
 import type { Provider } from '../../../domain/value-objects/provider.js';
-import type { RunMessage } from '../../../domain/value-objects/run-message.js';
+import type { RunHandOut } from '../../../domain/value-objects/run-hand-out.js';
 import type { RunState } from '../../../domain/value-objects/run-state.js';
 import { RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
@@ -27,32 +27,10 @@ import { LostWorkerRule } from '../../../domain/value-objects/lost-worker-rule.j
 import { OverdueStepRule } from '../../../domain/value-objects/overdue-step-rule.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 
-const NO_REMOTE = RunFailure.of(
-  'preparation_failed',
-  "The run has no repository remote to prepare from (the project's repository was removed).",
-);
-
-const NOT_DELIVERABLE = RunFailure.of(
-  'delivery_failed',
-  'The run cannot be delivered: it has no repository remote, integration branch or recorded ' +
-    'Run branch.',
-);
-
 const ENVIRONMENT_FILE_UNAVAILABLE = RunFailure.of(
   'preparation_failed',
   "Studio could not read the project's Environment file for this run. Start the run again; " +
     'if it keeps failing, set the Environment file again.',
-);
-
-const NOT_RESUMABLE = RunFailure.of(
-  'preparation_failed',
-  'Working copy no longer exists — run again: Studio has no recorded Working copy, repository ' +
-    'remote or integration branch for this run.',
-);
-
-const WORKING_COPY_REMOVED = RunFailure.of(
-  'preparation_failed',
-  "Working copy no longer exists — run again: the agent worker's retention removed it.",
 );
 
 /** The object ids a claimed Run's agent worker resumes its diffs from. */
@@ -81,7 +59,7 @@ export interface ClaimedRun {
   followUpCount: number;
   stepsBeforePart: number;
   limits: { stepMinutes: number; maxSteps: number };
-  messages: RunMessage[];
+  handOut: Exclude<RunHandOut, { kind: 'refused' }>;
   /** Test values only; goes to the claiming worker, never logged. */
   environmentFile: { path: string; content: string } | null;
   replaceEnvironmentFile: boolean;
@@ -102,7 +80,7 @@ type ClaimExtras = Pick<
   | 'diffState'
 >;
 
-const claimedRun = (run: Run, extras: ClaimExtras): ClaimedRun => ({
+const claimedRun = (run: Run, handOut: ClaimedRun['handOut'], extras: ClaimExtras): ClaimedRun => ({
   id: run.id,
   projectId: run.projectId,
   provider: run.provider,
@@ -121,7 +99,7 @@ const claimedRun = (run: Run, extras: ClaimExtras): ClaimedRun => ({
     stepMinutes: run.progress.limits.stepMinutes,
     maxSteps: run.progress.limits.maxSteps,
   },
-  messages: [...run.conversation.messages],
+  handOut,
   ...extras,
 });
 
@@ -177,74 +155,59 @@ export class ClaimRunHandler {
     for (;;) {
       const run = await this.runs.claimNext(workerId, now);
       if (!run) return null;
-      if (run.lifecycle.state === 'failed') {
-        // Without a remote, integration branch or Run branch there is nothing to deliver.
-        if (run.remoteUrl !== '' && run.delivery.integrationBranch !== '' && run.workingCopy) {
-          return claimedRun(run, {
-            environmentFile: null,
-            replaceEnvironmentFile: false,
-            studioPaths: studioPathsOf(run),
-            ...(await this.progress(run)),
-          });
-        }
-        await this.runs.change(run.id, (held) => {
-          try {
-            held.reportState(workerId, { state: 'failed', failure: NOT_DELIVERABLE }, now);
-          } catch (error) {
-            // Lost its claim meanwhile: nothing to finish (the sweep failed it).
-            if (!(error instanceof RunNotHeldError || error instanceof IllegalRunTransitionError)) {
-              throw error;
-            }
+      const handOut = run.handOut();
+      switch (handOut.kind) {
+        case 'refused':
+          if (handOut.as === 'delivery') {
+            await this.failDelivery(run, workerId, handOut.failure, now);
+            await this.snapshots.releaseFor(run.id);
+          } else {
+            await this.fail(run, workerId, handOut.failure, now);
           }
-        });
-        await this.snapshots.releaseFor(run.id);
-        continue;
-      }
-      // A Run without a remote (its Repository was removed) fails here instead
-      // of reaching a worker.
-      const reachable = run.remoteUrl !== '' && run.delivery.integrationBranch !== '';
-      const resume = run.resumeMessage();
-      if (resume !== null) {
-        // A Working copy the worker reported removed cannot be resumed.
-        if (!reachable || !run.workingCopy || run.claim.workingCopyRemovedAt !== null) {
-          const failure =
-            run.claim.workingCopyRemovedAt !== null ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
-          await this.fail(run, workerId, failure, now);
           continue;
-        }
-        if (!resume.takesNewEnvironmentFile(run.progress.followUpCount)) {
-          return claimedRun(run, {
+        case 'deliver':
+          return claimedRun(run, handOut, {
             environmentFile: null,
             replaceEnvironmentFile: false,
             studioPaths: studioPathsOf(run),
             ...(await this.progress(run)),
           });
+        case 'resume': {
+          if (!handOut.newEnvironmentFile) {
+            return claimedRun(run, handOut, {
+              environmentFile: null,
+              replaceEnvironmentFile: false,
+              studioPaths: studioPathsOf(run),
+              ...(await this.progress(run)),
+            });
+          }
+          const environmentFile = await this.snapshot(run, workerId, now, true);
+          if (environmentFile === SNAPSHOT_FAILED) continue;
+          return claimedRun(run, handOut, {
+            environmentFile,
+            replaceEnvironmentFile: true,
+            // The earlier file's path too: the worker removes it, and it is never committed.
+            studioPaths: [
+              ...new Set([
+                ...studioPathsOf(run),
+                ...(environmentFile ? [environmentFile.path] : []),
+              ]),
+            ],
+            ...(await this.progress(run)),
+          });
         }
-        const environmentFile = await this.snapshot(run, workerId, now, true);
-        if (environmentFile === SNAPSHOT_FAILED) continue;
-        return claimedRun(run, {
-          environmentFile,
-          replaceEnvironmentFile: true,
-          // The earlier file's path too: the worker removes it, and it is never committed.
-          studioPaths: [
-            ...new Set([...studioPathsOf(run), ...(environmentFile ? [environmentFile.path] : [])]),
-          ],
-          ...(await this.progress(run)),
-        });
+        case 'start': {
+          const environmentFile = await this.snapshot(run, workerId, now);
+          if (environmentFile === SNAPSHOT_FAILED) continue;
+          return claimedRun(run, handOut, {
+            environmentFile,
+            replaceEnvironmentFile: false,
+            studioPaths: environmentFile ? [environmentFile.path] : [],
+            completedSteps: 0,
+            nextSeq: 1,
+          });
+        }
       }
-      if (!reachable) {
-        await this.fail(run, workerId, NO_REMOTE, now);
-        continue;
-      }
-      const environmentFile = await this.snapshot(run, workerId, now);
-      if (environmentFile === SNAPSHOT_FAILED) continue;
-      return claimedRun(run, {
-        environmentFile,
-        replaceEnvironmentFile: false,
-        studioPaths: environmentFile ? [environmentFile.path] : [],
-        completedSteps: 0,
-        nextSeq: 1,
-      });
     }
   }
 
@@ -307,6 +270,24 @@ export class ClaimRunHandler {
       run.recordEnvironmentFile(workerId, file),
     );
     if (!recorded) throw new Error('The run is no longer held for its claim.');
+  }
+
+  private async failDelivery(
+    run: Run,
+    workerId: string,
+    failure: RunFailure,
+    now: Date,
+  ): Promise<void> {
+    await this.runs.change(run.id, (held) => {
+      try {
+        held.reportState(workerId, { state: 'failed', failure }, now);
+      } catch (error) {
+        // Lost its claim meanwhile: nothing to finish (the sweep failed it).
+        if (!(error instanceof RunNotHeldError || error instanceof IllegalRunTransitionError)) {
+          throw error;
+        }
+      }
+    });
   }
 
   private async fail(run: Run, workerId: string, failure: RunFailure, now: Date): Promise<void> {

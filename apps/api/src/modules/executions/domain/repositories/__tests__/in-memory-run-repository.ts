@@ -169,20 +169,7 @@ export class InMemoryRunRepository implements RunRepository {
   claimNext(workerId: string, now: Date): Promise<Run | null> {
     const next = HandOutRule.for(workerId).next(this.runs);
     if (!next) return Promise.resolve(null);
-    if (next.state === 'queued') {
-      Object.assign(next, {
-        state: 'preparing',
-        claimedBy: workerId,
-        lastClaimedBy: workerId,
-        // A resumed Run keeps its first start.
-        startedAt: next.startedAt ?? now,
-        heartbeatAt: now,
-        followUpQueued: false,
-      });
-    } else {
-      Object.assign(next, { claimedBy: workerId, heartbeatAt: now });
-    }
-    return Promise.resolve(this.view(next));
+    return Promise.resolve(this.changeStored(next.id, (run) => run.claimBy(workerId, now)));
   }
 
   listPendingDeliveryRetries(): Promise<{ runId: string; startedBy: string | null }[]> {

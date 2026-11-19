@@ -52,7 +52,7 @@
       "summarize": { "kind": "query" },
       "claimNext": {
         "kind": "atomic",
-        "reason": "Hands out the next eligible Run in one statement under the claim lock that locks the row it selects, so concurrent claims cannot exceed the limits; the selection is the domain HandOutRule."
+        "reason": "Selects and locks the next eligible Run under the claim lock, then the Run's claimBy saves the hand-out in the same transaction, so concurrent claims cannot exceed the limits; the selection is the domain HandOutRule."
       },
       "listWaiting": { "kind": "query" },
       "renewClaimsOncePerLease": {

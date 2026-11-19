@@ -421,6 +421,8 @@ const CHANGED_COLUMNS: {
     cancelReason: cancellation?.reason ?? null,
   }),
   cancelRequestedAt: (cancelRequestedAt) => ({ cancelRequestedAt }),
+  startedAt: (startedAt) => ({ startedAt }),
+  lastClaimedBy: (lastClaimedBy) => ({ lastClaimedBy }),
   followUpQueued: (followUpQueued) => ({ followUpQueued: followUpQueued! }),
   followUpCount: (followUpCount) => ({ followUpCount: followUpCount! }),
   stepsBeforePart: (stepsBeforePart) => ({ stepsBeforePart: stepsBeforePart! }),
@@ -549,37 +551,30 @@ export class PrismaRunRepository implements RunRepository {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-        // One statement selects and hands out the Run: it waits for a held row lock and re-checks
-        // the row, so a concurrent cancel cannot fail the claim and no Run is skipped for being
-        // briefly locked.
-        const [claimed] = await tx.$queryRaw<{ id: string }[]>`
-          UPDATE runs SET
-            state = CASE WHEN state = 'queued' THEN 'preparing' ELSE state END,
-            claimed_by = ${workerId}::uuid,
-            last_claimed_by = CASE WHEN state = 'queued' THEN ${workerId}::uuid ELSE last_claimed_by END,
-            started_at = CASE WHEN state = 'queued' THEN COALESCE(started_at, ${now}) ELSE started_at END,
-            heartbeat_at = ${now},
-            follow_up_queued = CASE WHEN state = 'queued' THEN false ELSE follow_up_queued END
-          WHERE id = (
-            SELECT r.id FROM runs r
-            WHERE ((r.state = 'queued'
-                    AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
-                   OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
-                       AND r.last_claimed_by = ${workerId}::uuid))
-              AND (SELECT count(*) FROM runs a
-                   WHERE a.id <> r.id AND ${HOLDS_PLACE}) < ${HandOutRule.MAX_PLACES}::int
-              AND NOT EXISTS (SELECT 1 FROM runs a
-                              WHERE a.id <> r.id
-                                AND a.project_id = r.project_id
-                                AND ${HOLDS_PLACE})
-            ORDER BY r.created_at, r.id
-            LIMIT 1
-            FOR UPDATE OF r)
-          RETURNING id`;
-        if (!claimed) return null;
-        return toRun(
-          await tx.run.findUniqueOrThrow({ where: { id: claimed.id }, select: RUN_FIELDS }),
-        );
+        // FOR UPDATE waits for a held row lock and re-checks the row, so a concurrent cancel
+        // cannot fail the claim and no Run is skipped for being briefly locked.
+        const [selected] = await tx.$queryRaw<{ id: string }[]>`
+          SELECT r.id FROM runs r
+          WHERE ((r.state = 'queued'
+                  AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
+                 OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
+                     AND r.last_claimed_by = ${workerId}::uuid))
+            AND (SELECT count(*) FROM runs a
+                 WHERE a.id <> r.id AND ${HOLDS_PLACE}) < ${HandOutRule.MAX_PLACES}::int
+            AND NOT EXISTS (SELECT 1 FROM runs a
+                            WHERE a.id <> r.id
+                              AND a.project_id = r.project_id
+                              AND ${HOLDS_PLACE})
+          ORDER BY r.created_at, r.id
+          LIMIT 1
+          FOR UPDATE OF r`;
+        if (!selected) return null;
+        const read = () =>
+          tx.run.findUniqueOrThrow({ where: { id: selected.id }, select: RUN_FIELDS });
+        const run = toRun(await read());
+        run.claimBy(workerId, now);
+        await this.persist(tx, run);
+        return toRun(await read());
       },
       // Claims queue on the lock inside their transactions; each holds it for milliseconds.
       CLAIM_TRANSACTION,

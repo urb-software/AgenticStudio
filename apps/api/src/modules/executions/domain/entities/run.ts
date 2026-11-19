@@ -20,7 +20,9 @@ import {
   RunSlotTakenError,
   StepOutOfOrderError,
 } from '../errors/run-errors.js';
-import type { RunFailure } from '../value-objects/run-failure.js';
+import { RunFailure } from '../value-objects/run-failure.js';
+import type { HandOutView } from '../value-objects/hand-out-view.js';
+import type { RunHandOut } from '../value-objects/run-hand-out.js';
 import type { FollowUpConsumption, FollowUpOrigin } from './run-follow-up-facts.js';
 import type { FollowUpFacts, WorkerFacts } from './run-worker-facts.js';
 import type { ResumeFacts } from './run-resume-facts.js';
@@ -57,6 +59,28 @@ type RunPatch = Partial<
     | 'createdAt'
   >
 >;
+
+const NO_REMOTE = RunFailure.of(
+  'preparation_failed',
+  "The run has no repository remote to prepare from (the project's repository was removed).",
+);
+
+const NOT_DELIVERABLE = RunFailure.of(
+  'delivery_failed',
+  'The run cannot be delivered: it has no repository remote, integration branch or recorded ' +
+    'Run branch.',
+);
+
+const NOT_RESUMABLE = RunFailure.of(
+  'preparation_failed',
+  'Working copy no longer exists — run again: Studio has no recorded Working copy, repository ' +
+    'remote or integration branch for this run.',
+);
+
+const WORKING_COPY_REMOVED = RunFailure.of(
+  'preparation_failed',
+  "Working copy no longer exists — run again: the agent worker's retention removed it.",
+);
 
 const CHANGES = new WeakMap<Run, RunChanges>();
 
@@ -145,6 +169,94 @@ export class Run {
         ? {}
         : { followUpEntry: { ...pending.followUpEntry } }),
     };
+  }
+
+  /** The facts {@link HandOutRule} decides on. */
+  handOutView(): HandOutView {
+    return {
+      id: this.id,
+      projectId: this.projectId,
+      state: this.lifecycle.state,
+      claimedBy: this.claim.claimedBy,
+      sessionRef: this.claim.sessionRef,
+      followUpQueued: this.progress.followUpQueued,
+      deliveryRequested: this.delivery.requested,
+      lastClaimedBy: this.claim.lastClaimedBy,
+      createdAt: this.createdAt,
+    };
+  }
+
+  /**
+   * The store selects the Run under the claim lock. Throws {@link IllegalRunTransitionError} when
+   * the worker may not take it. A failed Run held for a delivery retry only changes its holder.
+   */
+  claimBy(workerId: string, now: Date): void {
+    const { state } = this.lifecycle;
+    if (!HandOutRule.for(workerId).takes(this.handOutView())) {
+      throw new IllegalRunTransitionError(state, 'preparing');
+    }
+    if (state !== 'queued') {
+      this.apply({ claimedBy: workerId, heartbeatAt: now });
+      return;
+    }
+    this.lifecycle.assertTransitionTo('preparing');
+    this.apply({
+      state: 'preparing',
+      claimedBy: workerId,
+      lastClaimedBy: workerId,
+      // A resumed Run keeps its first start.
+      startedAt: this.lifecycle.startedAt ?? now,
+      heartbeatAt: now,
+      followUpQueued: false,
+    });
+  }
+
+  /** What the worker that claimed this Run gets, or why the Run cannot be handed out. */
+  handOut(): RunHandOut {
+    const reachable = this.remoteUrl !== '' && this.delivery.integrationBranch !== '';
+    const { workingCopy } = this;
+    const pullRequest = this.delivery.pullRequest
+      ? { pullRequestNumber: this.delivery.pullRequest.number }
+      : {};
+    const merged = this.conversation.latestMergedCommit();
+    // A delivery retry after a bring-up part counts from the commit it merged, which is not
+    // recorded as merged until the part succeeds.
+    const counted = this.conversation.currentUpdateStart()?.updateTip ?? merged;
+    const mergedBase = counted === undefined ? {} : { mergedIntegrationCommit: counted };
+    if (this.lifecycle.state === 'failed') {
+      if (!reachable || !workingCopy) {
+        return { kind: 'refused', failure: NOT_DELIVERABLE, as: 'delivery' };
+      }
+      return { kind: 'deliver', runBranch: workingCopy.runBranch, ...mergedBase, ...pullRequest };
+    }
+    const resume = this.resumeMessage();
+    const { sessionRef } = this.claim;
+    if (resume !== null && sessionRef !== null) {
+      // A Working copy the worker reported removed cannot be resumed.
+      if (!reachable || !workingCopy || this.claim.workingCopyRemoved) {
+        const failure = this.claim.workingCopyRemoved ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
+        return { kind: 'refused', failure, as: 'preparation' };
+      }
+      // A merge an earlier bring-up part left behind is undone by the next part.
+      const pending = this.conversation.pendingUpdate(this.delivery.pushedCommit);
+      const update = this.conversation.currentUpdateStart();
+      const { followUpCount } = this.progress;
+      return {
+        kind: 'resume',
+        runBranch: workingCopy.runBranch,
+        sessionRef,
+        answer: resume.text,
+        reason: resume.reason,
+        newEnvironmentFile: resume.takesNewEnvironmentFile(followUpCount),
+        ...mergedBase,
+        ...(pending === undefined ? {} : { pendingUpdate: pending }),
+        ...(followUpCount > 0 ? { followUpNumber: followUpCount } : {}),
+        ...(update === undefined ? {} : { bringUpToDate: update }),
+        ...pullRequest,
+      };
+    }
+    if (!reachable) return { kind: 'refused', failure: NO_REMOTE, as: 'preparation' };
+    return { kind: 'start' };
   }
 
   get isResumable(): boolean {
