@@ -21,10 +21,12 @@ export class CancelLongWaitingRunsHandler {
     for (const run of await this.runs.listWaiting()) {
       const cancellation = rule.cancellationFor(run.sweepFacts());
       if (!cancellation) continue;
-      // Conditional: an answer or an operator's cancel in between wins.
-      if (await this.runs.cancelUnheld(run.id, 'waiting_for_operator', cancellation, now)) {
-        cancelled++;
-      }
+      let done = false;
+      // An answer or an operator's cancel in between wins: the Run then refuses.
+      await this.runs.change(run.id, (locked) => {
+        done = locked.cancelAfterWaiting(cancellation, now);
+      });
+      if (done) cancelled++;
     }
     return { cancelled };
   }

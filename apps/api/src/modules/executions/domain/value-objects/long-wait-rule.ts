@@ -2,8 +2,8 @@ import { RunCancellation } from './run-cancellation.js';
 import type { RunSweepFacts } from './run-sweep-facts.js';
 
 /**
- * The store lists the waiting Runs (`listWaiting`, the state only) and cancels one only while it
- * still waits (`cancelUnheld`).
+ * The store lists the waiting Runs (`listWaiting`, the state only); the Run cancels itself only
+ * while it still waits (`cancelAfterWaiting`).
  */
 export class LongWaitRule {
   private constructor(readonly now: Date) {}

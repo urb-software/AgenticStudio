@@ -3,8 +3,8 @@ import type { RunSweepFacts } from './run-sweep-facts.js';
 
 /**
  * A pending delivery retry or resume can only be taken by the worker that last claimed the Run;
- * when that worker has not reported for longer than the lease, it fails. The store gives one up
- * only while it is pending.
+ * when that worker has not reported for longer than the lease, it fails. The Run gives one up
+ * only while it is pending (`abandonDeliveryRetry`, `abandonResume`).
  */
 export class GoneWorkerRule {
   private constructor(

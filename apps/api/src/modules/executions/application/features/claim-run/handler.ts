@@ -165,9 +165,11 @@ export class ClaimRunHandler {
     await this.runs.failStaleClaims(lost.staleBefore, lost.failure, lost.deliveryFailure, now);
     for (const waiting of await this.runs.listWaiting()) {
       const cancellation = LongWaitRule.at(now).cancellationFor(waiting.sweepFacts());
-      // Conditional: an answer or an operator's cancel in between wins.
+      // An answer or an operator's cancel in between wins: the Run then refuses.
       if (cancellation) {
-        await this.runs.cancelUnheld(waiting.id, 'waiting_for_operator', cancellation, now);
+        await this.runs.change(waiting.id, (locked) => {
+          locked.cancelAfterWaiting(cancellation, now);
+        });
       }
     }
     const overdue = OverdueStepRule.at(now);

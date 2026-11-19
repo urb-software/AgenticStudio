@@ -410,12 +410,9 @@ export class Run {
       throw new IllegalRunTransitionError(this.lifecycle.state, report.state);
     }
     this.apply({
-      claimedBy: null,
-      heartbeatAt: null,
       // A retried report of this outcome is then recognised.
-      releasedBy: workerId,
+      ...this.released(workerId, now),
       deliveryRequested: false,
-      finishedAt: now,
       ...(report.workingCopy ? { workingCopy: report.workingCopy } : {}),
       ...(delivery
         ? { state: 'succeeded' as const, failure: null, ...this.delivery.outcomePatch(delivery) }
@@ -451,10 +448,7 @@ export class Run {
     this.apply({
       ...EarlierResult.of(before).toData(),
       delivery: before.delivery,
-      claimedBy: null,
-      heartbeatAt: null,
-      releasedBy: workerId,
-      finishedAt: now,
+      ...this.released(workerId, now),
       stepStartedAt: null,
     });
     return true;
@@ -504,9 +498,7 @@ export class Run {
       this.apply({
         state: 'failed',
         failure: this.progress.stepLimitFailure(),
-        claimedBy: null,
-        heartbeatAt: null,
-        finishedAt: now,
+        ...this.released(null, now),
       });
       return { status: 'step_limit' };
     }
@@ -576,12 +568,46 @@ export class Run {
     this.apply({
       state: 'failed',
       failure,
-      claimedBy: null,
-      heartbeatAt: null,
-      releasedBy: workerId,
+      ...this.released(workerId, now),
+      waitingSince: null,
+    });
+    return true;
+  }
+
+  /**
+   * For Studio's own sweep, not the operator's cancel. `false` when the Run no longer waits (an
+   * answer or the operator's cancel came first). Does not set `lastActivityAt`.
+   */
+  cancelAfterWaiting(cancellation: RunCancellation, now: Date): boolean {
+    if (this.lifecycle.state !== 'waiting_for_operator') return false;
+    this.lifecycle.assertTransitionTo('cancelled');
+    this.apply({
+      state: 'cancelled',
+      cancellation: { ...cancellation },
       waitingSince: null,
       finishedAt: now,
+      followUpQueued: false,
     });
+    return true;
+  }
+
+  /** `false` when the retry is not pending or a worker holds the Run. */
+  abandonDeliveryRetry(failure: RunFailure, now: Date): boolean {
+    if (this.lifecycle.state !== 'failed' || !this.delivery.requested || this.claim.isHeld) {
+      return false;
+    }
+    this.apply({ failure, delivery: 'failed', deliveryRequested: false, finishedAt: now });
+    return true;
+  }
+
+  /**
+   * `queued` to `failed` is an exception the Run applies itself, like
+   * {@link Run.resumeAfterUsageLimit}: it is not in the lifecycle's transitions, so a worker's
+   * report cannot do it. `false` when the Run is not a queued resume.
+   */
+  abandonResume(failure: RunFailure, now: Date): boolean {
+    if (this.lifecycle.state !== 'queued' || !this.claim.hasSession) return false;
+    this.apply({ state: 'failed', failure, finishedAt: now, followUpQueued: false });
     return true;
   }
 
@@ -627,6 +653,10 @@ export class Run {
       isClaimedRunState(this.lifecycle.state) ||
       (this.lifecycle.state === 'failed' && this.delivery.requested);
     if (!held || !this.claim.isHeldBy(workerId)) throw new RunNotHeldError();
+  }
+
+  private released(by: string | null, now: Date): RunPatch {
+    return { claimedBy: null, heartbeatAt: null, releasedBy: by, finishedAt: now };
   }
 
   private updateStatus(next: RunPullRequestStatus): void {

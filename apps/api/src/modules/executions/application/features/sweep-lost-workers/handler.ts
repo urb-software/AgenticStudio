@@ -55,10 +55,12 @@ export class SweepLostWorkersHandler {
     for (const resume of await this.runs.listPendingResumes()) {
       const seen =
         (resume.startedBy ? this.statuses.lastSeen(resume.startedBy) : undefined) ?? this.since;
-      if (
-        rule.isGone(seen) &&
-        (await this.runs.abandonResume(resume.runId, rule.resumeFailure, now))
-      ) {
+      if (!rule.isGone(seen)) continue;
+      let done = false;
+      await this.runs.change(resume.runId, (locked) => {
+        done = locked.abandonResume(rule.resumeFailure, now);
+      });
+      if (done) {
         abandoned++;
         await this.snapshots.releaseFor(resume.runId);
       }
@@ -73,10 +75,12 @@ export class SweepLostWorkersHandler {
     for (const retry of await this.runs.listPendingDeliveryRetries()) {
       const seen =
         (retry.startedBy ? this.statuses.lastSeen(retry.startedBy) : undefined) ?? this.since;
-      if (
-        rule.isGone(seen) &&
-        (await this.runs.abandonDeliveryRetry(retry.runId, rule.deliveryRetryFailure, now))
-      ) {
+      if (!rule.isGone(seen)) continue;
+      let done = false;
+      await this.runs.change(retry.runId, (locked) => {
+        done = locked.abandonDeliveryRetry(rule.deliveryRetryFailure, now);
+      });
+      if (done) {
         abandoned++;
         await this.snapshots.releaseFor(retry.runId);
       }
