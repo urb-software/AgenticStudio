@@ -15,7 +15,7 @@ import { Run } from '../run.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { RunConversation } from '../../value-objects/run-conversation.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
-import { type RunData } from '../run-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { type RunState } from '../../value-objects/run-state.js';
 import { ReviewComments } from '../review-comments.js';
 import type { ReviewCommentInput } from '../../value-objects/review-comment.js';
@@ -43,7 +43,7 @@ const ALL_STATES: RunState[] = [
 ];
 const FINAL_STATES = ['succeeded', 'failed', 'cancelled', 'timed_out'] as const;
 
-function data(overrides: Partial<RunData> = {}): RunData {
+function data(overrides: Partial<RestoreData<typeof Run>> = {}): RestoreData<typeof Run> {
   return {
     id: RUN_ID,
     projectId: PROJECT_ID,
@@ -87,8 +87,8 @@ function data(overrides: Partial<RunData> = {}): RunData {
   };
 }
 
-function inState(state: RunState, overrides: Partial<RunData> = {}): Run {
-  const byState: Partial<Record<RunState, Partial<RunData>>> = {
+function inState(state: RunState, overrides: Partial<RestoreData<typeof Run>> = {}): Run {
+  const byState: Partial<Record<RunState, Partial<RestoreData<typeof Run>>>> = {
     preparing: { claimedBy: WORKER, startedAt: T0 },
     running: { claimedBy: WORKER, startedAt: T0, stepStartedAt: T0 },
     waiting_for_operator: { waitingSince: T0 },
@@ -125,18 +125,15 @@ describe('Run.start and Run.restore', () => {
   it('starts a queued Run with the trimmed Task, the limits in force and nothing else set', () => {
     const run = Run.start(input);
 
-    expect(run.snapshot()).toMatchObject({
+    expect(run).toMatchObject({
       id: RUN_ID,
-      state: 'queued',
       task: 'Add a health check',
       provider: 'codex',
-      limits: LIMITS,
       createdAt: T0,
-      lastActivityAt: T0,
-      claimedBy: null,
-      failure: null,
-      messages: [],
-      stepCount: 0,
+      lifecycle: { state: 'queued', failure: null },
+      progress: { limits: LIMITS, lastActivityAt: T0, stepCount: 0 },
+      claim: { claimedBy: null },
+      conversation: { messages: [] },
     });
     noChanges(run);
   });
@@ -181,10 +178,9 @@ describe('Run.answer', () => {
 
     run.answer('PostgreSQL', T1);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'queued',
-      waitingSince: null,
-      lastActivityAt: T1,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'queued' },
+      progress: { waitingSince: null, lastActivityAt: T1 },
     });
     expect(run.conversation.messages).toEqual([
       { kind: 'question', question: QUESTION, at: T0 },
@@ -251,13 +247,14 @@ describe('Run.cancel', () => {
 
       run.cancel(T1);
 
-      expect(run.snapshot()).toMatchObject({
-        state: 'cancelled',
-        cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
-        finishedAt: T1,
-        waitingSince: null,
-        followUpQueued: false,
-        cancelRequestedAt: null,
+      expect(run).toMatchObject({
+        lifecycle: {
+          state: 'cancelled',
+          cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+          finishedAt: T1,
+          cancelRequestedAt: null,
+        },
+        progress: { waitingSince: null, followUpQueued: false },
       });
     },
   );
@@ -269,12 +266,9 @@ describe('Run.cancel', () => {
 
       run.cancel(T1);
 
-      expect(run.snapshot()).toMatchObject({
-        state,
-        cancelRequestedAt: T1,
-        claimedBy: WORKER,
-        cancellation: null,
-        finishedAt: null,
+      expect(run).toMatchObject({
+        lifecycle: { state, cancelRequestedAt: T1, cancellation: null, finishedAt: null },
+        claim: { claimedBy: WORKER },
       });
       expect(run.pendingChanges().fields).toEqual({ cancelRequestedAt: T1 });
     },
@@ -315,7 +309,7 @@ describe('Run.cancel', () => {
 });
 
 describe('Run.requestDeliveryRetry', () => {
-  const failedDelivery = (overrides: Partial<RunData> = {}) =>
+  const failedDelivery = (overrides: Partial<RestoreData<typeof Run>> = {}) =>
     inState('failed', {
       failure: { code: 'delivery_failed', detail: 'Pushing was refused.' },
       delivery: 'failed',
@@ -327,7 +321,7 @@ describe('Run.requestDeliveryRetry', () => {
 
     run.requestDeliveryRetry();
 
-    expect(run.snapshot()).toMatchObject({ state: 'failed', deliveryRequested: true });
+    expect(run).toMatchObject({ lifecycle: { state: 'failed' }, delivery: { requested: true } });
     expect(run.pendingChanges().fields).toEqual({ deliveryRequested: true });
   });
 
@@ -364,7 +358,7 @@ describe('Run.resumeAfterUsageLimit', () => {
     serverPlacesTaken: 0,
     environmentFileSnapshotKept: true,
   };
-  const limited = (overrides: Partial<RunData> = {}) =>
+  const limited = (overrides: Partial<RestoreData<typeof Run>> = {}) =>
     inState('failed', {
       failure: { code: 'usage_limit', detail: 'The usage limit was reached.' },
       sessionRef: 'session-9',
@@ -377,12 +371,10 @@ describe('Run.resumeAfterUsageLimit', () => {
 
     run.resumeAfterUsageLimit(T1, FREE);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'queued',
-      failure: null,
-      finishedAt: null,
-      lastActivityAt: T1,
-      sessionRef: 'session-9',
+    expect(run).toMatchObject({
+      lifecycle: { state: 'queued', failure: null, finishedAt: null },
+      progress: { lastActivityAt: T1 },
+      claim: { sessionRef: 'session-9' },
     });
     expect(run.conversation.messages).toEqual([
       { kind: 'answer', text: RunConversation.USAGE_LIMIT_RESUME_TEXT, at: T1 },
@@ -487,7 +479,10 @@ describe('Run.resumeAfterUsageLimit', () => {
 describe('Run.followUp', () => {
   const AVAILABLE: FollowUpFacts = { workerAvailable: true, providerAvailable: true };
   const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
-  const finished = (state: (typeof FINAL_STATES)[number], overrides: Partial<RunData> = {}) =>
+  const finished = (
+    state: (typeof FINAL_STATES)[number],
+    overrides: Partial<RestoreData<typeof Run>> = {},
+  ) =>
     inState(state, {
       sessionRef: 'session-7',
       workingCopy: WORKING_COPY,
@@ -533,21 +528,24 @@ describe('Run.followUp', () => {
 
       const consumed = run.followUp('Also handle HEAD.', T1, AVAILABLE);
 
-      expect(run.snapshot()).toMatchObject({
-        state: 'queued',
-        lastActivityAt: T1,
-        followUpQueued: true,
-        followUpCount: 1,
-        stepsBeforePart: 2,
-        failure: null,
-        finishedAt: null,
-        cancellation: null,
-        cancelRequestedAt: null,
-        delivery: null,
-        waitingSince: null,
-        stepStartedAt: null,
-        pullRequest: PULL_REQUEST,
-        sessionRef: 'session-7',
+      expect(run).toMatchObject({
+        lifecycle: {
+          state: 'queued',
+          failure: null,
+          finishedAt: null,
+          cancellation: null,
+          cancelRequestedAt: null,
+        },
+        progress: {
+          lastActivityAt: T1,
+          followUpQueued: true,
+          followUpCount: 1,
+          stepsBeforePart: 2,
+          waitingSince: null,
+          stepStartedAt: null,
+        },
+        delivery: { state: null, pullRequest: PULL_REQUEST },
+        claim: { sessionRef: 'session-7' },
       });
       expect(run.conversation.messages).toHaveLength(2);
       expect(run.conversation.messages[0]).toMatchObject({ kind: 'part_end', state, at: T1 });

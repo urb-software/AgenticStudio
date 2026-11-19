@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FollowUpNotAllowedError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
+import { PreparedFollowUp } from '../../../../domain/entities/prepared-follow-up.js';
 import { type Run } from '../../../../domain/entities/run.js';
 import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
@@ -49,17 +50,14 @@ const runView = (
       run.claim.lastClaimedBy === null ? undefined : workers.lastSeen(run.claim.lastClaimedBy),
     latest: workers.latest(),
   };
-  return {
-    run: run.snapshot(),
-    ...retention.runView(
-      run.followUpAvailability(facts, now, leaseSeconds),
-      run.retentionFacts(),
-      facts.latest,
-      now,
-      leaseSeconds,
-      overLimit,
-    ),
-  };
+  return retention.runView(
+    run.followUpAvailability(facts, now, leaseSeconds),
+    run.retentionFacts(),
+    facts.latest,
+    now,
+    leaseSeconds,
+    overLimit,
+  );
 };
 const RETENTION = RetentionPolicy.of({
   days: 7,
@@ -151,11 +149,12 @@ describe('FollowUpRunHandler', () => {
   });
 
   describe('a Follow-up prepared from failing checks', () => {
-    const draft = {
+    const draftData = {
       source: 'pull_request_checks' as const,
       text: 'Prepared text.',
       items: [{ name: 'unit tests', url: 'https://ci.test/1', logAvailable: true, section: 'x' }],
     };
+    const draft = PreparedFollowUp.restore(draftData);
 
     it('is stored as given, marked with its source, and removes the prepared draft', async () => {
       const run = await finished();
@@ -166,9 +165,9 @@ describe('FollowUpRunHandler', () => {
         text: 'Prepared text, edited by the operator.',
         source: 'pull_request_checks',
       });
-      const queued = (await runs.findById(run.id))!.snapshot();
+      const queued = (await runs.findById(run.id))!;
 
-      expect(queued.messages.at(-1)).toEqual({
+      expect(queued.conversation.messages.at(-1)).toEqual({
         kind: 'follow_up',
         text: 'Prepared text, edited by the operator.',
         at: T1,
@@ -197,9 +196,9 @@ describe('FollowUpRunHandler', () => {
         runId: run.id,
         text: 'Written from scratch.',
       });
-      const queued = (await runs.findById(run.id))!.snapshot();
+      const queued = (await runs.findById(run.id))!;
 
-      expect(queued.messages.at(-1)).not.toHaveProperty('source');
+      expect(queued.conversation.messages.at(-1)).not.toHaveProperty('source');
       expect(runs.prepared.has(run.id)).toBe(true);
     });
   });
@@ -237,9 +236,9 @@ describe('FollowUpRunHandler', () => {
         source: 'review_comments',
         reviewCommentIds: ['conversation-1', 'conversation-3'],
       });
-      const queued = (await runs.findById(run.id))!.snapshot();
+      const queued = (await runs.findById(run.id))!;
 
-      expect(queued.messages.at(-1)).toEqual({
+      expect(queued.conversation.messages.at(-1)).toEqual({
         kind: 'follow_up',
         text: 'Add the test the reviewer asked for.',
         at: T1,
@@ -301,9 +300,9 @@ describe('FollowUpRunHandler', () => {
         runId: run.id,
         text: 'Written from scratch.',
       });
-      const queued = (await runs.findById(run.id))!.snapshot();
+      const queued = (await runs.findById(run.id))!;
 
-      expect(queued.messages.at(-1)).not.toHaveProperty('source');
+      expect(queued.conversation.messages.at(-1)).not.toHaveProperty('source');
       expect(runs.reviewSets.has(run.id)).toBe(true);
     });
   });
@@ -317,21 +316,21 @@ describe('FollowUpRunHandler', () => {
         runId: run.id,
         text: 'Also handle empty lists.',
       });
-      const queued = (await runs.findById(run.id))!.snapshot();
+      const queued = (await runs.findById(run.id))!;
 
       expect(queued).toMatchObject({
-        state: 'queued',
-        followUpQueued: true,
-        followUpCount: 1,
-        stepsBeforePart: 1,
-        failure: null,
-        finishedAt: null,
-        cancellation: null,
-        cancelRequestedAt: null,
-        delivery: null,
-        sessionRef: 'session-1',
+        lifecycle: {
+          state: 'queued',
+          failure: null,
+          finishedAt: null,
+          cancellation: null,
+          cancelRequestedAt: null,
+        },
+        progress: { followUpQueued: true, followUpCount: 1, stepsBeforePart: 1 },
+        delivery: { state: null },
+        claim: { sessionRef: 'session-1' },
       });
-      expect(queued.messages.at(-1)).toEqual({
+      expect(queued.conversation.messages.at(-1)).toEqual({
         kind: 'follow_up',
         text: 'Also handle empty lists.',
         at: T1,
@@ -343,9 +342,9 @@ describe('FollowUpRunHandler', () => {
     const run = await finished('succeeded');
 
     await handler.execute({ runId: run.id, text: 'Rename it.' });
-    const queued = (await runs.findById(run.id))!.snapshot();
+    const queued = (await runs.findById(run.id))!;
 
-    expect(queued.pullRequest).toEqual(PULL_REQUEST);
+    expect(queued.delivery.pullRequest).toEqual(PULL_REQUEST);
   });
 
   it('refuses a second submission while one is queued, and a Run that is not finished', async () => {
@@ -480,9 +479,9 @@ describe('FollowUpRunHandler', () => {
       readAs(run, state);
 
       await handler.execute({ runId: run.id, text: 'Go on.' });
-      const queued = (await runs.findById(run.id))!.snapshot();
+      const queued = (await runs.findById(run.id))!;
 
-      expect(queued.state).toBe('queued');
+      expect(queued.lifecycle.state).toBe('queued');
     },
   );
 
@@ -504,7 +503,7 @@ describe('FollowUpRunHandler', () => {
     const run = await finished('succeeded');
 
     await handler.execute({ runId: run.id, text: 'Go on.' });
-    const queued = (await runs.findById(run.id))!.snapshot();
+    const queued = (await runs.findById(run.id))!;
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'pull_request_state' });
@@ -516,10 +515,10 @@ describe('FollowUpRunHandler', () => {
     executions.requests.request = () => Promise.reject(new Error('The database is busy'));
 
     await handler.execute({ runId: run.id, text: 'Go on.' });
-    const queued = (await runs.findById(run.id))!.snapshot();
+    const queued = (await runs.findById(run.id))!;
 
-    expect(queued.state).toBe('queued');
-    expect(queued.followUpQueued).toBe(true);
+    expect(queued.lifecycle.state).toBe('queued');
+    expect(queued.progress.followUpQueued).toBe(true);
   });
 
   it('answers not found for an unknown Run or an id that is not a UUID', async () => {
@@ -551,10 +550,10 @@ describe('FollowUpRunHandler', () => {
       now: T1,
     });
     expect(await runs.claimNext(OTHER_WORKER, T1)).toBeNull();
-    expect((await runs.claimNext(WORKER, T1))?.snapshot()).toMatchObject({
+    expect(await runs.claimNext(WORKER, T1)).toMatchObject({
       id: run.id,
-      state: 'preparing',
-      followUpQueued: false,
+      lifecycle: { state: 'preparing' },
+      progress: { followUpQueued: false },
     });
   });
 

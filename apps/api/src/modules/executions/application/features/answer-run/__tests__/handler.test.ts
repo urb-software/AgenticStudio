@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import { type Run } from '../../../../domain/entities/run.js';
 import { RunNotWaitingError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { AnswerRunHandler } from '../handler.js';
@@ -14,7 +14,7 @@ const QUESTION = { text: 'Which database?', options: ['PostgreSQL', 'SQLite'] };
 describe('AnswerRunHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: AnswerRunHandler;
-  let run: RunSnapshot;
+  let run: Run;
 
   async function ask() {
     await runs.transitionClaimed({
@@ -62,7 +62,7 @@ describe('AnswerRunHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!.snapshot();
+    run = (await runs.claimNext(WORKER, T0))!;
   });
 
   it('stores the answer after the question and queues the Run to resume', async () => {
@@ -70,9 +70,12 @@ describe('AnswerRunHandler', () => {
 
     expect(await handler.execute({ runId: run.id, text: 'PostgreSQL' })).toBeUndefined();
 
-    const answered = (await runs.findById(run.id))!.snapshot();
-    expect(answered).toMatchObject({ state: 'queued', waitingSince: null });
-    expect(answered.messages).toEqual([
+    const answered = (await runs.findById(run.id))!;
+    expect(answered).toMatchObject({
+      lifecycle: { state: 'queued' },
+      progress: { waitingSince: null },
+    });
+    expect(answered.conversation.messages).toEqual([
       { kind: 'question', question: QUESTION, at: T0 },
       { kind: 'answer', text: 'PostgreSQL', at: T1 },
     ]);

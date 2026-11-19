@@ -4,6 +4,7 @@ import {
   T0,
   WORKER,
 } from '../../../../domain/repositories/__tests__/delivered-run.js';
+import { PreparedFollowUp } from '../../../../domain/entities/prepared-follow-up.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
@@ -100,7 +101,7 @@ describe('preparing a Follow-up from failing checks', () => {
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'failing_check_logs' });
     expect(answer.run.pullRequestStatus.prepareRequestedAt).toEqual(T0);
     expect(answer.run.pullRequestStatus.refreshRequestedAt).toBeNull();
-    expect((await runs.findById(run.id))!.snapshot().followUpQueued).toBe(false);
+    expect((await runs.findById(run.id))!.progress.followUpQueued).toBe(false);
     expect(answer.run.messages.some((message) => message.kind === 'follow_up')).toBe(false);
   });
 
@@ -135,11 +136,12 @@ describe('preparing a Follow-up from failing checks', () => {
   });
 
   describe('reviewing the prepared Follow-up', () => {
-    const draft = {
+    const draftData = {
       source: 'pull_request_checks' as const,
       text: 'Fix it.',
       items: [{ name: 'unit tests', url: 'https://ci.test/1', logAvailable: true, section: 'x' }],
     };
+    const draft = PreparedFollowUp.restore(draftData);
 
     it('reads the prepared Follow-up, and says when there is none', async () => {
       const get = new GetPreparedFollowUpHandler(executions.preparedFollowUps);
@@ -150,7 +152,7 @@ describe('preparing a Follow-up from failing checks', () => {
 
       runs.prepared.set(run.id, draft);
 
-      expect(await get.execute({ runId: run.id })).toEqual(draft);
+      expect(await get.execute({ runId: run.id })).toEqual(draftData);
       await expect(get.execute({ runId: 'not-a-run' })).rejects.toBeInstanceOf(RunNotFoundError);
     });
 

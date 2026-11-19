@@ -3,15 +3,21 @@ import type { FollowUpSource } from '../../value-objects/follow-up-source.js';
 import type { PreparedFollowUpRepository } from '../prepared-follow-up-repository.js';
 import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
+/** A stored draft never aliases one a caller still holds: the repository hands out copies. */
+const copyOf = (draft: PreparedFollowUp): PreparedFollowUp =>
+  PreparedFollowUp.restore({
+    source: draft.source,
+    text: draft.text,
+    items: draft.items.map((item) => ({ ...item })),
+  });
+
 /** In-memory {@link PreparedFollowUpRepository}; stores in the Run fake's `prepared` map. */
 export class InMemoryPreparedFollowUpRepository implements PreparedFollowUpRepository {
   constructor(private readonly runs: InMemoryRunRepository) {}
 
   find(runId: string): Promise<PreparedFollowUp | null> {
     const stored = this.runs.prepared.get(runId);
-    return Promise.resolve(
-      stored ? PreparedFollowUp.restore({ ...stored, items: [...stored.items] }) : null,
-    );
+    return Promise.resolve(stored ? copyOf(stored) : null);
   }
 
   findRunIdsAmong(runIds: readonly string[]): Promise<ReadonlySet<string>> {
@@ -19,7 +25,7 @@ export class InMemoryPreparedFollowUpRepository implements PreparedFollowUpRepos
   }
 
   replace(runId: string, draft: PreparedFollowUp): Promise<void> {
-    this.runs.prepared.set(runId, draft.snapshot());
+    this.runs.prepared.set(runId, copyOf(draft));
     return Promise.resolve();
   }
 

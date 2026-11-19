@@ -1,9 +1,9 @@
 import { EnvironmentFile } from '../../entities/environment-file.js';
-import { type StoredEnvironmentFile } from '../../entities/environment-file-snapshot.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import type { EnvironmentFileRepository } from '../environment-file-repository.js';
 
 export class InMemoryEnvironmentFileRepository implements EnvironmentFileRepository {
-  readonly files = new Map<string, StoredEnvironmentFile>();
+  readonly files = new Map<string, RestoreData<typeof EnvironmentFile>>();
   now = new Date('2026-11-15T10:00:00.000Z');
 
   find(projectId: string): Promise<EnvironmentFile | null> {

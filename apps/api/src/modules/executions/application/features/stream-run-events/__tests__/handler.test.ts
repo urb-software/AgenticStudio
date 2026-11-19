@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import type { Run } from '../../../../domain/entities/run.js';
 import type { RunEvent } from '../../../../domain/value-objects/run-event.js';
 import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
@@ -51,7 +51,7 @@ describe('a Run log, paged and live', () => {
   let runs: InMemoryRunRepository;
   let log: InMemoryRunLog;
   let signal: TestSignal;
-  let run: RunSnapshot;
+  let run: Run;
 
   const append = async (...seqs: number[]) => {
     await log.append(run.id, WORKER, seqs.map(event), 1_000_000);
@@ -90,7 +90,7 @@ describe('a Run log, paged and live', () => {
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!.snapshot();
+    run = (await runs.claimNext(WORKER, T0))!;
   });
 
   describe('paging', () => {

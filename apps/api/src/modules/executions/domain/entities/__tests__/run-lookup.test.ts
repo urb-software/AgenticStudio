@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { RunLookup } from '../run-lookup.js';
 
 const T0 = new Date('2026-11-17T10:00:00.000Z');
@@ -6,11 +7,26 @@ const T1 = new Date('2026-11-17T10:01:00.000Z');
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 
+const REQUESTED: RestoreData<typeof RunLookup> = {
+  id: 'l-1',
+  runId: 'r-1',
+  kind: 'pull_request_state',
+  status: 'requested',
+  requestedAt: T0,
+  claimedBy: null,
+  claimedAt: null,
+  retryAt: null,
+  finishedAt: null,
+  error: null,
+  result: null,
+  scope: null,
+  since: null,
+};
 const requested = () =>
   RunLookup.request({ id: 'l-1', runId: 'r-1', kind: 'pull_request_state', now: T0 });
 const claimed = () =>
   RunLookup.restore({
-    ...requested().snapshot(),
+    ...REQUESTED,
     status: 'claimed',
     claimedBy: WORKER,
     claimedAt: T0,
@@ -20,21 +36,7 @@ describe('RunLookup', () => {
   it('is requested for a Run, open, and waits for a worker', () => {
     const lookup = requested();
 
-    expect(lookup.snapshot()).toEqual({
-      id: 'l-1',
-      runId: 'r-1',
-      kind: 'pull_request_state',
-      status: 'requested',
-      requestedAt: T0,
-      claimedBy: null,
-      claimedAt: null,
-      retryAt: null,
-      finishedAt: null,
-      error: null,
-      result: null,
-      scope: null,
-      since: null,
-    });
+    expect(lookup).toEqual(RunLookup.restore(REQUESTED));
     expect(lookup.isOpen).toBe(true);
   });
 

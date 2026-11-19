@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Run } from '../../../domain/entities/run.js';
 import { HandOutRule } from '../../../domain/value-objects/hand-out-rule.js';
 import { GoneWorkerRule } from '../../../domain/value-objects/gone-worker-rule.js';
 import { LeaseRenewalRule } from '../../../domain/value-objects/lease-renewal-rule.js';
@@ -32,11 +33,21 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
   let app: INestApplication;
   const db = () => app.get<DatabaseClient>(DATABASE_CLIENT);
   const runs = () => app.get<RunRepository>(RUN_REPOSITORY);
-  // The rules take plain facts: the entities are read through their snapshots here.
-  const newestFirst = async () => (await runs().listNewestFirst()).map((run) => run.snapshot());
-  const waiting = async () => (await runs().listWaiting()).map((run) => run.snapshot());
-  const claimNext = async (worker: string, now: Date) =>
-    (await runs().claimNext(worker, now))?.snapshot() ?? null;
+  /** What the hand-out rule takes, read from the entity's fields. */
+  const handOutView = (run: Run) => ({
+    id: run.id,
+    projectId: run.projectId,
+    createdAt: run.createdAt,
+    state: run.lifecycle.state,
+    claimedBy: run.claim.claimedBy,
+    lastClaimedBy: run.claim.lastClaimedBy,
+    sessionRef: run.claim.sessionRef,
+    followUpQueued: run.progress.followUpQueued,
+    deliveryRequested: run.delivery.requested,
+  });
+  const newestFirst = () => runs().listNewestFirst();
+  const waiting = () => runs().listWaiting();
+  const claimNext = (worker: string, now: Date) => runs().claimNext(worker, now);
 
   beforeAll(async () => {
     services = await startStudioServices();
@@ -238,7 +249,7 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
 
           for (let step = 0; step < 6; step++) {
             const stored = await newestFirst();
-            const expected = HandOutRule.for(worker).next(stored)?.id ?? null;
+            const expected = HandOutRule.for(worker).next(stored.map(handOutView))?.id ?? null;
             const before = await snapshot();
 
             const handed = await claimNext(worker, NOW);
@@ -251,8 +262,8 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
               break;
             }
             expect(changed).toEqual([handed.id]);
-            expect(handed.claimedBy).toBe(worker);
-            expect(handed.heartbeatAt).toEqual(NOW);
+            expect(handed.claim.claimedBy).toBe(worker);
+            expect(handed.claim.heartbeatAt).toEqual(NOW);
           }
         });
       }
@@ -265,10 +276,9 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
 
       expect(handed).toMatchObject({
         id,
-        state: 'preparing',
-        startedAt: T,
-        followUpQueued: false,
-        lastClaimedBy: W1,
+        lifecycle: { state: 'preparing', startedAt: T },
+        progress: { followUpQueued: false },
+        claim: { lastClaimedBy: W1 },
       });
     });
 
@@ -277,7 +287,12 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
 
       const handed = await claimNext(W1, NOW);
 
-      expect(handed).toMatchObject({ id, state: 'failed', claimedBy: W1, deliveryRequested: true });
+      expect(handed).toMatchObject({
+        id,
+        lifecycle: { state: 'failed' },
+        claim: { claimedBy: W1 },
+        delivery: { requested: true },
+      });
     });
   });
 
@@ -300,7 +315,9 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       const rule = LostWorkerRule.at(NOW, LEASE_SECONDS);
       const before = await newestFirst();
       const selected = new Map(
-        before.filter((run) => rule.selects(run)).map((run) => [run.id, rule.resultFor(run)]),
+        before
+          .filter((run) => rule.selects(run.sweepFacts()))
+          .map((run) => [run.id, rule.resultFor(run.sweepFacts())]),
       );
       expect(selected.size).toBe(3);
 
@@ -316,22 +333,19 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
         const result = selected.get(run.id);
         if (!result) {
           expect(before.find((candidate) => candidate.id === run.id)).toMatchObject({
-            state: run.state,
-            claimedBy: run.claimedBy,
+            lifecycle: { state: run.lifecycle.state },
+            claim: { claimedBy: run.claim.claimedBy },
           });
           continue;
         }
         expect(run).toMatchObject({
-          state: 'failed',
-          failure: result.failure,
-          claimedBy: null,
-          heartbeatAt: null,
-          finishedAt: NOW,
+          lifecycle: { state: 'failed', failure: result.failure, finishedAt: NOW },
+          claim: { claimedBy: null, heartbeatAt: null },
         });
         if (result.retryEnds) {
-          expect(run).toMatchObject({ deliveryRequested: false, delivery: 'failed' });
+          expect(run).toMatchObject({ delivery: { requested: false, state: 'failed' } });
         } else {
-          expect(run.deliveryRequested).toBe(false);
+          expect(run.delivery.requested).toBe(false);
         }
       }
       expect(ids).toHaveLength(SPECS.length);
@@ -355,7 +369,9 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       ]);
       const rule = OverdueStepRule.at(NOW, 5);
       const before = await newestFirst();
-      const selected = new Set(before.filter((run) => rule.selects(run)).map((run) => run.id));
+      const selected = new Set(
+        before.filter((run) => rule.selects(run.sweepFacts())).map((run) => run.id),
+      );
       expect(selected.size).toBe(1);
 
       const count = await runs().timeOutOverdueSteps(rule.now, rule.graceMinutes);
@@ -363,9 +379,14 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       expect(count).toBe(selected.size);
       for (const run of await newestFirst()) {
         if (selected.has(run.id)) {
-          expect(run).toMatchObject({ state: 'timed_out', claimedBy: null, finishedAt: NOW });
+          expect(run).toMatchObject({
+            lifecycle: { state: 'timed_out', finishedAt: NOW },
+            claim: { claimedBy: null },
+          });
         } else {
-          expect(run.state).toBe(before.find((candidate) => candidate.id === run.id)!.state);
+          expect(run.lifecycle.state).toBe(
+            before.find((candidate) => candidate.id === run.id)!.lifecycle.state,
+          );
         }
       }
     });
@@ -388,14 +409,18 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       ]);
       const rule = LongWaitRule.at(NOW);
       const before = await newestFirst();
-      const candidates = before.filter((run) => rule.candidate(run)).map((run) => run.id);
-      const selected = new Set(before.filter((run) => rule.selects(run)).map((run) => run.id));
+      const candidates = before
+        .filter((run) => rule.candidate(run.sweepFacts()))
+        .map((run) => run.id);
+      const selected = new Set(
+        before.filter((run) => rule.selects(run.sweepFacts())).map((run) => run.id),
+      );
       expect(selected.size).toBe(2);
 
       const listed = await waiting();
       expect(listed.map((run) => run.id).sort()).toEqual([...candidates].sort());
       for (const run of listed) {
-        const cancellation = rule.cancellationFor(run);
+        const cancellation = rule.cancellationFor(run.sweepFacts());
         if (!cancellation) continue;
         expect(
           await runs().cancelUnheld(run.id, 'waiting_for_operator', cancellation, NOW),
@@ -405,12 +430,12 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       for (const run of await newestFirst()) {
         if (selected.has(run.id)) {
           expect(run).toMatchObject({
-            state: 'cancelled',
-            cancellation: { by: 'system' },
-            finishedAt: NOW,
+            lifecycle: { state: 'cancelled', cancellation: { by: 'system' }, finishedAt: NOW },
           });
         } else {
-          expect(run.state).toBe(before.find((candidate) => candidate.id === run.id)!.state);
+          expect(run.lifecycle.state).toBe(
+            before.find((candidate) => candidate.id === run.id)!.lifecycle.state,
+          );
         }
       }
       const [cancelled] = [...selected];
@@ -438,8 +463,8 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       ]);
       const rule = GoneWorkerRule.at(NOW, LEASE_SECONDS);
       const before = await newestFirst();
-      const retries = before.filter((run) => rule.pendingDeliveryRetry(run));
-      const resumes = before.filter((run) => rule.pendingResume(run));
+      const retries = before.filter((run) => rule.pendingDeliveryRetry(run.sweepFacts()));
+      const resumes = before.filter((run) => rule.pendingResume(run.sweepFacts()));
       expect(retries).toHaveLength(1);
       expect(resumes).toHaveLength(2);
       const failure = { code: 'delivery_failed', detail: 'gone' } as const;
@@ -448,17 +473,17 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       const listedResumes = await runs().listPendingResumes();
 
       expect(listedRetries).toEqual(
-        retries.map((run) => ({ runId: run.id, startedBy: run.lastClaimedBy })),
+        retries.map((run) => ({ runId: run.id, startedBy: run.claim.lastClaimedBy })),
       );
       expect(listedResumes.map((entry) => entry.runId).sort()).toEqual(
         resumes.map((run) => run.id).sort(),
       );
       expect(listedResumes.map((entry) => entry.startedBy).sort()).toEqual(
-        resumes.map((run) => run.lastClaimedBy).sort(),
+        resumes.map((run) => run.claim.lastClaimedBy).sort(),
       );
       for (const run of before) {
-        const pendingRetry = rule.pendingDeliveryRetry(run);
-        const pendingResume = rule.pendingResume(run);
+        const pendingRetry = rule.pendingDeliveryRetry(run.sweepFacts());
+        const pendingResume = rule.pendingResume(run.sweepFacts());
         expect(await runs().abandonDeliveryRetry(run.id, failure, NOW)).toBe(pendingRetry);
         expect(
           await runs().abandonResume(run.id, { code: 'preparation_failed', detail: 'gone' }, NOW),
@@ -479,14 +504,16 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       ]);
       const rule = LeaseRenewalRule.at(NOW, LEASE_SECONDS);
       const before = await newestFirst();
-      const renewed = before.filter((run) => rule.renews(run));
+      const renewed = before.filter((run) => rule.renews(run.sweepFacts()));
       expect(rule.isDue(null)).toBe(true);
 
       expect(await runs().renewClaimsOncePerLease(NOW, LEASE_SECONDS)).toBe(renewed.length);
 
       for (const run of await newestFirst()) {
         const was = before.find((candidate) => candidate.id === run.id)!;
-        expect(run.heartbeatAt).toEqual(rule.renews(run) ? NOW : was.heartbeatAt);
+        expect(run.claim.heartbeatAt).toEqual(
+          rule.renews(run.sweepFacts()) ? NOW : was.claim.heartbeatAt,
+        );
       }
       const soon = new Date(NOW.getTime() + 30_000);
       expect(LeaseRenewalRule.at(soon, LEASE_SECONDS).isDue(NOW)).toBe(false);

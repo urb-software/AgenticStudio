@@ -3,7 +3,7 @@ import {
   IllegalRunTransitionError,
   RunNotFoundError,
 } from '../../../../domain/errors/run-errors.js';
-import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import { type Run } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
 import { ReportRunStateHandler, type ReportRunStateInput } from '../handler.js';
@@ -18,7 +18,7 @@ const T1 = new Date('2026-11-15T12:05:00.000Z');
 describe('ReportRunStateHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: ReportRunStateHandler;
-  let run: RunSnapshot;
+  let run: Run;
   let notified: string[];
   let released: string[];
 
@@ -30,7 +30,7 @@ describe('ReportRunStateHandler', () => {
       failure: null,
       ...input,
     });
-    return (await runs.findById(run.id))!.snapshot();
+    return (await runs.findById(run.id))!;
   };
 
   beforeEach(async () => {
@@ -56,15 +56,14 @@ describe('ReportRunStateHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!.snapshot();
+    run = (await runs.claimNext(WORKER, T0))!;
     await runs.attachEnvironmentFile(run.id, WORKER, { path: '.env', secretRef: 'snapshot' });
   });
 
   it('moves a preparing Run to running, still held', async () => {
     expect(await report({ state: 'running' })).toMatchObject({
-      state: 'running',
-      claimedBy: WORKER,
-      finishedAt: null,
+      lifecycle: { state: 'running', finishedAt: null },
+      claim: { claimedBy: WORKER },
     });
   });
 
@@ -72,10 +71,8 @@ describe('ReportRunStateHandler', () => {
     await report({ state: 'running' });
 
     expect(await report({ state: 'succeeded' })).toMatchObject({
-      state: 'succeeded',
-      claimedBy: null,
-      finishedAt: T1,
-      failure: null,
+      lifecycle: { state: 'succeeded', finishedAt: T1, failure: null },
+      claim: { claimedBy: null },
     });
   });
 
@@ -167,7 +164,7 @@ describe('ReportRunStateHandler', () => {
       },
     });
 
-    expect(failed.failure?.detail).toBe('login with ••••••[redacted] failed');
+    expect(failed.lifecycle.failure?.detail).toBe('login with ••••••[redacted] failed');
     expect(failed.workingCopy?.commits[0]?.subject).toBe('Use ••••••[redacted]');
   });
 
@@ -216,9 +213,7 @@ describe('ReportRunStateHandler', () => {
     const failure = { code: 'agent_failed', detail: 'The agent exited with code 1.' } as const;
 
     expect(await report({ state: 'failed', failure })).toMatchObject({
-      state: 'failed',
-      failure,
-      finishedAt: T1,
+      lifecycle: { state: 'failed', failure, finishedAt: T1 },
     });
   });
 
@@ -226,9 +221,8 @@ describe('ReportRunStateHandler', () => {
     await report({ state: 'running' });
 
     expect(await report({ state: 'waiting_for_operator' })).toMatchObject({
-      state: 'waiting_for_operator',
-      claimedBy: null,
-      finishedAt: null,
+      lifecycle: { state: 'waiting_for_operator', finishedAt: null },
+      claim: { claimedBy: null },
     });
   });
 
@@ -265,16 +259,18 @@ describe('ReportRunStateHandler', () => {
           state: 'succeeded',
           delivery: { outcome: 'delivered', pullRequest: PULL_REQUEST },
         }),
-      ).toMatchObject({ state: 'succeeded', delivery: 'delivered', pullRequest: PULL_REQUEST });
+      ).toMatchObject({
+        lifecycle: { state: 'succeeded' },
+        delivery: { state: 'delivered', pullRequest: PULL_REQUEST },
+      });
     });
 
     it('records "No changes" as the delivery none, without a pull request', async () => {
       await report({ state: 'running' });
 
       expect(await report({ state: 'succeeded', delivery: { outcome: 'none' } })).toMatchObject({
-        state: 'succeeded',
-        delivery: 'none',
-        pullRequest: null,
+        lifecycle: { state: 'succeeded' },
+        delivery: { state: 'none', pullRequest: null },
       });
     });
 
@@ -282,9 +278,8 @@ describe('ReportRunStateHandler', () => {
       await report({ state: 'running' });
 
       expect(await report({ state: 'failed', failure: DELIVERY_FAILED })).toMatchObject({
-        state: 'failed',
-        failure: DELIVERY_FAILED,
-        delivery: 'failed',
+        lifecycle: { state: 'failed', failure: DELIVERY_FAILED },
+        delivery: { state: 'failed' },
       });
     });
 
@@ -306,14 +301,10 @@ describe('ReportRunStateHandler', () => {
           workingCopy,
         }),
       ).toMatchObject({
-        state: 'succeeded',
-        failure: null,
-        delivery: 'delivered',
-        pullRequest: PULL_REQUEST,
-        deliveryRequested: false,
-        claimedBy: null,
-        finishedAt: T1,
         workingCopy,
+        lifecycle: { state: 'succeeded', failure: null, finishedAt: T1 },
+        delivery: { state: 'delivered', pullRequest: PULL_REQUEST, requested: false },
+        claim: { claimedBy: null },
       });
     });
 
@@ -322,11 +313,9 @@ describe('ReportRunStateHandler', () => {
       const again = { code: 'delivery_failed', detail: 'GitHub answered 503.' } as const;
 
       expect(await report({ state: 'failed', failure: again })).toMatchObject({
-        state: 'failed',
-        failure: again,
-        delivery: 'failed',
-        deliveryRequested: false,
-        claimedBy: null,
+        lifecycle: { state: 'failed', failure: again },
+        delivery: { state: 'failed', requested: false },
+        claim: { claimedBy: null },
       });
     });
 
@@ -343,7 +332,7 @@ describe('ReportRunStateHandler', () => {
           hasUncommittedChanges: false,
         },
       });
-      expect(failedAgain.failure?.detail).toBe('push of ••••••[redacted] refused');
+      expect(failedAgain.lifecycle.failure?.detail).toBe('push of ••••••[redacted] refused');
       expect(failedAgain.workingCopy?.commits[0]?.subject).toBe('agent: used ••••••[redacted]');
       expect(released).toEqual([]);
 
@@ -391,18 +380,22 @@ describe('ReportRunStateHandler', () => {
       const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: true };
 
       expect(await report({ state: 'cancelled', workingCopy })).toMatchObject({
-        state: 'cancelled',
-        cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
-        claimedBy: null,
-        finishedAt: T1,
         workingCopy,
+        lifecycle: {
+          state: 'cancelled',
+          cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+          finishedAt: T1,
+        },
+        claim: { claimedBy: null },
       });
     });
 
     it('confirms a cancel requested while the Run was still preparing', async () => {
       await runs.cancel(run.id, T0);
 
-      expect(await report({ state: 'cancelled' })).toMatchObject({ state: 'cancelled' });
+      expect(await report({ state: 'cancelled' })).toMatchObject({
+        lifecycle: { state: 'cancelled' },
+      });
     });
 
     it('refuses a cancelled report nobody asked for', async () => {
@@ -419,9 +412,8 @@ describe('ReportRunStateHandler', () => {
       await runs.cancel(run.id, T0);
 
       expect(await report({ state: 'waiting_for_operator' })).toMatchObject({
-        state: 'cancelled',
-        cancellation: { by: 'operator' },
-        waitingSince: null,
+        lifecycle: { state: 'cancelled', cancellation: { by: 'operator' } },
+        progress: { waitingSince: null },
       });
     });
 
@@ -430,9 +422,8 @@ describe('ReportRunStateHandler', () => {
       await runs.cancel(run.id, T0);
 
       expect(await report({ state: 'succeeded', delivery: { outcome: 'none' } })).toMatchObject({
-        state: 'succeeded',
-        delivery: 'none',
-        cancellation: null,
+        lifecycle: { state: 'succeeded', cancellation: null },
+        delivery: { state: 'none' },
       });
     });
 
@@ -442,8 +433,7 @@ describe('ReportRunStateHandler', () => {
       const failure = { code: 'agent_failed', detail: 'exit 1' } as const;
 
       expect(await report({ state: 'failed', failure })).toMatchObject({
-        state: 'failed',
-        failure,
+        lifecycle: { state: 'failed', failure },
       });
     });
 
@@ -452,19 +442,18 @@ describe('ReportRunStateHandler', () => {
       const workingCopy = { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false };
 
       expect(await report({ state: 'timed_out', workingCopy })).toMatchObject({
-        state: 'timed_out',
-        failure: null,
-        cancellation: null,
-        claimedBy: null,
-        finishedAt: T1,
         workingCopy,
+        lifecycle: { state: 'timed_out', failure: null, cancellation: null, finishedAt: T1 },
+        claim: { claimedBy: null },
       });
     });
 
     it('records when a Run began waiting for the operator', async () => {
       await report({ state: 'running' });
 
-      expect(await report({ state: 'waiting_for_operator' })).toMatchObject({ waitingSince: T1 });
+      expect(await report({ state: 'waiting_for_operator' })).toMatchObject({
+        progress: { waitingSince: T1 },
+      });
     });
   });
 
@@ -490,7 +479,7 @@ describe('ReportRunStateHandler', () => {
       await runs.cancel(run.id, T0);
       const cancelled = await report({ state: 'waiting_for_operator' });
 
-      expect(cancelled.state).toBe('cancelled');
+      expect(cancelled.lifecycle.state).toBe('cancelled');
       expect(await report({ state: 'waiting_for_operator' })).toEqual(cancelled);
     });
 
@@ -512,10 +501,8 @@ describe('ReportRunStateHandler', () => {
     expect(
       await report({ state: 'cancelled', delivery: { outcome: 'delivered', pullRequest } }),
     ).toMatchObject({
-      state: 'cancelled',
-      cancellation: { by: 'operator' },
-      delivery: 'delivered',
-      pullRequest,
+      lifecycle: { state: 'cancelled', cancellation: { by: 'operator' } },
+      delivery: { state: 'delivered', pullRequest },
     });
   });
 
@@ -526,14 +513,15 @@ describe('ReportRunStateHandler', () => {
     expect(
       await report({ state: 'cancelled', delivery: { outcome: 'none', branchPushed: true } }),
     ).toMatchObject({
-      state: 'cancelled',
-      delivery: 'none',
-      pullRequest: null,
-      cancellation: {
-        by: 'operator',
-        reason:
-          'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
+      lifecycle: {
+        state: 'cancelled',
+        cancellation: {
+          by: 'operator',
+          reason:
+            'Cancelled by the operator during its delivery: the Run branch was pushed, no pull request was opened.',
+        },
       },
+      delivery: { state: 'none', pullRequest: null },
     });
   });
 
@@ -552,10 +540,9 @@ describe('ReportRunStateHandler', () => {
       });
 
       expect(failed).toMatchObject({
-        state: 'failed',
-        failure: USAGE_LIMIT,
-        sessionRef: 'session-7',
         workingCopy: WORKING_COPY,
+        lifecycle: { state: 'failed', failure: USAGE_LIMIT },
+        claim: { sessionRef: 'session-7' },
       });
       expect(released).toEqual([]);
     });
@@ -569,7 +556,7 @@ describe('ReportRunStateHandler', () => {
         sessionRef: 'session-7',
       });
 
-      expect(failed.sessionRef).toBeNull();
+      expect(failed.claim.sessionRef).toBeNull();
       expect(released).toEqual([run.id]);
     });
   });
@@ -641,21 +628,20 @@ describe('ReportRunStateHandler', () => {
       const restored = await report({ state: 'succeeded', unchanged: true });
 
       expect(restored).toMatchObject({
-        state: 'succeeded',
-        claimedBy: null,
-        delivery: 'delivered',
-        pullRequest: PULL_REQUEST,
+        lifecycle: { state: 'succeeded' },
+        claim: { claimedBy: null },
+        delivery: { state: 'delivered', pullRequest: PULL_REQUEST },
       });
-      expect(restored.messages.at(-1)).toMatchObject({
+      expect(restored.conversation.messages.at(-1)).toMatchObject({
         kind: 'part_end',
         state: 'succeeded',
         detail: expect.stringContaining('already has everything dev has'),
       });
       expect(notified).toContain(run.id);
       expect(await report({ state: 'succeeded', unchanged: true })).toMatchObject({
-        state: 'succeeded',
+        lifecycle: { state: 'succeeded' },
       });
-      expect(restored.messages).toHaveLength(
+      expect(restored.conversation.messages).toHaveLength(
         (await runs.findById(run.id))!.conversation.messages.length,
       );
     });
@@ -669,8 +655,11 @@ describe('ReportRunStateHandler', () => {
         unchangedDetail: 'The integration branch dev could not be fetched. Nothing was changed.',
       });
 
-      expect(restored).toMatchObject({ state: 'succeeded', delivery: 'delivered' });
-      expect(restored.messages.at(-1)).toMatchObject({
+      expect(restored).toMatchObject({
+        lifecycle: { state: 'succeeded' },
+        delivery: { state: 'delivered' },
+      });
+      expect(restored.conversation.messages.at(-1)).toMatchObject({
         kind: 'part_end',
         detail: 'The integration branch dev could not be fetched. Nothing was changed.',
       });

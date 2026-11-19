@@ -57,13 +57,15 @@ describe('CancelLongWaitingRunsHandler', () => {
 
     expect(await handler.execute()).toEqual({ cancelled: 1 });
 
-    expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-      state: 'cancelled',
-      cancellation: {
-        by: 'system',
-        reason: 'Cancelled automatically: the run waited for the operator longer than 14 days.',
+    expect((await runs.findById(run.id))!).toMatchObject({
+      lifecycle: {
+        state: 'cancelled',
+        cancellation: {
+          by: 'system',
+          reason: 'Cancelled automatically: the run waited for the operator longer than 14 days.',
+        },
+        finishedAt: now,
       },
-      finishedAt: now,
     });
   });
 

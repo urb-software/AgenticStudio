@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { RunAlreadyFinishedError, RunNotFoundError } from '../../../../domain/errors/run-errors.js';
-import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import { type Run } from '../../../../domain/entities/run.js';
+import { type RunState } from '../../../../domain/value-objects/run-state.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { CancelRunHandler } from '../handler.js';
 
@@ -16,9 +17,9 @@ describe('CancelRunHandler', () => {
   let runs: InMemoryRunRepository;
   let now: Date;
   let handler: CancelRunHandler;
-  let run: RunSnapshot;
+  let run: Run;
 
-  const transition = (from: RunSnapshot['state'], to: RunSnapshot['state']) =>
+  const transition = (from: RunState, to: RunState) =>
     runs.transitionClaimed({
       runId: run.id,
       workerId: WORKER,
@@ -33,25 +34,25 @@ describe('CancelRunHandler', () => {
     runs = new InMemoryRunRepository();
     now = T1;
     handler = new CancelRunHandler(runs, { now: () => now });
-    run = (
-      await runs.start({
-        projectId: PROJECT,
-        provider: 'codex',
-        task: 'x',
-        startCommit: 'a',
-        remoteUrl: 'https://git.example.test/a.git',
-        integrationBranch: 'dev',
-        limits: LIMITS,
-      })
-    ).snapshot();
+    run = await runs.start({
+      projectId: PROJECT,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://git.example.test/a.git',
+      integrationBranch: 'dev',
+      limits: LIMITS,
+    });
   });
 
   it('cancels a queued Run at once, by the operator', async () => {
     expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancelled' });
-    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
-      state: 'cancelled',
-      cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
-      finishedAt: T1,
+    expect(await runs.findById(run.id)).toMatchObject({
+      lifecycle: {
+        state: 'cancelled',
+        cancellation: { by: 'operator', reason: 'Cancelled by the operator.' },
+        finishedAt: T1,
+      },
     });
   });
 
@@ -61,11 +62,9 @@ describe('CancelRunHandler', () => {
     await transition('running', 'waiting_for_operator');
 
     expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancelled' });
-    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
-      state: 'cancelled',
-      cancellation: { by: 'operator' },
-      finishedAt: T1,
-      waitingSince: null,
+    expect(await runs.findById(run.id)).toMatchObject({
+      lifecycle: { state: 'cancelled', cancellation: { by: 'operator' }, finishedAt: T1 },
+      progress: { waitingSince: null },
     });
   });
 
@@ -76,11 +75,9 @@ describe('CancelRunHandler', () => {
       if (state === 'running') await transition('preparing', 'running');
 
       expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancel_requested' });
-      expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
-        state,
-        cancelRequestedAt: T1,
-        claimedBy: WORKER,
-        cancellation: null,
+      expect(await runs.findById(run.id)).toMatchObject({
+        lifecycle: { state, cancelRequestedAt: T1, cancellation: null },
+        claim: { claimedBy: WORKER },
       });
     },
   );
@@ -91,9 +88,8 @@ describe('CancelRunHandler', () => {
     now = T2;
 
     expect(await handler.execute({ runId: run.id })).toEqual({ outcome: 'cancel_requested' });
-    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
-      state: 'preparing',
-      cancelRequestedAt: T1,
+    expect(await runs.findById(run.id)).toMatchObject({
+      lifecycle: { state: 'preparing', cancelRequestedAt: T1 },
     });
   });
 

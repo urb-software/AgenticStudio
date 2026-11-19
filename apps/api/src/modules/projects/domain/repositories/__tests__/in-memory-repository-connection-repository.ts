@@ -5,11 +5,11 @@ import {
 } from '../../errors/repository-connection-errors.js';
 import { RepositoryConnection } from '../../entities/repository-connection.js';
 import { type RepositoryState } from '../../value-objects/repository-state.js';
-import { type StoredRepositoryConnection } from '../../entities/repository-connection-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { RepositoryFailure } from '../../value-objects/repository-failure.js';
 import { type RepositoryConnectionRepository } from '../repository-connection-repository.js';
 
-export type StoredRepository = StoredRepositoryConnection & { identity: string };
+export type StoredRepository = RestoreData<typeof RepositoryConnection> & { identity: string };
 
 /**
  * In-memory adapter of {@link RepositoryConnectionRepository} for handler tests, with the database's
@@ -97,11 +97,18 @@ export class InMemoryRepositoryConnectionRepository implements RepositoryConnect
       return;
     }
     const stored = this.repositories.get(projectId);
-    const { hasClone, hostKeyFingerprint, ...fields } = repository.snapshot();
-    void hasClone;
-    void hostKeyFingerprint;
     this.repositories.set(projectId, {
-      ...fields,
+      projectId,
+      url: repository.url,
+      integrationBranch: repository.integrationBranch,
+      state: repository.state,
+      headSha: repository.headSha,
+      lastFetchedAt: repository.lastFetchedAt,
+      failure: repository.failure,
+      publicKey: repository.publicKey,
+      deployKeySecret: repository.deployKeySecret,
+      pinnedHostKey: repository.pinnedHostKey,
+      pendingHostKey: repository.pendingHostKey,
       identity: changes.identity ?? identity ?? stored!.identity,
     });
   }

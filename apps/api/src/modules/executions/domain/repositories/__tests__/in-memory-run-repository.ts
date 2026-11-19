@@ -20,7 +20,7 @@ import { Run } from '../../entities/run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { isFinalRunState } from '../../value-objects/run-state.js';
 import { type RunCancellation } from '../../value-objects/run-cancellation.js';
-import { type RunData } from '../../entities/run-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { type RunLimits } from '../../value-objects/run-limits.js';
 import { type RunDeliveryOutcome } from '../../value-objects/run-delivery.js';
 import { type RunFailure } from '../../value-objects/run-failure.js';
@@ -28,9 +28,8 @@ import { type Provider } from '../../value-objects/provider.js';
 import { type RunWorkingCopy } from '../../value-objects/run-working-copy.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { Task } from '../../value-objects/task.js';
-import type { PreparedFollowUpSnapshot } from '../../entities/prepared-follow-up-snapshot.js';
+import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type { ReviewComments } from '../../entities/review-comments.js';
-import type { RunStepSnapshot } from '../../entities/run-step-snapshot.js';
 import type {
   LimitedRunView,
   RunRepository,
@@ -38,7 +37,7 @@ import type {
   RunStateView,
 } from '../run-repository.js';
 
-type StoredRun = RunData & {
+type StoredRun = RestoreData<typeof Run> & {
   environmentFileSecret: string | null;
 };
 
@@ -74,7 +73,8 @@ export type AppendStepOutcome =
   | { status: 'step_limit' };
 
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
-const queuedToResume = (run: RunData) => run.state === 'queued' && run.sessionRef !== null;
+const queuedToResume = (run: RestoreData<typeof Run>) =>
+  run.state === 'queued' && run.sessionRef !== null;
 
 /** In-memory {@link RunRepository} for handler tests, following the database adapter's rules. */
 export class InMemoryRunRepository implements RunRepository {
@@ -297,7 +297,7 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  readonly prepared = new Map<string, PreparedFollowUpSnapshot>();
+  readonly prepared = new Map<string, PreparedFollowUp>();
 
   readonly reviewSets = new Map<string, ReviewComments>();
 
@@ -592,7 +592,7 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(true);
   }
 
-  listSteps(runId: string): Promise<(RunStepSnapshot & { reportedAt: Date })[]> {
+  listSteps(runId: string): ReturnType<RunRepository['listSteps']> {
     return Promise.resolve(
       this.steps
         .filter((stored) => stored.runId === runId)
@@ -635,7 +635,7 @@ export class InMemoryRunRepository implements RunRepository {
   listReleasableEnvironmentFileSecrets(
     retryableFinishedBefore: Date,
   ): Promise<{ runId: string; secretRef: string }[]> {
-    const retryable = (run: RunData) =>
+    const retryable = (run: RestoreData<typeof Run>) =>
       run.state === 'failed' &&
       (run.failure?.code === 'delivery_failed' || run.failure?.code === 'usage_limit') &&
       (run.deliveryRequested ||
@@ -688,7 +688,7 @@ export class InMemoryRunRepository implements RunRepository {
     return Run.restore(this.data(run));
   }
 
-  private data(run: StoredRun): RunData {
+  private data(run: StoredRun): RestoreData<typeof Run> {
     const { environmentFileSecret, ...rest } = run;
     void environmentFileSecret;
     return structuredClone(rest);

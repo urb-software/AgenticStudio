@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { knownHostName } from '../../../../../platform/config/ssh-known-hosts.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
-import { type RepositoryConnectionData } from '../../../domain/entities/repository-connection-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
+import type { RepositoryConnection } from '../../../domain/entities/repository-connection.js';
 import { Ed25519DeployKeyGenerator } from '../ed25519-deploy-key-generator.js';
 import { KnownHostName } from '../../../domain/value-objects/known-host-name.js';
 import { SecretStoreDeployKeys } from '../secret-store-deploy-keys.js';
@@ -13,7 +14,13 @@ const GITHUB_KEY = hostKey();
 const PORT_KEY = hostKey();
 const PINNED_KEY = hostKey();
 
-function repository(overrides: Partial<RepositoryConnectionData>): RepositoryConnectionData {
+/** What a Repository connection restores from, with the fields it derives. */
+type RepositoryFields = RestoreData<typeof RepositoryConnection> & {
+  hasClone: boolean;
+  hostKeyFingerprint: string | null;
+};
+
+function repository(overrides: Partial<RepositoryFields>): RepositoryFields {
   return {
     projectId: '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
     url: 'git@github.com:acme/shop.git',

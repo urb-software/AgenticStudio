@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Run } from '../run.js';
-import type { RunData } from '../run-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import type { RunState } from '../../value-objects/run-state.js';
 import { LongWaitRule } from '../../value-objects/long-wait-rule.js';
@@ -8,7 +8,10 @@ import { AT, runData } from './run-fixtures.js';
 
 describe('long-wait rule', () => {
   const since = new Date('2026-11-01T12:00:00.000Z');
-  const waiting = (waitingDays: number, overrides: Partial<RunData> = {}): RunData =>
+  const waiting = (
+    waitingDays: number,
+    overrides: Partial<RestoreData<typeof Run>> = {},
+  ): RestoreData<typeof Run> =>
     runData({
       createdAt: since,
       startedAt: since,
@@ -76,7 +79,7 @@ describe('Follow-ups', () => {
     workingCopy: { runBranch: 'agent/x-r0b8e5c2d', commits: [], hasUncommittedChanges: false },
     stepCount: 3,
   });
-  const restored = (patch: Partial<RunData> = {}) => {
+  const restored = (patch: Partial<RestoreData<typeof Run>> = {}) => {
     const state = patch.state ?? finished.state;
     return Run.restore({
       ...finished,
@@ -88,7 +91,7 @@ describe('Follow-ups', () => {
     });
   };
   const available = { workerAvailable: true, providerAvailable: true };
-  const known = (state: NonNullable<RunData['pullRequestStatus']['state']>) => ({
+  const known = (state: NonNullable<RestoreData<typeof Run>['pullRequestStatus']['state']>) => ({
     ...RunPullRequestStatus.none().toStored(),
     state,
     refreshedAt: AT,

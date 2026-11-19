@@ -7,7 +7,7 @@ import {
 import { Run } from '../run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { RunCancellation } from '../../value-objects/run-cancellation.js';
-import { type RunData } from '../run-data.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { type RunState } from '../../value-objects/run-state.js';
 import { type RunStateReport } from '../run-report-facts.js';
 
@@ -26,7 +26,7 @@ const WORKING_COPY = {
 const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
 const DELIVERY_FAILED = { code: 'delivery_failed', detail: 'Pushing was refused.' } as const;
 
-function data(overrides: Partial<RunData> = {}): RunData {
+function data(overrides: Partial<RestoreData<typeof Run>> = {}): RestoreData<typeof Run> {
   return {
     id: RUN_ID,
     projectId: PROJECT_ID,
@@ -70,8 +70,8 @@ function data(overrides: Partial<RunData> = {}): RunData {
   };
 }
 
-function inState(state: RunState, overrides: Partial<RunData> = {}): Run {
-  const byState: Partial<Record<RunState, Partial<RunData>>> = {
+function inState(state: RunState, overrides: Partial<RestoreData<typeof Run>> = {}): Run {
+  const byState: Partial<Record<RunState, Partial<RestoreData<typeof Run>>>> = {
     preparing: { claimedBy: WORKER, lastClaimedBy: WORKER, heartbeatAt: T0, startedAt: T0 },
     running: {
       claimedBy: WORKER,
@@ -103,7 +103,7 @@ const report = (overrides: Partial<RunStateReport> = {}): RunStateReport => ({
   ...overrides,
 });
 
-const retrying = (overrides: Partial<RunData> = {}) =>
+const retrying = (overrides: Partial<RestoreData<typeof Run>> = {}) =>
   inState('failed', {
     failure: DELIVERY_FAILED,
     delivery: 'failed',
@@ -115,7 +115,7 @@ const retrying = (overrides: Partial<RunData> = {}) =>
     ...overrides,
   });
 
-const BRING_UP: RunData['messages'] = [
+const BRING_UP: RestoreData<typeof Run>['messages'] = [
   {
     kind: 'part_end',
     state: 'succeeded',
@@ -133,13 +133,10 @@ describe('a state the agent worker reports', () => {
 
     expect(run.reportState(WORKER, report(), T1)).toBe(true);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'running',
-      claimedBy: WORKER,
-      heartbeatAt: T1,
-      stepStartedAt: T1,
-      releasedBy: null,
-      failure: null,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'running', failure: null },
+      claim: { claimedBy: WORKER, heartbeatAt: T1, releasedBy: null },
+      progress: { stepStartedAt: T1 },
     });
   });
 
@@ -148,12 +145,10 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'waiting_for_operator' }), T1);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'waiting_for_operator',
-      claimedBy: null,
-      heartbeatAt: null,
-      waitingSince: T1,
-      releasedBy: WORKER,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'waiting_for_operator' },
+      claim: { claimedBy: null, heartbeatAt: null, releasedBy: WORKER },
+      progress: { waitingSince: T1 },
     });
   });
 
@@ -169,15 +164,10 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'succeeded',
-      claimedBy: null,
-      heartbeatAt: null,
-      finishedAt: T1,
-      releasedBy: WORKER,
-      delivery: 'delivered',
-      pullRequest: PULL_REQUEST,
-      pushedCommit: 'f'.repeat(40),
+    expect(run).toMatchObject({
+      lifecycle: { state: 'succeeded', finishedAt: T1 },
+      claim: { claimedBy: null, heartbeatAt: null, releasedBy: WORKER },
+      delivery: { state: 'delivered', pullRequest: PULL_REQUEST, pushedCommit: 'f'.repeat(40) },
     });
   });
 
@@ -195,12 +185,14 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: { code: 'usage_limit', detail: 'The usage limit was reached.' },
+    expect(run).toMatchObject({
       workingCopy: WORKING_COPY,
-      sessionRef: 'session-9',
-      finishedAt: T1,
+      lifecycle: {
+        state: 'failed',
+        failure: { code: 'usage_limit', detail: 'The usage limit was reached.' },
+        finishedAt: T1,
+      },
+      claim: { sessionRef: 'session-9' },
     });
   });
 
@@ -213,10 +205,9 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'failed',
-      delivery: 'failed',
-      pushedCommit: 'e'.repeat(40),
+    expect(run).toMatchObject({
+      lifecycle: { state: 'failed' },
+      delivery: { state: 'failed', pushedCommit: 'e'.repeat(40) },
     });
   });
 
@@ -239,11 +230,9 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'cancelled' }), T1);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'cancelled',
-      cancellation: RunCancellation.OPERATOR,
-      finishedAt: T1,
-      claimedBy: null,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'cancelled', cancellation: RunCancellation.OPERATOR, finishedAt: T1 },
+      claim: { claimedBy: null },
     });
   });
 
@@ -252,7 +241,10 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'waiting_for_operator' }), T1);
 
-    expect(run.snapshot()).toMatchObject({ state: 'cancelled', waitingSince: null });
+    expect(run).toMatchObject({
+      lifecycle: { state: 'cancelled' },
+      progress: { waitingSince: null },
+    });
   });
 
   it('keeps the delivery of a Run cancelled during it, and says whether the branch was pushed', () => {
@@ -264,10 +256,9 @@ describe('a state the agent worker reports', () => {
       T1,
     );
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'cancelled',
-      delivery: 'none',
-      cancellation: RunCancellation.OPERATOR_BRANCH_PUSHED,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'cancelled', cancellation: RunCancellation.OPERATOR_BRANCH_PUSHED },
+      delivery: { state: 'none' },
     });
   });
 
@@ -276,7 +267,7 @@ describe('a state the agent worker reports', () => {
 
     run.reportState(WORKER, report({ state: 'succeeded', delivery: { outcome: 'none' } }), T1);
 
-    expect(run.snapshot()).toMatchObject({ state: 'succeeded', delivery: 'none' });
+    expect(run).toMatchObject({ lifecycle: { state: 'succeeded' }, delivery: { state: 'none' } });
   });
 
   it('refuses a cancelled report when the operator asked for nothing', () => {
@@ -397,16 +388,10 @@ describe('the outcome of a delivery retry the agent worker reports', () => {
       ),
     ).toBe(true);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'succeeded',
-      failure: null,
-      delivery: 'delivered',
-      pullRequest: PULL_REQUEST,
-      deliveryRequested: false,
-      claimedBy: null,
-      heartbeatAt: null,
-      releasedBy: WORKER,
-      finishedAt: T1,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'succeeded', failure: null, finishedAt: T1 },
+      delivery: { state: 'delivered', pullRequest: PULL_REQUEST, requested: false },
+      claim: { claimedBy: null, heartbeatAt: null, releasedBy: WORKER },
     });
   });
 
@@ -420,14 +405,10 @@ describe('the outcome of a delivery retry the agent worker reports', () => {
       T1,
     );
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: again,
-      delivery: 'failed',
-      deliveryRequested: false,
-      claimedBy: null,
-      pushedCommit: 'e'.repeat(40),
-      finishedAt: T1,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'failed', failure: again, finishedAt: T1 },
+      delivery: { state: 'failed', requested: false, pushedCommit: 'e'.repeat(40) },
+      claim: { claimedBy: null },
     });
   });
 
@@ -489,14 +470,11 @@ describe('a bring-up-to-date request that changed nothing', () => {
 
     expect(run.reportState(WORKER, unchanged('Nothing to merge.'), T1)).toBe(true);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'succeeded',
-      delivery: 'delivered',
-      claimedBy: null,
-      heartbeatAt: null,
-      releasedBy: WORKER,
-      finishedAt: T1,
-      stepStartedAt: null,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'succeeded', finishedAt: T1 },
+      delivery: { state: 'delivered' },
+      claim: { claimedBy: null, heartbeatAt: null, releasedBy: WORKER },
+      progress: { stepStartedAt: null },
     });
     expect(run.conversation.messages.at(-1)).toEqual({
       kind: 'part_end',
@@ -559,14 +537,12 @@ describe('a Run step the agent worker reports', () => {
     );
 
     expect(outcome).toEqual({ status: 'stored', index: 1 });
-    expect(run.snapshot()).toMatchObject({
-      stepCount: 1,
+    expect(run).toMatchObject({
       workingCopy: WORKING_COPY,
       failingChecks: ['lint'],
-      sessionRef: 'session-1',
-      stepStartedAt: null,
-      lastActivityAt: T1,
-      state: 'running',
+      progress: { stepCount: 1, stepStartedAt: null, lastActivityAt: T1 },
+      claim: { sessionRef: 'session-1' },
+      lifecycle: { state: 'running' },
     });
     expect(run.pendingChanges().steps).toEqual([
       { index: 1, kind: 'start', result: { outcome: 'done' } },
@@ -619,13 +595,10 @@ describe('a Run step the agent worker reports', () => {
 
     expect(run.reportStep(WORKER, step, WORKING_COPY, [], T1)).toEqual({ status: 'step_limit' });
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: { code: 'step_limit' },
-      claimedBy: null,
-      heartbeatAt: null,
-      finishedAt: T1,
-      stepCount: 2,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'failed', failure: { code: 'step_limit' }, finishedAt: T1 },
+      claim: { claimedBy: null, heartbeatAt: null },
+      progress: { stepCount: 2 },
     });
     expect(run.pendingChanges().steps).toBeUndefined();
   });
@@ -736,9 +709,8 @@ describe('the Environment file the claim gives a Run', () => {
 
     run.recordEnvironmentFile(WORKER, file);
 
-    expect(run.snapshot()).toMatchObject({
-      environmentFileSupplied: true,
-      environmentFilePath: '.env',
+    expect(run).toMatchObject({
+      claim: { environmentFileSupplied: true, environmentFilePath: '.env' },
     });
     expect(run.pendingChanges().environmentFileSecretRef).toBe('snapshot-1');
   });
@@ -751,9 +723,8 @@ describe('the Environment file the claim gives a Run', () => {
 
     run.recordEnvironmentFile(WORKER, null);
 
-    expect(run.snapshot()).toMatchObject({
-      environmentFileSupplied: false,
-      environmentFilePath: null,
+    expect(run).toMatchObject({
+      claim: { environmentFileSupplied: false, environmentFilePath: null },
     });
     expect(run.pendingChanges().environmentFileSecretRef).toBeNull();
   });
@@ -777,13 +748,9 @@ describe('a claim that could not prepare the Run', () => {
 
     expect(run.failPreparation(WORKER, failure, T1)).toBe(true);
 
-    expect(run.snapshot()).toMatchObject({
-      state: 'failed',
-      failure,
-      claimedBy: null,
-      heartbeatAt: null,
-      releasedBy: WORKER,
-      finishedAt: T1,
+    expect(run).toMatchObject({
+      lifecycle: { state: 'failed', failure, finishedAt: T1 },
+      claim: { claimedBy: null, heartbeatAt: null, releasedBy: WORKER },
     });
   });
 

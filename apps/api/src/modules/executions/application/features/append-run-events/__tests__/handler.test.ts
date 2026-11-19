@@ -1,6 +1,6 @@
 import { RUN_EVENT_TEXT_MAX_BYTES } from '@agentic-studio/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import type { Run } from '../../../../domain/entities/run.js';
 import { LOG_TRUNCATED_NOTICE } from '../../../../domain/value-objects/log-cap.js';
 import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
@@ -31,7 +31,7 @@ describe('AppendRunEventsHandler', () => {
   let notified: string[];
   let secrets: string[];
   let handler: AppendRunEventsHandler;
-  let run: RunSnapshot;
+  let run: Run;
 
   const append = async (events: InputEvent[], workerId = WORKER) =>
     (await handler.execute({ runId: run.id, workerId, events })).stored;
@@ -61,7 +61,7 @@ describe('AppendRunEventsHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!.snapshot();
+    run = (await runs.claimNext(WORKER, T0))!;
     build();
   });
 

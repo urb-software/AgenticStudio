@@ -10,10 +10,11 @@ const diffs: Record<'run' | 'last', NewRunDiff> = {
 const state = { resultTree: ID, resultCommit: ID, previousTree: ID, previousCommit: ID };
 
 describe('RunDiff', () => {
-  it('is reported for a Run with its diffs and state, and gives them back as a snapshot', () => {
+  it('is reported for a Run with its diffs and state, and is what a restore of the same data gives', () => {
     const report = RunDiff.report({ runId: 'r-1', diffs, state });
 
-    expect(report.snapshot()).toEqual({ runId: 'r-1', diffs, state });
+    expect(report).toEqual(RunDiff.restore({ runId: 'r-1', diffs, state }));
+    expect(report).toMatchObject({ runId: 'r-1', diffs, state });
   });
 
   it('keeps the stored state when the report has none (the diffs were unavailable)', () => {

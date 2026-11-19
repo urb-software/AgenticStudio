@@ -185,16 +185,13 @@ describe('selecting comments', () => {
     expect(set.selection(['review-1', 'review-1'])).toBeNull();
   });
 
-  it('is a plain snapshot, a copy of its values', () => {
-    const snapshot = set.snapshot();
-
-    expect(snapshot).toEqual({
+  it('keeps the values it was restored with', () => {
+    expect(set).toMatchObject({
       scope: 'unresolved',
       truncated: false,
       loadedAt: new Date('2026-11-16T12:00:00.000Z'),
-      comments: set.comments,
     });
-    expect(snapshot.comments[0]).not.toBe(set.comments[0]);
+    expect(set.comments.map((c) => c.id)).toEqual(['review-1', 'inline-2', 'conversation-3']);
   });
 
   it('lists the distinct authors in order of appearance', () => {

@@ -127,23 +127,25 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     const run = await finished();
 
     await bringUp(run.id, 'Keep our version of the config.');
-    const queued = (await runs.findById(run.id))!.snapshot();
+    const queued = (await runs.findById(run.id))!;
 
     expect(queued).toMatchObject({
-      state: 'queued',
-      followUpQueued: true,
-      followUpCount: 1,
-      stepsBeforePart: 1,
-      sessionRef: 'session-1',
+      lifecycle: { state: 'queued' },
+      progress: { followUpQueued: true, followUpCount: 1, stepsBeforePart: 1 },
+      claim: { sessionRef: 'session-1' },
     });
-    expect(queued.messages.at(-1)).toEqual({
+    expect(queued.conversation.messages.at(-1)).toEqual({
       kind: 'follow_up',
       text: 'Keep our version of the config.',
       at: T1,
       source: 'bring_up_to_date',
     });
-    expect(RunConversation.of(queued.messages).inBringUpToDate).toBe(true);
-    expect(RunConversation.of(queued.messages).resumeMessage(queued.sessionRef !== null)).toEqual({
+    expect(RunConversation.of(queued.conversation.messages).inBringUpToDate).toBe(true);
+    expect(
+      RunConversation.of(queued.conversation.messages).resumeMessage(
+        queued.claim.sessionRef !== null,
+      ),
+    ).toEqual({
       text: 'Keep our version of the config.',
       reason: 'bring_up_to_date',
     });
@@ -153,10 +155,14 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     const run = await finished();
 
     await bringUp(run.id, undefined);
-    const queued = (await runs.findById(run.id))!.snapshot();
+    const queued = (await runs.findById(run.id))!;
 
-    expect(queued.messages.at(-1)).toMatchObject({ kind: 'follow_up', text: '' });
-    expect(RunConversation.of(queued.messages).resumeMessage(queued.sessionRef !== null)).toEqual({
+    expect(queued.conversation.messages.at(-1)).toMatchObject({ kind: 'follow_up', text: '' });
+    expect(
+      RunConversation.of(queued.conversation.messages).resumeMessage(
+        queued.claim.sessionRef !== null,
+      ),
+    ).toEqual({
       text: RunConversation.BRING_UP_TO_DATE_DEFAULT_TEXT,
       reason: 'bring_up_to_date',
     });
@@ -170,9 +176,9 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
     const run = await finished('failed');
 
     await bringUp(run.id, undefined);
-    const queued = (await runs.findById(run.id))!.snapshot();
+    const queued = (await runs.findById(run.id))!;
 
-    expect(queued.messages.at(-2)).toMatchObject({
+    expect(queued.conversation.messages.at(-2)).toMatchObject({
       kind: 'part_end',
       state: 'failed',
       failureCode: 'agent_failed',
@@ -358,14 +364,11 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
 
         const restored = await runs.finishBringUpToDate(run.id, WORKER, 'Already up to date.', T2);
 
-        expect(restored!.snapshot()).toMatchObject({
-          state: end,
-          claimedBy: null,
-          releasedBy: WORKER,
-          finishedAt: T2,
-          delivery,
-          pullRequest: end === 'succeeded' ? PULL_REQUEST : null,
-          stepCount: 1,
+        expect(restored!).toMatchObject({
+          lifecycle: { state: end, finishedAt: T2 },
+          claim: { claimedBy: null, releasedBy: WORKER },
+          delivery: { state: delivery, pullRequest: end === 'succeeded' ? PULL_REQUEST : null },
+          progress: { stepCount: 1 },
         });
         if (end === 'failed') {
           expect(restored?.lifecycle.failure).toEqual({
@@ -385,7 +388,7 @@ describe('bringing the branch up to date (the Follow-up handler with its source)
           detail: 'Already up to date.',
         });
         await bringUp(run.id, undefined);
-        expect((await runs.findById(run.id))?.snapshot().followUpCount).toBe(2);
+        expect((await runs.findById(run.id))?.progress.followUpCount).toBe(2);
       },
     );
 

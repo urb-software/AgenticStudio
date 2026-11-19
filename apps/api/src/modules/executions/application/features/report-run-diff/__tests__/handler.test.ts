@@ -1,6 +1,6 @@
 import type { RunDiff } from '@agentic-studio/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import type { Run } from '../../../../domain/entities/run.js';
 import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunNotHeldError } from '../../../../domain/repositories/run-repository.js';
@@ -41,7 +41,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
   let report: ReportRunDiffHandler;
   let readDiff: GetRunDiffHandler;
   let readFile: GetRunDiffFileHandler;
-  let run: RunSnapshot;
+  let run: Run;
 
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
@@ -57,7 +57,7 @@ describe('ReportRunDiffHandler and GetRunDiffHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!.snapshot();
+    run = (await runs.claimNext(WORKER, T0))!;
     report = new ReportRunDiffHandler(
       runs,
       executions.transactions,
