@@ -141,7 +141,7 @@ export class RepositoryUrl {
         'Remove the password from the URL. Studio connects over SSH with a Deploy key.',
       );
     }
-    if (url.username !== '' && !SSH_USER.test(decodeURIComponent(url.username))) {
+    if (url.username !== '' && !SSH_USER.test(RepositoryUrl.decodeUser(url.username))) {
       RepositoryUrl.invalid(`Enter a valid SSH user name, ${SSH_EXAMPLE}.`);
     }
     if (url.search !== '' || url.hash !== '' || input.includes('?') || input.includes('#')) {
@@ -159,6 +159,14 @@ export class RepositoryUrl {
       host: url.hostname.toLowerCase(),
       port: url.port === '' ? 22 : Number(url.port),
     });
+  }
+
+  private static decodeUser(username: string): string {
+    try {
+      return decodeURIComponent(username);
+    } catch {
+      return RepositoryUrl.invalid(`Enter a valid SSH user name, ${SSH_EXAMPLE}.`);
+    }
   }
 
   private static invalid(message: string): never {

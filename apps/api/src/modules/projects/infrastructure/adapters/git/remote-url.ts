@@ -1,4 +1,8 @@
 import { HostLiteral } from '../../../domain/value-objects/host-literal.js';
+import {
+  InvalidRepositoryUrlError,
+  RepositoryUrl,
+} from '../../../domain/value-objects/repository-url.js';
 import { GitRequestRejectedError } from '../../../application/ports/repository-git.js';
 
 /** Transports a remote URL may use. Production allows exactly `ssh` and `https`. */
@@ -9,98 +13,66 @@ export interface RemoteUrl {
   url: string;
 }
 
-const HOSTNAME =
-  /^(?=.{1,253}$)[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
-const IPV6_LITERAL = /^\[[\da-f:.]+\]$/i;
-const SSH_USER = /^[a-z_][a-z\d._-]{0,31}$/i;
 const SCP_LIKE = /^([^@/:\s]+)@([^@/:\s]+):(.+)$/;
-// eslint-disable-next-line no-control-regex -- the point is to reject control characters
-const UNSAFE_CHARACTERS = /[\s\u0000-\u001f\u007f\\]/;
 
 function reject(reason: string): never {
   throw new GitRequestRejectedError(`Remote URL rejected: ${reason}.`);
 }
 
-function checkHost(host: string): void {
-  if (!HOSTNAME.test(host) && !IPV6_LITERAL.test(host)) {
-    reject('the host is not a valid host name');
-  }
-  // A numeric host the resolver would read some other way than intended.
-  if (HostLiteral.of(host).kind === 'invalid') reject('the host is not a valid host name');
-}
+const SSH_IPV6_HOST = /^(ssh:\/\/(?:[^/@[\]]+@)?)\[([\da-f:.]+)\](?=[:/]|$)/i;
 
-function checkPath(path: string): void {
-  if (path.length === 0 || path === '/') {
-    reject('the repository path is missing');
+/**
+ * The domain refuses an IPv6 literal in an ssh:// URL, which the address policy covers when
+ * the host is resolved. The literal is checked here and replaced by a placeholder host, so the
+ * rest of the URL still goes through the domain; Git must read the same host back.
+ */
+function withoutIpv6Literal(input: string): string {
+  const match = SSH_IPV6_HOST.exec(input);
+  if (!match) return input;
+  const literal = `[${match[2]}]`;
+  if (HostLiteral.of(literal).kind === 'invalid') reject('the host is not a valid host name');
+  let hostname: string;
+  try {
+    hostname = new URL(input).hostname;
+  } catch {
+    return reject('it is not a valid URL');
   }
-  if (path.startsWith('-') || path.includes('/-')) {
-    reject('a path segment starts with "-"');
-  }
+  if (hostname !== new URL(`ssh://${literal}/`).hostname)
+    reject('the host is not a valid host name');
+  return input.replace(SSH_IPV6_HOST, '$1ipv6-literal.invalid');
 }
 
 /**
- * Validates a remote URL before Git starts (security.md §4): only the allowed transports,
- * no embedded credentials, no local paths, no option-like or control characters. The
- * scp-like SSH form (`git@host:owner/repo.git`) is accepted as `ssh`.
+ * Validates a remote URL before Git starts (security.md §4): the shape is the domain's
+ * {@link RepositoryUrl} rule; this adds the allowed transports and the exact input Git gets.
  */
 export function parseRemoteUrl(
   input: string,
   allowedTransports: readonly GitTransport[],
 ): RemoteUrl {
-  if (input.length === 0 || input.length > 2048) {
-    reject('it is empty or too long');
-  }
-  if (UNSAFE_CHARACTERS.test(input)) {
-    reject('it contains whitespace, control characters or a backslash');
-  }
-  if (input.startsWith('-')) {
-    reject('it starts with "-"');
-  }
+  // The domain trims; Git must receive exactly what was stored.
+  if (input !== input.trim()) reject('it has leading or trailing whitespace');
 
-  const scp = /^[a-z][a-z\d+.-]*:\/\//i.test(input) ? null : SCP_LIKE.exec(input);
-  if (scp) {
-    const [, user = '', host = '', path = ''] = scp;
-    if (!allowedTransports.includes('ssh')) reject('the ssh transport is not allowed');
-    if (!SSH_USER.test(user)) reject('the SSH user name is not valid');
-    if (host.startsWith('[')) reject('the host is not a valid host name');
-    checkHost(host);
-    checkPath(path);
-    return { transport: 'ssh', url: input };
-  }
-
-  let url: URL;
+  let parsed: RepositoryUrl;
   try {
-    url = new URL(input);
-  } catch {
-    return reject('it is neither an ssh, https nor allowed URL');
+    parsed = RepositoryUrl.parse(withoutIpv6Literal(input), {
+      allowFileRemotes: allowedTransports.includes('file'),
+    });
+  } catch (error) {
+    if (error instanceof InvalidRepositoryUrlError) reject(error.message.replace(/\.$/, ''));
+    throw error;
   }
+
+  if (parsed.ssh) {
+    if (!allowedTransports.includes('ssh')) reject('the ssh transport is not allowed');
+    const isUrl = /^[a-z][a-z\d+.-]*:\/\//i.test(input);
+    return { transport: 'ssh', url: isUrl ? new URL(input).href : input };
+  }
+  const url = new URL(input);
   const transport = url.protocol.slice(0, -1);
   if (!isTransport(transport) || !allowedTransports.includes(transport)) {
     return reject(`the ${transport} transport is not allowed`);
   }
-  if (url.search !== '' || url.hash !== '' || input.includes('?') || input.includes('#')) {
-    reject('it has a query or fragment');
-  }
-
-  if (transport === 'file') {
-    if (url.host !== '' || url.username !== '' || url.password !== '') {
-      reject('a file URL must not name a host');
-    }
-    checkPath(url.pathname);
-    return { transport, url: url.href };
-  }
-
-  if (url.password !== '') {
-    reject('it embeds credentials');
-  }
-  if (transport === 'https' && url.username !== '') {
-    reject('it embeds credentials');
-  }
-  if (transport === 'ssh' && url.username !== '' && !SSH_USER.test(url.username)) {
-    reject('the SSH user name is not valid');
-  }
-  checkHost(url.hostname);
-  checkPath(url.pathname);
   return { transport, url: url.href };
 }
 

@@ -91,7 +91,7 @@ export const zRepositoryOutput = z.object({
 
 export const zConnectRepositoryRequest = z.object({
     url: z.string().min(1).max(2048),
-    integrationBranch: z.string().min(1).max(255).regex(/^(?!@$)(?![-\/.])(?!.*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/)
+    integrationBranch: z.string().min(1).max(255).regex(/^(?!@$)(?![-\/.])(?![\s\S]*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/)
 });
 
 export const zVerifyRepositoryRequest = z.object({
