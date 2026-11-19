@@ -1,5 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EnvironmentFile } from '../../../../domain/entities/environment-file.js';
+import { EnvironmentFileContent } from '../../../../domain/value-objects/environment-file-content.js';
+import { EnvironmentFilePath } from '../../../../domain/value-objects/environment-file-path.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
 import { InMemoryEnvironmentFileContents } from '../../../ports/__tests__/in-memory-environment-file-contents.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../handler.js';
@@ -24,7 +27,15 @@ describe('SweepOrphanedEnvironmentFilesHandler', () => {
   it('deletes only unreferenced contents older than the grace period', async () => {
     const referenced = await contents.store('A=test-only-1');
     const orphan = await contents.store('B=test-only-2');
-    await files.save(PROJECT, { path: '.env', sizeBytes: 13, secretRef: referenced });
+    await files.save(
+      EnvironmentFile.create({
+        projectId: PROJECT,
+        path: EnvironmentFilePath.of('.env'),
+        content: EnvironmentFileContent.of('A=test-only-1'),
+        secretRef: referenced,
+        now: new Date(),
+      }),
+    );
     contents.ageAll();
     const fresh = await contents.store('C=test-only-3');
 

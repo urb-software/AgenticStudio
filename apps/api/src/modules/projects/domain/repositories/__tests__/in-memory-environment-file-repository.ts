@@ -11,9 +11,10 @@ export class InMemoryEnvironmentFileRepository implements EnvironmentFileReposit
     return Promise.resolve(file ? EnvironmentFile.restore({ ...file }) : null);
   }
 
-  save(projectId: string, record: { path: string; sizeBytes: number; secretRef: string }) {
+  save(file: EnvironmentFile) {
+    const { projectId, path, sizeBytes, secretRef } = file;
     const replacedSecretRef = this.files.get(projectId)?.secretRef ?? null;
-    const stored = { ...record, projectId, updatedAt: this.now };
+    const stored = { projectId, path, sizeBytes, secretRef, updatedAt: this.now };
     this.files.set(projectId, stored);
     return Promise.resolve({ saved: EnvironmentFile.restore(stored), replacedSecretRef });
   }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type RestoreData } from '../../../../../__tests__/restore-data.js';
+import { EnvironmentFileContent } from '../../value-objects/environment-file-content.js';
+import { EnvironmentFilePath } from '../../value-objects/environment-file-path.js';
 import { EnvironmentFile } from '../environment-file.js';
 
 const STORED: RestoreData<typeof EnvironmentFile> = {
@@ -15,5 +17,18 @@ describe('EnvironmentFile', () => {
     const file = EnvironmentFile.restore(STORED);
 
     expect(file).toMatchObject(STORED);
+  });
+
+  it('is created from valid path and content, with the size of the content and its reference', () => {
+    const file = EnvironmentFile.create({
+      projectId: STORED.projectId,
+      path: EnvironmentFilePath.of('.env'),
+      content: EnvironmentFileContent.of('KEY=value'),
+      secretRef: STORED.secretRef,
+      now: STORED.updatedAt,
+    });
+
+    expect(file).toMatchObject({ ...STORED, sizeBytes: 9 });
+    expect(Object.values(file)).not.toContain('KEY=value');
   });
 });

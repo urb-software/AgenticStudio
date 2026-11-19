@@ -28,8 +28,7 @@ export class PrismaEnvironmentFileRepository implements EnvironmentFileRepositor
   }
 
   async save(
-    projectId: string,
-    record: { path: string; sizeBytes: number; secretRef: string },
+    file: EnvironmentFile,
   ): Promise<{ saved: EnvironmentFile; replacedSecretRef: string | null }> {
     // The old row is locked before it is read and replaced, so two concurrent replacements each
     // return the reference the other one replaced, never the same one twice. (Two concurrent
@@ -37,11 +36,11 @@ export class PrismaEnvironmentFileRepository implements EnvironmentFileRepositor
     return this.db.$transaction(async (tx) => {
       const old = await tx.$queryRaw<{ secret_id: string }[]>`
         SELECT secret_id::text AS secret_id FROM environment_files
-        WHERE project_id = ${projectId}::uuid FOR UPDATE`;
+        WHERE project_id = ${file.projectId}::uuid FOR UPDATE`;
       const [row] = await tx.$queryRaw<{ path: string; size_bytes: number; updated_at: Date }[]>`
         INSERT INTO environment_files (project_id, path, size_bytes, secret_id, updated_at)
-        VALUES (${projectId}::uuid, ${record.path}, ${record.sizeBytes},
-                ${record.secretRef}::uuid, now())
+        VALUES (${file.projectId}::uuid, ${file.path}, ${file.sizeBytes},
+                ${file.secretRef}::uuid, now())
         ON CONFLICT (project_id) DO UPDATE SET
           path = EXCLUDED.path,
           size_bytes = EXCLUDED.size_bytes,
@@ -50,11 +49,11 @@ export class PrismaEnvironmentFileRepository implements EnvironmentFileRepositor
         RETURNING path, size_bytes, updated_at`;
       return {
         saved: EnvironmentFile.restore({
-          projectId,
+          projectId: file.projectId,
           path: row!.path,
           sizeBytes: row!.size_bytes,
           updatedAt: row!.updated_at,
-          secretRef: record.secretRef,
+          secretRef: file.secretRef,
         }),
         replacedSecretRef: old[0]?.secret_id ?? null,
       };
