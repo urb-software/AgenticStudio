@@ -62,14 +62,16 @@ describe('SweepLostWorkersHandler', () => {
 
     expect(await handler.execute()).toEqual({ failed: 1 });
 
-    expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: {
-        code: 'worker_lost',
-        detail: 'The agent worker sent no heartbeat for 60 seconds.',
+    expect((await runs.findById(run.id))!).toMatchObject({
+      lifecycle: {
+        state: 'failed',
+        failure: {
+          code: 'worker_lost',
+          detail: 'The agent worker sent no heartbeat for 60 seconds.',
+        },
+        finishedAt: later(61),
       },
-      claimedBy: null,
-      finishedAt: later(61),
+      claim: { claimedBy: null },
     });
   });
 
@@ -176,15 +178,16 @@ describe('SweepLostWorkersHandler', () => {
 
       expect(await handler.execute()).toEqual({ failed: 1 });
 
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        state: 'failed',
-        failure: {
-          code: 'delivery_failed',
-          detail: expect.stringMatching(/^Working copy no longer exists \(agent worker gone\)/),
+      expect((await runs.findById(run.id))!).toMatchObject({
+        lifecycle: {
+          state: 'failed',
+          failure: {
+            code: 'delivery_failed',
+            detail: expect.stringMatching(/^Working copy no longer exists \(agent worker gone\)/),
+          },
         },
-        delivery: 'failed',
-        deliveryRequested: false,
-        claimedBy: null,
+        delivery: { state: 'failed', requested: false },
+        claim: { claimedBy: null },
       });
       expect(released).toEqual([run.id]);
     });
@@ -260,15 +263,17 @@ describe('SweepLostWorkersHandler', () => {
 
       expect(await handler.execute()).toEqual({ failed: 1 });
 
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        state: 'failed',
-        failure: {
-          code: 'preparation_failed',
-          detail: expect.stringMatching(
-            /^Working copy no longer exists \(agent worker gone\) — run again/,
-          ),
+      expect((await runs.findById(run.id))!).toMatchObject({
+        lifecycle: {
+          state: 'failed',
+          failure: {
+            code: 'preparation_failed',
+            detail: expect.stringMatching(
+              /^Working copy no longer exists \(agent worker gone\) — run again/,
+            ),
+          },
+          finishedAt: later(71),
         },
-        finishedAt: later(71),
       });
     });
 

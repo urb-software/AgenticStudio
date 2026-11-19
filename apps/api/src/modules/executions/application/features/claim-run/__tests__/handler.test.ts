@@ -77,9 +77,9 @@ describe('ClaimRunHandler', () => {
     const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed).toMatchObject({ id: first.id, state: 'preparing' });
-    expect((await runs.findById(first.id))!.snapshot()).toMatchObject({
-      claimedBy: WORKER,
-      startedAt: T0,
+    expect((await runs.findById(first.id))!).toMatchObject({
+      claim: { claimedBy: WORKER },
+      lifecycle: { startedAt: T0 },
     });
   });
 
@@ -112,10 +112,9 @@ describe('ClaimRunHandler', () => {
     const claimed = await handler.execute({ workerId: WORKER });
 
     expect(claimed?.id).toBe(next.id);
-    expect((await runs.findById(orphan.id))!.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: { code: 'preparation_failed' },
-      claimedBy: null,
+    expect((await runs.findById(orphan.id))!).toMatchObject({
+      lifecycle: { state: 'failed', failure: { code: 'preparation_failed' } },
+      claim: { claimedBy: null },
     });
   });
 
@@ -155,9 +154,9 @@ describe('ClaimRunHandler', () => {
         id: run.id,
         state: 'failed',
       });
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        deliveryRequested: true,
-        claimedBy: WORKER,
+      expect((await runs.findById(run.id))!).toMatchObject({
+        delivery: { requested: true },
+        claim: { claimedBy: WORKER },
       });
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
     });
@@ -189,8 +188,8 @@ describe('ClaimRunHandler', () => {
         state: 'failed',
         environmentFile: null,
       });
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        environmentFilePath: '.env',
+      expect((await runs.findById(run.id))!).toMatchObject({
+        claim: { environmentFilePath: '.env' },
       });
       expect(secrets.values.size).toBe(0);
     });
@@ -278,14 +277,16 @@ describe('ClaimRunHandler', () => {
       await runs.requestDeliveryRetry(run.id);
 
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        state: 'failed',
-        failure: {
-          code: 'delivery_failed',
-          detail: expect.stringContaining('cannot be delivered'),
+      expect((await runs.findById(run.id))!).toMatchObject({
+        lifecycle: {
+          state: 'failed',
+          failure: {
+            code: 'delivery_failed',
+            detail: expect.stringContaining('cannot be delivered'),
+          },
         },
-        deliveryRequested: false,
-        claimedBy: null,
+        delivery: { requested: false },
+        claim: { claimedBy: null },
       });
       expect(released).toEqual([run.id]);
     });
@@ -312,15 +313,16 @@ describe('ClaimRunHandler', () => {
 
       await handler.execute({ workerId: OTHER_WORKER });
 
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        state: 'failed',
-        failure: {
-          code: 'delivery_failed',
-          detail: expect.stringContaining('retried the delivery'),
+      expect((await runs.findById(run.id))!).toMatchObject({
+        lifecycle: {
+          state: 'failed',
+          failure: {
+            code: 'delivery_failed',
+            detail: expect.stringContaining('retried the delivery'),
+          },
         },
-        delivery: 'failed',
-        deliveryRequested: false,
-        claimedBy: null,
+        delivery: { state: 'failed', requested: false },
+        claim: { claimedBy: null },
       });
     });
   });
@@ -396,9 +398,9 @@ describe('ClaimRunHandler', () => {
         completedSteps: 1,
         nextSeq: 4,
       });
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        claimedBy: WORKER,
-        startedAt: T0,
+      expect((await runs.findById(run.id))!).toMatchObject({
+        claim: { claimedBy: WORKER },
+        lifecycle: { startedAt: T0 },
       });
     });
 
@@ -426,10 +428,12 @@ describe('ClaimRunHandler', () => {
       const next = await queue(B);
 
       expect((await handler.execute({ workerId: WORKER }))?.id).toBe(next.id);
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        state: 'failed',
-        failure: { code: 'preparation_failed', detail: expect.stringContaining('run again') },
-        claimedBy: null,
+      expect((await runs.findById(run.id))!).toMatchObject({
+        lifecycle: {
+          state: 'failed',
+          failure: { code: 'preparation_failed', detail: expect.stringContaining('run again') },
+        },
+        claim: { claimedBy: null },
       });
     });
 
@@ -472,8 +476,8 @@ describe('ClaimRunHandler', () => {
         id: queued.id,
         environmentFile: null,
       });
-      expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
-        environmentFilePath: '.env',
+      expect((await runs.findById(queued.id))!).toMatchObject({
+        claim: { environmentFilePath: '.env' },
       });
       expect(await runs.findEnvironmentFileSecret(queued.id)).toBe(snapshot);
       expect(secrets.values.size).toBe(1);
@@ -525,9 +529,8 @@ describe('ClaimRunHandler', () => {
     now = new Date(T0.getTime() + 15 * 24 * 60 * 60 * 1000);
 
     expect((await handler.execute({ workerId: WORKER }))?.id).toBe(next.id);
-    expect((await runs.findById(waiting.id))!.snapshot()).toMatchObject({
-      state: 'cancelled',
-      cancellation: { by: 'system' },
+    expect((await runs.findById(waiting.id))!).toMatchObject({
+      lifecycle: { state: 'cancelled', cancellation: { by: 'system' } },
     });
   });
 
@@ -553,10 +556,9 @@ describe('ClaimRunHandler', () => {
     await runs.heartbeat(stuck.id, WORKER, now);
     await handler.execute({ workerId: OTHER_WORKER });
 
-    expect((await runs.findById(stuck.id))!.snapshot()).toMatchObject({
-      state: 'timed_out',
-      claimedBy: null,
-      finishedAt: now,
+    expect((await runs.findById(stuck.id))!).toMatchObject({
+      lifecycle: { state: 'timed_out', finishedAt: now },
+      claim: { claimedBy: null },
     });
   });
 
@@ -682,9 +684,8 @@ describe('ClaimRunHandler with Environment files', () => {
       environmentFile: current,
       studioPaths: ['.env', 'config/.env'],
     });
-    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
-      environmentFileSupplied: true,
-      environmentFilePath: 'config/.env',
+    expect((await runs.findById(queued.id))!).toMatchObject({
+      claim: { environmentFileSupplied: true, environmentFilePath: 'config/.env' },
     });
     expect(secrets.values.has(first!)).toBe(false);
     const snapshot = await runs.findEnvironmentFileSecret(queued.id);
@@ -705,8 +706,8 @@ describe('ClaimRunHandler with Environment files', () => {
       environmentFile: null,
       studioPaths: ['.env'],
     });
-    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
-      environmentFileSupplied: false,
+    expect((await runs.findById(queued.id))!).toMatchObject({
+      claim: { environmentFileSupplied: false },
     });
     expect(await runs.findEnvironmentFileSecret(queued.id)).toBeNull();
     expect(secrets.values.size).toBe(0);
@@ -720,12 +721,14 @@ describe('ClaimRunHandler with Environment files', () => {
     await runs.markWorkingCopiesRemoved(WORKER, [queued.id], T0);
 
     expect(await handler.execute({ workerId: WORKER })).toBeNull();
-    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: {
-        code: 'preparation_failed',
-        detail:
-          "Working copy no longer exists — run again: the agent worker's retention removed it.",
+    expect((await runs.findById(queued.id))!).toMatchObject({
+      lifecycle: {
+        state: 'failed',
+        failure: {
+          code: 'preparation_failed',
+          detail:
+            "Working copy no longer exists — run again: the agent worker's retention removed it.",
+        },
       },
     });
   });
@@ -770,10 +773,9 @@ describe('ClaimRunHandler with Environment files', () => {
     const queued = await queue();
 
     expect(await handler.execute({ workerId: WORKER })).toBeNull();
-    expect((await runs.findById(queued.id))!.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: { code: 'preparation_failed' },
-      environmentFileSupplied: false,
+    expect((await runs.findById(queued.id))!).toMatchObject({
+      lifecycle: { state: 'failed', failure: { code: 'preparation_failed' } },
+      claim: { environmentFileSupplied: false },
     });
   });
 

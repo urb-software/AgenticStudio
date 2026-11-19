@@ -5,8 +5,9 @@ describe('RunStep', () => {
   it('is created for a number from 1, not yet stored', () => {
     const step = RunStep.create({ index: 1, kind: 'start', result: { outcome: 'done' } });
 
-    expect(step.snapshot()).toEqual({ index: 1, kind: 'start', result: { outcome: 'done' } });
-    expect(step.snapshot()).not.toHaveProperty('reportedAt');
+    expect(step).toEqual(RunStep.restore({ index: 1, kind: 'start', result: { outcome: 'done' } }));
+    expect(step).toMatchObject({ index: 1, kind: 'start', result: { outcome: 'done' } });
+    expect(step.reportedAt).toBeUndefined();
   });
 
   it('refuses a number that is not a positive integer', () => {
@@ -18,9 +19,7 @@ describe('RunStep', () => {
   it('is restored with the time the store recorded it', () => {
     const reportedAt = new Date('2026-11-17T12:00:00.000Z');
 
-    expect(
-      RunStep.restore({ index: 2, kind: 'resume', result: {}, reportedAt }).snapshot(),
-    ).toEqual({
+    expect(RunStep.restore({ index: 2, kind: 'resume', result: {}, reportedAt })).toMatchObject({
       index: 2,
       kind: 'resume',
       result: {},

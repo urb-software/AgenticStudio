@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import type { Run } from '../../../../domain/entities/run.js';
 import { HandOutRule } from '../../../../domain/value-objects/hand-out-rule.js';
 import { RunConversation } from '../../../../domain/value-objects/run-conversation.js';
 import { type RunFailure } from '../../../../domain/value-objects/run-failure.js';
@@ -38,7 +38,7 @@ const NEW_RUN = {
 describe('ResumeRunHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: ResumeRunHandler;
-  let run: RunSnapshot;
+  let run: Run;
 
   async function stop(failure: RunFailure, sessionRef: string | null = 'session-1') {
     await runs.transitionClaimed({
@@ -67,7 +67,7 @@ describe('ResumeRunHandler', () => {
     runs = new InMemoryRunRepository();
     handler = new ResumeRunHandler(runs, { now: () => T1 });
     await runs.start(NEW_RUN);
-    run = (await runs.claimNext(WORKER, T0))!.snapshot();
+    run = (await runs.claimNext(WORKER, T0))!;
   });
 
   it('queues the Run to resume its session with "Continue where you stopped."', async () => {
@@ -75,15 +75,13 @@ describe('ResumeRunHandler', () => {
 
     expect(await handler.execute({ runId: run.id })).toBeUndefined();
 
-    const resumed = (await runs.findById(run.id))!.snapshot();
+    const resumed = (await runs.findById(run.id))!;
     expect(resumed).toMatchObject({
-      state: 'queued',
-      failure: null,
-      finishedAt: null,
-      sessionRef: 'session-1',
       workingCopy: WORKING_COPY,
+      lifecycle: { state: 'queued', failure: null, finishedAt: null },
+      claim: { sessionRef: 'session-1' },
     });
-    expect(resumed.messages).toEqual([
+    expect(resumed.conversation.messages).toEqual([
       { kind: 'answer', text: 'Continue where you stopped.', at: T1 },
     ]);
     expect(RunConversation.USAGE_LIMIT_RESUME_TEXT).toBe('Continue where you stopped.');
@@ -94,9 +92,9 @@ describe('ResumeRunHandler', () => {
     await handler.execute({ runId: run.id });
 
     expect(await runs.claimNext(OTHER_WORKER, T1)).toBeNull();
-    expect((await runs.claimNext(WORKER, T1))?.snapshot()).toMatchObject({
+    expect(await runs.claimNext(WORKER, T1)).toMatchObject({
       id: run.id,
-      state: 'preparing',
+      lifecycle: { state: 'preparing' },
     });
   });
 

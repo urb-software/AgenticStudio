@@ -3,7 +3,7 @@ import {
   DeliveryNotRetryableError,
   RunNotFoundError,
 } from '../../../../domain/errors/run-errors.js';
-import { type RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import { type Run } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RetryDeliveryHandler } from '../handler.js';
 
@@ -15,7 +15,7 @@ const T0 = new Date('2026-11-15T12:00:00.000Z');
 describe('RetryDeliveryHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: RetryDeliveryHandler;
-  let run: RunSnapshot;
+  let run: Run;
 
   async function fail(code: 'delivery_failed' | 'agent_failed') {
     await runs.claimNext(WORKER, T0);
@@ -38,17 +38,15 @@ describe('RetryDeliveryHandler', () => {
   beforeEach(async () => {
     runs = new InMemoryRunRepository();
     handler = new RetryDeliveryHandler(runs);
-    run = (
-      await runs.start({
-        projectId: PROJECT,
-        provider: 'codex',
-        task: 'x',
-        startCommit: 'a',
-        remoteUrl: 'https://github.com/acme/shop.git',
-        limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
-        integrationBranch: 'dev',
-      })
-    ).snapshot();
+    run = await runs.start({
+      projectId: PROJECT,
+      provider: 'codex',
+      task: 'x',
+      startCommit: 'a',
+      remoteUrl: 'https://github.com/acme/shop.git',
+      limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
+      integrationBranch: 'dev',
+    });
   });
 
   it('requests a retry of a failed delivery; the Run stays failed until a worker delivers', async () => {
@@ -56,10 +54,9 @@ describe('RetryDeliveryHandler', () => {
 
     expect(await handler.execute({ runId: run.id })).toBeUndefined();
 
-    expect((await runs.findById(run.id))?.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: { code: 'delivery_failed' },
-      deliveryRequested: true,
+    expect(await runs.findById(run.id)).toMatchObject({
+      lifecycle: { state: 'failed', failure: { code: 'delivery_failed' } },
+      delivery: { requested: true },
     });
   });
 
@@ -69,7 +66,7 @@ describe('RetryDeliveryHandler', () => {
 
     await handler.execute({ runId: run.id });
 
-    expect((await runs.findById(run.id))?.snapshot().deliveryRequested).toBe(true);
+    expect((await runs.findById(run.id))?.delivery.requested).toBe(true);
   });
 
   it('refuses any Run whose delivery did not fail', async () => {

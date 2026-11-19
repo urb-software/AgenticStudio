@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RunSnapshot } from '../../../../domain/entities/run-snapshot.js';
+import type { Run } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
   RunNotHeldError,
@@ -26,7 +26,7 @@ const WORKING_COPY = {
 describe('ReportRunStepHandler', () => {
   let runs: InMemoryRunRepository;
   let handler: ReportRunStepHandler;
-  let run: RunSnapshot;
+  let run: Run;
 
   const report = async (workerId = WORKER, workingCopy = WORKING_COPY) =>
     (await handler.execute({ runId: run.id, workerId, kind: 'start', result: RESULT, workingCopy }))
@@ -48,7 +48,7 @@ describe('ReportRunStepHandler', () => {
       limits: { stepMinutes: 60, maxSteps: 2, waitingDays: 14, maxTotalSteps: 50 },
       integrationBranch: 'dev',
     });
-    run = (await runs.claimNext(WORKER, T0))!.snapshot();
+    run = (await runs.claimNext(WORKER, T0))!;
   });
 
   async function running() {
@@ -212,14 +212,16 @@ describe('ReportRunStepHandler', () => {
     await expect(report()).rejects.toBeInstanceOf(StepLimitReachedError);
 
     expect(runs.steps).toHaveLength(2);
-    expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-      state: 'failed',
-      failure: {
-        code: 'step_limit',
-        detail: 'The run reached its limit of 2 run steps; no further step was started.',
+    expect((await runs.findById(run.id))!).toMatchObject({
+      lifecycle: {
+        state: 'failed',
+        failure: {
+          code: 'step_limit',
+          detail: 'The run reached its limit of 2 run steps; no further step was started.',
+        },
+        finishedAt: T1,
       },
-      claimedBy: null,
-      finishedAt: T1,
+      claim: { claimedBy: null },
     });
   });
 
@@ -300,9 +302,9 @@ describe('ReportRunStepHandler', () => {
         workingCopy: WORKING_COPY,
       });
 
-      expect((await runs.findById(run.id))!.snapshot()).toMatchObject({
-        sessionRef: 'session-2',
-        messages: [],
+      expect((await runs.findById(run.id))!).toMatchObject({
+        claim: { sessionRef: 'session-2' },
+        conversation: { messages: [] },
       });
     });
   });

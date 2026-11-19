@@ -65,32 +65,29 @@ describe('StartRunHandler', () => {
 
   it('copies the limits in force onto the Run', async () => {
     const { id } = await start();
-    const run = (await runs.findById(id))!.snapshot();
+    const run = (await runs.findById(id))!;
 
-    expect(run.limits).toEqual(LIMITS);
-    expect(run).toMatchObject({ cancelRequestedAt: null, cancellation: null, waitingSince: null });
+    expect(run.progress.limits).toEqual(LIMITS);
+    expect(run).toMatchObject({
+      lifecycle: { cancelRequestedAt: null, cancellation: null },
+      progress: { waitingSince: null },
+    });
   });
 
   it('queues a Run that starts from the current integration branch commit', async () => {
     const result = await start();
-    const run = (await runs.findById(result.id))!.snapshot();
+    const run = (await runs.findById(result.id))!;
 
     expect(result).toEqual({ id: run.id });
     expect(run).toMatchObject({
       projectId: PROJECT,
       provider: 'codex',
       task: 'Fix the login bug',
-      state: 'queued',
       startCommit: HEAD,
       remoteUrl: REMOTE,
-      integrationBranch: 'dev',
-      delivery: null,
-      pullRequest: null,
-      deliveryRequested: false,
       workingCopy: null,
-      startedAt: null,
-      finishedAt: null,
-      failure: null,
+      lifecycle: { state: 'queued', startedAt: null, finishedAt: null, failure: null },
+      delivery: { integrationBranch: 'dev', state: null, pullRequest: null, requested: false },
     });
   });
 

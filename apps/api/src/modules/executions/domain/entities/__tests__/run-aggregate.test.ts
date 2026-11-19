@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Run } from '../run.js';
-import { type RunSnapshot } from '../run-snapshot.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { RunNotHeldError } from '../../errors/run-errors.js';
+import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { Task } from '../../value-objects/task.js';
 
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
@@ -22,10 +23,51 @@ const started = Run.start({
   limits: { stepMinutes: 60, maxSteps: 3, waitingDays: 14, maxTotalSteps: 10 },
   now: T0,
 });
-const restored = (patch: Partial<RunSnapshot>) => Run.restore({ ...started.snapshot(), ...patch });
-const running = (patch: Partial<RunSnapshot> = {}) =>
+const STARTED_DATA: RestoreData<typeof Run> = {
+  id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
+  projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
+  provider: 'codex',
+  task: 'Add a health check',
+  startCommit: 'a'.repeat(40),
+  remoteUrl: 'https://git.example.test/a.git',
+  createdAt: T0,
+  state: 'queued',
+  startedAt: null,
+  finishedAt: null,
+  failure: null,
+  cancellation: null,
+  cancelRequestedAt: null,
+  integrationBranch: 'dev',
+  delivery: null,
+  pullRequest: null,
+  deliveryRequested: false,
+  pushedCommit: null,
+  claimedBy: null,
+  lastClaimedBy: null,
+  releasedBy: null,
+  heartbeatAt: null,
+  sessionRef: null,
+  workingCopyRemovedAt: null,
+  environmentFileSupplied: false,
+  environmentFilePath: null,
+  stepCount: 0,
+  stepsBeforePart: 0,
+  followUpCount: 0,
+  followUpQueued: false,
+  stepStartedAt: null,
+  waitingSince: null,
+  lastActivityAt: T0,
+  limits: { stepMinutes: 60, maxSteps: 3, waitingDays: 14, maxTotalSteps: 10 },
+  workingCopy: null,
+  failingChecks: [],
+  pullRequestStatus: RunPullRequestStatus.none().toStored(),
+  messages: [],
+};
+const restored = (patch: Partial<RestoreData<typeof Run>>) =>
+  Run.restore({ ...STARTED_DATA, ...patch });
+const running = (patch: Partial<RestoreData<typeof Run>> = {}) =>
   restored({ state: 'running', claimedBy: WORKER, lastClaimedBy: WORKER, ...patch });
-const delivered = (patch: Partial<RunSnapshot> = {}) =>
+const delivered = (patch: Partial<RestoreData<typeof Run>> = {}) =>
   restored({
     state: 'succeeded',
     delivery: 'delivered',
@@ -35,22 +77,16 @@ const delivered = (patch: Partial<RunSnapshot> = {}) =>
     ...patch,
   });
 
-describe('Run.snapshot', () => {
-  it('is the Run flat, as storage holds it, and a copy', () => {
-    const run = running({ stepCount: 2 });
-
-    const snapshot = run.snapshot();
-
-    expect(snapshot).toMatchObject({ id: run.id, state: 'running', stepCount: 2, task: run.task });
-    expect(Run.restore(snapshot).snapshot()).toEqual(snapshot);
-    expect(snapshot).not.toBeInstanceOf(Run);
-    expect(Object.keys(snapshot)).not.toContain('pendingChanges');
+describe('Run.start', () => {
+  it('builds the Run that restore gives for the same data', () => {
+    expect(started).toEqual(Run.restore(STARTED_DATA));
+    expect(started.pendingChanges()).toEqual({ fields: {}, messages: [] });
   });
 });
 
 describe('restoring a Run from its flat record and giving it back', () => {
   const sessionRef = 'agent-session-1';
-  const full: RunSnapshot = {
+  const full: RestoreData<typeof Run> = {
     id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
     projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
     provider: 'claude_code',
@@ -127,8 +163,53 @@ describe('restoring a Run from its flat record and giving it back', () => {
   it('gives back every field, as it was stored', () => {
     const run = Run.restore(full);
 
-    expect(run.snapshot()).toEqual(full);
-    expect(Object.keys(run.snapshot()).sort()).toEqual(Object.keys(full).sort());
+    expect(run).toMatchObject({
+      id: full.id,
+      projectId: full.projectId,
+      provider: full.provider,
+      task: full.task,
+      startCommit: full.startCommit,
+      remoteUrl: full.remoteUrl,
+      createdAt: full.createdAt,
+      lifecycle: {
+        state: full.state,
+        startedAt: full.startedAt,
+        finishedAt: full.finishedAt,
+        failure: full.failure,
+        cancellation: full.cancellation,
+        cancelRequestedAt: full.cancelRequestedAt,
+      },
+      delivery: {
+        integrationBranch: full.integrationBranch,
+        state: full.delivery,
+        pullRequest: full.pullRequest,
+        requested: full.deliveryRequested,
+        pushedCommit: full.pushedCommit,
+      },
+      claim: {
+        claimedBy: full.claimedBy,
+        lastClaimedBy: full.lastClaimedBy,
+        releasedBy: full.releasedBy,
+        heartbeatAt: full.heartbeatAt,
+        sessionRef: full.sessionRef,
+        workingCopyRemovedAt: full.workingCopyRemovedAt,
+        environmentFileSupplied: full.environmentFileSupplied,
+        environmentFilePath: full.environmentFilePath,
+      },
+      progress: {
+        stepCount: full.stepCount,
+        stepsBeforePart: full.stepsBeforePart,
+        followUpCount: full.followUpCount,
+        followUpQueued: full.followUpQueued,
+        stepStartedAt: full.stepStartedAt,
+        waitingSince: full.waitingSince,
+        lastActivityAt: full.lastActivityAt,
+        limits: full.limits,
+      },
+      conversation: { messages: full.messages },
+      workingCopy: full.workingCopy,
+      failingChecks: full.failingChecks,
+    });
     expect(run.lifecycle.state).toBe('failed');
     expect(run.delivery.state).toBe('failed');
     expect(run.delivery.requested).toBe(true);
@@ -139,14 +220,14 @@ describe('restoring a Run from its flat record and giving it back', () => {
     expect(run.pendingChanges()).toEqual({ fields: {}, messages: [] });
   });
 
-  it('is a copy: changing the Run later does not change the snapshot taken before', () => {
+  it('shares no state with another Run restored from the same data', () => {
     const run = Run.restore(full);
-    const before = run.snapshot();
+    const other = Run.restore(full);
 
     run.recordHeartbeat(WORKER, T0);
 
-    expect(before.heartbeatAt).toEqual(T2);
-    expect(run.snapshot().heartbeatAt).toEqual(T0);
+    expect(other.claim.heartbeatAt).toEqual(T2);
+    expect(run.claim.heartbeatAt).toEqual(T0);
   });
 
   it('writes only the fields an operation changed', () => {

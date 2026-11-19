@@ -1,5 +1,5 @@
 import { RunLookup } from '../../entities/run-lookup.js';
-import { type RunLookupSnapshot } from '../../entities/run-lookup-snapshot.js';
+import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import type { LookupHandOutRule } from '../../value-objects/lookup-hand-out-rule.js';
 import type { ReviewCommentsLoad } from '../run-lookup-repository.js';
 import type { LookupKind } from '../../value-objects/lookup-kind.js';
@@ -9,8 +9,27 @@ import type { InMemoryRunRepository } from './in-memory-run-repository.js';
 
 /** Plain and mutable, so a test can set a lookup up in any state. */
 export type FakeLookup = {
-  -readonly [K in keyof Omit<RunLookupSnapshot, 'result'>]: RunLookupSnapshot[K];
+  -readonly [K in keyof Omit<RestoreData<typeof RunLookup>, 'result'>]: RestoreData<
+    typeof RunLookup
+  >[K];
 } & { result?: unknown };
+
+/** The lookup's fields, as a plain record the fake keeps and a test can set up. */
+const recordOf = (lookup: RunLookup): FakeLookup => ({
+  id: lookup.id,
+  runId: lookup.runId,
+  kind: lookup.kind,
+  status: lookup.status,
+  requestedAt: lookup.requestedAt,
+  claimedBy: lookup.claimedBy,
+  claimedAt: lookup.claimedAt,
+  retryAt: lookup.retryAt,
+  finishedAt: lookup.finishedAt,
+  error: lookup.error,
+  result: lookup.result,
+  scope: lookup.scope,
+  since: lookup.since,
+});
 
 const entity = (stored: FakeLookup): RunLookup =>
   RunLookup.restore({ ...stored, result: stored.result ?? null });
@@ -25,13 +44,13 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
   constructor(private readonly runs: InMemoryRunRepository) {}
 
   add(lookup: RunLookup): Promise<void> {
-    this.lookups.push(lookup.snapshot());
+    this.lookups.push(recordOf(lookup));
     return Promise.resolve();
   }
 
   save(lookup: RunLookup): Promise<void> {
     const stored = this.lookups.find((candidate) => candidate.id === lookup.id);
-    if (stored) Object.assign(stored, lookup.snapshot());
+    if (stored) Object.assign(stored, recordOf(lookup));
     return Promise.resolve();
   }
 

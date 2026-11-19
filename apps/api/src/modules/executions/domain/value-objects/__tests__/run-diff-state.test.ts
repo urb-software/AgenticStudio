@@ -10,7 +10,11 @@ const ids = {
 
 describe('RunDiffState', () => {
   it('takes object ids only and refuses anything else', () => {
-    expect(RunDiffState.of(ids).snapshot()).toEqual(ids);
+    expect(RunDiffState.of(ids)).toEqual(RunDiffState.restore(ids));
+    expect(RunDiffState.of({ ...ids, pushedCommit: 'e'.repeat(40) })).toMatchObject({
+      ...ids,
+      pushedCommit: 'e'.repeat(40),
+    });
     expect(() => RunDiffState.of({ ...ids, resultTree: 'HEAD' })).toThrow(
       'The diff state is not object ids.',
     );
