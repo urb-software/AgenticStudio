@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { EnvironmentFileSnapshotRule } from '../../../domain/value-objects/environment-file-snapshot-rule.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { type PullRequestState } from '../../../domain/value-objects/pull-request-state.js';
 import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
@@ -84,10 +83,7 @@ export class ReportRunStateHandler {
     // A failed delivery that can be retried, or a Run that can resume after the usage limit, keeps
     // its snapshot. A bring-up request that changed nothing leaves the Run as
     // it was, snapshot included.
-    if (
-      !report.unchanged &&
-      EnvironmentFileSnapshotRule.releasesAfterReport(changed.snapshotFacts())
-    ) {
+    if (!report.unchanged && changed.releasesEnvironmentFileAfterReport()) {
       await this.snapshots.releaseFor(changed.id);
     }
   }

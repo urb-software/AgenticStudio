@@ -394,8 +394,18 @@ export class Run {
       keepsForRetry: this.lifecycle.keepsEnvironmentFileForRetry,
       deliveryRequested: this.delivery.requested,
       finishedAt: this.lifecycle.finishedAt,
-      environmentFileSupplied: this.claim.environmentFileSupplied,
     };
+  }
+
+  /**
+   * A retryable Run keeps its snapshot: its retention period has just begun.
+   */
+  releasesEnvironmentFileAfterReport(): boolean {
+    return (
+      this.claim.environmentFileSupplied &&
+      this.lifecycle.isFinal &&
+      !this.lifecycle.keepsEnvironmentFileForRetry
+    );
   }
 
   limitedRunFacts(): LimitedRunFacts {

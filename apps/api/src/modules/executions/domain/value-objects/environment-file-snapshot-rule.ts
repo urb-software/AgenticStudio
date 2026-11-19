@@ -26,9 +26,4 @@ export class EnvironmentFileSnapshotRule {
       (facts.finishedAt !== null && facts.finishedAt >= this.retryableFinishedBefore)
     );
   }
-
-  /** Right after a state report the retention period has just begun, so a retryable Run keeps it. */
-  static releasesAfterReport(facts: EnvironmentFileSnapshotFacts): boolean {
-    return facts.environmentFileSupplied && facts.isFinal && !facts.keepsForRetry;
-  }
 }

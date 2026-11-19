@@ -9,7 +9,6 @@ const facts = (patch: Partial<EnvironmentFileSnapshotFacts>): EnvironmentFileSna
   keepsForRetry: false,
   deliveryRequested: false,
   finishedAt: NOW,
-  environmentFileSupplied: true,
   ...patch,
 });
 
@@ -49,17 +48,6 @@ describe('EnvironmentFileSnapshotRule', () => {
           finishedAt: new Date(rule.retryableFinishedBefore.getTime() - 1),
         }),
       ),
-    ).toBe(false);
-  });
-
-  it('releases right after a report only a final Run with a snapshot that is not retryable', () => {
-    expect(EnvironmentFileSnapshotRule.releasesAfterReport(facts({}))).toBe(true);
-    expect(EnvironmentFileSnapshotRule.releasesAfterReport(facts({ keepsForRetry: true }))).toBe(
-      false,
-    );
-    expect(EnvironmentFileSnapshotRule.releasesAfterReport(facts({ isFinal: false }))).toBe(false);
-    expect(
-      EnvironmentFileSnapshotRule.releasesAfterReport(facts({ environmentFileSupplied: false })),
     ).toBe(false);
   });
 });

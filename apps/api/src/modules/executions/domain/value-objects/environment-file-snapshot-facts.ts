@@ -4,5 +4,4 @@ export interface EnvironmentFileSnapshotFacts {
   keepsForRetry: boolean;
   deliveryRequested: boolean;
   finishedAt: Date | null;
-  environmentFileSupplied: boolean;
 }
