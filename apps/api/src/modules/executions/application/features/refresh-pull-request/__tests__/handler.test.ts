@@ -89,8 +89,8 @@ describe('RefreshPullRequestHandler', () => {
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'pull_request_state' });
-    expect(answer.run.pullRequestStatus.refreshRequestedAt).toEqual(T0);
-    expect(answer.workerConnected).toBe(true);
+    expect(answer.run.pullRequestStatus.refresh).toBe('refreshing');
+    expect((await runs.findById(run.id))!.pullRequestStatus.refreshRequestedAt).toEqual(T0);
   });
 
   it('returns the open request instead of recording a second one', async () => {
@@ -183,7 +183,7 @@ describe('RefreshPullRequestHandler', () => {
     await handler.execute({ runId: run.id, onOpen: false });
     const answer = await getRun.execute({ runId: run.id });
 
-    expect(answer.workerConnected).toBe(false);
+    expect(answer.run.pullRequestStatus.refresh).toBe('no_worker');
   });
 
   it('refuses a Run without a pull request', async () => {

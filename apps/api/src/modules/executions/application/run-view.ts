@@ -46,11 +46,9 @@ export interface RunView {
     refreshedAt: Date | null;
     refreshError: string | null;
     retryAt: Date | null;
-    refreshRequestedAt: Date | null;
     refresh: PullRequestRefreshOutcome;
     checks: RunPullRequestChecks | null;
     checksOnOtherCommit: boolean;
-    prepareRequestedAt: Date | null;
     preparation: FailingChecksPreparationOutcome;
     prepareError: string | null;
   };
@@ -104,11 +102,9 @@ export function runView(run: Run, facts: RunViewFacts): RunView {
       refreshedAt: status.refreshedAt,
       refreshError: status.refreshError,
       retryAt: status.retryAt,
-      refreshRequestedAt: status.refreshRequestedAt,
       refresh: status.refreshOutcome(facts.workerConnected),
       checks: status.checks,
       checksOnOtherCommit: status.checksOnOtherCommit(delivery.pushedCommit),
-      prepareRequestedAt: status.prepareRequestedAt,
       preparation: status.preparationOutcome(facts.workerConnected, facts.preparedFollowUp),
       prepareError: status.prepareError,
     },

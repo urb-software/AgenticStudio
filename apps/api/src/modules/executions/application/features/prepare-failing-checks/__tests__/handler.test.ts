@@ -103,8 +103,9 @@ describe('preparing a Follow-up from failing checks', () => {
 
     expect(lookups.lookups).toHaveLength(1);
     expect(lookups.lookups[0]).toMatchObject({ runId: run.id, kind: 'failing_check_logs' });
-    expect(answer.run.pullRequestStatus.prepareRequestedAt).toEqual(T0);
-    expect(answer.run.pullRequestStatus.refreshRequestedAt).toBeNull();
+    expect(answer.run.pullRequestStatus.preparation).toBe('preparing');
+    expect((await runs.findById(run.id))!.pullRequestStatus.prepareRequestedAt).toEqual(T0);
+    expect(answer.run.pullRequestStatus.refresh).toBe('idle');
     expect((await runs.findById(run.id))!.progress.followUpQueued).toBe(false);
     expect(answer.run.messages.some((message) => message.kind === 'follow_up')).toBe(false);
   });

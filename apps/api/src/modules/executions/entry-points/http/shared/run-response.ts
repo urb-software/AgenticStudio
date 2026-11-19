@@ -466,7 +466,7 @@ function preparationResponse(status: Parameters<typeof toRunResponse>[0]['pullRe
       return {
         failingChecksPreparation: {
           state: 'failed' as const,
-          ...(status.prepareError === null ? {} : { error: status.prepareError }),
+          error: status.prepareError!,
         },
       };
   }

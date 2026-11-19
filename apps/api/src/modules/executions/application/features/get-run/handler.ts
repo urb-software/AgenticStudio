@@ -22,7 +22,6 @@ export interface GetRunInput {
 export interface GetRunResult {
   run: RunView;
   followUp: FollowUpView;
-  workerConnected: boolean;
 }
 
 /** Throws {@link RunNotFoundError}, also for a non-UUID id. */
@@ -66,7 +65,6 @@ export class GetRunHandler {
         over,
         now,
       ),
-      workerConnected,
     };
   }
 }
