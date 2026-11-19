@@ -5,6 +5,8 @@ import {
   type PullRequestState,
 } from './pull-request-state.js';
 import type { RunPullRequestChecks } from './run-pull-request-checks.js';
+import type { PullRequestRefreshOutcome } from './pull-request-refresh-outcome.js';
+import type { FailingChecksPreparationOutcome } from './failing-checks-preparation-outcome.js';
 import type { PullRequestStateResult } from './pull-request-state-result.js';
 import type { RunPullRequestStatusData } from './run-pull-request-status-data.js';
 
@@ -110,6 +112,30 @@ export class RunPullRequestStatus {
       !checks.unavailable &&
       checks.checks.some((check) => check.state === 'failed')
     );
+  }
+
+  /** Without a known worker connection (`undefined`) the worker is not treated as disconnected. */
+  refreshOutcome(workerConnected?: boolean): PullRequestRefreshOutcome {
+    if (this.refreshRequestedAt === null) return 'idle';
+    return workerConnected === false ? 'no_worker' : 'refreshing';
+  }
+
+  preparationOutcome(
+    workerConnected: boolean | undefined,
+    preparedFollowUp: boolean,
+  ): FailingChecksPreparationOutcome {
+    if (this.prepareRequestedAt !== null) {
+      return workerConnected === false ? 'no_worker' : 'preparing';
+    }
+    if (this.prepareError !== null) return 'failed';
+    return preparedFollowUp ? 'ready' : null;
+  }
+
+  /** False while no checks were read, or the Run has no pushed commit. */
+  checksOnOtherCommit(pushedCommit: string | null): boolean {
+    const { checks } = this;
+    if (checks === null || checks.unavailable || pushedCommit === null) return false;
+    return pushedCommit.toLowerCase() !== checks.commit.toLowerCase();
   }
 
   pageRefreshDue(now: Date): boolean {

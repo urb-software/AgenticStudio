@@ -42,6 +42,11 @@ describe('RunProgress', () => {
     expect(followUp.allowsStep(21)).toBe(false);
   });
 
+  it('counts the steps of the current part, never below zero', () => {
+    expect(started().with({ stepCount: 4, stepsBeforePart: 3 }).stepsInPart).toBe(1);
+    expect(started().with({ stepCount: 2, stepsBeforePart: 3 }).stepsInPart).toBe(0);
+  });
+
   it('reaches the step total, after which it accepts no Follow-up', () => {
     expect(started().with({ stepCount: 49 }).reachedStepTotal).toBe(false);
     expect(started().with({ stepCount: 50 }).reachedStepTotal).toBe(true);

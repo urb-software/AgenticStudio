@@ -5,6 +5,9 @@ import type { RunDeliveryState } from '../domain/value-objects/run-delivery.js';
 import type { RunFailureCode } from '../domain/value-objects/run-failure-code.js';
 import type { RunLimits } from '../domain/value-objects/run-limits.js';
 import type { RunMessage } from '../domain/value-objects/run-message.js';
+import type { RunQuestion } from '../domain/value-objects/run-question.js';
+import type { PullRequestRefreshOutcome } from '../domain/value-objects/pull-request-refresh-outcome.js';
+import type { FailingChecksPreparationOutcome } from '../domain/value-objects/failing-checks-preparation-outcome.js';
 import type { RunPullRequestChecks } from '../domain/value-objects/run-pull-request-checks.js';
 import type { RunState } from '../domain/value-objects/run-state.js';
 import type { PullRequestState } from '../domain/value-objects/pull-request-state.js';
@@ -26,9 +29,10 @@ export interface RunView {
   environmentFileSupplied: boolean;
   limits: RunLimits;
   stepCount: number;
-  stepsBeforePart: number;
+  stepsInPart: number;
   followUpCount: number;
-  pushedCommit: string | null;
+  /** Per commit of the Working copy; `null` when unknown. */
+  commitsPushed: readonly boolean[] | null;
   cancelRequestedAt: Date | null;
   cancellation: { by: RunCancelledBy; reason: string } | null;
   delivery: RunDeliveryState | null;
@@ -42,19 +46,26 @@ export interface RunView {
     refreshedAt: Date | null;
     refreshError: string | null;
     retryAt: Date | null;
-    refreshRequestedAt: Date | null;
+    refresh: PullRequestRefreshOutcome;
     checks: RunPullRequestChecks | null;
-    prepareRequestedAt: Date | null;
+    checksOnOtherCommit: boolean;
+    preparation: FailingChecksPreparationOutcome;
     prepareError: string | null;
   };
   failingChecks: readonly string[];
-  /** Internal: the operator API shows only whether a Run can resume. */
-  sessionRef: string | null;
+  resumable: boolean;
+  question: RunQuestion | null;
   /** Empty in a list of Runs. */
   messages: RunMessage[];
 }
 
-export function runView(run: Run): RunView {
+export interface RunViewFacts {
+  /** Unknown (`undefined`) in a list: the worker is then not treated as disconnected. */
+  workerConnected?: boolean;
+  preparedFollowUp: boolean;
+}
+
+export function runView(run: Run, facts: RunViewFacts): RunView {
   const { lifecycle, delivery, progress, pullRequestStatus: status } = run;
   return {
     id: run.id,
@@ -73,9 +84,9 @@ export function runView(run: Run): RunView {
     environmentFileSupplied: run.claim.environmentFileSupplied,
     limits: progress.limits,
     stepCount: progress.stepCount,
-    stepsBeforePart: progress.stepsBeforePart,
+    stepsInPart: progress.stepsInPart,
     followUpCount: progress.followUpCount,
-    pushedCommit: delivery.pushedCommit,
+    commitsPushed: run.commitsPushed(),
     cancelRequestedAt: lifecycle.cancelRequestedAt,
     cancellation: lifecycle.cancellation
       ? { by: lifecycle.cancellation.by, reason: lifecycle.cancellation.reason }
@@ -91,13 +102,15 @@ export function runView(run: Run): RunView {
       refreshedAt: status.refreshedAt,
       refreshError: status.refreshError,
       retryAt: status.retryAt,
-      refreshRequestedAt: status.refreshRequestedAt,
+      refresh: status.refreshOutcome(facts.workerConnected),
       checks: status.checks,
-      prepareRequestedAt: status.prepareRequestedAt,
+      checksOnOtherCommit: status.checksOnOtherCommit(delivery.pushedCommit),
+      preparation: status.preparationOutcome(facts.workerConnected, facts.preparedFollowUp),
       prepareError: status.prepareError,
     },
     failingChecks: [...run.failingChecks],
-    sessionRef: run.claim.sessionRef,
+    resumable: run.resumable,
+    question: run.openQuestion,
     messages: [...run.conversation.messages],
   };
 }

@@ -3,11 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
-import {
-  RunListResponseDto,
-  toRunListItem,
-  withPreparedFollowUp,
-} from '../../shared/run-response.js';
+import { RunListResponseDto, toRunListItem } from '../../shared/run-response.js';
 import { RunProjectNotFoundError } from '../../../../domain/errors/run-errors.js';
 import { ListProjectRunsHandler } from '../../../../application/features/list-project-runs/handler.js';
 
@@ -22,9 +18,7 @@ export class ListProjectRunsEndpoint {
   @ApiProblemResponses({ 404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})` })
   async list(@Param('id') projectId: string) {
     try {
-      return (await this.handler.execute({ projectId })).map(({ run, preparedFollowUp }) =>
-        toRunListItem(withPreparedFollowUp(run, preparedFollowUp)),
-      );
+      return (await this.handler.execute({ projectId })).map((run) => toRunListItem(run));
     } catch (error) {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
       throw error;

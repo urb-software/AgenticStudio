@@ -6,10 +6,7 @@ import {
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 
-export type ListRunsResult = {
-  run: RunView;
-  preparedFollowUp: boolean;
-}[];
+export type ListRunsResult = RunView[];
 
 @Injectable()
 export class ListRunsHandler {
@@ -22,6 +19,6 @@ export class ListRunsHandler {
   async execute(): Promise<ListRunsResult> {
     const runs = await this.runs.listNewestFirst();
     const prepared = await this.preparedFollowUps.findRunIdsAmong(runs.map((run) => run.id));
-    return runs.map((run) => ({ run: runView(run), preparedFollowUp: prepared.has(run.id) }));
+    return runs.map((run) => runView(run, { preparedFollowUp: prepared.has(run.id) }));
   }
 }

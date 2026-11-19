@@ -14,11 +14,11 @@ const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestSt
   refreshedAt: null,
   refreshError: null,
   retryAt: null,
-  refreshRequestedAt: null,
+  refresh: 'idle',
   checks: null,
-  prepareRequestedAt: null,
+  checksOnOtherCommit: false,
+  preparation: null,
   prepareError: null,
-  preparedFollowUp: false,
 };
 
 const T0 = new Date('2026-11-15T12:00:00.000Z');
@@ -44,9 +44,9 @@ const run = {
   workingCopy: null,
   limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
   stepCount: 1,
-  stepsBeforePart: 0,
+  stepsInPart: 1,
   followUpCount: 0,
-  pushedCommit: null as string | null,
+  commitsPushed: null as readonly boolean[] | null,
   cancelRequestedAt: null,
   cancellation: null,
   delivery: null,
@@ -55,7 +55,8 @@ const run = {
   deliveryRequested: false,
   failingChecks: [],
   environmentFileSupplied: false,
-  sessionRef: 'session-1' as string | null,
+  resumable: false,
+  question: QUESTION as { text: string; options?: string[]; recommendation?: string } | null,
   messages: [{ kind: 'question' as const, question: QUESTION, at: T1 }] as Parameters<
     typeof toRunResponse
   >[0]['messages'],
@@ -83,6 +84,7 @@ describe('Run response: conversation', () => {
     const response = toRunResponse({
       ...run,
       state: 'queued',
+      question: null,
       messages: [...run.messages, { kind: 'answer', text: 'PostgreSQL', at: T2 }],
     });
 
@@ -102,35 +104,19 @@ describe('Run response: conversation', () => {
     expect(item).toMatchObject({ id: run.id, state: 'waiting_for_operator' });
   });
 
-  it('has no open question outside waiting, and the Task alone before any question', () => {
-    expect(toRunResponse({ ...run, state: 'cancelled' }).question).toBeUndefined();
-    expect(toRunResponse({ ...run, state: 'running', messages: [] }).messages).toEqual([
-      { role: 'operator', kind: 'task', text: 'Add a store', at: T0.toISOString() },
-    ]);
+  it('shows the Task alone before any question', () => {
+    expect(
+      toRunResponse({ ...run, state: 'running', question: null, messages: [] }).messages,
+    ).toEqual([{ role: 'operator', kind: 'task', text: 'Add a store', at: T0.toISOString() }]);
   });
 });
 
 describe('Run response: resuming after the usage limit', () => {
-  const stopped = {
-    ...run,
-    state: 'failed' as const,
-    finishedAt: T2,
-    failure: { code: 'usage_limit' as const, detail: 'The usage limit was reached.' },
-    workingCopy: { runBranch: 'agent/x', commits: [], hasUncommittedChanges: false },
-    messages: [],
-  };
-
-  it('says a Run stopped at the usage limit with a session can be resumed', () => {
-    expect(runResponseSchema.parse(toRunResponse(stopped)).resumable).toBe(true);
-  });
-
-  it.each([
-    ['another failure', { failure: { code: 'agent_failed' as const, detail: 'x' } }],
-    ['no session', { sessionRef: null }],
-    ['no Working copy', { workingCopy: null }],
-    ['a cancel request', { cancelRequestedAt: T2 }],
-  ])('not with %s', (_case, change) => {
-    expect(toRunResponse({ ...stopped, ...change })).not.toHaveProperty('resumable');
+  it('shows a resumable Run as resumable, and any other without the field', () => {
+    expect(runResponseSchema.parse(toRunResponse({ ...run, resumable: true })).resumable).toBe(
+      true,
+    );
+    expect(toRunResponse(run)).not.toHaveProperty('resumable');
   });
 });
 
@@ -151,9 +137,9 @@ describe('Run response: Follow-ups', () => {
       hasUncommittedChanges: false,
     },
     pullRequest: { url: 'https://github.com/acme/shop/pull/7', number: 7 },
-    pushedCommit: C2 as string | null,
+    commitsPushed: [true, true, false] as readonly boolean[] | null,
     stepCount: 4,
-    stepsBeforePart: 3,
+    stepsInPart: 1,
     followUpCount: 1,
     messages: [{ kind: 'follow_up' as const, text: 'Also add tests.', at: T2 }],
   };
@@ -166,7 +152,9 @@ describe('Run response: Follow-ups', () => {
       { id: C3, subject: 'Third', pushed: false },
     ]);
     expect(
-      toRunResponse({ ...followedUp, pushedCommit: null }).commits?.map((c) => c.pushed),
+      toRunResponse({ ...followedUp, commitsPushed: [false, false, false] }).commits?.map(
+        (c) => c.pushed,
+      ),
     ).toEqual([false, false, false]);
   });
 
@@ -186,9 +174,7 @@ describe('Run response: Follow-ups', () => {
   });
 
   it('leaves the pushed state unknown when the pushed commit is not listed', () => {
-    const response = runResponseSchema.parse(
-      toRunResponse({ ...followedUp, pushedCommit: 'f'.repeat(40) }),
-    );
+    const response = runResponseSchema.parse(toRunResponse({ ...followedUp, commitsPushed: null }));
     expect(response.commits?.every((commit) => !('pushed' in commit))).toBe(true);
   });
 
@@ -291,7 +277,7 @@ describe('Run response: pull request state', () => {
           refreshedAt: REFRESHED,
           refreshError: 'GitHub asked to wait.',
           retryAt,
-          refreshRequestedAt: REFRESHED,
+          refresh: 'refreshing',
         }),
       ),
     );
@@ -304,14 +290,14 @@ describe('Run response: pull request state', () => {
   });
 
   it('says a waiting refresh is under way, or that no agent worker is connected to carry it out', () => {
-    const waiting = withPullRequest({ state: 'open', refreshRequestedAt: REFRESHED });
-    expect(toRunResponse(waiting).pullRequest?.refreshing).toBe(true);
-    expect(toRunResponse(waiting, undefined, true).pullRequest?.refreshing).toBe(true);
-    const noWorker = toRunResponse(waiting, undefined, false).pullRequest;
+    const refreshing = withPullRequest({ state: 'open', refresh: 'refreshing' });
+    const waiting = withPullRequest({ state: 'open', refresh: 'no_worker' });
+    expect(toRunResponse(refreshing).pullRequest?.refreshing).toBe(true);
+    const noWorker = toRunResponse(waiting).pullRequest;
     expect(noWorker?.refreshing).toBeUndefined();
     expect(noWorker?.refreshError).toBe(NO_WORKER_FOR_REFRESH);
     expect(
-      toRunResponse(withPullRequest({ state: 'open' }), undefined, false).pullRequest?.refreshError,
+      toRunResponse(withPullRequest({ state: 'open' })).pullRequest?.refreshError,
     ).toBeUndefined();
   });
 
@@ -321,61 +307,58 @@ describe('Run response: pull request state', () => {
       { name: 'build', state: 'passed' as const, durationSeconds: 61, url: 'https://ci.test/1' },
       { name: 'lint', state: 'failed' as const, url: 'https://ci.test/2' },
     ];
-    const read = (status: Parameters<typeof withPullRequest>[0], pushedCommit: string | null) =>
-      runResponseSchema.parse(toRunResponse({ ...withPullRequest(status), pushedCommit }))
-        .pullRequest!;
+    const read = (status: Parameters<typeof withPullRequest>[0]) =>
+      runResponseSchema.parse(toRunResponse(withPullRequest(status))).pullRequest!;
 
     it('lists the checks with their commit, and nothing before they were read', () => {
-      expect(read({}, null)).not.toHaveProperty('checks');
-      expect(read({ state: 'open', checks: { commit: COMMIT, checks } }, COMMIT)).toMatchObject({
+      expect(read({})).not.toHaveProperty('checks');
+      expect(read({ state: 'open', checks: { commit: COMMIT, checks } })).toMatchObject({
         checksCommit: COMMIT,
         checks,
       });
-      expect(read({ state: 'open', checks: { commit: COMMIT, checks: [] } }, COMMIT)).toMatchObject(
-        { checksCommit: COMMIT, checks: [] },
-      );
+      expect(read({ state: 'open', checks: { commit: COMMIT, checks: [] } })).toMatchObject({
+        checksCommit: COMMIT,
+        checks: [],
+      });
     });
 
     it('says when GitHub would not tell the checks', () => {
-      const card = read({ state: 'open', checks: { unavailable: true } }, COMMIT);
+      const card = read({ state: 'open', checks: { unavailable: true } });
 
       expect(card.checksUnavailable).toBe(true);
       expect(card).not.toHaveProperty('checks');
     });
 
-    it("says when the checks belong to another commit than the Run's latest pushed one", () => {
+    it('says when the checks belong to another commit than the latest pushed one', () => {
       const status = { state: 'open' as const, checks: { commit: COMMIT, checks } };
 
-      expect(read(status, COMMIT.toUpperCase())).not.toHaveProperty('checksOtherCommit');
-      expect(read(status, 'd'.repeat(40)).checksOtherCommit).toBe(true);
-      expect(read(status, null)).not.toHaveProperty('checksOtherCommit');
+      expect(read(status)).not.toHaveProperty('checksOtherCommit');
+      expect(read({ ...status, checksOnOtherCommit: true }).checksOtherCommit).toBe(true);
     });
 
     it('shows where the preparation of the failing checks stands', () => {
-      const failed = { name: 'lint', state: 'failed' as const, url: 'https://ci.test/2' };
-      const base = { state: 'open' as const, checks: { commit: COMMIT, checks: [failed] } };
+      const base = { state: 'open' as const };
 
-      expect(read(base, COMMIT)).not.toHaveProperty('failingChecksPreparation');
-      expect(
-        read({ ...base, prepareRequestedAt: REFRESHED }, COMMIT).failingChecksPreparation,
-      ).toEqual({ state: 'preparing' });
-      expect(read({ ...base, preparedFollowUp: true }, COMMIT).failingChecksPreparation).toEqual({
+      expect(read(base)).not.toHaveProperty('failingChecksPreparation');
+      expect(read({ ...base, preparation: 'preparing' }).failingChecksPreparation).toEqual({
+        state: 'preparing',
+      });
+      expect(read({ ...base, preparation: 'ready' }).failingChecksPreparation).toEqual({
         state: 'ready',
       });
       expect(
-        read({ ...base, prepareError: 'The log is gone.' }, COMMIT).failingChecksPreparation,
+        read({ ...base, preparation: 'failed', prepareError: 'The log is gone.' })
+          .failingChecksPreparation,
       ).toEqual({ state: 'failed', error: 'The log is gone.' });
     });
 
     it('says no agent worker is connected instead of preparing for ever', () => {
-      const waiting = { ...withPullRequest({ state: 'open', prepareRequestedAt: REFRESHED }) };
+      const card = read({ state: 'open', preparation: 'no_worker' });
 
-      expect(
-        toRunResponse(waiting, undefined, false).pullRequest?.failingChecksPreparation,
-      ).toEqual({ state: 'failed', error: expect.stringContaining('not connected') });
-      expect(toRunResponse(waiting, undefined, true).pullRequest?.failingChecksPreparation).toEqual(
-        { state: 'preparing' },
-      );
+      expect(card.failingChecksPreparation).toEqual({
+        state: 'failed',
+        error: expect.stringContaining('not connected'),
+      });
     });
 
     it('marks a Follow-up message that was prepared from checks', () => {

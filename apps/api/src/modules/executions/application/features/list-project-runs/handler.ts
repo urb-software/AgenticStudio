@@ -12,10 +12,7 @@ export interface ListProjectRunsInput {
   projectId: string;
 }
 
-export type ListProjectRunsResult = {
-  run: RunView;
-  preparedFollowUp: boolean;
-}[];
+export type ListProjectRunsResult = RunView[];
 
 /** Throws {@link RunProjectNotFoundError} for an unknown project. */
 @Injectable()
@@ -32,6 +29,6 @@ export class ListProjectRunsHandler {
     if (startPoint.status === 'project_not_found') throw new RunProjectNotFoundError();
     const runs = await this.runs.listByProjectNewestFirst(input.projectId);
     const prepared = await this.preparedFollowUps.findRunIdsAmong(runs.map((run) => run.id));
-    return runs.map((run) => ({ run: runView(run), preparedFollowUp: prepared.has(run.id) }));
+    return runs.map((run) => runView(run, { preparedFollowUp: prepared.has(run.id) }));
   }
 }

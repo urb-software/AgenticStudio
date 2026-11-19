@@ -73,6 +73,10 @@ export class RunProgress {
     return this.followUpCount > 0;
   }
 
+  get stepsInPart(): number {
+    return Math.max(0, this.stepCount - this.stepsBeforePart);
+  }
+
   get reachedStepTotal(): boolean {
     return this.stepCount >= this.limits.maxTotalSteps;
   }

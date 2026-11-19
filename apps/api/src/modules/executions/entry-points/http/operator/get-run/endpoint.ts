@@ -3,7 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { EXECUTIONS_PROBLEM_TYPES, runNotFound } from '../../shared/problems.js';
-import { RunResponseDto, toRunResponse, withPreparedFollowUp } from '../../shared/run-response.js';
+import { RunResponseDto, toRunResponse } from '../../shared/run-response.js';
 import { GetRunHandler } from '../../../../application/features/get-run/handler.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
 
@@ -18,10 +18,10 @@ export class GetRunEndpoint {
   @ApiProblemResponses({ 404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})` })
   async get(@Param('runId') runId: string) {
     try {
-      const { run, followUp, workerConnected, preparedFollowUp } = await this.handler.execute({
+      const { run, followUp } = await this.handler.execute({
         runId,
       });
-      return toRunResponse(withPreparedFollowUp(run, preparedFollowUp), followUp, workerConnected);
+      return toRunResponse(run, followUp);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       throw error;
