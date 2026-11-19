@@ -551,6 +551,7 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
     const retryable = (failureCode: string, finishedAt: Date, deliveryRequested = false) => ({
       ...snapshot(),
       failureCode,
+      delivery: failureCode === 'delivery_failed' ? 'failed' : null,
       deliveryRequested,
       finishedAt,
     });
