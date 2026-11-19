@@ -60,7 +60,6 @@ describe('ClaimRunHandler', () => {
       secrets,
       {
         releaseFor: (runId) => Promise.resolve(void released.push(runId)),
-        releaseFinal: () => Promise.resolve(),
       },
       diffs,
     );
@@ -632,7 +631,6 @@ describe('ClaimRunHandler with Environment files', () => {
           await secrets.delete(ref);
           await runs.clearEnvironmentFileSecret(runId, ref);
         },
-        releaseFinal: () => Promise.resolve(),
       },
       new InMemoryRunDiffRepository(),
     );

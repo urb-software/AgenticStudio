@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { EnvironmentFileSnapshotRule } from '../../../domain/value-objects/environment-file-snapshot-rule.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import { type PullRequestState } from '../../../domain/value-objects/pull-request-state.js';
 import { type RunDeliveryOutcome } from '../../../domain/value-objects/run-delivery.js';
@@ -85,9 +86,9 @@ export class ReportRunStateHandler {
     // it was, snapshot included.
     if (
       !report.unchanged &&
-      changed.claim.environmentFileSupplied &&
-      changed.lifecycle.isFinal &&
-      !changed.lifecycle.keepsEnvironmentFileForRetry
+      EnvironmentFileSnapshotRule.at(this.clock.now(), 0).releasesAfterReport(
+        changed.snapshotFacts(),
+      )
     ) {
       await this.snapshots.releaseFor(changed.id);
     }

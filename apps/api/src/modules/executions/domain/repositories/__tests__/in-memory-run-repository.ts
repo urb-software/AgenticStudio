@@ -18,7 +18,6 @@ import { type ResumeFacts } from '../../entities/run-resume-facts.js';
 import { type RunStepRecord } from '../../entities/run-step-facts.js';
 import { Run } from '../../entities/run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
-import { isFinalRunState } from '../../value-objects/run-state.js';
 import { type RunMessage } from '../../value-objects/run-message.js';
 import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { type RunLimits } from '../../value-objects/run-limits.js';
@@ -27,6 +26,9 @@ import { type RunFailure } from '../../value-objects/run-failure.js';
 import { type Provider } from '../../value-objects/provider.js';
 import { type RunWorkingCopy } from '../../value-objects/run-working-copy.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
+import { EnvironmentFileSnapshotRule } from '../../value-objects/environment-file-snapshot-rule.js';
+import { PullRequestRefreshRule } from '../../value-objects/pull-request-refresh-rule.js';
+import { RetentionPolicy } from '../../value-objects/retention-policy.js';
 import { Task } from '../../value-objects/task.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type { ReviewComments } from '../../entities/review-comments.js';
@@ -41,6 +43,14 @@ type StoredRun = Omit<RestoreData<typeof Run>, 'messages'> & {
   messages: RunMessage[];
   environmentFileSecret: string | null;
 };
+
+/** The count of a Run against the limit does not depend on the settings. */
+const COUNTING_POLICY = RetentionPolicy.of({
+  days: 0,
+  maxPerProject: 0,
+  openPullRequestIdleDays: 0,
+  hoursAfterPullRequestEnd: 0,
+});
 
 export interface StartedRun {
   id?: string;
@@ -242,11 +252,14 @@ export class InMemoryRunRepository implements RunRepository {
     return Promise.resolve(
       this.runs.flatMap((run) =>
         projectIds.includes(run.projectId) &&
-        isFinalRunState(run.state) &&
         run.finishedAt !== null &&
-        run.pullRequest === null &&
-        run.workingCopy !== null &&
-        run.workingCopyRemovedAt === null
+        COUNTING_POLICY.countsAgainstLimit({
+          state: run.state,
+          finishedAt: run.finishedAt,
+          hasPullRequest: run.pullRequest !== null,
+          hasWorkingCopy: run.workingCopy !== null,
+          workingCopyRemoved: run.workingCopyRemovedAt !== null,
+        })
           ? [{ runId: run.id, projectId: run.projectId, finishedAt: run.finishedAt }]
           : [],
       ),
@@ -579,15 +592,14 @@ export class InMemoryRunRepository implements RunRepository {
   listReleasableEnvironmentFileSecrets(
     retryableFinishedBefore: Date,
   ): Promise<{ runId: string; secretRef: string }[]> {
-    const retryable = (run: RestoreData<typeof Run>) =>
-      run.state === 'failed' &&
-      (run.failure?.code === 'delivery_failed' || run.failure?.code === 'usage_limit') &&
-      (run.deliveryRequested ||
-        (run.finishedAt !== null && run.finishedAt >= retryableFinishedBefore));
+    const rule = EnvironmentFileSnapshotRule.at(retryableFinishedBefore, 0);
     return Promise.resolve(
       this.runs
-        .filter((run) => isFinalRunState(run.state) && run.environmentFileSecret !== null)
-        .filter((run) => !retryable(run))
+        .filter(
+          (run) =>
+            run.environmentFileSecret !== null &&
+            rule.releasable(Run.restore(this.data(run)).snapshotFacts()),
+        )
         .map((run) => ({ runId: run.id, secretRef: run.environmentFileSecret! })),
     );
   }
@@ -605,21 +617,16 @@ export class InMemoryRunRepository implements RunRepository {
   }
 
   listDueForDailyRefresh(attemptedBefore: Date, limit: number): Promise<string[]> {
+    const rule = PullRequestRefreshRule.at(
+      new Date(attemptedBefore.getTime() + PullRequestRefreshRule.AGE_HOURS * 60 * 60 * 1000),
+    );
     return Promise.resolve(
       this.runs
-        .filter((run) => {
-          const status = run.pullRequestStatus;
-          const attempt = status.lastAttemptAt ?? status.refreshedAt;
-          return (
-            run.pullRequest !== null &&
-            run.workingCopy !== null &&
-            status.refreshRequestedAt === null &&
-            (status.state === null || status.state === 'draft' || status.state === 'open') &&
-            (attempt === null || attempt < attemptedBefore)
-          );
-        })
+        .map((run) => Run.restore(this.data(run)).pullRequestRefreshFacts())
+        .filter((facts) => rule.dueDaily(facts))
+        .sort((a, b) => rule.dailyOrder(a, b))
         .slice(0, limit)
-        .map((run) => run.id),
+        .map((facts) => facts.id),
     );
   }
 

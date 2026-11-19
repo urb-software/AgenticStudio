@@ -2,7 +2,7 @@ import type { RunState } from './run-state.js';
 import type { HandOutView } from './hand-out-view.js';
 
 /**
- * The store hands a Run out in one atomic step under the claim lock, re-checking Runs another
+ * The store hands a Run out in one transaction under the claim lock, re-checking Runs another
  * transaction holds; `next` is the same rule in memory, which a test uses to prove the query
  * follows it.
  */

@@ -52,7 +52,6 @@ describe('SweepLostWorkersHandler', () => {
     released = [];
     handler = new SweepLostWorkersHandler(runs, { now: () => now }, { seconds: 60 }, statuses, {
       releaseFor: (runId) => Promise.resolve(void released.push(runId)),
-      releaseFinal: () => Promise.resolve(),
     });
   });
 
