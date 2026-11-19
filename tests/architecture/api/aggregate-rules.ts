@@ -429,10 +429,8 @@ function isEntityClass(
 }
 
 /**
- * A repository interface serves one aggregate root (rule 11): the file refers to exactly one
- * file in `domain/entities/`, and no method returns a type taken from `domain/value-objects/`
- * or from a companion file (`-data`, `-facts`). A value object counts as part of the aggregate when
- * the entity file itself imports it.
+ * A repository interface serves one aggregate root (rule 11): it refers to one entity file and
+ * returns no companion type (`-data`, `-facts`) and no value object its entity does not import.
  */
 function repositoryViolations(baseDir: string, path: string): Violation[] {
   const source = parse(baseDir, path);
