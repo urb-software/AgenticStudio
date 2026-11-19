@@ -179,4 +179,12 @@ describe('GitRunner.run', () => {
       expect(failure).toBeInstanceOf(TypeError);
     },
   );
+
+  it('refuses an add that names paths without the -- separator', async () => {
+    const failure = await new GitRunner()
+      .run(['add', 'file.txt'], { cwd: '.', timeoutMs: 1000 })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(TypeError);
+  });
 });

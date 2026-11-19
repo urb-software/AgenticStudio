@@ -239,6 +239,9 @@ function withSafeFlags(args: readonly string[], scope: GitScope): readonly strin
  * it to see whether it is dirty, under that repository's own configuration, which nothing lists.
  */
 function withoutGitlinks(args: readonly string[], gitlinks: readonly string[]): readonly string[] {
+  if (!args.includes('--') && args.slice(1).some((arg) => !arg.startsWith('-'))) {
+    throw new TypeError('A Git add names its paths after `--`.');
+  }
   if (gitlinks.length === 0) return args;
   const dashes = args.indexOf('--');
   const head = dashes < 0 ? args : args.slice(0, dashes);
@@ -291,8 +294,10 @@ export class GitRunner {
     // The Working copy's configuration is read once per command, and the drivers it names are
     // neutralised for that command. A failure to list stops the command.
     const drivers = scope === 'working-copy' ? await this.driverSettings(options) : [];
-    const gitlinks =
-      scope === 'working-copy' && args[0] === 'add' ? await this.gitlinks(options) : [];
+    const adding = scope === 'working-copy' && args[0] === 'add';
+    // Refused before any process starts.
+    if (adding) withoutGitlinks(args, []);
+    const gitlinks = adding ? await this.gitlinks(options) : [];
     return this.execute(withoutGitlinks(withSafeFlags(args, scope), gitlinks), options, scope, [
       ...drivers,
       ...(options.config ?? []),
