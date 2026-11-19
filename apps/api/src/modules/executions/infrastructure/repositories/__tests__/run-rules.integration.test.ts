@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Run } from '../../../domain/entities/run.js';
+import { EnvironmentFileSnapshotRule } from '../../../domain/value-objects/environment-file-snapshot-rule.js';
+import { PullRequestRefreshRule } from '../../../domain/value-objects/pull-request-refresh-rule.js';
+import { RetentionPolicy } from '../../../domain/value-objects/retention-policy.js';
 import { HandOutRule } from '../../../domain/value-objects/hand-out-rule.js';
 import { GoneWorkerRule } from '../../../domain/value-objects/gone-worker-rule.js';
 import { LeaseRenewalRule } from '../../../domain/value-objects/lease-renewal-rule.js';
@@ -526,6 +529,174 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
       const later = new Date(NOW.getTime() + LEASE_SECONDS * 1000);
       expect(LeaseRenewalRule.at(later, LEASE_SECONDS).isDue(NOW)).toBe(true);
       expect(await runs().renewClaimsOncePerLease(later, LEASE_SECONDS)).toBe(renewed.length);
+    });
+  });
+
+  const DAY = 24 * 60 * 60 * 1000;
+  const ago = (ms: number) => new Date(NOW.getTime() - ms);
+  const WORKING_COPY = { runBranch: 'agent/x-r1', commits: [], hasUncommittedChanges: false };
+  const withPullRequest = (number: number) => ({
+    delivery: 'delivered',
+    pullRequestUrl: `https://git.example.test/acme/shop/pull/${number}`,
+    pullRequestNumber: number,
+  });
+
+  describe('the Environment file snapshot release and EnvironmentFileSnapshotRule', () => {
+    const snapshot = () => ({
+      environmentFileSupplied: true,
+      environmentFilePath: '.env',
+      environmentFileSecretId: randomUUID(),
+    });
+    const rule = EnvironmentFileSnapshotRule.at(NOW, 7);
+    const retryable = (failureCode: string, finishedAt: Date, deliveryRequested = false) => ({
+      ...snapshot(),
+      failureCode,
+      delivery: failureCode === 'delivery_failed' ? 'failed' : null,
+      deliveryRequested,
+      finishedAt,
+    });
+
+    it('lists exactly the Runs holding a snapshot that the rule releases', async () => {
+      const edge = rule.retryableFinishedBefore;
+      await fixtures([
+        { kind: 'running', project: 1, overrides: snapshot() },
+        { kind: 'succeeded', project: 2, overrides: snapshot() },
+        { kind: 'succeeded', project: 3 },
+        { kind: 'failed', project: 4, overrides: snapshot() },
+        { kind: 'retry', project: 5, overrides: retryable('delivery_failed', ago(DAY), true) },
+        { kind: 'retry', project: 6, overrides: retryable('delivery_failed', ago(DAY)) },
+        { kind: 'retry', project: 7, overrides: retryable('delivery_failed', ago(8 * DAY)) },
+        { kind: 'retry', project: 8, overrides: retryable('delivery_failed', edge) },
+        {
+          kind: 'retry',
+          project: 9,
+          overrides: retryable('delivery_failed', new Date(edge.getTime() - 1)),
+        },
+        { kind: 'retry', project: 10, overrides: retryable('usage_limit', ago(DAY)) },
+        { kind: 'retry', project: 11, overrides: retryable('usage_limit', ago(9 * DAY)) },
+      ]);
+      const held = new Map(
+        (await db().run.findMany({ select: { id: true, environmentFileSecretId: true } })).map(
+          (row) => [row.id, row.environmentFileSecretId],
+        ),
+      );
+      const all = await newestFirst();
+      const expected = all
+        .filter((run) => held.get(run.id) && rule.releasable(run.snapshotFacts()))
+        .map((run) => run.id);
+
+      const listed = await runs().listReleasableEnvironmentFileSecrets(
+        rule.retryableFinishedBefore,
+      );
+
+      expect(expected.length).toBeGreaterThan(0);
+      expect(expected.length).toBeLessThan(all.length);
+      expect(listed.map((entry) => entry.runId).sort()).toEqual([...expected].sort());
+      for (const entry of listed) expect(entry.secretRef).toBe(held.get(entry.runId));
+    });
+  });
+
+  describe('the per-Project limit and RetentionPolicy', () => {
+    const policy = RetentionPolicy.of({
+      days: 7,
+      maxPerProject: 5,
+      openPullRequestIdleDays: 14,
+      hoursAfterPullRequestEnd: 24,
+    });
+
+    it('lists exactly the Runs the policy counts against the limit', async () => {
+      await fixtures([
+        { kind: 'succeeded', project: 1, overrides: WORKING_COPY },
+        { kind: 'failed', project: 1, overrides: WORKING_COPY },
+        { kind: 'succeeded', project: 1 },
+        { kind: 'succeeded', project: 1, overrides: { ...WORKING_COPY, workingCopyRemovedAt: T } },
+        { kind: 'succeeded', project: 2, overrides: { ...WORKING_COPY, ...withPullRequest(4) } },
+        { kind: 'running', project: 2, overrides: WORKING_COPY },
+        { kind: 'fresh', project: 2 },
+        { kind: 'succeeded', project: 2, overrides: WORKING_COPY },
+      ]);
+      const all = await newestFirst();
+      const expected = all
+        .filter((run) => policy.countsAgainstLimit(run.limitedRunFacts()))
+        .map((run) => run.id);
+
+      const listed = await runs().findLimitedRuns([...new Set(all.map((run) => run.projectId))]);
+
+      expect(expected.length).toBeGreaterThan(0);
+      expect(expected.length).toBeLessThan(all.length);
+      expect(listed.map((entry) => entry.runId).sort()).toEqual([...expected].sort());
+    });
+  });
+
+  describe('the daily pull request refresh and PullRequestRefreshRule', () => {
+    const rule = PullRequestRefreshRule.at(NOW);
+    const status = (
+      prState: string | null,
+      refreshedAt: Date | null,
+      extra: Partial<RunData> = {},
+    ) =>
+      ({
+        ...WORKING_COPY,
+        ...withPullRequest(7),
+        prState,
+        prRefreshedAt: prState === null ? null : refreshedAt,
+        ...extra,
+      }) as Partial<RunData>;
+
+    it('lists exactly the due Runs, in the order of the rule', async () => {
+      const old = ago(2 * DAY);
+      await fixtures([
+        { kind: 'succeeded', project: 1, overrides: status(null, null) },
+        { kind: 'succeeded', project: 2, overrides: status(null, null) },
+        { kind: 'succeeded', project: 3, overrides: status('open', old) },
+        {
+          kind: 'succeeded',
+          project: 4,
+          overrides: status('draft', old, { prLastAttemptAt: ago(3 * DAY) }),
+        },
+        {
+          kind: 'succeeded',
+          project: 5,
+          overrides: status('open', old, { prLastAttemptAt: ago(2 * DAY) }),
+        },
+        {
+          kind: 'succeeded',
+          project: 6,
+          overrides: status('open', old, { prLastAttemptAt: ago(DAY / 2) }),
+        },
+        { kind: 'succeeded', project: 7, overrides: status('open', ago(DAY / 2)) },
+        { kind: 'succeeded', project: 8, overrides: status('merged', old) },
+        { kind: 'succeeded', project: 9, overrides: status('closed', old) },
+        {
+          kind: 'succeeded',
+          project: 10,
+          overrides: status('open', old, { prRefreshRequestedAt: old }),
+        },
+        { kind: 'succeeded', project: 11, overrides: withPullRequest(8) },
+        { kind: 'succeeded', project: 12, overrides: WORKING_COPY },
+        {
+          kind: 'succeeded',
+          project: 13,
+          overrides: status('open', old, { prLastAttemptAt: ago(DAY) }),
+        },
+      ]);
+      const facts = (await newestFirst()).map((run) => run.pullRequestRefreshFacts());
+      const expected = facts
+        .filter((candidate) => rule.dueDaily(candidate))
+        .sort((a, b) => rule.dailyOrder(a, b))
+        .map((candidate) => candidate.id);
+
+      const listed = await runs().listDueForDailyRefresh(
+        rule.staleBefore,
+        PullRequestRefreshRule.BATCH,
+      );
+
+      expect(expected.length).toBeGreaterThan(2);
+      expect(expected.length).toBeLessThan(facts.length);
+      expect(listed).toEqual(expected);
+      expect(await runs().listDueForDailyRefresh(rule.staleBefore, 2)).toEqual(
+        expected.slice(0, 2),
+      );
     });
   });
 });

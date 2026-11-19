@@ -4,6 +4,7 @@ import { ReleaseFinalSnapshotsHandler } from '../../../application/features/rele
 import { RenewHeldRunLeasesHandler } from '../../../application/features/renew-held-run-leases/handler.js';
 import { SweepLostWorkersHandler } from '../../../application/features/sweep-lost-workers/handler.js';
 import { TimeOutOverdueStepsHandler } from '../../../application/features/time-out-overdue-steps/handler.js';
+import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { RunSweepsScheduler } from '../run-sweeps.js';
 
@@ -12,10 +13,7 @@ const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
 const STATUSES = { record: () => undefined, latest: () => undefined, lastSeen: () => undefined };
-const NO_SNAPSHOTS = {
-  releaseFor: () => Promise.resolve(),
-  releaseFinal: () => Promise.resolve(),
-};
+const NO_SNAPSHOTS = { releaseFor: () => Promise.resolve() };
 const later = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 
 describe('RunSweepsScheduler at API start', () => {
@@ -38,7 +36,9 @@ describe('RunSweepsScheduler at API start', () => {
         new TimeOutOverdueStepsHandler(runs, clock),
         new CancelLongWaitingRunsHandler(runs, clock),
         new RenewHeldRunLeasesHandler(runs, clock, LEASE),
-        new ReleaseFinalSnapshotsHandler(NO_SNAPSHOTS),
+        new ReleaseFinalSnapshotsHandler(runs, new InMemorySecretStore(), clock, {
+          retentionDays: 7,
+        }),
         { intervalMs: 30_000 },
       );
       await schedule.onApplicationBootstrap();

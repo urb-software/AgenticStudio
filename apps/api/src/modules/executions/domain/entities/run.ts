@@ -27,6 +27,9 @@ import type { FollowUpConsumption, FollowUpOrigin } from './run-follow-up-facts.
 import type { FollowUpFacts, WorkerFacts } from './run-worker-facts.js';
 import type { ResumeFacts } from './run-resume-facts.js';
 import type { RetentionFacts } from '../value-objects/retention-facts.js';
+import type { EnvironmentFileSnapshotFacts } from '../value-objects/environment-file-snapshot-facts.js';
+import type { LimitedRunFacts } from '../value-objects/limited-run-facts.js';
+import type { PullRequestRefreshFacts } from '../value-objects/pull-request-refresh-facts.js';
 import type { RunSweepFacts } from '../value-objects/run-sweep-facts.js';
 import type { RunChanges } from './run-change-facts.js';
 import type { RunStartInput } from './run-start-facts.js';
@@ -382,6 +385,48 @@ export class Run {
       pullRequestState: this.pullRequestStatus.state,
       pullRequestEndedAt: this.pullRequestStatus.endedAt,
       lastActivityAt: this.progress.lastActivityAt,
+    };
+  }
+
+  snapshotFacts(): EnvironmentFileSnapshotFacts {
+    return {
+      isFinal: this.lifecycle.isFinal,
+      keepsForRetry: this.lifecycle.keepsEnvironmentFileForRetry,
+      deliveryRequested: this.delivery.requested,
+      finishedAt: this.lifecycle.finishedAt,
+    };
+  }
+
+  /**
+   * A retryable Run keeps its snapshot: its retention period has just begun.
+   */
+  releasesEnvironmentFileAfterReport(): boolean {
+    return (
+      this.claim.environmentFileSupplied &&
+      this.lifecycle.isFinal &&
+      !this.lifecycle.keepsEnvironmentFileForRetry
+    );
+  }
+
+  limitedRunFacts(): LimitedRunFacts {
+    return {
+      state: this.lifecycle.state,
+      finishedAt: this.lifecycle.finishedAt,
+      hasPullRequest: this.delivery.hasPullRequest,
+      hasWorkingCopy: this.workingCopy !== null,
+      workingCopyRemoved: this.claim.workingCopyRemoved,
+    };
+  }
+
+  pullRequestRefreshFacts(): PullRequestRefreshFacts {
+    return {
+      id: this.id,
+      hasPullRequest: this.delivery.hasPullRequest,
+      hasWorkingCopy: this.workingCopy !== null,
+      refreshRequestedAt: this.pullRequestStatus.refreshRequestedAt,
+      pullRequestState: this.pullRequestStatus.state,
+      lastAttemptAt: this.pullRequestStatus.lastAttemptAt,
+      refreshedAt: this.pullRequestStatus.refreshedAt,
     };
   }
 

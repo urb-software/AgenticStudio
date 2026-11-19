@@ -43,7 +43,6 @@ describe('ReportRunStateHandler', () => {
       { notify: (runId) => notified.push(runId), subscribe: () => () => undefined },
       {
         releaseFor: (runId) => Promise.resolve(void released.push(runId)),
-        releaseFinal: () => Promise.resolve(),
       },
       { forRun: () => Promise.resolve(['test-only-known']) },
     );

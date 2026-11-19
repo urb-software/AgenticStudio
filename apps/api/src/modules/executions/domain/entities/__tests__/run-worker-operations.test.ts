@@ -701,6 +701,24 @@ describe('the removal of a Working copy the agent worker reports', () => {
   });
 });
 
+describe('releasing the Environment file snapshot after a report', () => {
+  const supplied = { environmentFileSupplied: true, environmentFilePath: '.env' };
+  const failedWith = (code: 'delivery_failed' | 'usage_limit' | 'agent_failed') =>
+    inState('failed', { ...supplied, failure: { code, detail: 'x' } });
+
+  it('releases a final Run that cannot be retried', () => {
+    expect(inState('succeeded', supplied).releasesEnvironmentFileAfterReport()).toBe(true);
+    expect(failedWith('agent_failed').releasesEnvironmentFileAfterReport()).toBe(true);
+  });
+
+  it('keeps the snapshot of a retryable Run, a Run still going and a Run without one', () => {
+    expect(failedWith('delivery_failed').releasesEnvironmentFileAfterReport()).toBe(false);
+    expect(failedWith('usage_limit').releasesEnvironmentFileAfterReport()).toBe(false);
+    expect(inState('running', supplied).releasesEnvironmentFileAfterReport()).toBe(false);
+    expect(inState('succeeded').releasesEnvironmentFileAfterReport()).toBe(false);
+  });
+});
+
 describe('the Environment file the claim gives a Run', () => {
   const file = { path: '.env', secretRef: 'snapshot-1' };
 

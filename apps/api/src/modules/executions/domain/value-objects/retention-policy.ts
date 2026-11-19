@@ -6,6 +6,7 @@ import { WorkerPresence } from './worker-presence.js';
 import { type WorkerStatusData } from './worker-status-data.js';
 import type { RetentionFacts } from './retention-facts.js';
 import type { RetentionSettings } from './retention-settings.js';
+import type { LimitedRunFacts } from './limited-run-facts.js';
 import type { LimitedRun } from './limited-run.js';
 import type { FollowUpView } from './follow-up-view.js';
 
@@ -53,6 +54,16 @@ export class RetentionPolicy {
 
   isLimited(facts: Pick<RetentionFacts, 'state' | 'hasPullRequest'>): boolean {
     return isFinalRunState(facts.state) && !facts.hasPullRequest;
+  }
+
+  /** What the per-Project limit counts; `isLimited` is the cheap first check. */
+  countsAgainstLimit(facts: LimitedRunFacts): boolean {
+    return (
+      this.isLimited(facts) &&
+      facts.finishedAt !== null &&
+      facts.hasWorkingCopy &&
+      !facts.workingCopyRemoved
+    );
   }
 
   /** Takes only final Runs without a pull request and without a removed Working copy. */

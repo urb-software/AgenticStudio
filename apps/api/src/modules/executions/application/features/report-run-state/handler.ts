@@ -83,12 +83,7 @@ export class ReportRunStateHandler {
     // A failed delivery that can be retried, or a Run that can resume after the usage limit, keeps
     // its snapshot. A bring-up request that changed nothing leaves the Run as
     // it was, snapshot included.
-    if (
-      !report.unchanged &&
-      changed.claim.environmentFileSupplied &&
-      changed.lifecycle.isFinal &&
-      !changed.lifecycle.keepsEnvironmentFileForRetry
-    ) {
+    if (!report.unchanged && changed.releasesEnvironmentFileAfterReport()) {
       await this.snapshots.releaseFor(changed.id);
     }
   }
