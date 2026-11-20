@@ -12,6 +12,7 @@ import { GitOperationError, GitUnsupportedPlatformError } from '../../../ports/r
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { DisconnectRepositoryHandler } from '../handler.js';
+import { RepositoryCleanup } from '../../../repository-cleanup.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from '../../../../domain/value-objects/deploy-key-sweep-policy.js';
@@ -88,7 +89,13 @@ describe('DisconnectRepositoryHandler', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
       logs.push(String(message));
     });
-    handler = new DisconnectRepositoryHandler(projects, connections, git, jobs, deployKeys);
+    handler = new DisconnectRepositoryHandler(
+      projects,
+      connections,
+      git,
+      jobs,
+      new RepositoryCleanup(connections, git, deployKeys),
+    );
   });
 
   it('marks the Repository disconnecting, cancels its job, removes the Clone, then deletes the record', async () => {

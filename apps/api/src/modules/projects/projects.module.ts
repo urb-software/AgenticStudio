@@ -15,6 +15,8 @@ import {
 } from './application/features/connect-repository/handler.js';
 import { DisconnectRepositoryEndpoint } from './entry-points/http/operator/disconnect-repository/endpoint.js';
 import { DisconnectRepositoryHandler } from './application/features/disconnect-repository/handler.js';
+import { ResumeDisconnectsHandler } from './application/features/resume-disconnects/handler.js';
+import { RepositoryCleanup } from './application/repository-cleanup.js';
 import { FetchRepositoryEndpoint } from './entry-points/http/operator/fetch-repository/endpoint.js';
 import { FetchRepositoryHandler } from './application/features/fetch-repository/handler.js';
 import { CreateProjectEndpoint } from './entry-points/http/operator/create-project/endpoint.js';
@@ -172,7 +174,9 @@ export class ProjectsModule {
         GetRepositoryHandler,
         ConnectRepositoryHandler,
         FetchRepositoryHandler,
+        RepositoryCleanup,
         DisconnectRepositoryHandler,
+        ResumeDisconnectsHandler,
         VerifyRepositoryHandler,
         GetRunStartPointHandler,
         { provide: RUN_START_POINTS, useExisting: GetRunStartPointHandler },

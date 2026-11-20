@@ -1,29 +1,26 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RepositoryConnection } from '../../../../domain/entities/repository-connection.js';
-import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
-import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
-import { GitOperationError } from '../../../ports/repository-git.js';
-import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
-import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
-import { DisconnectRepositoryHandler } from '../handler.js';
-import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
-import { SecretStoreUnavailableError } from '../../../../../../platform/secrets/index.js';
-import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
-import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
+import { RepositoryConnection } from '../../domain/entities/repository-connection.js';
+import { InMemoryProjectRepository } from '../../domain/repositories/__tests__/in-memory-project-repository.js';
+import { InMemoryRepositoryConnectionRepository } from '../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
+import { FakeRepositoryGit } from '../ports/__tests__/fake-repository-git.js';
+import { RepositoryCleanup } from '../repository-cleanup.js';
+import { testDeployKey } from '../../domain/value-objects/__tests__/test-deploy-key.js';
+import { SecretStoreUnavailableError } from '../../../../platform/secrets/index.js';
+import { InMemoryDeployKeys } from '../ports/__tests__/in-memory-deploy-keys.js';
+import { InMemorySecretStore } from '../ports/__tests__/in-memory-secret-store.js';
 
 const A = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const B = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
-const C = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
 
-describe('DisconnectRepositoryHandler finishing a disconnect', () => {
+describe('RepositoryCleanup finishing a disconnect', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
   let projects: InMemoryProjectRepository;
   let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let logs: string[];
-  let cleanup: DisconnectRepositoryHandler;
+  let cleanup: RepositoryCleanup;
 
   async function connect(projectId: string, name: string) {
     projects.addProject(projectId, name);
@@ -49,81 +46,7 @@ describe('DisconnectRepositoryHandler finishing a disconnect', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
       logs.push(String(message));
     });
-    cleanup = new DisconnectRepositoryHandler(
-      projects,
-      connections,
-      git,
-      new RecordingRepositoryJobs(),
-      deployKeys,
-    );
-  });
-
-  it('resumes every disconnecting Repository at start-up and leaves the others alone', async () => {
-    await connect(A, 'a');
-    await connect(B, 'b');
-    await connect(C, 'c');
-    await connections.change(A, (r) => {
-      r.startDisconnect();
-    });
-    await connections.change(C, (r) => {
-      r.startDisconnect();
-    });
-
-    await cleanup.resumeAll();
-
-    expect(await connections.find(A)).toBeNull();
-    expect(await connections.find(C)).toBeNull();
-    expect((await connections.find(B))?.state).toBe('connecting');
-    expect(git.removeClone.mock.calls.map(([projectId]) => projectId).sort()).toEqual(
-      [A, C].sort(),
-    );
-  });
-
-  it('keeps a Repository whose Clone cannot be removed disconnecting, logs it and goes on', async () => {
-    await connect(A, 'a');
-    await connect(B, 'b');
-    await connections.change(A, (r) => {
-      r.startDisconnect();
-    });
-    await connections.change(B, (r) => {
-      r.startDisconnect();
-    });
-    git.removeClone.mockImplementation((projectId) =>
-      projectId === A
-        ? Promise.reject(new GitOperationError('unknown', 'EBUSY'))
-        : Promise.resolve(),
-    );
-
-    await cleanup.resumeAll();
-
-    expect((await connections.find(A))?.state).toBe('disconnecting');
-    expect(await connections.find(B)).toBeNull();
-    expect(logs).toEqual([expect.stringContaining(A)]);
-  });
-
-  it('keeps going when the store fails for one Repository', async () => {
-    await connect(A, 'a');
-    await connect(B, 'b');
-    await connections.change(A, (r) => {
-      r.startDisconnect();
-    });
-    await connections.change(B, (r) => {
-      r.startDisconnect();
-    });
-    const change = connections.change.bind(connections);
-    connections.change = (projectId, mutate) =>
-      change(projectId, (repository) => {
-        mutate(repository);
-        if (projectId === A && repository.pendingChanges().removed) {
-          throw new Error('database down');
-        }
-      });
-
-    await cleanup.resumeAll();
-
-    expect((await connections.find(A))?.state).toBe('disconnecting');
-    expect(await connections.find(B)).toBeNull();
-    expect(logs).toEqual([expect.stringContaining(A)]);
+    cleanup = new RepositoryCleanup(connections, git, deployKeys);
   });
 
   it.each([
