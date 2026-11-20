@@ -375,6 +375,16 @@ export const QUALITY_TABLE = [
     expected: 'FAIL',
     gate: 'api',
   },
+  {
+    row: 'A handler has one public method, `execute`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'A handler has a second public method, or its one public method is not named `execute`',
+    expected: 'FAIL',
+    gate: 'api',
+  },
 ] as const;
 
 export interface FixtureCase {

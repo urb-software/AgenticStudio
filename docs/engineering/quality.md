@@ -160,6 +160,8 @@ Positive and negative fixtures prove the rules catch violations:
 | A test under `application/` imports an entry point (tests are not checked) | PASS |
 | A handler input holds plain data: primitives, lists of allowed values and nested shapes it declares | PASS |
 | A handler input refers to a class from `domain/`, directly, through an alias, by extending it or at the `execute` parameter | FAIL |
+| A handler has one public method, `execute` | PASS |
+| A handler has a second public method, or its one public method is not named `execute` | FAIL |
 | A repository interface refers to one entity file | PASS |
 | A repository interface refers to two entity files, or its main type is under `domain/value-objects/` | FAIL |
 | Nothing under `domain/value-objects/` or `domain/errors/` imports from `domain/entities/` | PASS |
@@ -224,7 +226,7 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | # | Rule | Enforcement |
 | --- | --- | --- |
 | 1 | Features are independent | Gate check: no import between feature folders, in every module |
-| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1, and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule, and that a handler has one public method `execute` (until the gate check of #243) |
+| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1, `application/` imports nothing from `platform/queue/`, and a handler class has exactly one public method, named `execute`. Review only: that an entry point holds no business rule |
 | 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features; pinned test: the list of application collaborators; the six-step order is review only |
 | 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor, in every module; where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory |

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunStartPoint, RunStartPoints } from '../../../contracts/index.js';
+import type { RunStartPoint } from '../../../contracts/index.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -20,16 +20,12 @@ export type GetRunStartPointResult = RunStartPoint;
  * Only a `ready` Repository qualifies: while it is fetching, its commit is about to change.
  */
 @Injectable()
-export class GetRunStartPointHandler implements RunStartPoints {
+export class GetRunStartPointHandler {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository,
     @Inject(REPOSITORY_CONNECTION_REPOSITORY)
     private readonly repositories: RepositoryConnectionRepository,
   ) {}
-
-  forProject(projectId: string): Promise<GetRunStartPointResult> {
-    return this.execute({ projectId });
-  }
 
   async execute(input: GetRunStartPointInput): Promise<GetRunStartPointResult> {
     const { projectId } = input;

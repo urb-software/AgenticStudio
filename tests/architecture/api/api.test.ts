@@ -26,6 +26,8 @@ const ROW_SNAPSHOT_METHOD_FAIL =
   'A class under `domain/` declares `snapshot` or `toSnapshot`' as const;
 const ROW_PROTOCOL_FAIL =
   'A file under `application/` imports the worker protocol package or an entry point' as const;
+const ROW_SINGLE_EXECUTE_FAIL =
+  'A handler has a second public method, or its one public method is not named `execute`' as const;
 const ROW_INPUT_FAIL =
   'A handler input refers to a class from `domain/`, directly or by extending it' as const;
 
@@ -1011,7 +1013,7 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'handler-method-without-return-type',
-    expected: ['api-handlers-return-plain-data'],
+    expected: ['api-handlers-return-plain-data', 'api-handler-single-execute'],
     qualityRow: ROW_HANDLER_FAIL,
   },
   {
@@ -1245,6 +1247,21 @@ describeGate('api', apiGate, 'apps/api', [
     fixture: 'billing-handler-input-extends-domain-class',
     expected: ['api-handler-input-plain-data'],
     qualityRow: ROW_INPUT_FAIL,
+  },
+  {
+    fixture: 'handler-single-execute',
+    expected: [],
+    qualityRow: 'A handler has one public method, `execute`',
+  },
+  {
+    fixture: 'handler-second-public-method',
+    expected: ['api-handler-single-execute'],
+    qualityRow: ROW_SINGLE_EXECUTE_FAIL,
+  },
+  {
+    fixture: 'handler-single-public-method-not-execute',
+    expected: ['api-handlers-return-plain-data', 'api-handler-single-execute'],
+    qualityRow: ROW_SINGLE_EXECUTE_FAIL,
   },
   {
     fixture: 'reference-module',

@@ -33,6 +33,8 @@ import { RemoveEnvironmentFileHandler } from './application/features/remove-envi
 import { SetEnvironmentFileEndpoint } from './entry-points/http/operator/set-environment-file/endpoint.js';
 import { SetEnvironmentFileHandler } from './application/features/set-environment-file/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from './application/features/sweep-orphaned-environment-files/handler.js';
+import { ProjectRunEnvironmentFiles } from './entry-points/contracts/run-environment-files.js';
+import { ProjectRunStartPoints } from './entry-points/contracts/run-start-points.js';
 import { GetRunStartPointHandler } from './application/features/get-run-start-point/handler.js';
 import { ListProjectsEndpoint } from './entry-points/http/operator/list-projects/endpoint.js';
 import { ListProjectsHandler } from './application/features/list-projects/handler.js';
@@ -179,13 +181,13 @@ export class ProjectsModule {
         ResumeDisconnectsHandler,
         VerifyRepositoryHandler,
         GetRunStartPointHandler,
-        { provide: RUN_START_POINTS, useExisting: GetRunStartPointHandler },
+        { provide: RUN_START_POINTS, useClass: ProjectRunStartPoints },
         GetEnvironmentFileHandler,
         SetEnvironmentFileHandler,
         RemoveEnvironmentFileHandler,
         SweepOrphanedEnvironmentFilesHandler,
         GetRunEnvironmentFileHandler,
-        { provide: RUN_ENVIRONMENT_FILES, useExisting: GetRunEnvironmentFileHandler },
+        { provide: RUN_ENVIRONMENT_FILES, useClass: ProjectRunEnvironmentFiles },
       ],
       exports: [RUN_START_POINTS, RUN_ENVIRONMENT_FILES],
     };
