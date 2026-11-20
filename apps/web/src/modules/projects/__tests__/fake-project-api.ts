@@ -33,12 +33,9 @@ const RUNS_ROUTE = /^\/api\/projects\/[^/]+\/runs$/;
 const ROUTE = /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?|\/environment-file)?$/;
 
 /**
- * A fake of the project detail API behind `fetch` (`GET /api/projects/:id`,
- * `GET|POST|DELETE /api/projects/:id/repository`, `POST /api/projects/:id/repository/fetch` and
- * `/verify`), so the
- * generated client, the wrapper and TanStack Query run for real. `repository` is the server's
- * state; tests change it to move the Repository on (as the background clone or fetch would)
- * and script error responses.
+ * A fake of the project detail API behind `fetch`. `repository` is the server's state; tests
+ * change it to move the Repository on (as the background clone or fetch would) and script error
+ * responses.
  */
 export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput | null = null) {
   /**
@@ -49,7 +46,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     repository: initial,
     cleanupPending: false,
     hostTrusted: false,
-    // Issue #104: what the server keeps of the project's Environment file (never sent back).
+    // What the server keeps of the project's Environment file (never sent back).
     environmentFile: null as EnvironmentFileInfoOutput | null,
     environmentFileContent: null as string | null,
   };
@@ -68,7 +65,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
   const held: Partial<Record<Route, Promise<void>>> = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
-    // The composed Runs section (executions, #97) lists the project's Runs: none here.
+    // The composed Runs section lists the project's Runs: none here.
     if (request.method === 'GET' && RUNS_ROUTE.test(new URL(request.url).pathname)) {
       return json(200, []);
     }

@@ -17,7 +17,7 @@ import { RunFailingChecks } from './run-failing-checks';
 import { RunReviewComments } from './run-review-comments';
 import { RunPullRequestChecks } from './run-pull-request-checks';
 
-/** While a check is queued or running, the page reads the checks again this often (Issue #145). */
+/** While a check is queued or running, the page reads the checks again this often. */
 const CHECKS_REFRESH_MS = 30_000;
 
 /** The request "Refresh" makes (generated `refreshRunPullRequest`), shown when it fails. */
@@ -79,9 +79,9 @@ function Mergeable({ pullRequest }: { pullRequest: PullRequest }) {
 }
 
 /**
- * "Bring up to date" (Issue #147): offered while the Run branch is behind the integration branch
- * and the Run can take a Follow-up. Says how far behind it is and whether GitHub reports
- * conflicts, and opens the confirm that explains what will happen and takes an optional note.
+ * "Bring up to date": offered while the Run branch is behind the integration branch and the Run
+ * can take a Follow-up. Says how far behind it is and whether GitHub reports conflicts, and
+ * opens the confirm that explains what will happen and takes an optional note.
  */
 function BringUpToDate({ run, pullRequest }: { run: RunOutput; pullRequest: PullRequest }) {
   const [open, setOpen] = useState(false);
@@ -129,20 +129,6 @@ function Refreshed({ iso }: { iso: string | undefined }) {
   );
 }
 
-/**
- * The Run's pull request on GitHub (Issue #142): its number and link, its state (draft, open,
- * merged, closed or missing), the Run branch, how far the branch is behind and ahead of the
- * integration branch, whether GitHub says it can be merged without conflicts, and when this was
- * last read. The state comes from the agent worker, through the Agent account, so it is
- * refreshed on request: once when the page opens (the API holds that to once a minute per Run)
- * and with "Refresh". While a refresh is under way the card says so; when one failed, or no
- * agent worker is connected, it says that and keeps the last known state. Issue #145: the card
- * also lists the Pull request checks of the pull request's latest commit and offers to send the
- * failing ones to the agent; while any check is queued or running and the page is visible, it
- * refreshes them every 30 seconds (its own floor, apart from the once-a-minute limit of the
- * on-open request). Issue #146: it also offers to load the pull request's Review comments as
- * input for a Follow-up while the Run can take one.
- */
 export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullRequest: PullRequest }) {
   const titleId = useId();
   const refresh = useRefreshPullRequest(run.id);

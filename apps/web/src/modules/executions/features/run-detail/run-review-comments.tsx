@@ -121,10 +121,9 @@ function CommentRow({
 }
 
 /**
- * The loaded comments for review (Issue #146): the operator's own are listed first and selected,
- * everyone else's sit in a collapsed section and are unselected. Selecting adds a comment's part
- * to the prepared text, deselecting takes it out (a part the operator edited stays, and is said
- * so). Nothing is sent until "Send Follow-up".
+ * The operator's own comments are listed first and selected; everyone else's sit in a collapsed
+ * section, unselected. Deselecting takes a comment's part out of the prepared text (a part the
+ * operator edited stays, and is said so).
  */
 function CommentsPreview({
   run,
@@ -288,15 +287,6 @@ function CommentsPreview({
   );
 }
 
-/**
- * "Load review comments" (Issue #146), on the pull request card while the Run can take a
- * Follow-up: it asks the agent worker to read the pull request's review summaries, inline
- * comments and conversation comments through the Agent account (by default those written since
- * the latest result; or all unresolved), then shows them for review: the operator's own selected,
- * everyone else's collapsed and unselected, an editable prepared text, and "Send Follow-up".
- * Loading starts no agent and sends nothing, and nothing is posted back to GitHub. There is no
- * setting that sends comments by itself.
- */
 export function RunReviewComments({ run }: { run: RunOutput }) {
   const canSend = run.followUp?.allowed === true;
   const comments = useReviewComments(run.id, canSend);

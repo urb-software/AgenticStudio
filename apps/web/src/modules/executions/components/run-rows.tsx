@@ -14,9 +14,9 @@ import {
 } from './run-presentation';
 
 /**
- * The pass or fail marker next to a pull request's state (Issue #145), from the stored summary of
- * its Pull request checks: only a result is marked (a failed check, or all finished and passed),
- * and only while the pull request is open. The word is there as well as the icon.
+ * The pass or fail marker next to a pull request's state, from the stored summary of its Pull
+ * request checks: only a result is marked (a failed check, or all finished and passed), and only
+ * while the pull request is open. The word is there as well as the icon.
  */
 function ChecksMarker({ pullRequest }: { pullRequest: NonNullable<RunOutput['pullRequest']> }) {
   const open = pullRequest.state === 'draft' || pullRequest.state === 'open';
@@ -49,13 +49,6 @@ type RunRowsProps = {
   projectNames?: ReadonlyMap<string, string>;
 };
 
-/**
- * Runs as rows: the state pill, the start of the Task (the link to the Run page), the Provider,
- * a pull request marker when the Run was delivered (Issue #102), how many Follow-ups it had
- * (Issue #141), the project when the list
- * spans projects, and how long ago it was created. One line per Run from tablet up; on phones
- * each Run is a stacked block, so the page never scrolls sideways.
- */
 export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
   return (
     <ul role="list" aria-label={label} className="m-0 flex list-none flex-col p-0">
@@ -80,12 +73,12 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
             <span className="col-span-2 row-start-3 flex min-w-0 flex-wrap gap-x-3 text-small text-text-muted md:col-span-1 md:col-start-3 md:row-start-1 md:flex-nowrap">
               <span>{PROVIDER_LABEL[run.provider]}</span>
               {run.pullRequest ? (
-                // A marker, not a link: the row is one link to the Run page (Issue #102).
+                // A marker, not a link: the row is one link to the Run page.
                 <span className="inline-flex items-center gap-1 font-mono text-code">
                   <GitPullRequestIcon aria-hidden="true" className="size-3.5" />
                   <span className="sr-only">Pull request </span>#{run.pullRequest.number}
                   {run.pullRequest.state ? (
-                    // Issue #142: where the pull request stands, next to its marker.
+                    // Where the pull request stands, next to its marker.
                     <span className="font-sans text-small text-text-muted">
                       <span aria-hidden="true">· </span>
                       <span className="sr-only">, </span>
@@ -96,7 +89,7 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
                 </span>
               ) : null}
               {run.followUps > 0 ? (
-                // Issue #141: the Run has had Follow-ups.
+                // The Run has had Follow-ups.
                 <span>
                   {run.followUps} {run.followUps === 1 ? 'Follow-up' : 'Follow-ups'}
                 </span>

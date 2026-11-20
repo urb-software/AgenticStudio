@@ -44,9 +44,9 @@ export interface RunLogHandle {
 }
 
 /**
- * The Run's log on the Run page (Issue #99): the LogViewer over the stored log, live while the
- * Run is active (new entries appear without a reload; a dropped stream reconnects and fills
- * the gap), with each Run step's structured result at its end.
+ * The Run's log on the Run page: the LogViewer over the stored log, live while the Run is active
+ * (new entries appear without a reload; a dropped stream reconnects and fills the gap), with
+ * each Run step's structured result at its end.
  */
 export function RunLog({ run, ref }: { run: RunOutput; ref?: Ref<RunLogHandle> }) {
   const refreshSteps = useRefreshRunSteps(run.id);
@@ -60,15 +60,15 @@ export function RunLog({ run, ref }: { run: RunOutput; ref?: Ref<RunLogHandle> }
   useEffect(() => {
     void refreshSteps();
   }, [run.state]); // eslint-disable-line react-hooks/exhaustive-deps -- on state changes only
-  // "Streaming live" is said once (Issue #115): the words stay through a reconnect, so the polite
-  // status does not change and is not read again; a new load (retry) may say them again.
+  // "Streaming live" is said once: the words stay through a reconnect, so the polite status does
+  // not change and is not read again; a new load (retry) may say them again.
   const [wentLive, setWentLive] = useState(false);
   if (log.status === 'live' && !wentLive) setWentLive(true);
   if ((log.status === 'loading' || log.status === 'error') && wentLive) setWentLive(false);
   const announcement =
     log.status === 'ended' ? ENDED_ANNOUNCEMENT : wentLive ? LIVE_ANNOUNCEMENT : '';
   const { events, version } = log;
-  // Appends each live batch's rows instead of rebuilding them all (Issue #115).
+  // Appends each live batch's rows instead of rebuilding them all.
   const [builder] = useState(() => new LogRowBuilder());
   const rows = useMemo(
     () => builder.build(events, steps ?? NO_STEPS, run.messages ?? NO_MESSAGES),

@@ -8,10 +8,6 @@ import { aRun, fakeRunsApi, problem, PROJECT } from './fake-runs-api';
 const SWITCHED_OFF = 'Switched off on the agent worker';
 const NO_WORKER = 'No agent worker is connected';
 
-// Runs section seam (Story #97): the public ProjectRuns of the executions module with the New
-// run dialog, the generated client, the API wrapper and TanStack Query real, and the API faked
-// at `fetch`.
-
 const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 
@@ -454,7 +450,7 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
     expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
     expect(startButton()).toHaveProperty('disabled', true);
-    // The checking state is accessible too (review R2-2 of #120, Issue #115).
+    // The checking state is accessible too.
     await expect(document.body).toHaveNoAxeViolations();
     answer(
       new Response(

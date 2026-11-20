@@ -5,11 +5,9 @@ import { Slot } from 'radix-ui';
 import { cn } from '@/shared/lib/utils';
 
 /**
- * Agent Studio Button (design-system/components/Button). shadcn's `default` variant is the
- * design system's `primary`; the default is `secondary`, as the spec says (primary appears at
- * most once per view). Sizes follow the control tokens: sm 30px, md 36px, lg 44px; `icon` and
- * `icon-sm` are the 36px / 28px squares of the IconButton spec. On coarse pointers every size
- * grows to at least 44px.
+ * shadcn's `default` variant is the design system's `primary`; the default here is `secondary`,
+ * as the spec says (primary appears at most once per view). On coarse pointers every size grows
+ * to at least 44px.
  */
 const buttonVariants = cva(
   [
@@ -50,13 +48,9 @@ type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>
 
 type ButtonBaseProps = Omit<React.ComponentProps<'button'>, 'aria-label'> & {
   variant?: ButtonVariant;
-  /** lucide icon before the label; `loading` swaps it for a spinner. */
   icon?: LucideIcon;
-  /** lucide icon after the label. */
   iconRight?: LucideIcon;
-  /** Shows a spinner, disables the button and sets aria-busy. The caller changes the label. */
   loading?: boolean;
-  /** Renders the single child (e.g. a link) with the button's styling. */
   asChild?: boolean;
 };
 

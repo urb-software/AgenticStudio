@@ -6,10 +6,6 @@ import { RunDetail } from '..';
 import type { RunMessageOutput, RunOutput, RunStepOutput } from '../../../platform/api';
 import { anEvent, aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #103 seam: the agent's question, the answer form and the conversation on the public
-// RunDetail, with the generated client, the API wrapper and TanStack Query real, and the API
-// faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 function renderRun(runId: string) {
@@ -318,7 +314,7 @@ describe('Conversation (Issue #103)', () => {
     expect(items[2]).toContain('You · Answer');
     expect(items[2]).toContain('PostgreSQL');
     expect(items[3]).toContain('And the schema name?');
-    // Review M2 of #127: a past question keeps its options and recommendation.
+    // A past question keeps its options and recommendation.
     const offered = within(conversation).getByRole('list', { name: 'Options offered' });
     expect(within(offered).getByText('Recommended')).toBeTruthy();
     expect(within(conversation).getByRole('link', { name: 'Run step 1 · log below' })).toBeTruthy();

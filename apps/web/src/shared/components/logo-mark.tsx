@@ -1,10 +1,8 @@
 import { cn } from '@/shared/lib/utils';
 
 /**
- * The Agent Studio mark: the hexagon in a violet `brand-solid` tile (the design system's
- * `accent-solid`; design-system/assets/Logos, drawn as in the prototype). Decorative: the
- * product name is always set beside it. 30px tile: the `control-sm` size, which has no
- * Tailwind token in globals.css.
+ * Decorative: the product name is always set beside it. The 30px tile is the `control-sm` size,
+ * which has no Tailwind token in globals.css.
  */
 export function LogoMark() {
   return (

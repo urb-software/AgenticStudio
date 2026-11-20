@@ -5,10 +5,6 @@ import { RunIndicator } from '..';
 import type { RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi } from './fake-runs-api';
 
-// Run indicator seam (Story #97): the public RunIndicator of the executions module, with the
-// generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`. It
-// reads the two counts of `GET /api/runs/summary`, never the Run list (Issue #115).
-
 function renderIndicator() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(

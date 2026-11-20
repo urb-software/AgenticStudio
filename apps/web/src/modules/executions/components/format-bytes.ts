@@ -2,7 +2,7 @@ const UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const;
 
 /**
  * A byte count in binary units ("3.2 GiB"), one decimal below 10 and none above, as the agent
- * worker's disk figures read (Issue #143); the worker's threshold is configured in GiB.
+ * worker's disk figures read; the worker's threshold is configured in GiB.
  */
 export function formatBytes(bytes: number): string {
   let value = bytes;

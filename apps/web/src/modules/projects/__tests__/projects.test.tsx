@@ -7,10 +7,6 @@ import { ProjectsOverview } from '..';
 import type { ProjectOutput } from '../../../platform/api';
 import { fakeProjectsApi, problem } from './fake-projects-api';
 
-// Projects UI seam (Story #16, restyled in #44): the public ProjectsOverview of the projects
-// module, with the generated client, the API wrapper and TanStack Query all real, and the API
-// faked at `fetch`. The Toaster is mounted as the root layout mounts it.
-
 const ALPHA: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000a1',
   name: 'Alpha',

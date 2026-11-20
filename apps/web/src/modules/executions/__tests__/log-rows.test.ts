@@ -3,8 +3,8 @@ import type { RunEventOutput, RunStepOutput } from '../../../platform/api';
 import { LogRowBuilder, stepStartRowKey } from '../features/run-log/log-rows';
 import { anEvent } from './fake-runs-api';
 
-// Issue #115 (review Spec-1 of #119): the Run log's rows are built per live batch, appending
-// only the new events' rows, so a long live log is not rebuilt ten times a second.
+// The Run log's rows are built per live batch, appending only the new events' rows, so a long
+// live log is not rebuilt ten times a second.
 
 const NO_STEPS: ReadonlyMap<number, RunStepOutput> = new Map();
 const NO_MESSAGES = [] as const;
@@ -55,8 +55,8 @@ describe('LogRowBuilder', () => {
     expect(reloaded.map((row) => row.text)).toEqual(['fresh']);
   });
 
-  // Review of #137: after a usage-limit resume (Issue #105) the worker runs the cut step again
-  // under the same number, and the resume text is stored as an operator answer.
+  // After a usage-limit resume the worker runs the cut step again under the same number, and the
+  // resume text is stored as an operator answer.
   const at = '2026-11-15T10:00:00.000Z';
   const needsInput: RunStepOutput = { ...done, outcome: 'needs_input', summary: 'Which DB?' };
   const resumedLog: RunEventOutput[] = [

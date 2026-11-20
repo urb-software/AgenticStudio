@@ -7,7 +7,6 @@ import { RunTitle } from '@/modules/executions';
 import { ProjectName } from '@/modules/projects';
 import { routeFor } from './routes';
 
-/** `/projects/<id>` or `/executions/<id>`: a project or a Run, one level below its section. */
 const DETAIL_PATH = /^\/(projects|executions)\/([^/]+)\/?$/;
 
 const CURRENT = 'block truncate px-1.5 py-1 font-medium text-text';

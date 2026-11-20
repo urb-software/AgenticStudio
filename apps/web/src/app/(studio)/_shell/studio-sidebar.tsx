@@ -17,7 +17,6 @@ import { LogoLockup } from '@/shared/components/logo-mark';
 import { routeFor, STUDIO_ROUTES } from './routes';
 
 function toggleLabel(auto: boolean, collapsed: boolean): string {
-  // Before the client knows the width, the rail or column is drawn by CSS: name no direction.
   if (auto) return 'Toggle sidebar';
   return collapsed ? 'Expand sidebar' : 'Collapse sidebar';
 }

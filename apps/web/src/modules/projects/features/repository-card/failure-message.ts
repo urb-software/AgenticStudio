@@ -5,14 +5,12 @@ type Failure = NonNullable<RepositoryOutput['failure']>;
 /** What failed: the first clone (or a Retry), or a fetch into an existing Clone. */
 export type FailedOperation = 'clone' | 'fetch';
 
-/** How Studio reaches the Repository: anonymous HTTPS, or SSH with the Deploy key (#62). */
+/** How Studio reaches the Repository: anonymous HTTPS, or SSH with the Deploy key. */
 export type Transport = 'https' | 'ssh';
 
 /**
- * The part of a failure's detail the card shows as Git output. For `host_key_mismatch` the API
- * puts Studio's own explanation first, then a blank line and the redacted Git output (or only
- * the explanation, when there is no output); the card's message already gives that advice, so
- * only the Git output is shown, and nothing when there is none (#72).
+ * For `host_key_mismatch` the API puts Studio's own explanation first, then a blank line and the
+ * Git output; the card's message already gives that advice, so only the Git output is shown.
  */
 export function gitOutputOf(failure: Failure): string {
   if (failure.code !== 'host_key_mismatch') return failure.detail;
@@ -21,9 +19,9 @@ export function gitOutputOf(failure: Failure): string {
 }
 
 /**
- * The operator-facing message for a failure reason code (Epic #55's fixed list). A code this
- * version does not know (added by a later API) gets a generic message; the redacted detail is
- * shown next to it either way.
+ * The operator-facing message for a failure reason code. A code this version does not know
+ * (added by a later API) gets a generic message; the redacted detail is shown next to it either
+ * way.
  */
 export function failureMessage(
   failure: Failure,
@@ -63,13 +61,13 @@ export function failureMessage(
     case 'host_key_mismatch':
       // True for a changed key and for no trusted key at all; the advice is given only here.
       return "The Git host's key is not one Studio trusts, so Studio did not connect. Studio never accepts a changed key on its own: if the change is expected, disconnect the repository and connect it again.";
-    // Issue #69: the remote address policy. The detail names the address and, for a loopback
-    // or private one, the setting that allows it.
+    // The remote address policy. The detail names the address and, for a loopback or private
+    // one, the setting that allows it.
     case 'remote_not_allowed':
       return 'Studio does not connect to this address: it is link-local, a cloud metadata service, or loopback or private without STUDIO_GIT_ALLOW_PRIVATE_REMOTES=true. The detail below names the address.';
     case 'redirect_refused':
       return 'The Git host redirected Studio to another URL, and Studio does not follow redirects. Connect with the final URL of the repository.';
-    // An operation cut off by a crash or a restart of Studio (#72), not by the repository.
+    // An operation cut off by a crash or a restart of Studio, not by the repository.
     case 'interrupted':
       return `The ${operation} was interrupted, for example by a restart of Studio.`;
     case 'unknown':

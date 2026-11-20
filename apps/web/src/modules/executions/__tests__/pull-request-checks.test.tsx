@@ -6,11 +6,6 @@ import { ExecutionsOverview, RunDetail } from '..';
 import type { PreparedFollowUpOutput, RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #145 on the Run page seam: the Pull request checks on the pull request card, the pass or
-// fail marker in the lists, and "Send failing checks to the agent": prepared, reviewed (deselect,
-// edit) and sent or discarded, with the generated client, the API wrapper and TanStack Query real,
-// and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const URL_OF_PULL_REQUEST = 'https://github.com/acme/shop/pull/7';

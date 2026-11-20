@@ -11,7 +11,6 @@ export const STUDIO_ROUTES: readonly StudioRoute[] = [
   { href: '/executions', label: 'Executions', icon: Activity },
 ];
 
-/** The section a path belongs to (`/projects/abc` → Projects), if any. */
 export function routeFor(pathname: string): StudioRoute | undefined {
   return STUDIO_ROUTES.find(
     (route) => pathname === route.href || pathname.startsWith(`${route.href}/`),

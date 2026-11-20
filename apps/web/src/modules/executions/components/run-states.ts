@@ -3,9 +3,9 @@ import type { RunOutput } from '../../../platform/api';
 type RunState = RunOutput['state'];
 
 /**
- * The Run state groups of the web app, defined once (Issue #115). They follow the API's
- * state machine: these are presentation groups for polling, counts and the log, and the API
- * alone decides a Run's state.
+ * The Run state groups of the web app, defined once. They follow the API's state machine: these
+ * are presentation groups for polling, counts and the log, and the API alone decides a Run's
+ * state.
  */
 
 /**

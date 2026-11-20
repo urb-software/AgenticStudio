@@ -6,9 +6,6 @@ import { RunDetail } from '..';
 import type { RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem, PROJECT, SHA } from './fake-runs-api';
 
-// Run page seam (Story #97): the public RunDetail of the executions module, with the generated
-// client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
 const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 

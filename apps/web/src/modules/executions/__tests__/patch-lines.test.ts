@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { patchLines } from '../features/run-changes/patch-lines';
 
-// Issue #144: Git's unified diff of one file into DiffView rows.
+// Git's unified diff of one file into DiffView rows.
 
 describe('patchLines', () => {
   it('numbers the old and new lines of each hunk and leaves the file headers out', () => {

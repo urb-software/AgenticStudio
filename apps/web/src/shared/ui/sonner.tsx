@@ -11,10 +11,8 @@ import {
 } from 'lucide-react';
 
 /**
- * Toaster for transient confirmations (design-system/components/Toast): bottom-right, up to
- * four at a time, auto-dismissed after about 4.5s. Errors that need action go in a Banner.
- * Sonner's colour variables point at the tokens through classNames (no style= colours); `!`
- * lets them win over Sonner's own unlayered stylesheet.
+ * Sonner's colour variables point at the tokens through classNames (no style= colours); `!` lets
+ * them win over Sonner's own unlayered stylesheet.
  */
 const Toaster = ({ ...props }: ToasterProps) => {
   const { resolvedTheme } = useTheme();

@@ -3,9 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { resolve } from 'node:path';
 import { resolveApiProxy, resolveOutput } from './next.config';
 
-// The /api proxy of next.config.ts (Issue #30 decision 3): a production build proxies only on
-// an explicit, validated opt-in (STUDIO_WEB_API_PROXY=true + API_ORIGIN); API_ORIGIN alone
-// no longer does.
+// The /api proxy of next.config.ts: a production build proxies only on an explicit, validated
+// opt-in (STUDIO_WEB_API_PROXY=true + API_ORIGIN); API_ORIGIN alone no longer does.
 
 describe('resolveApiProxy: next dev', () => {
   it('always proxies, to http://localhost:3001 by default', () => {
@@ -81,7 +80,7 @@ describe('resolveApiProxy: validation', () => {
   });
 });
 
-// The production image's standalone build (Issue #132): opt-in, so `next start` is unchanged.
+// The production image's standalone build: opt-in, so `next start` is unchanged.
 describe('resolveOutput', () => {
   it.each([{}, { STUDIO_WEB_STANDALONE: '' }, { STUDIO_WEB_STANDALONE: 'false' }])(
     'keeps the default build output for %j',

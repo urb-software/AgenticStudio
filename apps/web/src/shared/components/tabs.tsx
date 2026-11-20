@@ -4,11 +4,9 @@ import * as React from 'react';
 import { cn } from '@/shared/lib/utils';
 import { Tabs as TabsRoot, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs';
 
-/** One tab (design-system/components/Tabs `TabItem`). */
 export interface TabItem {
   value: string;
   label: string;
-  /** An optional count beside the label. */
   count?: number;
   /** The count is work waiting on the operator: it turns amber. */
   attention?: boolean;
@@ -19,19 +17,11 @@ type TabsProps = {
   value?: string;
   defaultValue?: string;
   onChange?: (value: string) => void;
-  /** The tab list's accessible name. */
   label?: string;
   className?: string;
-  /** The panels: one {@link TabPanel} per item. */
   children?: React.ReactNode;
 };
 
-/**
- * Page-level sections of one entity (design-system/components/Tabs), e.g. a Run's Log and
- * Changes, with the spec's props (`items`, `value`, `onChange`, `label`) over the shadcn Tabs
- * primitive: arrow keys move between tabs, `aria-selected` marks the selected one, which gets
- * the `accent-solid` underline. Keep labels to one or two words, never more than six tabs.
- */
 function Tabs({ items, value, defaultValue, onChange, label, className, children }: TabsProps) {
   return (
     <TabsRoot

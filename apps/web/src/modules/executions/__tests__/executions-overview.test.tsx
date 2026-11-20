@@ -5,9 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { ExecutionsOverview } from '..';
 import { aRun, fakeRunsApi, OTHER_PROJECT_ID, problem, PROJECT } from './fake-runs-api';
 
-// Executions page seam (Story #97): the public ExecutionsOverview of the executions module, with
-// the generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
 function renderExecutions() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -86,7 +83,7 @@ describe('Executions page', () => {
     const [row] = await rows();
     expect(within(row!).getByText('Unknown project')).toBeTruthy();
   });
-  // Issue #143: the agent side's disk.
+  // The agent side's disk.
   describe('agent worker disk', () => {
     const GIB = 1024 ** 3;
     const disk = {

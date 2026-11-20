@@ -10,12 +10,9 @@ import { Button } from '@/shared/ui/button';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/sheet';
 import { SIDEBAR_COOKIE_MAX_AGE, SIDEBAR_COOKIE_NAME } from '@/shared/ui/sidebar-state';
 
-// Trimmed from the shadcn Sidebar to what the Studio Shell uses (#43): a left sidebar that
-// collapses to an icon rail on tablet and desktop and is an off-canvas sheet on phones. The
-// generated floating/inset variants, right side, rail, sub-menus, menu buttons/actions/badges/
-// skeletons, search input, Cmd/Ctrl+B shortcut and trigger were removed; nothing used them.
-// Widths (design-system Layout: 240px sidebar, 64px icon rail) are CSS variables set in
-// classNames, not style= props: --sidebar-width, --sidebar-width-icon.
+// Trimmed from the shadcn Sidebar to what the Studio Shell uses; the unused variants and parts
+// were removed.
+// Widths are CSS variables set in classNames, not style= props.
 
 type SidebarContextProps = {
   state: 'expanded' | 'collapsed';
@@ -39,12 +36,9 @@ function useSidebar() {
 }
 
 /**
- * `defaultOpen` is the operator's stored choice (the `sidebar_state` cookie, read on the
- * server so the first paint matches). Without one, the sidebar starts expanded on desktop and
- * collapsed to the icon rail on tablet (frontend.md §9); that default is never stored. The
- * server cannot know the width, so until the client does, the markup carries `data-auto` and
- * `group-data-[auto=true]:md:max-xl:` styles draw the tablet rail (consumers read `auto` to do
- * the same for their own content): no flash either way.
+ * `defaultOpen` is the operator's stored choice (the `sidebar_state` cookie, read on the server).
+ * The server cannot know the width: until the client does, `data-auto` and the
+ * `group-data-[auto=true]:md:max-xl:` styles draw the tablet rail, so there is no flash.
  */
 function SidebarProvider({
   defaultOpen,

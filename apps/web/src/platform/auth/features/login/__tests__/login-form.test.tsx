@@ -3,9 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { LoginForm } from '../login-form';
 
-// #44 UI seam: the login form with the generated client and the API wrapper real, the API
-// faked at `fetch` and Next.js navigation faked at `useRouter`.
-
 const replace: Mock<(href: string) => void> = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace }) }));
 
@@ -122,7 +119,7 @@ describe('LoginForm', () => {
 
     await signIn();
 
-    // Announced assertively, as the lockout message was before #44.
+    // Announced assertively, as the lockout message always was.
     const banner = await screen.findByRole('alert');
     expect(banner.dataset.tone).toBe('warning');
     expect(banner.querySelector('b')?.textContent?.trim()).toBe('Too many failed attempts.');
@@ -176,7 +173,7 @@ describe('LoginForm', () => {
   });
 
   it('says the API is unreachable when the request fails without a response', async () => {
-    // A network error: `fetch` rejects and no HTTP response arrives (#52).
+    // A network error: `fetch` rejects and no HTTP response arrives.
     fakeLogin(() => Promise.reject(new TypeError('Failed to fetch')));
     const { container } = render(<LoginForm />);
 
@@ -199,7 +196,7 @@ describe('LoginForm', () => {
   });
 
   it('keeps the server-error message for a 5xx that has a response (e.g. from a proxy)', async () => {
-    // Any HTTP response, even an empty gateway error, means something answered (#52).
+    // Any HTTP response, even an empty gateway error, means something answered.
     fakeLogin(() => new Response(null, { status: 504 }));
     render(<LoginForm />);
 

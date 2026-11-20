@@ -6,11 +6,6 @@ import { RunDetail } from '..';
 import type { ReviewCommentOutput, ReviewCommentsOutput, RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #146 on the Run page seam: "Load review comments" on the pull request card, the two
-// sections (the operator's own selected, everyone else's collapsed and unselected), selecting and
-// editing, and sending as a Follow-up marked as prepared from Review comments, with the generated
-// client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const BRANCH = 'agent/add-a-health-check-r1';

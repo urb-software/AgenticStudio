@@ -44,12 +44,9 @@ function Commit({ id }: { id: string }) {
 }
 
 /**
- * The Pull request checks of the Run's pull request (Issue #145): GitHub's results for the pull
- * request's latest commit, which the section names, kept apart from the agent's own Reported
- * checks. A summary line says the overall picture, then each check with its state, duration and
- * link. It says so when the latest commit is not the Run's latest pushed one (someone else pushed),
- * and has its own words for no checks, checks that have not started, checks GitHub would not tell
- * and a lookup that failed. An ended pull request has none to show.
+ * GitHub's results for the pull request's latest commit, kept apart from the agent's own
+ * Reported checks; it says so when that commit is not the Run's latest pushed one (someone else
+ * pushed).
  */
 export function RunPullRequestChecks({ pullRequest }: { pullRequest: PullRequest }) {
   const titleId = useId();

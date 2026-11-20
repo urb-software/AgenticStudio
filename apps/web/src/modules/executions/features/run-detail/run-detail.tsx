@@ -45,7 +45,7 @@ import { RunFollowUp } from './run-follow-up';
 import { RunPullRequest } from './run-pull-request';
 import { ResumeRun } from './run-resume';
 
-/** The Run page's tabs (Issue #144): its log and what it changed. */
+/** The Run page's tabs: its log and what it changed. */
 const RUN_TABS = [
   { value: 'log', label: 'Log' },
   { value: 'changes', label: 'Changes' },
@@ -88,8 +88,8 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
 }
 
 /**
- * Whether the Run was given its project's Environment file (Issue #104): it is decided when an
- * agent worker claims the Run, so a Run that has not started says so.
+ * Whether the Run was given its project's Environment file: it is decided when an agent worker
+ * claims the Run, so a Run that has not started says so.
  */
 function EnvironmentFileFact({ run }: { run: RunOutput }) {
   if (run.environmentFileSupplied) {
@@ -108,8 +108,8 @@ function EnvironmentFileFact({ run }: { run: RunOutput }) {
 }
 
 /**
- * What a Codex Run runs under (Issue #106): the agent worker's sandbox mode (ADR 0002; the only
- * mode it accepts, and each Run step states it in the log) and the accepted risks of the Codex
+ * What a Codex Run runs under: the agent worker's sandbox mode (ADR 0002; the only mode it
+ * accepts, and each Run step states it in the log) and the accepted risks of the Codex
  * compliance record, which the Run page does not hide.
  */
 function CodexFacts() {
@@ -133,12 +133,12 @@ function CodexFacts() {
 
 /** Why a queued Run waits; it needs the project's Runs, read (and polled) only while queued. */
 function QueuedReason({ run }: { run: RunOutput }) {
-  // Issue #141: a Follow-up waits for the agent worker that holds the Working copy, and for a
-  // free place under the concurrency limits like any queued Run.
+  // A Follow-up waits for the agent worker that holds the Working copy, and for a free place
+  // under the concurrency limits like any queued Run.
   if (run.messages?.at(-1)?.kind === 'follow_up') {
     return <FollowUpQueuedReason run={run} />;
   }
-  // Issue #103: an answered Run waits for the agent worker that holds its Working copy.
+  // An answered Run waits for the agent worker that holds its Working copy.
   if (run.messages?.at(-1)?.kind === 'answer') {
     return (
       <Banner tone="info" icon={ClockIcon} title="Answer sent.">
@@ -151,7 +151,7 @@ function QueuedReason({ run }: { run: RunOutput }) {
 
 function FollowUpQueuedReason({ run }: { run: RunOutput }) {
   const { data } = useProjectRuns(run.projectId);
-  // Issue #147: a request to bring the Run branch up to date is a Follow-up of its own source.
+  // A request to bring the Run branch up to date is a Follow-up of its own source.
   const bringUp = run.messages?.at(-1)?.source === 'bring_up_to_date';
   return (
     <Banner tone="info" icon={ClockIcon} title={bringUp ? 'Update requested.' : 'Follow-up sent.'}>
@@ -204,9 +204,9 @@ function RunAgain({ run }: { run: RunOutput }) {
 }
 
 /**
- * "Cancel run" (Issue #100) for a Run that is not finished: a danger trigger and the destructive
- * confirm. Once a running Run carries a cancel request it shows "Cancel requested…" instead,
- * until the agent worker has stopped it.
+ * "Cancel run" for a Run that is not finished: a danger trigger and the destructive confirm.
+ * Once a running Run carries a cancel request it shows "Cancel requested…" instead, until the
+ * agent worker has stopped it.
  */
 function CancelRun({ run, onCancel }: { run: RunOutput; onCancel: () => void }) {
   if (run.cancelRequestedAt) {
@@ -226,7 +226,7 @@ function CancelRun({ run, onCancel }: { run: RunOutput; onCancel: () => void }) 
 /**
  * The header's action: "Run again" for a finished Run, "Cancel run" otherwise. The cancel
  * confirm lives here, outside that switch, so it stays open with its answer when the Run turns
- * final meanwhile (review of #124: "Run already finished" must stay readable).
+ * final meanwhile.
  */
 function RunActions({ run }: { run: RunOutput }) {
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -244,7 +244,7 @@ function RunActions({ run }: { run: RunOutput }) {
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-/** The limits in force for the Run (Issue #100; per part and in total, Issue #141), in words. */
+/** The limits in force for the Run, in words. */
 function limitsText({
   stepMinutes,
   maxSteps,
@@ -259,7 +259,7 @@ function limitsText({
   ].join(' · ');
 }
 
-/** The Run step totals (Issue #141): in total, and in the current part. */
+/** The Run step totals: in total, and in the current part. */
 function stepsText(run: RunOutput): string {
   const part = run.followUps > 0 ? 'in this Follow-up' : 'in this run';
   return (
@@ -268,10 +268,10 @@ function stepsText(run: RunOutput): string {
   );
 }
 
-/** How a Run that was stopped ended (Issue #100): who cancelled it and why, or its time limit. */
+/** How a Run that was stopped ended: who cancelled it and why, or its time limit. */
 function Stopped({ run }: { run: RunOutput }) {
   if (run.state === 'cancelled') {
-    // A Run cancelled before reasons were recorded has none (review of #124).
+    // A Run cancelled before reasons were recorded has none.
     return (
       <Banner
         tone="info"
@@ -314,21 +314,6 @@ export function RunTitle({ runId }: { runId: string }) {
   return <>{data ? taskSummary(data.task) : 'Run'}</>;
 }
 
-/**
- * The Run page: the Task, the state as a status pill (polled while the Run is active), the
- * Provider, the project, the starting commit, the Run branch and the times. A queued Run says
- * why it waits; a failed Run shows the message for its reason code and the detail in mono; a
- * finished one has "Run again". How the result reached GitHub (Issue #102) follows: the draft
- * pull request, "No changes", failing checks, "Retry delivery" or where the Run branch stays. A
- * Run that is not finished can be cancelled; the limits in force are shown, and a cancelled or
- * timed-out Run says why it stopped (Issue #100). A Run waiting for the operator shows the
- * agent's question and the answer form; once the agent asked, the Task leads the conversation
- * of questions and answers (Issue #103). A finished Run offers a Follow-up, or says why it cannot
- * take one; the conversation marks each Follow-up and keeps each part's result, the Details show
- * the Run step totals, and the commits say which are pushed (Issue #141). A Run with a pull request shows its card: the
- * state on GitHub, the branch position and when it was read (Issue #142). Below, two tabs: the
- * Run's log (Issue #99) and its Changes (Issue #144), what it changed in its Working copy.
- */
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
   const log = useRef<RunLogHandle>(null);
@@ -420,7 +405,7 @@ export function RunDetail({ runId }: { runId: string }) {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-        {/* Issue #103: once the agent asked, the Task leads the conversation. */}
+        {/* Once the agent asked, the Task leads the conversation. */}
         {run.messages && run.messages.length > 1 ? (
           <RunConversation runId={run.id} messages={run.messages} onShowStep={showStep} />
         ) : (
@@ -485,7 +470,7 @@ export function RunDetail({ runId }: { runId: string }) {
       >
         {/* Kept mounted while hidden: the live log keeps its stream and its place. */}
         <TabPanel value="log" forceMount>
-          {/* Issue #141: a Follow-up reopens a finished Run, so its log opens again, live. */}
+          {/* A Follow-up reopens a finished Run, so its log opens again, live. */}
           <RunLog key={`${run.id}-${run.followUps}`} ref={log} run={run} />
         </TabPanel>
         <TabPanel value="changes">

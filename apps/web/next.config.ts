@@ -2,10 +2,9 @@ import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 import { resolve } from 'node:path';
 
-// Same-origin /api/* proxy to the NestJS API, so the browser never needs CORS. The rules
-// (dev always; production only with STUDIO_WEB_API_PROXY=true + API_ORIGIN) are canonical
-// in README.md, "Web /api proxy"; next.config.test.ts pins them. The logic stays in this
-// file because `next start` cannot load a separate TypeScript module from the config.
+// Same-origin /api/* proxy to the API, so the browser needs no CORS. Rules: README.md, "Web /api
+// proxy"; next.config.test.ts pins them. Kept in this file: `next start` cannot load another
+// TypeScript module from the config.
 
 const DEFAULT_DEV_API_ORIGIN = 'http://localhost:3001';
 const FLAG = 'STUDIO_WEB_API_PROXY';
@@ -72,9 +71,9 @@ export function resolveApiProxy(env: ApiProxyEnv, { devServer }: { devServer: bo
 }
 
 /**
- * The production image's build (apps/web/Dockerfile, Issue #132) sets STUDIO_WEB_STANDALONE=true
- * for Next.js's self-contained server bundle, traced from the repository root (`next build` runs
- * in apps/web). Unset, the build output is unchanged (`next start`, e2e:smoke).
+ * The production image's build sets STUDIO_WEB_STANDALONE=true for Next.js's self-contained
+ * server bundle, traced from the repository root (`next build` runs in apps/web). Unset, the
+ * build output is unchanged (`next start`, e2e:smoke).
  */
 export function resolveOutput(
   env: ApiProxyEnv,

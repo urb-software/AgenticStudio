@@ -32,11 +32,8 @@ function noteError(error: unknown): string | undefined {
 }
 
 /**
- * The "Bring up to date" confirm (Issue #147): says what will happen before anything does, and
- * takes an optional note for the agent. The branch is only ever brought up to date by merging the
- * integration branch into it (never a rebase, never a force push), and only on this request. A
- * refusal (the Run can no longer take a Follow-up) shows as a banner; a note the API refuses, next
- * to the field. A bottom sheet on phones; it cannot be closed while the request is in flight.
+ * The branch is only ever brought up to date by merging the integration branch into it (never a
+ * rebase, never a force push), and only on this request.
  */
 export function BringUpToDateDialog({ run, open, onOpenChange }: BringUpToDateDialogProps) {
   const [note, setNote] = useState('');

@@ -49,11 +49,9 @@ function resultRows(step: RunStepOutput): LogRow[] {
 }
 
 /**
- * Each question of the Run with the operator's answer to it, if any, in order (Issue #103), and
- * the texts that resumed a Run stopped at the usage limit (Issue #105), by the Run step they
- * ran again. Both are operator `answer` messages; an answer to a question comes right after it,
- * while a resume follows the Task or an answer (a Run waiting for an answer is never stopped at
- * the limit). A resume runs the step after the last asked question again.
+ * Both are operator `answer` messages: an answer comes right after its question, a resume
+ * follows the Task or an answer (a Run waiting for an answer is never stopped at the limit) and
+ * runs the step after the last asked question again.
  */
 function questionsAndAnswers(messages: readonly RunMessageOutput[]) {
   const turns: { question: string; answer?: string }[] = [];
@@ -93,7 +91,7 @@ const rowKey = (event: RunEventOutput, line: number | 'cut') => `${event.seq}:${
 /**
  * The key of the row that starts Run step `index` (its `step_started` marker), if it is loaded.
  * A step run again after a usage-limit resume has a marker per attempt: the last one is the
- * attempt that produced the step's result (review of #137).
+ * attempt that produced the step's result.
  */
 export function stepStartRowKey(
   events: readonly RunEventOutput[],
@@ -167,15 +165,9 @@ function eventRows(event: RunEventOutput, context: RowContext, rows: LogRow[]): 
 }
 
 /**
- * The rows of a Run's log for the LogViewer: each event's text line by line (commands as `$`
- * lines, notices as warnings, step markers as section rows), a note under a cut event, and the
- * step's structured result right after its `step_finished` marker once it is known. After a
- * step that ended with a question come the question and the operator's answer (Issue #103), so
- * the log reads as the conversation with each Run step's log between its turns.
- *
- * Built incrementally (Issue #115): the log's events array grows in place, so a live batch
- * appends only the new events' rows and earlier rows stay the same objects. New step results
- * or messages (once per Run step) or a new events array lay the rows out again.
+ * Built incrementally: the log's events array grows in place, so a live batch appends only the
+ * new events' rows and earlier rows stay the same objects. New step results or messages, or a
+ * new events array, lay the rows out again.
  */
 export class LogRowBuilder {
   private built:

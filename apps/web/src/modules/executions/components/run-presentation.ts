@@ -6,10 +6,9 @@ export type Provider = RunOutput['provider'];
 export type FailureCode = NonNullable<RunOutput['failure']>['code'];
 
 /**
- * How each Run state looks (design-system README, run-state colours): the pill colour and the
- * word. The design system has six colours for eight states, so `preparing` shares running's
- * colour (work is under way) and `timed_out` shares failed's (it stopped without a result); the
- * word tells them apart. Amber is only for the operator.
+ * The design system has six colours for eight states: `preparing` shares running's colour (work
+ * is under way) and `timed_out` shares failed's; the word tells them apart. Amber is only for
+ * the operator.
  */
 export const RUN_STATE_VIEW: Record<RunState, { pill: PillStatus; label: string }> = {
   queued: { pill: 'queued', label: 'Queued' },
@@ -25,10 +24,8 @@ export const RUN_STATE_VIEW: Record<RunState, { pill: PillStatus; label: string 
 export type PullRequestState = NonNullable<NonNullable<RunOutput['pullRequest']>['state']>;
 
 /**
- * How a pull request's state looks (Issue #142): the pill colour and the word. Colours follow the
- * run states' meaning without borrowing amber, which is only for the operator: a draft is quiet
- * (queued), an open one is under way (running), a merged one is done (succeeded), a closed one is
- * an outline (cancelled) and one that is gone is red (failed).
+ * Colours follow the run states' meaning without borrowing amber, which is only for the
+ * operator.
  */
 export const PULL_REQUEST_STATE_VIEW: Record<
   PullRequestState,
@@ -45,9 +42,9 @@ type PullRequestChecks = NonNullable<NonNullable<RunOutput['pullRequest']>['chec
 export type PullRequestCheckState = PullRequestChecks[number]['state'];
 
 /**
- * How a Pull request check's state looks (Issue #145): the pill colour and the word. Colours
- * follow the run states' meaning without amber: queued and skipped are quiet, running is under
- * way, passed is done, failed is red and cancelled is an outline. The word always says it too.
+ * How a Pull request check's state looks: the pill colour and the word. Colours follow the run
+ * states' meaning without amber: queued and skipped are quiet, running is under way, passed is
+ * done, failed is red and cancelled is an outline. The word always says it too.
  */
 export const PULL_REQUEST_CHECK_VIEW: Record<
   PullRequestCheckState,
@@ -61,7 +58,7 @@ export const PULL_REQUEST_CHECK_VIEW: Record<
   cancelled: { pill: 'cancelled', label: 'Cancelled' },
 };
 
-/** The overall picture of a pull request's checks (Issue #145). */
+/** The overall picture of a pull request's checks. */
 export interface ChecksSummary {
   /** The summary line, e.g. "1 of 12 checks failed". */
   text: string;
@@ -136,7 +133,7 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
 
 /**
  * The Providers the New run dialog offers, Claude Code first. Which of them is available comes
- * from `GET /api/providers` (#101): the dialog disables an unavailable one with its reason and
+ * from `GET /api/providers`: the dialog disables an unavailable one with its reason and
  * preselects the first available.
  */
 export const PROVIDER_OPTIONS: readonly { value: Provider; label: string }[] = [
@@ -144,7 +141,7 @@ export const PROVIDER_OPTIONS: readonly { value: Provider; label: string }[] = [
   { value: 'codex', label: PROVIDER_LABEL.codex },
 ];
 
-/** One message per fixed failure code (#97 DoR); the Run's own detail follows in mono. */
+/** One message per fixed failure code; the Run's own detail follows in mono. */
 export const FAILURE_MESSAGE: Record<FailureCode, string> = {
   provider_disabled: 'The provider is switched off on this server.',
   preparation_failed: "The run's working copy could not be prepared.",
@@ -160,10 +157,8 @@ export const FAILURE_MESSAGE: Record<FailureCode, string> = {
 const HOLDING: readonly RunState[] = ['preparing', 'running', 'waiting_for_operator'];
 
 /**
- * Why a queued Run waits, derived from its project's Runs (#97 DoR: no contract change): another
- * Run holds the project, or else the server's limit of active Runs is reached. The held states
- * and the limit of two mirror the API's concurrency rule (ADR 0002) for this message only; the
- * API alone decides when a Run starts.
+ * The held states and the limit of two mirror the API's concurrency rule (ADR 0002) for this
+ * message only; the API alone decides when a Run starts.
  */
 export function queuedReason(run: RunOutput, projectRuns: readonly RunOutput[]): string {
   const projectBusy = projectRuns.some(

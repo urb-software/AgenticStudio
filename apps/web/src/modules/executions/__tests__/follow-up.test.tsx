@@ -7,10 +7,6 @@ import type { RunOutput } from '../../../platform/api';
 import { formatExactTime } from '@/shared/lib/relative-time';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #141 on the Run page seam: sending a Follow-up to a finished Run, and how the page shows
-// a Run that has had Follow-ups, with the generated client, the API wrapper and TanStack Query
-// real, and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
@@ -171,7 +167,7 @@ describe('Run page: Follow-up (Issue #141)', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
-  // Issue #143: until when the Run stays open to Follow-ups.
+  // Until when the Run stays open to Follow-ups.
   it('says until when the Run is open to Follow-ups', async () => {
     const openUntil = '2026-12-14T09:30:00.000Z';
     const run = delivered({ followUp: { allowed: true, openUntil } });
@@ -344,7 +340,7 @@ describe('Run page: a Run with Follow-ups (Issue #141)', () => {
       at = found + 1;
     }
     expect(within(conversation).getByText('Added GET /health.')).toBeTruthy();
-    // Review S1 of #150: the earlier failure's reason stays visible, as plain text.
+    // The earlier failure's reason stays visible, as plain text.
     expect(within(conversation).getByText('The tests did not compile.')).toBeTruthy();
     // The kept pull request: this Follow-up pushed nothing.
     expect(screen.getByText('This Follow-up pushed nothing.')).toBeTruthy();

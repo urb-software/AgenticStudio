@@ -60,12 +60,6 @@ type CreateProjectDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-/**
- * The New project dialog (a bottom sheet on phones). The generated Zod schema gives quick
- * client-side feedback; the API is authoritative (normalization, duplicates), and its field
- * errors land on the field. On success it closes and a toast confirms; on failure it stays
- * open with the error. It cannot be closed while the request is in flight.
- */
 export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
   const createProject = useCreateProject();
   const {

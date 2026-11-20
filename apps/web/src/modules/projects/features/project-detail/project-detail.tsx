@@ -32,11 +32,6 @@ function LoadingProject() {
   );
 }
 
-/**
- * The project screen (prototype "project" view): the name and creation time, the Repository
- * card and the Environment file card (Issue #104), then the Runs section of the executions module. An unknown project shows a not-found
- * state that links back to Projects.
- */
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const { data, error, isPending, isError, isRefetching, refetch, dataUpdatedAt } =
     useProject(projectId);

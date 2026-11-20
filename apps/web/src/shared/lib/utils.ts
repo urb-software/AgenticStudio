@@ -2,10 +2,9 @@ import { clsx, type ClassValue } from 'clsx';
 import { extendTailwindMerge } from 'tailwind-merge';
 
 /**
- * tailwind-merge must know the custom scales of globals.css: the type scale (`--text-*`),
- * the shadows (`--shadow-xs`, `--shadow-float`) and the `pulse-dot` animation. Otherwise it
- * reads `text-label` or `shadow-float` as a colour and drops the real colour next to it.
- * Radius tokens (sm–xl) and colour tokens need no entry: their names already classify.
+ * tailwind-merge must know the custom scales of globals.css (`--text-*`, `--shadow-*`, the
+ * `pulse-dot` animation); otherwise it reads `text-label` or `shadow-float` as a colour and
+ * drops the real colour next to it.
  */
 const twMerge = extendTailwindMerge({
   extend: {
@@ -17,7 +16,6 @@ const twMerge = extendTailwindMerge({
   },
 });
 
-/** Joins class names and lets later Tailwind utilities override earlier ones. */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }

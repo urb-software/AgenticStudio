@@ -6,10 +6,6 @@ import { RunDetail } from '..';
 import type { RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #147 on the Run page seam: the "Bring up to date" action of the pull request card, its
-// confirm, and how the conversation shows such a Follow-up, with the generated client, the API
-// wrapper and TanStack Query real, and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };

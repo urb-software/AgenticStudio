@@ -42,11 +42,8 @@ type DiffViewProps = {
 };
 
 /**
- * Unified diff of one file (design-system/components/DiffView): a header with the path in mono,
- * green +additions and red −deletions; rows of 20px with the old and new line numbers, a sign
- * column and the text, additions on `run-succeeded-soft`, deletions on `run-failed-soft`, hunk
- * headers on `run-running-soft`. The code scrolls sideways inside its own box (focusable, so a
- * keyboard can scroll it). Every line is plain text: nothing in it is rendered as markup.
+ * Every line is plain text: nothing in it is rendered as markup. The code box scrolls sideways
+ * and is focusable, so a keyboard can scroll it.
  */
 function DiffView({ path, additions, deletions, actions, lines, label, className }: DiffViewProps) {
   const added = additions ?? lines.filter((line) => line.type === 'add').length;

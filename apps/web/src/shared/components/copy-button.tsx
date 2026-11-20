@@ -16,18 +16,14 @@ const ANNOUNCEMENT: Record<CopyState, string> = {
 };
 
 type CopyButtonProps = {
-  /** The text put on the clipboard. */
   value: string;
-  /** The accessible name, e.g. "Copy public key". */
   label: string;
   className?: string;
 };
 
 /**
- * A small secondary "Copy" button that puts `value` on the clipboard and confirms with
- * "Copied" for a moment. The outcome is also announced in a polite live region, and a
- * clipboard that refuses (permissions, insecure context) says so. Not in the design system
- * yet (a listed gap); built from its Button.
+ * A clipboard that refuses (permissions, insecure context) says so; the outcome is also
+ * announced in a polite live region.
  */
 function CopyButton({ value, label, className }: CopyButtonProps) {
   const [state, setState] = useState<CopyState>('idle');

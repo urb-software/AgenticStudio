@@ -20,10 +20,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
 /**
- * Dark is server-rendered (`class="dark"`), so the first paint is dark even before
- * next-themes applies a stored theme; `suppressHydrationWarning` covers that class change.
- * `body` takes the bg/text tokens and the sans font from globals.css. The one Toaster (#44)
- * sits inside the theme provider so toasts follow the theme on every page.
+ * Dark is server-rendered, so the first paint is dark before next-themes applies a stored theme;
+ * `suppressHydrationWarning` covers that class change.
  */
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (

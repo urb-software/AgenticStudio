@@ -12,13 +12,9 @@ import { ThemeMenuItem, ThemeToggle } from './_shell/theme-toggle';
 const MAIN_ID = 'main-content';
 
 /**
- * The Studio Shell (design-system Layout) around every Studio page: sidebar, sticky 56px top
- * bar and the page capped at 1280px. globals.css has no `topbar-height`, `content-max` or
- * `z-topbar` tokens yet, so those are the literal values (`h-14`, `max-w-[1280px]`, `z-20`).
- * A Server Component: it
- * reads the stored sidebar state from the request so the first paint matches; the sidebar,
- * theme toggle and operator menu are Client islands. The API enforces the session (401 →
- * login); the shell hides nothing that the API does not also protect.
+ * globals.css has no `topbar-height`, `content-max` or `z-topbar` tokens yet, so those are the
+ * literal values (`h-14`, `max-w-[1280px]`, `z-20`).
+ * The API enforces the session; the shell hides nothing that the API does not also protect.
  */
 export default async function StudioLayout({ children }: LayoutProps<'/'>) {
   const sidebarOpen = parseSidebarOpen((await cookies()).get(SIDEBAR_COOKIE_NAME)?.value);

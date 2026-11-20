@@ -5,10 +5,6 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThemeProvider } from '../../../platform/theme/theme-provider';
 
-// #43 seam: the Studio Shell as `(studio)/layout.tsx` composes it, with the shell components,
-// platform/auth and TanStack Query real; the request cookie, the route and the API (`fetch`)
-// are faked.
-
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
 vi.mock('next/headers', () => ({
   cookies: async () => ({
